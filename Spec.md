@@ -95,8 +95,7 @@ Imports are **not re-exported** by default (see `export` below).
 
 #### 2.3.1 Import item qualifiers (namespaces)
 
-Kappa has multiple namespaces (§13). Import items may optionally specify the namespace being imported:
-
+Kappa has multiple namespaces (§13). Import items may optionally specify which namespace (or subset) the item is imported into:
 `kappa
 import std.list.(type List)
 import std.eq.(trait Eq)
@@ -107,7 +106,7 @@ Valid qualifiers are:
 
 * `term`  (term namespace)
 * `type`  (type namespace)
-* `trait` (trait namespace)
+* `trait` (type namespace; restricted to traits)
 * `ctor`  (constructor namespace)
 
 If no qualifier is given (`import M.X`), `X` is imported into any namespace(s) in which `M` exports `X`. If this results in ambiguity at a use site, that use is an error unless disambiguated (by qualification, expected kind/type, or explicit import qualifier).
@@ -185,6 +184,60 @@ Rules:
 * An `export M...` statement is only valid if the module `M` is imported in the same file (directly or via a previous `import` statement).
 * `export` only affects **re-exporting imported definitions**. All top-level definitions in the current module are exported by default
 
+### 2.X Hiding exports (`hide`)
+
+By default, all top-level definitions in the current module are exported.
+`hide` statements remove items from the module’s export interface.
+`hide` affects only downstream visibility; it does not affect visibility within the defining module.
+
+`hide` statements are **top-level only** and may appear anywhere. Their effect is order-independent.
+
+Forms:
+
+```kappa
+hide Foo
+
+hide term foo
+hide type Foo
+hide trait Eq
+
+hide ctor Foo
+hide ctor Foo.Bar
+
+hide view Foo
+
+hide alias Bar
+```
+
+Meaning:
+* `hide Foo` hides any exported item named `Foo` in any namespace. 
+  If Foo is a type/trait, this additionally hides its exported constructors and its exported view (pattern matching interface).
+* `hide term x` hides the exported term x.
+* `hide type T` hides the exported type constructor / type alias T.
+* `hide trait T` is like hide type T, but requires that T is a trait.
+* `hide ctor T` hides all exported constructors of type T (both construction and pattern usage) while still exporting T itself.
+* `hide ctor T.C` hides a specific constructor C of type T.
+* `hide view T` hides the pattern-matching view of T’s constructors (constructors may remain usable as terms).
+  Pattern matching may only mention constructors whose views are visible at the match site.
+* `hide alias T` applies to type aliases type T = ... and hides the alias’s definitional equation from downstream modules.
+  Outside the defining module, T is treated as an abstract type of the same kind and does not unfold during definitional equality.
+
+### 2.6 Prelude interface (implicit, declarations only)
+
+Although Kappa has explicit imports, implementations provide an implicit **prelude interface** that is in scope by default.
+
+Normative rule:
+
+* Each source file is processed as if it began with an implicit import of a prelude module:
+
+  ```kappa
+  import std.prelude.*
+  ```
+
+The exact contents of std.prelude are implementation-defined, but it must include:
+* any declarations required by surface syntax (e.g. Bool and the meanings of True/False),
+* fixity declarations for any operator tokens that the implementation expects to parse “out of the box”
+(e.g. `+`, `*`, `==`, `and`, `or`, `..`, `..<`), consistent with infix gating (§3.5.3).
 ---
 
 ## 3. Lexical Structure
@@ -289,27 +342,42 @@ let x = (+) 1 2
 
 #### 3.5.2 Fixity declarations
 
-Fixity declarations control parsing of infix operator use:
+Fixity declarations control parsing of operator use.
+
+Supported forms:
 
 ```kappa
-infix  50 (==)
-infix left 60 (+)
-infix left 70 (*)
+-- infix (non-associative)
+infix 50 (==)
+
+-- infix left/right associativity
+infix left  60 (+)
 infix right 40 (::)
+
+-- prefix and postfix
+prefix  80 (-)
+postfix 90 (?)
 ```
 
 Rules:
 
-* A fixity declaration binds a precedence level (an integer; recommended range `0..100`) and associativity to one operator token.
+* A fixity declaration binds a precedence level (an integer; recommended range `0..100`), and
+  a kind (infix, infix left, infix right, prefix, postfix) to one operator token.
 * Fixities are **block-scoped** and apply from the point of declaration onward.
 * `import`/`from` may bring fixities into scope as part of the imported module interface.
+* Fixity declarations apply when parsing operator tokens in both term expressions and type expressions wherever operator parsing is supported by the grammar.
+  (They do not change the meaning of reserved punctuation used by other syntactic forms, such as ->.)
+
 
 #### 3.5.3 Infix gating
 
-An operator token may only be used in infix position if a fixity for that operator is in scope at that source location.
+An operator token may only be used in an operator position if a matching fixity is in scope at that source location:
+
+* infix position requires an `infix...` fixity in scope
+* prefix position requires a `prefix` fixity in scope
+* postfix position requires a `postfix` fixity in scope
 
 If no fixity is in scope, the operator may still be used as a normal name via `(op)`.
-
 
 
 ---
@@ -403,19 +471,22 @@ Implementations may normalize leading indentation, but the spec assumes the raw 
 
 #### 4.3.3 Prefixed strings
 
-Three built-in prefixed string forms exist, each treated as a distinct lexical token:
+
+A **prefixed string literal** has the form:
 
 ```kappa
-f"hello $name, balance ${balance : .2f}"
-re"(\d+)"
-b"hello"
+prefix"..."
+prefix"""..."""
 ```
 
-All support **interpolation**:
+Where prefix is an identifier (including backtick identifiers).
 
-* `$name` inserts a variable `name`.
-* `${expr}` inserts an arbitrary expression.
-* For `f"..."`, `${expr : fmt}` applies a format string `fmt` (mini-language like `.2f`, `0d`, etc).
+All prefixed strings support interpolation:
+ * `$name` inserts a variable name.
+ * `${expr}` inserts an arbitrary expression.
+ * `${expr : fmt}` inserts expr using format string fmt (format mini-language is implementation-defined).
+
+A literal `$` may be written as `\$`.
 
 Semantic sketch:
 
@@ -427,6 +498,10 @@ Semantic sketch:
   After interpolation, the string is encoded as UTF-8 to produce bytes.
 
 Only prefixes `f`, `re`, and `b` are special in v0.1. Other `foo"..."` forms are invalid or treated as IDENT+STRING without interpolation, at the implementation’s discretion.
+
+Name resolution rule:
+
+`prefix` must resolve to a term in scope at the use site. If it does not, the program is ill-formed.
 
 ### 4.4 Unit and tuples
 
@@ -456,21 +531,33 @@ Only prefixes `f`, `re`, and `b` are special in v0.1. Other `foo"..."` forms are
 
 Kappa is dependently typed with a stratified universe hierarchy.
 
-* `Type` ≡ `Type0`
-* `Type1`, `Type2`, ... are higher universes.
-* `*` is a **universe-polymorphic placeholder** usable in type annotations, meaning “some universe level inferred by the compiler”. It is not a proper runtime value and not a term.
+* There is an infinite family of universes: `Type0`, `Type1`, `Type2`, ...
+* Universe typing:
 
-Examples:
+    * `Type0 : Type1`
+    * `Type1 : Type2`
+    * in general, `Typeu : Type(u+1)`.
 
-```kappa
-let id : forall a. a -> a =
-    \ (x : a) -> x
+* `Type` is **universe-polymorphic** surface syntax:
+    * each occurrence of `Type` introduces a fresh universe level metavariable (implementation-defined notation, e.g. `?u`),
+      meaning “some universe level inferred by the compiler”.
+* `*` is syntactic sugar for `Type`.
 
-let eqType : (t : Type) -> t -> t -> Type =
-    \ (@t : Type) (x : t) (y : t) -> Type
-```
+#### 5.1.1 Cumulativity
 
-### 5.1.1 Erasure and elaboration time
+Universes are **cumulative**:
+
+* if `u ≤ v`, then `Typeu` may be used where `Typev` is expected.
+
+Implementations may realize this as an implicit coercion/subtyping rule between universes.
+
+#### 5.1.2 Universe inference (sketch)
+
+Elaboration generates constraints on universe metavariables (e.g. `?u ≤ ?v`, `?u < ?v`) from typing.
+If the constraints are unsatisfiable, compilation fails.
+Unconstrained universe metavariables may be generalized at top-level (implementation-defined).
+
+### 5.1.3 Erasure and elaboration time
 
 `Type` and universe terms are compile-time entities. Kappa does not require runtime type information.
 
@@ -504,8 +591,8 @@ let eqType : (t : Type) -> t -> t -> Type =
 `forall` is syntactic sugar over Pi-types:
 
 ```kappa
-forall a. T                ==   (a : Type) -> T
-forall (a : S). T          ==   (a : S) -> T
+forall a. T                ==   (@a : Type) -> T
+forall (a : S). T          ==   (@a : S) -> T
 ```
 
 Examples:
@@ -566,11 +653,18 @@ Syntax:
 ```
 
 * One-element record type: `(x : T,)`
-* Records are ordered collections of named fields; field order is part of the type.
+* Records form a dependent telescope of named fields. Field order is not semantically significant except for 
+  dependencies: a field type may only refer to earlier fields in some dependency-respecting ordering.
 
 #### 5.5.1.1 Record field order and lawful reorderings
 
 Record types are **order-insensitive up to lawful reorderings**.
+
+Well-formedness:
+
+* In a record type `(f1 : T1, f2 : T2, ...)`, each field type `Ti` may refer only to fields that are earlier in the written order.
+  (Equivalently: the written order must already be dependency-respecting.)
+* References to later fields in the same record type are a compile-time error.
 
 Intuition: record types form a dependent telescope. Fields may be reordered when the reorder does not violate dependencies.
 
@@ -599,6 +693,11 @@ let p : (x : Int, y : Int) = (x = 1, y = 2)
 let a = p.x       -- 1
 let b = p.y       -- 2
 ```
+
+Well-formedness:
+
+* In a record value `(f1 = e1, f2 = e2, ...)`, each expression `ei` may refer only to fields that are earlier in the written order.
+* References to later fields in the same record literal are a compile-time error.
 
 Record values are order-insensitive. Field order in a record literal does not affect its meaning.
 
@@ -843,6 +942,39 @@ let odd  n = ...
 ```
 
 Within such a definition body, the declared name(s) are in scope.
+
+### 6.5 `expect` declarations
+
+An `expect` declaration introduces a name and its type/signature, but does not provide a definition in the current file.
+
+`expect` declarations are **top-level only**.
+
+Forms:
+
+```kappa
+expect type Int
+expect type String
+expect type Float
+
+expect trait Eq a
+expect term toFloat : (this : Int) -> Float
+expect term print   : (this : String) -> IO Unit
+```
+
+Rules:
+* expect may prefix a type, trait, or a term signature `(term name : Type)`. 
+* An expect declaration contributes to name resolution as if it were an ordinary declaration. 
+* Each expected item must be satisfied exactly once by the compilation unit selected for the build, either by:
+  * a matching ordinary definition in another source file fragment of the same module (implementation-defined), or 
+  * a compiler/back-end intrinsic.
+
+Errors:
+* If an expect is not satisfied, it is a compile-time error.
+* If multiple satisfying definitions exist for a single expect, it is a compile-time error.
+* The satisfying definition must match the expected signature (up to definitional equality).
+
+Implementations may support selecting module “fragments” by target (e.g. `main.kp` + `main.win32.kp`). 
+In such systems, `expect` declarations in common fragments are satisfied by definitions in the selected target fragments.
 
 ---
 
@@ -1125,9 +1257,9 @@ A `do` block sequences monadic actions:
 
 ```kappa
 do
-    x <- action1
+    let x <- action1
     action2
-    y <- action3 x
+    let y <- action3 x
     finalExpr
 ```
 
@@ -1144,26 +1276,57 @@ Where the block’s type is some `m T`.
 
 Valid statements inside `do`:
 
-* **Bind / assign (`<-`)**:
+* **Bind (`<-`) **:
 
   ```kappa
-  pat <- expr
+  let pat <- expr
   ```
 
-  * If `pat` is a single identifier `x` and `x` resolves to an existing mutable variable declared by `var x = ...`,
-    then this form is **assignment** to that mutable variable.
-  * Otherwise, this form is **monadic bind**, introducing new bindings from `pat`.
+  This form is **monadic bind**, introducing new bindings from `pat`.
 
   Typing:
 
   * `expr` is expected to have type `m A`.
-  * If `expr` instead has type `A` (pure), it is implicitly lifted to `pure expr` (using the enclosing monad).
+
+* **Assign (`<-`) **:
+
+  ```kappa
+  x <- expr
+  ```
+
+  * Here, `x` must be an existing mutable variable declared by `var x = ...`.
+  * This form updates the mutable variable `x` with the result of `expr`.
+
+  Typing:
+
+  * `expr` is expected to have type `m A`, where `x` has type `A`.
+
+* Pure assignment (assign to an existing `var` only):
+    ```kappa
+    x = expr
+    ```
+    
+    * Here, `x` must be an existing mutable variable declared by `var x = ...`.
+    * This form updates the mutable variable `x` with the pure result of `expr`.
+    
+    Typing:
+    
+    * `expr` is expected to have type `A`, where `x` has type `A`.
 
 * **Expression statement**:
 
   ```kappa
   expr           -- expr : m Unit (or value coerced to m Unit)
   ```
+
+* **Resource-scoped bind (`using`)**:
+    ```kappa
+    using pat <- expr
+    ```
+  
+    This form is like `let pat <- expr`, but ensures that resources acquired by `expr` are released when the `do` block exits.
+
+    It desugars to a `defer` mechanism (see §8.6).
 
 * **Local definition**:
 
@@ -1484,6 +1647,17 @@ General structure:
 {   clauses..., yield keyExpr : valueExpr }
 ```
 
+Clause separators:
+
+* Within comprehensions, clauses may be separated by newlines or commas.
+* Commas are purely a separator (equivalent to a newline at the same layout nesting).
+
+Example:
+
+```kappa
+[ for x in xs, let y = x + 1, if y > 2, yield y ]
+```
+
 The **clauses** appear before `yield` and may include:
 
 * `for` clauses
@@ -1797,10 +1971,13 @@ trait Eq a = ...           -- Eq (a : Type)
 trait Marker a b = ...     -- both default to Type
 ```
 
-For higher-kinded parameters, annotations are **required**:
+Trait parameters default to kind `Type` when unannotated, but implementations may infer higher kinds from usage.
+
+Example:
 
 ```kappa
-trait Functor f = ...      -- ERROR in v0.1
+trait Functor f =
+    map : (a -> b) -> f a -> f b
 ```
 
 ### 12.2 Trait members
@@ -1852,6 +2029,23 @@ Rules:
   * for any trait application, at most one instance may apply.
 * Orphan instances are disallowed:
   * an instance must be defined in the same module as the trait definition or the type constructor being instantiated (implementation-defined for URL imports and module identity).
+
+### 12.X Traits as propositions (`Prop`)
+
+Kappa provides a built-in marker trait:
+
+```kappa
+trait Prop (t : Type)
+```
+
+`Prop t` indicates that t is treated as a proposition type for the purposes of implicit resolution.
+
+Rules:
+* For any trait application `Tr args`, the compiler can synthesize an implicit instance of `Prop (Tr args)`. 
+* Trait instance resolution is coherent:
+  * for any fully-applied, ground trait type `Tr args`, there is at most one instance candidate available to instance search. 
+  * if multiple candidates could apply, it is a compile-time error. 
+  * This is a compiler-enforced property; it does not require a separate “Prop universe”.
 
 ### 12.4 Deriving
 
