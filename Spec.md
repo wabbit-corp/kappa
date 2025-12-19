@@ -1,5 +1,7 @@
 # Kappa Language Specification
 
+![Temporary Logo](https://espunisinjapan.com/wp-content/uploads/2023/12/kappa-1024x1024.jpg)
+
 > **Status:** Draft.  
 > **Scope:** Core language, core syntax, and core semantics.
 
@@ -93,14 +95,21 @@ Constraints:
 
 Imports are **not re-exported** by default (see `export` below).
 
+Module aliases and qualification:
+
+* `import M` brings the module name `M` into scope for qualified access (e.g. `M.x`).
+* `import M as A` brings only the alias `A` into scope for qualified access (e.g. `A.x`). The name `M` is not brought into scope by this form.
+* Selective imports (`import M.(...)`, `import M.*`, and `import M.* except (...)`) do not bring `M` into scope for qualified access.
+  To enable qualified access, use a separate `import M` (or `import M as M`).
+
 #### 2.3.1 Import item qualifiers (namespaces)
 
 Kappa has multiple namespaces (§13). Import items may optionally specify which namespace (or subset) the item is imported into:
-`kappa
+```kappa
 import std.list.(type List)
 import std.eq.(trait Eq)
 import std.base.(term println)
-`
+```
 
 Valid qualifiers are:
 
@@ -115,7 +124,7 @@ Constructors are not imported as unqualified names by default. Constructors can 
 
 If `ctor X` is imported, `X` becomes available as an unqualified constructor name in patterns and expressions (subject to ambiguity rules).
 
-### 2.3.1 URL imports, pinning, and reproducibility
+### 2.3.2 URL imports, pinning, and reproducibility
 
 URL imports are intended for scripts and quick one-offs, but Kappa also supports reproducible builds.
 
@@ -184,7 +193,7 @@ Rules:
 * An `export M...` statement is only valid if the module `M` is imported in the same file (directly or via a previous `import` statement).
 * `export` only affects **re-exporting imported definitions**. All top-level definitions in the current module are exported by default
 
-### 2.X Hiding exports (`hide`)
+### 2.5 Hiding exports (`hide`)
 
 By default, all top-level definitions in the current module are exported.
 `hide` statements remove items from the module’s export interface.
@@ -206,7 +215,7 @@ hide ctor Foo.Bar
 
 hide view Foo
 
-hide alias Bar
+hide def foo
 ```
 
 Meaning:
@@ -219,8 +228,10 @@ Meaning:
 * `hide ctor T.C` hides a specific constructor C of type T.
 * `hide view T` hides the pattern-matching view of T’s constructors (constructors may remain usable as terms).
   Pattern matching may only mention constructors whose views are visible at the match site.
-* `hide alias T` applies to type aliases type T = ... and hides the alias’s definitional equation from downstream modules.
-  Outside the defining module, T is treated as an abstract type of the same kind and does not unfold during definitional equality.
+* `hide def x` hides the definitional equation (implementation body) of an exported term `x` from downstream modules,
+  while still exporting its signature.
+  Outside the defining module, `x` is treated as opaque for definitional equality (δ-reduction does not unfold it).
+  `hide def x` requires that `x` has an explicit exported type signature in the module interface.
 
 ### 2.6 Prelude interface (implicit, declarations only)
 
@@ -287,43 +298,54 @@ Keywords are **soft** (contextual) keywords:
 * Line comments:
 
   ```kappa
-  // this is a comment
+  -- this is a comment
   ```
 
 * Block comments:
 
   ```kappa
-  /* this is
-     a block comment */
+  {- this is
+     a block comment -}
   ```
 
-Comments do not nest (implementation may choose to support nesting, but spec does not require it).
+Comments can nest, i.e. block comments may contain other block comments.
 
-### 3.4 Whitespace and indentation
+### 3.4 Whitespace, indentation, and continuation
 
-Kappa uses a **significant indentation** (“offside”) rule similar to Haskell/Python.
+Kappa uses a Python-style significant indentation rule.
 
-* Blocks are introduced by certain keywords (`do`, `match`, `try match`, `trait`, `data`, `let ... in`, comprehensions).
-* A block consists of one or more lines **indented more** than the introducer.
-* All lines in a block must share the same indentation level (modulo continuation rules, which implementations may refine).
+Lexical model:
 
-Semicolons `;` are optional statement separators:
+* The lexer emits `NEWLINE`, `INDENT`, and `DEDENT` tokens.
+* Indentation is measured in spaces. Tabs are a lexical error.
+* Inside `()`, `[]`, `{}`, and `{| |}`, newlines do not end statements and do not produce indentation tokens.
 
-* Newline at the base indentation level terminates a statement.
+Statement boundaries:
 
-* `;` may terminate a statement early, allowing multiple statements on one line:
+* At base indentation level, `NEWLINE` terminates a statement unless the parser is in a continuation context.
 
-  ```kappa
-  let x = 1; let y = 2
-  ```
+Continuation contexts:
 
-* Semicolons are never required.
+A `NEWLINE` followed by an `INDENT` continues the current syntactic construct when the `NEWLINE` occurs immediately after a token that syntactically requires a following expression, including (non-exhaustive):
 
-There are **no general-purpose brace blocks**. Braces do not create statement blocks.
+* `=`, `->`, `then`, `elif`, `else`, `in`
+* the introducers `do`, `match`, `try`, `case`, `except`, `finally`
+* after `:` when parsing type annotations or map entries
+* after an operator token in infix position
 
-* `{ ... }` is reserved for **map literals** and **map comprehensions** (§10), and for **record update** / **named record patterns** when braces follow an expression or type name (§5.5, §7.6).
+In these cases, the indented lines form a continuation of the expression rather than starting a new statement.
 
-Blank lines and comment-only lines do not change indentation, but they are still logically line breaks and must not interfere with subsequent layout.
+Block introducers:
+
+Certain keywords introduce blocks, meaning they require one or more statements at a greater indentation level, including:
+
+* `do`
+* `match` (its `case` clauses)
+* `try` / `try match` (its `except` and optional `finally`)
+* `trait`, `data`, and local `let ... in` bindings
+* comprehension clause blocks (when written vertically)
+
+All lines belonging to the same block must share the same indentation level (modulo continuation contexts).
 
 ### 3.5 Operator identifiers and fixity
 
@@ -424,7 +446,7 @@ General form:
 * A standard-library function is provided for IEEE “numeric” equality (the common `==` in many languages), 
   where NaN is never equal and `+0.0` equals `-0.0`.
 
-#### 4.1.3 Sign
+#### 4.1.4 Sign
 
 `-` is a **unary operator**, not part of the literal.
 
@@ -454,7 +476,7 @@ Common escapes:
 
 * `\n`, `\t`, `\r`, `\\`, `\"`, `\b`, `\uXXXX` etc. Exact set is implementation-defined but should be Unicode-aware.
 
-Single-quoted `'...'` literals are **not valid** in v0.1.
+Single-quoted literals are reserved for `Char` literals (§4.4). Single-quoted **string** literals are not valid in v0.1.
 
 #### 4.3.2 Multiline strings
 
@@ -503,7 +525,28 @@ Name resolution rule:
 
 `prefix` must resolve to a term in scope at the use site. If it does not, the program is ill-formed.
 
-### 4.4 Unit and tuples
+### 4.4 Character literals (`Char`)
+
+A character literal is a single-quoted Unicode scalar value:
+
+```kappa
+'a'
+'λ'
+'🙂'
+'\n'
+'\u03BB'
+```
+
+Rules:
+* A Char literal denotes a value of type Char.
+* The literal must contain exactly one Unicode scalar value (one code point excluding surrogates).
+  * Grapheme clusters consisting of multiple code points are not a single Char.
+* Escape sequences are the same as for strings (at minimum \n, \t, \r, \\, \', \uXXXX, and \u{...} if supported).
+* Char ordering and ranges:
+  * Char has an Ord-like ordering given by numeric scalar value order. 
+  * Range enumeration over Char (e.g. 'a' .. 'z') enumerates by increasing scalar value.
+
+### 4.5 Unit and tuples
 
 * Unit: `()`
 
@@ -741,17 +784,22 @@ let g (x : A) (y : B) : R = ...
 
 Records are immutable values. Record update produces a new record with selected fields replaced:
 
-`kappa
+```kappa
 let p : (x : Int, y : Int) = (x = 1, y = 2)
 let p2 = p { y = 99 }          -- (x = 1, y = 99)
-`
+```
 
 Rules:
 
+Let `r` have record type `(f1 : T1, f2 : T2[f1], ..., fn : Tn[f1..f(n-1)])`.
+
 * `r { field = expr, ... }` is an expression.
-* The update expression must mention only fields present in `r`’s record type.
-* Field expressions are evaluated left-to-right.
-* Updated fields may depend on earlier fields (including updated ones) according to the record telescope rules.
+* Updates are processed left-to-right.
+* An updated field expression may refer to earlier fields (including updated ones), respecting the telescope rule.
+* For each field fi not mentioned in the update:
+  * The new value defaults to the old value r.fi only if the field’s type after applying earlier updates
+  is definitionally equal to the original field type. 
+  * If the field’s type changes (i.e. is not definitionally equal), it is a compile-time error unless fi is explicitly updated.
 
 Implementations may support dotted update paths as sugar:
 
@@ -836,9 +884,9 @@ In type positions, implementations may evaluate `!e` during elaboration to produ
 
 Example shape:
 
-`kappa
+```kappa
 let readCSV (path : String) : (!typeCSV path).Row = ...
-`
+```
 
 Rules:
 
@@ -874,7 +922,7 @@ There are two distinct forms:
    let name (x : A, y : B) : R = body
    ```
 
-   Any new term-level binding must begin with `let`, except inside `let ... in` (see below).
+   Any term definition must begin with `let`, except inside `let ... in` (see below).
 
 ### 6.2 Top-level signatures + definitions
 
@@ -917,21 +965,35 @@ Grammar:
 
 ### 6.4 Totality, unfolding, and `partial`
 
-Kappa is total by default for definitions that participate in typechecking via definitional equality.
+Kappa is total by default.
 
-* A **total** definition may be unfolded during typechecking (delta-reduction), subject to implementation limits.
-* A **partial** definition is treated as **opaque** for definitional equality: it is not unfolded by the typechecker.
+Normative rule:
+
+* All definitions that may participate in typechecking via definitional equality must be terminating.
+
+Termination checking:
+
+* Recursive definitions are permitted only when the termination checker accepts them (e.g. structural recursion),
+  or when the definition is explicitly annotated with `assertTotal`.
 
 Syntax:
 
-`kappa
-partial let diverge : Int = diverge
-`
+```kappa
+assertTotal let f : T = ...
+```
+
+Meaning:
+
+* `assertTotal` indicates that the programmer asserts the definition is total even if the compiler cannot prove it.
+* `assertTotal` does not change the runtime semantics.
+* `assertTotal` does not, by itself, make a definition opaque; opacity is controlled separately via export-interface mechanisms
+(e.g. `hide def f`, `hide alias T`) or separate compilation interfaces.
 
 Recursion policy:
 
-* There is no `let rec`.
-* A top-level binding is permitted to be (mutually) recursive **only if** it has a preceding top-level signature declaration.
+There is no `let rec`.
+
+A top-level binding is permitted to be (mutually) recursive only if it has a preceding top-level signature declaration.
 
 ```kappa
 even : Nat -> Bool
@@ -1353,10 +1415,10 @@ outer@do
 
 Control flow keywords may target a label:
 
-`kappa
+```kappa
 break@outer
 defer@outer cleanup
-`
+```
 
 Semantics follow Kotlin-style labeled control flow:
 
@@ -1478,7 +1540,8 @@ Semantics:
 
 ### 8.6 `defer`
 
-Inside `do`, `defer e` schedules `e` to be run when the enclosing `do` block is exited (normal or via `return`/exception):
+Inside a `do`-scope, `defer e` schedules `e` to run when exiting that `do`-scope (normal completion, `return`,
+exception, `break`, or `continue` that exits the scope).
 
 ```kappa
 do
@@ -1488,10 +1551,19 @@ do
     ...
 ```
 
+A `do`-scope is introduced by:
+
+* an explicit `do` block
+* the body of `while ... do ...`
+* the body of `for ... do ...`
+* `else do` blocks attached to loops
+* `try` / `except` / `finally` blocks (each block is its own do-scope)
+
 Semantics:
 
 * `e` must be a monadic action (e.g. `IO Unit`).
-* `defer` actions run in **LIFO order** when exiting the `do`.
+* Deferred actions run in LIFO order upon scope exit.
+* `defer@label e` targets a labeled enclosing `do`-scope.
 
 Implementation may desugar this to a bracket/finalizer mechanism; spec only fixes the ordering and guarantee of execution on exit.
 
@@ -1517,12 +1589,12 @@ trait MonadError (m : Type -> Type) (e : Type) =
 
 Syntax:
 
-`kappa
+```kappa
 try expr
 except pat1 if guard1 -> handler1
 except pat2           -> handler2
 finally               -> finalizer
-`
+```
 
 Rules:
 
@@ -1574,6 +1646,14 @@ Semantics sketch:
 
 ---
 
+### 9.4 `raise`
+
+`raise err` is sugar for throwing an error in the current error monad:
+
+* In any context with an implicit `MonadError m e`, if `err : e` then `raise err : m a` desugars to `throwError err`.
+
+`raise` is permitted anywhere an expression of type `m a` is expected (commonly inside `except` handlers).
+
 ## 10. Collections, Ranges, and Comprehensions
 
 ### 10.1 Built-in collection literals
@@ -1602,31 +1682,18 @@ Semantics sketch:
 
 Empty `{}` denotes an empty map; empty set uses `{| |}`.
 
-### 10.2 Range literals
+### 10.2 Range operators
 
-Syntax:
+`..` and `..<` are ordinary operator identifiers whose fixities are expected to be provided by `std.prelude`.
 
-```kappa
-from .. to        -- inclusive
-from ..< to       -- end-exclusive
-```
-
-Examples:
-
-```kappa
-1 .. 10
-1 ..< 10
-'a' .. 'z'        -- if character-like types exist
-```
-
-Ranges rely on a trait like:
+They are defined conceptually in terms of a trait such as:
 
 ```kappa
 trait Rangeable (v : Type) (t : Type) =
     range : (from : v) -> (to : v) -> (exclusive : Bool) -> t
 ```
 
-Desugaring:
+Prelude implementation:
 
 * `from .. to`  ≡  `range from to False`
 * `from ..< to` ≡  `range from to True`
@@ -1891,6 +1958,54 @@ This relies on a trait (conceptually `FromComprehension`) that defines how to bu
 
 ---
 
+### 10.11 Comprehension desugaring and required traits
+
+Comprehensions desugar to a pipeline of combinators. The compiler must choose a desugaring that is well-typed
+and must not require stronger trait constraints than necessary for the given comprehension shape.
+
+We refer to a carrier type constructor `f : Type -> Type`.
+
+Required combinators (conceptual traits):
+
+* `Functor f` provides `map : (a -> b) -> f a -> f b`
+* `Applicative f` provides `pure : a -> f a`
+* `Monad f` provides `bind : f a -> (a -> f b) -> f b`
+* `Filterable f` provides `filter : (a -> Bool) -> f a -> f a`
+* `Alternative f` provides `empty : f a` and `orElse : f a -> f a -> f a`
+
+(Exact names and trait factoring are not mandated, but the semantics correspond to these operations.)
+
+Desugaring rules (list/set forms shown; map form analogous):
+
+1. Yield-only:
+
+   `[ yield e ]` desugars to `pure e` and requires `Applicative f`.
+
+2. Single generator without refutation:
+
+   `[ for x in xs, yield e ]` desugars to `map (\x -> e) xs` and requires `Functor f`.
+
+3. Filters without refutation:
+
+   If the comprehension contains `if cond` clauses but no refutable generators/bindings, it prefers `filter` when available:
+
+   `[ for x in xs, if cond, yield e ]` desugars to `map (\x -> e) (filter (\x -> cond) xs)`
+   and requires `Filterable f` and `Functor f`.
+
+   If `Filterable f` is not available, it may desugar using `bind` and `empty` (requiring `Monad f` and `Alternative f`).
+
+4. Multiple generators and/or dependency between generators:
+
+   `[ for x in xs, for y in ys(x), yield e ]` desugars using `bind` and requires `Monad f`.
+   (A later generator `ys(x)` that depends on earlier bound variables forces `bind`.)
+
+5. Refutable generator (`in?`) and refutable let (`?=`):
+
+   These desugar using `bind` plus a match that produces `empty` when refutation fails,
+   requiring `Monad f` and `Alternative f`.
+
+The above is normative: implementations may produce equivalent code, but must preserve these semantics and constraint minimality.
+
 ## 11. Algebraic Data Types and Type Aliases
 
 ### 11.1 `data` declarations
@@ -1942,6 +2057,15 @@ type Id (a : Type) = a
 
 * Parameters may be annotated; sugar: `type Id a = a` ≡ `type Id (a : Type) = a`.
 * `type Name ...` with no `= ...` defines an abstract type whose implementation may be provided elsewhere (implementation-defined).
+
+Type aliases vs type-level definitions:
+
+Because Kappa is dependently typed, types are terms.
+
+* `type T ... = RHS` is surface syntax for a type-level definition whose right-hand side is parsed in a type context.
+* An equivalent form is a term definition with a universe type, e.g. `let T : Type = RHS`,
+  when `RHS` is intended to be a type expression.
+  Implementations may treat these as equivalent after elaboration.
 
 ---
 
@@ -2030,15 +2154,16 @@ Rules:
 * Orphan instances are disallowed:
   * an instance must be defined in the same module as the trait definition or the type constructor being instantiated (implementation-defined for URL imports and module identity).
 
-### 12.X Traits as propositions (`Prop`)
+### 12.4 Traits as propositions (`Prop`)
 
 Kappa provides a built-in marker trait:
 
 ```kappa
-trait Prop (t : Type)
+trait Prop (t : Type) =
+    proofIrrel : (x : t) -> (y : t) -> IsTrue (x == y)
 ```
 
-`Prop t` indicates that t is treated as a proposition type for the purposes of implicit resolution.
+`Prop t` indicates that `t` is treated as a proposition type and is proof-irrelevant.
 
 Rules:
 * For any trait application `Tr args`, the compiler can synthesize an implicit instance of `Prop (Tr args)`. 
@@ -2104,23 +2229,19 @@ The `.` token is used for:
 * **Record field projection:** `p.x`
 * **Method-call sugar:** `x.show`
 
-Resolution of `lhs.name` proceeds in this order:
+Resolution of `lhs.name` proceeds by attempting the following interpretations:
 
-1. **Module qualification**
-   * If `lhs` resolves to a module alias or module path, then `lhs.name` is a qualified lookup in that module (across namespaces as appropriate to context).
+1. Module qualification
+2. Type scope selection
+3. Record projection
+4. Method-call sugar
 
-2. **Type scope selection**
-   * If `lhs` resolves to a type constructor `T`, then `T.name` looks up constructors and other type-scoped names exported by `T`.
+Disambiguation rule:
 
-3. **Record projection**
-   * If `lhs` is a term and its type is a record type containing a field named `name`, then `lhs.name` is record projection.
-
-4. **Method-call sugar**
-   * Otherwise, if `name` resolves to a function eligible for method sugar, then `lhs.name` desugars to `name lhs`.
-
-Ambiguity:
-
-* If more than one interpretation typechecks without additional information, it is a compile-time error unless disambiguated (e.g. by qualification, explicit type ascription, or explicit import qualifiers).
+* The compiler attempts interpretations that are well-formed at the use site.
+* If exactly one interpretation is well-formed, it is chosen.
+* If more than one interpretation is well-formed, the use is ambiguous and is a compile-time error unless disambiguated
+  (e.g. by explicit qualification/aliasing, explicit import qualifiers, or type ascription that forces a unique interpretation).
 
 #### 13.1.1 Method-call sugar eligibility.
 A function name is eligible for method-call sugar iff its first explicit binder is named `this`.
@@ -2139,3 +2260,117 @@ Vec.Cons head tail
 ```
 
 Unqualified constructor names are not imported by default. If a module imports a type constructor, its constructors are available via that type’s scope.
+
+## 14. Core Semantics
+
+This chapter defines evaluation, elaboration, definitional equality, and erasure at a level sufficient to make
+the language’s typechecking and runtime behavior unambiguous.
+
+### 14.1 Elaboration overview
+
+Kappa source code elaborates to an internal core language.
+
+Elaboration performs (non-exhaustive):
+
+* layout processing (`INDENT`/`DEDENT`) and parsing using fixities in scope,
+* name resolution across namespaces (term/type/ctor/trait),
+* implicit argument insertion (§7.3),
+* insertion of coercions required by:
+    * union injections (§5.4),
+    * lawful record reorderings (§5.5.1.1),
+* desugaring of:
+    * `do` blocks to monadic core (§8.2),
+    * comprehensions to combinator pipelines (§10.11),
+    * `try match` and `try` to error-handling combinators (§9),
+    * method-call sugar (§13.1),
+* termination checking (§6.4),
+* optional erasure planning (§14.4).
+
+Elaboration must be terminating.
+
+### 14.2 Dynamic semantics (runtime evaluation)
+
+Runtime evaluation is strict call-by-value with left-to-right evaluation order.
+
+Evaluation order:
+
+* Function application evaluates the function expression, then the argument expression, then applies.
+* Record/tuple literals evaluate fields/elements left-to-right.
+* Record update evaluates the scrutinee record, then evaluates updated field expressions left-to-right.
+* `if` evaluates the condition, then evaluates exactly one branch.
+* `match` evaluates the scrutinee once, then tests cases top-to-bottom; guards are evaluated only after the pattern matches.
+
+`do` blocks:
+
+* `do` blocks are elaboration-time sugar to monadic operations (`pure`, `bind`, sequencing).
+* Evaluation order follows the desugared monadic structure.
+
+### 14.3 Definitional equality
+
+Definitional equality (also called conversion) is the equality relation used by the typechecker.
+
+Definitional equality is the smallest congruence containing the following reductions (subject to opacity rules):
+
+* β-reduction:
+  `(\(x : A) -> e) v  ↦  e[x := v]`
+* δ-reduction:
+  unfolding of transparent terminating definitions and transparent type aliases whose bodies are available
+  and not hidden in the module interface (e.g. not affected by `hide def` / `hide alias`).
+* ι-reduction:
+  reducing `match` on known constructors/literals.
+* η-equality (definitional):
+    * Functions: `f ≡ (\(x : A) -> f x)` when `x` is not free in `f`.
+    * Records: a record is definitionally equal to a record reconstructed from its projections (field-wise η),
+      up to lawful reorderings.
+
+Normalization used by the typechecker may be fuel-bounded for performance, but must be sound:
+it must not claim definitional equality unless it holds in the mathematical relation above.
+
+Definitional equality also includes canonical normalization of:
+
+* union types: flatten, deduplicate members up to definitional equality, then order canonically (§5.4.2, §14.5),
+* record types/values: normalize to a canonical dependency-respecting field order (§5.5.1.1, §14.6).
+
+### 14.4 Erasure
+
+Types and universe terms are compile-time only and do not require runtime representation.
+
+Erasure principles:
+
+* Implicit parameters (`@`) may be erased.
+* Proof terms of proposition-like types (including `IsTrue b`, `IsFalse b`, and trait constraints treated as propositions)
+  may be erased unless explicitly requested by library mechanisms.
+* Erasure must preserve runtime behavior of remaining (computationally relevant) terms.
+
+### 14.5 Union runtime representation
+
+A union type `A | B | ...` is represented at runtime as a tagged sum.
+
+Canonical member ordering:
+
+* The compiler normalizes union members (flatten + dedupe up to definitional equality) and chooses a canonical stable order.
+* Runtime tags are assigned by this canonical order.
+* The canonical order must be deterministic and stable within a compilation unit.
+
+Injection:
+
+* If `e : A` and the expected type is `A | B | ...`, elaboration inserts an injection that stores a tag and payload.
+
+Elimination:
+
+* `match` over a union inspects the runtime tag and selects the matching branch.
+* Typed patterns `(p : A)` match the `A` injection and bind `p : A`.
+
+### 14.6 Record canonicalization
+
+Record types and values normalize to a canonical dependency-respecting field order.
+
+Canonical order:
+
+* A record field may depend only on earlier fields.
+* The canonical ordering is the dependency-respecting topological order; ties are broken by field name.
+* Two record types are definitionally equal iff their canonical forms are field-wise definitionally equal.
+
+Record update:
+
+* Record update is typechecked using definitional equality as specified in §5.5.4.
