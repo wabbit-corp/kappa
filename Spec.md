@@ -32,13 +32,23 @@ Kappa is a small, statically typed, dependently typed language. The primary desi
 Implementations may also support an explicit top-level module header:
 
 ```kappa
-module std.base
+@AllowUnhiding @AllowClarification module std.base
 ```
 
 Rules:
 
+* A source file may contain at most one module header.
+* A module header may be preceded by zero or more module attributes of the form: @Ident
+* If a module header is present, it must appear before any non-comment, non-whitespace token other than these leading module attributes.
 * If a module header is present, it must match the implementation’s path-derived module name in “package mode”.
 * In “script mode”, implementations may permit a module header that does not match the path-derived name (implementation-defined).
+
+Standard module attributes:
+
+* @AllowUnhiding: permits use of unhide import items within this module.
+* @AllowClarification: permits use of clarify import items within this module.
+
+If the corresponding attribute is absent, using the related escape hatch is a compile-time error.
 
 ### 2.2 Acyclic imports
 
@@ -71,6 +81,9 @@ import std.math.* except (sin, pi)
 import "https://example.com/lib".*
 import "https://example.com/lib".(foo, bar)
 import "https://example.com/lib".* except (unsafe, debug)
+
+-- Import a URL module for qualified access only
+import "https://example.com/lib" as lib
 ```
 
 An `import` statement may contain multiple import specifications separated by commas:
@@ -101,6 +114,9 @@ Module aliases and qualification:
 * `import M as A` brings only the alias `A` into scope for qualified access (e.g. `A.x`). The name `M` is not brought into scope by this form.
 * Selective imports (`import M.(...)`, `import M.*`, and `import M.* except (...)`) do not bring `M` into scope for qualified access.
   To enable qualified access, use a separate `import M` (or `import M as M`).
+* `import "url" as A` brings only the alias `A` into scope for qualified access.
+  The string literal itself never becomes a qualifier.
+
 
 #### 2.3.1 Import item qualifiers (namespaces)
 
@@ -120,9 +136,50 @@ Valid qualifiers are:
 
 If no qualifier is given (`import M.X`), `X` is imported into any namespace(s) in which `M` exports `X`. If this results in ambiguity at a use site, that use is an error unless disambiguated (by qualification, expected kind/type, or explicit import qualifier).
 
+Exception (constructors):
+* Even when no qualifier is given, constructor-namespace exports are NOT imported as unqualified names by default.
+* To import constructors unqualified, the import item must be explicitly qualified with `ctor`.
+
 Constructors are not imported as unqualified names by default. Constructors can be accessed through type scope (§13.2).
 
 If `ctor X` is imported, `X` becomes available as an unqualified constructor name in patterns and expressions (subject to ambiguity rules).
+
+#### 2.3.1.1 `unhide` and `clarify` import items
+
+Import items may be prefixed by the modifiers:
+
+* unhide
+* clarify
+
+```kappa
+import std.rope.(unhide normalizeWorker)
+import std.rope.(clarify Rope)
+
+import std.rope.(unhide term normalizeWorker)
+import std.rope.(clarify type Rope)
+import std.rope.(unhide clarify term normalizeWorker)
+```
+
+An import item has the shape:
+
+```
+[unhide] [clarify] [term|type|trait|ctor] Name
+```
+
+Rules:
+
+* unhide imports a name that is marked private in the imported module, as if it were exported.
+  unhide is permitted only when the importing module has @AllowUnhiding.
+
+* clarify requests that an imported opaque item be treated as transparent for definitional equality in the importing module.
+  clarify is permitted only when the importing module has @AllowClarification.
+
+* unhide and clarify may be combined for the same item (order-insensitive).
+
+* clarify affects only the importing module. It does not change the imported module and is not re-exported implicitly.
+
+* If the compiler does not have access to the requested private definition or the definitional content of an opaque item
+  (e.g. due to separate compilation artifacts lacking bodies/constructors), unhide/clarify is a compile-time error.
 
 ### 2.3.2 URL imports, pinning, and reproducibility
 
@@ -186,52 +243,96 @@ export std.math.* except (sin, pi)
 export "https://example.com/lib".*
 export "https://example.com/lib".(foo, bar)
 export "https://example.com/lib".* except (unsafe, debug)
+-- Re-export a URL module for qualified access only
+export "https://example.com/lib" as lib
 ```
 
 Rules:
 
-* An `export M...` statement is only valid if the module `M` is imported in the same file (directly or via a previous `import` statement).
-* `export` only affects **re-exporting imported definitions**. All top-level definitions in the current module are exported by default
+* An `export M...` statement is valid whether the module `M` is imported in the same file or not.
+* `export` only affects **re-exporting definitions**. All top-level definitions in the current module are exported by default
 
-### 2.5 Hiding exports (`hide`)
+### 2.5 Visibility and opacity (private, opaque)
 
-By default, all top-level definitions in the current module are exported.
-`hide` statements remove items from the module’s export interface.
-`hide` affects only downstream visibility; it does not affect visibility within the defining module.
+By default, all top-level definitions in the current module are exported (public).
 
-`hide` statements are **top-level only** and may appear anywhere. Their effect is order-independent.
+This section defines two orthogonal controls:
 
-Forms:
+1. Visibility (whether a name is exported at all)
+2. Transparency (whether definitional equality may unfold a definition outside its defining module)
 
-```kappa
-hide Foo
+#### 2.5.1 private (visibility)
 
-hide term foo
-hide type Foo
-hide trait Eq
+A top-level declaration or definition may be prefixed with private.
 
-hide ctor Foo
-hide ctor Foo.Bar
+Examples:
 
-hide view Foo
-
-hide def foo
+```
+private let helper = ...
+private type Internal = ...
+private data Node a = ...
 ```
 
-Meaning:
-* `hide Foo` hides any exported item named `Foo` in any namespace. 
-  If Foo is a type/trait, this additionally hides its exported constructors and its exported view (pattern matching interface).
-* `hide term x` hides the exported term x.
-* `hide type T` hides the exported type constructor / type alias T.
-* `hide trait T` is like hide type T, but requires that T is a trait.
-* `hide ctor T` hides all exported constructors of type T (both construction and pattern usage) while still exporting T itself.
-* `hide ctor T.C` hides a specific constructor C of type T.
-* `hide view T` hides the pattern-matching view of T’s constructors (constructors may remain usable as terms).
-  Pattern matching may only mention constructors whose views are visible at the match site.
-* `hide def x` hides the definitional equation (implementation body) of an exported term `x` from downstream modules,
-  while still exporting its signature.
-  Outside the defining module, `x` is treated as opaque for definitional equality (δ-reduction does not unfold it).
-  `hide def x` requires that `x` has an explicit exported type signature in the module interface.
+Rules:
+
+* A private item is not part of the module’s export interface.
+* Outside the defining module, a private item is not name-resolvable and cannot be imported by ordinary import forms.
+* An importing module may access a private item only via an explicit unhide import item, and only if the importing module
+  has the @AllowUnhiding attribute.
+
+private affects only downstream visibility; it does not affect visibility within the defining module.
+
+#### 2.5.2 opaque (definitional transparency)
+
+A top-level term definition or type alias definition may be prefixed with opaque.
+
+Examples:
+
+```
+opaque let normalize : Expr -> Expr = ...
+opaque type Id a = a
+```
+
+Rules:
+
+* An opaque item remains exported (unless also private).
+* Outside the defining module, an opaque item’s definitional equation is not available for definitional equality (delta reduction does not unfold it).
+  The item is treated as an opaque constant at its declared type.
+* Inside the defining module, the definition remains available normally.
+
+An importing module may request to treat an opaque item as transparent via an explicit clarify import item, and only if the importing module
+has the @AllowClarification attribute.
+
+#### 2.5.3 opaque data (representation hiding)
+
+A data declaration may be prefixed with opaque:
+
+```
+opaque data Rope a : Type =
+    Leaf (xs : Array a)
+    Node (l : Rope a) (r : Rope a) (size : Nat)
+```
+
+Rules:
+
+* The type constructor Rope is exported (unless also private).
+* The constructors of Rope are not exported. Outside the defining module, Rope’s constructors are not name-resolvable,
+  including through type scope selection (e.g. Rope.Node is not available).
+* Pattern matching on Rope constructors outside the defining module is therefore not possible unless the importing module
+  explicitly clarifies Rope.
+
+Clarify on an opaque data type requests that its constructors (and the pattern-matching interface derived from them) be made available
+to the importing module, subject to the availability of definition bodies/constructors in the compilation artifact.
+
+#### 2.5.4 Modifier combinations
+
+private and opaque may be combined:
+
+```
+private opaque let x = ...
+```
+
+In such cases private controls visibility; opaque controls transparency when the item is accessed via escape hatch mechanisms.
 
 ### 2.6 Prelude interface (implicit, declarations only)
 
@@ -285,7 +386,8 @@ forall,
 assertTotal, instance, derive, 
 infix, postfix, prefix, left, right,
 var, while, break, continue, using,
-yield, for, group, by, distinct, order, skip, take, top, join, left, asc, desc
+yield, for, group, by, distinct, order, skip, take, top, join, left, asc, desc,
+private, opaque, public, unhide, clarify
 ```
 
 Keywords are **soft** (contextual) keywords:
@@ -318,7 +420,12 @@ Lexical model:
 
 * The lexer emits `NEWLINE`, `INDENT`, and `DEDENT` tokens.
 * Indentation is measured in spaces. Tabs are a lexical error.
-* Inside `()`, `[]`, `{}`, and `{| |}`, newlines do not end statements and do not produce indentation tokens.
+* Inside `()`, `[]`, `{}`, and `{| |}`, the lexer does not emit `INDENT`/`DEDENT` (or the parser may intentionally ignore those).
+  Newlines inside these delimiters are still emitted.
+  Specific syntactic forms (notably comprehensions, §10) may treat `NEWLINE` as a clause separator.
+
+Blank lines and comment-only lines:
+* Blank lines and comment-only lines do not affect indentation and do not produce `INDENT`/`DEDENT` changes.
 
 Statement boundaries:
 
@@ -347,6 +454,10 @@ Certain keywords introduce blocks, meaning they require one or more statements a
 
 All lines belonging to the same block must share the same indentation level (modulo continuation contexts).
 
+Trailing commas:
+* Wherever the grammar admits a comma-separated list (e.g. tuples, record fields, import/export item lists),
+  an optional trailing comma is permitted.
+
 ### 3.5 Operator identifiers and fixity
 
 Kappa supports symbolic operator identifiers (e.g. `+`, `*`, `==`, `..`), which live in the term namespace.
@@ -361,6 +472,16 @@ Operators may be used as ordinary function names by parenthesizing:
 let add = (+)
 let x = (+) 1 2
 ```
+
+Reserved punctuation tokens:
+The following tokens are reserved by the surface syntax and are not operator tokens:
+* `->`, `<-`
+* `=`, `:`
+* `.`, `@`
+* `|` (reserved for union types and or-patterns)
+* `?=` and `in?`
+* comment and block-comment delimiters (`--`, `{-`, `-}`)
+* string and character delimiters
 
 #### 3.5.2 Fixity declarations
 
@@ -386,7 +507,7 @@ Rules:
 * A fixity declaration binds a precedence level (an integer; recommended range `0..100`), and
   a kind (infix, infix left, infix right, prefix, postfix) to one operator token.
 * Fixities are **block-scoped** and apply from the point of declaration onward.
-* `import`/`from` may bring fixities into scope as part of the imported module interface.
+* `import` may bring fixities into scope as part of the imported module interface.
 * Fixity declarations apply when parsing operator tokens in both term expressions and type expressions wherever operator parsing is supported by the grammar.
   (They do not change the meaning of reserved punctuation used by other syntactic forms, such as ->.)
 
@@ -549,16 +670,16 @@ Rules:
 ### 4.5 Unit and tuples
 
 * Unit: `()`
-
+  * Unit type:
+    * The unit type is `Unit` (provided by the prelude).
+    * The sole value of `Unit` is `()`.
+    * In type position, `()` is permitted as syntactic sugar for `Unit`.
 * Tuple value:
-
   ```kappa
   (1, "two", 3.0)
   (42,)          -- single-element tuple
   ```
-
 * Tuple type:
-
   ```kappa
   (Int, String, Real)
   (Int,)         -- single-element tuple type
@@ -868,7 +989,7 @@ Within a `do` block (§8), `!e` runs the monadic computation `e` and yields its 
 Example:
 
 ```kappa
-let main : IO () = do
+let main : IO Unit = do
 let x = !readInt
 let y = !readInt
 println (x + y)
@@ -905,7 +1026,7 @@ There are two distinct forms:
 1. **Declaration (signature only):**
 
    ```kappa
-   name : Type
+   [private] [opaque] name : Type
    ```
 
    This introduces a type for `name` without providing a definition. Commonly used:
@@ -916,10 +1037,10 @@ There are two distinct forms:
 2. **Definition (term binding):**
 
    ```kappa
-   let pat : Type = expr
-   let pat = expr
-   let name (x : A) (y : B) : R = body
-   let name (x : A, y : B) : R = body
+   [private] [opaque] let pat : Type = expr
+   [private] [opaque] let pat = expr
+   [private] [opaque] let name (x : A) (y : B) : R = body
+   [private] [opaque] let name (x : A, y : B) : R = body
    ```
 
    Any term definition must begin with `let`, except inside `let ... in` (see below).
@@ -935,6 +1056,12 @@ There are two distinct forms:
 
    A top-level pattern binding is never treated as recursive and does not participate in the “preceding signature enables recursion” rule.
 
+   Modifiers:
+
+   * private controls export visibility (§2.5.1).
+   * opaque controls definitional transparency across modules (§2.5.2).
+   * Modifiers are top-level only. Implementations may reject local private/opaque inside let-in or do.
+
 #### 6.1.1 Irrefutable patterns (for `let` bindings)
 
 A pattern `pat` is **irrefutable** for a scrutinee type `T` iff matching `pat` against any value of type `T` cannot fail.
@@ -949,9 +1076,7 @@ The following patterns are irrefutable when well-typed:
 * Anonymous record patterns `(f1 = p1, ..., fk = pk)` where each `pi` is irrefutable and the scrutinee type is a record
   type containing fields `f1..fk` (extra fields are allowed and ignored)
 
-Constructor patterns (including named record constructor patterns such as `C { ... }`) are considered irrefutable 
-for `let` bindings in v0.1 unless the compiler can establish (via definitional equality / index unification) that the scrutinee’s
-type has exactly one possible constructor at the binding site.
+Constructor patterns are refutable for `let` bindings unless the compiler can prove the scrutinee type has exactly one constructor at the binding site (via definitional equality / index unification). Only in that provable-single-constructor case may a constructor pattern be treated as irrefutable.
 
 Implementations must reject any `let pat = expr` binding whose `pat` is not irrefutable for the inferred/annotated type of `expr`.
 
@@ -1005,7 +1130,7 @@ Elaboration (schematic):
 * `let pat = e in body` elaborates as `match e; case pat -> body`.
   This is only permitted because `pat` is required to be irrefutable.
 
-### 6.4 Totality, unfolding, and `partial`
+### 6.4 Totality, unfolding, and `assertTotal`
 
 Kappa is total by default.
 
@@ -1028,8 +1153,7 @@ Meaning:
 
 * `assertTotal` indicates that the programmer asserts the definition is total even if the compiler cannot prove it.
 * `assertTotal` does not change the runtime semantics.
-* `assertTotal` does not, by itself, make a definition opaque; opacity is controlled separately via export-interface mechanisms
-(e.g. `hide def f`, `hide alias T`) or separate compilation interfaces.
+* `assertTotal` does not, by itself, make a definition opaque; opacity is controlled separately via the opaque modifier (§2.5.2).
 
 Recursion policy:
 
@@ -1111,6 +1235,8 @@ The `.` token is used for:
 * method-call sugar (`x.show`)
 
 Resolution of `lhs.name` is defined in §13.1.
+Method-call sugar is defined in §13.1.1 and supplies `lhs` to the unique explicit binder named `this`, 
+which may appear in any argument position.
 
 
 ### 7.2 Lambdas
@@ -1162,7 +1288,7 @@ Resolution proceeds in this order:
 1. **Local implicit context**: if there is an in-scope implicit value whose type is definitionally equal to `G`, use it.
    The local implicit context includes:
    * implicit binders introduced by `(@x : T)` parameters, and
-   * implicit assumptions introduced by control flow (see §7.4.1, §7.5.1, §10.4.1, §8.5.2).
+   * implicit assumptions introduced by control flow (see §7.4.1, §7.5.3, §10.4.1).
 
 2. **Trait instance resolution**: if `G` is a trait application (e.g. `Eq Int`), attempt to resolve an instance from the instance environment (coherent, non-overlapping in v1.0).
 
@@ -1243,7 +1369,7 @@ else e4
 * `e3` is checked under `IsFalse c1`, `IsFalse c2`, and `IsTrue c3`.
 * `e4` is checked under `IsFalse c1`, `IsFalse c2`, and `IsFalse c3`.
 
-These assumptions participate in implicit resolution (§7.3.2). In particular, `summon (c2)` within the `elif c2` branch can retrieve a proof of `IsTrue c2` (via §5.6 coercion).
+These assumptions participate in implicit resolution (§7.3.3). In particular, `summon (c2)` within the `elif c2` branch can retrieve a proof of `IsTrue c2` (via §5.6 coercion).
 
 
 ### 7.5 `match` expressions
@@ -1459,8 +1585,10 @@ Valid statements inside `do`:
 * **Expression statement**:
 
   ```kappa
-  expr           -- expr : m Unit (or value coerced to m Unit)
+  expr           -- expr : m a -- The value is discarded.
   ```
+
+  Desugaring sketch: `expr` desugars to `expr >> pure ()`.
 
 * **Resource-scoped bind (`using`)**:
     ```kappa
@@ -1485,25 +1613,21 @@ Valid statements inside `do`:
 
 * **Local declarations and scoping**:
 
-`import`/`from`, fixity declarations (`infix`, `postfix`, `prefix`), and (optionally) local `data`/`type`/`trait` declarations are permitted inside a `do` block.
+`import`, fixity declarations (`infix`, `postfix`, `prefix`), and (optionally) local `data`/`type`/`trait` declarations are permitted inside a `do` block.
 Their effects are scoped to the enclosing `do` block and apply from the declaration onward.
 
 ### 8.2.1 Labeled `do` blocks and labeled control flow
 
-A `do` block may be labeled:
+Labels:
+* A label has the form `label@` and may prefix any block-introducing construct (e.g. `do`, `try`, `match`, loops).
+* Labels are in scope within the labeled block.
 
-```kappa
-outer@do
-  ...
-  break @outer
-```
+Targets:
+* `break@label` may target a labeled `do`-scope or loop.
+* `continue@label` may target a labeled loop only.
+* `defer@label e` may target a labeled `do`-scope.
 
-Control flow keywords may target a label:
-
-```kappa
-break@outer
-defer@outer cleanup
-```
+Targeting a label that does not name an appropriate construct is a compile-time error.
 
 Semantics follow Kotlin-style labeled control flow:
 
@@ -1576,20 +1700,13 @@ These are **syntactic sugar** over monadic operations.
       stmts
   ```
 
-  Desugars to a recursive function in the monad:
+  Typing of `cond`:
+  * `cond` may have type `Bool` or type `m Bool` where `m` is the enclosing `do`-block’s monad.
+  * If `cond : Bool`, it is implicitly lifted to `pure cond : m Bool` for the purpose of desugaring.
 
-  ```kappa
-  let rec loop () =
-      cond >>= \c ->
-      if c then
-          body >>
-          loop ()
-      else
-          pure ()
-  in loop ()
-  ```
-
-  (Exact desugaring is left to implementations; the invariant is: repeated evaluation until condition fails.)
+  Desugaring (schematic):
+  `while cond do body` elaborates to an internal recursive loop in the monad.
+  (The core language supports recursion even though surface Kappa has no `let rec`.)
 
 * `for` in `do`:
 
@@ -1686,7 +1803,11 @@ Rules:
 * `expr` has type `m a`, where `m` supports error handling (conceptually `MonadError m e`).
 * Each `except` handler must produce type `m a`.
 * `finally` (optional) is a monadic action of type `m Unit` that always runs after success or error handling but before `try` returns.
-* `except` clauses must be exhaustive over the error type `e` (with `_` allowed).
+* The error type `e` must be a closed type (e.g. an ADT, `Bool`, or a union of closed types).
+* `except` clauses must be exhaustive over `e`.
+    * For union error types, exhaustiveness is satisfied by covering each member of the normalized union;
+      a catch-all (`_`) is permitted but not required.
+    * For non-union closed types, standard exhaustiveness checking applies; `_` is permitted but not required when coverage can be established.
 
 Semantics sketch:
 
@@ -1897,12 +2018,18 @@ In a **map comprehension**, `yield keyExpr : valueExpr` is always interpreted as
   ```kappa
   { for x in xs, yield x : x + 1 }  -- key/value
   ```
+  
 
-If you need type ascription inside a map comprehension, parenthesise:
+  If you need type ascription inside a map comprehension, parenthesise:
+    
+  ```kappa
+  { for x in xs, yield (x : KeyType) : (x + 1 : ValType) }
+  ```
 
-```kappa
-{ for x in xs, yield (x : KeyType) : (x + 1 : ValType) }
-```
+  Duplicate keys in map comprehensions:
+  * If a map comprehension produces the same key multiple times, later entries overwrite earlier entries
+    (left-to-right in the comprehension’s iteration order).
+
 
 ### 10.6 Ordering, paging, distinct
 
@@ -1919,6 +2046,10 @@ order by (asc expr1, desc expr2, expr3)
 
 * Requires an `Ord`-like trait for the involved key types.
 * Applies sorting to the current carrier.
+
+Stability:
+* `order by` is a stable sort: elements that compare equal under the ordering keys preserve their relative order
+  from the input iteration order.
 
 #### 10.6.2 `skip` and `take`
 
@@ -2006,7 +2137,14 @@ Left join example (using group join + flattening):
 ]
 ```
 
-Precise desugaring is left to the implementation; the semantics are those of inner/left joins over collections.
+Desugaring (normative; the compiler is free to optimize):
+* `join pat in xs on cond` is sugar for:
+  `for tmp in xs, let pat ?= tmp, if cond`
+  where `cond` is evaluated in the scope where `pat` bindings are in scope.
+
+* `left join pat in xs on cond into name` is sugar for binding `name` to the list of matching elements:
+  `let name = [ for tmp in xs, let pat ?= tmp, if cond, yield tmp ]`
+  The bindings introduced by `pat` are not in scope after the `left join`; only `name` is.
 
 ### 10.9 `top n by` sugar
 
@@ -2059,6 +2197,9 @@ Required combinators (conceptual traits):
 * `Monad f` provides `bind : f a -> (a -> f b) -> f b`
 * `Filterable f` provides `filter : (a -> Bool) -> f a -> f a`
 * `Alternative f` provides `empty : f a` and `orElse : f a -> f a -> f a`
+* `FilterMap f` provides `filterMap : (a -> Option b) -> f a -> f b`
+  (dropping elements that map to `None`).
+
 
 (Exact names and trait factoring are not mandated, but the semantics correspond to these operations.)
 
@@ -2088,7 +2229,10 @@ Desugaring rules (list/set forms shown; map form analogous):
 
 5. Refutable generator (`in?`) and refutable let (`?=`):
 
-   These desugar using `bind` plus a match that produces `empty` when refutation fails,
+   If `FilterMap f` is available, refutation desugars via `filterMap` and requires only `FilterMap f`
+   (plus whatever is needed by surrounding clauses).
+
+   Otherwise, refutation desugars using `bind` plus a match that produces `empty` when refutation fails,
    requiring `Monad f` and `Alternative f`.
 
 The above is normative: implementations may produce equivalent code, but must preserve these semantics and constraint minimality.
@@ -2100,7 +2244,7 @@ The above is normative: implementations may produce equivalent code, but must pr
 General form:
 
 ```kappa
-data Name (params...) : TypeK =
+[private] [opaque] data Name (params...) : TypeK =
     Constructor1 arg1 arg2 ...
     Constructor2 ...
     ...
@@ -2120,6 +2264,7 @@ data Result (e : Type) (a : Type) : Type =
 
 * Constructors live in the **constructor namespace**.
 * Parameters live in the **type namespace** (with sugar `a` ≡ `(a : Type)`) unless specified otherwise.
+* If `opaque` is present on a data declaration, constructors are not exported (§2.5.3).
 
 ### 11.1.1 Constructor application with named arguments (`C { ... }`)
 
@@ -2183,10 +2328,13 @@ Type aliases use `type`:
 ```kappa
 type Foo (x : Int) : Type = Int
 type Id (a : Type) = a
+opaque type Id (a : Type) = a
+private type Internal = ...
 ```
 
 * Parameters may be annotated; sugar: `type Id a = a` ≡ `type Id (a : Type) = a`.
 * `type Name ...` with no `= ...` defines an abstract type whose implementation may be provided elsewhere (implementation-defined).
+* If `opaque` is present on a type alias, the right-hand side is not unfolded by definitional equality outside the defining module (§2.5.2).
 
 Type aliases vs type-level definitions:
 
@@ -2284,6 +2432,13 @@ Rules:
 * Orphan instances are disallowed:
   * an instance must be defined in the same module as the trait definition or the type constructor being instantiated (implementation-defined for URL imports and module identity).
 
+Instance environment:
+* The instance environment consists of all instance declarations from all modules in the compilation unit’s module closure
+  (i.e. the transitive closure of imports from the entry modules, including the implicit prelude import).
+* Instance resolution is not gated by lexical imports:
+  importing a module is not required for its instances to be considered by instance search, provided the module is in the build closure.
+* If instance search finds more than one applicable instance for a goal, the program is ill-formed (coherence violation).
+
 ### 12.4 Traits as propositions (`Prop`)
 
 Kappa provides a built-in marker trait:
@@ -2332,8 +2487,11 @@ Kappa uses multiple namespaces:
     * Functions (`let foo = ...`).
 
 3. **Constructor namespace**:
+ * Data constructors (`Just`, `Nothing`, `VCons`).
 
-    * Data constructors (`Just`, `Nothing`, `VCons`).
+4. **Module namespace**:
+ * Module qualifiers introduced by import M / import M as A.
+ * Module names are not terms and cannot be used as values.
 
 Rules:
 
@@ -2347,8 +2505,9 @@ Rules:
   ```
 
 * Within a single namespace at the same scope, duplicate definitions are a compile-time error.
-
-* Imports bring all three namespaces into the importing module, subject to the import form used.
+* Imports may bring names into the term namespace and/or type namespace, and may bring module qualifiers into the module namespace.
+* Constructor names are not imported as unqualified names unless explicitly imported with the `ctor` qualifier (§2.3.1).
+  Constructors remain accessible via type scope selection (§13.2).
 
 ### 13.1 Dotted name resolution (`.`)
 
@@ -2373,11 +2532,81 @@ Disambiguation rule:
 * If more than one interpretation is well-formed, the use is ambiguous and is a compile-time error unless disambiguated
   (e.g. by explicit qualification/aliasing, explicit import qualifiers, or type ascription that forces a unique interpretation).
 
-#### 13.1.1 Method-call sugar eligibility.
-A function name is eligible for method-call sugar iff its first explicit binder is named `this`.
-If `lhs.name` resolves by method-call sugar, it desugars to `name lhs`.
-(If name additionally expects implicit parameters, they are resolved as normal implicit arguments after desugaring.)
+#### 13.1.1 Method-call sugar
 
+Method-call sugar allows writing:
+
+```
+lhs.name
+```
+
+as a section (a function value) that supplies lhs as the receiver argument of name, even when the receiver argument is not the first explicit parameter.
+
+Eligibility:
+
+A term name is eligible for method-call sugar iff:
+
+1. name resolves to a term f in scope, and
+2. the elaborated type of f is a Pi-telescope with exactly one explicit binder whose name is this.
+
+If there is no explicit binder named this, or there is more than one, method-call sugar does not apply.
+
+Elaboration / desugaring:
+
+Let f be the resolved term for name. Let f have elaborated type:
+
+```
+f : Π p1. Π p2. ... Π pn. R
+```
+
+where exactly one binder pk is an explicit binder named:
+
+```
+pk = (this : Tk)
+```
+
+Tk may depend on earlier binders p1..p(k-1).
+
+To elaborate lhs.name:
+
+1. Elaborate lhs to a term e with type E.
+
+2. Instantiate binders before this:
+   Introduce fresh metavariables (placeholders) for the binders p1..p(k-1), respecting their kinds/types.
+   Let Tk' be Tk with p1..p(k-1) replaced by these metavariables.
+
+3. Receiver unification:
+   Require that E is definitionally equal to Tk' (via unification / definitional equality).
+   This step may solve some or all metavariables for p1..p(k-1).
+
+   If unification fails, lhs.name is not well-formed as method-call sugar.
+
+   If unification succeeds but leaves any metavariable unsolved that affects the required type of the receiver position,
+   lhs.name is a compile-time error (the receiver e has a fixed type and cannot typecheck for multiple incompatible choices).
+
+4. Build the method section:
+   Construct a lambda over the remaining binders p_i for i ≠ k that are not fixed by unification, preserving:
+
+    * their relative order (the order induced by p1..pn with pk removed),
+    * their binder names,
+    * their implicitness (implicit binders remain implicit),
+    * and their dependent types after substituting the solved metavariables and substituting this := e in later binder types.
+
+   The body of the lambda is an application of f with arguments supplied in the original order,
+   inserting e at the this position.
+
+   Intuitively, lhs.name elaborates to:
+
+   ```
+   \ (p1') (p2') ... (p(k-1)') (p(k+1)') ... (pn') ->
+       f p1' p2' ... p(k-1)' e p(k+1)' ... pn'
+   ```
+
+   where any binder fixed by unification is not abstracted and is instead substituted directly.
+
+Correctness note:
+
+For any arguments supplied to the resulting lambda, beta-reduction yields an application of f in which lhs has been placed exactly at the this binder position. Therefore lhs.name is definitionally equal to the corresponding eta-expanded form of applying f with lhs as the this argument, subject to the substitutions described above.
 
 ### 13.2 Constructors via type scope
 
@@ -2444,8 +2673,8 @@ Definitional equality is the smallest congruence containing the following reduct
 * β-reduction:
   `(\(x : A) -> e) v  ↦  e[x := v]`
 * δ-reduction:
-  unfolding of transparent terminating definitions and transparent type aliases whose bodies are available
-  and not hidden in the module interface (e.g. not affected by `hide def` / `hide alias`).
+  unfolding of transparent terminating definitions and transparent type aliases whose bodies are available and not marked opaque at the use site.
+  Outside the defining module, opaque definitions and opaque type aliases do not unfold unless the importing module has explicitly clarified them (§2.5.2).
 * ι-reduction:
   reducing `match` on known constructors/literals.
 * η-equality (definitional):
