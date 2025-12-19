@@ -276,13 +276,13 @@ Non-exhaustive but important list:
 
 ```text
 let, in, if, then, elif, else,
-match, case, is,
+match, case, is, impossible,
 try, except, finally,
 data, type, trait,
 import, export, as, except,
 do, return,
 forall,
-partial, instance, derive, 
+assertTotal, instance, derive, 
 infix, postfix, prefix, left, right,
 var, while, break, continue, using,
 yield, for, group, by, distinct, order, skip, take, top, join, left, asc, desc
@@ -916,13 +916,44 @@ There are two distinct forms:
 2. **Definition (term binding):**
 
    ```kappa
-   let name : Type = expr
-   let name = expr
+   let pat : Type = expr
+   let pat = expr
    let name (x : A) (y : B) : R = body
    let name (x : A, y : B) : R = body
    ```
 
    Any term definition must begin with `let`, except inside `let ... in` (see below).
+   
+   Pattern bindings:
+
+   In `let pat = expr`, `pat` is a pattern (§7.6).
+
+   `pat` must be irrefutable at the type of expr (definition below). If it is refutable, it is a compile-time error.
+   (Use match / try match / comprehension refutable forms instead.)
+
+   Top-level restriction:
+
+   A top-level pattern binding is never treated as recursive and does not participate in the “preceding signature enables recursion” rule.
+
+#### 6.1.1 Irrefutable patterns (for `let` bindings)
+
+A pattern `pat` is **irrefutable** for a scrutinee type `T` iff matching `pat` against any value of type `T` cannot fail.
+
+The following patterns are irrefutable when well-typed:
+
+* Wildcard `_`
+* Binder `x`
+* As-pattern `x@p` where `p` is irrefutable
+* Typed pattern `(p : U)` where `p` is irrefutable and `T` is definitionally equal to `U`
+* Tuple patterns `(p1, ..., pn)` where each `pi` is irrefutable and the scrutinee type is a tuple type of arity `n`
+* Anonymous record patterns `(f1 = p1, ..., fk = pk)` where each `pi` is irrefutable and the scrutinee type is a record
+  type containing fields `f1..fk` (extra fields are allowed and ignored)
+
+Constructor patterns (including named record constructor patterns such as `C { ... }`) are considered irrefutable 
+for `let` bindings in v0.1 unless the compiler can establish (via definitional equality / index unification) that the scrutinee’s
+type has exactly one possible constructor at the binding site.
+
+Implementations must reject any `let pat = expr` binding whose `pat` is not irrefutable for the inferred/annotated type of `expr`.
 
 ### 6.2 Top-level signatures + definitions
 
@@ -956,12 +987,23 @@ Grammar:
 * Each binding is:
 
   ```kappa
-  name [ : Type ] = expr
+  pat [ : Type ] = expr
   ```
 
 * Followed by `in` and a single expression.
 
 `let ... in` is itself an expression; it can appear anywhere an expression is allowed.
+
+Pattern bindings in `let ... in`:
+
+* Each binding `pat [ : Type ] = expr` must use an irrefutable pattern `pat` (§6.1.1).
+* Names bound by `pat` are in scope in subsequent bindings and in the `in` body.
+* If a type annotation is provided (`pat : T = expr`), `expr` is checked against `T` before destructuring.
+
+Elaboration (schematic):
+
+* `let pat = e in body` elaborates as `match e; case pat -> body`.
+  This is only permitted because `pat` is required to be irrefutable.
 
 ### 6.4 Totality, unfolding, and `partial`
 
@@ -1228,7 +1270,7 @@ case pattern2           -> expr2
 * For **closed** types (e.g. ADTs, `Bool`), `match` must be exhaustive; missing cases are a compile-time error.
 * For open/infinite domains (e.g. `Int`), you must include a catch-all (`_`) or similar; otherwise it’s an error.
 
-#### 7.5.2 Exhaustiveness with indexed types (GADTs)
+#### 7.5.1 Exhaustiveness with indexed types (GADTs)
 
 For indexed/“GADT-style” types, pattern matching refines the scrutinee’s indices and may render some constructor cases impossible.
 
@@ -1238,7 +1280,30 @@ Implementations should:
 * treat unreachable cases as not required for exhaustiveness,
 * otherwise (if coverage cannot be established) require an explicit catch-all (`_`) or an explicit user-written case structure that proves impossibility.
 
-### 7.5.1 Boolean matches introduce assumptions
+As a user-facing way to state and check unreachability, a branch may use `-> impossible` (§7.5.2).
+Such a branch is valid only when the compiler can verify the case is unreachable.
+
+#### 7.5.2 `impossible` (unreachable branch bodies)
+
+`impossible` is a special expression used to mark an unreachable branch.
+
+Form:
+
+```kappa
+match e
+case pat -> impossible
+```
+
+Typing rule:
+* A branch body `impossible` is accepted only if the compiler can prove that the corresponding case is unreachable,
+using definitional equality and index unification (the same machinery used for detecting unreachable constructor cases in §7.5.2).
+* If the compiler cannot prove the case unreachable, it is a compile-time error.
+
+Meaning:
+* If accepted, `impossible` may be given any result type required by the surrounding match.
+* At runtime, an `impossible` branch must never be executed; implementations may compile it to a trap.
+
+### 7.5.3 Boolean matches introduce assumptions
 
 When the scrutinee has type `Bool` and a case pattern is the boolean literal `True` or `False`, the corresponding branch is typechecked with an implicit assumption:
 
@@ -1275,7 +1340,7 @@ Patterns are used in `match`, `try match`, `for` generators, and refutable forms
   (x = px, y = py)
   (x = px,)         -- one-field record pattern
   ```
-* Named record patterns:
+* Constructor patterns with named arguments (“named record patterns”):
   ```kappa
   User { name = n, age = a }
   ```
@@ -1288,6 +1353,12 @@ Patterns are used in `match`, `try match`, `for` generators, and refutable forms
   (p : T)
   ```
 
+* Pattern alternatives (or-patterns):
+  ```kappa
+  p1 | p2 | p3
+  ```
+  Meaning: try `p1`; if it fails, try `p2`; etc.
+
 #### 7.6.2 Scoping and validity
 
 * Names bound by a pattern are in scope in:
@@ -1296,6 +1367,16 @@ Patterns are used in `match`, `try match`, `for` generators, and refutable forms
   * subsequent clauses (for comprehensions).
 * Duplicate binders within the same pattern are an error (e.g. `(x, x)`).
 * A pattern match proceeds left-to-right; nested patterns are permitted.
+
+#### 7.6.3 Or-pattern validity (`|`)
+
+In `p1 | p2 | ... | pn`:
+
+* Each alternative must bind the **same set of names**.
+* Each bound name must have definitionally equal types across alternatives (under the scrutinee type and any index refinements).
+* If these conditions do not hold, the pattern is ill-formed.
+
+Or-patterns are tried left-to-right at runtime.
 
 ---
 
@@ -1393,8 +1474,12 @@ Valid statements inside `do`:
 * **Local definition**:
 
   ```kappa
-  let x = expr   -- pure local binding inside the `do` body
+  let pat = expr   -- pure local binding inside the `do` body
   ```
+
+  Rules:
+    * `pat` must be an irrefutable pattern (§6.1.1). Refutable patterns are not permitted in do-local bindings.
+    * Names bound by pat are in scope in subsequent statements in the do block.
 
 * **Control-flow sugar** (loops, `if`, `return`, `defer`, etc.) described below.
 
@@ -1764,7 +1849,9 @@ Examples:
 ```
 
 * `for x in collection` binds elements of a collection.
-* `let` creates derived values within the comprehension.
+* `let pat = expr` creates derived values within the comprehension.
+    * `pat` must be irrefutable (§6.1.1).
+    * For refutable matching, use `let pat ?= expr` (§10.4.1).
 * `if condition` filters out elements where the condition is `False`.
 
 ### 10.4.1 Refutable patterns in comprehensions
@@ -2033,6 +2120,49 @@ data Result (e : Type) (a : Type) : Type =
 
 * Constructors live in the **constructor namespace**.
 * Parameters live in the **type namespace** (with sugar `a` ≡ `(a : Type)`) unless specified otherwise.
+
+### 11.1.1 Constructor application with named arguments (`C { ... }`)
+
+Constructors may be applied using a record-like named-argument syntax when their explicit parameters have names.
+
+Expression forms:
+
+```kappa
+User { name = "Bob", age = 33 }
+User { name, age }                 -- punning (name = name, age = age)
+Vec.VCons { head = h, tail = t }    -- qualified/type-scoped constructor
+```
+
+Rules:
+* `C { ... }` is valid only if `C` resolves to a constructor whose explicit argument binders have names.
+* Each field label in `{ ... }` must correspond to a distinct explicit constructor argument name.
+* Duplicate labels are an error.
+* Missing required labels are an error.
+* Extra labels not present in the constructor’s argument list are an error.
+* Field order is not semantically significant. Implementations elaborate the application in the constructor’s argument order
+  (or any dependency-respecting order if later arguments depend on earlier ones).
+
+Elaboration sketch:
+
+If `C` has explicit parameters `(f1 : A1) -> (f2 : A2[f1]) -> ... -> R`,
+then:
+
+```
+C { f1 = e1, f2 = e2, ... }
+```
+
+elaborates to:
+
+```
+C e1 e2 ...
+```
+
+with implicit arguments resolved as usual (§7.3).
+
+Notes:
+
+This syntax is distinct from record update `r { ... }` (§5.5.4). If the left-hand side resolves to a constructor head,
+the brace form is constructor application; otherwise it is record update (or a type error).
 
 ### 11.2 GADT-style constructors
 
