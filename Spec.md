@@ -1598,10 +1598,12 @@ Valid statements inside `do`:
 * **Expression statement**:
 
   ```kappa
-  expr           -- expr : m a -- The value is discarded.
+  expr           -- expr : m a
   ```
 
-  Desugaring sketch: `expr` desugars to `expr >> pure ()`.
+  * If `expr` is not the final expression of the enclosing `do` block, its value is discarded.
+  Desugaring sketch: `expr` (non-final) behaves like `expr >> pure ()`.
+  * If `expr` is the final expression of the enclosing `do` block, it is the block’s result and is not discarded.
 
 * **Resource-scoped bind (`using`)**:
     ```kappa
@@ -1632,7 +1634,18 @@ Control-flow statements:
   * `break` and `continue` are statements, not expressions. They are valid only inside loop bodies (§8.5).
   * `return e` is a statement, not an expression. It is valid only inside a function body (§8.4).
 
-### 8.2.1 Labeled `do` blocks and labeled control flow
+### 8.2.1 Final expression of a `do` block
+
+A `do` block consists of zero or more **do-statements** followed by exactly one **final expression**.
+
+* Every do-statement other than the final expression is executed for effects and its result is discarded.
+* The final expression determines the result of the `do` block and is **not** discarded.
+
+Typing:
+* Each non-final expression statement must have type `m A` for some `A`; its value is discarded.
+* The final expression must have type `m T`; the `do` block has type `m T`.
+
+### 8.2.2 Labeled `do` blocks and labeled control flow
 
 Labels:
 * A label has the form `label@` and may prefix any block-introducing construct (e.g. `do`, `try`, `match`, loops).
@@ -1645,13 +1658,21 @@ Targets:
 
 Targeting a label that does not name an appropriate construct is a compile-time error.
 
+Label resolution:
+* Labels are resolved lexically by searching outward from the use site.
+* `break@L` / `continue@L` resolve to the nearest enclosing labeled loop with label `L`.
+* `defer@L` resolves to the nearest enclosing labeled `do`-scope with label `L`.
+* If no suitable labeled construct is found, it is a compile-time error.
+* If multiple labeled constructs with the same label occur at the same lexical nesting level, it is a compile-time error.
+  (Shadowing by nested labels is permitted.)
+
 Semantics follow Kotlin-style labeled control flow:
 
 * `break@label` exits the labeled loop.
 * `continue@label` targets the labeled loop.
 * `defer@label e` schedules `e` to run when the labeled `do`-scope exits.
 
-### 8.2.2 Simple desugaring applicability
+### 8.2.3 Simple desugaring applicability
 
 The schematic desugaring in §8.2 (into `>>=` / `>>` chains) is valid only for `do` blocks that do not use any of:
 
@@ -1706,12 +1727,18 @@ So `if` remains an expression; the missing `else` is implicitly `pure ()` in the
       pure y
   ```
 
+**Typing**: Let the nearest enclosing function have declared return type `m R` and let the nearest enclosing `do`-block elaborate in the same monad `m`.
+Within that `do` block, `return e` requires `e : R`. The effect of `return e` is to terminate the function and produce the function result `pure e : m R`.
+
+Well-formedness: If a `return e` occurs within a `do` block whose monad is not definitionally equal to the enclosing function’s return monad,
+it is a compile-time error.
+
 Implementations may implement this via CPS or an effect; spec treats it as function-level early exit.
 
 Restrictions:
 
 * `return` MUST NOT appear syntactically within the body of a `defer` action (§8.6) or within a `finally` block (§9.2, §9.3).
-  If a `return` token occurs within a `defer` action or `finally` block (even if nested inside lambdas or local blocks),
+  If the syntactic statement form `return e` occurs within a `defer` action or `finally` block (even if nested inside lambdas or local blocks),
   it is a compile-time error.
 
 Interaction with `defer` / `finally`:
@@ -1790,9 +1817,9 @@ exception, `break`, or `continue` that exits the scope).
 
 ```kappa
 do
-    file <- open path "r"
+    let file <- open path "r"
     defer file.close
-    data <- file.read
+    let data <- file.read
     ...
 ```
 
@@ -1802,23 +1829,54 @@ A `do`-scope is introduced by:
 * the body of `while ... do ...`
 * the body of `for ... do ...`
 * `else do` blocks attached to loops
-* `try` / `except` / `finally` blocks (each block is its own do-scope)
+
+`try`/`except`/`finally` clause bodies are expressions. To use do-scope statements (`defer`, `<-`, loops), write an explicit `do` block.
+
+Required capability:
+
+To guarantee execution of deferred actions when a monadic error propagates out of a scope, the enclosing monad `m` must support
+a finalization operation:
+
+`onExit : m a -> m Unit -> m a`
+
+`onExit act fin` runs `fin` after `act` whether `act` succeeds or propagates a monadic error.
+
+Error interaction (for monads with an implicit `MonadError m e` instance):
+
+* If `act` succeeds with result `a` and `fin` succeeds, the result is `a`.
+* If `act` succeeds with result `a` and `fin` propagates error `e2`, the result is the error `e2`.
+* If `act` propagates error `e1` and `fin` succeeds, the result is the error `e1`.
+* If `act` propagates error `e1` and `fin` propagates error `e2`,
+  the result is the error `combineFinally e1 e2`, where `combineFinally` is from the implicit `MonadError m e` instance (§9.1).
+
+Intuition: `combineFinally` is where “suppressed exceptions” live. A typical instance keeps `e1` as primary
+and records `e2` as suppressed.
 
 Semantics:
 
-* Each dynamic execution of a `do`-scope maintains its own LIFO stack of deferred actions.
-  (In particular, each loop iteration body execution is a fresh dynamic `do`-scope.)
-* `defer e` pushes `e` onto the current `do`-scope’s deferred-action stack.
-* When control exits that `do`-scope for any reason (normal completion, `return`, a `break`/`continue` that exits the scope,
+* When control exits a `do`-scope for any reason (normal completion, `return`, a `break`/`continue` that exits the scope,
   or a monadic error that propagates out of the scope), the deferred actions are executed in LIFO order.
+
 * Deferred actions are executed sequentially in the enclosing monad.
-* If a deferred action raises/propagates a monadic error, that error becomes the result of exiting the scope and
-  any remaining deferred actions in that scope are not executed.
+
+* All deferred actions in the scope are attempted, even if some deferred actions propagate monadic errors.
+
+* If no monadic error is in flight when unwinding begins (i.e. the scope is exiting “normally” with some completion),
+  and one or more deferred actions propagate errors, the scope exits by propagating an error.
+  The primary error is the first deferred-action error encountered in LIFO execution order; subsequent deferred-action errors
+  are combined into it using `combineFinally` (§9.1) in the order they occur.
+
+* If a monadic error `e0` is in flight when unwinding begins, deferred-action errors are combined into `e0` using `combineFinally`
+  in LIFO execution order, and the final combined error is propagated.
+
+* If any deferred-action error is propagated after combining, the original normal completion / break / continue / return completion
+  is abandoned.
+
 * `defer@label e` schedules `e` in the deferred-action stack of the labeled enclosing `do`-scope.
 
 Restrictions:
 * The deferred action `e` MUST NOT contain `return`, `break`, or `continue` anywhere within its syntax tree.
-  If any of these tokens occur within `e` (even if nested inside lambdas or local blocks), it is a compile-time error.
+  If any of syntactic statement forms occur within `e` (even if nested inside lambdas or local blocks), it is a compile-time error.
 
 Implementation may desugar this to a bracket/finalizer mechanism; spec only fixes the ordering and guarantee of execution on exit.
 
@@ -1833,34 +1891,55 @@ but MUST be observationally equivalent to the model below.
 For specification purposes, we model execution of a `do`-scope using *completion records*:
 
 ```
-
 Completion(R, A) =
 Normal   A
 | Break    Label
 | Continue Label
 | Return   R
-
 ```
 
 Where:
 
 * `A` is the “normal” result type of the construct (often `Unit` for statements).
-* `R` is the return type of the nearest enclosing function.
+* `R` is the *inner* return type such that the nearest enclosing function has declared return type `m R`,
+  where `m` is the monad of the enclosing `do` scope.
 
 ### 8.7.2 Dynamic `do`-scope exit and deferred actions
 
 Each dynamic execution of a `do`-scope has a LIFO stack of deferred actions (each of type `m Unit`).
 `defer` pushes onto that stack (§8.6).
 
-When exiting a `do`-scope with a completion record `c : Completion(R, A)`:
+When exiting a `do`-scope, all deferred actions are executed in LIFO order.
+Errors during unwinding are accumulated using `combineFinally` (§9.1).
 
-1. Execute deferred actions in LIFO order.
-2. If a deferred action raises a monadic error, that error propagates and no further deferred actions in that scope execute.
-   The original completion `c` is abandoned.
-3. Otherwise, propagate the original completion `c`.
+Meta-level model:
 
-Deferred actions MUST NOT contain `return`, `break`, or `continue` (§8.6), so deferred actions cannot produce
-non-local control flow.
+Let the scope’s deferred stack (top-first) be: `d1, d2, ..., dn` where each `di : m Unit`.
+
+Let the scope body either:
+* return a completion record `c : Completion(R, A)`, or
+* propagate a monadic error `e0`.
+
+Define an accumulator `acc : Option e`:
+
+* If the body returned `c`, start with `acc = None`.
+* If the body propagated error `e0`, start with `acc = Some e0`.
+
+Then execute deferred actions `d1..dn` in order, updating `acc`:
+
+For each `di`:
+* Run `di`.
+* If `di` succeeds: `acc` unchanged.
+* If `di` propagates error `ei`:
+    * If `acc = None`, set `acc = Some ei`.
+    * If `acc = Some e`, set `acc = Some (combineFinally e ei)`.
+
+After running all deferred actions:
+* If `acc = Some e`, the scope propagates the monadic error `e` (abandoning any completion record).
+* If `acc = None`, the scope propagates the original completion record `c`.
+
+Note: This model requires the ability to catch and resume after deferred-action errors,
+which is provided by `catchError` in `MonadError m e` (§9.1).
 
 ### 8.7.3 Completion-aware sequencing (meta-level)
 
@@ -1888,8 +1967,21 @@ Sequencing is `thenC x y = bindC x (\_ -> y)`.
 
 A `do` block is elaborated in a context with a known function return type `R`.
 
-For a statement-sequence `S` that is expected to produce `Unit`, elaboration yields a computation
-`⟦S⟧ : m (Completion(R, Unit))` and is defined by cases below.
+For a do-scope body consisting of do-statements followed by a final expression, elaboration yields:
+
+* For a tail (final expression) `final` expected to produce `A`:
+  `⟦final⟧ : m (Completion(R, A))`
+
+* For a sequence `stmt; rest` where `rest` ultimately produces `A`:
+  `⟦stmt; rest⟧ : m (Completion(R, A))`
+
+The cases below define `⟦...⟧` for arbitrary `A`.
+
+#### Final expression
+
+* Final expression `final` where `final : m A`:
+
+  `⟦final⟧ = lift final`
 
 #### Ordinary statements
 
@@ -1910,7 +2002,9 @@ For a statement-sequence `S` that is expected to produce `Unit`, elaboration yie
 * `defer d; rest`:
 
   elaborates by scheduling `d` for the current `do`-scope exit (per §8.6 / §8.7.2) and then elaborating `rest`.
-  (Implementations may realize this as an explicit stack or as nested `finally`-style wrappers.)
+  (Implementations may realize this as an explicit stack of deferred actions or by constructing a single finalizer action
+  that sequences deferred actions in LIFO order; the observable behavior MUST match §8.6 / §8.7.2, 
+  including attempting all deferred actions and combining unwind-time errors via `combineFinally`.)
 
 * `using pat <- acquire; rest`:
 
@@ -1922,7 +2016,7 @@ let pat <- acquire
 defer (release pat)
 rest
 
-````
+```
 
 where `release` is an implementation-defined mechanism for releasing the acquired resource.
 (Implementations typically resolve `release` by trait or intrinsic.)
@@ -1936,6 +2030,8 @@ Restrictions from §8.6 apply: the scheduled release action MUST NOT contain `re
 `⟦return e⟧ = pure (Return e)`.
 
 `return` is not permitted inside `defer` actions or `finally` blocks.
+
+A `Return r` completion causes the enclosing function (of return type `m R`) to return `pure r`.
 
 #### `break` / `continue`
 
@@ -1964,26 +2060,26 @@ while cond do
   body
 else do
   onNoBreak
-````
+```
 
 Let `L` be the loop’s label (explicit or implicit).
 Let `cond` be either `Bool` or `m Bool` (§8.5).
 
+
 The meaning is:
 
 * Repeatedly evaluate `cond`:
-
     * If false: the loop completed normally; run `onNoBreak` (if present) and return `Normal ()`.
     * If true: execute one iteration by entering a fresh dynamic `do`-scope for `body` (so its defers run on `continue`/`break`/`return`/error).
-
 * If the iteration completes with:
-
     * `Normal ()` or `Continue L`: begin the next iteration.
     * `Break L`: exit the loop immediately with `Normal ()`, and SKIP the `else` block.
     * `Continue L'` or `Break L'` where `L' ≠ L`: propagate outward unchanged.
     * `Return r`: propagate outward unchanged.
 
-The loop `else` block runs iff the loop completes by condition becoming false, and no `Break L` occurs.
+The loop `else` block runs iff the loop completes by condition becoming false, and no `Break L` occurs. 
+
+If the `else do` block is present, it is executed as a fresh dynamic `do`-scope (so any `defer` inside it runs on exit as usual).
 
 #### For loops
 
@@ -2014,11 +2110,13 @@ The loop `else` block runs iff iteration is exhausted and no `Break L` occurs.
 
 Implementations MUST NOT require stronger iteration capabilities than necessary:
 
-* If the loop body contains no `break`/`continue` targeting the loop AND the loop has no `else` block,
-  the implementation MUST accept a desugaring equivalent to a `Foldable`/`Traversable` left-to-right traversal, e.g.
-  `foldlM` / `traverse_` style sequencing, and MUST NOT require an early-exit iterator protocol.
+* If the loop body contains no `break`/`continue` whose resolved target is this loop or any enclosing loop,
+  AND contains no `return` statement, AND the loop has no `else` block,
+  the implementation MUST accept a desugaring equivalent to a `Foldable`/`Traversable` left-to-right traversal
+  (e.g. `foldlM` / `traverse_`) and MUST NOT require an early-exit iterator protocol.
 
-* If the loop body contains `break` or `continue` targeting the loop OR the loop has an `else` block,
+* If the loop body contains a `break`/`continue` that can exit the loop early (as above),
+  OR contains `return`, OR the loop has an `else` block,
   then early-exit behavior is required. The implementation MUST use (or behave equivalently to) an iteration protocol
   that supports stopping early without executing effects for remaining elements (e.g. an iterator `next` loop).
   The exact protocol is implementation-defined, but the observable semantics MUST match §8.7.5.
@@ -2035,6 +2133,9 @@ Error-aware monads are described via a trait like:
 trait MonadError (m : Type -> Type) (e : Type) =
     throwError : e -> m a
     catchError : m a -> (e -> m a) -> m a
+
+    -- combine errors when an action fails and a finalizer fails during unwinding
+    combineFinally : (primary : e) -> (secondary : e) -> e
 ```
 
 (Exact trait name and methods are not mandated in v0.1; this is conceptual.)
@@ -2074,11 +2175,16 @@ Semantics sketch:
 1. Evaluate `expr`.
 2. If `expr` succeeds, the result is the `try` result.
 3. If `expr` raises an error, run the first matching `except` handler and use its result.
-4. If `finally` exists, run it and discard its result.
+4. If `finally` exists, the result of the `try` expression is `onExit act finalizer`,
+   where `act` is the computation produced after applying `except` handling.
+   Error interaction is as specified by `onExit` (§8.6):
+    * finalizer error overrides success,
+    * if both a primary error and the finalizer error occur, they are combined with `combineFinally` (§9.1).
+5. `finally` runs even when control exits via `return`, `break`, or `continue` propagation (it does not intercept them).
 
 Restrictions:
 * `finally` blocks MUST NOT contain `return`, `break`, or `continue` anywhere within their syntax tree.
-  If any of these tokens occur within a `finally` block (even if nested inside lambdas or local blocks),
+  If any of these syntactic statement forms occur within a `finally` block (even if nested inside lambdas or local blocks),
   it is a compile-time error.
 
 Control-flow interaction:
@@ -2087,46 +2193,44 @@ Control-flow interaction:
 
 ### 9.3 `try match`
 
-`try match` combines error handling and pattern matching.
+`try match` is syntactic sugar that combines a monadic bind + `match` on success with `try` error handling.
 
-Syntax:
+Normative desugaring:
 
 ```kappa
 try match expr
-case successPattern1 if guard1 -> successExpr1
-case successPattern2           -> successExpr2
-except errPattern1 if guardE1  -> errorExpr1
-except errPattern2             -> errorExpr2
-finally                        -> finalExpr
+case p1 if g1 -> s1
+case p2       -> s2
+...
+except q1 if h1 -> e1
+except q2       -> e2
+...
+finally         -> fin
 ```
 
-* `expr` has type `m a`, where `m` is a monad with an error type `e` (i.e. an instance of `MonadError m e`).
-* `case` clauses pattern-match on the **successful result** `a`.
-* `except` clauses pattern-match on the **error value** `e`.
-* `finally` (optional) is a monadic action of type `m Unit` that always runs after success or error handling but before the whole `try match` expression returns.
+desugars to:
 
-Semantics sketch:
+```kappa
+try
+    do
+        let __tmp <- expr
+        match __tmp
+        case p1 if g1 -> s1
+        case p2       -> s2
+        ...
+except q1 if h1 -> e1
+except q2       -> e2
+...
+finally          -> fin
+```
 
-1. Evaluate `expr`.
-2. On success (value `v : a`):
+(where `__tmp` is a fresh name).
 
-    * Run the first matching `case`-branch on `v`.
-3. On error (value `err : e`):
+Therefore:
 
-    * Run the first matching `except`-branch on `err`.
-4. If a `finally` clause exists, run it and discard its result.
-5. The result of `try match` is the result of the taken `case`/`except` branch.
-
-`try match` must be exhaustive on both the success and error sides (with `_` allowed as a catch-all).
-
-Restrictions:
-* `finally` blocks MUST NOT contain `return`, `break`, or `continue` anywhere within their syntax tree.
-  If any of these tokens occur within a `finally` block (even if nested inside lambdas or local blocks),
-  it is a compile-time error.
-
-Control-flow interaction:
-* `except` handlers match only monadic error values. They do not intercept `break`, `continue`, or `return`.
-  Such control flow propagates outward normally, but `finally` still runs as specified above.
+* error handling and `finally` behavior are exactly those of `try` (§9.2), including error-combination via `onExit` (§8.6),
+* success-side exhaustiveness is exactly that of `match` (§7.5),
+* error-side exhaustiveness is exactly that of `try`’s `except` clauses (§9.2).
 
 ---
 
@@ -2238,7 +2342,7 @@ Clause introducers are the contextual keywords:
 
 `for`, `let`, `if`, `order`, `skip`, `take`, `distinct`, `group`, `join`, `left`, `yield`.
 
-This rule applies equally when the bracketed form is prefixed with a custom carrier (§10.10).
+This rule applies equally when the bracketed form is prefixed with a custom carrier (§10.9).
 
 Escape hatch:
 
@@ -2256,6 +2360,10 @@ Escape hatch:
 ### 10.3.2 Encounter order and order-sensitive clauses
 
 Comprehensions process elements in an encounter order induced by generator enumeration and preceding clauses.
+
+For multiple `for` clauses, encounter order is the lexicographic order induced by left-to-right nesting:
+for each row produced so far, the next `for` enumerates its collection and extends the row stream in that enumeration order.
+(This corresponds to the standard `bind`/`flatMap` desugaring in §10.11.)
 
 A comprehension pipeline is in one of two orderedness states:
 
@@ -2325,6 +2433,8 @@ Examples:
     * For refutable matching, use `let pat ?= expr` (§10.4.1).
 
 * `if condition` filters out rows where the condition is `False`.
+  Within the remainder of the comprehension after an `if condition` clause, typechecking proceeds under an implicit assumption
+  `@p : condition = True` for the current row (analogous to §7.4.1).
 
 
 Map iteration:
@@ -2393,25 +2503,56 @@ In a **map comprehension**, `yield keyExpr : valueExpr` is always interpreted as
   { for x in xs, yield (x : KeyType) : (x + 1 : ValType) }
   ```
 
+  It may be followed by an optional map-conflict clause:
+
+  ```kappa
+  yield keyExpr : valueExpr
+  on conflict ...
+  ```
+
+  The optional `on conflict` clause is permitted only in map comprehensions, must appear **after** `yield`,
+  and must be the **final** clause in the comprehension.
+
   Duplicate keys in map comprehensions:
-  * If a map comprehension produces the same key multiple times, later entries overwrite earlier entries
-    (left-to-right in the comprehension’s iteration order).
+  * If a map comprehension produces the same key multiple times, the conflict policy determines the outcome (§10.5.1).
+  * If no `on conflict` clause is present, the default policy is `keep last` in the comprehension’s encounter order.
 
 ### 10.5.1 Map key conflicts (`on conflict`)
 
-Map comprehensions may optionally specify a key-conflict policy:
+A map comprehension may specify a key-conflict policy using a final post-`yield` clause:
 
 ```kappa
-{ clauses..., on conflict keep last, yield k : v }
-{ clauses..., on conflict keep first, yield k : v }
-{ clauses..., on conflict combine using Concat, yield k : v }
-{ clauses..., on conflict combine with (\old new -> old + new), yield k : v }
+{
+    clauses...
+    yield k : v
+    on conflict keep last
+}
+
+{
+    clauses...
+    yield k : v
+    on conflict keep first
+}
+
+{
+    clauses...
+    yield k : v
+    on conflict combine using Concat
+}
+
+{
+    clauses...
+    yield k : v
+    on conflict combine with (\old new -> old + new)
+}
 ```
 
 Rules:
 
 * `on conflict ...` is permitted only in map comprehensions.
-* If no `on conflict` clause is present, the default policy is `keep last`.
+* `on conflict ...` may appear at most once.
+* `on conflict ...` MUST appear after the `yield` clause.
+* `on conflict ...` MUST be the final clause in the comprehension.
 
 Semantics:
 
@@ -2428,7 +2569,7 @@ Policies:
 
 Order note:
 
-* For `keep first`, `keep last`, and `combine with`, results depend on encounter order.
+* For `keep first`, `keep last`, `combine using`, and `combine with`, results may depend on encounter order.
   If orderedness is Unordered at the point where pairs are produced, the outcome is unspecified with respect to ties (§10.3.2).
 
 ### 10.6 Ordering, paging, distinct
@@ -2490,8 +2631,8 @@ distinct
 distinct by keyExpr
 ```
 
-* `distinct` keeps unique elements based on their entire value.
-* `distinct by keyExpr` keeps the first element for each unique key `keyExpr`.
+* `distinct` keeps unique rows based on the deduplication key being the full current row environment record.
+* `distinct by keyExpr` keeps the first encountered row for each unique deduplication key `keyExpr`.
 * Requires an `Eq`-like trait for the value used to determine uniqueness. Hashing may be used as an optimization (implementation-defined).
 
 Representative choice:
@@ -2525,7 +2666,8 @@ Aggregate field form:
 
 Well-formedness:
 
-* `Wrapper` must be a type constructor with exactly one constructor taking exactly one field (a “newtype-like” wrapper).
+* `Wrapper` must resolve to a constructor whose type is of the form `T -> W`, where `W` is a data type with
+  exactly one constructor and that constructor has exactly one field (a “newtype-like” wrapper).
   Otherwise `using Wrapper` is a compile-time error.
 
 Rules:
@@ -2614,7 +2756,7 @@ Desugaring (normative; the compiler is free to optimize):
   `let name = [ for tmp in xs, let pat ?= tmp, if cond, yield tmp ]`
   The bindings introduced by `pat` are not in scope after the `left join`; only `name` is.
 
-### 10.10 Custom carriers
+### 10.9 Custom carriers
 
 Any comprehension form can be prefixed with a custom carrier:
 
@@ -2628,7 +2770,7 @@ This relies on a trait (conceptually `FromComprehension`) that defines how to bu
 
 ---
 
-### 10.11 Comprehension desugaring and required traits
+### 10.10 Comprehension desugaring and required traits
 
 Comprehensions desugar to a pipeline of combinators. The compiler must choose a desugaring that is well-typed
 and must not require stronger trait constraints than necessary for the given comprehension shape.
@@ -2682,7 +2824,7 @@ Desugaring rules (list/set forms shown; map form analogous):
 
 The above is normative: implementations may produce equivalent code, but must preserve these semantics and constraint minimality.
 
-### 10.11.1 Evaluation-count guarantees
+### 10.10.1 Evaluation-count guarantees
 
 Within a comprehension, implementations must preserve the following evaluation-count guarantees (as-if rules):
 
@@ -3103,8 +3245,8 @@ Elaboration performs (non-exhaustive):
     * union injections (§5.4),
     * lawful record reorderings (§5.5.1.1),
 * desugaring of:
-    * `do` blocks to monadic core (§8.2),
-    * comprehensions to combinator pipelines (§10.11),
+    * `do` blocks and control-flow sugar to monadic core (§8.2, §8.7),
+    * comprehensions to combinator pipelines (§10.10),
     * `try match` and `try` to error-handling combinators (§9),
     * method-call sugar (§13.1),
 * termination checking (§6.4),
