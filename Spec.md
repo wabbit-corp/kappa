@@ -24,12 +24,20 @@ Kappa is a small, statically typed, dependently typed language. The primary desi
 
 ### 2.1 Modules and files
 
-- The **module name** is derived from the file path (Python-style). For example:
+- The module name of a source file is determined from its file path relative to a source root. For example:
   - `std/base.kp` → module `std.base`
   - `user/orders/list.kp` → module `user.orders.list`
-- The mapping is implementation-defined but must be consistent.
 
-Implementations may also support an explicit top-level module header:
+Normative mapping:
+* Let the file path be `P` and the source root be `R`.
+* `P` must be under `R` and must end in the extension ".kp", otherwise it is not a source file.
+* Let `S` be the relative path from `R` to `P`, with the ".kp" suffix removed.
+* Path separators are normalized such that '\' is treated as '/'.
+* Let `S = seg1/seg2/.../segn`.
+* Each `segi` must match the identifier regex `[A-Za-z_][A-Za-z0-9_]*`, otherwise it is a compile-time error.
+* The module name is `seg1.seg2....segn`.
+
+Modules may have an explicit top-level module header:
 
 ```kappa
 @AllowUnhiding @AllowClarification module std.base
@@ -39,14 +47,17 @@ Rules:
 
 * A source file may contain at most one module header.
 * A module header may be preceded by zero or more module attributes of the form: @Ident
-* If a module header is present, it must appear before any non-comment, non-whitespace token other than these leading module attributes.
-* If a module header is present, it must match the implementation’s path-derived module name in “package mode”.
-* In “script mode”, implementations may permit a module header that does not match the path-derived name (implementation-defined).
+* If a module header is present:
+  * It must appear before any non-comment, non-whitespace token other than the leading module attributes.
+  * In package mode, it MUST match the path-derived module name (compile-time error otherwise).
+  * In script mode, it MAY differ; if it differs, the header name is the module name of the file.
+* If no module header is present, the module name is always the path-derived module name.
 
 Standard module attributes:
 
-* @AllowUnhiding: permits use of unhide import items within this module.
-* @AllowClarification: permits use of clarify import items within this module.
+* `@AllowUnhiding`: permits use of unhide import items within this module.
+* `@AllowClarification`: permits use of clarify import items within this module.
+* `@PrivateByDefault`: all top-level named items are private unless explicitly marked `public`.
 
 If the corresponding attribute is absent, using the related escape hatch is a compile-time error.
 
@@ -254,7 +265,10 @@ Rules:
 
 ### 2.5 Visibility and opacity (private, opaque)
 
-By default, all top-level definitions in the current module are exported (public).
+By default (without @PrivateByDefault), all top-level named items in the current module are exported (public)
+unless marked `private`.
+
+If the module attribute `@PrivateByDefault` is present, top-level named items are not exported unless marked `public`.
 
 This section defines two orthogonal controls:
 
@@ -907,14 +921,14 @@ Records are immutable values. Record update produces a new record with selected 
 
 ```kappa
 let p : (x : Int, y : Int) = (x = 1, y = 2)
-let p2 = p { y = 99 }          -- (x = 1, y = 99)
+let p2 = p.{ y = 99 }          -- (x = 1, y = 99)
 ```
 
 Rules:
 
 Let `r` have record type `(f1 : T1, f2 : T2[f1], ..., fn : Tn[f1..f(n-1)])`.
 
-* `r { field = expr, ... }` is an expression.
+* `r.{ field = expr, ... }` is an expression.
 * Updates are processed left-to-right.
 * An updated field expression may refer to earlier fields (including updated ones), respecting the telescope rule.
 * For each field fi not mentioned in the update:
@@ -925,58 +939,48 @@ Let `r` have record type `(f1 : T1, f2 : T2[f1], ..., fn : Tn[f1..f(n-1)])`.
 Implementations may support dotted update paths as sugar:
 
 ```kappa
--- Optional sugar (implementation-defined in v0.1; recommended for v1.0):
--- r { address.street = "Main" }
+-- r.{ address.street = "Main" }
 ```
 
 
-### 5.6 Propositions over booleans
+### 5.6 Propositions via booleans and propositional equality
 
-Kappa provides a minimal bridge from runtime booleans to propositions usable in types.
+Kappa supports propositional equality as a built-in type former.
 
-#### 5.6.1 `IsTrue` and `IsFalse`
+#### 5.6.1 Propositional equality (`=`) in type positions
 
-The language defines two built-in type families:
+Formation:
 
-```kappa
-IsTrue  : Bool -> Type
-IsFalse : Bool -> Type
-```
+* If `A : Type` and `x : A` and `y : A`, then `(x = y) : Type`.
 
-Intuition:
+Introduction:
 
-* `IsTrue b` is the proposition “`b` holds” (i.e. evaluates to `True`).
-* `IsFalse b` is the proposition “`b` does not hold” (i.e. evaluates to `False`).
+* There exists a canonical term (name implementation-defined, e.g. `refl`) inhabiting `x = x`.
 
-Canonical inhabitants:
+Definitional equality interaction:
 
-* There exists a canonical term (name implementation-defined) inhabiting `IsTrue True`.
-* There exists a canonical term (name implementation-defined) inhabiting `IsFalse False`.
-* There are no constructors for `IsTrue False` or `IsFalse True`.
+* If `x` and `y` are definitionally equal, then the canonical reflexivity proof may be used at type `x = y`.
 
-Proof terms of `IsTrue`/`IsFalse` are compile-time relevant and may be erased at runtime.
+(Elimination/transport may be defined in libraries in terms of this equality; the core language does not require runtime equality evidence.)
 
 #### 5.6.2 Boolean-to-type coercion in type positions
 
 In any position where a `Type` is expected, an expression `b` of type `Bool` is implicitly coerced to:
 
 ```kappa
-IsTrue b
+b = True
 ```
 
-This enables dependent “proof fields” without introducing a separate proposition syntax:
+This enables boolean propositions in types without separate `IsTrue`/`IsFalse` families.
+
+Examples:
 
 ```kappa
 let r : (id : Int, ok : id == 1) = (id = 2, ok = _)
--- parses as: ok : IsTrue (id == 1)
+-- parses as: ok : (id == 1) = True
 ```
 
-This coercion applies to:
-
-* type annotations (`e : T`)
-* binder types (`(x : T) -> ...`)
-* record field types (`(x : T, ...)`)
-* any explicit argument position expecting a value of type `Type`
+To express a “false branch” proposition explicitly, use `b = False`.
 
 ### 5.7 Elaboration-time evaluation and splicing (`!`)
 
@@ -1026,7 +1030,7 @@ There are two distinct forms:
 1. **Declaration (signature only):**
 
    ```kappa
-   [private] [opaque] name : Type
+   [public|private] [opaque] name : Type
    ```
 
    This introduces a type for `name` without providing a definition. Commonly used:
@@ -1037,10 +1041,10 @@ There are two distinct forms:
 2. **Definition (term binding):**
 
    ```kappa
-   [private] [opaque] let pat : Type = expr
-   [private] [opaque] let pat = expr
-   [private] [opaque] let name (x : A) (y : B) : R = body
-   [private] [opaque] let name (x : A, y : B) : R = body
+   [public|private] [opaque] let pat : Type = expr
+   [public|private] [opaque] let pat = expr
+   [public|private] [opaque] let name (x : A) (y : B) : R = body
+   [public|private] [opaque] let name (x : A, y : B) : R = body
    ```
 
    Any term definition must begin with `let`, except inside `let ... in` (see below).
@@ -1233,6 +1237,7 @@ The `.` token is used for:
 * type scope selection (`Vec.Cons`)
 * record field projection (`p.x`)
 * method-call sugar (`x.show`)
+* record update (`r.{ field = expr, ... }`)
 
 Resolution of `lhs.name` is defined in §13.1.
 Method-call sugar is defined in §13.1.1 and supplies `lhs` to the unique explicit binder named `this`, 
@@ -1293,8 +1298,16 @@ Resolution proceeds in this order:
 2. **Trait instance resolution**: if `G` is a trait application (e.g. `Eq Int`), attempt to resolve an instance from the instance environment (coherent, non-overlapping in v1.0).
 
 3. **Boolean proposition normalization**:
-   * If `G` is `IsTrue b` and `b` normalizes (by definitional equality) to `True`, synthesize the canonical inhabitant of `IsTrue True`.
-   * If `G` is `IsFalse b` and `b` normalizes (by definitional equality) to `False`, synthesize the canonical inhabitant of `IsFalse False`.
+    * If `G` is `b = True` and `b` normalizes (by definitional equality) to `True`, synthesize the canonical reflexivity proof.
+    * If `G` is `b = False` and `b` normalizes (by definitional equality) to `False`, synthesize the canonical reflexivity proof.
+
+4. **Equality reflection from `==`**:
+   If `G` is `x = y` for some type `A`, and the implicit context contains a proof `@p : (x == y) = True`,
+   then the compiler may attempt to resolve an implicit instance `@eq : Eq A` and synthesize:
+
+   ```kappa
+   Eq.eq_of_true x y @p
+   ```
 
 If all steps fail, compilation fails with an error indicating the unsolved implicit goal `G`.
 
@@ -1310,7 +1323,7 @@ let summon t @v = v
 Examples (using §5.6 coercion):
 
 ```kappa
--- inside a context where IsTrue (x > 0) is available implicitly:
+-- inside a context where (x > 0) = True is available implicitly:
 let p : (x > 0) = summon (x > 0)
 
 -- retrieving an instance dictionary:
@@ -1351,9 +1364,9 @@ Typechecking rules:
 
 * `cond` must have type `Bool`.
 * `e1` is typechecked with an additional implicit assumption:
-  * `@p : IsTrue cond`
+  * `@p : cond = True`
 * `e2` is typechecked with an additional implicit assumption:
-  * `@p : IsFalse cond`
+  * `@p : cond = False`
 
 For chained conditionals:
 
@@ -1364,12 +1377,12 @@ elif c3 then e3
 else e4
 ```
 
-* `e1` is checked under `IsTrue c1`.
-* `e2` is checked under `IsFalse c1` and `IsTrue c2`.
-* `e3` is checked under `IsFalse c1`, `IsFalse c2`, and `IsTrue c3`.
-* `e4` is checked under `IsFalse c1`, `IsFalse c2`, and `IsFalse c3`.
+* `e1` is checked under `@p : c1 = True`.
+* `e2` is checked under `@p : c1 = False` and `@p : c2 = True`.
+* `e3` is checked under `@p : c1 = False`, `@p : c2 = False`, and `@p : c3 = True`.
+* `e4` is checked under `@p : c1 = False`, `@p : c2 = False`, and `@p : c3 = False`.
 
-These assumptions participate in implicit resolution (§7.3.3). In particular, `summon (c2)` within the `elif c2` branch can retrieve a proof of `IsTrue c2` (via §5.6 coercion).
+These assumptions participate in implicit resolution (§7.3.3). In particular, `summon (c2)` within the `elif c2` branch can retrieve a proof of `c2 = True` (via §5.6 coercion).
 
 
 ### 7.5 `match` expressions
@@ -1435,8 +1448,8 @@ When the scrutinee has type `Bool` and a case pattern is the boolean literal `Tr
 
 ```kappa
 match b
-case True  -> eT   -- eT checked under  @p : IsTrue  b
-case False -> eF   -- eF checked under  @p : IsFalse b
+case True  -> eT   -- eT checked under  @p : b = True
+case False -> eF   -- eF checked under  @p : b = False
 ```
 
 This applies equally to `try match` success/error branches when the matched value is a `Bool`.
@@ -1553,9 +1566,9 @@ Valid statements inside `do`:
 
   This form is **monadic bind**, introducing new bindings from `pat`.
 
-  Typing:
-
-  * `expr` is expected to have type `m A`.
+  Typing and well-formedness:
+  * `expr` is expected to have type `m A` where `m` is the enclosing `do`-block’s monad.
+  * `pat` MUST be irrefutable for type `A` (§6.1.1). If `pat` is not irrefutable, it is a compile-time error.
 
 * **Assign (`<-`) **:
 
@@ -1612,9 +1625,12 @@ Valid statements inside `do`:
 * **Control-flow sugar** (loops, `if`, `return`, `defer`, etc.) described below.
 
 * **Local declarations and scoping**:
+  `import`, fixity declarations (`infix`, `postfix`, `prefix`), and (optionally) local `data`/`type`/`trait` declarations are permitted inside a `do` block.
+  Their effects are scoped to the enclosing `do` block and apply from the declaration onward.
 
-`import`, fixity declarations (`infix`, `postfix`, `prefix`), and (optionally) local `data`/`type`/`trait` declarations are permitted inside a `do` block.
-Their effects are scoped to the enclosing `do` block and apply from the declaration onward.
+Control-flow statements:
+  * `break` and `continue` are statements, not expressions. They are valid only inside loop bodies (§8.5).
+  * `return e` is a statement, not an expression. It is valid only inside a function body (§8.4).
 
 ### 8.2.1 Labeled `do` blocks and labeled control flow
 
@@ -1623,18 +1639,30 @@ Labels:
 * Labels are in scope within the labeled block.
 
 Targets:
-* `break@label` may target a labeled `do`-scope or loop.
-* `continue@label` may target a labeled loop only.
-* `defer@label e` may target a labeled `do`-scope.
+* `break@label` may target a labeled loop only (§8.5). Targeting a label that does not name a loop is a compile-time error.
+* `continue@label` may target a labeled loop only. Targeting a label that does not name a loop is a compile-time error.
+* `defer@label e` may target a labeled `do`-scope (§8.6). Targeting a label that does not name a `do`-scope is a compile-time error.
 
 Targeting a label that does not name an appropriate construct is a compile-time error.
 
 Semantics follow Kotlin-style labeled control flow:
 
-* `break@label` exits the labeled `do` block or loop.
-* `continue@label` targets loops only.
-* `defer@label e` schedules `e` to run when the labeled `do` block exits.
+* `break@label` exits the labeled loop.
+* `continue@label` targets the labeled loop.
+* `defer@label e` schedules `e` to run when the labeled `do`-scope exits.
 
+### 8.2.2 Simple desugaring applicability
+
+The schematic desugaring in §8.2 (into `>>=` / `>>` chains) is valid only for `do` blocks that do not use any of:
+
+* `break` / `continue`,
+* `return`,
+* `defer` / `using`,
+* `while` / `for` (since those introduce additional control structure and nested do-scopes).
+
+When any of the above features are present, the normative semantics and elaboration model is specified in §8.7.
+Implementations MAY still generate code equivalent to the §8.2 sketch, but only if it is observationally equivalent
+to the §8.7 model.
 
 ### 8.3 `if` without `else` in `do`
 
@@ -1680,6 +1708,17 @@ So `if` remains an expression; the missing `else` is implicitly `pure ()` in the
 
 Implementations may implement this via CPS or an effect; spec treats it as function-level early exit.
 
+Restrictions:
+
+* `return` MUST NOT appear syntactically within the body of a `defer` action (§8.6) or within a `finally` block (§9.2, §9.3).
+  If a `return` token occurs within a `defer` action or `finally` block (even if nested inside lambdas or local blocks),
+  it is a compile-time error.
+
+Interaction with `defer` / `finally`:
+
+* Executing `return e` exits the current function. Before the function returns, all enclosing dynamic `do`-scopes are exited
+  and their deferred actions (and any `finally` blocks) run according to §8.6 and §9.
+
 ### 8.5 Loops and mutable variables (`var`, `while`, `for` in `do`)
 
 These are **syntactic sugar** over monadic operations.
@@ -1718,11 +1757,11 @@ These are **syntactic sugar** over monadic operations.
   Desugars to iteration over `xs` in the monad, e.g. via a `Foldable`/`Traversable`-like trait.
 
 * `break` and `continue`:
-
-    * Valid only inside loops.
-    * `break` exits the nearest loop.
-    * `continue` jumps to the next iteration of the nearest loop.
-    * Desugaring typically uses additional control effects; spec only requires their usual loop semantics.
+    * `break` and `continue` are valid only within the body of a `while ... do ...` or `for ... do ...` loop.
+      Using them outside a loop body is a compile-time error.
+    * Unlabeled `break` / `continue` target the nearest enclosing loop.
+    * Labeled `break@L` / `continue@L` target the loop labeled `L@`. If `L` does not name an enclosing loop, it is an error.
+    * The precise semantics (including interaction with `defer` and `finally`) are specified in §8.7.
 
 ### 8.5.1 Loop `else`
 
@@ -1737,8 +1776,12 @@ else do
 
 Semantics:
 
-* The `else` block runs iff the loop completes normally (i.e. no `break` is executed).
-* If the loop exits via `break`, the `else` block is skipped.
+* The `else` block runs iff the loop completes normally (i.e. the loop condition becomes false for `while`,
+  or the iteration is exhausted for `for`) and no `break` targeting that loop is executed.
+* If the loop is exited due to:
+    * a `break` targeting that loop, OR
+    * any abrupt control that exits the loop without normal completion (e.g. `break@outer` propagating outward, or `return`)
+      then the loop’s `else` block is skipped.
 
 ### 8.6 `defer`
 
@@ -1763,11 +1806,222 @@ A `do`-scope is introduced by:
 
 Semantics:
 
-* `e` must be a monadic action (e.g. `IO Unit`).
-* Deferred actions run in LIFO order upon scope exit.
-* `defer@label e` targets a labeled enclosing `do`-scope.
+* Each dynamic execution of a `do`-scope maintains its own LIFO stack of deferred actions.
+  (In particular, each loop iteration body execution is a fresh dynamic `do`-scope.)
+* `defer e` pushes `e` onto the current `do`-scope’s deferred-action stack.
+* When control exits that `do`-scope for any reason (normal completion, `return`, a `break`/`continue` that exits the scope,
+  or a monadic error that propagates out of the scope), the deferred actions are executed in LIFO order.
+* Deferred actions are executed sequentially in the enclosing monad.
+* If a deferred action raises/propagates a monadic error, that error becomes the result of exiting the scope and
+  any remaining deferred actions in that scope are not executed.
+* `defer@label e` schedules `e` in the deferred-action stack of the labeled enclosing `do`-scope.
+
+Restrictions:
+* The deferred action `e` MUST NOT contain `return`, `break`, or `continue` anywhere within its syntax tree.
+  If any of these tokens occur within `e` (even if nested inside lambdas or local blocks), it is a compile-time error.
 
 Implementation may desugar this to a bracket/finalizer mechanism; spec only fixes the ordering and guarantee of execution on exit.
+
+## 8.7 Normative elaboration model for `do` blocks, loops, and abrupt control
+
+This section defines the normative meaning of `do` blocks with loops, `break` / `continue`, `return`,
+and `defer` / `using`. Implementations may compile using jumps, CPS, internal exceptions, or other techniques,
+but MUST be observationally equivalent to the model below.
+
+### 8.7.1 Abrupt completion records (meta-level)
+
+For specification purposes, we model execution of a `do`-scope using *completion records*:
+
+```
+
+Completion(R, A) =
+Normal   A
+| Break    Label
+| Continue Label
+| Return   R
+
+```
+
+Where:
+
+* `A` is the “normal” result type of the construct (often `Unit` for statements).
+* `R` is the return type of the nearest enclosing function.
+
+### 8.7.2 Dynamic `do`-scope exit and deferred actions
+
+Each dynamic execution of a `do`-scope has a LIFO stack of deferred actions (each of type `m Unit`).
+`defer` pushes onto that stack (§8.6).
+
+When exiting a `do`-scope with a completion record `c : Completion(R, A)`:
+
+1. Execute deferred actions in LIFO order.
+2. If a deferred action raises a monadic error, that error propagates and no further deferred actions in that scope execute.
+   The original completion `c` is abandoned.
+3. Otherwise, propagate the original completion `c`.
+
+Deferred actions MUST NOT contain `return`, `break`, or `continue` (§8.6), so deferred actions cannot produce
+non-local control flow.
+
+### 8.7.3 Completion-aware sequencing (meta-level)
+
+For an enclosing monad `m`, we write computations of the form `m (Completion(R, A))`.
+
+Define the following meta-level operators (expressible in core via `>>=` and `match` in the compiler IR):
+
+* Lifting a normal monadic computation:
+
+  `lift : m A -> m (Completion(R, A))`
+
+  `lift act` runs `act` and returns `Normal` of its result.
+
+* Completion bind:
+
+  `bindC : m (Completion(R, A)) -> (A -> m (Completion(R, B))) -> m (Completion(R, B))`
+
+  `bindC ma k` runs `ma` and:
+    * if it returns `Normal a`, runs `k a`,
+    * otherwise propagates `Break` / `Continue` / `Return` unchanged.
+
+Sequencing is `thenC x y = bindC x (\_ -> y)`.
+
+### 8.7.4 Elaboration of `do` statement sequences
+
+A `do` block is elaborated in a context with a known function return type `R`.
+
+For a statement-sequence `S` that is expected to produce `Unit`, elaboration yields a computation
+`⟦S⟧ : m (Completion(R, Unit))` and is defined by cases below.
+
+#### Ordinary statements
+
+* Expression statement `act` where `act : m A`:
+
+  `⟦act; rest⟧ = thenC (lift act) ⟦rest⟧`
+
+* Monadic bind `let pat <- act` where `act : m A` and `pat` is irrefutable for `A` (§8.2):
+
+  `⟦let pat <- act; rest⟧ = bindC (lift act) (\tmp -> ⟦rest⟧)` with `pat` bound to `tmp`.
+
+* Pure local binding `let pat = expr`:
+
+  elaborates as a pure binding and continues with `rest`.
+
+#### `defer` and `using`
+
+* `defer d; rest`:
+
+  elaborates by scheduling `d` for the current `do`-scope exit (per §8.6 / §8.7.2) and then elaborating `rest`.
+  (Implementations may realize this as an explicit stack or as nested `finally`-style wrappers.)
+
+* `using pat <- acquire; rest`:
+
+  is equivalent to:
+
+```
+
+let pat <- acquire
+defer (release pat)
+rest
+
+````
+
+where `release` is an implementation-defined mechanism for releasing the acquired resource.
+(Implementations typically resolve `release` by trait or intrinsic.)
+
+Restrictions from §8.6 apply: the scheduled release action MUST NOT contain `return`, `break`, or `continue`.
+
+#### `return`
+
+* `return e` elaborates to a completion that exits the current function:
+
+`⟦return e⟧ = pure (Return e)`.
+
+`return` is not permitted inside `defer` actions or `finally` blocks.
+
+#### `break` / `continue`
+
+Within a loop body, each `break` / `continue` targets a specific loop label:
+
+* Unlabeled targets the nearest enclosing loop.
+* Labeled targets the named enclosing loop.
+
+Elaboration:
+
+* `⟦break⟧ = pure (Break L)`
+* `⟦continue⟧ = pure (Continue L)`
+
+where `L` is the resolved target label.
+
+### 8.7.5 Normative elaboration of loops
+
+Loops are statements within `do` and elaborate to `m (Completion(R, Unit))`.
+
+#### While loops
+
+For:
+
+```kappa
+while cond do
+  body
+else do
+  onNoBreak
+````
+
+Let `L` be the loop’s label (explicit or implicit).
+Let `cond` be either `Bool` or `m Bool` (§8.5).
+
+The meaning is:
+
+* Repeatedly evaluate `cond`:
+
+    * If false: the loop completed normally; run `onNoBreak` (if present) and return `Normal ()`.
+    * If true: execute one iteration by entering a fresh dynamic `do`-scope for `body` (so its defers run on `continue`/`break`/`return`/error).
+
+* If the iteration completes with:
+
+    * `Normal ()` or `Continue L`: begin the next iteration.
+    * `Break L`: exit the loop immediately with `Normal ()`, and SKIP the `else` block.
+    * `Continue L'` or `Break L'` where `L' ≠ L`: propagate outward unchanged.
+    * `Return r`: propagate outward unchanged.
+
+The loop `else` block runs iff the loop completes by condition becoming false, and no `Break L` occurs.
+
+#### For loops
+
+For:
+
+```kappa
+for x in xs do
+    body
+else do
+    onNoBreak
+```
+
+Let `L` be the loop label (explicit or implicit).
+The loop iterates `xs` in its iteration order.
+
+Each iteration executes `body` in a fresh dynamic `do`-scope.
+
+Completion behavior matches `while` above:
+
+* `Continue L` continues with the next element.
+* `Break L` exits the loop and skips `else`.
+* Mismatched labels propagate outward.
+* `Return` propagates outward.
+
+The loop `else` block runs iff iteration is exhausted and no `Break L` occurs.
+
+### 8.7.6 Minimal desugaring requirements for `for` loops
+
+Implementations MUST NOT require stronger iteration capabilities than necessary:
+
+* If the loop body contains no `break`/`continue` targeting the loop AND the loop has no `else` block,
+  the implementation MUST accept a desugaring equivalent to a `Foldable`/`Traversable` left-to-right traversal, e.g.
+  `foldlM` / `traverse_` style sequencing, and MUST NOT require an early-exit iterator protocol.
+
+* If the loop body contains `break` or `continue` targeting the loop OR the loop has an `else` block,
+  then early-exit behavior is required. The implementation MUST use (or behave equivalently to) an iteration protocol
+  that supports stopping early without executing effects for remaining elements (e.g. an iterator `next` loop).
+  The exact protocol is implementation-defined, but the observable semantics MUST match §8.7.5.
 
 ---
 
@@ -1802,7 +2056,13 @@ Rules:
 
 * `expr` has type `m a`, where `m` supports error handling (conceptually `MonadError m e`).
 * Each `except` handler must produce type `m a`.
-* `finally` (optional) is a monadic action of type `m Unit` that always runs after success or error handling but before `try` returns.
+* `finally` (optional) is a monadic action of type `m Unit` that runs whenever control exits the `try` expression,
+  including:
+    * normal success,
+    * an error that is handled by an `except`,
+    * an error that propagates out of the `try`,
+    * a `break`/`continue` propagating through the `try`,
+    * a `return` propagating through the `try`.
 * The error type `e` must be a closed type (e.g. an ADT, `Bool`, or a union of closed types).
 * `except` clauses must be exhaustive over `e`.
     * For union error types, exhaustiveness is satisfied by covering each member of the normalized union;
@@ -1815,6 +2075,15 @@ Semantics sketch:
 2. If `expr` succeeds, the result is the `try` result.
 3. If `expr` raises an error, run the first matching `except` handler and use its result.
 4. If `finally` exists, run it and discard its result.
+
+Restrictions:
+* `finally` blocks MUST NOT contain `return`, `break`, or `continue` anywhere within their syntax tree.
+  If any of these tokens occur within a `finally` block (even if nested inside lambdas or local blocks),
+  it is a compile-time error.
+
+Control-flow interaction:
+* `except` handlers match only monadic error values. They do not intercept `break`, `continue`, or `return`.
+  Such control flow propagates outward normally, but `finally` still runs as specified above.
 
 ### 9.3 `try match`
 
@@ -1849,6 +2118,15 @@ Semantics sketch:
 5. The result of `try match` is the result of the taken `case`/`except` branch.
 
 `try match` must be exhaustive on both the success and error sides (with `_` allowed as a catch-all).
+
+Restrictions:
+* `finally` blocks MUST NOT contain `return`, `break`, or `continue` anywhere within their syntax tree.
+  If any of these tokens occur within a `finally` block (even if nested inside lambdas or local blocks),
+  it is a compile-time error.
+
+Control-flow interaction:
+* `except` handlers match only monadic error values. They do not intercept `break`, `continue`, or `return`.
+  Such control flow propagates outward normally, but `finally` still runs as specified above.
 
 ---
 
@@ -1940,9 +2218,75 @@ The **clauses** appear before `yield` and may include:
 * `skip n`, `take n`
 * `distinct` / `distinct by expr`
 * `group by expr` with aggregations
-* `top n by ...`
 * `join` / `left join` (joins)
 * (all optional and composable)
+
+### 10.3.1 Parsing: comprehension vs literal
+
+A bracketed form may denote either a literal or a comprehension:
+
+* `[e1, e2, ...]` is a list literal; `[ clauses..., yield valueExpr ]` is a list comprehension.
+* `{|e1, e2, ...|}` is a set literal; `{| clauses..., yield valueExpr |}` is a set comprehension.
+* `{ k1 : v1, ... }` is a map literal; `{ clauses..., yield keyExpr : valueExpr }` is a map comprehension.
+
+Comprehension detection:
+
+* After reading the opening delimiter (`[`, `{|`, or `{`), the parser skips whitespace and comments.
+* If the next token is a comprehension clause introducer, the form is parsed as a comprehension; otherwise it is parsed as a literal.
+
+Clause introducers are the contextual keywords:
+
+`for`, `let`, `if`, `order`, `skip`, `take`, `distinct`, `group`, `join`, `left`, `yield`.
+
+This rule applies equally when the bracketed form is prefixed with a custom carrier (§10.10).
+
+Escape hatch:
+
+* To write a literal whose first element/key is an identifier that would otherwise be a clause introducer,
+  parenthesize it or use a backtick identifier. Examples:
+
+  ```kappa
+  [ (yield) ]
+  [ `yield` ]
+  { (left) : 1 }
+  {| (for) |}
+  ```
+
+
+### 10.3.2 Encounter order and order-sensitive clauses
+
+Comprehensions process elements in an encounter order induced by generator enumeration and preceding clauses.
+
+A comprehension pipeline is in one of two orderedness states:
+
+* **Ordered**: the encounter order is specified by the semantics.
+* **Unordered**: the encounter order is unspecified.
+
+Rules for built-in sources:
+
+* Iterating a `List` (and other sequence types with specified iteration order) produces an Ordered stream.
+* Iterating a `Set` (`{| ... |}` and values of the built-in set type) produces an Unordered stream.
+* Iterating a `Map` (`{ ... }` and values of the built-in map type) produces an Unordered stream.
+
+Order propagation:
+
+* `for` preserves Ordered iff the input is Ordered and the iterated collection’s iteration order is specified; otherwise it produces Unordered.
+* `let` clauses and `if` filters preserve the current orderedness.
+* `order by ...` sets orderedness to Ordered.
+* `distinct` / `distinct by` preserve Ordered when the input is Ordered; otherwise the result is Unordered.
+* `group by` sets orderedness to Unordered.
+* Refutable forms preserve orderedness the same way filtering does:
+  * `for pat in? xs` preserves Ordered iff `xs` is iterated in a specified order and the incoming stream is Ordered.
+  * `let pat ?= e` preserves the current orderedness (it’s row-local and either keeps or drops the row).
+* `join` / `left join` orderedness follows their normative desugaring in §10.8 (i.e. behaves like adding a `for tmp in ...` plus filters).
+
+Order-sensitive clauses:
+
+* `skip n` and `take n` are well-formed only when the pipeline is Ordered at that point; otherwise it is a compile-time error.
+
+When orderedness is Unordered, any semantics that would rely on relative order (for example, choosing between equal `order by` keys,
+or resolving “keep first/keep last” conflicts) is unspecified with respect to those ties.
+
 
 ### 10.4 `for` and `let` clauses
 
@@ -1969,11 +2313,30 @@ Examples:
 }
 ```
 
-* `for x in collection` binds elements of a collection.
+* `for pat in collection` binds elements of a collection.
+
+    * `pat` is a pattern (§7.6).
+    * In `for pat in collection`, `pat` must be **irrefutable** for the element type of `collection` (§6.1.1).
+      If it is refutable, it is a compile-time error; use `for pat in? collection` (§10.4.1) instead.
+
 * `let pat = expr` creates derived values within the comprehension.
+
     * `pat` must be irrefutable (§6.1.1).
     * For refutable matching, use `let pat ?= expr` (§10.4.1).
-* `if condition` filters out elements where the condition is `False`.
+
+* `if condition` filters out rows where the condition is `False`.
+
+
+Map iteration:
+
+* Iterating a map yields entries as a record `(key : K, value : V)`.
+  This enables destructuring via record patterns, for example:
+
+  ```kappa
+  { for (key = k, value = v) in myMap, yield k : v }
+  { for (key = k) in myMap, yield k : 1 }
+  ```
+
 
 ### 10.4.1 Refutable patterns in comprehensions
 
@@ -1995,13 +2358,18 @@ Comprehensions support refutable generators and matches:
 
   If `expr` matches `pat`, bind pattern variables and continue. Otherwise, the current element is dropped (as if filtered out).
 
-* **Type/pattern test**:
+* **Binding pattern-test filter**:
 
   ```kappa
   if expr is pat
   ```
 
-  Evaluates to `True` iff `expr` matches `pat`.
+  This filters the current row stream by attempting to match `expr` against `pat`. 
+    * If the match succeeds, names bound by `pat` are brought into scope for subsequent clauses. 
+    * If the match fails, the current row is dropped.
+
+  Desugaring (normative):
+  `if expr is pat` is sugar for `let pat ?= expr`.
 
 ### 10.5 Map comprehensions and `:` vs type ascription
 
@@ -2018,7 +2386,6 @@ In a **map comprehension**, `yield keyExpr : valueExpr` is always interpreted as
   ```kappa
   { for x in xs, yield x : x + 1 }  -- key/value
   ```
-  
 
   If you need type ascription inside a map comprehension, parenthesise:
     
@@ -2030,6 +2397,39 @@ In a **map comprehension**, `yield keyExpr : valueExpr` is always interpreted as
   * If a map comprehension produces the same key multiple times, later entries overwrite earlier entries
     (left-to-right in the comprehension’s iteration order).
 
+### 10.5.1 Map key conflicts (`on conflict`)
+
+Map comprehensions may optionally specify a key-conflict policy:
+
+```kappa
+{ clauses..., on conflict keep last, yield k : v }
+{ clauses..., on conflict keep first, yield k : v }
+{ clauses..., on conflict combine using Concat, yield k : v }
+{ clauses..., on conflict combine with (\old new -> old + new), yield k : v }
+```
+
+Rules:
+
+* `on conflict ...` is permitted only in map comprehensions.
+* If no `on conflict` clause is present, the default policy is `keep last`.
+
+Semantics:
+
+* When multiple yielded pairs produce keys that are equal (by an `Eq`-like equality on keys),
+  the conflict policy determines the final value associated with that key.
+
+Policies:
+
+* `keep last`: the value from the last encountered pair wins.
+* `keep first`: the value from the first encountered pair wins.
+* `combine using Wrapper`: values are combined by wrapping them with `Wrapper` and folding using the implied monoid
+  (same wrapper-fold-unwrap mechanism as `group by`).
+* `combine with f`: values are combined by left-folding `f` over the encountered values for the key.
+
+Order note:
+
+* For `keep first`, `keep last`, and `combine with`, results depend on encounter order.
+  If orderedness is Unordered at the point where pairs are produced, the outcome is unspecified with respect to ties (§10.3.2).
 
 ### 10.6 Ordering, paging, distinct
 
@@ -2051,19 +2451,39 @@ Stability:
 * `order by` is a stable sort: elements that compare equal under the ordering keys preserve their relative order
   from the input iteration order.
 
+Tie behavior on unordered inputs:
+
+* Stability is with respect to the **current encounter order**.
+* If the current orderedness is Unordered (§10.3.2), then the relative order of elements with equal ordering keys is unspecified.
+
+Evaluation:
+* In `order by ...`, each ordering key expression is evaluated exactly once per row.
+  Implementations may cache keys for sorting.
+
 #### 10.6.2 `skip` and `take`
 
-```kappa
-skip 5
-take 10
-```
+`skip` and `take` are order-sensitive clauses:
 
-* `skip n` discards the first `n` elements.
-* `take n` limits the result to `n` elements.
+* `skip n` discards the first `n` rows in the current encounter order.
+* `take n` limits the result to the first `n` rows in the current encounter order.
 
-`skip` and `take` are defined for ordered carriers (like lists or ordered streams). After `group by` or `distinct`, order may be unspecified until another `order by` is applied.
+Well-formedness:
+
+* `skip` and `take` are permitted only when the pipeline is Ordered at that point (§10.3.2).
+  Using `skip` or `take` when orderedness is Unordered is a compile-time error.
+
+Notes:
+
+* After `group by` orderedness is Unordered until another `order by` is applied.
+* After `distinct`, orderedness is preserved only if the input was Ordered.
 
 #### 10.6.3 `distinct` / `distinct by`
+
+`distinct` and `distinct by` operate on the current row environment at the clause site.
+
+* For `distinct`, the deduplication key is the record of all currently bound names in scope (in a compiler-chosen canonical order).
+* For `distinct by keyExpr`, the deduplication key is `keyExpr` evaluated in that environment.
+
 
 ```kappa
 distinct
@@ -2072,7 +2492,7 @@ distinct by keyExpr
 
 * `distinct` keeps unique elements based on their entire value.
 * `distinct by keyExpr` keeps the first element for each unique key `keyExpr`.
-* Requires `Eq` and `Hash`-like traits for the type used to determine uniqueness.
+* Requires an `Eq`-like trait for the value used to determine uniqueness. Hashing may be used as an optimization (implementation-defined).
 
 Representative choice:
 
@@ -2087,26 +2507,74 @@ Grouping syntax:
 [
     for product in products
     group by product.category {
-        key   = product.category          -- group key
-        items = [product] using Concat    -- aggregated items via monoid
-        count = 1 using Sum               -- aggregated count via monoid
-    } into category_group
-    yield (category_group.key, category_group.count)
+        items = [product] using Concat
+        count = 1 using Sum
+    } into g
+    yield (g.key, g.count)
 ]
 ```
 
-Conceptual semantics:
+Form:
 
-* `group by expr { fields... } into name`:
+* `group by keyExpr { agg1, agg2, ... } into name`
 
-    * `expr` defines the grouping key.
-    * The block defines **aggregated fields** using monoidal folds:
+Aggregate field form:
 
-        * `items = [product] using Concat` means “fold elements into `items` using the `Concat` monoid”.
-        * `count = 1 using Sum` means “sum 1 for each item”.
-    * `into category_group` binds a record with fields `key`, `items`, `count`, etc.
+* `field = valueExpr using Wrapper`
+* `field = valueExpr` (optional; uses the default monoid for the inferred wrapper/result type)
 
-* After grouping, iteration order is unspecified until re-ordered.
+Well-formedness:
+
+* `Wrapper` must be a type constructor with exactly one constructor taking exactly one field (a “newtype-like” wrapper).
+  Otherwise `using Wrapper` is a compile-time error.
+
+Rules:
+
+* `keyExpr` is evaluated on each incoming row to produce the group key.
+* The bound name `name` is a record containing:
+
+    * `key` (always present), and
+    * one field per aggregate declaration in the aggregation block.
+* The aggregation block may not bind names; it contains only aggregate field declarations.
+* Aggregate fields may refer to names bound by earlier comprehension clauses.
+* Aggregate fields may not refer to other aggregate fields (compile-time error).
+
+`key` is special:
+
+* The group record always contains a field `key`.
+* Declaring an aggregate field named `key` is a compile-time error.
+
+Semantics (normative):
+
+* Grouping partitions the incoming rows by the value of `keyExpr`.
+* For each group key, aggregates are computed over the rows in that group.
+
+Aggregate semantics with `using`:
+
+* Let `valueExpr : T`.
+* Let `Wrapper` resolve to a constructor `Wrapper : T -> W`.
+* Let there be an implicit monoid instance for `W` (implementation-defined trait factoring, but conceptually:
+  `empty : W` and `append : W -> W -> W`).
+
+Then the aggregate value is computed as:
+
+1. For each row in the group, compute `w = Wrapper (valueExpr)`.
+2. Fold the `w` values using the monoid: `acc = fold append empty ws`.
+3. Unwrap `acc` by pattern matching on the single-constructor wrapper.
+
+`using` omission:
+
+* If `using Wrapper` is omitted, the compiler resolves a default monoid for the aggregate result type (implementation-defined).
+  This is equivalent to using an identity wrapper with that monoid.
+
+Encounter order after grouping:
+
+* The output of `group by` has Unordered encounter order (§10.3.2) until another `order by` is applied.
+
+Implementation model (permitted):
+
+* Implementations may compute grouping via single-pass hash aggregation, then continue the pipeline on the grouped rows.
+  The exact strategy is not semantically observable except through the Unordered/Ordered rules above.
 
 ### 10.8 Joins
 
@@ -2145,29 +2613,6 @@ Desugaring (normative; the compiler is free to optimize):
 * `left join pat in xs on cond into name` is sugar for binding `name` to the list of matching elements:
   `let name = [ for tmp in xs, let pat ?= tmp, if cond, yield tmp ]`
   The bindings introduced by `pat` are not in scope after the `left join`; only `name` is.
-
-### 10.9 `top n by` sugar
-
-Top-N sugar:
-
-```kappa
-[
-    for player in players
-    top 5 by (desc player.score, asc player.name)
-    yield player.name
-]
-```
-
-Is sugar for:
-
-```kappa
-[
-    for player in players
-    order by (desc player.score, asc player.name)
-    take 5
-    yield player.name
-]
-```
 
 ### 10.10 Custom carriers
 
@@ -2237,6 +2682,20 @@ Desugaring rules (list/set forms shown; map form analogous):
 
 The above is normative: implementations may produce equivalent code, but must preserve these semantics and constraint minimality.
 
+### 10.11.1 Evaluation-count guarantees
+
+Within a comprehension, implementations must preserve the following evaluation-count guarantees (as-if rules):
+
+* `let` clause right-hand sides are evaluated at most once per incoming row.
+* `if` filter conditions are evaluated at most once per incoming row.
+* In `order by`, each ordering key expression is evaluated exactly once per row.
+* In `distinct by`, the key expression is evaluated exactly once per row.
+* In `group by`:
+    * `keyExpr` is evaluated exactly once per incoming row.
+    * each aggregate `valueExpr` is evaluated exactly once per incoming row per aggregate field.
+
+Implementations may cache computed keys and intermediate aggregate wrappers to satisfy these guarantees.
+
 ## 11. Algebraic Data Types and Type Aliases
 
 ### 11.1 `data` declarations
@@ -2244,7 +2703,7 @@ The above is normative: implementations may produce equivalent code, but must pr
 General form:
 
 ```kappa
-[private] [opaque] data Name (params...) : TypeK =
+[public|private] [opaque] data Name (params...) : TypeK =
     Constructor1 arg1 arg2 ...
     Constructor2 ...
     ...
@@ -2303,11 +2762,6 @@ C e1 e2 ...
 ```
 
 with implicit arguments resolved as usual (§7.3).
-
-Notes:
-
-This syntax is distinct from record update `r { ... }` (§5.5.4). If the left-hand side resolves to a constructor head,
-the brace form is constructor application; otherwise it is record update (or a type error).
 
 ### 11.2 GADT-style constructors
 
@@ -2418,6 +2872,14 @@ instance Eq a => Eq (Option a) =
         case (Option.None, Option.None) -> True
         case (Option.Some x, Option.Some y) -> x == y
         case _ -> False
+        
+trait Iterator (it : Type) =
+    Item : Type
+    next : (this : it) -> Option Item
+
+instance Iterator (List a) =
+    let Item = a
+    let next this = ...
 ```
 
 An instance declaration elaborates to a term definition (a dictionary value) whose type is the corresponding trait application.
@@ -2445,7 +2907,7 @@ Kappa provides a built-in marker trait:
 
 ```kappa
 trait Prop (t : Type) =
-    proofIrrel : (x : t) -> (y : t) -> IsTrue (x == y)
+    proofIrrel : (x : t) -> (y : t) -> (x = y)
 ```
 
 `Prop t` indicates that `t` is treated as a proposition type and is proof-irrelevant.
@@ -2517,6 +2979,9 @@ The `.` token is used for:
 * **Type scope selection:** `Vec.Cons`
 * **Record field projection:** `p.x`
 * **Method-call sugar:** `x.show`
+* **Record update:** (`r.{ y = 99 }`)
+
+The form `lhs.{ ... }` is parsed as record update (§5.5.4) and does not participate in dotted name resolution.
 
 Resolution of `lhs.name` proceeds by attempting the following interpretations:
 
