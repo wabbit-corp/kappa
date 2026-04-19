@@ -1,6 +1,7 @@
 module CoreTests
 
 open System
+open System.Text
 open Kappa.Compiler
 open Harness
 open Xunit
@@ -525,3 +526,42 @@ let ``interpreter evaluates recursive list matches built from the cons operator`
         Assert.Equal("72", RuntimeValue.format value)
     | Result.Error issue ->
         failwithf "Expected recursive list evaluation to succeed, got %s" issue.Message
+
+[<Fact>]
+let ``interpreter executes io programs against an injected output sink`` () =
+    let mainSource =
+        [
+            "module main"
+            "sumList : List Int -> Int"
+            "let sumList xs ="
+            "    match xs"
+            "    case Nil -> 0"
+            "    case head :: tail -> head + sumList tail"
+            "let main : IO Unit = do"
+            "    let nums = 10 :: 20 :: 42 :: Nil"
+            "    let total = sumList nums"
+            "    printInt total"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-injected-output-root"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    let buffer = StringBuilder()
+
+    let output: RuntimeOutput =
+        { Write = fun text -> buffer.Append(text) |> ignore
+          WriteLine = fun text -> buffer.AppendLine(text) |> ignore }
+
+    match Interpreter.executeBindingWithOutput workspace output "main.main" with
+    | Result.Ok UnitValue -> ()
+    | Result.Ok value ->
+        failwithf "Expected IO entry point to execute to Unit, got %s" (RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected injected-output execution to succeed, got %s" issue.Message
+
+    Assert.Equal("72\n", buffer.ToString().Replace("\r\n", "\n"))

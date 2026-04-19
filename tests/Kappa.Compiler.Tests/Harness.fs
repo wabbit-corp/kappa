@@ -4,6 +4,7 @@ open System
 open System.Diagnostics
 open System.IO
 open System.Runtime.InteropServices
+open System.Text
 open System.Text.RegularExpressions
 open Kappa.Compiler
 open Xunit
@@ -194,6 +195,8 @@ type KpFixtureAssertion =
     | AssertType of target: string * expectedTypeText: string * filePath: string * lineNumber: int
     | AssertEval of target: string * expectedValueText: string * filePath: string * lineNumber: int
     | AssertEvalErrorContains of target: string * expectedText: string * filePath: string * lineNumber: int
+    | AssertExecute of target: string * expectedValueText: string * filePath: string * lineNumber: int
+    | AssertRunStdout of target: string * expectedOutputText: string * filePath: string * lineNumber: int
     | AssertModule of expectedModuleText: string * filePath: string * lineNumber: int
     | AssertModuleAttributes of expectedAttributes: string list * filePath: string * lineNumber: int
     | AssertDeclarationKinds of expectedKinds: string list * filePath: string * lineNumber: int
@@ -256,6 +259,40 @@ let private parseNonNegativeInt (directiveName: string) (filePath: string) lineN
     | _ ->
         invalidOp $"{directiveName} expects a non-negative integer ({filePath}:{lineNumber})."
 
+let private parseTargetAndBody (directiveName: string) (filePath: string) lineNumber (directiveBody: string) =
+    let targetAndBody =
+        directiveBody.Split([| ' '; '\t' |], 2, StringSplitOptions.RemoveEmptyEntries)
+
+    if targetAndBody.Length <> 2 then
+        invalidOp $"{directiveName} expects '<target> <value>' ({filePath}:{lineNumber})."
+
+    targetAndBody[0], targetAndBody[1].Trim()
+
+let private decodeAssertionText (directiveName: string) (filePath: string) lineNumber (value: string) =
+    let trimmed = value.Trim()
+
+    if trimmed.StartsWith("\"", StringComparison.Ordinal) then
+        match SyntaxFacts.tryDecodeStringLiteral trimmed with
+        | Result.Ok decoded -> decoded
+        | Result.Error message ->
+            invalidOp $"{directiveName} expects valid string literal text ({filePath}:{lineNumber}): {message}"
+    else
+        trimmed
+
+let private normalizeExecutionOutput (text: string) =
+    text.Replace("\r\n", "\n").TrimEnd([| '\r'; '\n' |])
+
+let private executeBindingWithCapturedOutput (workspace: WorkspaceCompilation) (entryPoint: string) =
+    let builder = StringBuilder()
+
+    let output: RuntimeOutput =
+        { Write = fun text -> builder.Append(text) |> ignore
+          WriteLine = fun text -> builder.AppendLine(text) |> ignore }
+
+    let result = Interpreter.executeBindingWithOutput workspace output entryPoint
+
+    result, normalizeExecutionOutput (builder.ToString())
+
 let private parseFixtureAssertion (filePath: string) lineNumber (lineText: string) =
     let trimmed = lineText.Trim()
 
@@ -300,32 +337,40 @@ let private parseFixtureAssertion (filePath: string) lineNumber (lineText: strin
                 invalidOp $"assertType expects '<target> <type>' ({filePath}:{lineNumber})."
 
             Some(AssertType(targetAndType[0], targetAndType[1].Trim(), filePath, lineNumber))
+        | "assertEval"
         | "x-assertEval" ->
-            let targetAndValue =
-                directiveBody.Split([| ' '; '\t' |], 2, StringSplitOptions.RemoveEmptyEntries)
-
-            if targetAndValue.Length <> 2 then
-                invalidOp $"x-assertEval expects '<target> <value>' ({filePath}:{lineNumber})."
-
-            Some(AssertEval(targetAndValue[0], targetAndValue[1].Trim(), filePath, lineNumber))
+            let target, expectedValueText = parseTargetAndBody "assertEval" filePath lineNumber directiveBody
+            Some(AssertEval(target, expectedValueText, filePath, lineNumber))
+        | "assertEvalErrorContains"
         | "x-assertEvalErrorContains" ->
-            let targetAndText =
-                directiveBody.Split([| ' '; '\t' |], 2, StringSplitOptions.RemoveEmptyEntries)
+            let target, expectedText = parseTargetAndBody "assertEvalErrorContains" filePath lineNumber directiveBody
+            Some(AssertEvalErrorContains(target, expectedText, filePath, lineNumber))
+        | "assertExecute" ->
+            let target, expectedValueText = parseTargetAndBody "assertExecute" filePath lineNumber directiveBody
+            Some(AssertExecute(target, expectedValueText, filePath, lineNumber))
+        | "assertRunStdout" ->
+            let target, expectedOutputText = parseTargetAndBody "assertRunStdout" filePath lineNumber directiveBody
 
-            if targetAndText.Length <> 2 then
-                invalidOp $"x-assertEvalErrorContains expects '<target> <message-substring>' ({filePath}:{lineNumber})."
-
-            Some(AssertEvalErrorContains(targetAndText[0], targetAndText[1].Trim(), filePath, lineNumber))
+            Some(
+                AssertRunStdout(
+                    target,
+                    decodeAssertionText "assertRunStdout" filePath lineNumber expectedOutputText,
+                    filePath,
+                    lineNumber
+                )
+            )
+        | "assertModule"
         | "x-assertModule" ->
             if String.IsNullOrWhiteSpace(directiveBody) then
-                invalidOp $"x-assertModule expects '<module>' ({filePath}:{lineNumber})."
+                invalidOp $"assertModule expects '<module>' ({filePath}:{lineNumber})."
 
             Some(AssertModule(directiveBody, filePath, lineNumber))
+        | "assertModuleAttributes"
         | "x-assertModuleAttributes" ->
             let expectedAttributes = parseFixtureList directiveBody
 
             if List.isEmpty expectedAttributes then
-                invalidOp $"x-assertModuleAttributes expects a comma-separated list of attributes ({filePath}:{lineNumber})."
+                invalidOp $"assertModuleAttributes expects a comma-separated list of attributes ({filePath}:{lineNumber})."
 
             Some(AssertModuleAttributes(expectedAttributes, filePath, lineNumber))
         | "assertDeclKinds" ->
@@ -335,51 +380,56 @@ let private parseFixtureAssertion (filePath: string) lineNumber (lineText: strin
                 invalidOp $"assertDeclKinds expects a comma-separated list of declaration kinds ({filePath}:{lineNumber})."
 
             Some(AssertDeclarationKinds(expectedKinds, filePath, lineNumber))
+        | "assertDeclDescriptors"
         | "x-assertDeclDescriptors" ->
             let expectedDescriptors = parseFixtureList directiveBody
 
             if List.isEmpty expectedDescriptors then
-                invalidOp $"x-assertDeclDescriptors expects a comma-separated list of declaration descriptors ({filePath}:{lineNumber})."
+                invalidOp $"assertDeclDescriptors expects a comma-separated list of declaration descriptors ({filePath}:{lineNumber})."
 
             Some(AssertDeclarationDescriptors(expectedDescriptors, filePath, lineNumber))
+        | "assertDataConstructors"
         | "x-assertDataConstructors" ->
             let typeAndConstructors =
                 directiveBody.Split([| ' '; '\t' |], 2, StringSplitOptions.RemoveEmptyEntries)
 
             if typeAndConstructors.Length <> 2 then
-                invalidOp $"x-assertDataConstructors expects '<type> <ctor1, ctor2, ...>' ({filePath}:{lineNumber})."
+                invalidOp $"assertDataConstructors expects '<type> <ctor1, ctor2, ...>' ({filePath}:{lineNumber})."
 
             let expectedConstructors = parseFixtureList typeAndConstructors[1]
 
             if List.isEmpty expectedConstructors then
-                invalidOp $"x-assertDataConstructors expects at least one constructor ({filePath}:{lineNumber})."
+                invalidOp $"assertDataConstructors expects at least one constructor ({filePath}:{lineNumber})."
 
             Some(AssertDataConstructors(typeAndConstructors[0], expectedConstructors, filePath, lineNumber))
+        | "assertTraitMembers"
         | "x-assertTraitMembers" ->
             let traitAndMembers =
                 directiveBody.Split([| ' '; '\t' |], 2, StringSplitOptions.RemoveEmptyEntries)
 
             if traitAndMembers.Length <> 2 then
-                invalidOp $"x-assertTraitMembers expects '<trait> <member1, member2, ...>' ({filePath}:{lineNumber})."
+                invalidOp $"assertTraitMembers expects '<trait> <member1, member2, ...>' ({filePath}:{lineNumber})."
 
             let expectedMembers = parseFixtureList traitAndMembers[1]
 
             if List.isEmpty expectedMembers then
-                invalidOp $"x-assertTraitMembers expects at least one member ({filePath}:{lineNumber})."
+                invalidOp $"assertTraitMembers expects at least one member ({filePath}:{lineNumber})."
 
             Some(AssertTraitMembers(traitAndMembers[0], expectedMembers, filePath, lineNumber))
+        | "assertContainsTokenKinds"
         | "x-assertContainsTokenKinds" ->
             let expectedKinds = parseFixtureList directiveBody
 
             if List.isEmpty expectedKinds then
-                invalidOp $"x-assertContainsTokenKinds expects a comma-separated list of token kinds ({filePath}:{lineNumber})."
+                invalidOp $"assertContainsTokenKinds expects a comma-separated list of token kinds ({filePath}:{lineNumber})."
 
             Some(AssertContainsTokenKinds(expectedKinds, filePath, lineNumber))
+        | "assertContainsTokenTexts"
         | "x-assertContainsTokenTexts" ->
             let expectedTexts = parseFixtureList directiveBody
 
             if List.isEmpty expectedTexts then
-                invalidOp $"x-assertContainsTokenTexts expects a comma-separated list of token texts ({filePath}:{lineNumber})."
+                invalidOp $"assertContainsTokenTexts expects a comma-separated list of token texts ({filePath}:{lineNumber})."
 
             Some(AssertContainsTokenTexts(expectedTexts, filePath, lineNumber))
         | other ->
@@ -781,6 +831,36 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
                     lineNumber
             | Result.Error issue ->
                 Assert.Contains(expectedText, issue.Message, StringComparison.OrdinalIgnoreCase)
+        | AssertExecute(target, expectedValueText, filePath, lineNumber) ->
+            let bindingTarget = qualifyFixtureBindingTarget workspace filePath target
+            let result, _ = executeBindingWithCapturedOutput workspace bindingTarget
+
+            match result with
+            | Result.Ok value ->
+                Assert.Equal(expectedValueText, RuntimeValue.format value)
+            | Result.Error issue ->
+                failwithf
+                    "Expected '%s' execution to produce '%s', but execution failed with '%s' (%s:%d)."
+                    bindingTarget
+                    expectedValueText
+                    issue.Message
+                    filePath
+                    lineNumber
+        | AssertRunStdout(target, expectedOutputText, filePath, lineNumber) ->
+            let bindingTarget = qualifyFixtureBindingTarget workspace filePath target
+            let result, actualOutput = executeBindingWithCapturedOutput workspace bindingTarget
+
+            match result with
+            | Result.Ok _ ->
+                Assert.Equal(normalizeExecutionOutput expectedOutputText, actualOutput)
+            | Result.Error issue ->
+                failwithf
+                    "Expected '%s' to run and write '%s', but execution failed with '%s' (%s:%d)."
+                    bindingTarget
+                    expectedOutputText
+                    issue.Message
+                    filePath
+                    lineNumber
         | AssertModule(expectedModuleText, filePath, lineNumber) ->
             match tryFindDocumentForFilePath workspace filePath with
             | Some document ->

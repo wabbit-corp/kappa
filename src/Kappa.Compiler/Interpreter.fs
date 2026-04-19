@@ -6,6 +6,19 @@ open System.Collections.Generic
 type EvaluationError =
     { Message: string }
 
+type RuntimeOutput =
+    { Write: string -> unit
+      WriteLine: string -> unit }
+
+module RuntimeOutput =
+    let console =
+        { Write = Console.Write
+          WriteLine = Console.WriteLine }
+
+    let discard =
+        { Write = ignore
+          WriteLine = ignore }
+
 type RuntimeValue =
     | IntegerValue of int64
     | FloatValue of double
@@ -88,7 +101,7 @@ module Interpreter =
         | LiteralValue.Character value -> CharacterValue value
         | LiteralValue.Unit -> UnitValue
 
-    let private buildContext (workspace: WorkspaceCompilation) =
+    let private buildContextWithOutput (output: RuntimeOutput) (workspace: WorkspaceCompilation) =
         let moduleRuntimes =
             workspace.KBackendIR
             |> List.map (fun backendModule ->
@@ -570,7 +583,7 @@ module Interpreter =
                 ok
                     (Some(
                         IOActionValue(fun () ->
-                            Console.Write(value)
+                            output.Write(value)
                             ok UnitValue)
                     ))
             | "print", arguments when List.length arguments < 1 ->
@@ -583,7 +596,7 @@ module Interpreter =
                 ok
                     (Some(
                         IOActionValue(fun () ->
-                            Console.WriteLine(value)
+                            output.WriteLine(value)
                             ok UnitValue)
                     ))
             | "println", arguments when List.length arguments < 1 ->
@@ -596,7 +609,7 @@ module Interpreter =
                 ok
                     (Some(
                         IOActionValue(fun () ->
-                            Console.WriteLine(value)
+                            output.WriteLine(string value)
                             ok UnitValue)
                     ))
             | "printInt", arguments when List.length arguments < 1 ->
@@ -798,6 +811,9 @@ module Interpreter =
 
         context
 
+    let private buildContext workspace =
+        buildContextWithOutput RuntimeOutput.console workspace
+
     let private resolveEntryPoint (context: RuntimeContext) (entryPoint: string) : Result<string * string, EvaluationError> =
         let segments =
             entryPoint.Split('.', StringSplitOptions.RemoveEmptyEntries)
@@ -835,21 +851,26 @@ module Interpreter =
             | None ->
                 error $"Module '{moduleName}' was not found."
 
-    let evaluateBinding (workspace: WorkspaceCompilation) (entryPoint: string) =
+    let private evaluateBindingWithContext (context: RuntimeContext) (entryPoint: string) =
+        resolveEntryPoint context entryPoint
+        |> Result.bind (fun (moduleName, bindingName) ->
+            let runtimeModule = context.Modules[moduleName]
+
+            match runtimeModule.Values.TryGetValue(bindingName) with
+            | true, lazyValue -> lazyValue.Value
+            | _ -> error $"Binding '{bindingName}' was not found in module '{moduleName}'.")
+
+    let evaluateBindingWithOutput (workspace: WorkspaceCompilation) (output: RuntimeOutput) (entryPoint: string) =
         if workspace.HasErrors then
             error "Cannot evaluate a workspace that already contains diagnostics."
         else
-            let context = buildContext workspace
+            let context = buildContextWithOutput output workspace
+            evaluateBindingWithContext context entryPoint
 
-            resolveEntryPoint context entryPoint
-            |> Result.bind (fun (moduleName, bindingName) ->
-                let runtimeModule = context.Modules[moduleName]
+    let evaluateBinding (workspace: WorkspaceCompilation) (entryPoint: string) =
+        evaluateBindingWithOutput workspace RuntimeOutput.console entryPoint
 
-                match runtimeModule.Values.TryGetValue(bindingName) with
-                | true, lazyValue -> lazyValue.Value
-                | _ -> error $"Binding '{bindingName}' was not found in module '{moduleName}'.")
-
-    let executeBinding (workspace: WorkspaceCompilation) (entryPoint: string) =
+    let executeBindingWithOutput (workspace: WorkspaceCompilation) (output: RuntimeOutput) (entryPoint: string) =
         let rec execute value =
             match value with
             | IOActionValue action ->
@@ -858,8 +879,11 @@ module Interpreter =
             | other ->
                 ok other
 
-        evaluateBinding workspace entryPoint
+        evaluateBindingWithOutput workspace output entryPoint
         |> Result.bind execute
+
+    let executeBinding (workspace: WorkspaceCompilation) (entryPoint: string) =
+        executeBindingWithOutput workspace RuntimeOutput.console entryPoint
 
     let shouldPrintResult value =
         match value with
