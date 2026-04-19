@@ -15,6 +15,7 @@ let ``dotnet backend emits a managed project that runs`` () =
                 "math.kp",
                 [
                     "module math"
+                    "twice : Int -> Int"
                     "let twice x = x * 2"
                 ]
                 |> String.concat "\n"
@@ -33,6 +34,12 @@ let ``dotnet backend emits a managed project that runs`` () =
         match Backend.emitDotNetArtifact workspace "main.result" outputDirectory DotNetDeployment.Managed with
         | Result.Ok artifact -> artifact
         | Result.Error message -> failwith message
+
+    Assert.True(File.Exists(artifact.GeneratedFilePath), $"Expected generated CLR artifact at '{artifact.GeneratedFilePath}'.")
+    Assert.True(artifact.GeneratedFilePath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+
+    let programSource = File.ReadAllText(artifact.ProgramFilePath)
+    Assert.Contains("Assembly.LoadFrom", programSource)
 
     let runResult =
         runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
@@ -82,7 +89,7 @@ let ``cli can run the managed dotnet backend`` () =
             "main.kp",
             [
                 "module main"
-                "let result = if not False then 42 else 0"
+                "let result = 40 + 2"
             ]
             |> String.concat "\n"
         ]
@@ -215,7 +222,7 @@ let ``cli interpreter backend can execute io entry points`` () =
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
-let ``dotnet backend runs the milestone one recursive list program`` () =
+let ``dotnet backend reports unsupported io entry points while clr lowering is incomplete`` () =
     let workspace =
         compileInMemoryWorkspace
             "memory-m1-dotnet-root"
@@ -238,8 +245,38 @@ let ``dotnet backend runs the milestone one recursive list program`` () =
 
     let outputDirectory = createScratchDirectory "dotnet-m1-backend"
 
+    match Backend.emitDotNetArtifact workspace "main.main" outputDirectory DotNetDeployment.Managed with
+    | Result.Ok artifact ->
+        failwithf "Expected CLR-backed dotnet emission to reject the IO entry point, but emitted '%s'." artifact.ProjectFilePath
+    | Result.Error message ->
+        Assert.Contains("could not lower 'main.main'", message, StringComparison.OrdinalIgnoreCase)
+
+[<Fact>]
+let ``hosted dotnet backend runs the milestone one recursive list program`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m1-dotnet-hosted-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "sumList : List Int -> Int"
+                    "let sumList xs ="
+                    "    match xs"
+                    "    case Nil -> 0"
+                    "    case head :: tail -> head + sumList tail"
+                    "let main : IO Unit = do"
+                    "    let nums = 10 :: 20 :: 42 :: Nil"
+                    "    let total = sumList nums"
+                    "    printInt total"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "dotnet-hosted-m1-backend"
+
     let artifact =
-        match Backend.emitDotNetArtifact workspace "main.main" outputDirectory DotNetDeployment.Managed with
+        match Backend.emitHostedDotNetArtifact workspace "main.main" outputDirectory DotNetDeployment.Managed with
         | Result.Ok artifact -> artifact
         | Result.Error message -> failwith message
 

@@ -556,7 +556,8 @@ let main argv =
                         | Result.Error issue ->
                             Console.Error.WriteLine($"runtime error: {issue.Message}")
                             1
-                    | "dotnet"
+                    | "dotnet" ->
+                        runDotNetBackend Backend.emitDotNetArtifact workspace entryPoint options.EmitDirectory options.NativeAot
                     | "dotnet-hosted" ->
                         runDotNetBackend Backend.emitHostedDotNetArtifact workspace entryPoint options.EmitDirectory options.NativeAot
                     | "dotnet-il" ->
