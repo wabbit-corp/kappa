@@ -284,7 +284,16 @@ module IlDotNetBackend =
         | "Char" -> Some(IlPrimitive IlChar)
         | _ -> None
 
-    let private importAllowsUnqualifiedName allowedNamespaces selection name =
+    let private itemImportsTypeName (item: ImportItem) =
+        item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Type
+
+    let private itemImportsTermName (item: ImportItem) =
+        item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Term
+
+    let private itemImportsConstructorName (item: ImportItem) =
+        item.Namespace = Some ImportNamespace.Constructor
+
+    let private selectionImportsTypeName selection name =
         match selection with
         | QualifiedOnly ->
             false
@@ -292,11 +301,38 @@ module IlDotNetBackend =
             items
             |> List.exists (fun item ->
                 String.Equals(item.Name, name, StringComparison.Ordinal)
-                && (item.Namespace.IsNone || allowedNamespaces |> List.contains item.Namespace.Value))
+                && itemImportsTypeName item)
         | All ->
             true
         | AllExcept excludedNames ->
             not (List.contains name excludedNames)
+
+    let private selectionImportsTermName selection name =
+        match selection with
+        | QualifiedOnly ->
+            false
+        | Items items ->
+            items
+            |> List.exists (fun item ->
+                String.Equals(item.Name, name, StringComparison.Ordinal)
+                && itemImportsTermName item)
+        | All ->
+            true
+        | AllExcept excludedNames ->
+            not (List.contains name excludedNames)
+
+    let private selectionImportsConstructorName selection name =
+        match selection with
+        | QualifiedOnly ->
+            false
+        | Items items ->
+            items
+            |> List.exists (fun item ->
+                String.Equals(item.Name, name, StringComparison.Ordinal)
+                && itemImportsConstructorName item)
+        | All
+        | AllExcept _ ->
+            false
 
     let private buildRawDataTypes (workspace: WorkspaceCompilation) =
         workspace.Documents
@@ -388,7 +424,7 @@ module IlDotNetBackend =
 
                 match rawModules |> Map.tryFind importedModuleName with
                 | Some importedModule
-                    when importAllowsUnqualifiedName [ ImportNamespace.Type ] spec.Selection name
+                    when selectionImportsTypeName spec.Selection name
                          && importedModule.TypeExports.Contains(name) ->
                     Some(importedModuleName, name)
                 | _ ->
@@ -666,7 +702,7 @@ module IlDotNetBackend =
 
                 match modules |> Map.tryFind importedModuleName with
                 | Some importedModule
-                    when importAllowsUnqualifiedName [ ImportNamespace.Term ] spec.Selection name
+                    when selectionImportsTermName spec.Selection name
                          && importedModule.Exports.Contains(name) ->
                     importedModule.Bindings |> Map.tryFind name |> Option.map (fun binding -> importedModule.Name, binding)
                 | _ ->
@@ -709,7 +745,7 @@ module IlDotNetBackend =
 
                 match modules |> Map.tryFind importedModuleName with
                 | Some importedModule
-                    when importAllowsUnqualifiedName [ ImportNamespace.Constructor ] spec.Selection name
+                    when selectionImportsConstructorName spec.Selection name
                          && importedModule.Exports.Contains(name) ->
                     importedModule.Constructors
                     |> Map.tryFind name

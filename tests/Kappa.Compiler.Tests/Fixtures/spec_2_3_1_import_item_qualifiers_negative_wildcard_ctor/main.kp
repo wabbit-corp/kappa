@@ -1,0 +1,8 @@
+module main
+
+import foo.*
+
+let result = Box 42
+
+--! assertNoErrors
+--! assertEvalErrorContains result Name 'Box' is not in scope

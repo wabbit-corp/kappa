@@ -13,6 +13,32 @@ module Stdlib =
           Alias = None
           Selection = All }
 
+    let FixedPreludeConstructors =
+        [ "True"
+          "False"
+          "None"
+          "Some"
+          "Ok"
+          "Err"
+          "Nil"
+          "::"
+          "LT"
+          "EQ"
+          "GT"
+          "refl" ]
+
+    let PreludeConstructorImportSpec =
+        { Source = Dotted PreludeModuleName
+          Alias = None
+          Selection =
+            Items(
+                FixedPreludeConstructors
+                |> List.map (fun name ->
+                    { Modifiers = []
+                      Namespace = Some ImportNamespace.Constructor
+                      Name = name })
+            ) }
+
     let private bundledPreludeResourceName = "Kappa.Compiler.Stdlib.std.prelude.kp"
 
     let private bundledPreludeText =
@@ -36,7 +62,7 @@ module Stdlib =
 
     let implicitImportsFor moduleName =
         if shouldImplicitlyImportPrelude moduleName then
-            [ PreludeImportSpec ]
+            [ PreludeImportSpec; PreludeConstructorImportSpec ]
         else
             []
 

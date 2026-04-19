@@ -658,6 +658,50 @@ module Interpreter =
                 let bindingName = List.last segments
                 resolveQualifiedName scope qualifierSegments bindingName
 
+        and itemImportsTermName (item: ImportItem) =
+            item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Term
+
+        and itemImportsConstructorName (item: ImportItem) =
+            item.Namespace = Some ImportNamespace.Constructor
+
+        and selectionImportsTermName (importedModule: RuntimeModule) (selection: ImportSelection) (name: string) =
+            let exportsTerm =
+                importedModule.Definitions.ContainsKey(name)
+                || importedModule.IntrinsicTerms.Contains(name)
+
+            match selection with
+            | QualifiedOnly ->
+                false
+            | Items items ->
+                items
+                |> List.exists (fun item ->
+                    String.Equals(item.Name, name, StringComparison.Ordinal)
+                    && itemImportsTermName item)
+            | All ->
+                exportsTerm && importedModule.Exports.Contains(name)
+            | AllExcept excludedNames ->
+                not (List.contains name excludedNames)
+                && exportsTerm
+                && importedModule.Exports.Contains(name)
+
+        and selectionImportsConstructorName (importedModule: RuntimeModule) (selection: ImportSelection) (name: string) =
+            let exportsConstructor =
+                importedModule.Constructors.ContainsKey(name)
+                && importedModule.Exports.Contains(name)
+
+            match selection with
+            | QualifiedOnly ->
+                false
+            | Items items ->
+                exportsConstructor
+                && (items
+                    |> List.exists (fun item ->
+                        String.Equals(item.Name, name, StringComparison.Ordinal)
+                        && itemImportsConstructorName item))
+            | All
+            | AllExcept _ ->
+                false
+
         and findImportedModulesForName (scope: RuntimeScope) (name: string) =
             let currentModule = scope.Context.Modules[scope.CurrentModule]
 
@@ -674,21 +718,10 @@ module Interpreter =
                         None
                     | Some importedModule ->
                         let importsName =
-                            match spec.Selection with
-                            | QualifiedOnly -> false
-                            | Items items ->
-                                items
-                                |> List.exists (fun item ->
-                                    String.Equals(item.Name, name, StringComparison.Ordinal)
-                                    && (item.Namespace.IsNone
-                                        || item.Namespace = Some ImportNamespace.Term
-                                        || item.Namespace = Some ImportNamespace.Constructor))
-                            | All ->
-                                importedModule.Exports.Contains(name)
-                            | AllExcept excludedNames ->
-                                not (List.contains name excludedNames) && importedModule.Exports.Contains(name)
+                            selectionImportsTermName importedModule spec.Selection name
+                            || selectionImportsConstructorName importedModule spec.Selection name
 
-                        if importsName && importedModule.Exports.Contains(name) then
+                        if importsName then
                             Some(importedModuleName, importedModule)
                         else
                             None)

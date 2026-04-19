@@ -1440,6 +1440,49 @@ internal static class KappaRunner
         };
     }
 
+    private static bool ItemImportsTermName(ImportItem item)
+    {
+        return item.Namespace == ImportNamespaceKind.None
+            || item.Namespace == ImportNamespaceKind.Term;
+    }
+
+    private static bool ItemImportsConstructorName(ImportItem item)
+    {
+        return item.Namespace == ImportNamespaceKind.Constructor;
+    }
+
+    private static bool SelectionImportsTermName(RuntimeModule importedModule, ImportSelection selection, string name)
+    {
+        var exportsTerm =
+            importedModule.Definitions.ContainsKey(name)
+            || importedModule.IntrinsicTerms.Contains(name);
+
+        return selection.Kind switch
+        {
+            ImportSelectionKind.QualifiedOnly => false,
+            ImportSelectionKind.Items => selection.Items.Any(item => string.Equals(item.Name, name, StringComparison.Ordinal) && ItemImportsTermName(item)),
+            ImportSelectionKind.All => exportsTerm && importedModule.Exports.Contains(name),
+            ImportSelectionKind.AllExcept => !selection.ExcludedNames.Contains(name, StringComparer.Ordinal) && exportsTerm && importedModule.Exports.Contains(name),
+            _ => false
+        };
+    }
+
+    private static bool SelectionImportsConstructorName(RuntimeModule importedModule, ImportSelection selection, string name)
+    {
+        var exportsConstructor =
+            importedModule.Constructors.ContainsKey(name)
+            && importedModule.Exports.Contains(name);
+
+        return selection.Kind switch
+        {
+            ImportSelectionKind.QualifiedOnly => false,
+            ImportSelectionKind.Items => exportsConstructor && selection.Items.Any(item => string.Equals(item.Name, name, StringComparison.Ordinal) && ItemImportsConstructorName(item)),
+            ImportSelectionKind.All => false,
+            ImportSelectionKind.AllExcept => false,
+            _ => false
+        };
+    }
+
     private static List<RuntimeModule> FindImportedModulesForName(RuntimeScope scope, string name)
     {
         var currentModule = scope.Context.Modules[scope.CurrentModule];
@@ -1460,16 +1503,10 @@ internal static class KappaRunner
             }
 
             var importsName =
-                spec.Selection.Kind switch
-                {
-                    ImportSelectionKind.QualifiedOnly => false,
-                    ImportSelectionKind.Items => spec.Selection.Items.Any(item => string.Equals(item.Name, name, StringComparison.Ordinal) && (item.Namespace == ImportNamespaceKind.None || item.Namespace == ImportNamespaceKind.Term || item.Namespace == ImportNamespaceKind.Constructor)),
-                    ImportSelectionKind.All => importedModule.Exports.Contains(name),
-                    ImportSelectionKind.AllExcept => !spec.Selection.ExcludedNames.Contains(name, StringComparer.Ordinal) && importedModule.Exports.Contains(name),
-                    _ => false
-                };
+                SelectionImportsTermName(importedModule, spec.Selection, name)
+                || SelectionImportsConstructorName(importedModule, spec.Selection, name);
 
-            if (importsName && importedModule.Exports.Contains(name))
+            if (importsName)
             {
                 matches[importedModuleName] = importedModule;
             }

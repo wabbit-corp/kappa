@@ -346,3 +346,33 @@ let ``il backend evaluates recursive list matches through emitted clr types`` ()
     Assert.NotNull(resultMethod)
     Assert.Equal(typeof<int64>, resultMethod.ReturnType)
     Assert.Equal(72L, resultMethod.Invoke(null, [||]) |> unbox<int64>)
+
+[<Fact>]
+let ``il backend requires explicit ctor imports for unqualified imported constructors`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-il-wildcard-constructor-root"
+            [
+                "foo.kp",
+                [
+                    "module foo"
+                    "data Box a : Type ="
+                    "    Box a"
+                ]
+                |> String.concat "\n"
+                "main.kp",
+                [
+                    "module main"
+                    "import foo.*"
+                    "let result = Box 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "il-wildcard-constructor"
+
+    match Backend.emitIlAssemblyArtifact workspace outputDirectory with
+    | Result.Ok artifact ->
+        failwithf "Expected wildcard-imported constructor emission to fail, but emitted '%s'." artifact.AssemblyFilePath
+    | Result.Error message ->
+        Assert.Contains("could not resolve callee 'Box'", message, StringComparison.OrdinalIgnoreCase)

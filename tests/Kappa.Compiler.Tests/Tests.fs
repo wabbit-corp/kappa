@@ -199,6 +199,48 @@ let ``compilation injects bundled std prelude and satisfies its intrinsic expect
     Assert.True(intrinsicExpect.IsSome, "Expected bundled std.prelude to declare intrinsic term 'not'.")
 
 [<Fact>]
+let ``implicit prelude import models the wildcard and constructor subset separately`` () =
+    let imports = Stdlib.implicitImportsFor (Some [ "main" ])
+
+    match imports with
+    | [ wildcardImport; constructorImport ] ->
+        match wildcardImport.Source, wildcardImport.Selection with
+        | Dotted moduleName, All ->
+            Assert.Equal<string list>(Stdlib.PreludeModuleName, moduleName)
+        | other ->
+            failwithf "Unexpected implicit wildcard prelude import: %A" other
+
+        match constructorImport.Source, constructorImport.Selection with
+        | Dotted moduleName, Items items ->
+            Assert.Equal<string list>(Stdlib.PreludeModuleName, moduleName)
+
+            let actualItems =
+                items
+                |> List.map (fun item -> item.Namespace, item.Name)
+
+            let expectedItems =
+                [
+                    Some ImportNamespace.Constructor, "True"
+                    Some ImportNamespace.Constructor, "False"
+                    Some ImportNamespace.Constructor, "None"
+                    Some ImportNamespace.Constructor, "Some"
+                    Some ImportNamespace.Constructor, "Ok"
+                    Some ImportNamespace.Constructor, "Err"
+                    Some ImportNamespace.Constructor, "Nil"
+                    Some ImportNamespace.Constructor, "::"
+                    Some ImportNamespace.Constructor, "LT"
+                    Some ImportNamespace.Constructor, "EQ"
+                    Some ImportNamespace.Constructor, "GT"
+                    Some ImportNamespace.Constructor, "refl"
+                ]
+
+            Assert.Equal<(ImportNamespace option * string) list>(expectedItems, actualItems)
+        | other ->
+            failwithf "Unexpected implicit prelude constructor import: %A" other
+    | other ->
+        failwithf "Expected two implicit prelude import specs, got %A" other
+
+[<Fact>]
 let ``compilation reports unsatisfied expect declarations outside std prelude`` () =
     let mainSource =
         [
