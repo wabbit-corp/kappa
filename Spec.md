@@ -4107,6 +4107,10 @@ Rules:
 * A non-active-pattern case following a `Match`-returning active pattern matches directly against the threaded residue.
 * `Match`-returning active patterns are not permitted in `let?`, because `let?` provides no continuation branch to
   receive the `Miss` residue.
+* Because active patterns are arbitrary functions, the exhaustiveness checker treats `Match`-returning active-pattern
+  cases as refutable. A threaded `match` / `try match` sequence using such cases is exhaustive only if the threaded
+  chain is terminated by an unconditionally irrefutable final case, such as `_` or another total pattern, that consumes
+  the final `Miss` residue.
 
 #### 7.7.4 Total active patterns (ADTs and variants)
 
