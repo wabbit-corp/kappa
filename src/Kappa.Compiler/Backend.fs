@@ -121,6 +121,26 @@ module Backend =
         | LiteralValue.Unit ->
             "LiteralValue.Unit()"
 
+    let rec private emitBackendPattern pattern =
+        match pattern with
+        | KBackendWildcardPattern ->
+            "Pattern.Wildcard()"
+        | KBackendNamePattern name ->
+            $"Pattern.FromName({csharpString name})"
+        | KBackendLiteralPattern literal ->
+            $"Pattern.FromLiteral({emitLiteralValue literal})"
+        | KBackendConstructorPattern(name, arguments) ->
+            let argumentsCode =
+                match arguments with
+                | [] -> "System.Array.Empty<Pattern>()"
+                | _ ->
+                    arguments
+                    |> List.map emitBackendPattern
+                    |> String.concat ", "
+                    |> fun body -> $"new Pattern[] {{ {body} }}"
+
+            $"Pattern.Constructor({emitStringArray name}, {argumentsCode})"
+
     let rec private emitBackendExpression expression =
         match expression with
         | KBackendLiteral literal ->
@@ -131,6 +151,18 @@ module Backend =
             $"new ClosureExpression({emitStringArray parameters}, {emitBackendExpression body})"
         | KBackendIfThenElse(condition, whenTrue, whenFalse) ->
             $"new IfExpression({emitBackendExpression condition}, {emitBackendExpression whenTrue}, {emitBackendExpression whenFalse})"
+        | KBackendMatch(scrutinee, cases) ->
+            let casesCode =
+                match cases with
+                | [] -> "System.Array.Empty<MatchCase>()"
+                | _ ->
+                    cases
+                    |> List.map (fun caseClause ->
+                        $"new MatchCase({emitBackendPattern caseClause.Pattern}, {emitBackendExpression caseClause.Body})")
+                    |> String.concat ", "
+                    |> fun body -> $"new MatchCase[] {{ {body} }}"
+
+            $"new MatchExpression({emitBackendExpression scrutinee}, {casesCode})"
         | KBackendApply(callee, arguments) ->
             let argumentsCode =
                 match arguments with
@@ -258,6 +290,18 @@ internal sealed class IfExpression : KExpr
     }
 }
 
+internal sealed class MatchExpression : KExpr
+{
+    public KExpr Scrutinee { get; }
+    public MatchCase[] Cases { get; }
+
+    public MatchExpression(KExpr scrutinee, MatchCase[] cases)
+    {
+        Scrutinee = scrutinee;
+        Cases = cases;
+    }
+}
+
 internal sealed class ApplyExpression : KExpr
 {
     public KExpr Callee { get; }
@@ -321,6 +365,49 @@ internal sealed class StringPart
 
     public static StringPart FromText(string text) => new(text, null);
     public static StringPart FromInterpolation(KExpr expression) => new(null, expression);
+}
+
+internal enum PatternKind
+{
+    Wildcard,
+    Name,
+    Literal,
+    Constructor
+}
+
+internal sealed class Pattern
+{
+    public PatternKind Kind { get; }
+    public string? BoundName { get; }
+    public string[] Segments { get; }
+    public LiteralValue? Literal { get; }
+    public Pattern[] Arguments { get; }
+
+    private Pattern(PatternKind kind, string? boundName, string[] segments, LiteralValue? literal, Pattern[] arguments)
+    {
+        Kind = kind;
+        BoundName = boundName;
+        Segments = segments;
+        Literal = literal;
+        Arguments = arguments;
+    }
+
+    public static Pattern Wildcard() => new(PatternKind.Wildcard, null, Array.Empty<string>(), null, Array.Empty<Pattern>());
+    public static Pattern FromName(string name) => new(PatternKind.Name, name, Array.Empty<string>(), null, Array.Empty<Pattern>());
+    public static Pattern FromLiteral(LiteralValue literal) => new(PatternKind.Literal, null, Array.Empty<string>(), literal, Array.Empty<Pattern>());
+    public static Pattern Constructor(string[] segments, Pattern[] arguments) => new(PatternKind.Constructor, null, segments, null, arguments);
+}
+
+internal sealed class MatchCase
+{
+    public Pattern Pattern { get; }
+    public KExpr Body { get; }
+
+    public MatchCase(Pattern pattern, KExpr body)
+    {
+        Pattern = pattern;
+        Body = body;
+    }
 }
 
 internal enum ImportNamespaceKind
@@ -418,20 +505,36 @@ internal sealed class BindingSpec
     }
 }
 
+internal sealed class ConstructorSpec
+{
+    public string Name { get; }
+    public int Arity { get; }
+    public string TypeName { get; }
+
+    public ConstructorSpec(string name, int arity, string typeName)
+    {
+        Name = name;
+        Arity = arity;
+        TypeName = typeName;
+    }
+}
+
 internal sealed class RuntimeModuleSpec
 {
     public string Name { get; }
     public ImportSpec[] Imports { get; }
     public string[] Exports { get; }
     public string[] IntrinsicTerms { get; }
+    public ConstructorSpec[] Constructors { get; }
     public BindingSpec[] Bindings { get; }
 
-    public RuntimeModuleSpec(string name, ImportSpec[] imports, string[] exports, string[] intrinsicTerms, BindingSpec[] bindings)
+    public RuntimeModuleSpec(string name, ImportSpec[] imports, string[] exports, string[] intrinsicTerms, ConstructorSpec[] constructors, BindingSpec[] bindings)
     {
         Name = name;
         Imports = imports;
         Exports = exports;
         IntrinsicTerms = intrinsicTerms;
+        Constructors = constructors;
         Bindings = bindings;
     }
 }
@@ -525,6 +628,56 @@ internal sealed class BuiltinValue : KValue
     }
 }
 
+internal sealed class RuntimeConstructor
+{
+    public string Name { get; }
+    public string QualifiedName { get; }
+    public int Arity { get; }
+    public string TypeName { get; }
+
+    public RuntimeConstructor(string name, string qualifiedName, int arity, string typeName)
+    {
+        Name = name;
+        QualifiedName = qualifiedName;
+        Arity = arity;
+        TypeName = typeName;
+    }
+}
+
+internal sealed class ConstructorFunctionValue : KValue
+{
+    public RuntimeConstructor Constructor { get; }
+    public List<KValue> Arguments { get; }
+
+    public ConstructorFunctionValue(RuntimeConstructor constructor, List<KValue>? arguments = null)
+    {
+        Constructor = constructor;
+        Arguments = arguments ?? new List<KValue>();
+    }
+}
+
+internal sealed class ConstructedValue : KValue
+{
+    public RuntimeConstructor Constructor { get; }
+    public List<KValue> Fields { get; }
+
+    public ConstructedValue(RuntimeConstructor constructor, List<KValue> fields)
+    {
+        Constructor = constructor;
+        Fields = fields;
+    }
+}
+
+internal sealed class IOActionValue : KValue
+{
+    public Func<KValue> Action { get; }
+
+    public IOActionValue(Func<KValue> action)
+    {
+        Action = action;
+    }
+}
+
 internal sealed class RuntimeScope
 {
     public Dictionary<string, KValue> Locals { get; }
@@ -543,15 +696,17 @@ internal sealed class RuntimeModule
 {
     public string Name { get; }
     public Dictionary<string, BindingSpec> Definitions { get; }
+    public Dictionary<string, RuntimeConstructor> Constructors { get; }
     public HashSet<string> IntrinsicTerms { get; }
     public HashSet<string> Exports { get; }
     public List<ImportSpec> Imports { get; }
     public Dictionary<string, Lazy<KValue>> Values { get; }
 
-    public RuntimeModule(string name, Dictionary<string, BindingSpec> definitions, HashSet<string> intrinsicTerms, HashSet<string> exports, List<ImportSpec> imports)
+    public RuntimeModule(string name, Dictionary<string, BindingSpec> definitions, Dictionary<string, RuntimeConstructor> constructors, HashSet<string> intrinsicTerms, HashSet<string> exports, List<ImportSpec> imports)
     {
         Name = name;
         Definitions = definitions;
+        Constructors = constructors;
         IntrinsicTerms = intrinsicTerms;
         Exports = exports;
         Imports = imports;
@@ -580,8 +735,10 @@ internal static class KappaRunner
     {
         var context = BuildContext(moduleSpecs);
         var (moduleName, bindingName) = ResolveEntryPoint(context, entryPoint);
-        return ForceBinding(context.Modules[moduleName], bindingName);
+        return ExecuteIfIo(ForceBinding(context.Modules[moduleName], bindingName));
     }
+
+    public static bool ShouldPrintResult(KValue value) => value is not UnitValue;
 
     public static string Format(KValue value) =>
         value switch
@@ -593,6 +750,11 @@ internal static class KappaRunner
             StringValue stringValue => $"\"{stringValue.Value}\"",
             CharacterValue characterValue => $"'{characterValue.Value}'",
             UnitValue => "()",
+            ConstructorFunctionValue constructorValue => $"<constructor {constructorValue.Constructor.Name}/{constructorValue.Constructor.Arity} [{constructorValue.Arguments.Count}]>",
+            ConstructedValue constructedValue when constructedValue.Fields.Count == 0 => constructedValue.Constructor.Name,
+            ConstructedValue constructedValue when constructedValue.Constructor.Name == "::" && constructedValue.Fields.Count == 2 => $"{Format(constructedValue.Fields[0])} :: {Format(constructedValue.Fields[1])}",
+            ConstructedValue constructedValue => $"{constructedValue.Constructor.Name} {string.Join(" ", constructedValue.Fields.Select(Format))}",
+            IOActionValue => "<io>",
             FunctionValue => "<function>",
             BuiltinValue builtinValue => $"<builtin {builtinValue.Name}>",
             _ => throw new RuntimeError("Unknown runtime value.")
@@ -611,9 +773,17 @@ internal static class KappaRunner
                             .Where(binding => !binding.Intrinsic)
                             .ToDictionary(binding => binding.Name, binding => binding, StringComparer.Ordinal);
 
+                    var constructors =
+                        spec.Constructors
+                            .ToDictionary(
+                                constructor => constructor.Name,
+                                constructor => new RuntimeConstructor(constructor.Name, $"{spec.Name}.{constructor.Name}", constructor.Arity, constructor.TypeName),
+                                StringComparer.Ordinal);
+
                     return new RuntimeModule(
                         spec.Name,
                         definitions,
+                        constructors,
                         new HashSet<string>(spec.IntrinsicTerms, StringComparer.Ordinal),
                         new HashSet<string>(spec.Exports, StringComparer.Ordinal),
                         spec.Imports.ToList());
@@ -723,6 +893,11 @@ internal static class KappaRunner
                     _ => throw new RuntimeError($"Expected a Boolean in the if condition, but got {Format(conditionValue)}.")
                 };
             }
+            case MatchExpression matchExpression:
+            {
+                var scrutineeValue = EvaluateExpression(scope, matchExpression.Scrutinee);
+                return EvaluateMatch(scope, scrutineeValue, matchExpression.Cases);
+            }
             case ApplyExpression applyExpression:
             {
                 var functionValue = EvaluateExpression(scope, applyExpression.Callee);
@@ -778,6 +953,88 @@ internal static class KappaRunner
             }
             default:
                 throw new RuntimeError("Unknown backend expression.");
+        }
+    }
+
+    private static KValue EvaluateMatch(RuntimeScope scope, KValue scrutineeValue, MatchCase[] cases)
+    {
+        foreach (var matchCase in cases)
+        {
+            var bindings = TryMatchPattern(scope, scrutineeValue, matchCase.Pattern);
+
+            if (bindings is null)
+            {
+                continue;
+            }
+
+            var nextLocals = new Dictionary<string, KValue>(scope.Locals, StringComparer.Ordinal);
+
+            foreach (var (name, value) in bindings)
+            {
+                nextLocals[name] = value;
+            }
+
+            return EvaluateExpression(new RuntimeScope(nextLocals, scope.CurrentModule, scope.Context), matchCase.Body);
+        }
+
+        throw new RuntimeError($"Non-exhaustive match for {Format(scrutineeValue)}.");
+    }
+
+    private static List<(string Name, KValue Value)>? TryMatchPattern(RuntimeScope scope, KValue value, Pattern pattern)
+    {
+        switch (pattern.Kind)
+        {
+            case PatternKind.Wildcard:
+                return new List<(string Name, KValue Value)>();
+            case PatternKind.Name:
+                return new List<(string Name, KValue Value)> { (pattern.BoundName ?? string.Empty, value) };
+            case PatternKind.Literal:
+                return pattern.Literal is not null && ValuesEqual(value, LiteralToValue(pattern.Literal))
+                    ? new List<(string Name, KValue Value)>()
+                    : null;
+            case PatternKind.Constructor:
+            {
+                var constructorValue = ResolveName(scope, pattern.Segments);
+
+                RuntimeConstructor? expectedConstructor =
+                    constructorValue switch
+                    {
+                        ConstructorFunctionValue functionValue => functionValue.Constructor,
+                        ConstructedValue resolvedConstructedValue when resolvedConstructedValue.Fields.Count == 0 => resolvedConstructedValue.Constructor,
+                        _ => null
+                    };
+
+                if (expectedConstructor is null)
+                {
+                    var patternName = string.Join(".", pattern.Segments);
+                    throw new RuntimeError($"Pattern '{patternName}' does not resolve to a constructor.");
+                }
+
+                if (value is not ConstructedValue actualConstructedValue
+                    || !string.Equals(expectedConstructor.QualifiedName, actualConstructedValue.Constructor.QualifiedName, StringComparison.Ordinal)
+                    || pattern.Arguments.Length != actualConstructedValue.Fields.Count)
+                {
+                    return null;
+                }
+
+                var bindings = new List<(string Name, KValue Value)>();
+
+                for (var index = 0; index < pattern.Arguments.Length; index++)
+                {
+                    var nestedBindings = TryMatchPattern(scope, actualConstructedValue.Fields[index], pattern.Arguments[index]);
+
+                    if (nestedBindings is null)
+                    {
+                        return null;
+                    }
+
+                    bindings.AddRange(nestedBindings);
+                }
+
+                return bindings;
+            }
+            default:
+                throw new RuntimeError("Unknown backend pattern.");
         }
     }
 
@@ -845,9 +1102,45 @@ internal static class KappaRunner
         functionValue switch
         {
             FunctionValue closure => ApplyClosure(closure, arguments),
+            ConstructorFunctionValue constructorValue => ApplyConstructor(constructorValue, arguments),
             BuiltinValue builtinValue => ApplyBuiltinFunction(builtinValue, arguments),
             _ => throw new RuntimeError($"Cannot apply {Format(functionValue)} as a function.")
         };
+
+    private static KValue ApplyConstructor(ConstructorFunctionValue constructorValue, List<KValue> arguments)
+    {
+        var currentConstructor = new ConstructorFunctionValue(constructorValue.Constructor, constructorValue.Arguments.ToList());
+        var remainingArguments = new Queue<KValue>(arguments);
+
+        while (true)
+        {
+            if (remainingArguments.Count == 0)
+            {
+                return currentConstructor.Arguments.Count == currentConstructor.Constructor.Arity
+                    ? new ConstructedValue(currentConstructor.Constructor, currentConstructor.Arguments.ToList())
+                    : currentConstructor;
+            }
+
+            currentConstructor.Arguments.Add(remainingArguments.Dequeue());
+
+            if (currentConstructor.Arguments.Count > currentConstructor.Constructor.Arity)
+            {
+                throw new RuntimeError($"Constructor '{currentConstructor.Constructor.Name}' received too many arguments.");
+            }
+
+            if (currentConstructor.Arguments.Count == currentConstructor.Constructor.Arity)
+            {
+                var value = new ConstructedValue(currentConstructor.Constructor, currentConstructor.Arguments.ToList());
+
+                if (remainingArguments.Count == 0)
+                {
+                    return value;
+                }
+
+                return Apply(value, remainingArguments.ToList());
+            }
+        }
+    }
 
     private static KValue ApplyClosure(FunctionValue closure, List<KValue> arguments)
     {
@@ -922,6 +1215,13 @@ internal static class KappaRunner
         }
     }
 
+    private static KValue ExecuteIfIo(KValue value) =>
+        value switch
+        {
+            IOActionValue ioActionValue => ioActionValue.Action(),
+            _ => value
+        };
+
     private static KValue? InvokeBuiltin(BuiltinValue builtin)
     {
         switch (builtin.Name)
@@ -963,36 +1263,67 @@ internal static class KappaRunner
                 return builtin.Arguments.Count switch
                 {
                     0 => null,
-                    1 => throw new RuntimeError("Intrinsic 'pure' is declared in std.prelude but is not executable in the runtime yet."),
+                    1 => new IOActionValue(() => builtin.Arguments[0]),
                     _ => throw new RuntimeError("Intrinsic 'pure' received too many arguments.")
                 };
             case ">>=":
                 return builtin.Arguments.Count switch
                 {
                     < 2 => null,
-                    2 => throw new RuntimeError("Intrinsic '>>=' is declared in std.prelude but is not executable in the runtime yet."),
+                    2 => new IOActionValue(() =>
+                    {
+                        var result = ExecuteIfIo(builtin.Arguments[0]);
+                        var next = Apply(builtin.Arguments[1], new List<KValue> { result });
+                        return ExecuteIfIo(next);
+                    }),
                     _ => throw new RuntimeError("Intrinsic '>>=' received too many arguments.")
                 };
             case ">>":
                 return builtin.Arguments.Count switch
                 {
                     < 2 => null,
-                    2 => throw new RuntimeError("Intrinsic '>>' is declared in std.prelude but is not executable in the runtime yet."),
+                    2 => new IOActionValue(() =>
+                    {
+                        _ = ExecuteIfIo(builtin.Arguments[0]);
+                        return ExecuteIfIo(builtin.Arguments[1]);
+                    }),
                     _ => throw new RuntimeError("Intrinsic '>>' received too many arguments.")
                 };
             case "print":
                 return builtin.Arguments.Count switch
                 {
                     0 => null,
-                    1 => throw new RuntimeError("Intrinsic 'print' is declared in std.prelude but is not executable in the runtime yet."),
+                    1 when builtin.Arguments[0] is StringValue stringValue => new IOActionValue(() =>
+                    {
+                        Console.Write(stringValue.Value);
+                        return UnitValue.Instance;
+                    }),
+                    1 => throw new RuntimeError($"Intrinsic 'print' expects a String, but got {Format(builtin.Arguments[0])}."),
                     _ => throw new RuntimeError("Intrinsic 'print' received too many arguments.")
                 };
             case "println":
                 return builtin.Arguments.Count switch
                 {
                     0 => null,
-                    1 => throw new RuntimeError("Intrinsic 'println' is declared in std.prelude but is not executable in the runtime yet."),
+                    1 when builtin.Arguments[0] is StringValue stringValue => new IOActionValue(() =>
+                    {
+                        Console.WriteLine(stringValue.Value);
+                        return UnitValue.Instance;
+                    }),
+                    1 => throw new RuntimeError($"Intrinsic 'println' expects a String, but got {Format(builtin.Arguments[0])}."),
                     _ => throw new RuntimeError("Intrinsic 'println' received too many arguments.")
+                };
+            case "printInt":
+                return builtin.Arguments.Count switch
+                {
+                    0 => null,
+                    1 when builtin.Arguments[0] is IntegerValue integerValue => new IOActionValue(() =>
+                    {
+                        Console.WriteLine(integerValue.Value);
+                        return UnitValue.Instance;
+                    }),
+                    1 => throw new RuntimeError($"Intrinsic 'printInt' expects an Int, but got {Format(builtin.Arguments[0])}."),
+                    _ => throw new RuntimeError("Intrinsic 'printInt' received too many arguments.")
                 };
             default:
                 if (BuiltinBinaryNames.Contains(builtin.Name))
@@ -1059,6 +1390,10 @@ internal static class KappaRunner
             (StringValue leftValue, StringValue rightValue) => string.Equals(leftValue.Value, rightValue.Value, StringComparison.Ordinal),
             (CharacterValue leftValue, CharacterValue rightValue) => leftValue.Value == rightValue.Value,
             (UnitValue, UnitValue) => true,
+            (ConstructedValue leftValue, ConstructedValue rightValue)
+                when string.Equals(leftValue.Constructor.QualifiedName, rightValue.Constructor.QualifiedName, StringComparison.Ordinal)
+                     && leftValue.Fields.Count == rightValue.Fields.Count =>
+                leftValue.Fields.Zip(rightValue.Fields).All(pair => ValuesEqual(pair.First, pair.Second)),
             _ => false
         };
 
@@ -1085,6 +1420,7 @@ internal static class KappaRunner
 
         return scope.Locals.ContainsKey(name)
             || currentModule.Definitions.ContainsKey(name)
+            || currentModule.Constructors.ContainsKey(name)
             || FindImportedModulesForName(scope, name).Count > 0;
     }
 
@@ -1098,6 +1434,11 @@ internal static class KappaRunner
         var currentModule = scope.Context.Modules[scope.CurrentModule];
 
         if (currentModule.Definitions.ContainsKey(name))
+        {
+            return ForceBinding(currentModule, name);
+        }
+
+        if (currentModule.Constructors.ContainsKey(name))
         {
             return ForceBinding(currentModule, name);
         }
@@ -1135,7 +1476,7 @@ internal static class KappaRunner
                 spec.Selection.Kind switch
                 {
                     ImportSelectionKind.QualifiedOnly => false,
-                    ImportSelectionKind.Items => spec.Selection.Items.Any(item => string.Equals(item.Name, name, StringComparison.Ordinal) && (item.Namespace == ImportNamespaceKind.None || item.Namespace == ImportNamespaceKind.Term)),
+                    ImportSelectionKind.Items => spec.Selection.Items.Any(item => string.Equals(item.Name, name, StringComparison.Ordinal) && (item.Namespace == ImportNamespaceKind.None || item.Namespace == ImportNamespaceKind.Term || item.Namespace == ImportNamespaceKind.Constructor)),
                     ImportSelectionKind.All => importedModule.Exports.Contains(name),
                     ImportSelectionKind.AllExcept => !spec.Selection.ExcludedNames.Contains(name, StringComparer.Ordinal) && importedModule.Exports.Contains(name),
                     _ => false
@@ -1201,19 +1542,26 @@ internal static class KappaRunner
 
     private static KValue ForceBinding(RuntimeModule runtimeModule, string bindingName)
     {
-        if (!runtimeModule.Values.TryGetValue(bindingName, out var lazyValue))
+        if (runtimeModule.Values.TryGetValue(bindingName, out var lazyValue))
         {
-            throw new RuntimeError($"Binding '{bindingName}' was not found in module '{runtimeModule.Name}'.");
+            try
+            {
+                return lazyValue.Value;
+            }
+            catch (InvalidOperationException)
+            {
+                throw new RuntimeError($"Recursive evaluation of '{runtimeModule.Name}.{bindingName}' is not supported for non-function values.");
+            }
         }
 
-        try
+        if (runtimeModule.Constructors.TryGetValue(bindingName, out var constructor))
         {
-            return lazyValue.Value;
+            return constructor.Arity == 0
+                ? new ConstructedValue(constructor, new List<KValue>())
+                : new ConstructorFunctionValue(constructor);
         }
-        catch (InvalidOperationException)
-        {
-            throw new RuntimeError($"Recursive evaluation of '{runtimeModule.Name}.{bindingName}' is not supported for non-function values.");
-        }
+
+        throw new RuntimeError($"Binding '{bindingName}' was not found in module '{runtimeModule.Name}'.");
     }
 
     private static KValue? TryCreateBuiltinFunction(string name) =>
@@ -1241,6 +1589,7 @@ internal static class KappaRunner
             "negate" => new BuiltinValue("negate"),
             "println" => new BuiltinValue("println"),
             "print" => new BuiltinValue("print"),
+            "printInt" => new BuiltinValue("printInt"),
             _ => throw new RuntimeError($"Intrinsic term '{name}' is not implemented for module '{moduleName}'.")
         };
     }
@@ -1274,7 +1623,10 @@ internal static class KappaRunner
             "try"
             "{"
             $"    var value = KappaRunner.Run(GeneratedProgram.CreateModules(), {csharpString entryPoint});"
-            "    Console.WriteLine(KappaRunner.Format(value));"
+            "    if (KappaRunner.ShouldPrintResult(value))"
+            "    {"
+            "        Console.WriteLine(KappaRunner.Format(value));"
+            "    }"
             "    return 0;"
             "}"
             "catch (RuntimeError error)"
@@ -1312,6 +1664,12 @@ internal static class KappaRunner
 
         builder.Append(", ").Append(if binding.Intrinsic then "true" else "false").Append(")") |> ignore
 
+    let private appendConstructor (builder: StringBuilder) (constructor: KBackendConstructor) =
+        builder.Append("new ConstructorSpec(") |> ignore
+        builder.Append(csharpString constructor.Name).Append(", ") |> ignore
+        builder.Append(constructor.Arity).Append(", ") |> ignore
+        builder.Append(csharpString constructor.TypeName).Append(")") |> ignore
+
     let private appendModule (builder: StringBuilder) (moduleDump: KBackendModule) =
         builder.Append("            [") |> ignore
         builder.Append(csharpString moduleDump.Name).Append("] = new RuntimeModuleSpec(") |> ignore
@@ -1326,6 +1684,15 @@ internal static class KappaRunner
         builder.Append(", ") |> ignore
         moduleDump.IntrinsicTerms |> List.map csharpString |> appendArray builder "string"
         builder.Append(", ") |> ignore
+        builder.Append("new ConstructorSpec[] { ") |> ignore
+        moduleDump.Constructors
+        |> List.iteri (fun index constructor ->
+            if index > 0 then
+                builder.Append(", ") |> ignore
+
+            appendConstructor builder constructor)
+
+        builder.Append(" }, ") |> ignore
 
         builder.Append("new BindingSpec[] { ") |> ignore
         moduleDump.Bindings

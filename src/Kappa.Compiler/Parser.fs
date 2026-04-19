@@ -103,6 +103,52 @@ type private TokenParser(tokens: Token list, source: SourceText) =
         else
             this.TryConsumeOperatorName()
 
+    member private _.ParseConstructorNameAndArity(lineTokens: Token list) =
+        let significantTokens =
+            lineTokens
+            |> List.filter (fun token ->
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent -> false
+                | _ -> true)
+
+        let name, argumentTokens =
+            match significantTokens with
+            | leftToken :: operatorToken :: rightToken :: rest
+                when leftToken.Kind = LeftParen && operatorToken.Kind = Operator && rightToken.Kind = RightParen ->
+                operatorToken.Text, rest
+            | head :: rest when Token.isName head ->
+                SyntaxFacts.trimIdentifierQuotes head.Text, rest
+            | _ ->
+                "<anonymous>", []
+
+        let tokenArray = List.toArray argumentTokens
+        let mutable arity = 0
+        let mutable index = 0
+
+        while index < tokenArray.Length do
+            match tokenArray[index].Kind with
+            | LeftParen ->
+                arity <- arity + 1
+                let mutable depth = 1
+                index <- index + 1
+
+                while index < tokenArray.Length && depth > 0 do
+                    match tokenArray[index].Kind with
+                    | LeftParen -> depth <- depth + 1
+                    | RightParen -> depth <- depth - 1
+                    | _ -> ()
+
+                    index <- index + 1
+            | RightParen ->
+                index <- index + 1
+            | _ ->
+                arity <- arity + 1
+                index <- index + 1
+
+        name, arity
+
     member private this.IsSignatureStart() =
         (this.Current.Kind = Identifier || (match this.Current.Kind with | Keyword _ -> true | _ -> false))
         && this.Peek(1).Kind = Colon
@@ -167,6 +213,13 @@ type private TokenParser(tokens: Token list, source: SourceText) =
             | Dedent when localIndents > 0 ->
                 localIndents <- localIndents - 1
                 collected.Add(this.Advance())
+
+                if localIndents = 0 then
+                    let next = this.NextNonLayout(0)
+                    let afterNext = this.NextNonLayout(1)
+
+                    if this.IsProbableTopLevelStart(next, Some afterNext) then
+                        keepCollecting <- false
             | _ ->
                 collected.Add(this.Advance())
 
@@ -524,14 +577,12 @@ type private TokenParser(tokens: Token list, source: SourceText) =
             if this.TryConsume(Equals).IsSome then
                 this.ParseIndentedLines()
                 |> List.map (fun lineTokens ->
-                    let constructorName =
-                        lineTokens
-                        |> List.tryFind Token.isName
-                        |> Option.map (fun token -> SyntaxFacts.trimIdentifierQuotes token.Text)
-                        |> Option.defaultValue "<anonymous>"
+                    let constructorName, arity =
+                        this.ParseConstructorNameAndArity(lineTokens)
 
                     ({ Name = constructorName
-                       Tokens = lineTokens }: DataConstructor))
+                       Tokens = lineTokens
+                       Arity = arity }: DataConstructor))
             else
                 diagnostics.AddError("Expected '=' in the data declaration.", source.GetLocation(this.Current.Span))
                 []

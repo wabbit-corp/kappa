@@ -444,9 +444,11 @@ let main argv =
                 | Some entryPoint ->
                     match options.BackendProfile.ToLowerInvariant() with
                     | "interpreter" ->
-                        match Interpreter.evaluateBinding workspace entryPoint with
+                        match Interpreter.executeBinding workspace entryPoint with
                         | Result.Ok value ->
-                            printfn "%s" (RuntimeValue.format value)
+                            if Interpreter.shouldPrintResult value then
+                                printfn "%s" (RuntimeValue.format value)
+
                             0
                         | Result.Error issue ->
                             Console.Error.WriteLine($"runtime error: {issue.Message}")

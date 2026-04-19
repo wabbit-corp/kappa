@@ -388,8 +388,12 @@ module Lexer =
                         emit Comma "," currentIndex
                         currentIndex <- currentIndex + 1
                     | ':' ->
-                        emit Colon ":" currentIndex
-                        currentIndex <- currentIndex + 1
+                        if currentIndex + 1 < lineText.Length && lineText[currentIndex + 1] = ':' then
+                            emit Operator "::" currentIndex
+                            currentIndex <- currentIndex + 2
+                        else
+                            emit Colon ":" currentIndex
+                            currentIndex <- currentIndex + 1
                     | '@' ->
                         emit AtSign "@" currentIndex
                         currentIndex <- currentIndex + 1
@@ -498,8 +502,12 @@ module Lexer =
                     emit Comma "," index
                     index <- index + 1
                 | ':' ->
-                    emit Colon ":" index
-                    index <- index + 1
+                    if index + 1 < lineText.Length && lineText[index + 1] = ':' then
+                        emit Operator "::" index
+                        index <- index + 2
+                    else
+                        emit Colon ":" index
+                        index <- index + 1
                 | '@' ->
                     emit AtSign "@" index
                     index <- index + 1

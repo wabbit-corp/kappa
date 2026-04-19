@@ -61,7 +61,7 @@ module Stdlib =
             ]
 
     let IntrinsicTermNames =
-        Set.ofList [ "pure"; ">>="; ">>"; "True"; "False"; "not"; "and"; "or"; "negate"; "println"; "print" ]
+        Set.ofList [ "pure"; ">>="; ">>"; "True"; "False"; "not"; "and"; "or"; "negate"; "println"; "print"; "printInt" ]
 
     let private isPreludeExpectation moduleName =
         moduleName = PreludeModuleName

@@ -6,6 +6,249 @@ type LetHeaderParseResult =
     { Parameters: Parameter list
       ReturnTypeTokens: Token list option }
 
+type private PatternParser(tokens: Token list, source: SourceText, diagnostics: DiagnosticBag, fixities: FixityTable) =
+    let eofSpan =
+        match List.tryLast tokens with
+        | Some token -> token.Span
+        | None -> TextSpan.FromBounds(source.Length, source.Length)
+
+    let tokenArray =
+        tokens
+        @ [ { Kind = EndOfFile
+              Text = ""
+              Span = eofSpan } ]
+        |> List.toArray
+
+    let mutable position = 0
+
+    member private _.Current =
+        let index = min position (tokenArray.Length - 1)
+        tokenArray[index]
+
+    member private _.Peek(offset: int) =
+        let index = min (position + offset) (tokenArray.Length - 1)
+        tokenArray[index]
+
+    member private this.Advance() =
+        let current = this.Current
+
+        if position < tokenArray.Length - 1 then
+            position <- position + 1
+
+        current
+
+    member private this.SkipLayout() =
+        while (match this.Current.Kind with
+               | Newline
+               | Indent
+               | Dedent -> true
+               | _ -> false) do
+            this.Advance() |> ignore
+
+    member private this.IsNameToken(token: Token) =
+        Token.isName token
+        && not (Token.isKeyword Keyword.If token)
+        && not (Token.isKeyword Keyword.Then token)
+        && not (Token.isKeyword Keyword.Else token)
+        && not (Token.isKeyword Keyword.In token)
+        && not (Token.isKeyword Keyword.Do token)
+        && not (Token.isKeyword Keyword.Match token)
+        && not (Token.isKeyword Keyword.Case token)
+        && not (Token.isKeyword Keyword.Let token)
+        && not (Token.isKeyword Keyword.Do token)
+        && not (Token.isKeyword Keyword.Match token)
+        && not (Token.isKeyword Keyword.Case token)
+        && not (Token.isKeyword Keyword.Let token)
+
+    member private this.ParseQualifiedName() =
+        this.SkipLayout()
+
+        let segments = ResizeArray<string>()
+
+        if this.IsNameToken(this.Current) then
+            segments.Add(SyntaxFacts.trimIdentifierQuotes (this.Advance().Text))
+
+            while this.Current.Kind = Dot && this.IsNameToken(this.Peek(1)) do
+                this.Advance() |> ignore
+                segments.Add(SyntaxFacts.trimIdentifierQuotes (this.Advance().Text))
+        else
+            diagnostics.AddError("Expected a pattern name.", source.GetLocation(this.Current.Span))
+
+        List.ofSeq segments
+
+    member private _.IsConstructorSegments(segments: string list) =
+        match segments with
+        | [] -> false
+        | _ :: _ :: _ -> true
+        | [ segment ] ->
+            not (String.IsNullOrWhiteSpace(segment))
+            && (Char.IsUpper(segment[0]) || SyntaxFacts.isOperatorCharacter segment[0])
+
+    member private this.IsAtomicPatternStart(token: Token) =
+        match token.Kind with
+        | IntegerLiteral
+        | FloatLiteral
+        | StringLiteral
+        | CharacterLiteral
+        | LeftParen
+        | Underscore -> true
+        | _ -> this.IsNameToken(token)
+
+    member private this.ParseLiteralPattern(token: Token) =
+        match token.Kind with
+        | IntegerLiteral ->
+            match Int64.TryParse(token.Text) with
+            | true, value -> LiteralPattern(LiteralValue.Integer value)
+            | _ ->
+                diagnostics.AddError($"Invalid integer literal '{token.Text}'.", source.GetLocation(token.Span))
+                LiteralPattern(LiteralValue.Integer 0L)
+        | FloatLiteral ->
+            match Double.TryParse(token.Text) with
+            | true, value -> LiteralPattern(LiteralValue.Float value)
+            | _ ->
+                diagnostics.AddError($"Invalid float literal '{token.Text}'.", source.GetLocation(token.Span))
+                LiteralPattern(LiteralValue.Float 0.0)
+        | StringLiteral ->
+            match SyntaxFacts.tryDecodeStringLiteral token.Text with
+            | Result.Ok value -> LiteralPattern(LiteralValue.String value)
+            | Result.Error message ->
+                diagnostics.AddError(message, source.GetLocation(token.Span))
+                LiteralPattern(LiteralValue.String(SyntaxFacts.trimStringQuotes token.Text))
+        | CharacterLiteral ->
+            match SyntaxFacts.tryDecodeCharacterLiteral token.Text with
+            | Result.Ok value -> LiteralPattern(LiteralValue.Character value)
+            | Result.Error message ->
+                diagnostics.AddError(message, source.GetLocation(token.Span))
+                LiteralPattern(LiteralValue.Character '\000')
+        | _ ->
+            diagnostics.AddError("Expected a literal pattern.", source.GetLocation(token.Span))
+            LiteralPattern LiteralValue.Unit
+
+    member private this.CollectParenthesizedTokens() =
+        let start = this.Current
+        this.Advance() |> ignore
+
+        let innerTokens = ResizeArray<Token>()
+        let mutable depth = 1
+
+        while depth > 0 && this.Current.Kind <> EndOfFile do
+            match this.Current.Kind with
+            | LeftParen ->
+                depth <- depth + 1
+                innerTokens.Add(this.Advance())
+            | RightParen ->
+                depth <- depth - 1
+
+                if depth > 0 then
+                    innerTokens.Add(this.Advance())
+                else
+                    this.Advance() |> ignore
+            | _ ->
+                innerTokens.Add(this.Advance())
+
+        if depth > 0 then
+            diagnostics.AddError("Expected ')' to close the pattern.", source.GetLocation(start.Span))
+
+        List.ofSeq innerTokens
+
+    member private this.ParseAtomicPattern() =
+        this.SkipLayout()
+
+        match this.Current.Kind with
+        | Underscore ->
+            this.Advance() |> ignore
+            WildcardPattern
+        | IntegerLiteral
+        | FloatLiteral
+        | StringLiteral
+        | CharacterLiteral ->
+            this.ParseLiteralPattern(this.Advance())
+        | LeftParen ->
+            let innerTokens = this.CollectParenthesizedTokens()
+
+            match innerTokens with
+            | [] -> LiteralPattern LiteralValue.Unit
+            | [ operatorToken ] when operatorToken.Kind = Operator ->
+                ConstructorPattern([ operatorToken.Text ], [])
+            | _ ->
+                let nestedParser = PatternParser(innerTokens, source, diagnostics, fixities)
+                nestedParser.Parse()
+        | _ when this.IsNameToken(this.Current) ->
+            let segments = this.ParseQualifiedName()
+
+            if this.IsConstructorSegments(segments) then
+                ConstructorPattern(segments, [])
+            else
+                match segments with
+                | [ name ] -> NamePattern name
+                | _ -> ConstructorPattern(segments, [])
+        | _ ->
+            diagnostics.AddError("Expected a pattern.", source.GetLocation(this.Current.Span))
+            WildcardPattern
+
+    member private this.ParseApplicationPattern() =
+        let head = this.ParseAtomicPattern()
+        let arguments = ResizeArray<CorePattern>()
+
+        while this.IsAtomicPatternStart(this.Current) do
+            arguments.Add(this.ParseAtomicPattern())
+
+        match head, List.ofSeq arguments with
+        | ConstructorPattern(name, existingArguments), additionalArguments ->
+            ConstructorPattern(name, existingArguments @ additionalArguments)
+        | NamePattern name, [] ->
+            NamePattern name
+        | NamePattern name, additionalArguments ->
+            ConstructorPattern([ name ], additionalArguments)
+        | literalPattern, [] ->
+            literalPattern
+        | _, _ ->
+            diagnostics.AddError("Only constructor patterns may take arguments.", source.GetLocation(this.Current.Span))
+            head
+
+    member private this.ParsePattern(minimumPrecedence: int) =
+        let mutable left = this.ParseApplicationPattern()
+        let mutable keepParsing = true
+
+        while keepParsing do
+            this.SkipLayout()
+
+            match this.Current.Kind with
+            | Operator ->
+                let operatorText = this.Current.Text
+
+                match FixityTable.tryFindInfix operatorText fixities with
+                | Some(associativity, precedence) when precedence >= minimumPrecedence ->
+                    let nextMinimumPrecedence =
+                        match associativity with
+                        | LeftAssociative
+                        | NonAssociative -> precedence + 1
+                        | RightAssociative -> precedence
+
+                    this.Advance() |> ignore
+                    let right = this.ParsePattern(nextMinimumPrecedence)
+                    left <- ConstructorPattern([ operatorText ], [ left; right ])
+                | _ ->
+                    keepParsing <- false
+            | _ ->
+                keepParsing <- false
+
+        left
+
+    member this.Parse() =
+        this.SkipLayout()
+
+        if this.Current.Kind = EndOfFile then
+            WildcardPattern
+        else
+            let pattern = this.ParsePattern(0)
+            this.SkipLayout()
+
+            if this.Current.Kind <> EndOfFile then
+                diagnostics.AddError("Unexpected tokens at the end of the pattern.", source.GetLocation(this.Current.Span))
+
+            pattern
+
 type private ExpressionParser(tokens: Token list, source: SourceText, diagnostics: DiagnosticBag, fixities: FixityTable) =
     let eofSpan =
         match List.tryLast tokens with
@@ -108,6 +351,14 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
             Some expression
         | _ ->
             None
+
+    member private this.ParseStandaloneExpression(tokens: Token list) =
+        let nestedParser = ExpressionParser(tokens, source, diagnostics, fixities)
+        nestedParser.Parse() |> Option.defaultValue (Literal LiteralValue.Unit)
+
+    member private this.ParsePatternFromTokens(tokens: Token list) =
+        let nestedParser = PatternParser(tokens, source, diagnostics, fixities)
+        nestedParser.Parse()
 
     member private _.MakeOperatorSection body =
         let parameterName = "__sectionArg"
@@ -268,6 +519,165 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
         let whenFalse = this.ParseExpression(0)
         IfThenElse(condition, whenTrue, whenFalse)
 
+    member private this.CollectIndentedLines() =
+        let lines = ResizeArray<Token list>()
+
+        if this.Current.Kind = Newline && this.Peek(1).Kind = Indent then
+            this.Advance() |> ignore
+            this.Advance() |> ignore
+
+            let currentLine = ResizeArray<Token>()
+            let mutable nestedIndents = 0
+
+            let flushLine () =
+                if currentLine.Count > 0 then
+                    lines.Add(List.ofSeq currentLine)
+                    currentLine.Clear()
+
+            while not (this.Current.Kind = Dedent && nestedIndents = 0) && this.Current.Kind <> EndOfFile do
+                match this.Current.Kind with
+                | Newline when nestedIndents = 0 ->
+                    flushLine ()
+                    this.Advance() |> ignore
+                | Indent ->
+                    nestedIndents <- nestedIndents + 1
+                    currentLine.Add(this.Advance())
+                | Dedent when nestedIndents > 0 ->
+                    nestedIndents <- nestedIndents - 1
+                    currentLine.Add(this.Advance())
+                | _ ->
+                    currentLine.Add(this.Advance())
+
+            flushLine ()
+
+            if this.Current.Kind = Dedent then
+                this.Advance() |> ignore
+            else
+                diagnostics.AddError("Expected the do block to dedent.", source.GetLocation(this.Current.Span))
+        else
+            let inlineTokens = ResizeArray<Token>()
+
+            while this.Current.Kind <> EndOfFile do
+                inlineTokens.Add(this.Advance())
+
+            if inlineTokens.Count > 0 then
+                lines.Add(List.ofSeq inlineTokens)
+
+        List.ofSeq lines
+
+    member private this.SplitCasePatternTokens() =
+        let tokens = ResizeArray<Token>()
+        let mutable depth = 0
+        let mutable result = None
+        let mutable keepReading = true
+
+        while keepReading && this.Current.Kind <> EndOfFile do
+            match this.Current.Kind with
+            | Arrow when depth = 0 ->
+                result <- Some(List.ofSeq tokens)
+                this.Advance() |> ignore
+                keepReading <- false
+            | LeftParen ->
+                depth <- depth + 1
+                tokens.Add(this.Advance())
+            | RightParen ->
+                depth <- max 0 (depth - 1)
+                tokens.Add(this.Advance())
+            | _ ->
+                tokens.Add(this.Advance())
+
+        match result with
+        | Some tokens -> tokens
+        | None ->
+            diagnostics.AddError("Expected '->' in the case clause.", source.GetLocation(this.Current.Span))
+            List.ofSeq tokens
+
+    member private this.ParseMatchExpression() =
+        this.ExpectKeyword(Keyword.Match, "Expected 'match'.") |> ignore
+        let scrutineeTokens = ResizeArray<Token>()
+
+        while this.Current.Kind <> Newline && this.Current.Kind <> EndOfFile do
+            scrutineeTokens.Add(this.Advance())
+
+        let scrutinee = this.ParseStandaloneExpression(List.ofSeq scrutineeTokens)
+
+        if this.Current.Kind = Newline then
+            this.Advance() |> ignore
+
+        let cases = ResizeArray<MatchCase>()
+
+        while Token.isKeyword Keyword.Case this.Current do
+            this.Advance() |> ignore
+
+            let lineTokens = ResizeArray<Token>()
+
+            while this.Current.Kind <> Newline && this.Current.Kind <> EndOfFile do
+                lineTokens.Add(this.Advance())
+
+            if this.Current.Kind = Newline then
+                this.Advance() |> ignore
+
+            let tokenArray = lineTokens |> Seq.toArray
+            let splitIndex = tokenArray |> Array.tryFindIndex (fun token -> token.Kind = Arrow)
+
+            match splitIndex with
+            | Some index ->
+                let patternTokens = tokenArray[0 .. index - 1] |> Array.toList
+                let bodyTokens = tokenArray[index + 1 ..] |> Array.toList
+                let pattern = this.ParsePatternFromTokens(patternTokens)
+                let body = this.ParseStandaloneExpression(bodyTokens)
+                cases.Add({ Pattern = pattern; Body = body })
+            | None ->
+                diagnostics.AddError("Expected '->' in the case clause.", source.GetLocation(this.Current.Span))
+
+        if cases.Count = 0 then
+            diagnostics.AddError("A match expression must declare at least one case.", source.GetLocation(this.Current.Span))
+
+        Match(scrutinee, List.ofSeq cases)
+
+    member private this.ParseDoLine(lineTokens: Token list) =
+        match lineTokens with
+        | letToken :: nameToken :: rest when Token.isKeyword Keyword.Let letToken && Token.isName nameToken ->
+            let mutable splitIndex = -1
+            let tokenArray = List.toArray rest
+            let mutable index = 0
+
+            while index < tokenArray.Length && splitIndex = -1 do
+                if tokenArray[index].Kind = Equals then
+                    splitIndex <- index
+
+                index <- index + 1
+
+            if splitIndex < 0 then
+                diagnostics.AddError("Expected '=' in the do binding.", source.GetLocation(nameToken.Span))
+                DoExpression(Literal LiteralValue.Unit)
+            else
+                let name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
+                let expressionTokens = List.ofArray tokenArray[splitIndex + 1 ..]
+                DoLet(name, this.ParseStandaloneExpression(expressionTokens))
+        | nameToken :: operatorToken :: rest when Token.isName nameToken && operatorToken.Kind = Operator && operatorToken.Text = "<-" ->
+            let name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
+            DoBind(name, this.ParseStandaloneExpression(rest))
+        | _ ->
+            DoExpression(this.ParseStandaloneExpression(lineTokens))
+
+    member private this.ParseDoExpression() =
+        this.ExpectKeyword(Keyword.Do, "Expected 'do'.") |> ignore
+
+        let statements =
+            this.CollectIndentedLines()
+            |> List.filter (List.isEmpty >> not)
+            |> List.map this.ParseDoLine
+
+        match List.tryLast statements with
+        | Some(DoExpression _) -> ()
+        | Some _ ->
+            diagnostics.AddError("A do block must end with an expression.", source.GetLocation(this.Current.Span))
+        | None ->
+            diagnostics.AddError("A do block must contain at least one statement.", source.GetLocation(this.Current.Span))
+
+        Do statements
+
     member private this.ParseLambdaExpression() =
         this.SkipLayout()
         this.Advance() |> ignore
@@ -320,6 +730,10 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
         this.SkipLayout()
 
         match this.Current.Kind with
+        | Keyword Keyword.Match ->
+            this.ParseMatchExpression()
+        | Keyword Keyword.Do ->
+            this.ParseDoExpression()
         | Keyword Keyword.If ->
             this.ParseIfExpression()
         | Backslash ->

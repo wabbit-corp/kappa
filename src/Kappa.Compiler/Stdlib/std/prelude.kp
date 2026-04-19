@@ -14,7 +14,7 @@ data Result e a : Type =
 
 data List a : Type =
     Nil
-    Cons a (List a)
+    (::) (head : a) (tail : List a)
 
 expect type Unit
 expect type Char
@@ -52,6 +52,7 @@ expect term or : Bool -> Bool -> Bool
 expect term negate : a -> a
 expect term println : String -> IO Unit
 expect term print : String -> IO Unit
+expect term printInt : Int -> IO Unit
 
 infix 50 (==)
 infix 50 (!=)
@@ -59,6 +60,7 @@ infix 50 (<)
 infix 50 (<=)
 infix 50 (>)
 infix 50 (>=)
+infix right 40 (::)
 prefix 80 (-)
 infix left 60 (+)
 infix left 60 (-)

@@ -238,6 +238,8 @@ type CoreExpression =
     | Name of string list
     | Lambda of Parameter list * CoreExpression
     | IfThenElse of CoreExpression * CoreExpression * CoreExpression
+    | Match of CoreExpression * MatchCase list
+    | Do of DoStatement list
     | Apply of CoreExpression * CoreExpression list
     | Unary of operatorName: string * CoreExpression
     | Binary of CoreExpression * operatorName: string * CoreExpression
@@ -246,6 +248,21 @@ type CoreExpression =
 and InterpolatedStringPart =
     | StringText of string
     | StringInterpolation of CoreExpression
+
+and CorePattern =
+    | WildcardPattern
+    | NamePattern of string
+    | LiteralPattern of LiteralValue
+    | ConstructorPattern of string list * CorePattern list
+
+and MatchCase =
+    { Pattern: CorePattern
+      Body: CoreExpression }
+
+and DoStatement =
+    | DoLet of string * CoreExpression
+    | DoBind of string * CoreExpression
+    | DoExpression of CoreExpression
 
 type BindingSignature =
     { Visibility: Visibility option
@@ -285,7 +302,8 @@ type LetDefinition =
 
 type DataConstructor =
     { Name: string
-      Tokens: Token list }
+      Tokens: Token list
+      Arity: int }
 
 type DataDeclaration =
     { Visibility: Visibility option
@@ -519,6 +537,10 @@ module FixityTable =
             { Fixity = Infix NonAssociative
               Precedence = 50
               OperatorName = ">=" }
+        |> add
+            { Fixity = Infix RightAssociative
+              Precedence = 40
+              OperatorName = "::" }
         |> add
             { Fixity = Infix LeftAssociative
               Precedence = 60

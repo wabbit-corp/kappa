@@ -118,3 +118,77 @@ let ``cli can run the managed dotnet backend`` () =
     Assert.Equal(0, runResult.ExitCode)
     Assert.Contains("42", runResult.StandardOutput)
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
+let ``cli interpreter backend can execute io entry points`` () =
+    let workspaceRoot = createScratchDirectory "cli-interpreter-workspace"
+
+    writeWorkspaceFiles
+        workspaceRoot
+        [
+            "main.kp",
+            [
+                "module main"
+                "sumList : List Int -> Int"
+                "let sumList xs ="
+                "    match xs"
+                "    case Nil -> 0"
+                "    case head :: tail -> head + sumList tail"
+                "let main : IO Unit = do"
+                "    let nums = 10 :: 20 :: 42 :: Nil"
+                "    let total = sumList nums"
+                "    printInt total"
+            ]
+            |> String.concat "\n"
+        ]
+
+    let cliProjectPath =
+        Path.GetFullPath(
+            Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "src", "Kappa.Compiler.Cli", "Kappa.Compiler.Cli.fsproj")
+        )
+
+    let runResult =
+        runProcess
+            workspaceRoot
+            "dotnet"
+            $"run --project \"{cliProjectPath}\" -v q -- --source-root \"{workspaceRoot}\" --run main.main"
+
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("72", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
+let ``dotnet backend runs the milestone one recursive list program`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m1-dotnet-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "sumList : List Int -> Int"
+                    "let sumList xs ="
+                    "    match xs"
+                    "    case Nil -> 0"
+                    "    case head :: tail -> head + sumList tail"
+                    "let main : IO Unit = do"
+                    "    let nums = 10 :: 20 :: 42 :: Nil"
+                    "    let total = sumList nums"
+                    "    printInt total"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "dotnet-m1-backend"
+
+    let artifact =
+        match Backend.emitDotNetArtifact workspace "main.main" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    let runResult =
+        runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
+
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("72", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)

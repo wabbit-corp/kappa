@@ -403,3 +403,125 @@ let ``interpreter reports ambiguous imported names`` () =
         failwithf "Expected an ambiguity error, got %s" (RuntimeValue.format value)
     | Result.Error issue ->
         Assert.Contains("ambiguous", issue.Message)
+
+[<Fact>]
+let ``parser captures recursive list matches and do blocks`` () =
+    let sourceText =
+        [
+            "module main"
+            "sumList : List Int -> Int"
+            "let sumList xs ="
+            "    match xs"
+            "    case Nil -> 0"
+            "    case head :: tail -> head + sumList tail"
+            "let main : IO Unit = do"
+            "    let nums = 10 :: 20 :: 42 :: Nil"
+            "    let total = sumList nums"
+            "    printInt total"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "main.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Empty(parsed.Diagnostics)
+
+    match parsed.Syntax.Declarations with
+    | [ SignatureDeclaration sumListSignature
+        LetDeclaration sumListDefinition
+        LetDeclaration mainDefinition ] ->
+        Assert.Equal("sumList", sumListSignature.Name)
+
+        match sumListDefinition.Body with
+        | Some(Match(Name [ "xs" ], cases)) ->
+            match cases with
+            | [ nilCase; consCase ] ->
+                match nilCase.Pattern with
+                | ConstructorPattern([ "Nil" ], []) -> ()
+                | other -> failwithf "Unexpected Nil pattern: %A" other
+
+                match nilCase.Body with
+                | Literal(LiteralValue.Integer 0L) -> ()
+                | other -> failwithf "Unexpected Nil case body: %A" other
+
+                match consCase.Pattern with
+                | ConstructorPattern([ "::" ], [ NamePattern "head"; NamePattern "tail" ]) -> ()
+                | other -> failwithf "Unexpected cons pattern: %A" other
+
+                match consCase.Body with
+                | Binary(
+                    Name [ "head" ],
+                    "+",
+                    Apply(Name [ "sumList" ], [ Name [ "tail" ] ])
+                  ) -> ()
+                | other ->
+                    failwithf "Unexpected cons case body: %A" other
+            | other ->
+                failwithf "Unexpected match cases: %A" other
+        | other ->
+            failwithf "Unexpected sumList body: %A" other
+
+        match mainDefinition.ReturnTypeTokens with
+        | Some returnTypeTokens ->
+            let tokenTexts = returnTypeTokens |> List.map (fun token -> token.Text)
+            Assert.Equal<string list>([ "IO"; "Unit" ], tokenTexts)
+        | None ->
+            failwith "Expected main to declare a return type."
+
+        match mainDefinition.Body with
+        | Some(
+            Do
+                [ DoLet(
+                    "nums",
+                    Binary(
+                        Literal(LiteralValue.Integer 10L),
+                        "::",
+                        Binary(
+                            Literal(LiteralValue.Integer 20L),
+                            "::",
+                            Binary(
+                                Literal(LiteralValue.Integer 42L),
+                                "::",
+                                Name [ "Nil" ]
+                            )
+                        )
+                    )
+                  )
+                  DoLet("total", Apply(Name [ "sumList" ], [ Name [ "nums" ] ]))
+                  DoExpression(Apply(Name [ "printInt" ], [ Name [ "total" ] ])) ]
+          ) -> ()
+        | other ->
+            failwithf "Unexpected main body: %A" other
+    | other ->
+        failwithf "Unexpected declarations: %A" other
+
+[<Fact>]
+let ``interpreter evaluates recursive list matches built from the cons operator`` () =
+    let mainSource =
+        [
+            "module main"
+            "sumList : List Int -> Int"
+            "let sumList xs ="
+            "    match xs"
+            "    case Nil -> 0"
+            "    case head :: tail -> head + sumList tail"
+            "let result = sumList (10 :: 20 :: 42 :: Nil)"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-list-match-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("72", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected recursive list evaluation to succeed, got %s" issue.Message

@@ -13,8 +13,19 @@ type RuntimeValue =
     | StringValue of string
     | CharacterValue of char
     | UnitValue
+    | ConstructorFunctionValue of RuntimeConstructor * RuntimeValue list
+    | ConstructedValue of RuntimeConstructed
+    | IOActionValue of (unit -> Result<RuntimeValue, EvaluationError>)
     | FunctionValue of RuntimeClosure
     | BuiltinFunctionValue of BuiltinFunction
+and RuntimeConstructor =
+    { Name: string
+      QualifiedName: string
+      Arity: int
+      TypeName: string }
+and RuntimeConstructed =
+    { Constructor: RuntimeConstructor
+      Fields: RuntimeValue list }
 and RuntimeClosure =
     { Parameters: string list
       Body: KBackendExpression
@@ -31,13 +42,14 @@ and RuntimeContext =
 and RuntimeModule =
     { Name: string
       Definitions: Map<string, KBackendBinding>
+      Constructors: Map<string, RuntimeConstructor>
       IntrinsicTerms: Set<string>
       Exports: Set<string>
       Imports: ImportSpec list
       Values: Dictionary<string, Lazy<Result<RuntimeValue, EvaluationError>>> }
 
 module RuntimeValue =
-    let format value =
+    let rec format value =
         match value with
         | IntegerValue value -> string value
         | FloatValue value -> string value
@@ -46,6 +58,18 @@ module RuntimeValue =
         | StringValue value -> $"\"{value}\""
         | CharacterValue value -> $"'{value}'"
         | UnitValue -> "()"
+        | ConstructorFunctionValue(constructor, arguments) ->
+            $"<constructor {constructor.Name}/{constructor.Arity} [{arguments.Length}]>"
+        | ConstructedValue constructed ->
+            match constructed.Constructor.Name, constructed.Fields with
+            | constructorName, [] ->
+                constructorName
+            | "::", [ head; tail ] ->
+                $"{format head} :: {format tail}"
+            | constructorName, fields ->
+                let fieldText = fields |> List.map format |> String.concat " "
+                $"{constructorName} {fieldText}"
+        | IOActionValue _ -> "<io>"
         | FunctionValue _ -> "<function>"
         | BuiltinFunctionValue builtin -> $"<builtin {builtin.Name}>"
 
@@ -68,6 +92,16 @@ module Interpreter =
         let moduleRuntimes =
             workspace.KBackendIR
             |> List.map (fun backendModule ->
+                let constructors =
+                    backendModule.Constructors
+                    |> List.map (fun constructor ->
+                        constructor.Name,
+                        { Name = constructor.Name
+                          QualifiedName = $"{backendModule.Name}.{constructor.Name}"
+                          Arity = constructor.Arity
+                          TypeName = constructor.TypeName })
+                    |> Map.ofList
+
                 let definitions =
                     backendModule.Bindings
                     |> List.filter (fun binding -> not binding.Intrinsic)
@@ -77,6 +111,7 @@ module Interpreter =
                 backendModule.Name,
                 { Name = backendModule.Name
                   Definitions = definitions
+                  Constructors = constructors
                   IntrinsicTerms = backendModule.IntrinsicTerms |> Set.ofList
                   Exports = backendModule.Exports |> Set.ofList
                   Imports = backendModule.Imports
@@ -109,10 +144,19 @@ module Interpreter =
                 | "or"
                 | "negate"
                 | "println"
-                | "print" ->
+                | "print"
+                | "printInt" ->
                     Some(BuiltinFunctionValue { Name = name; Arguments = [] })
                 | _ ->
                     None
+
+        let constructorValue constructor =
+            if constructor.Arity = 0 then
+                ConstructedValue
+                    { Constructor = constructor
+                      Fields = [] }
+            else
+                ConstructorFunctionValue(constructor, [])
 
         let applyBuiltinUnary operatorName operand =
             match operatorName, operand with
@@ -124,6 +168,27 @@ module Interpreter =
                 error $"Unary '{operatorName}' expects a numeric value, but got {RuntimeValue.format value}."
             | _ ->
                 error $"Unary operator '{operatorName}' is not supported."
+
+        let rec valuesEqual left right =
+            match left, right with
+            | IntegerValue left, IntegerValue right ->
+                left = right
+            | FloatValue left, FloatValue right ->
+                left = right
+            | BooleanValue left, BooleanValue right ->
+                left = right
+            | StringValue left, StringValue right ->
+                left = right
+            | CharacterValue left, CharacterValue right ->
+                left = right
+            | UnitValue, UnitValue ->
+                true
+            | ConstructedValue left, ConstructedValue right ->
+                String.Equals(left.Constructor.QualifiedName, right.Constructor.QualifiedName, StringComparison.Ordinal)
+                && List.length left.Fields = List.length right.Fields
+                && List.forall2 valuesEqual left.Fields right.Fields
+            | _ ->
+                false
 
         let applyBuiltinBinary operatorName left right =
             match operatorName, left, right with
@@ -147,9 +212,9 @@ module Interpreter =
             | "/", FloatValue left, FloatValue right ->
                 ok (FloatValue(left / right))
             | "==", left, right ->
-                ok (BooleanValue(left = right))
+                ok (BooleanValue(valuesEqual left right))
             | "!=", left, right ->
-                ok (BooleanValue(left <> right))
+                ok (BooleanValue(not (valuesEqual left right)))
             | "<", IntegerValue left, IntegerValue right ->
                 ok (BooleanValue(left < right))
             | "<=", IntegerValue left, IntegerValue right ->
@@ -182,6 +247,9 @@ module Interpreter =
             | StringValue value -> ok value
             | CharacterValue value -> ok (string value)
             | UnitValue -> ok "()"
+            | ConstructedValue _
+            | ConstructorFunctionValue _
+            | IOActionValue _
             | FunctionValue _
             | BuiltinFunctionValue _ ->
                 error $"Cannot interpolate {RuntimeValue.format value} into an f-string."
@@ -207,6 +275,9 @@ module Interpreter =
                     | BooleanValue false -> evaluateExpression scope whenFalse
                     | value ->
                         error $"Expected a Boolean in the if condition, but got {RuntimeValue.format value}.")
+            | KBackendMatch (scrutinee, cases) ->
+                evaluateExpression scope scrutinee
+                |> Result.bind (fun value -> evaluateMatch scope value cases)
             | KBackendApply (callee, arguments) ->
                 evaluateExpression scope callee
                 |> Result.bind (fun functionValue ->
@@ -286,14 +357,119 @@ module Interpreter =
                     |> String.concat ""
                     |> StringValue)
 
+        and evaluateMatch (scope: RuntimeScope) (scrutinee: RuntimeValue) (cases: KBackendMatchCase list) =
+            let rec tryCases remainingCases =
+                match remainingCases with
+                | [] ->
+                    error $"Non-exhaustive match for {RuntimeValue.format scrutinee}."
+                | caseClause :: rest ->
+                    match tryMatchPattern scope scrutinee caseClause.Pattern with
+                    | Result.Error issue ->
+                        Result.Error issue
+                    | Result.Ok None ->
+                        tryCases rest
+                    | Result.Ok(Some bindings) ->
+                        let nextScope =
+                            { scope with
+                                Locals =
+                                    bindings
+                                    |> List.fold (fun locals (name, value) -> locals.Add(name, value)) scope.Locals }
+
+                        evaluateExpression nextScope caseClause.Body
+
+            tryCases cases
+
+        and tryMatchPattern (scope: RuntimeScope) (value: RuntimeValue) (pattern: KBackendPattern) =
+            match pattern with
+            | KBackendWildcardPattern ->
+                ok (Some [])
+            | KBackendNamePattern name ->
+                ok (Some [ name, value ])
+            | KBackendLiteralPattern literal ->
+                let literalValue = literalToValue literal
+
+                if valuesEqual value literalValue then
+                    ok (Some [])
+                else
+                    ok None
+            | KBackendConstructorPattern(nameSegments, argumentPatterns) ->
+                resolveName scope nameSegments
+                |> Result.bind (fun constructorValue ->
+                    let expectedConstructor =
+                        match constructorValue with
+                        | ConstructorFunctionValue(constructor, _) -> Some constructor
+                        | ConstructedValue constructed when List.isEmpty constructed.Fields -> Some constructed.Constructor
+                        | _ -> None
+
+                    match expectedConstructor, value with
+                    | Some constructor, ConstructedValue constructed
+                        when String.Equals(constructor.QualifiedName, constructed.Constructor.QualifiedName, StringComparison.Ordinal)
+                             && List.length argumentPatterns = List.length constructed.Fields ->
+                        let rec gatherBindings patterns fields acc =
+                            match patterns, fields with
+                            | [], [] ->
+                                ok (Some(List.rev acc))
+                            | patternHead :: remainingPatterns, fieldHead :: remainingFields ->
+                                tryMatchPattern scope fieldHead patternHead
+                                |> Result.bind (function
+                                    | None ->
+                                        ok None
+                                    | Some bindings ->
+                                        gatherBindings remainingPatterns remainingFields (List.rev bindings @ acc))
+                            | _ ->
+                                ok None
+
+                        gatherBindings argumentPatterns constructed.Fields []
+                    | Some _, ConstructedValue _ ->
+                        ok None
+                    | Some _, _ ->
+                        ok None
+                    | None, _ ->
+                        let patternName = String.concat "." nameSegments
+                        error $"Pattern '{patternName}' does not resolve to a constructor."
+                )
+
         and apply (functionValue: RuntimeValue) (arguments: RuntimeValue list) : Result<RuntimeValue, EvaluationError> =
             match functionValue with
             | FunctionValue closure ->
                 applyClosure closure arguments
+            | ConstructorFunctionValue(constructor, existingArguments) ->
+                applyConstructor constructor existingArguments arguments
             | BuiltinFunctionValue builtin ->
                 applyBuiltinFunction builtin arguments
             | value ->
                 error $"Cannot apply {RuntimeValue.format value} as a function."
+
+        and applyConstructor (constructor: RuntimeConstructor) (existingArguments: RuntimeValue list) (arguments: RuntimeValue list) =
+            let rec invoke collected remainingArguments =
+                match remainingArguments with
+                | [] ->
+                    if List.length collected = constructor.Arity then
+                        ok
+                            (ConstructedValue
+                                { Constructor = constructor
+                                  Fields = collected })
+                    else
+                        ok (ConstructorFunctionValue(constructor, collected))
+                | argument :: rest ->
+                    let nextArguments = collected @ [ argument ]
+
+                    if List.length nextArguments > constructor.Arity then
+                        error $"Constructor '{constructor.Name}' received too many arguments."
+                    elif List.length nextArguments = constructor.Arity then
+                        let value =
+                            ConstructedValue
+                                { Constructor = constructor
+                                  Fields = nextArguments }
+
+                        if List.isEmpty rest then
+                            ok value
+                        else
+                            apply value rest
+                    else
+                        invoke nextArguments rest
+
+            invoke existingArguments arguments
 
         and applyBuiltinFunction (builtin: BuiltinFunction) (arguments: RuntimeValue list) : Result<RuntimeValue, EvaluationError> =
             let rec invoke (currentBuiltin: BuiltinFunction) (remainingArguments: RuntimeValue list) =
@@ -316,6 +492,13 @@ module Interpreter =
                             invoke nextBuiltin rest)
 
             invoke builtin arguments
+
+        and executeIoAction value =
+            match value with
+            | IOActionValue action ->
+                action ()
+            | other ->
+                error $"Expected an IO action, but got {RuntimeValue.format other}."
 
         and invokeBuiltin (builtin: BuiltinFunction) : Result<RuntimeValue option, EvaluationError> =
             match builtin.Name, builtin.Arguments with
@@ -353,36 +536,75 @@ module Interpreter =
                 error $"Intrinsic 'or' expects Bool arguments, but got {RuntimeValue.format left} and {RuntimeValue.format right}."
             | "or", _ ->
                 error "Intrinsic 'or' received too many arguments."
-            | "pure", [ _ ] ->
-                error "Intrinsic 'pure' is declared in std.prelude but is not executable in the interpreter yet."
+            | "pure", [ value ] ->
+                ok (Some(IOActionValue(fun () -> ok value)))
             | "pure", arguments when List.length arguments < 1 ->
                 ok None
             | "pure", _ ->
                 error "Intrinsic 'pure' received too many arguments."
-            | ">>=", [ _; _ ] ->
-                error "Intrinsic '>>=' is declared in std.prelude but is not executable in the interpreter yet."
+            | ">>=", [ action; continuation ] ->
+                ok
+                    (Some(
+                        IOActionValue(fun () ->
+                            executeIoAction action
+                            |> Result.bind (fun value ->
+                                apply continuation [ value ]
+                                |> Result.bind executeIoAction))
+                    ))
             | ">>=", arguments when List.length arguments < 2 ->
                 ok None
             | ">>=", _ ->
                 error "Intrinsic '>>=' received too many arguments."
-            | ">>", [ _; _ ] ->
-                error "Intrinsic '>>' is declared in std.prelude but is not executable in the interpreter yet."
+            | ">>", [ leftAction; rightAction ] ->
+                ok
+                    (Some(
+                        IOActionValue(fun () ->
+                            executeIoAction leftAction
+                            |> Result.bind (fun _ -> executeIoAction rightAction))
+                    ))
             | ">>", arguments when List.length arguments < 2 ->
                 ok None
             | ">>", _ ->
                 error "Intrinsic '>>' received too many arguments."
-            | "print", [ _ ] ->
-                error "Intrinsic 'print' is declared in std.prelude but is not executable in the interpreter yet."
+            | "print", [ StringValue value ] ->
+                ok
+                    (Some(
+                        IOActionValue(fun () ->
+                            Console.Write(value)
+                            ok UnitValue)
+                    ))
             | "print", arguments when List.length arguments < 1 ->
                 ok None
+            | "print", [ value ] ->
+                error $"Intrinsic 'print' expects a String, but got {RuntimeValue.format value}."
             | "print", _ ->
                 error "Intrinsic 'print' received too many arguments."
-            | "println", [ _ ] ->
-                error "Intrinsic 'println' is declared in std.prelude but is not executable in the interpreter yet."
+            | "println", [ StringValue value ] ->
+                ok
+                    (Some(
+                        IOActionValue(fun () ->
+                            Console.WriteLine(value)
+                            ok UnitValue)
+                    ))
             | "println", arguments when List.length arguments < 1 ->
                 ok None
+            | "println", [ value ] ->
+                error $"Intrinsic 'println' expects a String, but got {RuntimeValue.format value}."
             | "println", _ ->
                 error "Intrinsic 'println' received too many arguments."
+            | "printInt", [ IntegerValue value ] ->
+                ok
+                    (Some(
+                        IOActionValue(fun () ->
+                            Console.WriteLine(value)
+                            ok UnitValue)
+                    ))
+            | "printInt", arguments when List.length arguments < 1 ->
+                ok None
+            | "printInt", [ value ] ->
+                error $"Intrinsic 'printInt' expects an Int, but got {RuntimeValue.format value}."
+            | "printInt", _ ->
+                error "Intrinsic 'printInt' received too many arguments."
             | name, [ left; right ] when builtinBinaryNames.Contains(name) ->
                 applyBuiltinBinary name left right
                 |> Result.map Some
@@ -456,7 +678,9 @@ module Interpreter =
                                 items
                                 |> List.exists (fun item ->
                                     String.Equals(item.Name, name, StringComparison.Ordinal)
-                                    && (item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Term))
+                                    && (item.Namespace.IsNone
+                                        || item.Namespace = Some ImportNamespace.Term
+                                        || item.Namespace = Some ImportNamespace.Constructor))
                             | All ->
                                 importedModule.Exports.Contains(name)
                             | AllExcept excludedNames ->
@@ -474,6 +698,7 @@ module Interpreter =
 
             Map.containsKey name scope.Locals
             || currentModule.Definitions.ContainsKey(name)
+            || currentModule.Constructors.ContainsKey(name)
             || not (List.isEmpty (findImportedModulesForName scope name))
 
         and resolveUnqualifiedName (scope: RuntimeScope) (name: string) : Result<RuntimeValue, EvaluationError> =
@@ -484,6 +709,8 @@ module Interpreter =
                 let currentModule = scope.Context.Modules[scope.CurrentModule]
 
                 if currentModule.Definitions.ContainsKey(name) then
+                    forceBinding currentModule name
+                elif currentModule.Constructors.ContainsKey(name) then
                     forceBinding currentModule name
                 else
                     let matches = findImportedModulesForName scope name
@@ -534,6 +761,8 @@ module Interpreter =
                     lazyValue.Value
                 with :? InvalidOperationException ->
                     error $"Recursive evaluation of '{runtimeModule.Name}.{bindingName}' is not supported for non-function values."
+            | _ when runtimeModule.Constructors.ContainsKey(bindingName) ->
+                ok (constructorValue runtimeModule.Constructors[bindingName])
             | _ ->
                 error $"Binding '{bindingName}' was not found in module '{runtimeModule.Name}'."
 
@@ -619,3 +848,20 @@ module Interpreter =
                 match runtimeModule.Values.TryGetValue(bindingName) with
                 | true, lazyValue -> lazyValue.Value
                 | _ -> error $"Binding '{bindingName}' was not found in module '{moduleName}'.")
+
+    let executeBinding (workspace: WorkspaceCompilation) (entryPoint: string) =
+        let rec execute value =
+            match value with
+            | IOActionValue action ->
+                action ()
+                |> Result.bind execute
+            | other ->
+                ok other
+
+        evaluateBinding workspace entryPoint
+        |> Result.bind execute
+
+    let shouldPrintResult value =
+        match value with
+        | UnitValue -> false
+        | _ -> true

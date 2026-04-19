@@ -181,6 +181,7 @@ type KCoreExpression =
     | KCoreName of string list
     | KCoreLambda of KCoreParameter list * KCoreExpression
     | KCoreIfThenElse of KCoreExpression * KCoreExpression * KCoreExpression
+    | KCoreMatch of KCoreExpression * KCoreMatchCase list
     | KCoreApply of KCoreExpression * KCoreExpression list
     | KCoreUnary of operatorName: string * KCoreExpression
     | KCoreBinary of KCoreExpression * operatorName: string * KCoreExpression
@@ -189,6 +190,16 @@ type KCoreExpression =
 and KCoreStringPart =
     | KCoreStringText of string
     | KCoreStringInterpolation of KCoreExpression
+
+and KCorePattern =
+    | KCoreWildcardPattern
+    | KCoreNamePattern of string
+    | KCoreLiteralPattern of LiteralValue
+    | KCoreConstructorPattern of string list * KCorePattern list
+
+and KCoreMatchCase =
+    { Pattern: KCorePattern
+      Body: KCoreExpression }
 
 type KCoreBinding =
     { Visibility: Visibility option
@@ -218,6 +229,7 @@ type KBackendExpression =
     | KBackendName of string list
     | KBackendClosure of string list * KBackendExpression
     | KBackendIfThenElse of KBackendExpression * KBackendExpression * KBackendExpression
+    | KBackendMatch of KBackendExpression * KBackendMatchCase list
     | KBackendApply of KBackendExpression * KBackendExpression list
     | KBackendUnary of operatorName: string * KBackendExpression
     | KBackendBinary of KBackendExpression * operatorName: string * KBackendExpression
@@ -226,6 +238,22 @@ type KBackendExpression =
 and KBackendStringPart =
     | KBackendStringText of string
     | KBackendStringInterpolation of KBackendExpression
+
+and KBackendPattern =
+    | KBackendWildcardPattern
+    | KBackendNamePattern of string
+    | KBackendLiteralPattern of LiteralValue
+    | KBackendConstructorPattern of string list * KBackendPattern list
+
+and KBackendMatchCase =
+    { Pattern: KBackendPattern
+      Body: KBackendExpression }
+
+type KBackendConstructor =
+    { Name: string
+      Arity: int
+      TypeName: string
+      Provenance: KCoreOrigin }
 
 type KBackendBinding =
     { Name: string
@@ -240,6 +268,7 @@ type KBackendModule =
       Imports: ImportSpec list
       Exports: string list
       IntrinsicTerms: string list
+      Constructors: KBackendConstructor list
       Bindings: KBackendBinding list }
 
 type WorkspaceCompilation =
@@ -310,11 +339,17 @@ module Compilation =
           Body: string
           Intrinsic: bool }
 
+    type DumpBackendConstructor =
+        { Name: string
+          Arity: int
+          TypeName: string }
+
     type DumpBackendModule =
         { Name: string
           SourceFile: string
           Exports: string list
           IntrinsicTerms: string list
+          Constructors: DumpBackendConstructor list
           Bindings: DumpBackendBinding list }
 
     let private compilerImplementationId = "kappa.compiler"
@@ -539,6 +574,25 @@ module Compilation =
         | None -> None
 
     let private expressionText expression =
+        let rec renderPattern pattern =
+            match pattern with
+            | WildcardPattern -> "_"
+            | NamePattern name -> name
+            | LiteralPattern(LiteralValue.Integer value) -> string value
+            | LiteralPattern(LiteralValue.Float value) -> string value
+            | LiteralPattern(LiteralValue.String value) -> $"\"{value}\""
+            | LiteralPattern(LiteralValue.Character value) -> $"'{value}'"
+            | LiteralPattern LiteralValue.Unit -> "()"
+            | ConstructorPattern(name, arguments) ->
+                let nameText = String.concat "." name
+
+                match arguments with
+                | [] ->
+                    nameText
+                | _ ->
+                    let argumentText = arguments |> List.map renderPattern |> String.concat " "
+                    $"({nameText} {argumentText})"
+
         let rec render current =
             match current with
             | Literal(LiteralValue.Integer value) -> string value
@@ -552,6 +606,23 @@ module Compilation =
                 $"(lambda ({names}) {render body})"
             | IfThenElse(condition, whenTrue, whenFalse) ->
                 $"(if {render condition} {render whenTrue} {render whenFalse})"
+            | Match(scrutinee, cases) ->
+                let caseText =
+                    cases
+                    |> List.map (fun caseClause -> $"(case {renderPattern caseClause.Pattern} {render caseClause.Body})")
+                    |> String.concat " "
+
+                $"(match {render scrutinee} {caseText})"
+            | Do statements ->
+                let statementText =
+                    statements
+                    |> List.map (function
+                        | DoLet(name, body) -> $"(let {name} {render body})"
+                        | DoBind(name, body) -> $"(<- {name} {render body})"
+                        | DoExpression body -> $"(expr {render body})")
+                    |> String.concat " "
+
+                $"(do {statementText})"
             | Apply(callee, arguments) ->
                 let argumentText =
                     arguments
@@ -761,6 +832,47 @@ module Compilation =
         { Name = parameter.Name
           TypeText = parameter.TypeTokens |> Option.map tokensText }
 
+    let rec private lowerKCorePattern pattern =
+        match pattern with
+        | WildcardPattern ->
+            KCoreWildcardPattern
+        | NamePattern name ->
+            KCoreNamePattern name
+        | LiteralPattern literal ->
+            KCoreLiteralPattern literal
+        | ConstructorPattern(name, arguments) ->
+            KCoreConstructorPattern(name, arguments |> List.map lowerKCorePattern)
+
+    let rec private desugarDoExpression statements =
+        match statements with
+        | [] ->
+            Literal LiteralValue.Unit
+        | [ DoExpression expression ] ->
+            expression
+        | DoExpression expression :: rest ->
+            Apply(Name [ ">>" ], [ expression; desugarDoExpression rest ])
+        | DoBind(name, expression) :: rest ->
+            Apply(
+                Name [ ">>=" ],
+                [
+                    expression
+                    Lambda(
+                        [ { Name = name
+                            TypeTokens = None } ],
+                        desugarDoExpression rest
+                    )
+                ]
+            )
+        | DoLet(name, expression) :: rest ->
+            Apply(
+                Lambda(
+                    [ { Name = name
+                        TypeTokens = None } ],
+                    desugarDoExpression rest
+                ),
+                [ expression ]
+            )
+
     let rec private lowerKCoreExpression expression =
         match expression with
         | Literal literal ->
@@ -775,6 +887,16 @@ module Compilation =
                 lowerKCoreExpression whenTrue,
                 lowerKCoreExpression whenFalse
             )
+        | Match(scrutinee, cases) ->
+            KCoreMatch(
+                lowerKCoreExpression scrutinee,
+                cases
+                |> List.map (fun caseClause ->
+                    { Pattern = lowerKCorePattern caseClause.Pattern
+                      Body = lowerKCoreExpression caseClause.Body })
+            )
+        | Do statements ->
+            lowerKCoreExpression (desugarDoExpression statements)
         | Apply(callee, arguments) ->
             KCoreApply(lowerKCoreExpression callee, arguments |> List.map lowerKCoreExpression)
         | Unary(operatorName, operand) ->
@@ -790,6 +912,25 @@ module Compilation =
                     | StringInterpolation inner -> KCoreStringInterpolation(lowerKCoreExpression inner))
             )
 
+    let rec private kcorePatternText pattern =
+        match pattern with
+        | KCoreWildcardPattern -> "_"
+        | KCoreNamePattern name -> name
+        | KCoreLiteralPattern(LiteralValue.Integer value) -> string value
+        | KCoreLiteralPattern(LiteralValue.Float value) -> string value
+        | KCoreLiteralPattern(LiteralValue.String value) -> $"\"{value}\""
+        | KCoreLiteralPattern(LiteralValue.Character value) -> $"'{value}'"
+        | KCoreLiteralPattern LiteralValue.Unit -> "()"
+        | KCoreConstructorPattern(name, arguments) ->
+            let nameText = String.concat "." name
+
+            match arguments with
+            | [] ->
+                nameText
+            | _ ->
+                let argumentText = arguments |> List.map kcorePatternText |> String.concat " "
+                $"({nameText} {argumentText})"
+
     let rec private kcoreExpressionText expression =
         match expression with
         | KCoreLiteral(LiteralValue.Integer value) -> string value
@@ -803,6 +944,13 @@ module Compilation =
             $"(lambda ({names}) {kcoreExpressionText body})"
         | KCoreIfThenElse(condition, whenTrue, whenFalse) ->
             $"(if {kcoreExpressionText condition} {kcoreExpressionText whenTrue} {kcoreExpressionText whenFalse})"
+        | KCoreMatch(scrutinee, cases) ->
+            let caseText =
+                cases
+                |> List.map (fun caseClause -> $"(case {kcorePatternText caseClause.Pattern} {kcoreExpressionText caseClause.Body})")
+                |> String.concat " "
+
+            $"(match {kcoreExpressionText scrutinee} {caseText})"
         | KCoreApply(callee, arguments) ->
             let argumentText =
                 arguments
@@ -890,6 +1038,17 @@ module Compilation =
           IntrinsicTerms = intrinsicTerms |> List.distinct |> List.sort
           Declarations = declarations }
 
+    let rec private lowerKBackendPattern pattern =
+        match pattern with
+        | KCoreWildcardPattern ->
+            KBackendWildcardPattern
+        | KCoreNamePattern name ->
+            KBackendNamePattern name
+        | KCoreLiteralPattern literal ->
+            KBackendLiteralPattern literal
+        | KCoreConstructorPattern(name, arguments) ->
+            KBackendConstructorPattern(name, arguments |> List.map lowerKBackendPattern)
+
     let rec private lowerKBackendExpression expression =
         match expression with
         | KCoreLiteral literal ->
@@ -903,6 +1062,14 @@ module Compilation =
                 lowerKBackendExpression condition,
                 lowerKBackendExpression whenTrue,
                 lowerKBackendExpression whenFalse
+            )
+        | KCoreMatch(scrutinee, cases) ->
+            KBackendMatch(
+                lowerKBackendExpression scrutinee,
+                cases
+                |> List.map (fun caseClause ->
+                    { Pattern = lowerKBackendPattern caseClause.Pattern
+                      Body = lowerKBackendExpression caseClause.Body })
             )
         | KCoreApply(callee, arguments) ->
             KBackendApply(lowerKBackendExpression callee, arguments |> List.map lowerKBackendExpression)
@@ -919,6 +1086,25 @@ module Compilation =
                     | KCoreStringInterpolation inner -> KBackendStringInterpolation(lowerKBackendExpression inner))
             )
 
+    let rec private backendPatternText pattern =
+        match pattern with
+        | KBackendWildcardPattern -> "_"
+        | KBackendNamePattern name -> name
+        | KBackendLiteralPattern(LiteralValue.Integer value) -> string value
+        | KBackendLiteralPattern(LiteralValue.Float value) -> string value
+        | KBackendLiteralPattern(LiteralValue.String value) -> $"\"{value}\""
+        | KBackendLiteralPattern(LiteralValue.Character value) -> $"'{value}'"
+        | KBackendLiteralPattern LiteralValue.Unit -> "()"
+        | KBackendConstructorPattern(name, arguments) ->
+            let nameText = String.concat "." name
+
+            match arguments with
+            | [] ->
+                nameText
+            | _ ->
+                let argumentText = arguments |> List.map backendPatternText |> String.concat " "
+                $"({nameText} {argumentText})"
+
     let rec private backendExpressionText expression =
         match expression with
         | KBackendLiteral(LiteralValue.Integer value) -> string value
@@ -932,6 +1118,13 @@ module Compilation =
             $"(closure ({names}) {backendExpressionText body})"
         | KBackendIfThenElse(condition, whenTrue, whenFalse) ->
             $"(if {backendExpressionText condition} {backendExpressionText whenTrue} {backendExpressionText whenFalse})"
+        | KBackendMatch(scrutinee, cases) ->
+            let caseText =
+                cases
+                |> List.map (fun caseClause -> $"(case {backendPatternText caseClause.Pattern} {backendExpressionText caseClause.Body})")
+                |> String.concat " "
+
+            $"(match {backendExpressionText scrutinee} {caseText})"
         | KBackendApply(callee, arguments) ->
             let argumentText =
                 arguments
@@ -960,11 +1153,18 @@ module Compilation =
         attributes
         |> List.exists (fun attributeName -> String.Equals(attributeName, "PrivateByDefault", StringComparison.Ordinal))
 
-    let private isExportedKCoreBinding (moduleDump: KCoreModule) (binding: KCoreBinding) =
-        match binding.Visibility with
+    let private isExportedVisibility moduleAttributes visibility =
+        match visibility with
         | Some Visibility.Public -> true
         | Some Visibility.Private -> false
-        | None -> not (isPrivateByDefaultAttributes moduleDump.ModuleAttributes)
+        | None -> not (isPrivateByDefaultAttributes moduleAttributes)
+
+    let private isExportedKCoreBinding (moduleDump: KCoreModule) (binding: KCoreBinding) =
+        isExportedVisibility moduleDump.ModuleAttributes binding.Visibility
+
+    let private isExportedDataDeclaration (moduleDump: KCoreModule) (declaration: DataDeclaration) =
+        not declaration.IsOpaque
+        && isExportedVisibility moduleDump.ModuleAttributes declaration.Visibility
 
     let private lowerKBackendModule (coreModule: KCoreModule) =
         let termBindings =
@@ -994,14 +1194,41 @@ module Compilation =
                       DeclarationName = Some name
                       IntroductionKind = "intrinsic" } })
 
+        let constructors =
+            coreModule.Declarations
+            |> List.collect (fun declaration ->
+                match declaration.Source with
+                | DataDeclarationNode dataDeclaration when isExportedDataDeclaration coreModule dataDeclaration ->
+                    dataDeclaration.Constructors
+                    |> List.map (fun constructor ->
+                        { Name = constructor.Name
+                          Arity = constructor.Arity
+                          TypeName = dataDeclaration.Name
+                          Provenance =
+                            { declaration.Provenance with
+                                DeclarationName = Some constructor.Name
+                                IntroductionKind = "constructor" } })
+                | _ ->
+                    [])
+
         let exports =
             coreModule.Declarations
-            |> List.choose (fun declaration ->
-                match declaration.Binding with
-                | Some binding when binding.Name.IsSome && isExportedKCoreBinding coreModule binding ->
-                    Some binding.Name.Value
-                | _ ->
-                    None)
+            |> List.collect (fun declaration ->
+                let bindingExports =
+                    match declaration.Binding with
+                    | Some binding when binding.Name.IsSome && isExportedKCoreBinding coreModule binding ->
+                        [ binding.Name.Value ]
+                    | _ ->
+                        []
+
+                let constructorExports =
+                    match declaration.Source with
+                    | DataDeclarationNode dataDeclaration when isExportedDataDeclaration coreModule dataDeclaration ->
+                        dataDeclaration.Constructors |> List.map (fun constructor -> constructor.Name)
+                    | _ ->
+                        []
+
+                bindingExports @ constructorExports)
             |> List.append coreModule.IntrinsicTerms
             |> List.distinct
             |> List.sort
@@ -1011,6 +1238,7 @@ module Compilation =
           Imports = coreModule.Imports
           Exports = exports
           IntrinsicTerms = coreModule.IntrinsicTerms
+          Constructors = constructors
           Bindings = termBindings @ intrinsicBindings }
 
     let private dumpDiagnostic (diagnostic: Diagnostic) =
@@ -1094,6 +1322,13 @@ module Compilation =
           Declarations = moduleDump.Declarations |> List.map dumpKCoreDeclaration }
 
     let private dumpBackendModule (moduleDump: KBackendModule) =
+        let constructors =
+            moduleDump.Constructors
+            |> List.map (fun constructor ->
+                { Name = constructor.Name
+                  Arity = constructor.Arity
+                  TypeName = constructor.TypeName })
+
         let bindings =
             moduleDump.Bindings
             |> List.map (fun binding ->
@@ -1106,6 +1341,7 @@ module Compilation =
           SourceFile = moduleDump.SourceFile
           Exports = moduleDump.Exports
           IntrinsicTerms = moduleDump.IntrinsicTerms
+          Constructors = constructors
           Bindings = bindings }
 
     let private countOrdinarySatisfactions (moduleDocuments: ParsedDocument list) declaration =
@@ -1386,12 +1622,27 @@ module Compilation =
         |> String.concat " "
         |> fun body -> $"(binding {body})"
 
+    let private renderDumpBackendConstructorSexpr (constructor: DumpBackendConstructor) =
+        [
+            sexprStringAtom "name" constructor.Name
+            sexprAtom "arity" (string constructor.Arity)
+            sexprStringAtom "type-name" constructor.TypeName
+        ]
+        |> String.concat " "
+        |> fun body -> $"(constructor {body})"
+
     let private renderDumpBackendModuleSexpr (moduleDump: DumpBackendModule) =
         [
             sexprStringAtom "name" moduleDump.Name
             sexprStringAtom "source-file" moduleDump.SourceFile
             sexprStringList "exports" moduleDump.Exports
             sexprStringList "intrinsic-terms" moduleDump.IntrinsicTerms
+            let constructorBody =
+                moduleDump.Constructors
+                |> List.map renderDumpBackendConstructorSexpr
+                |> String.concat " "
+
+            if String.IsNullOrWhiteSpace(constructorBody) then "(constructors)" else $"(constructors {constructorBody})"
             let bindingBody =
                 moduleDump.Bindings
                 |> List.map renderDumpBackendBindingSexpr
