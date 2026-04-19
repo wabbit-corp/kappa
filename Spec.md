@@ -3441,27 +3441,59 @@ a reserved token and cannot be redefined by user fixity declarations.
 Kappa does not support deep subtyping. However, to maintain ecosystem coherence between linear, borrowed, and
 unrestricted contexts, Kappa implements a localized subsumption rule at function application boundaries.
 
-Let `f` be a function expecting an argument of type `((q_dem x : A) -> B) -> R`. Let `e` be an expression inferred to
-have type `(q_cap x : A) -> B`.
+#### 7.1.3.1 Application elaboration pipeline
 
-When elaborating the application `f e`:
+To resolve an application `f e`, let the next explicit parameter expected by `f` be `(q_dem x : T_dem)`, and let `e`
+be the supplied argument expression. The compiler MUST apply the following steps in strict sequence:
 
-1. The compiler first attempts exact unification of the argument type and parameter type. If the expected type is
-   quantity-polymorphic, this may solve a `Quantity` metavariable.
-2. If exact unification fails due only to a mismatch in the outermost arrow quantity, the compiler checks the
-   satisfaction relation `q_cap ⊑ q_dem` as defined in §5.1.5.
-3. If either quantity contains an unsolved quantity metavariable, elaboration propagates quantity constraints from the
-   surrounding context. If `q_cap ⊑ q_dem` remains undecidable after those constraints are processed, compilation fails
-   with an unsolved quantity-metavariable error rather than defaulting to any particular case.
-4. If the satisfaction relation holds, the application is well-typed. The compiler MUST elaborate `e` by inserting an
-   internal coercion or an eta-expansion that matches the demanded quantity `q_dem`.
-5. If the satisfaction relation does not hold, the application is a compile-time error.
+1. **Outermost borrow introduction (auto-referencing).**
+
+   If `q_dem` is exactly a borrowed quantity binder (`&` or an explicitly scoped borrowed binder such as `&[s]`), the
+   compiler first checks whether `e` is a borrowable stable expression under §5.1.5.
+
+   * If so, elaboration first considers the temporary-borrow form of `e` and typechecks that borrowed argument against
+     `T_dem`.
+   * If this borrowed check succeeds, the application is well-typed for that argument and no interval-quantity
+     subsumption step is attempted.
+   * If `e` is not a borrowable stable expression, or if the temporary-borrow form does not typecheck, elaboration
+     continues to Step 2.
+
+2. **Exact unification and ordinary quantity satisfaction.**
+
+   Elaborate `e` against `T_dem`, obtaining an argument type `T_cap` and an available capability `q_cap` for the
+   supplied expression.
+
+   * If `T_cap` unifies exactly with `T_dem`, the compiler checks the satisfaction relation `q_cap ⊑ q_dem` as defined
+     in §5.1.5.
+   * If `q_cap ⊑ q_dem` holds, the application is well-typed.
+   * If `q_cap ⊑ q_dem` remains undecidable because one or both quantities still contain unsolved quantity
+     metavariables after processing surrounding constraints, compilation fails with an unsolved
+     quantity-metavariable error rather than defaulting to any case.
+   * If `T_cap` does not unify exactly with `T_dem`, continue to Step 3.
+
+3. **Arrow subsumption (higher-order coercion).**
+
+   If exact unification failed solely because `T_cap` and `T_dem` are both function types whose outermost binder
+   quantities differ, the compiler MAY attempt outermost-arrow subsumption:
+
+   * Let `T_dem = (q_inner_dem y : A) -> B`.
+   * Let `T_cap = (q_inner_cap y : A) -> B`.
+   * The parameter domain `A` and result type `B` must match up to definitional equality; only the outermost arrow
+     quantity mismatch is tolerated by this step.
+   * The compiler then checks the contravariant satisfaction condition `q_inner_dem ⊑ q_inner_cap`.
+   * If that condition holds, the application is well-typed and the compiler MUST elaborate `e` by inserting an
+     internal coercion or eta-expansion whose exposed binder quantity matches the demanded type `T_dem`.
+   * If the condition is undecidable after surrounding constraints are processed, compilation fails with an unsolved
+     quantity-metavariable error.
+   * If the condition does not hold, the application is a compile-time error.
+
+If none of the three steps succeeds, the application is ill-typed.
 
 This subsumption applies only to the outermost arrow at the point of application. It does not apply recursively inside
 type constructors. For example, `List ((ω x : A) -> B)` is never implicitly coercible to `List ((1 x : A) -> B)`.
 
-Borrow introduction for arguments demanded at quantity `&` is not part of this subsumption rule. It is handled
-separately by the borrow-introduction rule of §5.1.5, which may insert a temporary borrow of a borrowable stable
+Borrow introduction for arguments demanded at quantity `&` is not an interval-quantity case of `⊑`. It is handled by
+Step 1 above, via the borrow-introduction rule of §5.1.5, which may insert a temporary borrow of a borrowable stable
 expression even though no interval capability satisfies `&` in the `⊑` table.
 
 
