@@ -9617,6 +9617,8 @@ scriptMode
 backend <profile>
 
 entry <qualifiedName>
+runArgs <stringLiteral>...
+stdinFile <path>
 
 dumpFormat json
 dumpFormat sexpr
@@ -9635,6 +9637,14 @@ Rules:
 * Portable tests using `mode compile` or `mode run` SHOULD specify `backend <profile>`.
 * `entry <qualifiedName>` is valid only for `mode run`.
   It names the program entrypoint to execute.
+* `runArgs <stringLiteral>...` is valid only for `mode run`.
+  Each argument is parsed using the ordinary Kappa string-literal grammar and supplied as one command-line argument or
+  equivalent run-task argument in the specified order.
+  If `runArgs` is omitted, the default argument list is empty.
+* `stdinFile <path>` is valid only for `mode run`.
+  `<path>` is relative to the suite root.
+  The contents of the named file are supplied to the program's standard input as raw bytes.
+  If `stdinFile` is omitted, the default standard input is empty.
 * If no `dumpFormat` is specified, the default is `json`.
 * `requires ...` directives are preconditions.
   If any required condition is not met, the test result is **unsupported**, not failed.
@@ -9799,6 +9809,8 @@ assertExitCode <n>
 Rules:
 
 * These directives are valid only for `mode run`.
+* The asserted execution is the one obtained after applying any configured `entry`, `runArgs`, and `stdinFile`
+  directives from §T.4.
 * In `assertStdout <stringLiteral>` and `assertStdoutContains <stringLiteral>`, the argument is parsed using the
   ordinary Kappa string-literal grammar.
 * `<path>` is relative to the suite root.
