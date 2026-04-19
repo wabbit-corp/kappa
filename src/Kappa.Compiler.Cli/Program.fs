@@ -1,7 +1,9 @@
 open System
 open System.Diagnostics
 open System.IO
+open System.Reflection
 open System.Runtime.InteropServices
+open System.Runtime.Loader
 open Kappa.Compiler
 
 type CliOptions =
@@ -24,6 +26,7 @@ module private Cli =
             "kp [--source-root <path>] [--backend <profile>] [--emit-dir <path>] [--native-aot] [--dump-tokens] [--dump-ast] [--dump-stage <checkpoint>] [--dump-format <json|sexpr>] [--trace] [--verify <checkpoint>] [--run <binding>] [inputs...]"
             ""
             "If no input paths are supplied, the compiler scans the source root for *.kp files."
+            "Runtime backends: interpreter | dotnet | dotnet-hosted | dotnet-il"
         ]
         |> String.concat Environment.NewLine
 
@@ -307,7 +310,14 @@ let private printProcessFailure (heading: string) (result: ProcessResult) =
     if String.IsNullOrWhiteSpace(result.StandardOutput) && String.IsNullOrWhiteSpace(result.StandardError) then
         Console.Error.WriteLine(heading)
 
-let private runDotNetBackend (workspace: WorkspaceCompilation) (entryPoint: string) (emitDirectory: string option) (nativeAot: bool) =
+let private runDotNetBackend
+    (emitArtifact:
+        WorkspaceCompilation -> string -> string -> DotNetDeployment -> Result<DotNetArtifact, string>)
+    (workspace: WorkspaceCompilation)
+    (entryPoint: string)
+    (emitDirectory: string option)
+    (nativeAot: bool)
+    =
     let outputDirectory =
         emitDirectory
         |> Option.defaultWith (fun () ->
@@ -316,7 +326,7 @@ let private runDotNetBackend (workspace: WorkspaceCompilation) (entryPoint: stri
     let deployment =
         if nativeAot then DotNetDeployment.NativeAot else DotNetDeployment.Managed
 
-    match Backend.emitDotNetArtifact workspace entryPoint outputDirectory deployment with
+    match emitArtifact workspace entryPoint outputDirectory deployment with
     | Result.Error message ->
         Console.Error.WriteLine(message)
         1
@@ -368,6 +378,99 @@ let private runDotNetBackend (workspace: WorkspaceCompilation) (entryPoint: stri
                     Console.Error.Write(runResult.StandardError)
 
                 runResult.ExitCode
+
+let private resolveIlEntryPoint (workspace: WorkspaceCompilation) (entryPoint: string) =
+    let segments =
+        entryPoint.Split('.', StringSplitOptions.RemoveEmptyEntries)
+        |> Array.toList
+
+    let tryMatchBinding moduleName bindingName =
+        workspace.KBackendIR
+        |> List.tryFind (fun moduleDump -> String.Equals(moduleDump.Name, moduleName, StringComparison.Ordinal))
+        |> Option.bind (fun moduleDump ->
+            moduleDump.Bindings
+            |> List.tryFind (fun binding ->
+                String.Equals(binding.Name, bindingName, StringComparison.Ordinal)
+                && not binding.Intrinsic
+                && List.isEmpty binding.Parameters))
+
+    match segments with
+    | [] ->
+        Result.Error "Expected a binding name to run."
+    | [ bindingName ] ->
+        let matches =
+            workspace.KBackendIR
+            |> List.choose (fun moduleDump ->
+                moduleDump.Bindings
+                |> List.tryFind (fun binding ->
+                    String.Equals(binding.Name, bindingName, StringComparison.Ordinal)
+                    && not binding.Intrinsic
+                    && List.isEmpty binding.Parameters)
+                |> Option.map (fun binding -> moduleDump.Name, binding.Name))
+
+        match matches with
+        | [] ->
+            Result.Error $"No zero-argument binding named '{bindingName}' was found for dotnet-il."
+        | [ moduleName, resolvedBindingName ] ->
+            Result.Ok(moduleName, resolvedBindingName)
+        | _ ->
+            Result.Error $"Binding name '{bindingName}' is ambiguous. Use a fully qualified name."
+    | _ ->
+        let moduleName = segments |> List.take (segments.Length - 1) |> String.concat "."
+        let bindingName = List.last segments
+
+        match tryMatchBinding moduleName bindingName with
+        | Some _ ->
+            Result.Ok(moduleName, bindingName)
+        | None ->
+            Result.Error $"dotnet-il requires a zero-argument binding named '{bindingName}' in module '{moduleName}'."
+
+let private formatIlValue (value: obj) =
+    match value with
+    | :? int64 as integerValue -> string integerValue
+    | :? double as floatValue -> string floatValue
+    | :? bool as boolValue -> if boolValue then "True" else "False"
+    | :? string as stringValue -> $"\"{stringValue}\""
+    | :? char as characterValue -> $"'{characterValue}'"
+    | null -> "()"
+    | other -> other.ToString()
+
+let private runIlBackend (workspace: WorkspaceCompilation) (entryPoint: string) (emitDirectory: string option) =
+    let outputDirectory =
+        emitDirectory
+        |> Option.defaultWith (fun () ->
+            Path.Combine(Path.GetTempPath(), "kappa-cli-il", Guid.NewGuid().ToString("N")))
+
+    match resolveIlEntryPoint workspace entryPoint with
+    | Result.Error message ->
+        Console.Error.WriteLine(message)
+        1
+    | Result.Ok(moduleName, bindingName) ->
+        match Backend.emitIlAssemblyArtifact workspace outputDirectory with
+        | Result.Error message ->
+            Console.Error.WriteLine(message)
+            1
+        | Result.Ok artifact ->
+            let assemblyPath = Path.GetFullPath(artifact.AssemblyFilePath)
+            let assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(assemblyPath)
+            let typeName = IlDotNetBackend.emittedModuleTypeName moduleName
+            let methodName = IlDotNetBackend.emittedMethodName bindingName
+            let moduleType = assembly.GetType(typeName, throwOnError = false, ignoreCase = false)
+
+            if isNull moduleType then
+                Console.Error.WriteLine($"dotnet-il could not find emitted type '{typeName}'.")
+                1
+            else
+                let method =
+                    moduleType.GetMethod(methodName, BindingFlags.Public ||| BindingFlags.Static)
+
+                if isNull method then
+                    Console.Error.WriteLine($"dotnet-il could not find emitted method '{typeName}.{methodName}'.")
+                    1
+                else
+                    let value = method.Invoke(null, [||])
+                    Console.Out.WriteLine(formatIlValue value)
+                    0
 
 [<EntryPoint>]
 let main argv =
@@ -453,8 +556,11 @@ let main argv =
                         | Result.Error issue ->
                             Console.Error.WriteLine($"runtime error: {issue.Message}")
                             1
-                    | "dotnet" ->
-                        runDotNetBackend workspace entryPoint options.EmitDirectory options.NativeAot
+                    | "dotnet"
+                    | "dotnet-hosted" ->
+                        runDotNetBackend Backend.emitHostedDotNetArtifact workspace entryPoint options.EmitDirectory options.NativeAot
+                    | "dotnet-il" ->
+                        runIlBackend workspace entryPoint options.EmitDirectory
                     | other ->
-                        Console.Error.WriteLine($"Unsupported runtime backend '{other}'.")
+                        Console.Error.WriteLine($"Unsupported runtime backend '{other}'. Expected interpreter, dotnet, dotnet-hosted, or dotnet-il.")
                         1

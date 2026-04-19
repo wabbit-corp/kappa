@@ -3,7 +3,9 @@ module Harness
 open System
 open System.Diagnostics
 open System.IO
+open System.Reflection
 open System.Runtime.InteropServices
+open System.Runtime.Loader
 open System.Text
 open System.Text.RegularExpressions
 open Kappa.Compiler
@@ -185,6 +187,34 @@ let runProcess (workingDirectory: string) (fileName: string) (arguments: string)
     { ExitCode = child.ExitCode
       StandardOutput = standardOutput.Replace("\r\n", "\n")
       StandardError = standardError.Replace("\r\n", "\n") }
+
+type private TestAssemblyLoadContext(mainAssemblyPath: string) =
+    inherit AssemblyLoadContext($"kappa-test-{Guid.NewGuid():N}", isCollectible = true)
+
+    let resolver = AssemblyDependencyResolver(mainAssemblyPath)
+
+    override this.Load(assemblyName: AssemblyName) =
+        let resolvedPath = resolver.ResolveAssemblyToPath(assemblyName)
+
+        if String.IsNullOrWhiteSpace(resolvedPath) then
+            null
+        else
+            this.LoadFromAssemblyPath(resolvedPath)
+
+type LoadedManagedAssembly =
+    { Context: AssemblyLoadContext
+      Assembly: Assembly }
+    interface IDisposable with
+        member this.Dispose() =
+            this.Context.Unload()
+
+let loadManagedAssembly (assemblyPath: string) =
+    let resolvedPath = Path.GetFullPath(assemblyPath)
+    let loadContext = new TestAssemblyLoadContext(resolvedPath)
+    let assembly = loadContext.LoadFromAssemblyPath(resolvedPath)
+
+    { Context = loadContext
+      Assembly = assembly }
 
 type KpFixtureAssertion =
     | AssertNoErrors of filePath: string * lineNumber: int

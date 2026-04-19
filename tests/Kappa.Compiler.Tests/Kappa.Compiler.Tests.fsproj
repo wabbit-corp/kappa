@@ -13,6 +13,7 @@
     <Compile Include="CoreTests.fs" />
     <Compile Include="ObservabilityTests.fs" />
     <Compile Include="BackendTests.fs" />
+    <Compile Include="IlBackendTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

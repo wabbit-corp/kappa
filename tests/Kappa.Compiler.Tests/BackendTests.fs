@@ -42,10 +42,10 @@ let ``dotnet backend emits a managed project that runs`` () =
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
-let ``dotnet backend native aot publish runs`` () =
+let ``hosted dotnet backend remains available`` () =
     let workspace =
         compileInMemoryWorkspace
-            "memory-dotnet-native-root"
+            "memory-dotnet-hosted-root"
             [
                 "main.kp",
                 [
@@ -55,33 +55,18 @@ let ``dotnet backend native aot publish runs`` () =
                 |> String.concat "\n"
             ]
 
-    let outputDirectory = createScratchDirectory "dotnet-native-backend"
+    let outputDirectory = createScratchDirectory "dotnet-hosted-backend"
 
     let artifact =
-        match Backend.emitDotNetArtifact workspace "main.result" outputDirectory DotNetDeployment.NativeAot with
+        match Backend.emitHostedDotNetArtifact workspace "main.result" outputDirectory DotNetDeployment.Managed with
         | Result.Ok artifact -> artifact
         | Result.Error message -> failwith message
 
-    let rid = currentRid ()
-
-    let publishResult =
-        runProcess outputDirectory "dotnet" $"publish \"{artifact.ProjectFilePath}\" -c Release -r {rid}"
-
-    Assert.Equal(0, publishResult.ExitCode)
-
-    let publishDirectory =
-        Path.Combine(outputDirectory, "bin", "Release", "net10.0", rid, "publish")
-
-    let executableName =
-        Path.GetFileNameWithoutExtension(artifact.ProjectFilePath)
-
-    let executable =
-        executablePath publishDirectory executableName
-
-    Assert.True(File.Exists(executable), $"Expected published executable at '{executable}'.")
+    let runtimeSource = File.ReadAllText(artifact.RuntimeFilePath)
+    Assert.Contains("abstract class KExpr", runtimeSource)
 
     let runResult =
-        runProcess publishDirectory executable ""
+        runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
 
     Assert.Equal(0, runResult.ExitCode)
     Assert.Equal("42", runResult.StandardOutput.Trim())
@@ -117,6 +102,39 @@ let ``cli can run the managed dotnet backend`` () =
 
     Assert.Equal(0, runResult.ExitCode)
     Assert.Contains("42", runResult.StandardOutput)
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
+let ``cli can run the managed dotnet il backend for zero argument bindings`` () =
+    let workspaceRoot = createScratchDirectory "cli-dotnet-il-workspace"
+
+    writeWorkspaceFiles
+        workspaceRoot
+        [
+            "main.kp",
+            [
+                "module main"
+                "let answer = 40"
+                "let result = answer + 2"
+            ]
+            |> String.concat "\n"
+        ]
+
+    let emitDirectory = createScratchDirectory "cli-dotnet-il-emit"
+
+    let cliProjectPath =
+        Path.GetFullPath(
+            Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "src", "Kappa.Compiler.Cli", "Kappa.Compiler.Cli.fsproj")
+        )
+
+    let runResult =
+        runProcess
+            workspaceRoot
+            "dotnet"
+            $"run --project \"{cliProjectPath}\" -v q -- --source-root \"{workspaceRoot}\" --backend dotnet-il --emit-dir \"{emitDirectory}\" --run main.result"
+
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("42", runResult.StandardOutput.Trim())
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
