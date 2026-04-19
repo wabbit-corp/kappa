@@ -7887,6 +7887,8 @@ If the deep resumption is multi-shot, this reinstallation occurs afresh for each
 Kappa provides a built-in, content-addressed hashing system with two tiers.
 
 Hashes are defined over KCore after macro execution and full elaboration. They are not defined over KFrontIR.
+The semantic hashes of this chapter are not, by themselves, the required incremental invalidation keys of an
+implementation; compiler fingerprints for that purpose are defined separately in §17.1.2.
 Compiler observability artifacts such as stage dumps, pipeline traces, and reproducer bundles are not part of those
 hashing inputs.
 
@@ -8128,7 +8130,7 @@ Programs that use any of these facilities are outside the safe portable subset.
 These facilities remain part of the language specification, but they are classified as unsafe/debug features rather than
 ordinary portable surface forms.
 
-The compiler observability facilities of §17.1.1-§17.1.5 are ordinary required tooling facilities.
+The compiler observability facilities of §17.1.3-§17.1.7 are ordinary required tooling facilities.
 They are not classified as unsafe/debug language features merely because they expose intermediate compiler
 representations.
 
@@ -8221,7 +8223,77 @@ backend-intrinsic set it activates, is part of the effective build configuration
 A compilation that depends on backend intrinsics or backend-specific `expect` satisfaction is valid only when those
 requirements are met by the chosen backend profile.
 
-### 17.1.1 Compiler observability
+### 17.1.1 Incremental units
+
+A conforming implementation MUST behave as if compilation is decomposed into memoizable incremental units.
+
+At minimum, the following conceptual units exist:
+
+* source-file text units;
+* module import-surface units;
+* declaration-header units;
+* declaration-body units;
+* macro-expansion units;
+* module-interface units;
+* KCore declaration or module units;
+* KBackendIR declaration or module units; and
+* target-lowering units.
+
+An implementation MAY choose finer-grained units, but it MUST NOT behave as if every source edit invalidates the entire
+compilation unit unless the edit in fact changes every required upstream unit.
+
+Downstream ordinary compilation depends on imported module-interface units, not on imported implementation bodies,
+except where this specification explicitly permits otherwise (for example the unsafe/debug facilities of §16.3).
+
+### 17.1.2 Compiler fingerprints
+
+For incremental invalidation, a conforming implementation MUST define deterministic compiler fingerprints distinct from
+the semantic hashes of §15.
+
+Compiler fingerprints are implementation-defined digests or equivalent stable change detectors used to decide reuse and
+invalidation.
+They are not semantic identities and need not coincide with Easy Hash or Hard Hash.
+
+At minimum, the implementation MUST behave as if the following fingerprints exist:
+
+* `SourceFingerprint`:
+  determined by the source text and any source-level metadata that affects parsing or module identity.
+
+* `HeaderFingerprint`:
+  determined by the parts of a declaration needed for `DECLARATION_SHAPES`, `HEADER_TYPES`, `STATUS`, and
+  `IMPLICIT_SIGNATURES`.
+
+* `InterfaceFingerprint`:
+  determined by the externally visible interface of a module or declaration, including:
+  * exported names by namespace,
+  * importable fixity declarations,
+  * visibility and opacity classification,
+  * exported signatures,
+  * associated-type and effect-operation signatures where applicable,
+  * instance heads and any interface-visible coherence metadata, and
+  * any transparent definitional content required by downstream ordinary definitional equality.
+
+* `BodyFingerprint`:
+  determined by the non-interface body content of a declaration after the declaration header is fixed.
+
+* `BackendFingerprint(profile)`:
+  determined by all inputs relevant to KBackendIR lowering and target lowering for the selected backend profile,
+  including the effective build configuration, backend-intrinsic set, representation-selection inputs, and relevant
+  imported interface fingerprints.
+
+Rules:
+
+* A body-only change that leaves `InterfaceFingerprint` unchanged MUST NOT by itself invalidate downstream modules that
+  depend only on the module's ordinary interface.
+* A change that alters `InterfaceFingerprint` MUST invalidate downstream results that depend on that interface from the
+  earliest affected phase.
+* A change that alters only `BodyFingerprint` MAY preserve previously computed header-, interface-, and
+  downstream-import results.
+
+The semantic hashes of §15 remain normative for semantic identity, coherence, and related uses.
+They MUST NOT be assumed to be the sole or primary invalidation keys of a conforming implementation.
+
+### 17.1.3 Compiler observability
 
 A conforming implementation MUST provide user-visible or API-visible compiler observability facilities.
 
@@ -8239,7 +8311,7 @@ metadata required to understand it.
 A stage dump is not required to be a tree.
 In particular, KBackendIR dumps may be graph-structured.
 
-### 17.1.2 Named checkpoints
+### 17.1.4 Named checkpoints
 
 A conforming implementation MUST behave as if the following named checkpoints exist:
 
@@ -8256,7 +8328,7 @@ produce a stage dump observationally equivalent to the representation that would
 For representations that are not themselves IR-shaped, such as a final native executable or classfile bundle, the
 implementation MUST provide an artifact-manifest dump rather than pretending that an AST exists there.
 
-### 17.1.3 Machine-readable dump formats
+### 17.1.5 Machine-readable dump formats
 
 Implementations MUST support at least two machine-readable serializations for every required stage dump:
 
@@ -8309,7 +8381,7 @@ the redacted value.
 Stage dumps, pipeline traces, and reproducer bundles are observability artifacts only.
 They are not inputs to the hashing rules of §15.
 
-### 17.1.4 Pipeline traces and checkpoint verification
+### 17.1.6 Pipeline traces and checkpoint verification
 
 A conforming implementation MUST expose a pipeline trace for each compilation request.
 
@@ -8337,7 +8409,7 @@ crossed by a compilation request.
 
 An implementation SHOULD support before-and-after dumps for each transformation step that changes the representation.
 
-### 17.1.5 Reproducer bundles
+### 17.1.7 Reproducer bundles
 
 A conforming implementation MUST provide a mode that emits a reproducer bundle when compilation fails due to an internal
 compiler error or backend-lowering failure.
@@ -8358,9 +8430,9 @@ At minimum it MUST include:
 A reproducer bundle SHOULD additionally include the partially constructed representation at the point of failure when
 one exists.
 
-A reproducer bundle MAY redact sensitive external data under the rules of §17.1.3.
+A reproducer bundle MAY redact sensitive external data under the rules of §17.1.5.
 
-#### 17.1.6 Compilation tasks
+#### 17.1.8 Compilation tasks
 
 A conforming implementation MAY expose any number of user-facing commands, APIs, or build actions, but it MUST behave as
 if the following conceptual tasks exist:
@@ -8375,17 +8447,17 @@ if the following conceptual tasks exist:
   `check` need not perform KBackendIR lowering or target lowering.
 
 * `emit-interface`:
-  produce the separate-compilation interface artifacts of §17.1.7, or an observationally equivalent in-memory result.
+  produce the separate-compilation interface artifacts of §17.1.9, or an observationally equivalent in-memory result.
 
 * `compile`:
   lower checked roots through KBackendIR and target-profile lowering to a final artifact.
 
 * `run`:
-  execute checked roots using one of the execution strategies of §17.1.8.
+  execute checked roots using one of the execution strategies of §17.1.10.
 
 The names of these tasks in any particular toolchain are implementation-defined.
 
-#### 17.1.7 Separate-compilation artifacts
+#### 17.1.9 Separate-compilation artifacts
 
 For separate compilation, a module MAY be represented by:
 
@@ -8422,7 +8494,7 @@ It MAY embed the interface artifact or refer to it by stable identity.
 
 Ordinary downstream compilation MUST NOT require access to a target-specific implementation artifact.
 
-#### 17.1.8 Execution strategies
+#### 17.1.10 Execution strategies
 
 A `run` task executes checked roots under the effective build configuration and selected backend profile.
 
@@ -8626,7 +8698,116 @@ At minimum:
 * a change to macro-observed external input MUST invalidate any expansion, cached query result, or downstream phase
   result that depended on that input.
 
-#### 17.2.7 KFrontIR phase snapshots
+The implementation MUST determine affected results by consulting recorded query dependencies and compiler fingerprints,
+not merely by coarse file-level invalidation, unless the implementation can prove that such coarse invalidation is
+equivalent for the affected request.
+
+#### 17.2.7 Query model
+
+A conforming implementation MUST behave as if frontend analysis, elaboration, KCore construction, KBackendIR
+construction, and target lowering are computed by dependency-tracked queries.
+
+A query is identified by:
+
+* a stable query kind;
+* a stable input key;
+* the effective build configuration;
+* the selected backend profile and backend-intrinsic set when relevant; and
+* the analysis session or compilation session in which the query is evaluated.
+
+Query kinds are implementation-defined, but the implementation MUST behave as if at least the following conceptual
+queries exist:
+
+* parse source file;
+* build KFrontIR for source file;
+* advance node or declaration to phase `P`;
+* compute declaration header information;
+* compute declaration body resolution;
+* compute module interface;
+* lower declaration or module to KCore;
+* evaluate elaboration-time expansion or normalization request;
+* lower declaration or module to KBackendIR;
+* lower KBackendIR to target artifact unit.
+
+Query rules:
+
+* Query evaluation is conceptually pure.
+  A query result depends only on its explicit inputs and on the results of other queries it demands.
+* A query MUST record dependency edges to the queries and fingerprints it actually used.
+* A query result MAY be memoized and reused only while all recorded dependencies remain valid.
+* If a dependency changes, the cached query result is invalid from the earliest affected phase onward.
+* Hidden ambient mutable state MUST NOT affect query results except insofar as it is itself modeled as an explicit query
+  input or recorded transcript input.
+
+Cycle handling:
+
+* If query demand would create a cycle that is not already ruled out by source-language well-formedness, the
+  implementation MUST detect it and report a compiler diagnostic or internal-compiler diagnostic rather than deadlocking
+  or spinning indefinitely.
+* The diagnostic SHOULD identify the query cycle in terms of declarations, modules, or phases when possible.
+
+#### 17.2.8 Parallel execution and determinism
+
+A conforming implementation MAY evaluate ready queries in parallel.
+
+A query is ready when all of its prerequisite query inputs and fingerprints are available.
+
+Parallel execution rules:
+
+* Query evaluation MUST be observationally deterministic.
+* For fixed source inputs, dependency closure, build configuration, backend profile, backend-intrinsic set, and
+  implementation version:
+  * successful query results,
+  * emitted interfaces,
+  * KCore,
+  * KBackendIR,
+  * final artifacts,
+  * and diagnostics
+  MUST be independent of worker count, task interleaving, or scheduling policy.
+
+In particular:
+
+* no query may observe a partially published result of another query;
+* publication of memoized query results MUST be atomic from the viewpoint of other queries;
+* if several diagnostics are produced concurrently, their externally visible ordering MUST be canonical and
+  deterministic;
+* if several dumpable checkpoints are produced concurrently, their externally visible ordering and IDs MUST be canonical
+  and deterministic.
+
+A conforming implementation SHOULD exploit parallelism at least across:
+
+* modules whose imported interfaces are already available and whose dependency constraints permit concurrent work;
+* declarations within a module once their required header information and imported interfaces are available;
+* target-lowering units whose KBackendIR inputs are ready.
+
+An implementation MAY decline to parallelize any of these cases, but it MUST NOT introduce a semantic dependence on
+serial evaluation order where the source language does not require one.
+
+#### 17.2.9 Cancellation
+
+A conforming implementation MAY support cancellation of analysis, checking, elaboration, lowering, or target-lowering
+requests.
+
+If cancellation is supported:
+
+* cancellation MUST occur only at query boundaries or at implementation-defined safe points within a query;
+* a cancelled request MUST NOT publish a partially formed query result as if it were complete;
+* already completed and verified subquery results MAY remain memoized and available for reuse by later requests;
+* cancellation MUST NOT corrupt memo tables, persistent caches, or stage dumps already published as complete.
+
+Cancellation behavior is otherwise implementation-defined.
+
+#### 17.2.10 Fine-grained source reuse
+
+An implementation intended for editor or language-server use SHOULD preserve unchanged KFrontIR subtrees, declaration
+symbols, and source origins across localized source edits when doing so is sound.
+
+In particular, a localized edit SHOULD NOT by itself require rebuilding unaffected files, unrelated declarations in the
+same file, or unchanged syntactic subtrees whose containing incremental units remain valid.
+
+This is a performance recommendation rather than a semantic requirement.
+
+#### 17.2.11 KFrontIR phase snapshots
 
 A KFrontIR stage dump at phase `P` MUST preserve the error-tolerant and partially resolved nature of the representation.
 
@@ -8651,12 +8832,12 @@ A KFrontIR dump MUST expose, for each relevant node:
 If a tooling query forces lazy phase advancement, an implementation MUST be able to dump both the pre-query and
 post-query KFrontIR snapshots, or observationally equivalent reconstructions thereof.
 
-#### 17.2.8 Whole-compilation phase order
+#### 17.2.12 Whole-compilation phase order
 
 Because the module dependency graph is acyclic (§2.2), whole-compilation phase order is constrained by module
 topological order.
 
-A module is **interface-ready** when the implementation has produced the module interface artifact of §17.1.7, or an
+A module is **interface-ready** when the implementation has produced the module interface artifact of §17.1.9, or an
 observationally equivalent in-memory representation.
 
 A conforming implementation MUST behave as if batch compilation proceeds as follows:
@@ -8940,6 +9121,10 @@ distinctions MUST NOT by themselves force distinct runtime specializations.
 Two KCore terms whose erased calling convention and chosen runtime representation classes are definitionally equal MAY
 share a single KBackendIR body.
 
+A change that does not alter the erased calling convention, selected runtime representation classes, or other
+`BackendFingerprint(profile)` inputs SHOULD preserve previously computed KBackendIR and target-lowering results where
+possible.
+
 ### 17.4.7 Runtime calling convention
 
 At KBackendIR boundaries:
@@ -8952,6 +9137,40 @@ At KBackendIR boundaries:
   them.
 
 This section does not change source typing. It specifies only the backend-neutral runtime view after elaboration.
+
+### 17.4.8 Incremental reuse across lowering stages
+
+A conforming implementation MAY persist and reuse previously verified results of KCore construction, KBackendIR
+construction, and target lowering.
+
+Reuse rules:
+
+* A KCore unit MAY be reused when:
+  * its own required frontend-query results remain valid, and
+  * all recorded imported-interface dependencies remain valid.
+
+* A KBackendIR unit MAY be reused when:
+  * its originating KCore unit remains valid,
+  * its representation-selection inputs remain valid, and
+  * its `BackendFingerprint(profile)` remains unchanged.
+
+* A target-lowered unit MAY be reused when:
+  * its originating KBackendIR unit remains valid, and
+  * all target-profile-specific lowering inputs remain unchanged.
+
+An implementation MUST NOT reuse a cached result whose recorded dependencies are invalid.
+
+A successful reuse is observationally equivalent to recomputing the unit from its inputs under the current
+implementation version and effective build configuration.
+
+A conforming implementation SHOULD support persistent caches across compiler-process restarts for at least:
+
+* module-interface units,
+* KCore units,
+* KBackendIR units, and
+* target-lowering units,
+
+provided the reuse conditions above are satisfied.
 
 ### 17.5 Portable runtime obligations
 
