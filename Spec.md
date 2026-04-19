@@ -2265,6 +2265,9 @@ updateField  ::= [ '@' ] ident '=' expr
 A record update must contain only `=` fields. A record update containing `:=` is ill-formed.
 If a record field is declared as an implicit field `@label : T`, it may be explicitly updated with surface syntax
 `@label = expr`.
+Unlike record literals and constructor applications, field punning is not permitted in record updates. Every update
+field MUST provide an explicit right-hand side. Writing `r.{ x }` as shorthand for `r.{ x = x }` is a compile-time
+error.
 
 Normative elaboration:
 
