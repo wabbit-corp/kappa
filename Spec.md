@@ -5253,9 +5253,13 @@ Semantics:
   itself exits (§8.7.2.1).
 
 Restrictions:
-* The deferred action `e` MUST NOT contain a `return`, `break`, or `continue` that targets the enclosing `do`-scope.
-  Occurrences inside a nested lambda or local function are permitted if they target that nested construct rather than
-  the enclosing `do`-scope.
+* The deferred action `e` MUST NOT contain any abrupt control flow (`return`, `break`, or `continue`) that targets any
+  scope outside the deferred action itself. This includes the enclosing `do`-scope and any more distant labeled loop,
+  lambda, function, or `do`-scope.
+* Occurrences inside a nested lambda or local function are permitted only when they target a construct inside that
+  nested body rather than escaping the deferred action.
+* Since `finally` is elaborated via `defer` (§9.2), the same restriction applies to `finally` blocks. Attempting to
+  jump out of a `defer` or `finally` block is a compile-time error.
 
 Implementation may desugar this to a bracket/finalizer mechanism; spec only fixes the ordering and guarantee of
 execution on exit.
@@ -5396,6 +5400,12 @@ construct that targets it.
 A deferred action scheduled by `defer@L` into an outer frame remains pending while inner frames exit. It runs only when
 the target frame `L` itself is unwound. If `L` names the current `do`-scope, `defer@L e` is observationally equivalent
 to ordinary `defer e`.
+
+The in-flight unwinding sequence cannot itself be replaced by a new abrupt control transfer originating from a deferred
+action. By the restriction of §8.6, a deferred or `finally` action may complete normally or propagate a monadic error,
+but it cannot `return`, `break`, or `continue` to any scope outside that action. Therefore the crossed frames `F1 ...
+Fk` are always unwound in the specified inner-to-outer order, subject only to the primary-error selection rules of
+§8.7.2.
 
 When `MonadError m` is present, primary-error selection across multiple exited scope frames is defined by repeated
 application of §8.7.2. Equivalently, the propagated error is the first error encountered in the actual inner-to-outer
