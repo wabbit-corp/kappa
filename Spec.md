@@ -2700,8 +2700,8 @@ the same termination checker as the rest of the language. A macro accepted only 
 be deterministic with respect to its inputs and the macro input transcript. Non-termination of a macro during
 elaboration is a compiler error (the implementation may hang, time out, or report a diagnostic).
 
-These restrictions are enforced by the elaboration-time evaluator. A macro or splice that violates them is a
-compile-time error.
+These restrictions are enforced by the elaboration-time evaluator (§17.3.2).
+A macro or splice that violates them is a compile-time error.
 
 ### 5.9 Staged code values
 
@@ -7887,6 +7887,8 @@ If the deep resumption is multi-shot, this reinstallation occurs afresh for each
 Kappa provides a built-in, content-addressed hashing system with two tiers.
 
 Hashes are defined over KCore after macro execution and full elaboration. They are not defined over KFrontIR.
+Compiler observability artifacts such as stage dumps, pipeline traces, and reproducer bundles are not part of those
+hashing inputs.
 
 In package mode, hashes are deterministic functions of the source and dependency graph, because package-mode macros have
 no `IO` capability (§5.8.6). Canonical hashes are computed from the perspective of the defining module, using that
@@ -8126,6 +8128,10 @@ Programs that use any of these facilities are outside the safe portable subset.
 These facilities remain part of the language specification, but they are classified as unsafe/debug features rather than
 ordinary portable surface forms.
 
+The compiler observability facilities of §17.1.1-§17.1.5 are ordinary required tooling facilities.
+They are not classified as unsafe/debug language features merely because they expose intermediate compiler
+representations.
+
 ### 16.2 Build-level gating
 
 The legacy per-module attributes `@AllowUnhiding` and `@AllowClarification` are not part of the language. These
@@ -8214,6 +8220,223 @@ backend-intrinsic set it activates, is part of the effective build configuration
 
 A compilation that depends on backend intrinsics or backend-specific `expect` satisfaction is valid only when those
 requirements are met by the chosen backend profile.
+
+### 17.1.1 Compiler observability
+
+A conforming implementation MUST provide user-visible or API-visible compiler observability facilities.
+
+At minimum, the implementation MUST support:
+
+* requesting a snapshot at any named conceptual checkpoint of the compilation pipeline;
+* serializing that snapshot in machine-readable form;
+* verifying the invariants expected at that checkpoint;
+* listing the actual sequence of compilation steps executed for the current request; and
+* stopping compilation before or after a named checkpoint.
+
+The term **stage dump** in this chapter denotes a serialization of the representation at a checkpoint together with the
+metadata required to understand it.
+
+A stage dump is not required to be a tree.
+In particular, KBackendIR dumps may be graph-structured.
+
+### 17.1.2 Named checkpoints
+
+A conforming implementation MUST behave as if the following named checkpoints exist:
+
+* `surface-source`;
+* `KFrontIR.RAW`;
+* each monotone KFrontIR phase of §17.2.2;
+* `KCore`;
+* `KBackendIR`; and
+* each exposed post-KBackendIR target-lowering checkpoint.
+
+An implementation MAY fuse internal passes or omit physical materialization of a checkpoint, provided it can still
+produce a stage dump observationally equivalent to the representation that would exist at that checkpoint.
+
+For representations that are not themselves IR-shaped, such as a final native executable or classfile bundle, the
+implementation MUST provide an artifact-manifest dump rather than pretending that an AST exists there.
+
+### 17.1.3 Machine-readable dump formats
+
+Implementations MUST support at least two machine-readable serializations for every required stage dump:
+
+* `json`
+* `sexpr`
+
+Implementations MAY support additional formats.
+
+The `json` and `sexpr` serializations for the same checkpoint MUST carry equivalent semantic information.
+
+Neither format is required to round-trip through the source parser.
+They are observability formats, not source syntax.
+
+Every stage dump MUST be self-describing and versioned.
+At minimum it MUST identify:
+
+* dump format and dump-schema version;
+* language version;
+* compiler implementation identifier and version;
+* checkpoint name;
+* module identity or other compilation-root identity;
+* selected backend profile and backend-intrinsic set;
+* effective build-configuration digest or equivalent summary;
+* the dumped nodes, symbols, edges, and annotations relevant to that checkpoint;
+* source origins and synthetic-origin chains; and
+* any diagnostics attached to the snapshot.
+
+All cross references within a stage dump MUST use explicit IDs present in that dump.
+
+A stage dump MUST be deterministic for fixed inputs, effective build configuration, and implementation version.
+
+In particular, its content and ordering MUST NOT depend on:
+
+* heap addresses;
+* hash-table iteration order;
+* non-deterministic traversal order; or
+* thread scheduling.
+
+Where source order is semantically relevant, it MUST be preserved.
+Where source order is not semantically relevant, ordering MUST be canonical and implementation-defined.
+
+If the current compilation context does not possess private or opaque definitional content, the dump MUST NOT synthesize
+or reveal that content.
+Any unavailable, omitted, or redacted content MUST be represented explicitly as such rather than silently disappearing.
+
+Sensitive transcript or configuration values MAY be redacted by default.
+If redacted, the dump MUST carry an explicit redaction marker and a stable digest or equivalent placeholder in place of
+the redacted value.
+
+Stage dumps, pipeline traces, and reproducer bundles are observability artifacts only.
+They are not inputs to the hashing rules of §15.
+
+### 17.1.4 Pipeline traces and checkpoint verification
+
+A conforming implementation MUST expose a pipeline trace for each compilation request.
+
+A pipeline trace records the actual steps executed, in order, together with their checkpoint boundaries.
+
+Each trace step MUST identify at least:
+
+* a stable step name;
+* its input and output checkpoint names;
+* whether the step changed the representation; and
+* whether verification was attempted and whether it succeeded.
+
+An implementation SHOULD additionally record elapsed time and other implementation-defined metrics.
+
+An implementation MUST provide a way to verify the representation at any named checkpoint.
+
+If verification fails, the resulting diagnostic MUST identify:
+
+* the violated invariant;
+* the checkpoint at which it was checked; and
+* at least one related node, symbol, block, edge, or source origin.
+
+An implementation SHOULD support `verify-each` behavior, or an equivalent facility, that verifies every checkpoint
+crossed by a compilation request.
+
+An implementation SHOULD support before-and-after dumps for each transformation step that changes the representation.
+
+### 17.1.5 Reproducer bundles
+
+A conforming implementation MUST provide a mode that emits a reproducer bundle when compilation fails due to an internal
+compiler error or backend-lowering failure.
+
+A reproducer bundle MUST contain enough information to debug the failure without consulting the compiler's transient
+in-memory state.
+
+At minimum it MUST include:
+
+* the selected compilation roots or their stable identities;
+* the effective build configuration;
+* the selected backend profile and backend-intrinsic set;
+* the pipeline trace up to the point of failure;
+* the last successfully verified stage dump, if any;
+* the failing checkpoint and any immediately available diagnostics; and
+* compiler implementation identifier and version.
+
+A reproducer bundle SHOULD additionally include the partially constructed representation at the point of failure when
+one exists.
+
+A reproducer bundle MAY redact sensitive external data under the rules of §17.1.3.
+
+#### 17.1.6 Compilation tasks
+
+A conforming implementation MAY expose any number of user-facing commands, APIs, or build actions, but it MUST behave as
+if the following conceptual tasks exist:
+
+* `analyze`:
+  parse source, construct KFrontIR, and resolve only the phases required by the request.
+  `analyze` produces no KCore, KBackendIR, or target artifact unless the request itself requires them.
+
+* `check`:
+  verify the selected compilation roots through KCore construction and all semantic checks required by this
+  specification.
+  `check` need not perform KBackendIR lowering or target lowering.
+
+* `emit-interface`:
+  produce the separate-compilation interface artifacts of §17.1.7, or an observationally equivalent in-memory result.
+
+* `compile`:
+  lower checked roots through KBackendIR and target-profile lowering to a final artifact.
+
+* `run`:
+  execute checked roots using one of the execution strategies of §17.1.8.
+
+The names of these tasks in any particular toolchain are implementation-defined.
+
+#### 17.1.7 Separate-compilation artifacts
+
+For separate compilation, a module MAY be represented by:
+
+* source files;
+* a module interface artifact; and
+* a module implementation artifact.
+
+A module interface artifact is backend-independent and MUST be sufficient for ordinary downstream compilation without
+consulting the defining module's source text.
+
+A module interface artifact MUST record at least:
+
+* the module identity and dependency identities required by §§2.1-2.3.2;
+* the exported surface by namespace, including importable fixity declarations;
+* visibility and opacity classification of exported ordinary items;
+* the signatures of exported terms, types, traits, constructors, associated types, effect interfaces, and effect
+  operations, insofar as those entities are available to downstream code;
+* top-level instance heads and any metadata required for instance search and coherence under §§12.3 and 15.2.1;
+* the hashes or equivalent identity data required by §15 for exported definitions and instances;
+* enough definitional content for exported transparent items to support downstream definitional equality.
+
+A module interface artifact MAY omit:
+
+* the bodies of private items;
+* the definitional content of opaque items;
+* target-specific code.
+
+If a requested `unhide` or `clarify` operation would require private or opaque definitional content that is not present
+in the available artifacts, compilation fails as specified in §16.3.
+
+A module implementation artifact MAY contain target-specific code, backend-specific auxiliary data, implementation-
+private bodies, or any combination thereof.
+It MAY embed the interface artifact or refer to it by stable identity.
+
+Ordinary downstream compilation MUST NOT require access to a target-specific implementation artifact.
+
+#### 17.1.8 Execution strategies
+
+A `run` task executes checked roots under the effective build configuration and selected backend profile.
+
+A conforming implementation MAY realize `run` by:
+
+* interpreting KBackendIR or an observationally equivalent runtime form;
+* JIT-compiling from KBackendIR or an observationally equivalent runtime form and then executing the result; or
+* compiling to a final backend artifact and launching that artifact.
+
+If a selected execution strategy cannot realize the required backend intrinsics, foreign bindings, or runtime facilities
+of the chosen backend profile, `run` MUST fail before execution begins.
+
+For the same selected roots, build configuration, dependency closure, and backend profile, `run` MUST be observationally
+equivalent to `compile` followed by execution of the resulting artifact.
 
 ### 17.2 KFrontIR
 
@@ -8346,6 +8569,16 @@ Resolution is conceptually side-effect-free:
 Diagnostics are produced in `CHECKERS`, or on demand from information that would be available by `CHECKERS`, and are
 always attached to source origins from KFrontIR.
 
+A conforming implementation MUST additionally support machine-readable diagnostic output in JSON.
+
+Such diagnostic records MUST identify at least:
+
+* diagnostic code;
+* severity;
+* stage or phase;
+* primary origin; and
+* any related origins.
+
 Tooling queries over syntactically incomplete files are valid. Where possible, they MUST return partial results rather
 than failing wholesale merely because the surrounding file is incomplete.
 
@@ -8392,6 +8625,58 @@ At minimum:
   changed;
 * a change to macro-observed external input MUST invalidate any expansion, cached query result, or downstream phase
   result that depended on that input.
+
+#### 17.2.7 KFrontIR phase snapshots
+
+A KFrontIR stage dump at phase `P` MUST preserve the error-tolerant and partially resolved nature of the representation.
+
+It MUST NOT silently normalize away:
+
+* missing nodes;
+* error nodes;
+* unresolved references;
+* placeholder expressions;
+* unknown type references; or
+* other partial semantic nodes present at that phase.
+
+A KFrontIR dump MUST expose, for each relevant node:
+
+* its source origin or synthetic origin;
+* the highest phase reached by that node;
+* declaration-symbol identity where applicable;
+* resolved-reference targets where available;
+* semantic annotations available by that phase; and
+* unresolved obligations still pending at that phase, if any.
+
+If a tooling query forces lazy phase advancement, an implementation MUST be able to dump both the pre-query and
+post-query KFrontIR snapshots, or observationally equivalent reconstructions thereof.
+
+#### 17.2.8 Whole-compilation phase order
+
+Because the module dependency graph is acyclic (§2.2), whole-compilation phase order is constrained by module
+topological order.
+
+A module is **interface-ready** when the implementation has produced the module interface artifact of §17.1.7, or an
+observationally equivalent in-memory representation.
+
+A conforming implementation MUST behave as if batch compilation proceeds as follows:
+
+1. discover the source files and module dependency graph;
+2. construct `RAW` KFrontIR for every source file;
+3. for each module in topological order, resolve enough of KFrontIR to make that module interface-ready.
+   This includes at least `IMPORTS`, `DECLARATION_SHAPES`, `HEADER_TYPES`, `STATUS`, `IMPLICIT_SIGNATURES`, and any
+   additional resolution or `CORE_LOWERING` needed to materialize exported signatures, importable fixities, instance
+   heads, and exported transparent definitional content;
+4. downstream modules may consult only imported interfaces for ordinary import resolution, downstream typechecking,
+   instance search, and definitional equality.
+   Imported implementation artifacts or source bodies are not required, except for same-module multi-fragment
+   compilation or the unsafe/debug facilities of §16.3;
+5. once a module's required imports are interface-ready, `BODY_RESOLVE`, `CHECKERS`, and `CORE_LOWERING` for that
+   module may proceed in topological order or lazily per declaration;
+6. KBackendIR lowering and target-profile lowering occur only after KCore exists for the chosen compilation roots.
+
+An implementation MAY pipeline or parallelize these steps internally, provided the resulting behavior is as if the
+ordering above had been respected.
 
 ### 17.3 KCore
 
@@ -8442,6 +8727,56 @@ KCore contains no unresolved:
 * overloading obligations,
 * instance-search obligations,
 * or type-inference obligations.
+
+#### 17.3.1 KCore provenance and explainability
+
+Every synthetic KCore node introduced during elaboration MUST carry provenance sufficient to explain why it exists.
+
+At minimum, provenance MUST relate each synthetic KCore node to:
+
+* one or more KFrontIR origins; and
+* an introduction kind.
+
+Introduction kinds are implementation-defined, but MUST distinguish at least:
+
+* desugaring;
+* macro expansion;
+* inserted implicit argument or dictionary;
+* inserted coercion or widening;
+* borrow introduction;
+* record reordering;
+* safe-navigation or section lowering; and
+* local-declaration closure conversion.
+
+A KCore dump MUST expose this provenance.
+
+An implementation SHOULD provide an explain query that, given a source span or KCore node, returns the provenance chain
+from KFrontIR through KCore.
+
+#### 17.3.2 Elaboration-time evaluation
+
+The elaboration-time evaluator operates on KCore or an observationally equivalent internal representation.
+
+It is used for:
+
+* macro execution;
+* `type"..."` parsing;
+* compile-time reflection over `Syntax`;
+* any other elaboration-time computation required by this specification.
+
+Elaboration-time evaluation is backend-independent except insofar as the effective build configuration exposes
+elaboration-available backend intrinsics under §17.6.1.
+
+If elaboration-time evaluation encounters:
+
+* an unsatisfied backend intrinsic,
+* a backend intrinsic that is not elaboration-available, or
+* a foreign capability with no compile-time meaning,
+
+then compilation fails.
+
+The evaluator MAY memoize, partially normalize, or reuse cached results, provided the observable result is the same as
+semantic elaboration-time evaluation under the restrictions of §5.8.6.
 
 ### 17.4 KBackendIR
 
@@ -8495,7 +8830,104 @@ intrinsic:
 * proof terms whose only purpose is compile-time reasoning;
 * erased indices of dependent data.
 
-### 17.4.1 Representation classes and specialization
+### 17.4.1 Conceptual lowering stages
+
+A conforming implementation MUST behave as if lowering from KCore to KBackendIR performs the following conceptual
+stages:
+
+* `ERASURE`:
+  eliminate or discharge runtime-irrelevant universes, rows, regions, quantity-`0` binders, proof-only terms, and
+  erased indices in accordance with §14.4.
+
+* `CONTROL_LOWERING`:
+  lower source-level abrupt control, completion-carrying control, handlers, resumptions, `defer`, `using`, `try`, and
+  related constructs to explicit runtime control and cleanup operations.
+
+* `ENVIRONMENT_LOWERING`:
+  closure-convert lambdas and local declarations, and choose runtime environment layouts for captured values.
+
+* `REPRESENTATION_SELECTION`:
+  choose runtime representation classes, layouts, and tag encodings for data, variants, records, dictionaries,
+  numerics, strings, bytes, collections, refs, handlers, and resumption objects.
+
+* `CALL_LOWERING`:
+  fix runtime calling conventions, retained-dictionary passing, entrypoint signatures, and ABI-neutral parameter/result
+  conventions.
+
+* `RUNTIME_CONTROL_FORM`:
+  produce basic blocks and explicit control transfer, or an observationally equivalent structured runtime form.
+
+An implementation MAY fuse, split, reorder, or partially overlap these conceptual stages, provided the resulting
+KBackendIR is observationally equivalent to one produced by the staged lowering above.
+
+### 17.4.2 Lowering legality checkpoints
+
+At or before publication of KBackendIR, the implementation MUST validate that:
+
+* every declaration and body selected for runtime lowering is fully resolved;
+* no unerased `Type`, universe term, row term, anonymous region, quantity-`0` binder, or proof-only term remains unless
+  it has been explicitly reified as an ordinary runtime value;
+* every call, closure, and entrypoint has a fixed runtime arity and runtime calling convention;
+* handler, resumption, cleanup, and error-propagation structures satisfy the runtime obligations of Chapters 8, 9, and
+  14;
+* data, variant, and record layout choices are fixed consistently with §§14.5-14.6;
+* retained dictionaries and backend intrinsics have concrete runtime representations, or else compilation is rejected
+  before target lowering;
+* the compiled roots and exported runtime entrypoints are explicit.
+
+Failure of any of these checks is a compile-time error.
+A conforming implementation MUST NOT silently pass malformed or partially lowered runtime IR to target-profile lowering.
+
+### 17.4.3 KBackendIR graph dumps and legality witnesses
+
+A KBackendIR stage dump MUST be graph-capable.
+
+At minimum it MUST represent:
+
+* functions and entrypoints;
+* basic blocks, control regions, or an observationally equivalent control graph;
+* control-flow edges or equivalent successor structure;
+* values and def-use or binding-use relationships;
+* handler frames, resumption objects, cleanup scopes, and error-propagation structure;
+* selected runtime representation classes and calling-convention facts relevant to debugging; and
+* provenance links back to KCore.
+
+If the implementation internally uses a structured form rather than explicit basic blocks, the dump MUST still expose
+enough information to reconstruct control flow and unwinding shape for debugging purposes.
+
+The KBackendIR verifier MUST be user-invokable.
+
+A successful verification MAY be recorded in the dump as a verifier stamp or equivalent witness.
+
+### 17.4.4 Post-KBackendIR target-lowering dumps
+
+If a backend profile exposes post-KBackendIR intermediate forms, each such form MUST participate in the same
+observability model:
+
+* checkpoint naming;
+* dumpability;
+* version identification;
+* provenance back to KBackendIR; and
+* verifier access where the form has a verifier.
+
+If the post-KBackendIR form is not naturally serialized as `json` or `sexpr`, the implementation MUST still provide a
+`json` and `sexpr` manifest describing that form, its identity, and its relation to the surrounding checkpoints.
+
+### 17.4.5 KBackendIR interpretation
+
+An implementation MAY provide a KBackendIR interpreter for script execution, REPL use, tests, or debugging.
+
+If it does:
+
+* the interpreter executes only KBackendIR that has passed the legality checks of §17.4.2;
+* interpreted execution is governed by the same selected backend profile and backend-intrinsic set as compiled
+  execution;
+* interpreted execution MUST be observationally equivalent to compiled execution under that same configuration.
+
+A KBackendIR interpreter MAY retain extra source metadata for debugging, profiling, or diagnostics, provided that
+metadata does not change program behavior.
+
+### 17.4.6 Representation classes and specialization
 
 Implementations MAY monomorphize, dictionary-pass, closure-convert, or use any hybrid strategy consistent with
 KBackendIR semantics.
@@ -8508,7 +8940,7 @@ distinctions MUST NOT by themselves force distinct runtime specializations.
 Two KCore terms whose erased calling convention and chosen runtime representation classes are definitionally equal MAY
 share a single KBackendIR body.
 
-### 17.4.2 Runtime calling convention
+### 17.4.7 Runtime calling convention
 
 At KBackendIR boundaries:
 
@@ -8570,6 +9002,19 @@ Rules:
   or coherence decision that depends on that intrinsic MUST include that identity in its effective input.
 * If the selected backend profile does not supply a required intrinsic, the corresponding `expect` remains unsatisfied
   and compilation fails.
+
+#### 17.6.1 Elaboration-available backend intrinsics
+
+A backend intrinsic MAY additionally be classified as **elaboration-available**.
+
+Only elaboration-available backend intrinsics may be called, unfolded, or otherwise demanded by the elaboration-time
+evaluator of §17.3.2.
+
+Whether a backend intrinsic is elaboration-available is part of the backend-intrinsic set and therefore part of the
+effective build configuration and analysis-session identity.
+
+If elaboration-time evaluation reaches a backend intrinsic that is not classified as elaboration-available, compilation
+fails.
 
 ### 17.7 Portable foreign ABI
 
@@ -8816,4 +9261,3 @@ block into maximal independent groups elaborated with `liftA2` / `<*>`, and then
 
 This is an as-if optimization: the resulting program MUST remain observationally equivalent to the monadic desugaring of
 §8.2 / §8.7.
-
