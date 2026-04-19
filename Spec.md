@@ -9789,6 +9789,8 @@ Comparison semantics:
 Supported directives:
 
 ```text
+assertStdout <stringLiteral>
+assertStdoutContains <stringLiteral>
 assertStdoutFile <path>
 assertStderrFile <path>
 assertExitCode <n>
@@ -9797,10 +9799,17 @@ assertExitCode <n>
 Rules:
 
 * These directives are valid only for `mode run`.
+* In `assertStdout <stringLiteral>` and `assertStdoutContains <stringLiteral>`, the argument is parsed using the
+  ordinary Kappa string-literal grammar.
 * `<path>` is relative to the suite root.
 * The expected files are UTF-8 text files.
 * Comparison normalizes line endings to LF before comparison.
+* `assertStdout s` succeeds iff normalized standard output is exactly equal to the normalized string value `s`.
+* `assertStdoutContains s` succeeds iff normalized standard output contains the normalized string value `s` as a
+  substring.
 * `assertExitCode n` compares the process or task exit code observed by the harness.
+* For large or frequently changing outputs, `assertStdoutFile` and `assertStderrFile` remain the preferred golden-file
+  forms.
 
 #### T.5.5 Trace assertions
 
