@@ -140,6 +140,43 @@ let ``cli can run the managed dotnet il backend for zero argument bindings`` () 
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
+let ``cli can run the managed dotnet il backend for recursive list matches`` () =
+    let workspaceRoot = createScratchDirectory "cli-dotnet-il-list-workspace"
+
+    writeWorkspaceFiles
+        workspaceRoot
+        [
+            "main.kp",
+            [
+                "module main"
+                "sumList : List Int -> Int"
+                "let sumList xs ="
+                "    match xs"
+                "    case Nil -> 0"
+                "    case head :: tail -> head + sumList tail"
+                "let result = sumList (10 :: 20 :: 42 :: Nil)"
+            ]
+            |> String.concat "\n"
+        ]
+
+    let emitDirectory = createScratchDirectory "cli-dotnet-il-list-emit"
+
+    let cliProjectPath =
+        Path.GetFullPath(
+            Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "src", "Kappa.Compiler.Cli", "Kappa.Compiler.Cli.fsproj")
+        )
+
+    let runResult =
+        runProcess
+            workspaceRoot
+            "dotnet"
+            $"run --project \"{cliProjectPath}\" -v q -- --source-root \"{workspaceRoot}\" --backend dotnet-il --emit-dir \"{emitDirectory}\" --run main.result"
+
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("72", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
 let ``cli interpreter backend can execute io entry points`` () =
     let workspaceRoot = createScratchDirectory "cli-interpreter-workspace"
 

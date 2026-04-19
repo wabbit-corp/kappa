@@ -261,3 +261,88 @@ let ``il backend supports recursive signed methods over primitive values`` () =
     Assert.NotNull(resultMethod)
     Assert.Equal(15L, sumDownMethod.Invoke(null, [| box 5L |]) |> unbox<int64>)
     Assert.Equal(15L, resultMethod.Invoke(null, [||]) |> unbox<int64>)
+
+[<Fact>]
+let ``il backend emits generic list adt types for the prelude`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-il-list-types-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "empty : List Int"
+                    "let empty = Nil"
+                    "singleton : List Int"
+                    "let singleton = 1 :: Nil"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "il-list-types"
+
+    let artifact =
+        match Backend.emitIlAssemblyArtifact workspace outputDirectory with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    use loaded = loadManagedAssembly artifact.AssemblyFilePath
+
+    let moduleType = loaded.Assembly.GetType("Kappa.Generated.main", throwOnError = true, ignoreCase = false)
+    let emptyMethod = moduleType.GetMethod("empty", BindingFlags.Public ||| BindingFlags.Static)
+    let singletonMethod = moduleType.GetMethod("singleton", BindingFlags.Public ||| BindingFlags.Static)
+    let emptyValue = emptyMethod.Invoke(null, [||])
+    let singletonValue = singletonMethod.Invoke(null, [||])
+    let nilType = emptyValue.GetType()
+    let consType = singletonValue.GetType()
+    let listType = nilType.BaseType
+
+    Assert.NotNull(moduleType)
+    Assert.NotNull(emptyMethod)
+    Assert.NotNull(singletonMethod)
+    Assert.NotNull(listType)
+    Assert.NotNull(nilType)
+    Assert.NotNull(consType)
+    Assert.True(listType.IsClass)
+    Assert.True(listType.IsAbstract)
+    Assert.True(listType.IsGenericType)
+    Assert.Equal(1, listType.GetGenericArguments().Length)
+    Assert.True(nilType.IsGenericType)
+    Assert.True(consType.IsGenericType)
+    Assert.Equal(listType.GetGenericTypeDefinition(), nilType.GetGenericTypeDefinition().BaseType.GetGenericTypeDefinition())
+    Assert.Equal(listType.GetGenericTypeDefinition(), consType.GetGenericTypeDefinition().BaseType.GetGenericTypeDefinition())
+
+[<Fact>]
+let ``il backend evaluates recursive list matches through emitted clr types`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-il-list-match-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "sumList : List Int -> Int"
+                    "let sumList xs ="
+                    "    match xs"
+                    "    case Nil -> 0"
+                    "    case head :: tail -> head + sumList tail"
+                    "let result = sumList (10 :: 20 :: 42 :: Nil)"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "il-list-match"
+
+    let artifact =
+        match Backend.emitIlAssemblyArtifact workspace outputDirectory with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    use loaded = loadManagedAssembly artifact.AssemblyFilePath
+
+    let moduleType = loaded.Assembly.GetType("Kappa.Generated.main", throwOnError = true, ignoreCase = false)
+    let resultMethod = moduleType.GetMethod("result", BindingFlags.Public ||| BindingFlags.Static)
+
+    Assert.NotNull(resultMethod)
+    Assert.Equal(typeof<int64>, resultMethod.ReturnType)
+    Assert.Equal(72L, resultMethod.Invoke(null, [||]) |> unbox<int64>)
