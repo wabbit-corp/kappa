@@ -17,7 +17,7 @@ type RuntimeValue =
     | BuiltinFunctionValue of BuiltinFunction
 and RuntimeClosure =
     { Parameters: string list
-      Body: CoreExpression
+      Body: KBackendExpression
       Scope: RuntimeScope }
 and BuiltinFunction =
     { Name: string
@@ -30,8 +30,7 @@ and RuntimeContext =
     { Modules: Map<string, RuntimeModule> }
 and RuntimeModule =
     { Name: string
-      Document: ParsedDocument
-      Definitions: Map<string, LetDefinition>
+      Definitions: Map<string, KBackendBinding>
       IntrinsicTerms: Set<string>
       Exports: Set<string>
       Imports: ImportSpec list
@@ -65,72 +64,23 @@ module Interpreter =
         | LiteralValue.Character value -> CharacterValue value
         | LiteralValue.Unit -> UnitValue
 
-    let private isPrivateByDefault (document: ParsedDocument) =
-        document.Syntax.ModuleAttributes
-        |> List.exists (fun attributeName -> String.Equals(attributeName, "PrivateByDefault", StringComparison.Ordinal))
-
-    let private isExported (document: ParsedDocument) (definition: LetDefinition) =
-        match definition.Visibility with
-        | Some Visibility.Public -> true
-        | Some Visibility.Private -> false
-        | None -> not (isPrivateByDefault document)
-
-    let private collectImports (document: ParsedDocument) =
-        Stdlib.implicitImportsFor document.ModuleName
-        @ (document.Syntax.Declarations
-        |> List.collect (function
-            | ImportDeclaration (false, specs) -> specs
-            | _ -> []))
-
-    let private collectIntrinsicTerms (document: ParsedDocument) =
-        match document.ModuleName with
-        | Some moduleName ->
-            document.Syntax.Declarations
-            |> List.choose (function
-                | ExpectDeclarationNode (ExpectTermDeclaration declaration)
-                    when Stdlib.intrinsicallySatisfiesExpect moduleName (ExpectTermDeclaration declaration) ->
-                    Some declaration.Name
-                | _ ->
-                    None)
-            |> Set.ofList
-        | None ->
-            Set.empty
-
     let private buildContext (workspace: WorkspaceCompilation) =
         let moduleRuntimes =
-            workspace.Documents
-            |> List.choose (fun document ->
-                document.ModuleName
-                |> Option.map (fun moduleName ->
-                    let moduleText = SyntaxFacts.moduleNameToText moduleName
+            workspace.KBackendIR
+            |> List.map (fun backendModule ->
+                let definitions =
+                    backendModule.Bindings
+                    |> List.filter (fun binding -> not binding.Intrinsic)
+                    |> List.map (fun binding -> binding.Name, binding)
+                    |> Map.ofList
 
-                    let definitions =
-                        document.Syntax.Declarations
-                        |> List.choose (function
-                            | LetDeclaration (definition: LetDefinition) when definition.Name.IsSome && definition.Body.IsSome ->
-                                Some(definition.Name.Value, definition)
-                            | _ ->
-                                None)
-                        |> Map.ofList
-
-                    let intrinsicTerms =
-                        collectIntrinsicTerms document
-
-                    let exports =
-                        (definitions
-                         |> Map.toList
-                         |> List.choose (fun (name, definition) -> if isExported document definition then Some name else None)
-                         |> Set.ofList)
-                        |> Set.union intrinsicTerms
-
-                    moduleText,
-                    { Name = moduleText
-                      Document = document
-                      Definitions = definitions
-                      IntrinsicTerms = intrinsicTerms
-                      Exports = exports
-                      Imports = collectImports document
-                      Values = Dictionary<string, Lazy<Result<RuntimeValue, EvaluationError>>>() }))
+                backendModule.Name,
+                { Name = backendModule.Name
+                  Definitions = definitions
+                  IntrinsicTerms = backendModule.IntrinsicTerms |> Set.ofList
+                  Exports = backendModule.Exports |> Set.ofList
+                  Imports = backendModule.Imports
+                  Values = Dictionary<string, Lazy<Result<RuntimeValue, EvaluationError>>>() })
             |> Map.ofList
 
         let context = { Modules = moduleRuntimes }
@@ -236,28 +186,28 @@ module Interpreter =
             | BuiltinFunctionValue _ ->
                 error $"Cannot interpolate {RuntimeValue.format value} into an f-string."
 
-        let rec evaluateExpression (scope: RuntimeScope) (expression: CoreExpression) : Result<RuntimeValue, EvaluationError> =
+        let rec evaluateExpression (scope: RuntimeScope) (expression: KBackendExpression) : Result<RuntimeValue, EvaluationError> =
             match expression with
-            | Literal literal ->
+            | KBackendLiteral literal ->
                 ok (literalToValue literal)
-            | Name segments ->
+            | KBackendName segments ->
                 resolveName scope segments
-            | PrefixedString (prefix, parts) ->
+            | KBackendPrefixedString (prefix, parts) ->
                 evaluatePrefixedString scope prefix parts
-            | Lambda (parameters, body) ->
+            | KBackendClosure (parameters, body) ->
                 ok
                     (FunctionValue
-                        { Parameters = parameters |> List.map (fun (parameter: Parameter) -> parameter.Name)
+                        { Parameters = parameters
                           Body = body
                           Scope = scope })
-            | IfThenElse (condition, whenTrue, whenFalse) ->
+            | KBackendIfThenElse (condition, whenTrue, whenFalse) ->
                 evaluateExpression scope condition
                 |> Result.bind (function
                     | BooleanValue true -> evaluateExpression scope whenTrue
                     | BooleanValue false -> evaluateExpression scope whenFalse
                     | value ->
                         error $"Expected a Boolean in the if condition, but got {RuntimeValue.format value}.")
-            | Apply (callee, arguments) ->
+            | KBackendApply (callee, arguments) ->
                 evaluateExpression scope callee
                 |> Result.bind (fun functionValue ->
                     arguments
@@ -270,7 +220,7 @@ module Interpreter =
                             | _, Result.Error issue -> Result.Error issue)
                         (Result.Ok [])
                     |> Result.bind (fun values -> apply functionValue (List.rev values)))
-            | Unary (operatorName, expression) ->
+            | KBackendUnary (operatorName, expression) ->
                 evaluateExpression scope expression
                 |> Result.bind (fun operand ->
                     if hasExplicitUnqualifiedName scope operatorName then
@@ -278,7 +228,7 @@ module Interpreter =
                         |> Result.bind (fun functionValue -> apply functionValue [ operand ])
                     else
                         applyBuiltinUnary operatorName operand)
-            | Binary (left, "&&", right) when not (hasExplicitUnqualifiedName scope "&&") ->
+            | KBackendBinary (left, "&&", right) when not (hasExplicitUnqualifiedName scope "&&") ->
                 evaluateExpression scope left
                 |> Result.bind (function
                     | BooleanValue false -> ok (BooleanValue false)
@@ -290,7 +240,7 @@ module Interpreter =
                                 error $"Operator '&&' expects Boolean operands, but got {RuntimeValue.format value}.")
                     | value ->
                         error $"Operator '&&' expects Boolean operands, but got {RuntimeValue.format value}.")
-            | Binary (left, "||", right) when not (hasExplicitUnqualifiedName scope "||") ->
+            | KBackendBinary (left, "||", right) when not (hasExplicitUnqualifiedName scope "||") ->
                 evaluateExpression scope left
                 |> Result.bind (function
                     | BooleanValue true -> ok (BooleanValue true)
@@ -302,7 +252,7 @@ module Interpreter =
                                 error $"Operator '||' expects Boolean operands, but got {RuntimeValue.format value}.")
                     | value ->
                         error $"Operator '||' expects Boolean operands, but got {RuntimeValue.format value}.")
-            | Binary (left, operatorName, right) ->
+            | KBackendBinary (left, operatorName, right) ->
                 evaluateExpression scope left
                 |> Result.bind (fun leftValue ->
                     evaluateExpression scope right
@@ -313,7 +263,7 @@ module Interpreter =
                         else
                             applyBuiltinBinary operatorName leftValue rightValue))
 
-        and evaluatePrefixedString (scope: RuntimeScope) (prefix: string) (parts: InterpolatedStringPart list) =
+        and evaluatePrefixedString (scope: RuntimeScope) (prefix: string) (parts: KBackendStringPart list) =
             if not (String.Equals(prefix, "f", StringComparison.Ordinal)) then
                 error $"Prefixed string '{prefix}\"...\"' is not supported by the interpreter yet."
             else
@@ -323,9 +273,9 @@ module Interpreter =
                         state
                         |> Result.bind (fun segments ->
                             match part with
-                            | StringText text ->
+                            | KBackendStringText text ->
                                 ok (text :: segments)
-                            | StringInterpolation expression ->
+                            | KBackendStringInterpolation expression ->
                                 evaluateExpression scope expression
                                 |> Result.bind renderInterpolatedValue
                                 |> Result.map (fun text -> text :: segments)))
@@ -587,11 +537,10 @@ module Interpreter =
             | _ ->
                 error $"Binding '{bindingName}' was not found in module '{runtimeModule.Name}'."
 
-        and evaluateDefinition (context: RuntimeContext) (moduleName: string) (definition: LetDefinition) : Result<RuntimeValue, EvaluationError> =
+        and evaluateDefinition (context: RuntimeContext) (moduleName: string) (definition: KBackendBinding) : Result<RuntimeValue, EvaluationError> =
             match definition.Body with
             | None ->
-                let bindingName = defaultArg definition.Name "<anonymous>"
-                error $"Binding '{bindingName}' does not belong to the executable core subset."
+                error $"Binding '{definition.Name}' does not belong to the executable backend subset."
             | Some body ->
                 let baseScope =
                     { Locals = Map.empty
@@ -603,7 +552,7 @@ module Interpreter =
                 else
                     ok
                         (FunctionValue
-                            { Parameters = definition.Parameters |> List.map (fun (parameter: Parameter) -> parameter.Name)
+                            { Parameters = definition.Parameters
                               Body = body
                               Scope = baseScope })
 

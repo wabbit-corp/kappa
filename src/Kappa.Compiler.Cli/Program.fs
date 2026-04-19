@@ -6,13 +6,17 @@ type CliOptions =
     { SourceRoot: string
       DumpTokens: bool
       DumpAst: bool
+      DumpStage: string option
+      DumpFormat: StageDumpFormat
+      PrintTrace: bool
+      VerifyCheckpoint: string option
       RunBinding: string option
       Inputs: string list }
 
 module private Cli =
     let usage () =
         [
-            "kp [--source-root <path>] [--dump-tokens] [--dump-ast] [--run <binding>] [inputs...]"
+            "kp [--source-root <path>] [--dump-tokens] [--dump-ast] [--dump-stage <checkpoint>] [--dump-format <json|sexpr>] [--trace] [--verify <checkpoint>] [--run <binding>] [inputs...]"
             ""
             "If no input paths are supplied, the compiler scans the source root for *.kp files."
         ]
@@ -23,6 +27,10 @@ module private Cli =
         let mutable sourceRoot = Directory.GetCurrentDirectory()
         let mutable dumpTokens = false
         let mutable dumpAst = false
+        let mutable dumpStage = None
+        let mutable dumpFormat = StageDumpFormat.Json
+        let mutable printTrace = false
+        let mutable verifyCheckpoint = None
         let mutable runBinding = None
         let mutable index = 0
         let mutable error: string option = None
@@ -41,6 +49,34 @@ module private Cli =
             | "--dump-ast" ->
                 dumpAst <- true
                 index <- index + 1
+            | "--dump-stage" ->
+                if index + 1 >= argv.Length then
+                    error <- Some "Missing checkpoint name after --dump-stage."
+                else
+                    dumpStage <- Some argv[index + 1]
+                    index <- index + 2
+            | "--dump-format" ->
+                if index + 1 >= argv.Length then
+                    error <- Some "Missing format after --dump-format."
+                else
+                    match argv[index + 1].ToLowerInvariant() with
+                    | "json" ->
+                        dumpFormat <- StageDumpFormat.Json
+                        index <- index + 2
+                    | "sexpr" ->
+                        dumpFormat <- StageDumpFormat.SExpression
+                        index <- index + 2
+                    | value ->
+                        error <- Some $"Unsupported dump format '{value}'. Expected 'json' or 'sexpr'."
+            | "--trace" ->
+                printTrace <- true
+                index <- index + 1
+            | "--verify" ->
+                if index + 1 >= argv.Length then
+                    error <- Some "Missing checkpoint name after --verify."
+                else
+                    verifyCheckpoint <- Some argv[index + 1]
+                    index <- index + 2
             | "--run" ->
                 if index + 1 >= argv.Length then
                     error <- Some "Missing binding name after --run."
@@ -62,6 +98,10 @@ module private Cli =
                 { SourceRoot = sourceRoot
                   DumpTokens = dumpTokens
                   DumpAst = dumpAst
+                  DumpStage = dumpStage
+                  DumpFormat = dumpFormat
+                  PrintTrace = printTrace
+                  VerifyCheckpoint = verifyCheckpoint
                   RunBinding = runBinding
                   Inputs = List.ofSeq inputs }
 
@@ -85,6 +125,7 @@ let private declarationLabel declaration =
     match declaration with
     | ImportDeclaration (isExport, _) -> if isExport then "export" else "import"
     | FixityDeclarationNode _ -> "fixity"
+    | ExpectDeclarationNode _ -> "expect"
     | SignatureDeclaration _ -> "signature"
     | LetDeclaration _ -> "let"
     | DataDeclarationNode _ -> "data"
@@ -125,6 +166,12 @@ let private printAst (document: ParsedDocument) =
             printfn "  %s %d spec(s)" prefix specs.Length
         | FixityDeclarationNode declaration ->
             printfn "  fixity %s (%d)" declaration.OperatorName declaration.Precedence
+        | ExpectDeclarationNode (ExpectTypeDeclaration declaration) ->
+            printfn "  expect type %s" declaration.Name
+        | ExpectDeclarationNode (ExpectTraitDeclaration declaration) ->
+            printfn "  expect trait %s" declaration.Name
+        | ExpectDeclarationNode (ExpectTermDeclaration declaration) ->
+            printfn "  expect term %s" declaration.Name
         | SignatureDeclaration signature ->
             printfn "  signature %s" signature.Name
         | LetDeclaration definition ->
@@ -138,12 +185,47 @@ let private printAst (document: ParsedDocument) =
         | UnknownDeclaration tokens ->
             printfn "  unknown (%d token(s))" tokens.Length
 
+let private printTraceStep (step: PipelineTraceStep) =
+    let verificationText =
+        if not step.VerificationAttempted then
+            ""
+        else
+            match step.VerificationSucceeded with
+            | Some true -> " verify=ok"
+            | Some false -> " verify=failed"
+            | None -> " verify=attempted"
+
+    printfn
+        "  %-18s %-12s %s -> %s changed=%b%s"
+        (PipelineTraceEvent.toPortableName step.Event)
+        (PipelineTraceSubject.toPortableName step.Subject)
+        step.InputCheckpoint
+        step.OutputCheckpoint
+        step.ChangedRepresentation
+        verificationText
+
+let private printPipelineTrace workspace =
+    printfn ""
+    printfn "Pipeline trace"
+    workspace
+    |> Compilation.pipelineTrace
+    |> List.iter printTraceStep
+
+let private printVerification checkpoint diagnostics =
+    printfn ""
+    printfn "Verification for %s" checkpoint
+
+    if List.isEmpty diagnostics then
+        printfn "  ok"
+    else
+        diagnostics |> List.iter printDiagnostic
+
 [<EntryPoint>]
 let main argv =
     match Cli.parse argv with
     | Result.Error message ->
         Console.Error.WriteLine(message)
-        if message.Contains("kappac [--source-root") then 0 else 1
+        if message.Contains("kp [--source-root") then 0 else 1
     | Result.Ok options ->
         let compilationOptions = CompilationOptions.create options.SourceRoot
         let workspace = Compilation.parse compilationOptions options.Inputs
@@ -152,8 +234,13 @@ let main argv =
             Console.Error.WriteLine($"No .kp files were found under {compilationOptions.SourceRoot}.")
             1
         else
+            let explicitObservabilityRequest =
+                options.DumpStage.IsSome || options.PrintTrace || options.VerifyCheckpoint.IsSome
+
             let shouldPrintSummaries =
-                options.RunBinding.IsNone || options.DumpTokens || options.DumpAst
+                (options.RunBinding.IsNone && not explicitObservabilityRequest)
+                || options.DumpTokens
+                || options.DumpAst
 
             if shouldPrintSummaries then
                 for document in workspace.Documents do
@@ -165,12 +252,38 @@ let main argv =
             if options.DumpAst then
                 workspace.Documents |> List.iter printAst
 
+            if options.PrintTrace then
+                printPipelineTrace workspace
+
+            let verificationFailed =
+                match options.VerifyCheckpoint with
+                | Some checkpoint ->
+                    let diagnostics = Compilation.verifyCheckpoint workspace checkpoint
+                    printVerification checkpoint diagnostics
+                    not (List.isEmpty diagnostics)
+                | None ->
+                    false
+
+            let dumpFailed =
+                match options.DumpStage with
+                | Some checkpoint ->
+                    match Compilation.dumpStage workspace checkpoint options.DumpFormat with
+                    | Result.Ok dump ->
+                        printfn ""
+                        printfn "%s" dump
+                        false
+                    | Result.Error message ->
+                        Console.Error.WriteLine(message)
+                        true
+                | None ->
+                    false
+
             if not (List.isEmpty workspace.Diagnostics) then
                 printfn ""
                 printfn "Diagnostics"
                 workspace.Diagnostics |> List.iter printDiagnostic
 
-            if workspace.HasErrors then
+            if workspace.HasErrors || verificationFailed || dumpFailed then
                 1
             else
                 match options.RunBinding with
