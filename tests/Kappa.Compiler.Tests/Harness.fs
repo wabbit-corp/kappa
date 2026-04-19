@@ -146,6 +146,16 @@ let currentRid () =
     else
         invalidOp "Unsupported test operating system."
 
+let writeWorkspaceFiles (root: string) (files: (string * string) list) =
+    for filePath, text in files do
+        let fullPath = rootedFilePath root filePath
+        let directory = Path.GetDirectoryName(fullPath)
+
+        if not (String.IsNullOrWhiteSpace(directory)) then
+            Directory.CreateDirectory(directory) |> ignore
+
+        File.WriteAllText(fullPath, text.Replace("\r\n", "\n"))
+
 let executablePath (directory: string) (baseName: string) =
     if RuntimeInformation.IsOSPlatform(OSPlatform.Windows) then
         Path.Combine(directory, $"{baseName}.exe")

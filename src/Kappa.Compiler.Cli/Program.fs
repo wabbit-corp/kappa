@@ -1,9 +1,14 @@
 open System
+open System.Diagnostics
 open System.IO
+open System.Runtime.InteropServices
 open Kappa.Compiler
 
 type CliOptions =
     { SourceRoot: string
+      BackendProfile: string
+      EmitDirectory: string option
+      NativeAot: bool
       DumpTokens: bool
       DumpAst: bool
       DumpStage: string option
@@ -16,7 +21,7 @@ type CliOptions =
 module private Cli =
     let usage () =
         [
-            "kp [--source-root <path>] [--dump-tokens] [--dump-ast] [--dump-stage <checkpoint>] [--dump-format <json|sexpr>] [--trace] [--verify <checkpoint>] [--run <binding>] [inputs...]"
+            "kp [--source-root <path>] [--backend <profile>] [--emit-dir <path>] [--native-aot] [--dump-tokens] [--dump-ast] [--dump-stage <checkpoint>] [--dump-format <json|sexpr>] [--trace] [--verify <checkpoint>] [--run <binding>] [inputs...]"
             ""
             "If no input paths are supplied, the compiler scans the source root for *.kp files."
         ]
@@ -25,6 +30,9 @@ module private Cli =
     let parse (argv: string array) : Result<CliOptions, string> =
         let inputs = ResizeArray<string>()
         let mutable sourceRoot = Directory.GetCurrentDirectory()
+        let mutable backendProfile = "interpreter"
+        let mutable emitDirectory = None
+        let mutable nativeAot = false
         let mutable dumpTokens = false
         let mutable dumpAst = false
         let mutable dumpStage = None
@@ -43,6 +51,21 @@ module private Cli =
                 else
                     sourceRoot <- argv[index + 1]
                     index <- index + 2
+            | "--backend" ->
+                if index + 1 >= argv.Length then
+                    error <- Some "Missing backend profile after --backend."
+                else
+                    backendProfile <- argv[index + 1]
+                    index <- index + 2
+            | "--emit-dir" ->
+                if index + 1 >= argv.Length then
+                    error <- Some "Missing path after --emit-dir."
+                else
+                    emitDirectory <- Some argv[index + 1]
+                    index <- index + 2
+            | "--native-aot" ->
+                nativeAot <- true
+                index <- index + 1
             | "--dump-tokens" ->
                 dumpTokens <- true
                 index <- index + 1
@@ -96,6 +119,9 @@ module private Cli =
         | None ->
             Result.Ok
                 { SourceRoot = sourceRoot
+                  BackendProfile = backendProfile
+                  EmitDirectory = emitDirectory
+                  NativeAot = nativeAot
                   DumpTokens = dumpTokens
                   DumpAst = dumpAst
                   DumpStage = dumpStage
@@ -220,6 +246,129 @@ let private printVerification checkpoint diagnostics =
     else
         diagnostics |> List.iter printDiagnostic
 
+type private ProcessResult =
+    { ExitCode: int
+      StandardOutput: string
+      StandardError: string }
+
+let private runProcess (workingDirectory: string) (fileName: string) (arguments: string) =
+    let startInfo = ProcessStartInfo()
+    startInfo.WorkingDirectory <- workingDirectory
+    startInfo.FileName <- fileName
+    startInfo.Arguments <- arguments
+    startInfo.UseShellExecute <- false
+    startInfo.RedirectStandardOutput <- true
+    startInfo.RedirectStandardError <- true
+
+    use child = new Process()
+    child.StartInfo <- startInfo
+
+    if not (child.Start()) then
+        invalidOp $"Failed to start process '{fileName}'."
+
+    let standardOutput = child.StandardOutput.ReadToEnd()
+    let standardError = child.StandardError.ReadToEnd()
+    child.WaitForExit()
+
+    { ExitCode = child.ExitCode
+      StandardOutput = standardOutput.Replace("\r\n", "\n")
+      StandardError = standardError.Replace("\r\n", "\n") }
+
+let private currentRid () =
+    let suffix =
+        match RuntimeInformation.ProcessArchitecture with
+        | Architecture.X64 -> "x64"
+        | Architecture.Arm64 -> "arm64"
+        | Architecture.X86 -> "x86"
+        | architecture -> invalidOp $"Unsupported architecture '{architecture}'."
+
+    if RuntimeInformation.IsOSPlatform(OSPlatform.Windows) then
+        $"win-{suffix}"
+    elif RuntimeInformation.IsOSPlatform(OSPlatform.Linux) then
+        $"linux-{suffix}"
+    elif RuntimeInformation.IsOSPlatform(OSPlatform.OSX) then
+        $"osx-{suffix}"
+    else
+        invalidOp "Unsupported operating system."
+
+let private executablePath (directory: string) (baseName: string) =
+    if RuntimeInformation.IsOSPlatform(OSPlatform.Windows) then
+        Path.Combine(directory, $"{baseName}.exe")
+    else
+        Path.Combine(directory, baseName)
+
+let private printProcessFailure (heading: string) (result: ProcessResult) =
+    if not (String.IsNullOrWhiteSpace(result.StandardOutput)) then
+        Console.Error.WriteLine(result.StandardOutput.TrimEnd())
+
+    if not (String.IsNullOrWhiteSpace(result.StandardError)) then
+        Console.Error.WriteLine(result.StandardError.TrimEnd())
+
+    if String.IsNullOrWhiteSpace(result.StandardOutput) && String.IsNullOrWhiteSpace(result.StandardError) then
+        Console.Error.WriteLine(heading)
+
+let private runDotNetBackend (workspace: WorkspaceCompilation) (entryPoint: string) (emitDirectory: string option) (nativeAot: bool) =
+    let outputDirectory =
+        emitDirectory
+        |> Option.defaultWith (fun () ->
+            Path.Combine(Path.GetTempPath(), "kappa-cli", Guid.NewGuid().ToString("N")))
+
+    let deployment =
+        if nativeAot then DotNetDeployment.NativeAot else DotNetDeployment.Managed
+
+    match Backend.emitDotNetArtifact workspace entryPoint outputDirectory deployment with
+    | Result.Error message ->
+        Console.Error.WriteLine(message)
+        1
+    | Result.Ok artifact ->
+        if nativeAot then
+            let rid = currentRid ()
+            let publishResult =
+                runProcess artifact.ProjectDirectory "dotnet" $"publish \"{artifact.ProjectFilePath}\" -c Release -r {rid}"
+
+            if publishResult.ExitCode <> 0 then
+                printProcessFailure "Native AOT publish failed." publishResult
+                1
+            else
+                let publishDirectory =
+                    Path.Combine(artifact.ProjectDirectory, "bin", "Release", "net10.0", rid, "publish")
+
+                let executable =
+                    executablePath publishDirectory (Path.GetFileNameWithoutExtension(artifact.ProjectFilePath))
+
+                let runResult = runProcess publishDirectory executable ""
+
+                if not (String.IsNullOrWhiteSpace(runResult.StandardOutput)) then
+                    Console.Out.Write(runResult.StandardOutput)
+
+                if not (String.IsNullOrWhiteSpace(runResult.StandardError)) then
+                    Console.Error.Write(runResult.StandardError)
+
+                runResult.ExitCode
+        else
+            let buildResult =
+                runProcess artifact.ProjectDirectory "dotnet" $"build \"{artifact.ProjectFilePath}\" -c Release"
+
+            if buildResult.ExitCode <> 0 then
+                printProcessFailure "Managed dotnet build failed." buildResult
+                1
+            else
+                let outputDirectory =
+                    Path.Combine(artifact.ProjectDirectory, "bin", "Release", "net10.0")
+
+                let executable =
+                    executablePath outputDirectory (Path.GetFileNameWithoutExtension(artifact.ProjectFilePath))
+
+                let runResult = runProcess outputDirectory executable ""
+
+                if not (String.IsNullOrWhiteSpace(runResult.StandardOutput)) then
+                    Console.Out.Write(runResult.StandardOutput)
+
+                if not (String.IsNullOrWhiteSpace(runResult.StandardError)) then
+                    Console.Error.Write(runResult.StandardError)
+
+                runResult.ExitCode
+
 [<EntryPoint>]
 let main argv =
     match Cli.parse argv with
@@ -227,7 +376,10 @@ let main argv =
         Console.Error.WriteLine(message)
         if message.Contains("kp [--source-root") then 0 else 1
     | Result.Ok options ->
-        let compilationOptions = CompilationOptions.create options.SourceRoot
+        let compilationOptions =
+            { CompilationOptions.create options.SourceRoot with
+                BackendProfile = options.BackendProfile }
+
         let workspace = Compilation.parse compilationOptions options.Inputs
 
         if List.isEmpty workspace.Documents then
@@ -290,10 +442,17 @@ let main argv =
                 | None ->
                     0
                 | Some entryPoint ->
-                    match Interpreter.evaluateBinding workspace entryPoint with
-                    | Result.Ok value ->
-                        printfn "%s" (RuntimeValue.format value)
-                        0
-                    | Result.Error issue ->
-                        Console.Error.WriteLine($"runtime error: {issue.Message}")
+                    match options.BackendProfile.ToLowerInvariant() with
+                    | "interpreter" ->
+                        match Interpreter.evaluateBinding workspace entryPoint with
+                        | Result.Ok value ->
+                            printfn "%s" (RuntimeValue.format value)
+                            0
+                        | Result.Error issue ->
+                            Console.Error.WriteLine($"runtime error: {issue.Message}")
+                            1
+                    | "dotnet" ->
+                        runDotNetBackend workspace entryPoint options.EmitDirectory options.NativeAot
+                    | other ->
+                        Console.Error.WriteLine($"Unsupported runtime backend '{other}'.")
                         1

@@ -86,3 +86,35 @@ let ``dotnet backend native aot publish runs`` () =
     Assert.Equal(0, runResult.ExitCode)
     Assert.Equal("42", runResult.StandardOutput.Trim())
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
+let ``cli can run the managed dotnet backend`` () =
+    let workspaceRoot = createScratchDirectory "cli-dotnet-workspace"
+
+    writeWorkspaceFiles
+        workspaceRoot
+        [
+            "main.kp",
+            [
+                "module main"
+                "let result = if not False then 42 else 0"
+            ]
+            |> String.concat "\n"
+        ]
+
+    let emitDirectory = createScratchDirectory "cli-dotnet-emit"
+
+    let cliProjectPath =
+        Path.GetFullPath(
+            Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "src", "Kappa.Compiler.Cli", "Kappa.Compiler.Cli.fsproj")
+        )
+
+    let runResult =
+        runProcess
+            workspaceRoot
+            "dotnet"
+            $"run --project \"{cliProjectPath}\" -v q -- --source-root \"{workspaceRoot}\" --backend dotnet --emit-dir \"{emitDirectory}\" --run main.result"
+
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Contains("42", runResult.StandardOutput)
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
