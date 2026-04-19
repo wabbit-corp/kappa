@@ -2257,10 +2257,12 @@ Syntax:
 
 ```text
 recordUpdate ::= expr '.{' updateField (',' updateField)* '}'
-updateField  ::= ident '=' expr
+updateField  ::= [ '@' ] ident '=' expr
 ```
 
 A record update must contain only `=` fields. A record update containing `:=` is ill-formed.
+If a record field is declared as an implicit field `@label : T`, it may be explicitly updated with surface syntax
+`@label = expr`.
 
 Normative elaboration:
 
@@ -2275,8 +2277,9 @@ r.{ f1 = e1, ..., fk = ek }
 
 elaborates to a full record literal in that canonical order:
 
-* if `gi` is explicitly updated, the elaborated literal uses the supplied expression for `gi`,
-* if `gi` is omitted, the elaborated literal uses the projection `r.gi`.
+* if `gi` is explicitly updated, the elaborated literal uses the supplied expression for `gi`;
+  implicit fields are updated with surface syntax `@gi = expr`,
+* if `gi` is omitted, the elaborated literal uses the projection `r.gi`, including omitted implicit fields.
 
 The resulting full record literal is then typechecked against the original record type `R` using the ordinary
 dependent-record rules of §5.5.1.1 and §5.5.3.
@@ -2287,6 +2290,8 @@ Consequences:
   determined solely by ordinary typechecking of the elaborated full record literal.
 * If an omitted field depends on updated fields and the copied projection `r.field` no longer has the required type
   after substitution of the updated values, the update is rejected.
+* An implicit field may be repaired explicitly in the same update. For example, `r.{ id = 2, @ok = newProof }` is valid
+  when `newProof` has the type required by the updated record.
 * If an omitted field path is currently in the consumed state of the scrutinee, the implicit filler `r.field` is
   ill-typed; that field must therefore be supplied explicitly.
 
@@ -2328,6 +2333,14 @@ let buf3 = buf.{ len = 20, buffer = mkBuffer this.len }
 
 let buf4 = buf.{ checksum = 99 }
 -- OK; omitted fields are copied from `buf`
+
+let pos : (id : Int, @ok : id > 0) = ...
+let pos2 = pos.{ id = 2, @ok = newProof }
+-- OK when `newProof` proves `2 > 0`
+
+let pos3 = pos.{ id = 2 }
+-- rejected if the copied implicit field `pos.ok` no longer has the type
+-- required by the updated record
 
 let myRec : (1 buf : Buffer, len : Nat) = ...
 let extractedBuf = myRec.buf
