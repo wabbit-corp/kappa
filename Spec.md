@@ -9679,7 +9679,9 @@ assertErrorCount <n>
 assertWarningCount <n>
 assertDiagnostic <severity> <code>
 assertDiagnosticHere <severity> <code>
+assertDiagnosticAt <path> <severity> <code> <line>
 assertDiagnosticAt <path> <severity> <code> <line> <column>
+assertDiagnosticAt <path> <severity> <code> <startLine> <startColumn> - <endLine> <endColumn>
 assertDiagnosticMatch <regex>
 ```
 
@@ -9705,9 +9707,12 @@ Rules:
   directive line.
   It succeeds iff at least one matching diagnostic has its primary origin in that file and begins on that target line,
   regardless of column.
-* `assertDiagnosticAt path severity code line column` additionally requires the primary origin of the matching
-  diagnostic to start at the given 1-based line and 1-based column in the file `path`, where `path` is relative to the
-  suite root.
+* `assertDiagnosticAt path severity code line` requires the primary origin of the matching diagnostic to begin on the
+  given 1-based line in the file `path`, where `path` is relative to the suite root.
+* `assertDiagnosticAt path severity code line column` additionally requires the primary origin to begin at the given
+  1-based line and 1-based column.
+* `assertDiagnosticAt path severity code startLine startColumn - endLine endColumn` requires the primary origin range to
+  have exactly the given 1-based start and end positions.
 * `assertDiagnosticMatch regex` succeeds iff at least one emitted diagnostic has a primary human-readable message text
   that matches `regex`.
   Here `regex` is the remainder of the directive body and is interpreted as an ECMAScript-style regular expression.
