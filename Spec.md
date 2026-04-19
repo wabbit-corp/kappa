@@ -8382,6 +8382,19 @@ Semantics:
 * `assertTotal` does not change the runtime semantics of the program.
 * `assertTotal` is unsafe and is usable only when enabled by the `allow_assert_total` setting of §16.2.
 
+### 16.5 Backend-specific surface escapes
+
+The safe portable subset of Kappa excludes any implementation-defined surface syntax or API for directly embedding
+backend-specific code, backend-specific syntax fragments, or backend-specific intermediate representations.
+
+If an implementation provides such a facility:
+
+* it MUST document the facility as backend-specific;
+* it MUST NOT require the facility for ordinary portable Kappa code;
+* it MUST require explicit build-level or command-line enablement in package mode; and
+* the compiler MUST NOT claim portable validation for the embedded backend-specific fragment beyond whatever
+  validation is explicitly documented for that facility.
+
 ---
 
 ## 17. Compilation pipeline and backend profiles
@@ -8475,6 +8488,14 @@ Rules:
 * A change that alters only `BodyFingerprint` MAY preserve previously computed header-, interface-, and
   downstream-import results.
 
+InterfaceFingerprint intentionally tracks exported name bindings as well as semantic object identities.
+
+Therefore a rename, move, or re-export change that preserves the semantic object identity of the affected definition may
+still change `InterfaceFingerprint` if the exported namespace bindings change.
+
+Such a change need not by itself invalidate cached semantic objects keyed only by semantic object identity, but it does
+invalidate any result that depends on the affected interface surface.
+
 The semantic hashes of §15 remain normative for semantic identity, coherence, and related uses.
 They MUST NOT be assumed to be the sole or primary invalidation keys of a conforming implementation.
 
@@ -8544,6 +8565,13 @@ At minimum it MUST identify:
 All cross references within a stage dump MUST use explicit IDs present in that dump.
 
 A stage dump MUST be deterministic for fixed inputs, effective build configuration, and implementation version.
+
+Implementations SHOULD additionally provide a canonicalized dump mode that omits, redacts, or deterministically
+renumbers unstable implementation-generated identifiers such as local variable IDs, temporary binder IDs, or other
+non-semantic internal numbering.
+
+This canonicalized mode is intended for diff-friendly testing and debugging and MUST NOT remove or alter semantic
+information.
 
 In particular, its content and ordering MUST NOT depend on:
 
@@ -8664,6 +8692,12 @@ A module interface artifact MUST record at least:
 * the hashes or equivalent identity data required by §15 for exported definitions and instances;
 * enough definitional content for exported transparent items to support downstream definitional equality.
 
+A module interface artifact MUST distinguish the semantic object identity of an exported object from the current
+namespace bindings that expose it.
+
+An implementation SHOULD permit browsing and querying module interface artifacts, or semantic-object-store entries
+derived from them, without reparsing original source text.
+
 A module interface artifact MAY omit:
 
 * the bodies of private items;
@@ -8695,9 +8729,37 @@ of the chosen backend profile, `run` MUST fail before execution begins.
 For the same selected roots, build configuration, dependency closure, and backend profile, `run` MUST be observationally
 equivalent to `compile` followed by execution of the resulting artifact.
 
+#### 17.1.11 Full-fidelity concrete syntax (`KSyntax`)
+
+A conforming implementation MUST behave as if a full-fidelity concrete syntax representation `KSyntax` exists beneath or
+alongside KFrontIR.
+
+`KSyntax` preserves every token and every piece of trivia, including at least:
+
+* comments,
+* whitespace,
+* delimiters,
+* exact lexical spelling of tokens, and
+* the original source ordering of concrete syntax.
+
+For unchanged subtrees, `KSyntax` round-trips to the exact original source text.
+
+KFrontIR MAY be constructed from `KSyntax`, fused with it, or reconstructed from it on demand, provided observable
+behavior is as if `KSyntax` existed.
+
+`KSyntax` is purely syntactic:
+
+* names, symbols, types, and other semantic facts are not part of `KSyntax` except as external references; and
+* parse errors may be represented by error or missing syntax nodes in the same error-tolerant style required of
+  KFrontIR.
+
+Implementations intended for editor, formatter, or refactoring use SHOULD preserve and reuse unchanged `KSyntax`
+subtrees across localized edits.
+
 ### 17.2 KFrontIR
 
-KFrontIR is the source-preserving, symbol-bearing, error-tolerant frontend representation of Kappa.
+KFrontIR is the source-preserving, symbol-bearing, error-tolerant frontend representation of Kappa, constructed from
+`KSyntax` or an observationally equivalent full-fidelity syntax representation.
 
 Normative role:
 
@@ -8857,9 +8919,16 @@ Such queries SHOULD support at least:
 * expected type, expected quantity, and expected effect row where those are well-defined at a source position;
 * diagnostics for a file or declaration, even when the file is syntactically incomplete;
 * completion candidate enumeration at a source position;
-* find-usages and rename keyed by declaration-symbol identity.
+* find-usages and rename keyed by declaration-symbol identity;
+* type-directed search across the current project, imported interfaces, and any available semantic object store;
+* lookup, navigation, and find-usages by semantic object identity after name resolution;
+* browsing of interface artifacts or semantic object stores without reparsing source text; and
+* source-to-source refactoring that preserves unchanged concrete syntax and trivia where possible.
 
 API names, packaging, and transport are implementation-defined.
+
+An implementation SHOULD use the same dependency-tracked query engine for tooling and batch compilation where possible,
+and SHOULD avoid maintaining semantically divergent batch and tooling frontends.
 
 #### 17.2.6 Analysis sessions and invalidation
 
@@ -9149,6 +9218,58 @@ then compilation fails.
 The evaluator MAY memoize, partially normalize, or reuse cached results, provided the observable result is the same as
 semantic elaboration-time evaluation under the restrictions of §5.8.6.
 
+#### 17.3.3 Semantic object identities
+
+After `CORE_LOWERING`, each top-level KCore object that may be imported, browsed, documented, cached, or compiled has a
+canonical semantic object identity.
+
+Semantic objects include at least:
+
+* term definitions and declarations;
+* type definitions and aliases;
+* constructors;
+* traits and associated types;
+* effect interfaces and effect operations;
+* instances; and
+* any other implementation-defined top-level semantic artifact that is imported, browsed, or separately cached.
+
+A semantic object identity is distinct from:
+
+* user-visible names,
+* namespace bindings,
+* source file paths, and
+* source locations.
+
+Names are metadata that bind human-facing paths to semantic object identities.
+
+A rename, move, or re-export change that preserves the semantic object identity of an object does not change that
+object's identity, though it may change source-level name resolution outcomes and interface fingerprints where exported
+bindings change.
+
+An implementation MAY realize semantic object identities using the hashes of §15 or another stable identity scheme whose
+equality is at least as fine as KCore semantic identity.
+
+Tooling and caches that operate after name resolution SHOULD prefer semantic object identity to source spelling when
+tracking references, rename targets, usages, deduplication, and compiled artifact reuse.
+
+#### 17.3.4 Semantic object stores
+
+A conforming implementation MAY persist semantic objects in a structured semantic object store or codebase.
+
+If provided, such a store is keyed by semantic object identity together with any required compiler fingerprints,
+backend profile, backend-intrinsic set, and implementation version information.
+
+Rules:
+
+* semantic objects and the human-facing names that refer to them MUST be stored separately or be separately recoverable;
+* multiple names MAY refer to the same semantic object identity;
+* deleting, moving, or renaming a name binding does not by itself require duplicating the underlying semantic object;
+* browsing and querying the store MUST NOT require reparsing original source text; and
+* the store MAY be append-only, garbage-collected, versioned, or otherwise implementation-defined.
+
+A module-interface artifact of §17.1.9 MAY be materialized directly from such a store, embedded within it, or
+reconstructed from it on demand.
+
 ### 17.4 KBackendIR
 
 KBackendIR is the target-neutral runtime IR obtained by erasing KCore and choosing runtime representations.
@@ -9362,6 +9483,25 @@ A conforming implementation SHOULD support persistent caches across compiler-pro
 
 provided the reuse conditions above are satisfied.
 
+### 17.4.9 Implementation-defined intermediate forms
+
+An implementation MAY introduce additional named intermediate representations between KCore, KBackendIR, and target
+lowering.
+
+Such intermediate forms are implementation-defined and are not part of the portable subset unless standardized
+elsewhere in this specification.
+
+If an implementation exposes such an intermediate form through stage dumps, pipeline traces, or debugging APIs, it MUST
+also expose:
+
+* a stable checkpoint or step name for that form;
+* a machine-readable dump for that form;
+* a verifier or legality check for that form when such a notion exists; and
+* provenance relating that form to the adjacent standardized checkpoints.
+
+Implementations SHOULD avoid introducing an additional intermediate form unless it has a distinct semantic,
+optimization, representation, or deployment purpose.
+
 ### 17.5 Portable runtime obligations
 
 A backend MUST preserve all observable source semantics of Chapters 4, 8, 9, 10, 14, 15, and 16.
@@ -9424,6 +9564,25 @@ effective build configuration and analysis-session identity.
 
 If elaboration-time evaluation reaches a backend intrinsic that is not classified as elaboration-available, compilation
 fails.
+
+#### 17.6.2 Frontend/backend extension boundary
+
+Elaboration-time and frontend extensions operate on `KSyntax`, KFrontIR, or KCore.
+
+Backend extensions operate at or after KBackendIR.
+
+Rules:
+
+* an elaboration-time or frontend extension MUST NOT require direct dependence on implementation-defined
+  target-lowering internals;
+* a backend extension MUST NOT redefine source semantics or bypass the legality checkpoints required for KCore or
+  KBackendIR;
+* if a backend extension is visible during elaboration, it must be visible only through elaboration-available backend
+  intrinsics under §17.6.1;
+* an implementation SHOULD avoid maintaining separate unrelated extension models for tooling and batch compilation when
+  the same dependency-tracked query and lowering engine can be reused; and
+* any implementation-defined extension point that crosses this boundary MUST document which checkpoint is its input and
+  which invariants it may rely on.
 
 ### 17.7 Portable foreign ABI
 
