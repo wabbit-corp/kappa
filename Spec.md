@@ -2984,6 +2984,11 @@ succeeds, variables from `pat` are bound. If the match fails, the enclosing cons
   block short-circuits via `empty` (see §8.2.1).
 * In ordinary `let ... in`, `let?` is not permitted. Use `match` instead.
 
+Because the plain `let? pat = expr` form discards the refutation residue, it is permitted only when the values rejected
+by `pat` are droppable under the enclosing construct's rule. In particular, Kappa rejects plain `let?` when refutation
+could discard an owned value carrying a positive lower-bound usage obligation. Inside `do`, the `let? ... else ...`
+form of §8.2.1 binds the failure residue explicitly instead of discarding it.
+
 Elaboration (schematic):
 
 * If `bindPat` carries quantity `&`, the binding is elaborated as a borrowed binding of the underlying pattern `pat0`
@@ -4142,8 +4147,8 @@ Rules:
 * In a threaded sequence, the residue type `r` of each `Match a r` must be definitionally equal to the scrutinee type
   expected by the next case.
 * A non-active-pattern case following a `Match`-returning active pattern matches directly against the threaded residue.
-* `Match`-returning active patterns are not permitted in `let?`, because `let?` provides no continuation branch to
-  receive the `Miss` residue.
+* `Match`-returning active patterns are not permitted in the plain `let? pat = expr` form, because that form provides no
+  continuation branch to receive the `Miss` residue.
 * Because active patterns are arbitrary functions, the exhaustiveness checker treats `Match`-returning active-pattern
   cases as refutable. A threaded `match` / `try match` sequence using such cases is exhaustive only if the threaded
   chain is terminated by an unconditionally irrefutable final case, such as `_` or another total pattern, that consumes
@@ -4790,15 +4795,24 @@ Valid do-items inside `do`:
 
   ```kappa
   let? pat = expr
+  let? pat = expr else residuePat -> failExpr
   ```
 
   This form matches the pure expression `expr` against `pat`. If the match succeeds, pattern variables are bound in
-  subsequent do-items. If the match fails, the current `do`-block path short-circuits via `empty`.
+  subsequent do-items. In the plain form, if the match fails, the current `do`-block path short-circuits via `empty`.
+  In the `else` form, failure instead binds the unmatched cases to `residuePat` and evaluates `failExpr`.
 
   Typing and well-formedness:
     * `expr` is checked as a pure expression.
     * `pat` may be refutable.
-    * The enclosing monad must support short-circuiting via `Alternative m` (or equivalent structure providing `empty`).
+    * The plain `let? pat = expr` form requires `Alternative m` (or equivalent structure providing `empty`).
+    * The plain form is ill-formed unless the compiler can prove that every value discarded on match failure is
+      droppable. For this rule, quantities `0`, `&`, `<=1`, and `ω` are droppable, while quantities with a positive
+      owned lower bound, such as `1` and `>=1`, are not.
+    * The `else` form checks the pair of cases `pat` and `residuePat` as a disjoint, jointly exhaustive split of the
+      scrutinee type, using the same overlap and coverage machinery as `match`.
+    * In the `else` form, variables bound by `residuePat` are in scope only in `failExpr`, and subsequent do-items are
+      not executed on that failure branch.
 
 * **Control-flow sugar** (loops, `if`, `return`, `defer`, etc.) described below.
 
@@ -4820,25 +4834,59 @@ Control-flow statements:
 
 ### 8.2.1 Refutable local binding (`let?`)
 
-Within a `do` block, `let? pat = expr` is a refutable local binding.
+Within a `do` block, Kappa provides two refutable local binding forms:
+
+```kappa
+let? pat = expr
+let? pat = expr else residuePat -> failExpr
+```
 
 Semantics:
 
 * `expr` is evaluated as a pure expression and matched against `pat`.
 * On success, the names bound by `pat` are brought into scope for the subsequent do-items of the `do` block.
-* On failure, the current `do`-block path short-circuits via `empty`.
+* In the plain form, failure short-circuits the current `do`-block path via `empty`.
+* In the `else` form, failure instead matches the refutation residue against `residuePat` and evaluates `failExpr`.
+  Names bound by `residuePat` are in scope only in `failExpr`, and later do-items are not executed on that branch.
 
-This form requires `Alternative m` (or equivalent short-circuiting structure) for the enclosing monad.
+Typing and well-formedness:
+
+* The plain form requires `Alternative m` (or equivalent short-circuiting structure) for the enclosing monad.
+* The plain form is permitted only when every value discarded by refutation is droppable. The compiler MUST reject the
+  binding if it cannot prove this.
+* For this rule, values are droppable exactly when all discarded components carry only droppable quantities:
+  `0`, `&`, `<=1`, or `ω`. A discarded component with a positive owned lower-bound obligation, such as quantity `1` or
+  `>=1`, makes the plain form ill-formed.
+* This check is performed on the unmatched residue of `pat`, not merely on whether the matched branch contains linear
+  data. For example, matching `Option.Some` against `Option (1 File)` is permitted because the failure case `None`
+  carries no owned linear obligation, while matching `Ok` against `Result (1 File) (1 ErrorToken)` is rejected because
+  the failure case would discard `Err` carrying `ErrorToken`.
+* In the `else` form, the pair of patterns `pat` and `residuePat` is checked as a disjoint, jointly exhaustive split of
+  the scrutinee type, using the ordinary overlap and coverage rules of `match`.
+* The `else` form does not require `Alternative m` merely for refutation, because failure does not go through `empty`.
+  Instead, `failExpr` is typechecked as the terminal failure branch of the surrounding `do` block, against the
+  surrounding `do` result type.
+* Because `residuePat` explicitly binds the failure cases, those cases may carry linear owned obligations; ordinary
+  linearity rules then require the variables bound by `residuePat` to be consumed appropriately within `failExpr`.
 
 Schematic elaboration:
 
-* `let? pat = expr; rest` behaves like:
+* Plain `let? pat = expr; rest` behaves like:
 
   ```kappa
   match expr
   case pat -> do
       rest
   case _   -> empty
+  ```
+
+* `let? pat = expr else residuePat -> failExpr; rest` behaves like:
+
+  ```kappa
+  match expr
+  case pat        -> do
+      rest
+  case residuePat -> failExpr
   ```
 
 ### 8.2.2 Do-item sequences and block result
@@ -4850,7 +4898,7 @@ A do-item may be:
 * monadic bind (`let bindPat <- expr`)
 * mutable assignment (`x <- expr` or `x = expr`)
 * pure local binding (`let bindPat = expr`)
-* refutable local binding (`let? pat = expr`)
+* refutable local binding (`let? pat = expr` or `let? pat = expr else residuePat -> failExpr`)
 * monadic expression item (`expr`)
 * resource-scoped bind (`using pat <- expr`)
 * `defer`
@@ -5529,7 +5577,20 @@ The cases below define `⟦...⟧` for arbitrary `A`.
       case _   -> empty
   ```
 
-  where `tmp` is fresh. This case requires `Alternative m`.
+  where `tmp` is fresh. This case requires `Alternative m` and is permitted only when the discarded refutation residue
+  is droppable under §8.2.1.
+
+* Refutable local binding with explicit failure arm `let? pat = expr else residuePat -> failExpr`:
+
+  ```kappa
+  ⟦let? pat = expr else residuePat -> failExpr; rest⟧ =
+      match expr
+      case pat        -> ⟦rest⟧
+      case residuePat -> ⟦failExpr⟧
+  ```
+
+  where `pat` and `residuePat` are checked as a disjoint, jointly exhaustive split of the scrutinee type, and
+  `⟦failExpr⟧` denotes elaboration of the failure arm as a terminal branch at the surrounding `do` result type.
 
 * Pure local binding `let bindPat = expr`:
 
@@ -6436,10 +6497,15 @@ Map iteration:
 Comprehensions support refutable generators and refutable bindings:
 
 **Refutable generator.** `for? pat in collection` iterates `collection` and keeps only elements matching `pat`.
-Variables bound by `pat` are in scope in subsequent clauses.
+Variables bound by `pat` are in scope in subsequent clauses. This form is ill-formed if dropping a non-matching element
+would discard any component carrying a positive owned lower-bound obligation.
 
 **Refutable binding.** `let? pat = expr` matches `expr` against `pat`. On success, pattern variables are bound and the
-comprehension continues. On failure, the current row is dropped.
+comprehension continues. On failure, the current row is dropped. This form is ill-formed if the discarded failure
+residue would carry any positive owned lower-bound obligation.
+
+For both forms, discarded values are droppable only when all discarded components carry quantities `0`, `&`, `<=1`, or
+`ω`. Quantities `1` and `>=1` are not droppable here.
 
 Desugaring per §10.10: via `filterMap` when `FilterMap f` is available; otherwise via `bind` + `empty`.
 
@@ -6811,6 +6877,8 @@ Desugaring rules (list/set forms shown; map form analogous):
    that depends on earlier bound variables forces `bind`.)
 
 5. Refutable generator (`for?`) and refutable let (`let?`):
+
+   These forms are permitted only when the values discarded on refutation are droppable under §10.4.1.
 
    If `FilterMap f` is available, refutation desugars via `filterMap` and requires only `FilterMap f` (plus whatever is
    needed by surrounding clauses).
