@@ -4930,19 +4930,32 @@ do
         body
 ```
 
-Desugars to:
+A branch body written as an indented suite of sequenced do-items elaborates as a nested `do` block. Thus the first
+example above is first understood as:
 
 ```kappa
 do
-    if cond then
+    if cond then do
+        stmt1
+        stmt2
+```
+
+and then desugars to:
+
+```kappa
+do
+    if cond then do
         stmt1
         stmt2
     else
         pure ()
 ```
 
-So `if` remains an expression; the missing `else` is implicitly `pure ()` in the monad. For the tag-test form, no
-bindings escape the test.
+So `if` remains an expression; the missing `else` is implicitly `pure ()` in the monad. The nested branch `do` block
+is a fresh dynamic do-scope, so any `defer`, `using`, or other do-scope obligations introduced in that branch unwind
+on branch exit and do not outlive the branch's lexical accessibility. If a value or resource must remain accessible
+after the `if`, the user must make that explicit in the branch result (for example with `Option`). For the tag-test
+form, no bindings escape the test.
 
 ### 8.4 `return`
 
@@ -5211,6 +5224,8 @@ A `do`-scope is introduced by:
 * the body of `while ... do ...`
 * the body of `for ... do ...`
 * `else do` blocks attached to loops
+* the `then` or `else` branch of an `if` inside `do` when that branch is written as a sequenced do-item suite per
+  §8.3; such a branch elaborates as a nested `do` block
 
 `try`/`except`/`finally` clause bodies are expressions. To use do-scope statements (`defer`, `<-`, loops), write an
 explicit `do` block.
