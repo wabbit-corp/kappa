@@ -9645,7 +9645,9 @@ Rules:
   `<path>` is relative to the suite root.
   The contents of the named file are supplied to the program's standard input as raw bytes.
   If `stdinFile` is omitted, the default standard input is empty.
-* If no `dumpFormat` is specified, the default is `json`.
+* `dumpFormat json` and `dumpFormat sexpr` select the default stage-dump format for assertions whose expected-file path
+  does not itself determine the format.
+  If no `dumpFormat` is specified, the default is `json`.
 * `requires ...` directives are preconditions.
   If any required condition is not met, the test result is **unsupported**, not failed.
 
@@ -9782,10 +9784,15 @@ assertStageDump <checkpoint> equals <path>
 Rules:
 
 * `<checkpoint>` must name a valid compiler checkpoint under Chapter 17.
-* The harness requests a stage dump for that checkpoint in the selected `dumpFormat`.
 * `<path>` is relative to the suite root and names the expected golden file.
-* If `dumpFormat json` is selected, the expected file MUST contain JSON.
-* If `dumpFormat sexpr` is selected, the expected file MUST contain an S-expression serialization.
+* The harness requests a stage dump for that checkpoint in the format determined as follows:
+  * if `<path>` ends in `.json`, the requested format is JSON;
+  * if `<path>` ends in `.sexpr`, the requested format is S-expression;
+  * otherwise, the requested format is the suite's selected `dumpFormat`.
+* Therefore one suite MAY assert both JSON and S-expression dumps by using golden files with the corresponding
+  extensions.
+* If the effective format is JSON, the expected file MUST contain JSON.
+* If the effective format is S-expression, the expected file MUST contain an S-expression serialization.
 
 Comparison semantics:
 
