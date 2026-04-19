@@ -8685,6 +8685,11 @@ Such diagnostic records MUST identify at least:
 * primary origin; and
 * any related origins.
 
+A diagnostic code MUST be a stable, human-readable identifier that is unique within the implementation's diagnostic
+space, and it MUST NOT consist solely of digits.
+Implementations SHOULD use readable identifier forms such as `E_IMPORT_CYCLE`, `E_TYPE_MISMATCH`, or
+`W_UNUSED_BINDING` rather than bare numeric codes.
+
 Tooling queries over syntactically incomplete files are valid. Where possible, they MUST return partial results rather
 than failing wholesale merely because the surrounding file is incomplete.
 
@@ -9693,6 +9698,9 @@ warning
 note
 info
 ```
+
+In this appendix, `<code>` denotes a diagnostic code as defined by §17.2.4.
+Purely numeric codes are not valid standard-harness diagnostic codes.
 
 Rules:
 
