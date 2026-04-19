@@ -282,6 +282,25 @@ let private decodeAssertionText (directiveName: string) (filePath: string) lineN
 let private normalizeExecutionOutput (text: string) =
     text.Replace("\r\n", "\n").TrimEnd([| '\r'; '\n' |])
 
+let private legacyDirectiveAliases =
+    Map.ofList
+        [
+            "x-assertEval", "assertEval"
+            "x-assertEvalErrorContains", "assertEvalErrorContains"
+            "x-assertModule", "assertModule"
+            "x-assertModuleAttributes", "assertModuleAttributes"
+            "x-assertDeclDescriptors", "assertDeclDescriptors"
+            "x-assertDataConstructors", "assertDataConstructors"
+            "x-assertTraitMembers", "assertTraitMembers"
+            "x-assertContainsTokenKinds", "assertContainsTokenKinds"
+            "x-assertContainsTokenTexts", "assertContainsTokenTexts"
+        ]
+
+let private canonicalizeDirectiveName directiveName =
+    legacyDirectiveAliases
+    |> Map.tryFind directiveName
+    |> Option.defaultValue directiveName
+
 let private executeBindingWithCapturedOutput (workspace: WorkspaceCompilation) (entryPoint: string) =
     let builder = StringBuilder()
 
@@ -308,6 +327,8 @@ let private parseFixtureAssertion (filePath: string) lineNumber (lineText: strin
                 body, ""
             else
                 body.Substring(0, firstSpace), body.Substring(firstSpace + 1).Trim()
+
+        let directiveName = canonicalizeDirectiveName directiveName
 
         match directiveName with
         | "assertNoErrors" ->
@@ -337,12 +358,10 @@ let private parseFixtureAssertion (filePath: string) lineNumber (lineText: strin
                 invalidOp $"assertType expects '<target> <type>' ({filePath}:{lineNumber})."
 
             Some(AssertType(targetAndType[0], targetAndType[1].Trim(), filePath, lineNumber))
-        | "assertEval"
-        | "x-assertEval" ->
+        | "assertEval" ->
             let target, expectedValueText = parseTargetAndBody "assertEval" filePath lineNumber directiveBody
             Some(AssertEval(target, expectedValueText, filePath, lineNumber))
-        | "assertEvalErrorContains"
-        | "x-assertEvalErrorContains" ->
+        | "assertEvalErrorContains" ->
             let target, expectedText = parseTargetAndBody "assertEvalErrorContains" filePath lineNumber directiveBody
             Some(AssertEvalErrorContains(target, expectedText, filePath, lineNumber))
         | "assertExecute" ->
@@ -359,14 +378,12 @@ let private parseFixtureAssertion (filePath: string) lineNumber (lineText: strin
                     lineNumber
                 )
             )
-        | "assertModule"
-        | "x-assertModule" ->
+        | "assertModule" ->
             if String.IsNullOrWhiteSpace(directiveBody) then
                 invalidOp $"assertModule expects '<module>' ({filePath}:{lineNumber})."
 
             Some(AssertModule(directiveBody, filePath, lineNumber))
-        | "assertModuleAttributes"
-        | "x-assertModuleAttributes" ->
+        | "assertModuleAttributes" ->
             let expectedAttributes = parseFixtureList directiveBody
 
             if List.isEmpty expectedAttributes then
@@ -380,16 +397,14 @@ let private parseFixtureAssertion (filePath: string) lineNumber (lineText: strin
                 invalidOp $"assertDeclKinds expects a comma-separated list of declaration kinds ({filePath}:{lineNumber})."
 
             Some(AssertDeclarationKinds(expectedKinds, filePath, lineNumber))
-        | "assertDeclDescriptors"
-        | "x-assertDeclDescriptors" ->
+        | "assertDeclDescriptors" ->
             let expectedDescriptors = parseFixtureList directiveBody
 
             if List.isEmpty expectedDescriptors then
                 invalidOp $"assertDeclDescriptors expects a comma-separated list of declaration descriptors ({filePath}:{lineNumber})."
 
             Some(AssertDeclarationDescriptors(expectedDescriptors, filePath, lineNumber))
-        | "assertDataConstructors"
-        | "x-assertDataConstructors" ->
+        | "assertDataConstructors" ->
             let typeAndConstructors =
                 directiveBody.Split([| ' '; '\t' |], 2, StringSplitOptions.RemoveEmptyEntries)
 
@@ -402,8 +417,7 @@ let private parseFixtureAssertion (filePath: string) lineNumber (lineText: strin
                 invalidOp $"assertDataConstructors expects at least one constructor ({filePath}:{lineNumber})."
 
             Some(AssertDataConstructors(typeAndConstructors[0], expectedConstructors, filePath, lineNumber))
-        | "assertTraitMembers"
-        | "x-assertTraitMembers" ->
+        | "assertTraitMembers" ->
             let traitAndMembers =
                 directiveBody.Split([| ' '; '\t' |], 2, StringSplitOptions.RemoveEmptyEntries)
 
@@ -416,16 +430,14 @@ let private parseFixtureAssertion (filePath: string) lineNumber (lineText: strin
                 invalidOp $"assertTraitMembers expects at least one member ({filePath}:{lineNumber})."
 
             Some(AssertTraitMembers(traitAndMembers[0], expectedMembers, filePath, lineNumber))
-        | "assertContainsTokenKinds"
-        | "x-assertContainsTokenKinds" ->
+        | "assertContainsTokenKinds" ->
             let expectedKinds = parseFixtureList directiveBody
 
             if List.isEmpty expectedKinds then
                 invalidOp $"assertContainsTokenKinds expects a comma-separated list of token kinds ({filePath}:{lineNumber})."
 
             Some(AssertContainsTokenKinds(expectedKinds, filePath, lineNumber))
-        | "assertContainsTokenTexts"
-        | "x-assertContainsTokenTexts" ->
+        | "assertContainsTokenTexts" ->
             let expectedTexts = parseFixtureList directiveBody
 
             if List.isEmpty expectedTexts then
@@ -752,6 +764,22 @@ let private tryFindDeclaredTypeTokens (workspace: WorkspaceCompilation) (current
             | _ ->
                 None)
 
+let private requireFixtureDocument (workspace: WorkspaceCompilation) (filePath: string) lineNumber =
+    match tryFindDocumentForFilePath workspace filePath with
+    | Some document ->
+        document
+    | None ->
+        failwithf "Could not find parsed document for '%s' (%s:%d)." filePath filePath lineNumber
+
+let private evaluateFixtureBinding (workspace: WorkspaceCompilation) (filePath: string) (target: string) =
+    let bindingTarget = qualifyFixtureBindingTarget workspace filePath target
+    bindingTarget, Interpreter.evaluateBinding workspace bindingTarget
+
+let private executeFixtureBinding (workspace: WorkspaceCompilation) (filePath: string) (target: string) =
+    let bindingTarget = qualifyFixtureBindingTarget workspace filePath target
+    let result, output = executeBindingWithCapturedOutput workspace bindingTarget
+    bindingTarget, result, output
+
 let runKpFixtureCase (fixtureCase: KpFixtureCase) =
     Assert.NotEmpty(fixtureCase.SourceFiles)
     Assert.NotEmpty(fixtureCase.Assertions)
@@ -804,9 +832,9 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
             | None ->
                 failwithf "Could not find a declared top-level type for '%s' (%s:%d)." target filePath lineNumber
         | AssertEval(target, expectedValueText, filePath, lineNumber) ->
-            let bindingTarget = qualifyFixtureBindingTarget workspace filePath target
+            let bindingTarget, evaluation = evaluateFixtureBinding workspace filePath target
 
-            match Interpreter.evaluateBinding workspace bindingTarget with
+            match evaluation with
             | Result.Ok value ->
                 Assert.Equal(expectedValueText, RuntimeValue.format value)
             | Result.Error issue ->
@@ -818,9 +846,9 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
                     filePath
                     lineNumber
         | AssertEvalErrorContains(target, expectedText, filePath, lineNumber) ->
-            let bindingTarget = qualifyFixtureBindingTarget workspace filePath target
+            let bindingTarget, evaluation = evaluateFixtureBinding workspace filePath target
 
-            match Interpreter.evaluateBinding workspace bindingTarget with
+            match evaluation with
             | Result.Ok value ->
                 failwithf
                     "Expected '%s' evaluation to fail with a message containing '%s', but got '%s' (%s:%d)."
@@ -832,8 +860,7 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
             | Result.Error issue ->
                 Assert.Contains(expectedText, issue.Message, StringComparison.OrdinalIgnoreCase)
         | AssertExecute(target, expectedValueText, filePath, lineNumber) ->
-            let bindingTarget = qualifyFixtureBindingTarget workspace filePath target
-            let result, _ = executeBindingWithCapturedOutput workspace bindingTarget
+            let bindingTarget, result, _ = executeFixtureBinding workspace filePath target
 
             match result with
             | Result.Ok value ->
@@ -847,8 +874,7 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
                     filePath
                     lineNumber
         | AssertRunStdout(target, expectedOutputText, filePath, lineNumber) ->
-            let bindingTarget = qualifyFixtureBindingTarget workspace filePath target
-            let result, actualOutput = executeBindingWithCapturedOutput workspace bindingTarget
+            let bindingTarget, result, actualOutput = executeFixtureBinding workspace filePath target
 
             match result with
             | Result.Ok _ ->
@@ -862,94 +888,82 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
                     filePath
                     lineNumber
         | AssertModule(expectedModuleText, filePath, lineNumber) ->
-            match tryFindDocumentForFilePath workspace filePath with
-            | Some document ->
-                let actualModuleText =
-                    document.ModuleName
-                    |> Option.map SyntaxFacts.moduleNameToText
-                    |> Option.defaultValue "<none>"
+            let document = requireFixtureDocument workspace filePath lineNumber
 
-                Assert.Equal(expectedModuleText, actualModuleText)
-            | None ->
-                failwithf "Could not find parsed document for '%s' (%s:%d)." filePath filePath lineNumber
+            let actualModuleText =
+                document.ModuleName
+                |> Option.map SyntaxFacts.moduleNameToText
+                |> Option.defaultValue "<none>"
+
+            Assert.Equal(expectedModuleText, actualModuleText)
         | AssertModuleAttributes(expectedAttributes, filePath, lineNumber) ->
-            match tryFindDocumentForFilePath workspace filePath with
-            | Some document ->
-                let expected =
-                    expectedAttributes
-                    |> List.map normalizeFixtureText
+            let document = requireFixtureDocument workspace filePath lineNumber
 
-                let actual =
-                    document.Syntax.ModuleAttributes
-                    |> List.map normalizeFixtureText
+            let expected =
+                expectedAttributes
+                |> List.map normalizeFixtureText
 
-                Assert.Equal<string list>(expected, actual)
-            | None ->
-                failwithf "Could not find parsed document for '%s' (%s:%d)." filePath filePath lineNumber
+            let actual =
+                document.Syntax.ModuleAttributes
+                |> List.map normalizeFixtureText
+
+            Assert.Equal<string list>(expected, actual)
         | AssertDeclarationKinds(expectedKinds, filePath, lineNumber) ->
-            match tryFindDocumentForFilePath workspace filePath with
-            | Some document ->
-                let expected =
-                    expectedKinds |> List.map normalizeFixtureText
+            let document = requireFixtureDocument workspace filePath lineNumber
 
-                let actual =
-                    document.Syntax.Declarations
-                    |> List.map declarationKindText
-                    |> List.map normalizeFixtureText
+            let expected =
+                expectedKinds |> List.map normalizeFixtureText
 
-                Assert.Equal<string list>(expected, actual)
-            | None ->
-                failwithf "Could not find parsed document for '%s' (%s:%d)." filePath filePath lineNumber
+            let actual =
+                document.Syntax.Declarations
+                |> List.map declarationKindText
+                |> List.map normalizeFixtureText
+
+            Assert.Equal<string list>(expected, actual)
         | AssertDeclarationDescriptors(expectedDescriptors, filePath, lineNumber) ->
-            match tryFindDocumentForFilePath workspace filePath with
-            | Some document ->
+            let document = requireFixtureDocument workspace filePath lineNumber
+
+            let expected =
+                expectedDescriptors |> List.map normalizeFixtureText
+
+            let actual =
+                document.Syntax.Declarations
+                |> List.map declarationDescriptorText
+                |> List.map normalizeFixtureText
+
+            Assert.Equal<string list>(expected, actual)
+        | AssertDataConstructors(typeName, expectedConstructors, filePath, lineNumber) ->
+            let document = requireFixtureDocument workspace filePath lineNumber
+
+            match tryFindDataDeclaration typeName document with
+            | Some declaration ->
                 let expected =
-                    expectedDescriptors |> List.map normalizeFixtureText
+                    expectedConstructors |> List.map normalizeFixtureText
 
                 let actual =
-                    document.Syntax.Declarations
-                    |> List.map declarationDescriptorText
+                    declaration.Constructors
+                    |> List.map (fun constructor -> constructor.Name)
                     |> List.map normalizeFixtureText
 
                 Assert.Equal<string list>(expected, actual)
             | None ->
-                failwithf "Could not find parsed document for '%s' (%s:%d)." filePath filePath lineNumber
-        | AssertDataConstructors(typeName, expectedConstructors, filePath, lineNumber) ->
-            match tryFindDocumentForFilePath workspace filePath with
-            | Some document ->
-                match tryFindDataDeclaration typeName document with
-                | Some declaration ->
-                    let expected =
-                        expectedConstructors |> List.map normalizeFixtureText
-
-                    let actual =
-                        declaration.Constructors
-                        |> List.map (fun constructor -> constructor.Name)
-                        |> List.map normalizeFixtureText
-
-                    Assert.Equal<string list>(expected, actual)
-                | None ->
-                    failwithf "Could not find data declaration '%s' (%s:%d)." typeName filePath lineNumber
-            | None ->
-                failwithf "Could not find parsed document for '%s' (%s:%d)." filePath filePath lineNumber
+                failwithf "Could not find data declaration '%s' (%s:%d)." typeName filePath lineNumber
         | AssertTraitMembers(traitName, expectedMembers, filePath, lineNumber) ->
-            match tryFindDocumentForFilePath workspace filePath with
-            | Some document ->
-                match tryFindTraitDeclaration traitName document with
-                | Some declaration ->
-                    let expected =
-                        expectedMembers |> List.map normalizeFixtureText
+            let document = requireFixtureDocument workspace filePath lineNumber
 
-                    let actual =
-                        declaration.Members
-                        |> List.choose (fun memberDeclaration -> memberDeclaration.Name)
-                        |> List.map normalizeFixtureText
+            match tryFindTraitDeclaration traitName document with
+            | Some declaration ->
+                let expected =
+                    expectedMembers |> List.map normalizeFixtureText
 
-                    Assert.Equal<string list>(expected, actual)
-                | None ->
-                    failwithf "Could not find trait declaration '%s' (%s:%d)." traitName filePath lineNumber
+                let actual =
+                    declaration.Members
+                    |> List.choose (fun memberDeclaration -> memberDeclaration.Name)
+                    |> List.map normalizeFixtureText
+
+                Assert.Equal<string list>(expected, actual)
             | None ->
-                failwithf "Could not find parsed document for '%s' (%s:%d)." filePath filePath lineNumber
+                failwithf "Could not find trait declaration '%s' (%s:%d)." traitName filePath lineNumber
         | AssertContainsTokenKinds(expectedKinds, filePath, lineNumber) ->
             let lexed = lexFixtureFile filePath
 

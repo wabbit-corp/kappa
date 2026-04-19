@@ -15,10 +15,6 @@ module RuntimeOutput =
         { Write = Console.Write
           WriteLine = Console.WriteLine }
 
-    let discard =
-        { Write = ignore
-          WriteLine = ignore }
-
 type RuntimeValue =
     | IntegerValue of int64
     | FloatValue of double
@@ -513,6 +509,14 @@ module Interpreter =
             | other ->
                 error $"Expected an IO action, but got {RuntimeValue.format other}."
 
+        and toUnitIoAction (action: unit -> unit) =
+            ok
+                (Some(
+                    IOActionValue(fun () ->
+                        action ()
+                        ok UnitValue)
+                ))
+
         and invokeBuiltin (builtin: BuiltinFunction) : Result<RuntimeValue option, EvaluationError> =
             match builtin.Name, builtin.Arguments with
             | "not", [ BooleanValue value ] ->
@@ -580,12 +584,7 @@ module Interpreter =
             | ">>", _ ->
                 error "Intrinsic '>>' received too many arguments."
             | "print", [ StringValue value ] ->
-                ok
-                    (Some(
-                        IOActionValue(fun () ->
-                            output.Write(value)
-                            ok UnitValue)
-                    ))
+                toUnitIoAction (fun () -> output.Write(value))
             | "print", arguments when List.length arguments < 1 ->
                 ok None
             | "print", [ value ] ->
@@ -593,12 +592,7 @@ module Interpreter =
             | "print", _ ->
                 error "Intrinsic 'print' received too many arguments."
             | "println", [ StringValue value ] ->
-                ok
-                    (Some(
-                        IOActionValue(fun () ->
-                            output.WriteLine(value)
-                            ok UnitValue)
-                    ))
+                toUnitIoAction (fun () -> output.WriteLine(value))
             | "println", arguments when List.length arguments < 1 ->
                 ok None
             | "println", [ value ] ->
@@ -606,12 +600,7 @@ module Interpreter =
             | "println", _ ->
                 error "Intrinsic 'println' received too many arguments."
             | "printInt", [ IntegerValue value ] ->
-                ok
-                    (Some(
-                        IOActionValue(fun () ->
-                            output.WriteLine(string value)
-                            ok UnitValue)
-                    ))
+                toUnitIoAction (fun () -> output.WriteLine(string value))
             | "printInt", arguments when List.length arguments < 1 ->
                 ok None
             | "printInt", [ value ] ->
