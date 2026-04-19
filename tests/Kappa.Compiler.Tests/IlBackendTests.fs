@@ -190,3 +190,40 @@ let ``il backend supports qualified cross module calls into parameterized bindin
     Assert.NotNull(resultMethod)
     Assert.Equal(42L, twiceMethod.Invoke(null, [| box 21L |]) |> unbox<int64>)
     Assert.Equal(42L, resultMethod.Invoke(null, [||]) |> unbox<int64>)
+
+[<Fact>]
+let ``il backend supports unqualified imported calls into parameterized bindings`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-il-imported-parameterized-root"
+            [
+                "math.kp",
+                [
+                    "module math"
+                    "twice : Int -> Int"
+                    "let twice value = value * 2"
+                ]
+                |> String.concat "\n"
+                "main.kp",
+                [
+                    "module main"
+                    "import math.*"
+                    "let result = twice 21"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "il-imported-parameterized"
+
+    let artifact =
+        match Backend.emitIlAssemblyArtifact workspace outputDirectory with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    use loaded = loadManagedAssembly artifact.AssemblyFilePath
+
+    let mainType = loaded.Assembly.GetType("Kappa.Generated.main", throwOnError = true, ignoreCase = false)
+    let resultMethod = mainType.GetMethod("result", BindingFlags.Public ||| BindingFlags.Static)
+
+    Assert.NotNull(resultMethod)
+    Assert.Equal(42L, resultMethod.Invoke(null, [||]) |> unbox<int64>)

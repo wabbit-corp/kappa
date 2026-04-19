@@ -20,8 +20,16 @@ module IlDotNetBackend =
           ReturnType: IlValueType
           EmittedMethodName: string }
 
+    type private RawModuleInfo =
+        { Name: string
+          Imports: ImportSpec list
+          Exports: Set<string>
+          Bindings: Map<string, KBackendBinding> }
+
     type private ModuleInfo =
         { Name: string
+          Imports: ImportSpec list
+          Exports: Set<string>
           Bindings: Map<string, BindingInfo>
           EmittedTypeName: string }
 
@@ -165,18 +173,60 @@ module IlDotNetBackend =
                 |> List.map (fun binding -> binding.Name, binding)
                 |> Map.ofList
 
-            moduleDump.Name, bindings)
+            moduleDump.Name,
+            { Name = moduleDump.Name
+              Imports = moduleDump.Imports
+              Exports = moduleDump.Exports |> Set.ofList
+              Bindings = bindings })
         |> Map.ofList
 
-    let private tryResolveBinding (rawModules: Map<string, Map<string, KBackendBinding>>) currentModule segments =
+    let private importAllowsUnqualifiedTermName selection name =
+        match selection with
+        | QualifiedOnly -> false
+        | Items items ->
+            items
+            |> List.exists (fun item ->
+                String.Equals(item.Name, name, StringComparison.Ordinal)
+                && (item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Term))
+        | All -> true
+        | AllExcept excludedNames -> not (List.contains name excludedNames)
+
+    let private tryResolveImportedBinding (rawModules: Map<string, RawModuleInfo>) currentModule name =
+        let currentModuleInfo = rawModules[currentModule]
+
+        currentModuleInfo.Imports
+        |> List.choose (fun spec ->
+            match spec.Source with
+            | Url _ ->
+                None
+            | Dotted moduleSegments ->
+                let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
+
+                match rawModules |> Map.tryFind importedModuleName with
+                | Some importedModule
+                    when importAllowsUnqualifiedTermName spec.Selection name
+                         && importedModule.Exports.Contains(name) ->
+                    importedModule.Bindings
+                    |> Map.tryFind name
+                    |> Option.map (fun binding -> importedModule.Name, binding)
+                | _ ->
+                    None)
+        |> List.distinctBy fst
+        |> function
+            | [ matchItem ] -> Some matchItem
+            | _ -> None
+
+    let private tryResolveBinding (rawModules: Map<string, RawModuleInfo>) currentModule segments =
         match segments with
         | [] ->
             None
         | [ bindingName ] ->
-            rawModules
-            |> Map.tryFind currentModule
-            |> Option.bind (Map.tryFind bindingName)
+            let currentModuleInfo = rawModules[currentModule]
+
+            currentModuleInfo.Bindings
+            |> Map.tryFind bindingName
             |> Option.map (fun binding -> currentModule, binding)
+            |> Option.orElseWith (fun () -> tryResolveImportedBinding rawModules currentModule bindingName)
         | _ ->
             let moduleName =
                 segments
@@ -187,7 +237,7 @@ module IlDotNetBackend =
 
             rawModules
             |> Map.tryFind moduleName
-            |> Option.bind (Map.tryFind bindingName)
+            |> Option.bind (fun moduleInfo -> moduleInfo.Bindings |> Map.tryFind bindingName)
             |> Option.map (fun binding -> moduleName, binding)
 
     let private buildEnvironment (workspace: WorkspaceCompilation) =
@@ -208,7 +258,7 @@ module IlDotNetBackend =
             | _ when Set.contains cacheKey active ->
                 Result.Error $"IL backend recursive type inference is not implemented yet for '{currentModule}.{bindingName}'."
             | _ ->
-                match rawModules |> Map.tryFind currentModule |> Option.bind (Map.tryFind bindingName) with
+                match rawModules |> Map.tryFind currentModule |> Option.bind (fun moduleInfo -> moduleInfo.Bindings |> Map.tryFind bindingName) with
                 | None ->
                     Result.Error $"IL backend could not resolve binding '{currentModule}.{bindingName}'."
                 | Some binding ->
@@ -395,11 +445,11 @@ module IlDotNetBackend =
         rawModules
         |> Map.toList
         |> List.fold
-            (fun stateResult (moduleName, bindings) ->
+            (fun stateResult (moduleName, rawModule) ->
                 result {
                     let! state = stateResult
                     let! bindingEntries =
-                        bindings
+                        rawModule.Bindings
                         |> Map.toList
                         |> List.fold
                             (fun bindingResult (bindingName, binding) ->
@@ -415,6 +465,8 @@ module IlDotNetBackend =
 
                     let moduleInfo =
                         { Name = moduleName
+                          Imports = rawModule.Imports
+                          Exports = rawModule.Exports
                           Bindings = bindingEntries |> Map.ofList
                           EmittedTypeName = emittedModuleTypeName moduleName }
 
@@ -447,15 +499,42 @@ module IlDotNetBackend =
             il.Emit(OpCodes.Ldc_I4_0)
             il.Emit(OpCodes.Ceq)
 
+    let private tryResolveImportedBindingInfo (environment: EmissionEnvironment) currentModule name =
+        let currentModuleInfo = environment.Modules[currentModule]
+
+        currentModuleInfo.Imports
+        |> List.choose (fun spec ->
+            match spec.Source with
+            | Url _ ->
+                None
+            | Dotted moduleSegments ->
+                let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
+
+                match environment.Modules |> Map.tryFind importedModuleName with
+                | Some importedModule
+                    when importAllowsUnqualifiedTermName spec.Selection name
+                         && importedModule.Exports.Contains(name) ->
+                    importedModule.Bindings
+                    |> Map.tryFind name
+                    |> Option.map (fun bindingInfo -> importedModule.Name, bindingInfo)
+                | _ ->
+                    None)
+        |> List.distinctBy fst
+        |> function
+            | [ matchItem ] -> Some matchItem
+            | _ -> None
+
     let private tryResolveBindingInfo (environment: EmissionEnvironment) currentModule segments =
         match segments with
         | [] ->
             None
         | [ bindingName ] ->
-            environment.Modules
-            |> Map.tryFind currentModule
-            |> Option.bind (fun moduleInfo -> moduleInfo.Bindings |> Map.tryFind bindingName)
+            let currentModuleInfo = environment.Modules[currentModule]
+
+            currentModuleInfo.Bindings
+            |> Map.tryFind bindingName
             |> Option.map (fun bindingInfo -> currentModule, bindingInfo)
+            |> Option.orElseWith (fun () -> tryResolveImportedBindingInfo environment currentModule bindingName)
         | _ ->
             let moduleName =
                 segments
