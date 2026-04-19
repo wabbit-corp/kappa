@@ -9565,19 +9565,26 @@ harness preserves any compiler caches or reusable session state permitted by Cha
 
 A **test directive line** is a line comment whose first non-whitespace characters are `--!`.
 
+In `.kp` source files only, the harness also recognizes an **inline diagnostic marker** of the form `--!!` after
+ordinary source text on the same line.
+
 Grammar:
 
 ```text
 testDirectiveLine ::= ws? '--!' ws? testDirective
+inlineDiagnosticMarker ::= sourceText ws? '--!!' ws diagnosticCode (ws diagnosticCode)*
 testDirective     ::= directiveName [ws directiveBody]?
 directiveName     ::= ident | extensionDirectiveName
 extensionDirectiveName ::= 'x-' ident ('.' ident)*
 directiveBody     ::= <the remainder of the line, excluding the line break>
+diagnosticCode    ::= <a non-whitespace diagnostic code token>
 ```
 
 Rules:
 
 * Test directives are recognized only in line comments of the form `--!`.
+* Inline diagnostic markers are recognized only in `.kp` source files, and only when `--!!` appears after ordinary
+  source text on the same line.
 * Block comments do not introduce test directives.
 * Test directives are consumed by the harness before or alongside normal compilation.
   They remain comments for the language itself and do not affect ordinary source semantics.
@@ -9659,7 +9666,9 @@ assertNoWarnings
 assertErrorCount <n>
 assertWarningCount <n>
 assertDiagnostic <severity> <code>
+assertDiagnosticHere <severity> <code>
 assertDiagnosticAt <path> <severity> <code> <line> <column>
+assertDiagnosticMatch <regex>
 ```
 
 where `severity` is one of:
@@ -9679,11 +9688,24 @@ Rules:
 * `assertWarningCount n` succeeds iff exactly `n` diagnostics of severity `warning` are produced.
 * `assertDiagnostic severity code` succeeds iff at least one diagnostic with that severity and diagnostic code is
   produced.
+* `assertDiagnosticHere severity code` is valid only in `.kp` source files.
+  It applies to the first following line in the same file that is nonblank, not comment-only, and not itself a
+  directive line.
+  It succeeds iff at least one matching diagnostic has its primary origin in that file and begins on that target line,
+  regardless of column.
 * `assertDiagnosticAt path severity code line column` additionally requires the primary origin of the matching
   diagnostic to start at the given 1-based line and 1-based column in the file `path`, where `path` is relative to the
   suite root.
+* `assertDiagnosticMatch regex` succeeds iff at least one emitted diagnostic has a primary human-readable message text
+  that matches `regex`.
+  Here `regex` is the remainder of the directive body and is interpreted as an ECMAScript-style regular expression.
+* In a `.kp` source file, an inline marker `--!! E001` at the end of a source line is shorthand for attaching
+  `assertDiagnosticHere error E001` to that same line.
+  If several diagnostic codes follow one `--!!` marker, it expands to one same-line assertion per code.
 
-Diagnostic assertions are matched by severity and diagnostic code, not by the full human-readable message text.
+The code-based diagnostic assertions `assertDiagnostic`, `assertDiagnosticHere`, `assertDiagnosticAt`, and `--!!` are
+matched by severity and diagnostic code, not by the full human-readable message text.
+`assertDiagnosticMatch` is available for suites that want an additional message-text check.
 
 #### T.5.2 Type and declaration-shape assertions
 
