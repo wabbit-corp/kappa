@@ -2989,6 +2989,10 @@ by `pat` are droppable under the enclosing construct's rule. In particular, Kapp
 could discard an owned value carrying a positive lower-bound usage obligation. Inside `do`, the `let? ... else ...`
 form of §8.2.1 binds the failure residue explicitly instead of discarding it.
 
+For an open variant scrutinee of type `(| ... | r |)`, the plain form is rejected unless the available row constraints
+prove that every case admitted by the residual row `r` is droppable. In the absence of such proof, the compiler MUST
+conservatively reject the plain form.
+
 Elaboration (schematic):
 
 * If `bindPat` carries quantity `&`, the binding is elaborated as a borrowed binding of the underlying pattern `pat0`
@@ -4857,6 +4861,9 @@ Typing and well-formedness:
 * For this rule, values are droppable exactly when all discarded components carry only droppable quantities:
   `0`, `&`, `<=1`, or `ω`. A discarded component with a positive owned lower-bound obligation, such as quantity `1` or
   `>=1`, makes the plain form ill-formed.
+* For an open variant scrutinee of type `(| ... | r |)`, the plain form is permitted only when available row
+  constraints prove that every residual-row case in `r` is droppable. Because an unconstrained residual row may hide a
+  non-droppable owned case, the compiler MUST conservatively reject the plain form when such proof is unavailable.
 * This check is performed on the unmatched residue of `pat`, not merely on whether the matched branch contains linear
   data. For example, matching `Option.Some` against `Option (1 File)` is permitted because the failure case `None`
   carries no owned linear obligation, while matching `Ok` against `Result (1 File) (1 ErrorToken)` is rejected because
@@ -4864,8 +4871,13 @@ Typing and well-formedness:
 * In the `else` form, the pair of patterns `pat` and `residuePat` is checked as a disjoint, jointly exhaustive split of
   the scrutinee type, using the ordinary overlap and coverage rules of `match`.
 * The `else` form does not require `Alternative m` merely for refutation, because failure does not go through `empty`.
-  Instead, `failExpr` is typechecked as the terminal failure branch of the surrounding `do` block, against the
-  surrounding `do` result type.
+  Instead, the failure arm is terminal and is accepted only in one of the following two forms:
+  * `failExpr` is an explicit abrupt-control do-item (`return`, `break`, or `continue`), which is elaborated by the
+    ordinary abrupt-control rules of §8.4 and §8.5.
+  * `failExpr` elaborates as an expression branch of type `m Void`. This includes terms such as `empty`, `throwError
+    err`, or an explicit nested `do` block whose normal result type is `Void`.
+  In the `m Void` case, elaboration converts the impossible normal result to the surrounding `do` result type by
+  ex-falso using `absurd`.
 * Because `residuePat` explicitly binds the failure cases, those cases may carry linear owned obligations; ordinary
   linearity rules then require the variables bound by `residuePat` to be consumed appropriately within `failExpr`.
 
@@ -4888,6 +4900,15 @@ Schematic elaboration:
       rest
   case residuePat -> failExpr
   ```
+
+  where the failure arm is elaborated terminally:
+
+  * if `failExpr` is an explicit abrupt-control do-item, it uses the ordinary abrupt-control elaboration;
+  * otherwise `failExpr` must have type `m Void`, and its branch is elaborated as:
+
+    ```kappa
+    bindC (lift failExpr) (\v -> pure (Normal (absurd v)))
+    ```
 
 ### 8.2.2 Do-item sequences and block result
 
@@ -5586,11 +5607,19 @@ The cases below define `⟦...⟧` for arbitrary `A`.
   ⟦let? pat = expr else residuePat -> failExpr; rest⟧ =
       match expr
       case pat        -> ⟦rest⟧
-      case residuePat -> ⟦failExpr⟧
+      case residuePat -> termElse(failExpr)
   ```
 
   where `pat` and `residuePat` are checked as a disjoint, jointly exhaustive split of the scrutinee type, and
-  `⟦failExpr⟧` denotes elaboration of the failure arm as a terminal branch at the surrounding `do` result type.
+  `termElse(failExpr)` denotes terminal failure-arm elaboration:
+
+  * if `failExpr` is an explicit abrupt-control do-item, `termElse(failExpr)` is its ordinary abrupt-control
+    elaboration;
+  * otherwise `failExpr` must have type `m Void`, and
+
+    ```kappa
+    termElse(failExpr) = bindC (lift failExpr) (\v -> pure (Normal (absurd v)))
+    ```
 
 * Pure local binding `let bindPat = expr`:
 
@@ -6506,6 +6535,10 @@ residue would carry any positive owned lower-bound obligation.
 
 For both forms, discarded values are droppable only when all discarded components carry quantities `0`, `&`, `<=1`, or
 `ω`. Quantities `1` and `>=1` are not droppable here.
+
+For an open variant element or scrutinee type `(| ... | r |)`, a refutable comprehension clause is permitted only when
+the available row constraints prove that every case admitted by the residual row `r` is droppable. In the absence of
+such proof, the compiler MUST conservatively reject the clause.
 
 Desugaring per §10.10: via `filterMap` when `FilterMap f` is available; otherwise via `bind` + `empty`.
 
