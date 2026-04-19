@@ -5799,6 +5799,11 @@ or the pure analogue `let pat = func ~x1 ... ~xk args`, elaboration proceeds as 
      replacement `__pi_tmp`. The outermost `root` is then:
      * rebound if `root` is an ordinary immutable local binding, or
      * assigned if `root` denotes a mutable place introduced by `var`.
+   * Because path-sensitive restoration elaborates to nested record updates, it is subject to the dependent-record
+     update rules of §5.5.5. If the typestate transition of the restored `inout` path invalidates the type of any
+     omitted sibling field in the rebuilt record, the `inout` application is a compile-time error. The user must unpack
+     the record, perform the call, and manually reconstruct the dependent record, explicitly supplying any affected
+     sibling fields.
    * Since the call arguments themselves are still ordinary expressions, a `var`-bound root is passed by reading its
      current contents per §8.5.1 rather than by passing the underlying `Ref`.
    * When several `~` arguments are present, these restorations occur left-to-right in the order of the marked
