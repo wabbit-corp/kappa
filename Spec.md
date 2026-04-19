@@ -503,7 +503,8 @@ Normative rule:
   None, Some,
   Ok, Err,
   Nil, (::),
-  LT, EQ, GT
+  LT, EQ, GT,
+  refl
   ```
 
   This has the effect of an implicit prelude constructor import for that exact subset only. It is the only exception to
