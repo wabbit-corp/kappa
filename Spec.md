@@ -9559,6 +9559,8 @@ The standard harness supports three test forms:
    The incremental suite MAY additionally contain a file named `incremental.ktest` for cross-step assertions.
 
 In a single-file inline test, the compilation root is that file.
+The suite root for resolving relative paths is the containing directory of that file, and that directory is also the
+source root for module-path derivation.
 
 In a directory suite, the compilation roots are all `.kp` files under the suite root, recursively, interpreted relative
 to that suite root as the source root for module-path derivation.
@@ -9598,9 +9600,12 @@ Rules:
 * In `suite.ktest` or `incremental.ktest`, each line MUST be a directive line, a blank line, or a comment-only line
   beginning with `--`.
 * Directive names beginning with `x-` are implementation-defined extensions and are outside the portable subset.
-  A portable harness that does not support such a directive MUST report the test as unsupported rather than silently
-  ignoring it.
+  If a test uses one or more such directives that the harness does not support, the test result is **unsupported**.
+  A portable harness MUST NOT silently ignore unsupported extension directives.
 * Any unknown standard directive, malformed directive, or ill-typed directive argument is a harness error.
+* Whenever this appendix uses `<stringLiteral>` in a directive, it means the non-interpolated subset of the ordinary
+  Kappa string-literal grammar.
+  Interpolated string literals are not permitted in test directives.
 
 All directive files and golden files are UTF-8.
 
@@ -9643,8 +9648,8 @@ Rules:
 * `entry <qualifiedName>` is valid only for `mode run`.
   It names the program entrypoint to execute.
 * `runArgs <stringLiteral>...` is valid only for `mode run`.
-  Each argument is parsed using the ordinary Kappa string-literal grammar and supplied as one command-line argument or
-  equivalent run-task argument in the specified order.
+  Each argument is parsed using the directive `<stringLiteral>` rules from §T.3 and supplied as one command-line
+  argument or equivalent run-task argument in the specified order.
   If `runArgs` is omitted, the default argument list is empty.
 * `stdinFile <path>` is valid only for `mode run`.
   `<path>` is relative to the suite root.
@@ -9683,7 +9688,7 @@ assertNoWarnings
 assertErrorCount <n>
 assertWarningCount <n>
 assertDiagnostic <severity> <code>
-assertDiagnosticHere <severity> <code>
+assertDiagnosticNext <severity> <code>
 assertDiagnosticAt <path> <severity> <code> <line>
 assertDiagnosticAt <path> <severity> <code> <line> <column>
 assertDiagnosticAt <path> <severity> <code> <startLine> <startColumn> - <endLine> <endColumn>
@@ -9710,11 +9715,13 @@ Rules:
 * `assertWarningCount n` succeeds iff exactly `n` diagnostics of severity `warning` are produced.
 * `assertDiagnostic severity code` succeeds iff at least one diagnostic with that severity and diagnostic code is
   produced.
-* `assertDiagnosticHere severity code` is valid only in `.kp` source files.
+* `assertDiagnosticNext severity code` is valid only in `.kp` source files.
   It applies to the first following line in the same file that is nonblank, not comment-only, and not itself a
   directive line.
   It succeeds iff at least one matching diagnostic has its primary origin in that file and begins on that target line,
   regardless of column.
+* A harness MAY additionally accept `assertDiagnosticHere severity code` as a deprecated alias of
+  `assertDiagnosticNext severity code`.
 * `assertDiagnosticAt path severity code line` requires the primary origin of the matching diagnostic to begin on the
   given 1-based line in the file `path`, where `path` is relative to the suite root.
 * `assertDiagnosticAt path severity code line column` additionally requires the primary origin to begin at the given
@@ -9724,11 +9731,13 @@ Rules:
 * `assertDiagnosticMatch regex` succeeds iff at least one emitted diagnostic has a primary human-readable message text
   that matches `regex`.
   Here `regex` is the remainder of the directive body and is interpreted as an ECMAScript-style regular expression.
-* In a `.kp` source file, an inline marker `--!! E001` at the end of a source line is shorthand for attaching
-  `assertDiagnosticHere error E001` to that same line.
+* In a `.kp` source file, an inline marker `--!! E001` at the end of a source line is the same-line counterpart of
+  `assertDiagnosticNext error E001`.
+  It succeeds iff at least one matching diagnostic has its primary origin in that file and begins on the marked source
+  line, regardless of column.
   If several diagnostic codes follow one `--!!` marker, it expands to one same-line assertion per code.
 
-The code-based diagnostic assertions `assertDiagnostic`, `assertDiagnosticHere`, `assertDiagnosticAt`, and `--!!` are
+The code-based diagnostic assertions `assertDiagnostic`, `assertDiagnosticNext`, `assertDiagnosticAt`, and `--!!` are
 matched by severity and diagnostic code, not by the full human-readable message text.
 `assertDiagnosticMatch` is available for suites that want an additional message-text check.
 
@@ -9821,6 +9830,7 @@ Supported directives:
 ```text
 assertStdout <stringLiteral>
 assertStdoutContains <stringLiteral>
+assertStderrContains <stringLiteral>
 assertStdoutFile <path>
 assertStderrFile <path>
 assertExitCode <n>
@@ -9831,13 +9841,15 @@ Rules:
 * These directives are valid only for `mode run`.
 * The asserted execution is the one obtained after applying any configured `entry`, `runArgs`, and `stdinFile`
   directives from §T.4.
-* In `assertStdout <stringLiteral>` and `assertStdoutContains <stringLiteral>`, the argument is parsed using the
-  ordinary Kappa string-literal grammar.
+* In `assertStdout <stringLiteral>`, `assertStdoutContains <stringLiteral>`, and `assertStderrContains <stringLiteral>`,
+  the argument is parsed using the directive `<stringLiteral>` rules from §T.3.
 * `<path>` is relative to the suite root.
 * The expected files are UTF-8 text files.
 * Comparison normalizes line endings to LF before comparison.
 * `assertStdout s` succeeds iff normalized standard output is exactly equal to the normalized string value `s`.
 * `assertStdoutContains s` succeeds iff normalized standard output contains the normalized string value `s` as a
+  substring.
+* `assertStderrContains s` succeeds iff normalized standard error contains the normalized string value `s` as a
   substring.
 * `assertExitCode n` compares the process or task exit code observed by the harness.
 * For large or frequently changing outputs, `assertStdoutFile` and `assertStderrFile` remain the preferred golden-file
@@ -9886,8 +9898,12 @@ targetUnit
 
 Rules:
 
-* This assertion is evaluated against the pipeline trace of the current test execution.
-* It counts trace steps whose event and subject classifications match the given pair.
+* This assertion is evaluated against the portable view of the pipeline trace of the current test execution.
+* The portable view retains only trace steps whose event and subject classifications both use the portable names listed
+  above.
+* Each retained trace step contributes exactly one count to its `(event, subject)` pair.
+* Implementations MAY record richer traces internally, but retries, helper passes, cache probes, batching choices, and
+  other implementation-defined micro-steps MUST NOT create additional portable counts.
 * The assertion succeeds iff the resulting count satisfies the specified relation.
 
 ### T.6 Suite-level behavior
@@ -9927,6 +9943,7 @@ Rules:
 
 * `<step>` is a non-negative integer naming a step index.
 * `assertStepTraceCount` is evaluated against the pipeline trace produced for that step.
+  It uses the same portable trace-count semantics as `assertTraceCount`.
 * The intended use of step-trace assertions is to test incremental reuse and invalidation behavior, for example reuse of
   interfaces, KCore units, KBackendIR units, and target-lowering units.
 
@@ -9945,8 +9962,8 @@ Rules:
 
 * `pass` means all standard assertions succeeded.
 * `fail` means at least one standard assertion failed.
-* `unsupported` means one or more `requires ...` preconditions were not satisfied, or the test used only extension
-  directives unsupported by this harness.
+* `unsupported` means one or more `requires ...` preconditions were not satisfied, or the test used one or more
+  extension directives unsupported by this harness.
 * `harnessError` means the test itself was malformed, for example because of an unknown standard directive, invalid
   directive syntax, or an unreadable required golden file.
 
