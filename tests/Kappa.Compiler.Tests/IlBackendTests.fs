@@ -227,3 +227,37 @@ let ``il backend supports unqualified imported calls into parameterized bindings
 
     Assert.NotNull(resultMethod)
     Assert.Equal(42L, resultMethod.Invoke(null, [||]) |> unbox<int64>)
+
+[<Fact>]
+let ``il backend supports recursive signed methods over primitive values`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-il-recursive-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "sumDown : Int -> Int"
+                    "let sumDown n = if n == 0 then 0 else n + sumDown (n - 1)"
+                    "let result = sumDown 5"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "il-recursive"
+
+    let artifact =
+        match Backend.emitIlAssemblyArtifact workspace outputDirectory with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    use loaded = loadManagedAssembly artifact.AssemblyFilePath
+
+    let moduleType = loaded.Assembly.GetType("Kappa.Generated.main", throwOnError = true, ignoreCase = false)
+    let sumDownMethod = moduleType.GetMethod("sumDown", BindingFlags.Public ||| BindingFlags.Static)
+    let resultMethod = moduleType.GetMethod("result", BindingFlags.Public ||| BindingFlags.Static)
+
+    Assert.NotNull(sumDownMethod)
+    Assert.NotNull(resultMethod)
+    Assert.Equal(15L, sumDownMethod.Invoke(null, [| box 5L |]) |> unbox<int64>)
+    Assert.Equal(15L, resultMethod.Invoke(null, [||]) |> unbox<int64>)
