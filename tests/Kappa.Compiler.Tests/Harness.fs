@@ -1,7 +1,10 @@
 module Harness
 
 open System
+open System.Diagnostics
 open System.IO
+open System.Runtime.InteropServices
+open System.Text.RegularExpressions
 open Kappa.Compiler
 open Xunit
 
@@ -103,10 +106,81 @@ let evaluateInMemoryBinding (rootName: string) (entryPoint: string) (files: (str
     let workspace = compileInMemoryWorkspace rootName files
     workspace, Interpreter.evaluateBinding workspace entryPoint
 
+type ProcessResult =
+    { ExitCode: int
+      StandardOutput: string
+      StandardError: string }
+
+let private scratchRoot =
+    Path.Combine(Path.GetTempPath(), "kappa-tests")
+
+let createScratchDirectory (name: string) =
+    Directory.CreateDirectory(scratchRoot) |> ignore
+
+    let safeName =
+        name
+        |> Seq.map (fun ch ->
+            if Char.IsLetterOrDigit(ch) then ch else '-')
+        |> Array.ofSeq
+        |> System.String
+
+    let directory =
+        Path.Combine(scratchRoot, $"{safeName}-{Guid.NewGuid():N}")
+
+    Directory.CreateDirectory(directory).FullName
+
+let currentRid () =
+    let suffix =
+        match RuntimeInformation.ProcessArchitecture with
+        | Architecture.X64 -> "x64"
+        | Architecture.Arm64 -> "arm64"
+        | Architecture.X86 -> "x86"
+        | architecture -> invalidOp $"Unsupported test architecture '{architecture}'."
+
+    if RuntimeInformation.IsOSPlatform(OSPlatform.Windows) then
+        $"win-{suffix}"
+    elif RuntimeInformation.IsOSPlatform(OSPlatform.Linux) then
+        $"linux-{suffix}"
+    elif RuntimeInformation.IsOSPlatform(OSPlatform.OSX) then
+        $"osx-{suffix}"
+    else
+        invalidOp "Unsupported test operating system."
+
+let executablePath (directory: string) (baseName: string) =
+    if RuntimeInformation.IsOSPlatform(OSPlatform.Windows) then
+        Path.Combine(directory, $"{baseName}.exe")
+    else
+        Path.Combine(directory, baseName)
+
+let runProcess (workingDirectory: string) (fileName: string) (arguments: string) =
+    let startInfo = ProcessStartInfo()
+    startInfo.WorkingDirectory <- workingDirectory
+    startInfo.FileName <- fileName
+    startInfo.Arguments <- arguments
+    startInfo.UseShellExecute <- false
+    startInfo.RedirectStandardOutput <- true
+    startInfo.RedirectStandardError <- true
+
+    use child = new Process()
+    child.StartInfo <- startInfo
+
+    if not (child.Start()) then
+        invalidOp $"Failed to start process '{fileName}'."
+
+    let standardOutput = child.StandardOutput.ReadToEnd()
+    let standardError = child.StandardError.ReadToEnd()
+    child.WaitForExit()
+
+    { ExitCode = child.ExitCode
+      StandardOutput = standardOutput.Replace("\r\n", "\n")
+      StandardError = standardError.Replace("\r\n", "\n") }
+
 type KpFixtureAssertion =
     | AssertNoErrors of filePath: string * lineNumber: int
-    | AssertErrors of filePath: string * lineNumber: int
-    | AssertDiagnosticContains of expectedText: string * filePath: string * lineNumber: int
+    | AssertNoWarnings of filePath: string * lineNumber: int
+    | AssertErrorCount of expectedCount: int * filePath: string * lineNumber: int
+    | AssertWarningCount of expectedCount: int * filePath: string * lineNumber: int
+    | AssertDiagnosticMatch of regexPattern: string * filePath: string * lineNumber: int
     | AssertType of target: string * expectedTypeText: string * filePath: string * lineNumber: int
     | AssertEval of target: string * expectedValueText: string * filePath: string * lineNumber: int
     | AssertEvalErrorContains of target: string * expectedText: string * filePath: string * lineNumber: int
@@ -156,11 +230,21 @@ let private formatDiagnostics (diagnostics: Diagnostic list) =
         $"{locationText}: {diagnostic.Message}")
     |> String.concat Environment.NewLine
 
+let private countDiagnosticsBySeverity severity (diagnostics: Diagnostic list) =
+    diagnostics |> List.filter (fun diagnostic -> diagnostic.Severity = severity) |> List.length
+
 let private parseFixtureList (value: string) =
     value.Split([| ',' |], StringSplitOptions.RemoveEmptyEntries)
     |> Array.map (fun item -> item.Trim())
     |> Array.filter (String.IsNullOrWhiteSpace >> not)
     |> Array.toList
+
+let private parseNonNegativeInt (directiveName: string) (filePath: string) lineNumber (value: string) =
+    match Int32.TryParse(value.Trim()) with
+    | true, parsed when parsed >= 0 ->
+        parsed
+    | _ ->
+        invalidOp $"{directiveName} expects a non-negative integer ({filePath}:{lineNumber})."
 
 let private parseFixtureAssertion (filePath: string) lineNumber (lineText: string) =
     let trimmed = lineText.Trim()
@@ -184,16 +268,20 @@ let private parseFixtureAssertion (filePath: string) lineNumber (lineText: strin
                 invalidOp $"assertNoErrors does not take arguments ({filePath}:{lineNumber})."
 
             Some(AssertNoErrors(filePath, lineNumber))
-        | "assertErrors" ->
+        | "assertNoWarnings" ->
             if not (String.IsNullOrWhiteSpace(directiveBody)) then
-                invalidOp $"assertErrors does not take arguments ({filePath}:{lineNumber})."
+                invalidOp $"assertNoWarnings does not take arguments ({filePath}:{lineNumber})."
 
-            Some(AssertErrors(filePath, lineNumber))
-        | "assertDiagnosticContains" ->
+            Some(AssertNoWarnings(filePath, lineNumber))
+        | "assertErrorCount" ->
+            Some(AssertErrorCount(parseNonNegativeInt directiveName filePath lineNumber directiveBody, filePath, lineNumber))
+        | "assertWarningCount" ->
+            Some(AssertWarningCount(parseNonNegativeInt directiveName filePath lineNumber directiveBody, filePath, lineNumber))
+        | "assertDiagnosticMatch" ->
             if String.IsNullOrWhiteSpace(directiveBody) then
-                invalidOp $"assertDiagnosticContains expects a diagnostic substring ({filePath}:{lineNumber})."
+                invalidOp $"assertDiagnosticMatch expects a regular expression ({filePath}:{lineNumber})."
 
-            Some(AssertDiagnosticContains(directiveBody, filePath, lineNumber))
+            Some(AssertDiagnosticMatch(directiveBody, filePath, lineNumber))
         | "assertType" ->
             let targetAndType =
                 directiveBody.Split([| ' '; '\t' |], 2, StringSplitOptions.RemoveEmptyEntries)
@@ -202,32 +290,32 @@ let private parseFixtureAssertion (filePath: string) lineNumber (lineText: strin
                 invalidOp $"assertType expects '<target> <type>' ({filePath}:{lineNumber})."
 
             Some(AssertType(targetAndType[0], targetAndType[1].Trim(), filePath, lineNumber))
-        | "assertEval" ->
+        | "x-assertEval" ->
             let targetAndValue =
                 directiveBody.Split([| ' '; '\t' |], 2, StringSplitOptions.RemoveEmptyEntries)
 
             if targetAndValue.Length <> 2 then
-                invalidOp $"assertEval expects '<target> <value>' ({filePath}:{lineNumber})."
+                invalidOp $"x-assertEval expects '<target> <value>' ({filePath}:{lineNumber})."
 
             Some(AssertEval(targetAndValue[0], targetAndValue[1].Trim(), filePath, lineNumber))
-        | "assertEvalErrorContains" ->
+        | "x-assertEvalErrorContains" ->
             let targetAndText =
                 directiveBody.Split([| ' '; '\t' |], 2, StringSplitOptions.RemoveEmptyEntries)
 
             if targetAndText.Length <> 2 then
-                invalidOp $"assertEvalErrorContains expects '<target> <message-substring>' ({filePath}:{lineNumber})."
+                invalidOp $"x-assertEvalErrorContains expects '<target> <message-substring>' ({filePath}:{lineNumber})."
 
             Some(AssertEvalErrorContains(targetAndText[0], targetAndText[1].Trim(), filePath, lineNumber))
-        | "assertModule" ->
+        | "x-assertModule" ->
             if String.IsNullOrWhiteSpace(directiveBody) then
-                invalidOp $"assertModule expects '<module>' ({filePath}:{lineNumber})."
+                invalidOp $"x-assertModule expects '<module>' ({filePath}:{lineNumber})."
 
             Some(AssertModule(directiveBody, filePath, lineNumber))
-        | "assertModuleAttributes" ->
+        | "x-assertModuleAttributes" ->
             let expectedAttributes = parseFixtureList directiveBody
 
             if List.isEmpty expectedAttributes then
-                invalidOp $"assertModuleAttributes expects a comma-separated list of attributes ({filePath}:{lineNumber})."
+                invalidOp $"x-assertModuleAttributes expects a comma-separated list of attributes ({filePath}:{lineNumber})."
 
             Some(AssertModuleAttributes(expectedAttributes, filePath, lineNumber))
         | "assertDeclKinds" ->
@@ -237,51 +325,51 @@ let private parseFixtureAssertion (filePath: string) lineNumber (lineText: strin
                 invalidOp $"assertDeclKinds expects a comma-separated list of declaration kinds ({filePath}:{lineNumber})."
 
             Some(AssertDeclarationKinds(expectedKinds, filePath, lineNumber))
-        | "assertDeclDescriptors" ->
+        | "x-assertDeclDescriptors" ->
             let expectedDescriptors = parseFixtureList directiveBody
 
             if List.isEmpty expectedDescriptors then
-                invalidOp $"assertDeclDescriptors expects a comma-separated list of declaration descriptors ({filePath}:{lineNumber})."
+                invalidOp $"x-assertDeclDescriptors expects a comma-separated list of declaration descriptors ({filePath}:{lineNumber})."
 
             Some(AssertDeclarationDescriptors(expectedDescriptors, filePath, lineNumber))
-        | "assertDataConstructors" ->
+        | "x-assertDataConstructors" ->
             let typeAndConstructors =
                 directiveBody.Split([| ' '; '\t' |], 2, StringSplitOptions.RemoveEmptyEntries)
 
             if typeAndConstructors.Length <> 2 then
-                invalidOp $"assertDataConstructors expects '<type> <ctor1, ctor2, ...>' ({filePath}:{lineNumber})."
+                invalidOp $"x-assertDataConstructors expects '<type> <ctor1, ctor2, ...>' ({filePath}:{lineNumber})."
 
             let expectedConstructors = parseFixtureList typeAndConstructors[1]
 
             if List.isEmpty expectedConstructors then
-                invalidOp $"assertDataConstructors expects at least one constructor ({filePath}:{lineNumber})."
+                invalidOp $"x-assertDataConstructors expects at least one constructor ({filePath}:{lineNumber})."
 
             Some(AssertDataConstructors(typeAndConstructors[0], expectedConstructors, filePath, lineNumber))
-        | "assertTraitMembers" ->
+        | "x-assertTraitMembers" ->
             let traitAndMembers =
                 directiveBody.Split([| ' '; '\t' |], 2, StringSplitOptions.RemoveEmptyEntries)
 
             if traitAndMembers.Length <> 2 then
-                invalidOp $"assertTraitMembers expects '<trait> <member1, member2, ...>' ({filePath}:{lineNumber})."
+                invalidOp $"x-assertTraitMembers expects '<trait> <member1, member2, ...>' ({filePath}:{lineNumber})."
 
             let expectedMembers = parseFixtureList traitAndMembers[1]
 
             if List.isEmpty expectedMembers then
-                invalidOp $"assertTraitMembers expects at least one member ({filePath}:{lineNumber})."
+                invalidOp $"x-assertTraitMembers expects at least one member ({filePath}:{lineNumber})."
 
             Some(AssertTraitMembers(traitAndMembers[0], expectedMembers, filePath, lineNumber))
-        | "assertContainsTokenKinds" ->
+        | "x-assertContainsTokenKinds" ->
             let expectedKinds = parseFixtureList directiveBody
 
             if List.isEmpty expectedKinds then
-                invalidOp $"assertContainsTokenKinds expects a comma-separated list of token kinds ({filePath}:{lineNumber})."
+                invalidOp $"x-assertContainsTokenKinds expects a comma-separated list of token kinds ({filePath}:{lineNumber})."
 
             Some(AssertContainsTokenKinds(expectedKinds, filePath, lineNumber))
-        | "assertContainsTokenTexts" ->
+        | "x-assertContainsTokenTexts" ->
             let expectedTexts = parseFixtureList directiveBody
 
             if List.isEmpty expectedTexts then
-                invalidOp $"assertContainsTokenTexts expects a comma-separated list of token texts ({filePath}:{lineNumber})."
+                invalidOp $"x-assertContainsTokenTexts expects a comma-separated list of token texts ({filePath}:{lineNumber})."
 
             Some(AssertContainsTokenTexts(expectedTexts, filePath, lineNumber))
         | other ->
@@ -614,8 +702,9 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
     let expectsDiagnostics =
         fixtureCase.Assertions
         |> List.exists (function
-            | AssertErrors _
-            | AssertDiagnosticContains _ -> true
+            | AssertErrorCount(expectedCount, _, _) when expectedCount > 0 -> true
+            | AssertWarningCount(expectedCount, _, _) when expectedCount > 0 -> true
+            | AssertDiagnosticMatch _ -> true
             | _ -> false)
 
     if not expectsDiagnostics then
@@ -627,21 +716,24 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
     for assertion in fixtureCase.Assertions do
         match assertion with
         | AssertNoErrors _ ->
-            Assert.Empty(workspace.Diagnostics)
-        | AssertErrors _ ->
-            Assert.True(
-                workspace.HasErrors,
-                $"Expected fixture '{fixtureCase.Name}' to have errors, but diagnostics were:{Environment.NewLine}{formatDiagnostics workspace.Diagnostics}"
-            )
-        | AssertDiagnosticContains(expectedText, _, lineNumber) ->
-            let diagnostic =
-                workspace.Diagnostics
-                |> List.tryFind (fun item ->
-                    item.Message.Contains(expectedText, StringComparison.OrdinalIgnoreCase))
+            Assert.Equal(0, countDiagnosticsBySeverity DiagnosticSeverity.Error workspace.Diagnostics)
+        | AssertNoWarnings _ ->
+            Assert.Equal(0, countDiagnosticsBySeverity DiagnosticSeverity.Warning workspace.Diagnostics)
+        | AssertErrorCount(expectedCount, _, _) ->
+            Assert.Equal(expectedCount, countDiagnosticsBySeverity DiagnosticSeverity.Error workspace.Diagnostics)
+        | AssertWarningCount(expectedCount, _, _) ->
+            Assert.Equal(expectedCount, countDiagnosticsBySeverity DiagnosticSeverity.Warning workspace.Diagnostics)
+        | AssertDiagnosticMatch(pattern, _, lineNumber) ->
+            let regex =
+                try
+                    Regex(pattern, RegexOptions.ECMAScript)
+                with :? ArgumentException as ex ->
+                    invalidOp $"Invalid assertDiagnosticMatch regex '{pattern}' ({fixtureCase.Name}:{lineNumber}): {ex.Message}"
 
             Assert.True(
-                diagnostic.IsSome,
-                $"Could not find diagnostic containing '{expectedText}' ({fixtureCase.Name}:{lineNumber}). Actual diagnostics:{Environment.NewLine}{formatDiagnostics workspace.Diagnostics}"
+                workspace.Diagnostics
+                |> List.exists (fun item -> regex.IsMatch(item.Message)),
+                $"Could not find diagnostic matching /{pattern}/ ({fixtureCase.Name}:{lineNumber}). Actual diagnostics:{Environment.NewLine}{formatDiagnostics workspace.Diagnostics}"
             )
         | AssertType(target, expectedTypeText, filePath, lineNumber) ->
             let expectedTokens = tokenizeAssertionTypeText expectedTypeText
