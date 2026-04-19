@@ -39,9 +39,10 @@ Normative mapping:
 * Each `segi` must match the identifier regex `[A-Za-z_][A-Za-z0-9_]*`, otherwise it is a compile-time error.
 * Module name segments are case-sensitive. Implementations MUST reject a compilation unit that contains two source files
   whose path-derived module names are equal after case-folding but differ in case. For the comparison in this rule,
-  implementations MUST normalize module names to NFC and to lowercase ASCII. The canonical spelling is the spelling that
-  appears in the first source file encountered during compilation. The original spelling is preserved for diagnostics
-  and for the module header check below.
+  implementations MUST compare module names after converting each segment to lowercase ASCII. Because path-derived
+  segments are restricted to ASCII letters, digits, and `_`, no Unicode normalization is required. The canonical
+  spelling is the spelling that appears in the first source file encountered during compilation. The original spelling
+  is preserved for diagnostics and for the module header check below.
 * The module name is `seg1.seg2. ... .segn` (join the segments with a single `.`).
 
 Modules may have an explicit top-level module header:
