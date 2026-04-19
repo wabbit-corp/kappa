@@ -12,7 +12,7 @@ type CliOptions =
 module private Cli =
     let usage () =
         [
-            "kappac [--source-root <path>] [--dump-tokens] [--dump-ast] [--run <binding>] [inputs...]"
+            "kp [--source-root <path>] [--dump-tokens] [--dump-ast] [--run <binding>] [inputs...]"
             ""
             "If no input paths are supplied, the compiler scans the source root for *.kp files."
         ]
