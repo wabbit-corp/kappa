@@ -3956,7 +3956,7 @@ In `p1 | p2 | ... | pn`:
 
 * Each alternative must bind the **same set of names**.
 * Each bound name must have definitionally equal types across alternatives (under the scrutinee type and any index
-  refinements).
+  refinements), and corresponding binders must carry identical quantities across alternatives.
 * If these conditions do not hold, the pattern is ill-formed.
 
 Or-patterns are tried left-to-right at runtime.
