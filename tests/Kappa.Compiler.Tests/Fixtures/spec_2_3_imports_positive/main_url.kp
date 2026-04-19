@@ -1,0 +1,8 @@
+module main_url
+
+import "https://example.com/lib".*
+
+answer : Int
+let answer = 42
+
+--! assertDeclKinds import, signature, let

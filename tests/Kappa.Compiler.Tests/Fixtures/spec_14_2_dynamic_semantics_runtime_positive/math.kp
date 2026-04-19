@@ -1,0 +1,3 @@
+module math
+
+let twice x = x * 2

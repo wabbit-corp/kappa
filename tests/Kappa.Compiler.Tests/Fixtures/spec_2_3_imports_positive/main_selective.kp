@@ -1,0 +1,9 @@
+module main_selective
+
+import library.text.(greeting)
+
+message : String
+let message = greeting
+
+--! assertType message String
+--! assertDeclKinds import, signature, let

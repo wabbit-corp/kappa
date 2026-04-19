@@ -1,0 +1,11 @@
+module function_value_application
+
+let apply f x = f x
+let inc x = x + 1
+
+result : Int
+let result = apply inc 41
+
+--! assertNoErrors
+--! assertType result Int
+--! assertEval result 42

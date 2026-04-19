@@ -1,0 +1,11 @@
+module ambiguous_imported_name
+
+import a.*
+import b.*
+
+result : Int
+let result = value
+
+--! assertNoErrors
+--! assertType result Int
+--! assertEvalErrorContains result ambiguous

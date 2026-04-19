@@ -1,0 +1,68 @@
+module std.prelude
+
+data Bool : Type =
+    True
+    False
+
+data Option a : Type =
+    None
+    Some a
+
+data Result e a : Type =
+    Ok a
+    Err e
+
+data List a : Type =
+    Nil
+    Cons a (List a)
+
+expect type Unit
+expect type Char
+expect type String
+expect type Int
+expect type Nat
+expect type Float
+expect type Bytes
+expect type Array a
+expect type Ref a
+expect type IO a
+expect type Regex
+
+expect trait Eq a
+expect trait Ord a
+expect trait Show a
+expect trait Functor f
+expect trait Applicative f
+expect trait Monad m
+expect trait Foldable f
+expect trait Traversable f
+expect trait FromInteger a
+expect trait FromFloat a
+expect trait FromString a
+expect trait MonadError m e
+
+expect term pure : a -> IO a
+expect term (>>=) : IO a -> (a -> IO b) -> IO b
+expect term (>>) : IO a -> IO b -> IO b
+expect term True : Bool
+expect term False : Bool
+expect term not : Bool -> Bool
+expect term and : Bool -> Bool -> Bool
+expect term or : Bool -> Bool -> Bool
+expect term negate : a -> a
+expect term println : String -> IO Unit
+expect term print : String -> IO Unit
+
+infix 50 (==)
+infix 50 (!=)
+infix 50 (<)
+infix 50 (<=)
+infix 50 (>)
+infix 50 (>=)
+prefix 80 (-)
+infix left 60 (+)
+infix left 60 (-)
+infix left 70 (*)
+infix left 70 (/)
+infix left 40 (&&)
+infix left 30 (||)

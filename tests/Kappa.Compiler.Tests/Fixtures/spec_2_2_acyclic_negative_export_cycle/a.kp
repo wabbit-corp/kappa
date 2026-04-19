@@ -1,0 +1,7 @@
+module a
+
+export b
+
+--! assertErrors
+--! assertDiagnosticContains Import cycle detected
+--! assertDeclKinds export

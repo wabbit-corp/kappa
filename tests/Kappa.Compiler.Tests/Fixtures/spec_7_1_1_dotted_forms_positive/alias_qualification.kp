@@ -1,0 +1,11 @@
+module alias_qualification
+
+import util.math as math
+
+result : Int
+let result = math.fortyTwo
+
+--! assertNoErrors
+--! assertType result Int
+--! assertEval result 42
+--! assertDeclDescriptors import util.math as math, signature result, let result

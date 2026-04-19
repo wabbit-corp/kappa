@@ -1,0 +1,11 @@
+module main_trait_and_term
+
+import std.eq.(trait Eq)
+import std.base.(term println)
+
+message : String
+let message = "ready"
+
+--! assertNoErrors
+--! assertType message String
+--! assertDeclDescriptors import std.eq.(trait Eq), import std.base.(term println), signature message, let message

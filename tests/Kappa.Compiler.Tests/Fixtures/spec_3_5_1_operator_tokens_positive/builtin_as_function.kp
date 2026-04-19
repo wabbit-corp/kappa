@@ -1,0 +1,11 @@
+module builtin_as_function
+
+let add = (+)
+
+result : Int
+let result = add 20 22
+
+--! assertNoErrors
+--! assertType result Int
+--! assertEval result 42
+--! assertContainsTokenKinds Operator

@@ -1,0 +1,7 @@
+module c
+
+seed : Int
+let seed = 1
+
+--! assertType seed Int
+--! assertDeclKinds signature, let

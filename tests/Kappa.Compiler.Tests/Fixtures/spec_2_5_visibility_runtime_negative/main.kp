@@ -1,0 +1,10 @@
+module main
+
+import hidden.secret as secret
+
+result : Int
+let result = secret.secret
+
+--! assertNoErrors
+--! assertType result Int
+--! assertEvalErrorContains result not exported

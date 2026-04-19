@@ -1,0 +1,8 @@
+module demo.wrong
+
+value : Int
+let value = 42
+
+--! assertErrors
+--! assertDiagnosticContains does not match the path-derived module name
+--! assertModule demo.wrong

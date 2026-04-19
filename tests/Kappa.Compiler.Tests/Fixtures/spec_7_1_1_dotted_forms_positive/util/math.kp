@@ -1,0 +1,4 @@
+module util.math
+
+fortyTwo : Int
+let fortyTwo = 42

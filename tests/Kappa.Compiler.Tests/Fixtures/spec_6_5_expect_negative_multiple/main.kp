@@ -1,0 +1,10 @@
+module main
+
+expect term value : Int
+
+let value = 1
+let value = 2
+
+--! assertErrors
+--! assertDiagnosticContains Multiple satisfactions
+--! assertDeclKinds expect, let, let

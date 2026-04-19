@@ -1,0 +1,9 @@
+module main_wildcard_except
+
+import library.math.* except (fortyThree)
+
+answer : Int
+let answer = fortyTwo
+
+--! assertType answer Int
+--! assertDeclKinds import, signature, let

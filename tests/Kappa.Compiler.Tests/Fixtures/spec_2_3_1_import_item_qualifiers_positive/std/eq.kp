@@ -1,0 +1,4 @@
+module std.eq
+
+trait Eq a =
+    equals : a -> a -> Bool

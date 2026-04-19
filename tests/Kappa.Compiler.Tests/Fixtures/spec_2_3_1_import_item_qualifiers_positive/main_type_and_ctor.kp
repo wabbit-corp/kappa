@@ -1,0 +1,10 @@
+module main_type_and_ctor
+
+import std.list.(type List, ctor Cons)
+
+items : List Int
+let items = Cons 1 (Cons 2 Nil)
+
+--! assertNoErrors
+--! assertType items List Int
+--! assertDeclDescriptors import std.list.(type List + ctor Cons), signature items, let items

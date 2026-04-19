@@ -1,0 +1,6 @@
+module main
+
+let value = 'x
+
+--! assertErrors
+--! assertDiagnosticContains Unterminated character literal

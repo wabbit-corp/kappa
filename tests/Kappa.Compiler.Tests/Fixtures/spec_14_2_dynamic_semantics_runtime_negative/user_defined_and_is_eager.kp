@@ -1,0 +1,11 @@
+module user_defined_and_is_eager
+
+infix left 40 (&&)
+let (&&) x y = x
+
+result : Bool
+let result = False && ((1 / 0) == 0)
+
+--! assertNoErrors
+--! assertType result Bool
+--! assertEvalErrorContains result Division by zero

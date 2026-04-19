@@ -1,0 +1,40 @@
+# OS-generated files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# IDE / editor settings
+.idea/
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+.python-version
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+build/
+dist/
+.eggs/
+*.egg-info/
+
+# .NET
+bin/
+obj/
+.dotnet/
+artifacts/
+TestResults/

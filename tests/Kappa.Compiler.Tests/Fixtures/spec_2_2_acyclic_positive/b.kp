@@ -1,0 +1,9 @@
+module b
+
+import c.*
+
+next : Int
+let next = seed + 1
+
+--! assertType next Int
+--! assertDeclKinds import, signature, let

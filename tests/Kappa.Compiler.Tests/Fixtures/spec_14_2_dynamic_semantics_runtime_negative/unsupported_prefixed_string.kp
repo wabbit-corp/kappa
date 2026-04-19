@@ -1,0 +1,8 @@
+module unsupported_prefixed_string
+
+result : String
+let result = r"hello"
+
+--! assertNoErrors
+--! assertType result String
+--! assertEvalErrorContains result not supported by the interpreter yet

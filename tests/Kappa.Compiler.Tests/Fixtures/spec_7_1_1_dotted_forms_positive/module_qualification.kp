@@ -1,0 +1,11 @@
+module module_qualification
+
+import util.math
+
+result : Int
+let result = util.math.fortyTwo
+
+--! assertNoErrors
+--! assertType result Int
+--! assertEval result 42
+--! assertDeclDescriptors import util.math, signature result, let result

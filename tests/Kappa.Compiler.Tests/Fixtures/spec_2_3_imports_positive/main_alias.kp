@@ -1,0 +1,10 @@
+module main_alias
+
+import library.math as math
+
+answer : Int
+let answer = math.fortyTwo
+
+--! assertNoErrors
+--! assertType answer Int
+--! assertDeclKinds import, signature, let

@@ -1,0 +1,8 @@
+module main
+
+{- broken block comment
+value : Int
+let value = 42
+
+--! assertErrors
+--! assertDiagnosticContains Unterminated block comment

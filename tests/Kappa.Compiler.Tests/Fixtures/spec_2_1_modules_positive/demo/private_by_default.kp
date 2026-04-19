@@ -1,0 +1,9 @@
+@PrivateByDefault module demo.private_by_default
+
+hidden : String
+let hidden = "shh"
+
+--! assertModule demo.private_by_default
+--! assertModuleAttributes PrivateByDefault
+--! assertType hidden String
+--! assertDeclKinds signature, let

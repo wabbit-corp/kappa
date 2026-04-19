@@ -1,0 +1,7 @@
+module library.math
+
+fortyTwo : Int
+let fortyTwo = 42
+
+fortyThree : Int
+let fortyThree = 43

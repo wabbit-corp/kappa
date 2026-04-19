@@ -1,0 +1,15 @@
+module comment_lines
+
+data Choice : Type =
+    -- first branch
+    Yes
+
+    -- second branch
+    No
+
+value : Int
+let value = 0
+
+--! assertNoErrors
+--! assertDataConstructors Choice Yes, No
+--! assertContainsTokenKinds Indent, Dedent

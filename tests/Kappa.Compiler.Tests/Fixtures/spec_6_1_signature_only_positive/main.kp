@@ -1,0 +1,7 @@
+module main
+
+answer : Int
+
+--! assertNoErrors
+--! assertType answer Int
+--! assertDeclDescriptors signature answer

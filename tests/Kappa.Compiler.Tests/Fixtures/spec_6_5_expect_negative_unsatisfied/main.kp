@@ -1,0 +1,7 @@
+module main
+
+expect term mystery : Int
+
+--! assertErrors
+--! assertDiagnosticContains Unsatisfied expect declaration
+--! assertDeclKinds expect

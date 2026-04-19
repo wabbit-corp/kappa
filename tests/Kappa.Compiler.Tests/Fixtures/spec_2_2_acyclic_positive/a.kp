@@ -1,0 +1,10 @@
+module a
+
+import b.*
+
+result : Int
+let result = next + 1
+
+--! assertNoErrors
+--! assertType result Int
+--! assertDeclKinds import, signature, let

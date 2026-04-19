@@ -1,0 +1,11 @@
+module left_section_builtin
+
+let addToOne = (1 +)
+
+result : Int
+let result = addToOne 41
+
+--! assertNoErrors
+--! assertType result Int
+--! assertEval result 42
+--! assertContainsTokenTexts (, 1, +, )

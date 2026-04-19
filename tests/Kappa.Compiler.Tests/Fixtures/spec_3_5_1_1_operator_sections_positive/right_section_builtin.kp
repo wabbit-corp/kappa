@@ -1,0 +1,11 @@
+module right_section_builtin
+
+let inc = (+ 1)
+
+result : Int
+let result = inc 41
+
+--! assertNoErrors
+--! assertType result Int
+--! assertEval result 42
+--! assertContainsTokenTexts (, +, 1, )

@@ -1,0 +1,8 @@
+module reexports_url
+
+export "https://example.com/lib" as ext
+
+value : Int
+let value = 42
+
+--! assertDeclKinds export, signature, let

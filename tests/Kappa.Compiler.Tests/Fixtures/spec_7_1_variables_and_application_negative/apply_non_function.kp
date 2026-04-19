@@ -1,0 +1,8 @@
+module apply_non_function
+
+result : Int
+let result = 42 1
+
+--! assertNoErrors
+--! assertType result Int
+--! assertEvalErrorContains result Cannot apply 42 as a function

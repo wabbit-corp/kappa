@@ -1,0 +1,8 @@
+module short_circuit_or
+
+result : Bool
+let result = True || ((1 / 0) == 0)
+
+--! assertNoErrors
+--! assertType result Bool
+--! assertEval result True

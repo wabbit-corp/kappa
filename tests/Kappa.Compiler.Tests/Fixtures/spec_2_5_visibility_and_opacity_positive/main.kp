@@ -1,0 +1,15 @@
+module main
+
+private let helper = 1
+public let visible = helper
+opaque type Id a = a
+opaque data Token : Type =
+    Token
+public trait Display a =
+    show : a -> String
+    render : a -> String
+
+--! assertNoErrors
+--! assertDeclDescriptors private let helper, public let visible, opaque type Id, opaque data Token, public trait Display
+--! assertDataConstructors Token Token
+--! assertTraitMembers Display show, render

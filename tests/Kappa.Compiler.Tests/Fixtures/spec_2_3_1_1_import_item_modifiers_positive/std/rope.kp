@@ -1,0 +1,6 @@
+module std.rope
+
+type Rope = String
+
+normalizeWorker : Rope -> Rope
+let normalizeWorker value = value

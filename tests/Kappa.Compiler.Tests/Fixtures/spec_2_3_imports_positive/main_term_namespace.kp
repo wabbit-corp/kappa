@@ -1,0 +1,9 @@
+module main_term_namespace
+
+import library.math.(term fortyTwo)
+
+answer : Int
+let answer = fortyTwo
+
+--! assertType answer Int
+--! assertDeclKinds import, signature, let

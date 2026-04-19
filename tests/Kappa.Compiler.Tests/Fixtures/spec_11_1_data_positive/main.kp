@@ -1,0 +1,13 @@
+module main
+
+data Maybe a : Type =
+    Nothing
+    Just a
+
+data Pair a b : Type =
+    Pair a b
+
+--! assertNoErrors
+--! assertDeclDescriptors data Maybe, data Pair
+--! assertDataConstructors Maybe Nothing, Just
+--! assertDataConstructors Pair Pair

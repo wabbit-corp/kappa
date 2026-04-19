@@ -1,0 +1,5 @@
+module std.list
+
+data List a : Type =
+    Nil
+    Cons a (List a)

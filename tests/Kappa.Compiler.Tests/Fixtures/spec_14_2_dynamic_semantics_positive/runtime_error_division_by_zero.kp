@@ -1,0 +1,8 @@
+module runtime_error_division_by_zero
+
+result : Int
+let result = 1 / 0
+
+--! assertNoErrors
+--! assertType result Int
+--! assertEvalErrorContains result Division by zero

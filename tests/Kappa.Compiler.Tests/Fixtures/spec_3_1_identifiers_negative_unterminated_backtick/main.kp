@@ -1,0 +1,6 @@
+module main
+
+let `broken = 42
+
+--! assertErrors
+--! assertDiagnosticContains Unterminated backtick identifier

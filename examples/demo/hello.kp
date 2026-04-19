@@ -1,0 +1,19 @@
+module demo.hello
+
+import std.math as math
+import std.list.(type List, ctor Cons)
+export std.math.(sin, cos)
+
+type Id (a : Type) = a
+
+data Maybe (a : Type) : Type =
+    Nothing
+    Just a
+
+trait Show a =
+    show : a -> String
+
+answer : Int
+let answer = 42
+
+let increment x = x + 1

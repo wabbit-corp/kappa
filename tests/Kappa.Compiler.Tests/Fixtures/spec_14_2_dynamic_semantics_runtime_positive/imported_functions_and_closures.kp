@@ -1,0 +1,12 @@
+module imported_functions_and_closures
+
+import math.*
+
+let makeAdder x = \y -> x + y
+
+result : Int
+let result = makeAdder (twice 20) 2
+
+--! assertNoErrors
+--! assertType result Int
+--! assertEval result 42
