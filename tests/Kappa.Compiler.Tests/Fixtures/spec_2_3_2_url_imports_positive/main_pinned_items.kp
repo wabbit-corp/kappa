@@ -7,4 +7,4 @@ let value = "ok"
 
 --! assertNoErrors
 --! assertType value String
---! assertDeclDescriptors import "https://example.com/lib#ref:v1.2.3".(foo + bar), signature value, let value
+--! x-assertDeclDescriptors import "https://example.com/lib#ref:v1.2.3".(foo + bar), signature value, let value

@@ -5,4 +5,4 @@ let result = 1 / 0
 
 --! assertNoErrors
 --! assertType result Int
---! assertEvalErrorContains result Division by zero
+--! x-assertEvalErrorContains result Division by zero

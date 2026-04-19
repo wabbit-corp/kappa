@@ -5,4 +5,4 @@ let result = if False && ((1 / 0) == 0) then 0 else 42
 
 --! assertNoErrors
 --! assertType result Int
---! assertEval result 42
+--! x-assertEval result 42

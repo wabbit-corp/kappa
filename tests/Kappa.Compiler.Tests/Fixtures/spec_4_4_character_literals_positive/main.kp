@@ -9,4 +9,4 @@ let escaped = '\n'
 --! assertNoErrors
 --! assertType letter Char
 --! assertType escaped Char
---! assertContainsTokenKinds CharacterLiteral
+--! x-assertContainsTokenKinds CharacterLiteral

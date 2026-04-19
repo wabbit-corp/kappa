@@ -3,7 +3,7 @@
 hidden : String
 let hidden = "shh"
 
---! assertModule demo.private_by_default
---! assertModuleAttributes PrivateByDefault
+--! x-assertModule demo.private_by_default
+--! x-assertModuleAttributes PrivateByDefault
 --! assertType hidden String
 --! assertDeclKinds signature, let

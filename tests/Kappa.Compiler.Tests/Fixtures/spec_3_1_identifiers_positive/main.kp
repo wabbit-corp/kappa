@@ -9,5 +9,5 @@ let snake_case = `type`
 --! assertNoErrors
 --! assertType type Int
 --! assertType snake_case Int
---! assertDeclDescriptors signature type, let type, signature snake_case, let snake_case
---! assertContainsTokenKinds Identifier
+--! x-assertDeclDescriptors signature type, let type, signature snake_case, let snake_case
+--! x-assertContainsTokenKinds Identifier

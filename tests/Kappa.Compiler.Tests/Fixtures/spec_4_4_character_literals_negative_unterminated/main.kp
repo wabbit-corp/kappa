@@ -2,5 +2,5 @@ module main
 
 let value = 'x
 
---! assertErrors
---! assertDiagnosticContains Unterminated character literal
+--! assertErrorCount 2
+--! assertDiagnosticMatch Unterminated character literal

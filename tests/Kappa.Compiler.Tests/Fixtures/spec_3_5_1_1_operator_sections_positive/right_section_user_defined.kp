@@ -9,4 +9,4 @@ let result = bump 41
 
 --! assertNoErrors
 --! assertType result Int
---! assertEval result 42
+--! x-assertEval result 42

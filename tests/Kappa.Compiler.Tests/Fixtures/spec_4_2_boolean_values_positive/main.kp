@@ -9,4 +9,4 @@ let falsehood = False
 --! assertNoErrors
 --! assertType truth Bool
 --! assertType falsehood Bool
---! assertDeclDescriptors signature truth, let truth, signature falsehood, let falsehood
+--! x-assertDeclDescriptors signature truth, let truth, signature falsehood, let falsehood

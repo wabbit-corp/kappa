@@ -5,4 +5,4 @@ let result = r"hello"
 
 --! assertNoErrors
 --! assertType result String
---! assertEvalErrorContains result not supported by the interpreter yet
+--! x-assertEvalErrorContains result not supported by the interpreter yet

@@ -4,5 +4,5 @@ module main
 value : Int
 let value = 42
 
---! assertErrors
---! assertDiagnosticContains Unterminated block comment
+--! assertErrorCount 1
+--! assertDiagnosticMatch Unterminated block comment

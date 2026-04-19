@@ -1,5 +1,5 @@
 value : Int
 let value = 42
 
---! assertErrors
---! assertDiagnosticContains Could not derive a Kappa module name
+--! assertErrorCount 1
+--! assertDiagnosticMatch Could not derive a Kappa module name

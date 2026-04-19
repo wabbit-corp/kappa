@@ -2,6 +2,6 @@ module a
 
 import b
 
---! assertErrors
---! assertDiagnosticContains Import cycle detected
+--! assertErrorCount 1
+--! assertDiagnosticMatch Import cycle detected
 --! assertDeclKinds import

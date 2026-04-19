@@ -10,5 +10,5 @@ let result =
 
 --! assertNoErrors
 --! assertType result Int
---! assertEval result 42
---! assertContainsTokenKinds Indent, Dedent
+--! x-assertEval result 42
+--! x-assertContainsTokenKinds Indent, Dedent

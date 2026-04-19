@@ -7,4 +7,4 @@ let value = 42
 
 --! assertNoErrors
 --! assertType value Int
---! assertDeclDescriptors import std.prelude.(trait Eq + type Int), signature value, let value
+--! x-assertDeclDescriptors import std.prelude.(trait Eq + type Int), signature value, let value

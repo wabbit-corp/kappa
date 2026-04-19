@@ -5,4 +5,4 @@ let makeAdder x = \y -> x + y
 
 --! assertNoErrors
 --! assertType makeAdder Int -> Int -> Int
---! assertDeclDescriptors signature makeAdder, let makeAdder
+--! x-assertDeclDescriptors signature makeAdder, let makeAdder

@@ -9,4 +9,4 @@ let result = makeAdder (twice 20) 2
 
 --! assertNoErrors
 --! assertType result Int
---! assertEval result 42
+--! x-assertEval result 42

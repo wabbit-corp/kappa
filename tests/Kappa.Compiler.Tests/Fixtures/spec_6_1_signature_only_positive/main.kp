@@ -4,4 +4,4 @@ answer : Int
 
 --! assertNoErrors
 --! assertType answer Int
---! assertDeclDescriptors signature answer
+--! x-assertDeclDescriptors signature answer

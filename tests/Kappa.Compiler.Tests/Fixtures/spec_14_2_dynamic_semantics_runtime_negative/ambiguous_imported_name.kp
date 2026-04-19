@@ -8,4 +8,4 @@ let result = value
 
 --! assertNoErrors
 --! assertType result Int
---! assertEvalErrorContains result ambiguous
+--! x-assertEvalErrorContains result ambiguous

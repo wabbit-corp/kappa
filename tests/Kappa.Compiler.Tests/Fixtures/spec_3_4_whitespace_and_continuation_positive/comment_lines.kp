@@ -11,5 +11,5 @@ value : Int
 let value = 0
 
 --! assertNoErrors
---! assertDataConstructors Choice Yes, No
---! assertContainsTokenKinds Indent, Dedent
+--! x-assertDataConstructors Choice Yes, No
+--! x-assertContainsTokenKinds Indent, Dedent

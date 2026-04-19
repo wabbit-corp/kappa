@@ -2,5 +2,5 @@ module main
 
 let value = "broken
 
---! assertErrors
---! assertDiagnosticContains Unterminated string literal
+--! assertErrorCount 1
+--! assertDiagnosticMatch Unterminated string literal

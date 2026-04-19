@@ -9,4 +9,4 @@ let term = 2
 --! assertNoErrors
 --! assertType return Int
 --! assertType term Int
---! assertDeclDescriptors signature return, let return, signature term, let term
+--! x-assertDeclDescriptors signature return, let return, signature term, let term

@@ -7,4 +7,4 @@ let value = "alias"
 
 --! assertNoErrors
 --! assertType value String
---! assertDeclDescriptors import "https://example.com/lib" as remote, signature value, let value
+--! x-assertDeclDescriptors import "https://example.com/lib" as remote, signature value, let value

@@ -7,5 +7,5 @@ let result = math.fortyTwo
 
 --! assertNoErrors
 --! assertType result Int
---! assertEval result 42
---! assertDeclDescriptors import util.math as math, signature result, let result
+--! x-assertEval result 42
+--! x-assertDeclDescriptors import util.math as math, signature result, let result

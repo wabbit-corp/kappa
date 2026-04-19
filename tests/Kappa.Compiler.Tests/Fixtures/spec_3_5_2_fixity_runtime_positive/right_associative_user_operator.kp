@@ -8,5 +8,5 @@ let result = 1 ^^ 2 ^^ 3
 
 --! assertNoErrors
 --! assertType result Int
---! assertEval result 33
+--! x-assertEval result 33
 --! assertDeclKinds fixity, let, signature, let

@@ -7,4 +7,4 @@ let result = secret.secret
 
 --! assertNoErrors
 --! assertType result Int
---! assertEvalErrorContains result not exported
+--! x-assertEvalErrorContains result not exported

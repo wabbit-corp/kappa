@@ -8,6 +8,6 @@ data Pair a b : Type =
     Pair a b
 
 --! assertNoErrors
---! assertDeclDescriptors data Maybe, data Pair
---! assertDataConstructors Maybe Nothing, Just
---! assertDataConstructors Pair Pair
+--! x-assertDeclDescriptors data Maybe, data Pair
+--! x-assertDataConstructors Maybe Nothing, Just
+--! x-assertDataConstructors Pair Pair

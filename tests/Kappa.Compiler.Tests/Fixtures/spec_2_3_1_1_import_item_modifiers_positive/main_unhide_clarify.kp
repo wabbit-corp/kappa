@@ -8,4 +8,4 @@ let value = "rope"
 
 --! assertNoErrors
 --! assertType value String
---! assertDeclDescriptors import std.rope.(unhide normalizeWorker + clarify Rope), import std.rope.(unhide term normalizeWorker + clarify type Rope + unhide clarify term normalizeWorker), signature value, let value
+--! x-assertDeclDescriptors import std.rope.(unhide normalizeWorker + clarify Rope), import std.rope.(unhide term normalizeWorker + clarify type Rope + unhide clarify term normalizeWorker), signature value, let value

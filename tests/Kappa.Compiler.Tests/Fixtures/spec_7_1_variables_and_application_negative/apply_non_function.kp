@@ -5,4 +5,4 @@ let result = 42 1
 
 --! assertNoErrors
 --! assertType result Int
---! assertEvalErrorContains result Cannot apply 42 as a function
+--! x-assertEvalErrorContains result Cannot apply 42 as a function

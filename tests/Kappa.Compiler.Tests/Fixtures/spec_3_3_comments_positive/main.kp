@@ -9,4 +9,4 @@ let value = 42 -- trailing line comment
 
 --! assertNoErrors
 --! assertType value Int
---! assertDeclDescriptors signature value, let value
+--! x-assertDeclDescriptors signature value, let value

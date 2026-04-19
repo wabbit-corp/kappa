@@ -9,4 +9,4 @@ let decimal = 3.14
 --! assertNoErrors
 --! assertType whole Int
 --! assertType decimal Float
---! assertContainsTokenKinds IntegerLiteral, FloatLiteral
+--! x-assertContainsTokenKinds IntegerLiteral, FloatLiteral

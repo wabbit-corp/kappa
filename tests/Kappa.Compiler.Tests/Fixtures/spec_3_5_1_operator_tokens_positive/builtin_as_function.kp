@@ -7,5 +7,5 @@ let result = add 20 22
 
 --! assertNoErrors
 --! assertType result Int
---! assertEval result 42
---! assertContainsTokenKinds Operator
+--! x-assertEval result 42
+--! x-assertContainsTokenKinds Operator

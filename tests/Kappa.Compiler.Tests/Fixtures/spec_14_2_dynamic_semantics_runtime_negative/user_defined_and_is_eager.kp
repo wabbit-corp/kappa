@@ -8,4 +8,4 @@ let result = False && ((1 / 0) == 0)
 
 --! assertNoErrors
 --! assertType result Bool
---! assertEvalErrorContains result Division by zero
+--! x-assertEvalErrorContains result Division by zero

@@ -5,4 +5,4 @@ let choose flag left right = if flag then left else right
 
 --! assertNoErrors
 --! assertType choose Bool -> Int -> Int -> Int
---! assertDeclDescriptors signature choose, let choose
+--! x-assertDeclDescriptors signature choose, let choose

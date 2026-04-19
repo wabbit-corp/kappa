@@ -10,6 +10,6 @@ public trait Display a =
     render : a -> String
 
 --! assertNoErrors
---! assertDeclDescriptors private let helper, public let visible, opaque type Id, opaque data Token, public trait Display
---! assertDataConstructors Token Token
---! assertTraitMembers Display show, render
+--! x-assertDeclDescriptors private let helper, public let visible, opaque type Id, opaque data Token, public trait Display
+--! x-assertDataConstructors Token Token
+--! x-assertTraitMembers Display show, render

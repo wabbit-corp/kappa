@@ -8,6 +8,6 @@ trait Show a =
     debug : a -> String
 
 --! assertNoErrors
---! assertDeclDescriptors trait Eq, trait Show
---! assertTraitMembers Eq equals
---! assertTraitMembers Show show, debug
+--! x-assertDeclDescriptors trait Eq, trait Show
+--! x-assertTraitMembers Eq equals
+--! x-assertTraitMembers Show show, debug

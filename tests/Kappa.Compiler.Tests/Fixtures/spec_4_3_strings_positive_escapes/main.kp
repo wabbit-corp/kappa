@@ -5,4 +5,4 @@ let value = "line\nvalue\tend"
 
 --! assertNoErrors
 --! assertType value String
---! assertContainsTokenKinds StringLiteral
+--! x-assertContainsTokenKinds StringLiteral

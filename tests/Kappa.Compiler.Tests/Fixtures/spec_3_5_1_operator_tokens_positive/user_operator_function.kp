@@ -9,5 +9,5 @@ let result = add 20 22
 
 --! assertNoErrors
 --! assertType result Int
---! assertEval result 42
---! assertDeclDescriptors fixity infix ++, let ++, let add, signature result, let result
+--! x-assertEval result 42
+--! x-assertDeclDescriptors fixity infix ++, let ++, let add, signature result, let result

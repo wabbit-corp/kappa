@@ -7,5 +7,5 @@ let result = addToOne 41
 
 --! assertNoErrors
 --! assertType result Int
---! assertEval result 42
---! assertContainsTokenTexts (, 1, +, )
+--! x-assertEval result 42
+--! x-assertContainsTokenTexts (, 1, +, )

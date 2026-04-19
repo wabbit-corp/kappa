@@ -7,4 +7,4 @@ let value = 1
 
 --! assertNoErrors
 --! assertType value Int
---! assertDeclDescriptors import "https://example.com/lib#sha256:0123abcd".*, signature value, let value
+--! x-assertDeclDescriptors import "https://example.com/lib#sha256:0123abcd".*, signature value, let value

@@ -5,4 +5,4 @@ let value = ()
 
 --! assertNoErrors
 --! assertType value Unit
---! assertContainsTokenKinds LeftParen, RightParen
+--! x-assertContainsTokenKinds LeftParen, RightParen

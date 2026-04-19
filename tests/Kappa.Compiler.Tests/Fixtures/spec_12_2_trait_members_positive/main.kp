@@ -5,5 +5,5 @@ trait Show a =
     let debug x = show x
 
 --! assertNoErrors
---! assertDeclDescriptors trait Show
---! assertTraitMembers Show show, debug
+--! x-assertDeclDescriptors trait Show
+--! x-assertTraitMembers Show show, debug

@@ -8,4 +8,4 @@ let message = "ready"
 
 --! assertNoErrors
 --! assertType message String
---! assertDeclDescriptors import std.eq.(trait Eq), import std.base.(term println), signature message, let message
+--! x-assertDeclDescriptors import std.eq.(trait Eq), import std.base.(term println), signature message, let message

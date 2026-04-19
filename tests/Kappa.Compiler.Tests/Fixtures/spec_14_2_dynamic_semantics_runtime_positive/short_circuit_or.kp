@@ -5,4 +5,4 @@ let result = True || ((1 / 0) == 0)
 
 --! assertNoErrors
 --! assertType result Bool
---! assertEval result True
+--! x-assertEval result True

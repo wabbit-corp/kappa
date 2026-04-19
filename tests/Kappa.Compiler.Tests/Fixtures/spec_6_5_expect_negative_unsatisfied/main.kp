@@ -2,6 +2,6 @@ module main
 
 expect term mystery : Int
 
---! assertErrors
---! assertDiagnosticContains Unsatisfied expect declaration
+--! assertErrorCount 1
+--! assertDiagnosticMatch Unsatisfied expect declaration
 --! assertDeclKinds expect

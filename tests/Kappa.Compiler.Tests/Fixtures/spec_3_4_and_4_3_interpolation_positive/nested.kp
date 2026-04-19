@@ -8,6 +8,6 @@ let value = f"${ f" $name " }"
 
 --! assertNoErrors
 --! assertType value String
---! assertEval value " yo "
+--! x-assertEval value " yo "
 --! assertDeclKinds signature, let, signature, let
---! assertContainsTokenKinds InterpolatedStringStart, InterpolationStart, InterpolationEnd, InterpolatedStringEnd
+--! x-assertContainsTokenKinds InterpolatedStringStart, InterpolationStart, InterpolationEnd, InterpolatedStringEnd

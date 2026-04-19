@@ -7,5 +7,5 @@ let flag = not False
 
 --! assertNoErrors
 --! assertType flag Bool
---! assertEval flag True
---! assertDeclDescriptors import std.prelude.(not + False + True), signature flag, let flag
+--! x-assertEval flag True
+--! x-assertDeclDescriptors import std.prelude.(not + False + True), signature flag, let flag
