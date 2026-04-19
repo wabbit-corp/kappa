@@ -16,6 +16,7 @@ module IlDotNetBackend =
 
     type private BindingInfo =
         { Binding: KBackendBinding
+          ParameterTypes: (string * IlValueType) list
           ReturnType: IlValueType
           EmittedMethodName: string }
 
@@ -87,6 +88,74 @@ module IlDotNetBackend =
         | IlString -> typeof<string>
         | IlChar -> typeof<char>
 
+    let private tryParseIlValueType typeName =
+        match typeName with
+        | "Int" -> Some IlInt64
+        | "Float" -> Some IlFloat64
+        | "Bool" -> Some IlBool
+        | "String" -> Some IlString
+        | "Char" -> Some IlChar
+        | _ -> None
+
+    let private tryParseSimpleFunctionSignature tokens =
+        let filteredTokens =
+            tokens
+            |> List.filter (fun token ->
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent
+                | EndOfFile -> false
+                | _ -> true)
+
+        let rec split current remaining segments =
+            match remaining with
+            | [] ->
+                List.rev ((List.rev current) :: segments)
+            | token :: tail when token.Kind = Arrow ->
+                split [] tail ((List.rev current) :: segments)
+            | token :: tail ->
+                split (token.Text :: current) tail segments
+
+        let segments =
+            match filteredTokens with
+            | [] -> []
+            | _ -> split [] filteredTokens []
+
+        if List.isEmpty segments || List.exists List.isEmpty segments then
+            None
+        else
+            segments
+            |> List.map (function
+                | [ typeName ] -> tryParseIlValueType typeName
+                | _ -> None)
+            |> List.fold
+                (fun state next ->
+                    match state, next with
+                    | Some values, Some value -> Some(value :: values)
+                    | _ -> None)
+                (Some [])
+            |> Option.map List.rev
+            |> Option.bind (function
+                | [] -> None
+                | values ->
+                    let parameterTypes = values |> List.take (values.Length - 1)
+                    let returnType = List.last values
+                    Some(parameterTypes, returnType))
+
+    let private buildSignatureLookup (workspace: WorkspaceCompilation) =
+        workspace.Documents
+        |> List.choose (fun document ->
+            document.ModuleName
+            |> Option.map (fun moduleName ->
+                SyntaxFacts.moduleNameToText moduleName, document.Syntax.Declarations))
+        |> List.collect (fun (moduleName, declarations) ->
+            declarations
+            |> List.choose (function
+                | SignatureDeclaration declaration -> Some((moduleName, declaration.Name), declaration.TypeTokens)
+                | _ -> None))
+        |> Map.ofList
+
     let private buildRawModules (workspace: WorkspaceCompilation) =
         workspace.KBackendIR
         |> List.map (fun moduleDump ->
@@ -123,9 +192,15 @@ module IlDotNetBackend =
 
     let private buildEnvironment (workspace: WorkspaceCompilation) =
         let rawModules = buildRawModules workspace
-        let cache = Dictionary<string * string, IlValueType>()
+        let signatureLookup = buildSignatureLookup workspace
+        let cache = Dictionary<string * string, BindingInfo>()
 
-        let rec inferBindingType currentModule bindingName active =
+        let tryResolveExplicitSignature currentModule bindingName =
+            signatureLookup
+            |> Map.tryFind (currentModule, bindingName)
+            |> Option.bind tryParseSimpleFunctionSignature
+
+        let rec inferBindingInfo currentModule bindingName active =
             let cacheKey = currentModule, bindingName
 
             match cache.TryGetValue(cacheKey) with
@@ -136,19 +211,75 @@ module IlDotNetBackend =
                 match rawModules |> Map.tryFind currentModule |> Option.bind (Map.tryFind bindingName) with
                 | None ->
                     Result.Error $"IL backend could not resolve binding '{currentModule}.{bindingName}'."
-                | Some binding when not (List.isEmpty binding.Parameters) ->
-                    Result.Error $"IL backend currently supports only zero-argument bindings, but '{currentModule}.{bindingName}' has parameters."
                 | Some binding ->
+                    let bindingPath = $"{currentModule}.{bindingName}"
+
                     match binding.Body with
                     | None ->
-                        Result.Error $"IL backend requires a body for '{currentModule}.{bindingName}'."
+                        Result.Error $"IL backend requires a body for '{bindingPath}'."
                     | Some body ->
-                        inferExpressionType currentModule (Set.add cacheKey active) body
-                        |> Result.map (fun inferred ->
-                            cache[cacheKey] <- inferred
-                            inferred)
+                        match binding.Parameters with
+                        | [] ->
+                            let declaredReturnType =
+                                tryResolveExplicitSignature currentModule bindingName
+                                |> Option.bind (fun (parameterTypes, returnType) ->
+                                    if List.isEmpty parameterTypes then Some returnType else None)
 
-        and inferExpressionType currentModule active expression =
+                            let bodyTypeResult =
+                                inferExpressionType currentModule Map.empty (Set.add cacheKey active) body
+
+                            bodyTypeResult
+                            |> Result.bind (fun bodyType ->
+                                match declaredReturnType with
+                                | Some returnType when returnType <> bodyType ->
+                                    Result.Error $"IL backend expected '{bindingPath}' to return {returnType}, but the body returns {bodyType}."
+                                | Some returnType ->
+                                    let info =
+                                        { Binding = binding
+                                          ParameterTypes = []
+                                          ReturnType = returnType
+                                          EmittedMethodName = emittedMethodName bindingName }
+
+                                    cache[cacheKey] <- info
+                                    Result.Ok info
+                                | None ->
+                                    let info =
+                                        { Binding = binding
+                                          ParameterTypes = []
+                                          ReturnType = bodyType
+                                          EmittedMethodName = emittedMethodName bindingName }
+
+                                    cache[cacheKey] <- info
+                                    Result.Ok info)
+                        | parameters ->
+                            match tryResolveExplicitSignature currentModule bindingName with
+                            | None ->
+                                Result.Error $"IL backend currently requires a simple explicit signature for parameterized binding '{bindingPath}'."
+                            | Some(parameterTypes, returnType) ->
+                                if List.length parameterTypes <> List.length parameters then
+                                    Result.Error
+                                        $"IL backend expected signature for '{bindingPath}' to declare {List.length parameters} parameter type(s), but found {List.length parameterTypes}."
+                                else
+                                    let localTypes =
+                                        List.zip parameters parameterTypes |> Map.ofList
+
+                                    let info =
+                                        { Binding = binding
+                                          ParameterTypes = List.zip parameters parameterTypes
+                                          ReturnType = returnType
+                                          EmittedMethodName = emittedMethodName bindingName }
+
+                                    cache[cacheKey] <- info
+
+                                    inferExpressionType currentModule localTypes (Set.add cacheKey active) body
+                                    |> Result.bind (fun bodyType ->
+                                        if bodyType <> returnType then
+                                            cache.Remove(cacheKey) |> ignore
+                                            Result.Error $"IL backend expected '{bindingPath}' to return {returnType}, but the body returns {bodyType}."
+                                        else
+                                            Result.Ok info)
+
+        and inferExpressionType currentModule localTypes active expression =
             match expression with
             | KBackendLiteral(LiteralValue.Integer _) ->
                 Result.Ok IlInt64
@@ -163,18 +294,21 @@ module IlDotNetBackend =
             | KBackendName [ "True" ]
             | KBackendName [ "False" ] ->
                 Result.Ok IlBool
+            | KBackendName [ name ] when localTypes |> Map.containsKey name ->
+                Result.Ok localTypes[name]
             | KBackendName segments ->
                 let nameText = String.concat "." segments
 
                 match tryResolveBinding rawModules currentModule segments with
                 | Some (targetModule, binding) when List.isEmpty binding.Parameters ->
-                    inferBindingType targetModule binding.Name active
+                    inferBindingInfo targetModule binding.Name active
+                    |> Result.map (fun bindingInfo -> bindingInfo.ReturnType)
                 | Some (targetModule, binding) ->
                     Result.Error $"IL backend does not support function-valued name '{targetModule}.{binding.Name}' yet."
                 | None ->
                     Result.Error $"IL backend could not resolve name '{nameText}'."
             | KBackendUnary("-", operand) ->
-                inferExpressionType currentModule active operand
+                inferExpressionType currentModule localTypes active operand
                 |> Result.bind (function
                     | IlInt64 -> Result.Ok IlInt64
                     | IlFloat64 -> Result.Ok IlFloat64
@@ -184,8 +318,8 @@ module IlDotNetBackend =
             | KBackendBinary(left, operatorName, right) ->
                 let inferred =
                     result {
-                        let! leftType = inferExpressionType currentModule active left
-                        let! rightType = inferExpressionType currentModule active right
+                        let! leftType = inferExpressionType currentModule localTypes active left
+                        let! rightType = inferExpressionType currentModule localTypes active right
                         return leftType, rightType
                     }
 
@@ -205,13 +339,13 @@ module IlDotNetBackend =
                         Result.Error $"IL backend does not support '{operatorName}' for {leftType} and {rightType}.")
             | KBackendIfThenElse(condition, whenTrue, whenFalse) ->
                 result {
-                    let! conditionType = inferExpressionType currentModule active condition
+                    let! conditionType = inferExpressionType currentModule localTypes active condition
 
                     if conditionType <> IlBool then
                         return! Result.Error "IL backend requires Bool conditions for if expressions."
 
-                    let! trueType = inferExpressionType currentModule active whenTrue
-                    let! falseType = inferExpressionType currentModule active whenFalse
+                    let! trueType = inferExpressionType currentModule localTypes active whenTrue
+                    let! falseType = inferExpressionType currentModule localTypes active whenFalse
 
                     if trueType <> falseType then
                         return!
@@ -220,8 +354,37 @@ module IlDotNetBackend =
 
                     return trueType
                 }
+            | KBackendApply(KBackendName segments, arguments) ->
+                let nameText = String.concat "." segments
+
+                match tryResolveBinding rawModules currentModule segments with
+                | Some (targetModule, binding) ->
+                    inferBindingInfo targetModule binding.Name active
+                    |> Result.bind (fun bindingInfo ->
+                        if List.length bindingInfo.ParameterTypes <> List.length arguments then
+                            Result.Error
+                                $"IL backend expected '{nameText}' to receive {List.length bindingInfo.ParameterTypes} argument(s), but received {List.length arguments}."
+                        else
+                            let argumentChecks =
+                                List.zip arguments bindingInfo.ParameterTypes
+                                |> List.fold
+                                    (fun state (argument, (_, expectedType)) ->
+                                        state
+                                        |> Result.bind (fun () ->
+                                            inferExpressionType currentModule localTypes active argument
+                                            |> Result.bind (fun actualType ->
+                                                if actualType = expectedType then
+                                                    Result.Ok()
+                                                else
+                                                    Result.Error
+                                                        $"IL backend expected argument for '{nameText}' to have type {expectedType}, but found {actualType}.")))
+                                    (Result.Ok())
+
+                            argumentChecks |> Result.map (fun () -> bindingInfo.ReturnType))
+                | None ->
+                    Result.Error $"IL backend could not resolve callee '{nameText}'."
             | KBackendApply _ ->
-                Result.Error "IL backend does not support application yet."
+                Result.Error "IL backend currently supports application only when the callee is a named binding."
             | KBackendClosure _ ->
                 Result.Error "IL backend does not support closures yet."
             | KBackendMatch _ ->
@@ -242,11 +405,9 @@ module IlDotNetBackend =
                             (fun bindingResult (bindingName, binding) ->
                                 result {
                                     let! bindingEntriesSoFar = bindingResult
-                                    let! returnType = inferBindingType moduleName bindingName Set.empty
+                                    let! bindingInfo = inferBindingInfo moduleName bindingName Set.empty
                                     let info =
-                                        { Binding = binding
-                                          ReturnType = returnType
-                                          EmittedMethodName = emittedMethodName bindingName }
+                                        { bindingInfo with Binding = binding }
 
                                     return (bindingName, info) :: bindingEntriesSoFar
                                 })
@@ -286,7 +447,29 @@ module IlDotNetBackend =
             il.Emit(OpCodes.Ldc_I4_0)
             il.Emit(OpCodes.Ceq)
 
-    let private emitName (state: EmissionState) currentModule (il: ILGenerator) segments =
+    let private tryResolveBindingInfo (environment: EmissionEnvironment) currentModule segments =
+        match segments with
+        | [] ->
+            None
+        | [ bindingName ] ->
+            environment.Modules
+            |> Map.tryFind currentModule
+            |> Option.bind (fun moduleInfo -> moduleInfo.Bindings |> Map.tryFind bindingName)
+            |> Option.map (fun bindingInfo -> currentModule, bindingInfo)
+        | _ ->
+            let moduleName =
+                segments
+                |> List.take (segments.Length - 1)
+                |> String.concat "."
+
+            let bindingName = List.last segments
+
+            environment.Modules
+            |> Map.tryFind moduleName
+            |> Option.bind (fun moduleInfo -> moduleInfo.Bindings |> Map.tryFind bindingName)
+            |> Option.map (fun bindingInfo -> moduleName, bindingInfo)
+
+    let private emitName (state: EmissionState) currentModule localTypes (il: ILGenerator) segments =
         match segments with
         | [ "True" ] ->
             il.Emit(OpCodes.Ldc_I4_1)
@@ -294,23 +477,27 @@ module IlDotNetBackend =
         | [ "False" ] ->
             il.Emit(OpCodes.Ldc_I4_0)
             Result.Ok()
+        | [ name ] when localTypes |> Map.containsKey name ->
+            let argumentIndex = localTypes[name] |> fst
+            il.Emit(OpCodes.Ldarg, int16 argumentIndex)
+            Result.Ok()
         | _ ->
             let nameText = String.concat "." segments
 
-            match tryResolveBinding (state.Environment.Modules |> Map.map (fun _ moduleInfo -> moduleInfo.Bindings |> Map.map (fun _ bindingInfo -> bindingInfo.Binding))) currentModule segments with
-            | Some (targetModule, binding) when List.isEmpty binding.Parameters ->
+            match tryResolveBindingInfo state.Environment currentModule segments with
+            | Some (targetModule, bindingInfo) when List.isEmpty bindingInfo.ParameterTypes ->
                 let targetMethod =
-                    state.MethodBuilders[targetModule][binding.Name]
+                    state.MethodBuilders[targetModule][bindingInfo.Binding.Name]
 
                 il.Emit(OpCodes.Call, targetMethod)
                 Result.Ok()
-            | Some (targetModule, binding) ->
-                Result.Error $"IL backend does not support invoking function-valued binding '{targetModule}.{binding.Name}' yet."
+            | Some (targetModule, bindingInfo) ->
+                Result.Error $"IL backend does not support invoking function-valued binding '{targetModule}.{bindingInfo.Binding.Name}' yet."
             | None ->
                 Result.Error $"IL backend could not resolve name '{nameText}'."
 
-    let rec private emitExpression (state: EmissionState) currentModule (il: ILGenerator) expression =
-        let inferExpressionType currentModule expression =
+    let rec private emitExpression (state: EmissionState) currentModule localTypes (il: ILGenerator) expression =
+        let inferExpressionType currentModule localTypes expression =
             let moduleInfo = state.Environment.Modules[currentModule]
 
             let rec infer expression =
@@ -322,24 +509,19 @@ module IlDotNetBackend =
                 | KBackendLiteral LiteralValue.Unit -> Result.Error "IL backend does not emit Unit values yet."
                 | KBackendName [ "True" ]
                 | KBackendName [ "False" ] -> Result.Ok IlBool
+                | KBackendName [ name ] when localTypes |> Map.containsKey name ->
+                    Result.Ok(localTypes[name] |> snd)
                 | KBackendName [ bindingName ] ->
                     match moduleInfo.Bindings |> Map.tryFind bindingName with
-                    | Some bindingInfo -> Result.Ok bindingInfo.ReturnType
+                    | Some bindingInfo when List.isEmpty bindingInfo.ParameterTypes -> Result.Ok bindingInfo.ReturnType
+                    | Some _ -> Result.Error $"IL backend does not support function-valued name '{bindingName}' yet."
                     | None -> Result.Error $"IL backend could not resolve name '{bindingName}'."
                 | KBackendName segments ->
-                    let targetModuleName =
-                        segments
-                        |> List.take (segments.Length - 1)
-                        |> String.concat "."
-
-                    let bindingName = List.last segments
                     let nameText = String.concat "." segments
 
-                    match state.Environment.Modules |> Map.tryFind targetModuleName with
-                    | Some targetModule ->
-                        match targetModule.Bindings |> Map.tryFind bindingName with
-                        | Some bindingInfo -> Result.Ok bindingInfo.ReturnType
-                        | None -> Result.Error $"IL backend could not resolve name '{nameText}'."
+                    match tryResolveBindingInfo state.Environment currentModule segments with
+                    | Some (_, bindingInfo) when List.isEmpty bindingInfo.ParameterTypes -> Result.Ok bindingInfo.ReturnType
+                    | Some _ -> Result.Error $"IL backend does not support function-valued name '{nameText}' yet."
                     | None -> Result.Error $"IL backend could not resolve name '{nameText}'."
                 | KBackendUnary("-", operand) ->
                     infer operand
@@ -385,8 +567,33 @@ module IlDotNetBackend =
 
                         return trueType
                     }
+                | KBackendApply(KBackendName segments, arguments) ->
+                    let nameText = String.concat "." segments
+
+                    match tryResolveBindingInfo state.Environment currentModule segments with
+                    | Some (_, bindingInfo) ->
+                        if List.length bindingInfo.ParameterTypes <> List.length arguments then
+                            Result.Error
+                                $"IL backend expected '{nameText}' to receive {List.length bindingInfo.ParameterTypes} argument(s), but received {List.length arguments}."
+                        else
+                            List.zip arguments bindingInfo.ParameterTypes
+                            |> List.fold
+                                (fun stateResult (argument, (_, expectedType)) ->
+                                    stateResult
+                                    |> Result.bind (fun () ->
+                                        infer argument
+                                        |> Result.bind (fun actualType ->
+                                            if actualType = expectedType then
+                                                Result.Ok()
+                                            else
+                                                Result.Error
+                                                    $"IL backend expected argument for '{nameText}' to have type {expectedType}, but found {actualType}.")))
+                                (Result.Ok())
+                            |> Result.map (fun () -> bindingInfo.ReturnType)
+                    | None ->
+                        Result.Error $"IL backend could not resolve callee '{nameText}'."
                 | KBackendApply _ ->
-                    Result.Error "IL backend does not support application yet."
+                    Result.Error "IL backend currently supports application only when the callee is a named binding."
                 | KBackendClosure _ ->
                     Result.Error "IL backend does not support closures yet."
                 | KBackendMatch _ ->
@@ -400,11 +607,11 @@ module IlDotNetBackend =
         | KBackendLiteral literal ->
             emitLiteral il literal
         | KBackendName segments ->
-            emitName state currentModule il segments
+            emitName state currentModule localTypes il segments
         | KBackendUnary("-", operand) ->
             result {
-                let! operandType = inferExpressionType currentModule operand
-                do! emitExpression state currentModule il operand
+                let! operandType = inferExpressionType currentModule localTypes operand
+                do! emitExpression state currentModule localTypes il operand
                 match operandType with
                 | IlInt64
                 | IlFloat64 ->
@@ -417,10 +624,10 @@ module IlDotNetBackend =
             Result.Error $"IL backend does not support unary operator '{operatorName}' yet."
         | KBackendBinary(left, operatorName, right) ->
             result {
-                let! leftType = inferExpressionType currentModule left
-                let! rightType = inferExpressionType currentModule right
-                do! emitExpression state currentModule il left
-                do! emitExpression state currentModule il right
+                let! leftType = inferExpressionType currentModule localTypes left
+                let! rightType = inferExpressionType currentModule localTypes right
+                do! emitExpression state currentModule localTypes il left
+                do! emitExpression state currentModule localTypes il right
 
                 match operatorName, leftType, rightType with
                 | "+", IlInt64, IlInt64
@@ -471,24 +678,51 @@ module IlDotNetBackend =
             }
         | KBackendIfThenElse(condition, whenTrue, whenFalse) ->
             result {
-                let! conditionType = inferExpressionType currentModule condition
+                let! conditionType = inferExpressionType currentModule localTypes condition
 
                 if conditionType <> IlBool then
                     return! Result.Error "IL backend requires Bool conditions for if expressions."
 
-                do! emitExpression state currentModule il condition
+                do! emitExpression state currentModule localTypes il condition
                 let falseLabel = il.DefineLabel()
                 let endLabel = il.DefineLabel()
 
                 il.Emit(OpCodes.Brfalse, falseLabel)
-                do! emitExpression state currentModule il whenTrue
+                do! emitExpression state currentModule localTypes il whenTrue
                 il.Emit(OpCodes.Br, endLabel)
                 il.MarkLabel(falseLabel)
-                do! emitExpression state currentModule il whenFalse
+                do! emitExpression state currentModule localTypes il whenFalse
                 il.MarkLabel(endLabel)
             }
+        | KBackendApply(KBackendName segments, arguments) ->
+            let nameText = String.concat "." segments
+
+            match tryResolveBindingInfo state.Environment currentModule segments with
+            | Some (targetModule, bindingInfo) ->
+                if List.length bindingInfo.ParameterTypes <> List.length arguments then
+                    Result.Error
+                        $"IL backend expected '{nameText}' to receive {List.length bindingInfo.ParameterTypes} argument(s), but received {List.length arguments}."
+                else
+                    List.zip arguments bindingInfo.ParameterTypes
+                    |> List.fold
+                        (fun stateResult (argument, (_, expectedType)) ->
+                            stateResult
+                            |> Result.bind (fun () ->
+                                inferExpressionType currentModule localTypes argument
+                                |> Result.bind (fun actualType ->
+                                    if actualType <> expectedType then
+                                        Result.Error
+                                            $"IL backend expected argument for '{nameText}' to have type {expectedType}, but found {actualType}."
+                                    else
+                                        emitExpression state currentModule localTypes il argument)))
+                        (Result.Ok())
+                    |> Result.map (fun () ->
+                        let targetMethod = state.MethodBuilders[targetModule][bindingInfo.Binding.Name]
+                        il.Emit(OpCodes.Call, targetMethod))
+            | None ->
+                Result.Error $"IL backend could not resolve callee '{nameText}'."
         | KBackendApply _ ->
-            Result.Error "IL backend does not support application yet."
+            Result.Error "IL backend currently supports application only when the callee is a named binding."
         | KBackendClosure _ ->
             Result.Error "IL backend does not support closures yet."
         | KBackendMatch _ ->
@@ -502,6 +736,10 @@ module IlDotNetBackend =
                 state.MethodBuilders[moduleInfo.Name][bindingInfo.Binding.Name]
 
             let il = methodBuilder.GetILGenerator()
+            let localTypes =
+                bindingInfo.ParameterTypes
+                |> List.mapi (fun index (name, parameterType) -> name, (index, parameterType))
+                |> Map.ofList
 
             match bindingInfo.Binding.Body with
             | None ->
@@ -512,9 +750,9 @@ module IlDotNetBackend =
                     let falseLabel = il.DefineLabel()
                     let endLabel = il.DefineLabel()
 
-                    do! emitExpression state moduleInfo.Name il left
+                    do! emitExpression state moduleInfo.Name localTypes il left
                     il.Emit(OpCodes.Brfalse, falseLabel)
-                    do! emitExpression state moduleInfo.Name il right
+                    do! emitExpression state moduleInfo.Name localTypes il right
                     il.Emit(OpCodes.Br, endLabel)
                     il.MarkLabel(falseLabel)
                     il.Emit(OpCodes.Ldc_I4_0)
@@ -524,16 +762,16 @@ module IlDotNetBackend =
                     let trueLabel = il.DefineLabel()
                     let endLabel = il.DefineLabel()
 
-                    do! emitExpression state moduleInfo.Name il left
+                    do! emitExpression state moduleInfo.Name localTypes il left
                     il.Emit(OpCodes.Brtrue, trueLabel)
-                    do! emitExpression state moduleInfo.Name il right
+                    do! emitExpression state moduleInfo.Name localTypes il right
                     il.Emit(OpCodes.Br, endLabel)
                     il.MarkLabel(trueLabel)
                     il.Emit(OpCodes.Ldc_I4_1)
                     il.MarkLabel(endLabel)
                     il.Emit(OpCodes.Ret)
                 | _ ->
-                    do! emitExpression state moduleInfo.Name il body
+                    do! emitExpression state moduleInfo.Name localTypes il body
                     il.Emit(OpCodes.Ret)
         }
 
@@ -583,13 +821,23 @@ module IlDotNetBackend =
                                     moduleInfo.Bindings
                                     |> Map.toList
                                     |> List.map (fun (bindingName, bindingInfo) ->
+                                        let parameterTypes =
+                                            bindingInfo.ParameterTypes
+                                            |> List.map (snd >> runtimeType)
+                                            |> List.toArray
+
                                         let methodBuilder =
                                             typeBuilders[moduleName].DefineMethod(
                                                 bindingInfo.EmittedMethodName,
                                                 MethodAttributes.Public ||| MethodAttributes.Static ||| MethodAttributes.HideBySig,
                                                 runtimeType bindingInfo.ReturnType,
-                                                Type.EmptyTypes
+                                                parameterTypes
                                             )
+
+                                        bindingInfo.ParameterTypes
+                                        |> List.iteri (fun index (parameterName, _) ->
+                                            methodBuilder.DefineParameter(index + 1, ParameterAttributes.None, parameterName)
+                                            |> ignore)
 
                                         bindingName, methodBuilder)
                                     |> Map.ofList

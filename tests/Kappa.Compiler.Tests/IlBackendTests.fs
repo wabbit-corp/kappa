@@ -45,6 +45,44 @@ let ``il backend emits a loadable assembly with public static module methods`` (
     Assert.Equal(42L, resultMethod.Invoke(null, [||]) |> unbox<int64>)
 
 [<Fact>]
+let ``il backend emits parameterized public static methods from explicit signatures`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-il-parameterized-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "twice : Int -> Int"
+                    "let twice x = x * 2"
+                    "let result = twice 21"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "il-parameterized"
+
+    let artifact =
+        match Backend.emitIlAssemblyArtifact workspace outputDirectory with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    use loaded = loadManagedAssembly artifact.AssemblyFilePath
+
+    let moduleType = loaded.Assembly.GetType("Kappa.Generated.main", throwOnError = true, ignoreCase = false)
+    let twiceMethod = moduleType.GetMethod("twice", BindingFlags.Public ||| BindingFlags.Static)
+    let resultMethod = moduleType.GetMethod("result", BindingFlags.Public ||| BindingFlags.Static)
+    let parameters = twiceMethod.GetParameters()
+
+    Assert.NotNull(twiceMethod)
+    Assert.NotNull(resultMethod)
+    Assert.Equal(typeof<int64>, twiceMethod.ReturnType)
+    let _ = Assert.Single(parameters)
+    Assert.Equal(typeof<int64>, parameters[0].ParameterType)
+    Assert.Equal(42L, twiceMethod.Invoke(null, [| box 21L |]) |> unbox<int64>)
+    Assert.Equal(42L, resultMethod.Invoke(null, [||]) |> unbox<int64>)
+
+[<Fact>]
 let ``il backend emits executable conditional logic as IL`` () =
     let workspace =
         compileInMemoryWorkspace
@@ -111,4 +149,44 @@ let ``il backend supports qualified cross module calls for zero argument binding
     Assert.NotNull(mathAnswer)
     Assert.NotNull(resultMethod)
     Assert.Equal(41L, mathAnswer.Invoke(null, [||]) |> unbox<int64>)
+    Assert.Equal(42L, resultMethod.Invoke(null, [||]) |> unbox<int64>)
+
+[<Fact>]
+let ``il backend supports qualified cross module calls into parameterized bindings`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-il-qualified-parameterized-root"
+            [
+                "math.kp",
+                [
+                    "module math"
+                    "twice : Int -> Int"
+                    "let twice value = value * 2"
+                ]
+                |> String.concat "\n"
+                "main.kp",
+                [
+                    "module main"
+                    "let result = math.twice 21"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "il-qualified-parameterized"
+
+    let artifact =
+        match Backend.emitIlAssemblyArtifact workspace outputDirectory with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    use loaded = loadManagedAssembly artifact.AssemblyFilePath
+
+    let mainType = loaded.Assembly.GetType("Kappa.Generated.main", throwOnError = true, ignoreCase = false)
+    let mathType = loaded.Assembly.GetType("Kappa.Generated.math", throwOnError = true, ignoreCase = false)
+    let twiceMethod = mathType.GetMethod("twice", BindingFlags.Public ||| BindingFlags.Static)
+    let resultMethod = mainType.GetMethod("result", BindingFlags.Public ||| BindingFlags.Static)
+
+    Assert.NotNull(twiceMethod)
+    Assert.NotNull(resultMethod)
+    Assert.Equal(42L, twiceMethod.Invoke(null, [| box 21L |]) |> unbox<int64>)
     Assert.Equal(42L, resultMethod.Invoke(null, [||]) |> unbox<int64>)

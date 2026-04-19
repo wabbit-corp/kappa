@@ -114,8 +114,10 @@ let ``cli can run the managed dotnet il backend for zero argument bindings`` () 
             "main.kp",
             [
                 "module main"
+                "twice : Int -> Int"
+                "let twice value = value * 2"
                 "let answer = 40"
-                "let result = answer + 2"
+                "let result = twice answer + 2"
             ]
             |> String.concat "\n"
         ]
@@ -134,7 +136,7 @@ let ``cli can run the managed dotnet il backend for zero argument bindings`` () 
             $"run --project \"{cliProjectPath}\" -v q -- --source-root \"{workspaceRoot}\" --backend dotnet-il --emit-dir \"{emitDirectory}\" --run main.result"
 
     Assert.Equal(0, runResult.ExitCode)
-    Assert.Equal("42", runResult.StandardOutput.Trim())
+    Assert.Equal("82", runResult.StandardOutput.Trim())
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
