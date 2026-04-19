@@ -9514,3 +9514,409 @@ block into maximal independent groups elaborated with `liftA2` / `<*>`, and then
 
 This is an as-if optimization: the resulting program MUST remain observationally equivalent to the monadic desugaring of
 §8.2 / §8.7.
+
+## Appendix T. Standard test harness
+
+### T.1 Scope and status
+
+This appendix defines the **standard Kappa test harness**.
+
+The standard harness is a portable specification for compiler and language tests.
+It covers:
+
+* source-embedded assertions;
+* multi-file compilation suites;
+* backend- and mode-selected tests;
+* stage-dump and pipeline-trace assertions; and
+* incremental multi-step test suites.
+
+An implementation that claims support for the standard Kappa test harness MUST accept the syntax and satisfy the
+behavior specified in this appendix.
+
+Implementations MAY support additional nonstandard directives.
+Such directives are outside the portable subset.
+
+This appendix does **not** define a standard `xfail`, `todo`, or similar expected-failure escape hatch.
+
+### T.2 Test forms
+
+The standard harness supports three test forms:
+
+1. **Single-file inline test**
+   A `.kp` source file containing one or more test directives.
+
+2. **Directory suite**
+   A directory containing one or more `.kp` source files and optionally a file named `suite.ktest`.
+
+3. **Incremental step suite**
+   A directory containing subdirectories named `step0`, `step1`, `step2`, and so on, each of which is itself a
+   complete suite root.
+   The incremental suite MAY additionally contain a file named `incremental.ktest` for cross-step assertions.
+
+In a single-file inline test, the compilation root is that file.
+
+In a directory suite, the compilation roots are all `.kp` files under the suite root, recursively, interpreted relative
+to that suite root as the source root for module-path derivation.
+
+In an incremental step suite, each step directory is compiled as a complete suite root in numeric order, and the
+harness preserves any compiler caches or reusable session state permitted by Chapter 17 across those steps.
+
+### T.3 Directive syntax
+
+A **test directive line** is a line comment whose first non-whitespace characters are `--!`.
+
+Grammar:
+
+```text
+testDirectiveLine ::= ws? '--!' ws? testDirective
+testDirective     ::= directiveName [ws directiveBody]?
+directiveName     ::= ident | extensionDirectiveName
+extensionDirectiveName ::= 'x-' ident ('.' ident)*
+directiveBody     ::= <the remainder of the line, excluding the line break>
+```
+
+Rules:
+
+* Test directives are recognized only in line comments of the form `--!`.
+* Block comments do not introduce test directives.
+* Test directives are consumed by the harness before or alongside normal compilation.
+  They remain comments for the language itself and do not affect ordinary source semantics.
+* In a `.kp` source file, a directive applies to the suite containing that file.
+  Directives that are file-relative, such as `assertDeclKinds`, apply to the containing file.
+* In `suite.ktest` or `incremental.ktest`, each line MUST be a directive line, a blank line, or a comment-only line
+  beginning with `--`.
+* Directive names beginning with `x-` are implementation-defined extensions and are outside the portable subset.
+  A portable harness that does not support such a directive MUST report the test as unsupported rather than silently
+  ignoring it.
+* Any unknown standard directive, malformed directive, or ill-typed directive argument is a harness error.
+
+All directive files and golden files are UTF-8.
+
+### T.4 Configuration directives
+
+Configuration directives set up the current test case.
+
+Supported standard configuration directives are:
+
+```text
+mode analyze
+mode check
+mode compile
+mode run
+
+packageMode
+scriptMode
+
+backend <profile>
+
+entry <qualifiedName>
+
+dumpFormat json
+dumpFormat sexpr
+
+requires backend <profile>
+requires mode package
+requires mode script
+requires capability <name>
+```
+
+Rules:
+
+* If no `mode` is specified, the default is `check`.
+* If neither `packageMode` nor `scriptMode` is specified, the default is `packageMode`.
+* `backend <profile>` selects the backend profile for `compile` and `run` tests.
+* Portable tests using `mode compile` or `mode run` SHOULD specify `backend <profile>`.
+* `entry <qualifiedName>` is valid only for `mode run`.
+  It names the program entrypoint to execute.
+* If no `dumpFormat` is specified, the default is `json`.
+* `requires ...` directives are preconditions.
+  If any required condition is not met, the test result is **unsupported**, not failed.
+
+Portable capability names are:
+
+* `stageDumps`
+* `pipelineTrace`
+* `incremental`
+* `runTask`
+
+Additional capability names are implementation-defined.
+
+If the selected `mode`, backend profile, or requirements are mutually inconsistent, the test is ill-formed.
+
+### T.5 Assertion directives
+
+Unless otherwise stated, assertions are evaluated after the selected test mode has completed.
+
+A test fails if any standard assertion is unsatisfied.
+
+#### T.5.1 Diagnostic assertions
+
+Supported directives:
+
+```text
+assertNoErrors
+assertNoWarnings
+assertErrorCount <n>
+assertWarningCount <n>
+assertDiagnostic <severity> <code>
+assertDiagnosticAt <path> <severity> <code> <line> <column>
+```
+
+where `severity` is one of:
+
+```text
+error
+warning
+note
+info
+```
+
+Rules:
+
+* `assertNoErrors` succeeds iff the test produces no diagnostics of severity `error`.
+* `assertNoWarnings` succeeds iff the test produces no diagnostics of severity `warning`.
+* `assertErrorCount n` succeeds iff exactly `n` diagnostics of severity `error` are produced.
+* `assertWarningCount n` succeeds iff exactly `n` diagnostics of severity `warning` are produced.
+* `assertDiagnostic severity code` succeeds iff at least one diagnostic with that severity and diagnostic code is
+  produced.
+* `assertDiagnosticAt path severity code line column` additionally requires the primary origin of the matching
+  diagnostic to start at the given 1-based line and 1-based column in the file `path`, where `path` is relative to the
+  suite root.
+
+Diagnostic assertions are matched by severity and diagnostic code, not by the full human-readable message text.
+
+#### T.5.2 Type and declaration-shape assertions
+
+Supported directives:
+
+```text
+assertType <name> <typeExpr>
+assertDeclKinds <kindList>
+assertFileDeclKinds <path> <kindList>
+```
+
+where `kindList` is a comma-separated list of declaration kinds drawn from:
+
+```text
+import
+export
+fixity
+signature
+let
+data
+type
+trait
+instance
+derive
+effect
+pattern
+expect
+```
+
+Rules for `assertType`:
+
+* `<name>` is resolved by ordinary name resolution in the test suite.
+* If `<name>` is ambiguous, the assertion is ill-formed unless the name is sufficiently qualified to resolve uniquely.
+* `<typeExpr>` is parsed as a type expression in the ordinary type grammar.
+* The assertion succeeds iff the resolved declaration has a type and that type is definitionally equal to the parsed
+  expected type.
+
+Rules for `assertDeclKinds`:
+
+* `assertDeclKinds` applies to the containing `.kp` file.
+* It compares the sequence of top-level items in that file, in source order, after any optional module header and module
+  attributes.
+* Comments, blank lines, and test directives are ignored.
+
+Rules for `assertFileDeclKinds`:
+
+* It is the directory-suite form of `assertDeclKinds`.
+* `<path>` is relative to the suite root.
+
+In both declaration-kind assertions:
+
+* a separate signature and a following `let` definition count as two items;
+* the optional module header does not count as a declaration kind;
+* imports, exports, and fixity declarations do count when present.
+
+#### T.5.3 Stage-dump assertions
+
+Supported directives:
+
+```text
+assertStageDump <checkpoint> equals <path>
+```
+
+Rules:
+
+* `<checkpoint>` must name a valid compiler checkpoint under Chapter 17.
+* The harness requests a stage dump for that checkpoint in the selected `dumpFormat`.
+* `<path>` is relative to the suite root and names the expected golden file.
+* If `dumpFormat json` is selected, the expected file MUST contain JSON.
+* If `dumpFormat sexpr` is selected, the expected file MUST contain an S-expression serialization.
+
+Comparison semantics:
+
+* JSON dumps are compared after parsing and canonicalization.
+  Object-key order is ignored.
+* S-expression dumps are compared after parsing and canonicalization.
+* Implementations MUST NOT compare stage dumps as raw bytes alone for the purpose of this assertion.
+
+#### T.5.4 Run assertions
+
+Supported directives:
+
+```text
+assertStdoutFile <path>
+assertStderrFile <path>
+assertExitCode <n>
+```
+
+Rules:
+
+* These directives are valid only for `mode run`.
+* `<path>` is relative to the suite root.
+* The expected files are UTF-8 text files.
+* Comparison normalizes line endings to LF before comparison.
+* `assertExitCode n` compares the process or task exit code observed by the harness.
+
+#### T.5.5 Trace assertions
+
+Supported directives:
+
+```text
+assertTraceCount <event> <subject> <relop> <n>
+```
+
+where `relop` is one of:
+
+```text
+=  !=  <  <=  >  >=
+```
+
+Portable `event` names are:
+
+```text
+parse
+buildKFrontIR
+advancePhase
+emitInterface
+lowerKCore
+evaluateElaboration
+lowerKBackendIR
+lowerTarget
+reuse
+verify
+```
+
+Portable `subject` names are:
+
+```text
+file
+declaration
+module
+interface
+KCoreUnit
+KBackendIRUnit
+targetUnit
+```
+
+Rules:
+
+* This assertion is evaluated against the pipeline trace of the current test execution.
+* It counts trace steps whose event and subject classifications match the given pair.
+* The assertion succeeds iff the resulting count satisfies the specified relation.
+
+### T.6 Suite-level behavior
+
+Within a directory suite:
+
+* configuration directives in `suite.ktest` apply to the whole suite;
+* file-relative assertions written inline in a `.kp` file apply to that file;
+* suite-wide assertions such as `assertType`, `assertStageDump`, and diagnostic assertions may appear inline or in
+  `suite.ktest`.
+
+If the same configuration key is specified more than once with different values, the suite is ill-formed.
+
+### T.7 Incremental step suites
+
+An incremental step suite is a directory with subdirectories named `step0`, `step1`, `step2`, and so on.
+
+Rules:
+
+* Step numbering MUST begin at `step0` and be contiguous.
+* Each step directory is a complete suite root and may contain its own `.kp` files and optional `suite.ktest`.
+* The harness executes steps in numeric order.
+* Between steps, the harness preserves any caches, query results, module interfaces, KCore units, KBackendIR units, and
+  target-lowering units that the compiler may legally reuse under Chapter 17.
+* Assertions inside a step apply only to that step.
+
+Cross-step assertions MAY appear in `incremental.ktest` using:
+
+```text
+assertStepNoErrors <step>
+assertStepErrorCount <step> <n>
+assertStepWarningCount <step> <n>
+assertStepTraceCount <step> <event> <subject> <relop> <n>
+```
+
+Rules:
+
+* `<step>` is a non-negative integer naming a step index.
+* `assertStepTraceCount` is evaluated against the pipeline trace produced for that step.
+* The intended use of step-trace assertions is to test incremental reuse and invalidation behavior, for example reuse of
+  interfaces, KCore units, KBackendIR units, and target-lowering units.
+
+Each step is interpreted as a complete source snapshot, not as a textual patch.
+
+### T.8 Result classification
+
+A standard harness reports one of the following outcomes for each test:
+
+* `pass`
+* `fail`
+* `unsupported`
+* `harnessError`
+
+Rules:
+
+* `pass` means all standard assertions succeeded.
+* `fail` means at least one standard assertion failed.
+* `unsupported` means one or more `requires ...` preconditions were not satisfied, or the test used only extension
+  directives unsupported by this harness.
+* `harnessError` means the test itself was malformed, for example because of an unknown standard directive, invalid
+  directive syntax, or an unreadable required golden file.
+
+### T.9 Determinism
+
+For fixed source inputs, suite structure, build configuration, backend profile, and implementation version, the standard
+harness result MUST be deterministic.
+
+In particular:
+
+* assertion outcomes;
+* canonical stage-dump comparisons;
+* diagnostic-code matching; and
+* trace-count assertions
+
+MUST NOT depend on worker count, scheduling order, hash-table iteration order, or platform-specific line-ending
+conventions.
+
+### T.10 Example
+
+The following is a valid inline test:
+
+```kappa
+module main
+
+choose : Bool -> Int -> Int -> Int
+let choose flag left right = if flag then left else right
+
+message : String
+let message = "hello"
+
+--! assertNoErrors
+--! assertType choose Bool -> Int -> Int -> Int
+--! assertType message String
+--! assertDeclKinds signature, let, signature, let
+```
