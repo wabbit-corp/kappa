@@ -1140,6 +1140,14 @@ module IlDotNetBackend =
                                 inferConstructorTypeFromArguments inferExpressionType currentModule localTypes active expectedType arguments constructorInfo
                             | None ->
                                 Result.Error $"IL backend could not resolve callee '{nameText}'."
+                | KRuntimeExecute _
+                | KRuntimeLet _
+                | KRuntimeSequence _
+                | KRuntimeWhile _ ->
+                    Result.Error "IL backend does not support effectful control expressions yet."
+                | KRuntimeDictionaryValue _
+                | KRuntimeTraitCall _ ->
+                    Result.Error "IL backend does not support trait dictionaries yet."
                 | KRuntimeApply _ ->
                     Result.Error "IL backend currently supports application only when the callee is a named binding."
                 | KRuntimeClosure _ ->
@@ -1502,6 +1510,14 @@ module IlDotNetBackend =
                                     constructorInfo
                             | None ->
                                 Result.Error $"IL backend could not resolve callee '{nameText}'."
+                | KRuntimeExecute _
+                | KRuntimeLet _
+                | KRuntimeSequence _
+                | KRuntimeWhile _ ->
+                    Result.Error "IL backend does not support effectful control expressions yet."
+                | KRuntimeDictionaryValue _
+                | KRuntimeTraitCall _ ->
+                    Result.Error "IL backend does not support trait dictionaries yet."
                 | KRuntimeApply _ ->
                     Result.Error "IL backend currently supports application only when the callee is a named binding."
                 | KRuntimeClosure _ ->
@@ -1863,6 +1879,14 @@ module IlDotNetBackend =
                         emitConstructorApplication constructorInfo arguments expectedType
                     | None ->
                         Result.Error $"IL backend could not resolve callee '{nameText}'."
+        | KRuntimeExecute _
+        | KRuntimeLet _
+        | KRuntimeSequence _
+        | KRuntimeWhile _ ->
+            Result.Error "IL backend does not support effectful control expressions yet."
+        | KRuntimeDictionaryValue _
+        | KRuntimeTraitCall _ ->
+            Result.Error "IL backend does not support trait dictionaries yet."
         | KRuntimeApply _ ->
             Result.Error "IL backend currently supports application only when the callee is a named binding."
         | KRuntimeClosure _ ->

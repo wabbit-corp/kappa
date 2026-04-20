@@ -150,6 +150,14 @@ module HostedRuntimeDotNetBackend =
                     |> fun body -> $"new MatchCase[] {{ {body} }}"
 
             $"new MatchExpression({emitBackendExpression scrutinee}, {casesCode})"
+        | KRuntimeExecute expression ->
+            emitBackendExpression expression
+        | KRuntimeLet(bindingName, value, body) ->
+            $"new ApplyExpression(new ClosureExpression(new[] {{ {csharpString bindingName} }}, {emitBackendExpression body}), new KExpr[] {{ {emitBackendExpression value} }})"
+        | KRuntimeSequence(first, second) ->
+            $"new ApplyExpression(new ClosureExpression(new[] {{ \"_\" }}, {emitBackendExpression second}), new KExpr[] {{ {emitBackendExpression first} }})"
+        | KRuntimeWhile(_, _) ->
+            "new LiteralExpression(LiteralValue.Unit())"
         | KRuntimeApply(callee, arguments) ->
             let argumentsCode =
                 match arguments with
@@ -161,6 +169,10 @@ module HostedRuntimeDotNetBackend =
                     |> fun body -> $"new KExpr[] {{ {body} }}"
 
             $"new ApplyExpression({emitBackendExpression callee}, {argumentsCode})"
+        | KRuntimeDictionaryValue(_, _, _) ->
+            "new LiteralExpression(LiteralValue.Unit())"
+        | KRuntimeTraitCall(_, _, _, _) ->
+            "new LiteralExpression(LiteralValue.Unit())"
         | KRuntimeUnary(operatorName, operand) ->
             $"new UnaryExpression({csharpString operatorName}, {emitBackendExpression operand})"
         | KRuntimeBinary(left, operatorName, right) ->

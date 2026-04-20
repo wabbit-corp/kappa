@@ -182,7 +182,13 @@ type KCoreExpression =
     | KCoreLambda of KCoreParameter list * KCoreExpression
     | KCoreIfThenElse of KCoreExpression * KCoreExpression * KCoreExpression
     | KCoreMatch of KCoreExpression * KCoreMatchCase list
+    | KCoreExecute of KCoreExpression
+    | KCoreLet of bindingName: string * value: KCoreExpression * body: KCoreExpression
+    | KCoreSequence of KCoreExpression * KCoreExpression
+    | KCoreWhile of condition: KCoreExpression * body: KCoreExpression
     | KCoreApply of KCoreExpression * KCoreExpression list
+    | KCoreDictionaryValue of moduleName: string * traitName: string * instanceKey: string
+    | KCoreTraitCall of traitName: string * memberName: string * dictionary: KCoreExpression * arguments: KCoreExpression list
     | KCoreUnary of operatorName: string * KCoreExpression
     | KCoreBinary of KCoreExpression * operatorName: string * KCoreExpression
     | KCorePrefixedString of prefix: string * parts: KCoreStringPart list
@@ -230,7 +236,13 @@ type KRuntimeExpression =
     | KRuntimeClosure of string list * KRuntimeExpression
     | KRuntimeIfThenElse of KRuntimeExpression * KRuntimeExpression * KRuntimeExpression
     | KRuntimeMatch of KRuntimeExpression * KRuntimeMatchCase list
+    | KRuntimeExecute of KRuntimeExpression
+    | KRuntimeLet of bindingName: string * value: KRuntimeExpression * body: KRuntimeExpression
+    | KRuntimeSequence of KRuntimeExpression * KRuntimeExpression
+    | KRuntimeWhile of condition: KRuntimeExpression * body: KRuntimeExpression
     | KRuntimeApply of KRuntimeExpression * KRuntimeExpression list
+    | KRuntimeDictionaryValue of moduleName: string * traitName: string * instanceKey: string
+    | KRuntimeTraitCall of traitName: string * memberName: string * dictionary: KRuntimeExpression * arguments: KRuntimeExpression list
     | KRuntimeUnary of operatorName: string * KRuntimeExpression
     | KRuntimeBinary of KRuntimeExpression * operatorName: string * KRuntimeExpression
     | KRuntimePrefixedString of prefix: string * parts: KRuntimeStringPart list
@@ -278,6 +290,8 @@ type KBackendRepresentationClass =
     | BackendRepString
     | BackendRepChar
     | BackendRepUnit
+    | BackendRepRef of elementRepresentation: KBackendRepresentationClass
+    | BackendRepDictionary of traitName: string
     | BackendRepTaggedData of moduleName: string * typeName: string
     | BackendRepClosure of environmentLayout: string
     | BackendRepIOAction
@@ -328,10 +342,36 @@ type KBackendExpression =
         scrutinee: KBackendExpression *
         cases: KBackendMatchCase list *
         resultRepresentation: KBackendRepresentationClass
+    | BackendExecute of
+        expression: KBackendExpression *
+        resultRepresentation: KBackendRepresentationClass
+    | BackendLet of
+        binding: KBackendParameter *
+        value: KBackendExpression *
+        body: KBackendExpression *
+        resultRepresentation: KBackendRepresentationClass
+    | BackendSequence of
+        first: KBackendExpression *
+        second: KBackendExpression *
+        resultRepresentation: KBackendRepresentationClass
+    | BackendWhile of
+        condition: KBackendExpression *
+        body: KBackendExpression
     | BackendCall of
         callee: KBackendExpression *
         arguments: KBackendExpression list *
         convention: KBackendCallingConvention *
+        resultRepresentation: KBackendRepresentationClass
+    | BackendDictionaryValue of
+        moduleName: string *
+        traitName: string *
+        instanceKey: string *
+        representation: KBackendRepresentationClass
+    | BackendTraitCall of
+        traitName: string *
+        memberName: string *
+        dictionary: KBackendExpression *
+        arguments: KBackendExpression list *
         resultRepresentation: KBackendRepresentationClass
     | BackendConstructData of
         moduleName: string *

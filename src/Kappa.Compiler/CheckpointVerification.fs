@@ -133,8 +133,21 @@ module CheckpointVerification =
                            verifyRuntimePattern checkpoint bindingLabel caseClause.Pattern
 
                        patternDiagnostics @ verify (Set.union locals caseLocals) caseClause.Body))
+            | KRuntimeExecute expression ->
+                verify locals expression
+            | KRuntimeLet(bindingName, value, body) ->
+                verify locals value @ verify (Set.add bindingName locals) body
+            | KRuntimeSequence(first, second) ->
+                verify locals first @ verify locals second
+            | KRuntimeWhile(condition, body) ->
+                verify locals condition @ verify locals body
             | KRuntimeApply(callee, arguments) ->
                 verify locals callee
+                @ (arguments |> List.collect (verify locals))
+            | KRuntimeDictionaryValue _ ->
+                []
+            | KRuntimeTraitCall(_, _, dictionary, arguments) ->
+                verify locals dictionary
                 @ (arguments |> List.collect (verify locals))
             | KRuntimeUnary(_, operand) ->
                 verify locals operand
@@ -385,6 +398,17 @@ module CheckpointVerification =
                            verifyKBackendPattern moduleMap "KBackendIR" bindingLabel caseClause.Pattern
 
                        patternDiagnostics @ verifyBackendExpression currentModule bindingLabel caseClause.Body))
+            | BackendExecute(expression, _) ->
+                verifyBackendExpression currentModule bindingLabel expression
+            | BackendLet(_, value, body, _) ->
+                verifyBackendExpression currentModule bindingLabel value
+                @ verifyBackendExpression currentModule bindingLabel body
+            | BackendSequence(first, second, _) ->
+                verifyBackendExpression currentModule bindingLabel first
+                @ verifyBackendExpression currentModule bindingLabel second
+            | BackendWhile(condition, body) ->
+                verifyBackendExpression currentModule bindingLabel condition
+                @ verifyBackendExpression currentModule bindingLabel body
             | BackendCall(callee, arguments, convention, _) ->
                 let conventionDiagnostics =
                     [
@@ -397,6 +421,11 @@ module CheckpointVerification =
 
                 conventionDiagnostics
                 @ verifyBackendExpression currentModule bindingLabel callee
+                @ (arguments |> List.collect (verifyBackendExpression currentModule bindingLabel))
+            | BackendDictionaryValue(_, _, _, _) ->
+                []
+            | BackendTraitCall(_, _, dictionary, arguments, _) ->
+                verifyBackendExpression currentModule bindingLabel dictionary
                 @ (arguments |> List.collect (verifyBackendExpression currentModule bindingLabel))
             | BackendConstructData(moduleName, typeName, constructorName, tag, fields, _) ->
                 let constructorDiagnostics =

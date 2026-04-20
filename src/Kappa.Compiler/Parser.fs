@@ -163,6 +163,7 @@ type private TokenParser(tokens: Token list, source: SourceText) =
         | Keyword Keyword.Data
         | Keyword Keyword.Type
         | Keyword Keyword.Trait
+        | Keyword Keyword.Instance
         | Keyword Keyword.Infix
         | Keyword Keyword.Prefix
         | Keyword Keyword.Postfix
@@ -654,6 +655,105 @@ type private TokenParser(tokens: Token list, source: SourceText) =
               HeaderTokens = List.ofSeq headerTokens
               Members = members }
 
+    member private this.ParseInstanceMember(lineTokens: Token list) =
+        match lineTokens with
+        | letToken :: rest when Token.isKeyword Keyword.Let letToken ->
+            let memberTokens = ResizeArray<Token>(rest)
+            let headerTokens = ResizeArray<Token>()
+
+            let mutable position = 0
+
+            let current () =
+                if position < memberTokens.Count then
+                    memberTokens[position]
+                else
+                    { Kind = EndOfFile
+                      Text = ""
+                      Span = letToken.Span }
+
+            let advance () =
+                let token = current ()
+
+                if position < memberTokens.Count then
+                    position <- position + 1
+
+                token
+
+            let tryConsume kind =
+                if (current ()).Kind = kind then
+                    Some(advance ())
+                else
+                    None
+
+            let tryConsumeTermBindingName () =
+                let token = current ()
+
+                if Token.isName token then
+                    advance () |> ignore
+                    Some(SyntaxFacts.trimIdentifierQuotes token.Text)
+                elif token.Kind = LeftParen && position + 2 < memberTokens.Count && memberTokens[position + 1].Kind = Operator && memberTokens[position + 2].Kind = RightParen then
+                    advance () |> ignore
+                    let operatorToken = advance ()
+                    advance () |> ignore
+                    Some operatorToken.Text
+                else
+                    None
+
+            let name = tryConsumeTermBindingName ()
+
+            while (current ()).Kind <> Equals
+                   && (current ()).Kind <> Newline
+                   && (current ()).Kind <> EndOfFile do
+                headerTokens.Add(advance ())
+
+            let bodyTokens =
+                if tryConsume Equals |> Option.isSome then
+                    [ while (current ()).Kind <> EndOfFile do
+                          yield advance () ]
+                else
+                    diagnostics.AddError("Expected '=' in the instance member declaration.", source.GetLocation((current ()).Span))
+                    []
+
+            let parsedHeader = CoreParsing.parseLetHeader source diagnostics (List.ofSeq headerTokens)
+            let parsedBody = CoreParsing.parseExpression fixities source diagnostics bodyTokens
+
+            Some
+                { Visibility = None
+                  IsOpaque = false
+                  Name = name
+                  Parameters = parsedHeader.Parameters
+                  HeaderTokens = List.ofSeq headerTokens
+                  ReturnTypeTokens = parsedHeader.ReturnTypeTokens
+                  BodyTokens = bodyTokens
+                  Body = parsedBody }
+        | _ ->
+            diagnostics.AddError("Expected an instance member definition starting with 'let'.", source.GetLocation(this.Current.Span))
+            None
+
+    member private this.ParseInstanceDeclaration() =
+        this.ExpectKeyword(Keyword.Instance, "Expected 'instance'.") |> ignore
+        let traitName = this.ConsumeName("Expected a trait name in the instance head.")
+
+        let headerTokens = ResizeArray<Token>()
+
+        while (this.Current.Kind <> Equals
+               && this.Current.Kind <> Newline
+               && this.Current.Kind <> EndOfFile) do
+            headerTokens.Add(this.Advance())
+
+        let members =
+            if this.TryConsume(Equals).IsSome then
+                this.ParseIndentedLines()
+                |> List.choose this.ParseInstanceMember
+            else
+                diagnostics.AddError("Expected '=' in the instance declaration.", source.GetLocation(this.Current.Span))
+                []
+
+        InstanceDeclarationNode
+            { TraitName = traitName
+              HeaderTokens = List.ofSeq headerTokens
+              Members = members }
+
     member private this.ParseImportOrExport(isExport: bool) =
         let keyword = if isExport then Keyword.Export else Keyword.Import
         this.ExpectKeyword(keyword, $"Expected '{Keyword.toText keyword}'.") |> ignore
@@ -683,6 +783,11 @@ type private TokenParser(tokens: Token list, source: SourceText) =
         | Keyword Keyword.Data -> this.ParseDataDeclaration(modifiers)
         | Keyword Keyword.Type -> this.ParseTypeAlias(modifiers)
         | Keyword Keyword.Trait -> this.ParseTraitDeclaration(modifiers)
+        | Keyword Keyword.Instance ->
+            if modifiers.Visibility.IsSome || modifiers.IsOpaque then
+                diagnostics.AddError("Visibility and opacity modifiers do not apply to instance declarations.", source.GetLocation(this.Current.Span))
+
+            this.ParseInstanceDeclaration()
         | _ when this.IsSignatureStart() -> this.ParseSignature(modifiers)
         | _ -> this.ParseUnknownDeclaration()
 

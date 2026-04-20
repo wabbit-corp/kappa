@@ -41,7 +41,7 @@ let private executeWithCapturedOutput workspace entryPoint =
 
     result, builder.ToString().Replace("\r\n", "\n").TrimEnd([| '\r'; '\n' |])
 
-[<Fact(Skip = "M2 end-to-end backend execution is still under construction.")>]
+[<Fact>]
 let ``interpreter executes the milestone two trait and ref program`` () =
     let workspace =
         compileInMemoryWorkspace
@@ -61,7 +61,7 @@ let ``interpreter executes the milestone two trait and ref program`` () =
     | Result.Error issue ->
         failwith issue.Message
 
-[<Fact(Skip = "M2 end-to-end backend execution is still under construction.")>]
+[<Fact>]
 let ``zig backend runs the milestone two trait and ref program`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend

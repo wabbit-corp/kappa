@@ -88,6 +88,7 @@ module Stdlib =
                 "Functor"
                 "Applicative"
                 "Monad"
+                "MonadRef"
                 "Foldable"
                 "Traversable"
                 "FromInteger"
@@ -97,7 +98,26 @@ module Stdlib =
             ]
 
     let private intrinsicTermNames =
-        Set.ofList [ "pure"; ">>="; ">>"; "True"; "False"; "not"; "and"; "or"; "negate"; "println"; "print"; "printInt" ]
+        Set.ofList
+            [
+                "pure"
+                ">>="
+                ">>"
+                "True"
+                "False"
+                "not"
+                "and"
+                "or"
+                "negate"
+                "println"
+                "print"
+                "printInt"
+                "printString"
+                "primitiveIntToString"
+                "newRef"
+                "readRef"
+                "writeRef"
+            ]
 
     let private runtimeOnlyIntrinsicTermNames =
         Set.ofList [ "+"; "-"; "*"; "/"; "&&"; "||"; "=="; "!="; "<"; "<="; ">"; ">=" ]

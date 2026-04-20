@@ -34,6 +34,7 @@ expect trait Show a
 expect trait Functor f
 expect trait Applicative f
 expect trait Monad m
+expect trait MonadRef m
 expect trait Foldable f
 expect trait Traversable f
 expect trait FromInteger a
@@ -53,6 +54,11 @@ expect term negate : a -> a
 expect term println : String -> IO Unit
 expect term print : String -> IO Unit
 expect term printInt : Int -> IO Unit
+expect term printString : String -> IO Unit
+expect term primitiveIntToString : Int -> String
+expect term newRef : a -> IO (Ref a)
+expect term readRef : Ref a -> IO a
+expect term writeRef : Ref a -> a -> IO Unit
 
 infix 50 (==)
 infix 50 (!=)

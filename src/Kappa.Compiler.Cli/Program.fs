@@ -160,6 +160,7 @@ let private declarationLabel declaration =
     | DataDeclarationNode _ -> "data"
     | TypeAliasNode _ -> "type"
     | TraitDeclarationNode _ -> "trait"
+    | InstanceDeclarationNode _ -> "instance"
     | UnknownDeclaration _ -> "unknown"
 
 let private printDocumentSummary (document: ParsedDocument) =
@@ -211,6 +212,8 @@ let private printAst (document: ParsedDocument) =
             printfn "  type %s" declaration.Name
         | TraitDeclarationNode declaration ->
             printfn "  trait %s (%d member line(s))" declaration.Name declaration.Members.Length
+        | InstanceDeclarationNode declaration ->
+            printfn "  instance %s (%d member line(s))" declaration.TraitName declaration.Members.Length
         | UnknownDeclaration tokens ->
             printfn "  unknown (%d token(s))" tokens.Length
 

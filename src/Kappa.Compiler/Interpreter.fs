@@ -27,6 +27,8 @@ type RuntimeValue =
     | IOActionValue of (unit -> Result<RuntimeValue, EvaluationError>)
     | FunctionValue of RuntimeClosure
     | BuiltinFunctionValue of BuiltinFunction
+    | RefCellValue of RuntimeRefCell
+    | DictionaryValue of RuntimeDictionary
 and RuntimeConstructor =
     { Name: string
       QualifiedName: string
@@ -42,6 +44,12 @@ and RuntimeClosure =
 and BuiltinFunction =
     { Name: string
       Arguments: RuntimeValue list }
+and RuntimeRefCell =
+    { mutable Value: RuntimeValue }
+and RuntimeDictionary =
+    { ModuleName: string
+      TraitName: string
+      InstanceKey: string }
 and RuntimeScope =
     { Locals: Map<string, RuntimeValue>
       CurrentModule: string
@@ -81,6 +89,8 @@ module RuntimeValue =
         | IOActionValue _ -> "<io>"
         | FunctionValue _ -> "<function>"
         | BuiltinFunctionValue builtin -> $"<builtin {builtin.Name}>"
+        | RefCellValue _ -> "<ref>"
+        | DictionaryValue dictionary -> $"<dict {dictionary.ModuleName}.{dictionary.TraitName} {dictionary.InstanceKey}>"
 
 module Interpreter =
     let private error message =
@@ -154,7 +164,12 @@ module Interpreter =
                 | "negate"
                 | "println"
                 | "print"
-                | "printInt" ->
+                | "printInt"
+                | "printString"
+                | "primitiveIntToString"
+                | "newRef"
+                | "readRef"
+                | "writeRef" ->
                     Some(BuiltinFunctionValue { Name = name; Arguments = [] })
                 | _ ->
                     None
@@ -260,7 +275,9 @@ module Interpreter =
             | ConstructorFunctionValue _
             | IOActionValue _
             | FunctionValue _
-            | BuiltinFunctionValue _ ->
+            | BuiltinFunctionValue _
+            | RefCellValue _
+            | DictionaryValue _ ->
                 error $"Cannot interpolate {RuntimeValue.format value} into an f-string."
 
         let rec evaluateExpression (scope: RuntimeScope) (expression: KRuntimeExpression) : Result<RuntimeValue, EvaluationError> =
@@ -287,6 +304,37 @@ module Interpreter =
             | KRuntimeMatch (scrutinee, cases) ->
                 evaluateExpression scope scrutinee
                 |> Result.bind (fun value -> evaluateMatch scope value cases)
+            | KRuntimeExecute inner ->
+                evaluateExpression scope inner
+                |> Result.bind (function
+                    | IOActionValue action ->
+                        action ()
+                    | value ->
+                        ok value)
+            | KRuntimeLet (bindingName, valueExpression, bodyExpression) ->
+                evaluateExpression scope valueExpression
+                |> Result.bind (fun value ->
+                    let nextScope =
+                        { scope with
+                            Locals = scope.Locals.Add(bindingName, value) }
+
+                    evaluateExpression nextScope bodyExpression)
+            | KRuntimeSequence (firstExpression, secondExpression) ->
+                evaluateExpression scope firstExpression
+                |> Result.bind (fun _ -> evaluateExpression scope secondExpression)
+            | KRuntimeWhile (conditionExpression, bodyExpression) ->
+                let rec loop () =
+                    evaluateExpression scope conditionExpression
+                    |> Result.bind (function
+                        | BooleanValue true ->
+                            evaluateExpression scope bodyExpression
+                            |> Result.bind (fun _ -> loop ())
+                        | BooleanValue false ->
+                            ok UnitValue
+                        | value ->
+                            error $"Expected a Boolean in the while condition, but got {RuntimeValue.format value}.")
+
+                loop ()
             | KRuntimeApply (callee, arguments) ->
                 evaluateExpression scope callee
                 |> Result.bind (fun functionValue ->
@@ -300,6 +348,41 @@ module Interpreter =
                             | _, Result.Error issue -> Result.Error issue)
                         (Result.Ok [])
                     |> Result.bind (fun values -> apply functionValue (List.rev values)))
+            | KRuntimeDictionaryValue (moduleName, traitName, instanceKey) ->
+                ok
+                    (DictionaryValue
+                        { ModuleName = moduleName
+                          TraitName = traitName
+                          InstanceKey = instanceKey })
+            | KRuntimeTraitCall (traitName, memberName, dictionaryExpression, arguments) ->
+                evaluateExpression scope dictionaryExpression
+                |> Result.bind (fun dictionaryValue ->
+                    arguments
+                    |> List.map (evaluateExpression scope)
+                    |> List.fold
+                        (fun state next ->
+                            match state, next with
+                            | Result.Ok values, Result.Ok value -> Result.Ok(value :: values)
+                            | Result.Error issue, _ -> Result.Error issue
+                            | _, Result.Error issue -> Result.Error issue)
+                        (Result.Ok [])
+                    |> Result.bind (fun values ->
+                        match dictionaryValue with
+                        | DictionaryValue dictionary ->
+                            let bindingName =
+                                TraitRuntime.instanceMemberBindingName
+                                    traitName
+                                    dictionary.InstanceKey
+                                    memberName
+
+                            match Map.tryFind dictionary.ModuleName scope.Context.Modules with
+                            | Some runtimeModule ->
+                                forceBinding runtimeModule bindingName
+                                |> Result.bind (fun memberFunction -> apply memberFunction (List.rev values))
+                            | None ->
+                                error $"Dictionary module '{dictionary.ModuleName}' is not present in the runtime context."
+                        | other ->
+                            error $"Expected a dictionary value for trait call '{traitName}.{memberName}', but got {RuntimeValue.format other}."))
             | KRuntimeUnary (operatorName, expression) ->
                 evaluateExpression scope expression
                 |> Result.bind (fun operand ->
@@ -607,6 +690,49 @@ module Interpreter =
                 error $"Intrinsic 'printInt' expects an Int, but got {RuntimeValue.format value}."
             | "printInt", _ ->
                 error "Intrinsic 'printInt' received too many arguments."
+            | "printString", [ StringValue value ] ->
+                toUnitIoAction (fun () -> output.Write(value))
+            | "printString", arguments when List.length arguments < 1 ->
+                ok None
+            | "printString", [ value ] ->
+                error $"Intrinsic 'printString' expects a String, but got {RuntimeValue.format value}."
+            | "printString", _ ->
+                error "Intrinsic 'printString' received too many arguments."
+            | "primitiveIntToString", [ IntegerValue value ] ->
+                ok (Some(StringValue(string value)))
+            | "primitiveIntToString", arguments when List.length arguments < 1 ->
+                ok None
+            | "primitiveIntToString", [ value ] ->
+                error $"Intrinsic 'primitiveIntToString' expects an Int, but got {RuntimeValue.format value}."
+            | "primitiveIntToString", _ ->
+                error "Intrinsic 'primitiveIntToString' received too many arguments."
+            | "newRef", [ value ] ->
+                ok (Some(IOActionValue(fun () -> ok (RefCellValue { Value = value }))))
+            | "newRef", arguments when List.length arguments < 1 ->
+                ok None
+            | "newRef", _ ->
+                error "Intrinsic 'newRef' received too many arguments."
+            | "readRef", [ RefCellValue cell ] ->
+                ok (Some(IOActionValue(fun () -> ok cell.Value)))
+            | "readRef", arguments when List.length arguments < 1 ->
+                ok None
+            | "readRef", [ value ] ->
+                error $"Intrinsic 'readRef' expects a Ref, but got {RuntimeValue.format value}."
+            | "readRef", _ ->
+                error "Intrinsic 'readRef' received too many arguments."
+            | "writeRef", [ RefCellValue cell; value ] ->
+                ok
+                    (Some(
+                        IOActionValue(fun () ->
+                            cell.Value <- value
+                            ok UnitValue)
+                    ))
+            | "writeRef", arguments when List.length arguments < 2 ->
+                ok None
+            | "writeRef", [ referenceValue; _ ] ->
+                error $"Intrinsic 'writeRef' expects a Ref as the first argument, but got {RuntimeValue.format referenceValue}."
+            | "writeRef", _ ->
+                error "Intrinsic 'writeRef' received too many arguments."
             | name, [ left; right ] when builtinBinaryNames.Contains(name) ->
                 applyBuiltinBinary name left right
                 |> Result.map Some

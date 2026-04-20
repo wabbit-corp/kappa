@@ -536,6 +536,10 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
 
             while not (this.Current.Kind = Dedent && nestedIndents = 0) && this.Current.Kind <> EndOfFile do
                 match this.Current.Kind with
+                | Newline when nestedIndents = 0 && this.Peek(1).Kind = Indent ->
+                    currentLine.Add(this.Advance())
+                    nestedIndents <- nestedIndents + 1
+                    currentLine.Add(this.Advance())
                 | Newline when nestedIndents = 0 ->
                     flushLine ()
                     this.Advance() |> ignore
@@ -636,7 +640,86 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
         Match(scrutinee, List.ofSeq cases)
 
     member private this.ParseDoLine(lineTokens: Token list) =
+        let parseDoBlockTokens (tokens: Token list) =
+            let lines = ResizeArray<Token list>()
+            let tokenArray = List.toArray tokens
+            let mutable position = 0
+
+            let current () =
+                if position < tokenArray.Length then
+                    tokenArray[position]
+                else
+                    { Kind = EndOfFile
+                      Text = ""
+                      Span = if Array.isEmpty tokenArray then TextSpan.FromBounds(source.Length, source.Length) else tokenArray[tokenArray.Length - 1].Span }
+
+            let advance () =
+                let token = current ()
+
+                if position < tokenArray.Length then
+                    position <- position + 1
+
+                token
+
+            let flushLine (currentLine: ResizeArray<Token>) =
+                if currentLine.Count > 0 then
+                    lines.Add(List.ofSeq currentLine)
+                    currentLine.Clear()
+
+            if position < tokenArray.Length && (current ()).Kind = Newline && position + 1 < tokenArray.Length && tokenArray[position + 1].Kind = Indent then
+                advance () |> ignore
+                advance () |> ignore
+
+                let currentLine = ResizeArray<Token>()
+                let mutable nestedIndents = 0
+
+                while not ((current ()).Kind = Dedent && nestedIndents = 0) && (current ()).Kind <> EndOfFile do
+                    match (current ()).Kind with
+                    | Newline when nestedIndents = 0 && position + 1 < tokenArray.Length && tokenArray[position + 1].Kind = Indent ->
+                        currentLine.Add(advance ())
+                        nestedIndents <- nestedIndents + 1
+                        currentLine.Add(advance ())
+                    | Newline when nestedIndents = 0 ->
+                        flushLine currentLine
+                        advance () |> ignore
+                    | Indent ->
+                        nestedIndents <- nestedIndents + 1
+                        currentLine.Add(advance ())
+                    | Dedent when nestedIndents > 0 ->
+                        nestedIndents <- nestedIndents - 1
+                        currentLine.Add(advance ())
+                    | _ ->
+                        currentLine.Add(advance ())
+
+                flushLine currentLine
+
+                if (current ()).Kind = Dedent then
+                    advance () |> ignore
+                else
+                    diagnostics.AddError("Expected the while body to dedent.", source.GetLocation((current ()).Span))
+            else
+                let inlineTokens =
+                    tokens
+                    |> List.filter (fun token ->
+                        match token.Kind with
+                        | Newline
+                        | Indent
+                        | Dedent -> false
+                        | _ -> true)
+
+                if not (List.isEmpty inlineTokens) then
+                    lines.Add(inlineTokens)
+
+            lines
+            |> Seq.toList
+            |> List.filter (List.isEmpty >> not)
+            |> List.map this.ParseDoLine
+
         match lineTokens with
+        | varToken :: nameToken :: equalsToken :: rest
+            when Token.isKeyword Keyword.Var varToken && Token.isName nameToken && equalsToken.Kind = Equals ->
+            let name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
+            DoVar(name, this.ParseStandaloneExpression(rest))
         | letToken :: nameToken :: rest when Token.isKeyword Keyword.Let letToken && Token.isName nameToken ->
             let mutable splitIndex = -1
             let tokenArray = List.toArray rest
@@ -655,6 +738,36 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
                 let name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
                 let expressionTokens = List.ofArray tokenArray[splitIndex + 1 ..]
                 DoLet(name, this.ParseStandaloneExpression(expressionTokens))
+        | whileToken :: rest when Token.isKeyword Keyword.While whileToken ->
+            let tokenArray = List.toArray rest
+            let mutable splitIndex = -1
+            let mutable depth = 0
+            let mutable index = 0
+
+            while index < tokenArray.Length && splitIndex = -1 do
+                match tokenArray[index].Kind with
+                | LeftParen -> depth <- depth + 1
+                | RightParen -> depth <- max 0 (depth - 1)
+                | Keyword Keyword.Do when depth = 0 -> splitIndex <- index
+                | _ -> ()
+
+                index <- index + 1
+
+            if splitIndex < 0 then
+                diagnostics.AddError("Expected 'do' in the while statement.", source.GetLocation(whileToken.Span))
+                DoExpression(Literal LiteralValue.Unit)
+            else
+                let conditionTokens = tokenArray[0 .. splitIndex - 1] |> Array.toList
+                let bodyTokens =
+                    if splitIndex + 1 < tokenArray.Length then
+                        tokenArray[splitIndex + 1 ..] |> Array.toList
+                    else
+                        []
+
+                DoWhile(this.ParseStandaloneExpression(conditionTokens), parseDoBlockTokens bodyTokens)
+        | nameToken :: equalsToken :: rest when Token.isName nameToken && equalsToken.Kind = Equals ->
+            let name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
+            DoAssign(name, this.ParseStandaloneExpression(rest))
         | nameToken :: operatorToken :: rest when Token.isName nameToken && operatorToken.Kind = Operator && operatorToken.Text = "<-" ->
             let name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
             DoBind(name, this.ParseStandaloneExpression(rest))
@@ -669,12 +782,11 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
             |> List.filter (List.isEmpty >> not)
             |> List.map this.ParseDoLine
 
-        match List.tryLast statements with
-        | Some(DoExpression _) -> ()
-        | Some _ ->
-            diagnostics.AddError("A do block must end with an expression.", source.GetLocation(this.Current.Span))
-        | None ->
+        match statements with
+        | [] ->
             diagnostics.AddError("A do block must contain at least one statement.", source.GetLocation(this.Current.Span))
+        | _ ->
+            ()
 
         Do statements
 
@@ -791,13 +903,19 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
 
         match this.Current.Kind with
         | Operator ->
-            match FixityTable.tryFindPrefix this.Current.Text fixities with
-            | Some precedence ->
-                let operatorToken = this.Advance()
-                let expression = this.ParseExpression(precedence)
-                Unary(operatorToken.Text, expression)
-            | None ->
-                this.ParsePrimaryExpression()
+            if this.Current.Text = "!" then
+                this.Advance() |> ignore
+                // Splice should bind tightly to the next atomic/application form without
+                // swallowing surrounding infix operators in the enclosing expression.
+                MonadicSplice(this.ParseApplicationExpression())
+            else
+                match FixityTable.tryFindPrefix this.Current.Text fixities with
+                | Some precedence ->
+                    let operatorToken = this.Advance()
+                    let expression = this.ParseExpression(precedence)
+                    Unary(operatorToken.Text, expression)
+                | None ->
+                    this.ParsePrimaryExpression()
         | _ ->
             this.ParsePrimaryExpression()
 

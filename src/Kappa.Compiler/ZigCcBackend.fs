@@ -98,6 +98,9 @@ module ZigCcBackend =
     let private typeIdName moduleName typeName =
         $"KTYPE_{sanitizeIdentifier moduleName}_{sanitizeIdentifier typeName}"
 
+    let private traitDispatchFunctionName traitName memberName =
+        $"kappa_trait_dispatch_{sanitizeIdentifier traitName}_{sanitizeIdentifier memberName}"
+
     let private freshTemp (context: GenerationContext) prefix =
         let value = context.NextTempId
         context.NextTempId <- context.NextTempId + 1
@@ -251,8 +254,20 @@ module ZigCcBackend =
             emitIfExpression context scope condition whenTrue whenFalse
         | BackendMatch(scrutinee, cases, _) ->
             emitMatchExpression context scope scrutinee cases
+        | BackendExecute(expression, _) ->
+            emitExecuteExpression context scope expression
+        | BackendLet(binding, value, body, _) ->
+            emitLetExpression context scope binding value body
+        | BackendSequence(first, second, _) ->
+            emitSequenceExpression context scope first second
+        | BackendWhile(condition, body) ->
+            emitWhileExpression context scope condition body
         | BackendCall(callee, arguments, _, _) ->
             emitCallExpression context scope callee arguments
+        | BackendDictionaryValue(moduleName, traitName, instanceKey, _) ->
+            emitDictionaryValueExpression context moduleName traitName instanceKey
+        | BackendTraitCall(traitName, memberName, dictionary, arguments, _) ->
+            emitTraitDispatchExpression context scope traitName memberName dictionary arguments
         | BackendConstructData(moduleName, typeName, _, tag, fields, _) ->
             emitConstructDataExpression context scope moduleName typeName tag fields
         | BackendPrefixedString(prefix, _, _) ->
@@ -449,6 +464,134 @@ module ZigCcBackend =
                   ValueExpression = resultValue }
         }
 
+    and private emitExecuteExpression (context: GenerationContext) (scope: EmitScope) expression =
+        result {
+            let! emittedExpression = emitExpression context scope expression
+            let resultValue = freshTemp context "execute"
+
+            return
+                { Statements =
+                    emittedExpression.Statements
+                    @ [ $"KValue* {resultValue} = {emittedExpression.ValueExpression};" ]
+                  ValueExpression = resultValue }
+        }
+
+    and private emitLetExpression
+        (context: GenerationContext)
+        (scope: EmitScope)
+        (binding: KBackendParameter)
+        (value: KBackendExpression)
+        (body: KBackendExpression)
+        =
+        result {
+            let! emittedValue = emitExpression context scope value
+            let localName = freshTemp context binding.Name
+
+            let bodyScope =
+                { scope with
+                    Bindings = scope.Bindings.Add(binding.Name, localName) }
+
+            let! emittedBody = emitExpression context bodyScope body
+
+            return
+                { Statements =
+                    emittedValue.Statements
+                    @ [ $"KValue* {localName} = {emittedValue.ValueExpression};" ]
+                    @ emittedBody.Statements
+                  ValueExpression = emittedBody.ValueExpression }
+        }
+
+    and private emitSequenceExpression (context: GenerationContext) (scope: EmitScope) first second =
+        result {
+            let! emittedFirst = emitExpression context scope first
+            let! emittedSecond = emitExpression context scope second
+            let ignoredValue = freshTemp context "seq"
+
+            return
+                { Statements =
+                    emittedFirst.Statements
+                    @ [ $"KValue* {ignoredValue} = {emittedFirst.ValueExpression};" ]
+                    @ emittedSecond.Statements
+                  ValueExpression = emittedSecond.ValueExpression }
+        }
+
+    and private emitWhileExpression (context: GenerationContext) (scope: EmitScope) condition body =
+        result {
+            let conditionLabel = freshTemp context "while_cond"
+            let exitLabel = freshTemp context "while_exit"
+            let resultValue = freshTemp context "while_result"
+            let! emittedCondition = emitExpression context scope condition
+            let! emittedBody = emitExpression context scope body
+            let bodyValue = freshTemp context "while_body"
+            let conditionValue = freshTemp context "while_condition"
+
+            return
+                { Statements =
+                    [ $"KValue* {resultValue} = kappa_unit();"
+                      $"{conditionLabel}:;" ]
+                    @ emittedCondition.Statements
+                    @ [ $"KValue* {conditionValue} = {emittedCondition.ValueExpression};"
+                        $"if (!kappa_expect_bool({conditionValue})) goto {exitLabel};" ]
+                    @ emittedBody.Statements
+                    @ [ $"KValue* {bodyValue} = {emittedBody.ValueExpression};"
+                        $"(void){bodyValue};"
+                        $"goto {conditionLabel};"
+                        $"{exitLabel}:;" ]
+                  ValueExpression = resultValue }
+        }
+
+    and private emitDictionaryValueExpression
+        (context: GenerationContext)
+        (moduleName: string)
+        (traitName: string)
+        (instanceKey: string)
+        =
+        let statements, resultValue =
+            wrapCallResult
+                context
+                "dictionary"
+                $"kappa_make_dictionary(\"{cStringLiteral moduleName}\", \"{cStringLiteral traitName}\", \"{cStringLiteral instanceKey}\")"
+
+        Result.Ok
+            { Statements = statements
+              ValueExpression = resultValue }
+
+    and private emitTraitDispatchExpression
+        (context: GenerationContext)
+        (scope: EmitScope)
+        (traitName: string)
+        (memberName: string)
+        (dictionary: KBackendExpression)
+        (arguments: KBackendExpression list)
+        =
+        result {
+            let! emittedDictionary = emitExpression context scope dictionary
+            let! emittedArguments = emitExpressions context scope arguments
+
+            let argumentStatements =
+                emittedArguments |> List.collect (fun emitted -> emitted.Statements)
+
+            let argumentValues =
+                emittedArguments |> List.map (fun emitted -> emitted.ValueExpression)
+
+            let argumentArrayStatements, argumentArray =
+                buildArgumentArray context argumentValues
+
+            let statements, resultValue =
+                wrapCallResult
+                    context
+                    "trait_dispatch"
+                    $"{traitDispatchFunctionName traitName memberName}({emittedDictionary.ValueExpression}, {argumentArray}, {argumentValues.Length})"
+
+            return
+                { Statements =
+                    emittedDictionary.Statements
+                    @ argumentStatements
+                    @ argumentArrayStatements
+                    @ statements
+                  ValueExpression = resultValue }
+        }
+
     and private emitConstructDataExpression (context: GenerationContext) (scope: EmitScope) moduleName typeName tag fields =
         result {
             let! emittedFields = emitExpressions context scope fields
@@ -626,6 +769,17 @@ module ZigCcBackend =
                           ValueExpression = resultValue }
                 | _ ->
                     return! Result.Error "zig intrinsic 'printInt' expected exactly 1 argument."
+            | "printString" ->
+                match argumentValues with
+                | [ value ] ->
+                    let statements, resultValue =
+                        wrapCallResult context "print_string" $"kappa_builtin_print_string({value})"
+
+                    return
+                        { Statements = argumentStatements @ statements
+                          ValueExpression = resultValue }
+                | _ ->
+                    return! Result.Error "zig intrinsic 'printString' expected exactly 1 argument."
             | "print" ->
                 match argumentValues with
                 | [ value ] ->
@@ -648,6 +802,50 @@ module ZigCcBackend =
                           ValueExpression = resultValue }
                 | _ ->
                     return! Result.Error "zig intrinsic 'println' expected exactly 1 argument."
+            | "primitiveIntToString" ->
+                match argumentValues with
+                | [ value ] ->
+                    let statements, resultValue =
+                        wrapCallResult context "int_to_string" $"kappa_int_to_string({value})"
+
+                    return
+                        { Statements = argumentStatements @ statements
+                          ValueExpression = resultValue }
+                | _ ->
+                    return! Result.Error "zig intrinsic 'primitiveIntToString' expected exactly 1 argument."
+            | "newRef" ->
+                match argumentValues with
+                | [ value ] ->
+                    let statements, resultValue =
+                        wrapCallResult context "new_ref" $"kappa_make_ref({value})"
+
+                    return
+                        { Statements = argumentStatements @ statements
+                          ValueExpression = resultValue }
+                | _ ->
+                    return! Result.Error "zig intrinsic 'newRef' expected exactly 1 argument."
+            | "readRef" ->
+                match argumentValues with
+                | [ value ] ->
+                    let statements, resultValue =
+                        wrapCallResult context "read_ref" $"kappa_ref_read({value})"
+
+                    return
+                        { Statements = argumentStatements @ statements
+                          ValueExpression = resultValue }
+                | _ ->
+                    return! Result.Error "zig intrinsic 'readRef' expected exactly 1 argument."
+            | "writeRef" ->
+                match argumentValues with
+                | [ referenceValue; value ] ->
+                    let statements, resultValue =
+                        wrapCallResult context "write_ref" $"kappa_ref_write({referenceValue}, {value})"
+
+                    return
+                        { Statements = argumentStatements @ statements
+                          ValueExpression = resultValue }
+                | _ ->
+                    return! Result.Error "zig intrinsic 'writeRef' expected exactly 2 arguments."
             | other ->
                 return! Result.Error $"zig does not yet support intrinsic '{other}'."
         }
@@ -845,6 +1043,71 @@ module ZigCcBackend =
                   Definition = joinLines definitionLines }
         }
 
+    let private emitTraitDispatchFunctions (context: GenerationContext) =
+        let dispatchEntries =
+            context.Workspace.Documents
+            |> List.collect (fun document ->
+                match document.ModuleName with
+                | None ->
+                    []
+                | Some moduleSegments ->
+                    let moduleName = SyntaxFacts.moduleNameToText moduleSegments
+
+                    document.Syntax.Declarations
+                    |> List.choose (function
+                        | InstanceDeclarationNode declaration ->
+                            Some(moduleName, declaration)
+                        | _ ->
+                            None)
+                    |> List.collect (fun (instanceModuleName, declaration) ->
+                        let instanceKey = TraitRuntime.instanceKeyFromTokens declaration.HeaderTokens
+
+                        declaration.Members
+                        |> List.choose (fun memberDeclaration ->
+                            memberDeclaration.Name
+                            |> Option.bind (fun memberName ->
+                                let hiddenBindingName =
+                                    TraitRuntime.instanceMemberBindingName declaration.TraitName instanceKey memberName
+
+                                lookupFunctionName context instanceModuleName hiddenBindingName
+                                |> Option.map (fun emittedFunctionName ->
+                                    declaration.TraitName, memberName, instanceModuleName, instanceKey, emittedFunctionName)))))
+
+        dispatchEntries
+        |> List.groupBy (fun (traitName, memberName, _, _, _) -> traitName, memberName)
+        |> List.collect (fun ((traitName, memberName), entries) ->
+            let functionName = traitDispatchFunctionName traitName memberName
+            let missingDictionaryMessage =
+                cStringLiteral $"missing dictionary value for trait dispatch {traitName}.{memberName}"
+
+            let missingInstanceMessage =
+                cStringLiteral $"no instance available for trait dispatch {traitName}.{memberName}"
+
+            [
+                $"static KValue* {functionName}(KValue* dictionary, KValue** args, int argc)"
+                "{"
+                "    if (dictionary == NULL || dictionary->tag != K_TAG_DICTIONARY)"
+                "    {"
+                $"        kappa_panic(\"{missingDictionaryMessage}\");"
+                "    }"
+                ""
+                yield!
+                    entries
+                    |> List.collect (fun (_, _, instanceModuleName, instanceKey, emittedFunctionName) ->
+                        [
+                            $"    if (strcmp(dictionary->as.dictionary_value.module_name, \"{cStringLiteral instanceModuleName}\") == 0"
+                            $"        && strcmp(dictionary->as.dictionary_value.instance_key, \"{cStringLiteral instanceKey}\") == 0)"
+                            "    {"
+                            $"        return {emittedFunctionName}(NULL, args, argc);"
+                            "    }"
+                            ""
+                        ])
+                $"    kappa_panic(\"{missingInstanceMessage}\");"
+                "    return kappa_unit();"
+                "}"
+                ""
+            ])
+
     let private emitRuntimePrelude (context: GenerationContext) =
         let preludeBoolTypeId = typeIdName Stdlib.PreludeModuleText "Bool"
 
@@ -879,7 +1142,9 @@ module ZigCcBackend =
                 "    K_TAG_CHAR = 5,"
                 "    K_TAG_UNIT = 6,"
                 "    K_TAG_DATA = 7,"
-                "    K_TAG_CLOSURE = 8"
+                "    K_TAG_CLOSURE = 8,"
+                "    K_TAG_REF = 9,"
+                "    K_TAG_DICTIONARY = 10"
                 "} KValueTag;"
                 ""
                 "typedef struct KDataValue"
@@ -898,6 +1163,18 @@ module ZigCcBackend =
                 "    const char* debug_name;"
                 "} KClosureValue;"
                 ""
+                "typedef struct KRefValue"
+                "{"
+                "    KValue* value;"
+                "} KRefValue;"
+                ""
+                "typedef struct KDictionaryValue"
+                "{"
+                "    const char* module_name;"
+                "    const char* trait_name;"
+                "    const char* instance_key;"
+                "} KDictionaryValue;"
+                ""
                 "struct KValue"
                 "{"
                 "    KValueTag tag;"
@@ -910,6 +1187,8 @@ module ZigCcBackend =
                 "        int32_t char_value;"
                 "        KDataValue data_value;"
                 "        KClosureValue closure_value;"
+                "        KRefValue ref_value;"
+                "        KDictionaryValue dictionary_value;"
                 "    } as;"
                 "};"
                 ""
@@ -967,6 +1246,14 @@ module ZigCcBackend =
                 "    KValue* boxed = kappa_alloc_value(K_TAG_STRING);"
                 "    boxed->as.string_value = value;"
                 "    return boxed;"
+                "}"
+                ""
+                "static char* kappa_duplicate_string(const char* value)"
+                "{"
+                "    size_t length = strlen(value);"
+                "    char* copy = (char*)kappa_alloc(length + 1);"
+                "    memcpy(copy, value, length + 1);"
+                "    return copy;"
                 "}"
                 ""
                 "static KValue* kappa_box_char(int32_t value)"
@@ -1105,6 +1392,43 @@ module ZigCcBackend =
                 "    value->as.closure_value.env = env;"
                 "    value->as.closure_value.arity = arity;"
                 "    value->as.closure_value.debug_name = debug_name;"
+                "    return value;"
+                "}"
+                ""
+                "static KValue* kappa_make_ref(KValue* initial)"
+                "{"
+                "    KValue* value = kappa_alloc_value(K_TAG_REF);"
+                "    value->as.ref_value.value = initial;"
+                "    return value;"
+                "}"
+                ""
+                "static KValue* kappa_ref_read(KValue* reference)"
+                "{"
+                "    if (reference == NULL || reference->tag != K_TAG_REF)"
+                "    {"
+                "        kappa_panic(\"expected Ref value\");"
+                "    }"
+                ""
+                "    return reference->as.ref_value.value;"
+                "}"
+                ""
+                "static KValue* kappa_ref_write(KValue* reference, KValue* value)"
+                "{"
+                "    if (reference == NULL || reference->tag != K_TAG_REF)"
+                "    {"
+                "        kappa_panic(\"expected Ref value\");"
+                "    }"
+                ""
+                "    reference->as.ref_value.value = value;"
+                "    return kappa_unit();"
+                "}"
+                ""
+                "static KValue* kappa_make_dictionary(const char* module_name, const char* trait_name, const char* instance_key)"
+                "{"
+                "    KValue* value = kappa_alloc_value(K_TAG_DICTIONARY);"
+                "    value->as.dictionary_value.module_name = module_name;"
+                "    value->as.dictionary_value.trait_name = trait_name;"
+                "    value->as.dictionary_value.instance_key = instance_key;"
                 "    return value;"
                 "}"
                 ""
@@ -1260,6 +1584,12 @@ module ZigCcBackend =
                 "        case K_TAG_CLOSURE:"
                 "            printf(\"<closure:%s>\", value->as.closure_value.debug_name);"
                 "            return;"
+                "        case K_TAG_REF:"
+                "            fputs(\"<ref>\", stdout);"
+                "            return;"
+                "        case K_TAG_DICTIONARY:"
+                "            printf(\"<dict:%s:%s:%s>\", value->as.dictionary_value.module_name, value->as.dictionary_value.trait_name, value->as.dictionary_value.instance_key);"
+                "            return;"
                 "        default:"
                 "            fputs(\"<unknown>\", stdout);"
                 "            return;"
@@ -1280,6 +1610,32 @@ module ZigCcBackend =
                 "{"
                 "    printf(\"%lld\\n\", (long long)kappa_expect_int(value));"
                 "    return kappa_unit();"
+                "}"
+                ""
+                "static KValue* kappa_builtin_print_string(KValue* value)"
+                "{"
+                "    if (value == NULL || value->tag != K_TAG_STRING)"
+                "    {"
+                "        kappa_panic(\"expected String value\");"
+                "    }"
+                ""
+                "    fputs(value->as.string_value, stdout);"
+                "    return kappa_unit();"
+                "}"
+                ""
+                "static KValue* kappa_int_to_string(KValue* value)"
+                "{"
+                "    int64_t integer = kappa_expect_int(value);"
+                "    int length = snprintf(NULL, 0, \"%lld\", (long long)integer);"
+                ""
+                "    if (length < 0)"
+                "    {"
+                "        kappa_panic(\"failed to format Int as String\");"
+                "    }"
+                ""
+                "    char* buffer = (char*)kappa_alloc((size_t)length + 1);"
+                "    snprintf(buffer, (size_t)length + 1, \"%lld\", (long long)integer);"
+                "    return kappa_box_string(buffer);"
                 "}"
                 ""
                 "static void kappa_print_result_if_needed(KValue* value)"
@@ -1352,6 +1708,9 @@ module ZigCcBackend =
                 closureFunctions
                 |> List.collect (fun functionDump -> functionDump.SupportDefinitions)
 
+            let traitDispatchDefinitions =
+                emitTraitDispatchFunctions context
+
             let definitions =
                 emittedTopLevelFunctions
                 |> List.map (fun functionDump -> functionDump.Definition)
@@ -1377,6 +1736,8 @@ module ZigCcBackend =
                     yield emitRuntimePrelude context
                     if not (List.isEmpty prototypes) then
                         yield joinLines prototypes
+                    if not (List.isEmpty traitDispatchDefinitions) then
+                        yield joinLines traitDispatchDefinitions
                     if not (List.isEmpty supportDefinitions) then
                         yield joinLines supportDefinitions
                     if not (List.isEmpty definitions) then

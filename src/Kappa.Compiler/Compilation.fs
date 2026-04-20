@@ -382,10 +382,39 @@ module Compilation =
                     |> List.map (function
                         | DoLet(name, body) -> $"(let {name} {render body})"
                         | DoBind(name, body) -> $"(<- {name} {render body})"
+                        | DoVar(name, body) -> $"(var {name} {render body})"
+                        | DoAssign(name, body) -> $"(assign {name} {render body})"
+                        | DoWhile(condition, body) ->
+                            let bodyText =
+                                body
+                                |> List.map (function
+                                    | DoLet(innerName, innerBody) -> $"(let {innerName} {render innerBody})"
+                                    | DoBind(innerName, innerBody) -> $"(<- {innerName} {render innerBody})"
+                                    | DoVar(innerName, innerBody) -> $"(var {innerName} {render innerBody})"
+                                    | DoAssign(innerName, innerBody) -> $"(assign {innerName} {render innerBody})"
+                                    | DoWhile(innerCondition, innerStatements) ->
+                                        let nested =
+                                            innerStatements
+                                            |> List.map (fun statement -> statement |> function
+                                                | DoLet(nestedName, nestedBody) -> $"(let {nestedName} {render nestedBody})"
+                                                | DoBind(nestedName, nestedBody) -> $"(<- {nestedName} {render nestedBody})"
+                                                | DoVar(nestedName, nestedBody) -> $"(var {nestedName} {render nestedBody})"
+                                                | DoAssign(nestedName, nestedBody) -> $"(assign {nestedName} {render nestedBody})"
+                                                | DoWhile _ -> "(while ...)"
+                                                | DoExpression nestedBody -> $"(expr {render nestedBody})")
+                                            |> String.concat " "
+
+                                        $"(while {render innerCondition} {nested})"
+                                    | DoExpression innerBody -> $"(expr {render innerBody})")
+                                |> String.concat " "
+
+                            $"(while {render condition} {bodyText})"
                         | DoExpression body -> $"(expr {render body})")
                     |> String.concat " "
 
                 $"(do {statementText})"
+            | MonadicSplice inner ->
+                $"(! {render inner})"
             | Apply(callee, arguments) ->
                 let argumentText =
                     arguments
@@ -453,6 +482,7 @@ module Compilation =
         | DataDeclarationNode _ -> "data"
         | TypeAliasNode _ -> "type"
         | TraitDeclarationNode _ -> "trait"
+        | InstanceDeclarationNode _ -> "instance"
         | UnknownDeclaration _ -> "unknown"
 
     let private declarationName (declaration: TopLevelDeclaration) =
@@ -462,6 +492,7 @@ module Compilation =
         | DataDeclarationNode declaration -> Some declaration.Name
         | TypeAliasNode declaration -> Some declaration.Name
         | TraitDeclarationNode declaration -> Some declaration.Name
+        | InstanceDeclarationNode declaration -> Some declaration.TraitName
         | ExpectDeclarationNode (ExpectTypeDeclaration declaration) -> Some declaration.Name
         | ExpectDeclarationNode (ExpectTraitDeclaration declaration) -> Some declaration.Name
         | ExpectDeclarationNode (ExpectTermDeclaration declaration) -> Some declaration.Name
@@ -476,6 +507,7 @@ module Compilation =
         | DataDeclarationNode declaration -> declaration.IsOpaque
         | TypeAliasNode declaration -> declaration.IsOpaque
         | TraitDeclarationNode _ 
+        | InstanceDeclarationNode _
         | ExpectDeclarationNode _
         | FixityDeclarationNode _
         | ImportDeclaration _
@@ -488,6 +520,7 @@ module Compilation =
         | DataDeclarationNode declaration -> visibilityText declaration.Visibility
         | TypeAliasNode declaration -> visibilityText declaration.Visibility
         | TraitDeclarationNode declaration -> visibilityText declaration.Visibility
+        | InstanceDeclarationNode _
         | ExpectDeclarationNode _
         | FixityDeclarationNode _
         | ImportDeclaration _
@@ -548,6 +581,13 @@ module Compilation =
 
             let visibilityPrefix = defaultArg (visibilityText declaration.Visibility) ""
             $"{visibilityPrefix} trait {declaration.Name} [{members}]".Trim()
+        | InstanceDeclarationNode declaration ->
+            let members =
+                declaration.Members
+                |> List.choose (fun memberDeclaration -> memberDeclaration.Name)
+                |> String.concat ", "
+
+            $"instance {declaration.TraitName} {tokensText declaration.HeaderTokens} [{members}]".Trim()
         | UnknownDeclaration tokens ->
             $"unknown {tokensText tokens}".Trim()
 
@@ -576,6 +616,9 @@ module Compilation =
     let private declarationMembers (declaration: TopLevelDeclaration) =
         match declaration with
         | TraitDeclarationNode declaration ->
+            declaration.Members
+            |> List.choose (fun memberDeclaration -> memberDeclaration.Name)
+        | InstanceDeclarationNode declaration ->
             declaration.Members
             |> List.choose (fun memberDeclaration -> memberDeclaration.Name)
         | _ -> []
@@ -614,6 +657,12 @@ module Compilation =
             expression
         | DoExpression expression :: rest ->
             Apply(Name [ ">>" ], [ expression; desugarDoExpression rest ])
+        | DoVar(name, expression) :: rest ->
+            desugarDoExpression (DoBind(name, Apply(Name [ "newRef" ], [ expression ])) :: rest)
+        | DoAssign(name, expression) :: rest ->
+            desugarDoExpression (DoExpression(Apply(Name [ "writeRef" ], [ Name [ name ]; expression ])) :: rest)
+        | DoWhile(_, _) :: _ ->
+            Literal LiteralValue.Unit
         | DoBind(name, expression) :: rest ->
             Apply(
                 Name [ ">>=" ],
@@ -660,6 +709,8 @@ module Compilation =
             )
         | Do statements ->
             lowerKCoreExpression (desugarDoExpression statements)
+        | MonadicSplice inner ->
+            lowerKCoreExpression inner
         | Apply(callee, arguments) ->
             KCoreApply(lowerKCoreExpression callee, arguments |> List.map lowerKCoreExpression)
         | Unary(operatorName, operand) ->
@@ -714,6 +765,14 @@ module Compilation =
                 |> String.concat " "
 
             $"(match {kcoreExpressionText scrutinee} {caseText})"
+        | KCoreExecute expression ->
+            $"(execute {kcoreExpressionText expression})"
+        | KCoreLet(bindingName, value, body) ->
+            $"(let {bindingName} {kcoreExpressionText value} {kcoreExpressionText body})"
+        | KCoreSequence(first, second) ->
+            $"(seq {kcoreExpressionText first} {kcoreExpressionText second})"
+        | KCoreWhile(condition, body) ->
+            $"(while {kcoreExpressionText condition} {kcoreExpressionText body})"
         | KCoreApply(callee, arguments) ->
             let argumentText =
                 arguments
@@ -724,6 +783,18 @@ module Compilation =
                 $"(apply {kcoreExpressionText callee})"
             else
                 $"(apply {kcoreExpressionText callee} {argumentText})"
+        | KCoreDictionaryValue(moduleName, traitName, instanceKey) ->
+            $"(dictionary {moduleName} {traitName} {instanceKey})"
+        | KCoreTraitCall(traitName, memberName, dictionary, arguments) ->
+            let argumentText =
+                arguments
+                |> List.map kcoreExpressionText
+                |> String.concat " "
+
+            if String.IsNullOrWhiteSpace(argumentText) then
+                $"(trait-call {traitName}.{memberName} {kcoreExpressionText dictionary})"
+            else
+                $"(trait-call {traitName}.{memberName} {kcoreExpressionText dictionary} {argumentText})"
         | KCoreUnary(operatorName, operand) ->
             $"({operatorName} {kcoreExpressionText operand})"
         | KCoreBinary(left, operatorName, right) ->
@@ -834,8 +905,25 @@ module Compilation =
                     { Pattern = lowerKRuntimePattern caseClause.Pattern
                       Body = lowerKRuntimeExpression caseClause.Body })
             )
+        | KCoreExecute inner ->
+            KRuntimeExecute(lowerKRuntimeExpression inner)
+        | KCoreLet(bindingName, value, body) ->
+            KRuntimeLet(bindingName, lowerKRuntimeExpression value, lowerKRuntimeExpression body)
+        | KCoreSequence(first, second) ->
+            KRuntimeSequence(lowerKRuntimeExpression first, lowerKRuntimeExpression second)
+        | KCoreWhile(condition, body) ->
+            KRuntimeWhile(lowerKRuntimeExpression condition, lowerKRuntimeExpression body)
         | KCoreApply(callee, arguments) ->
             KRuntimeApply(lowerKRuntimeExpression callee, arguments |> List.map lowerKRuntimeExpression)
+        | KCoreDictionaryValue(moduleName, traitName, instanceKey) ->
+            KRuntimeDictionaryValue(moduleName, traitName, instanceKey)
+        | KCoreTraitCall(traitName, memberName, dictionary, arguments) ->
+            KRuntimeTraitCall(
+                traitName,
+                memberName,
+                lowerKRuntimeExpression dictionary,
+                arguments |> List.map lowerKRuntimeExpression
+            )
         | KCoreUnary(operatorName, operand) ->
             KRuntimeUnary(operatorName, lowerKRuntimeExpression operand)
         | KCoreBinary(left, operatorName, right) ->
@@ -888,6 +976,14 @@ module Compilation =
                 |> String.concat " "
 
             $"(match {runtimeExpressionText scrutinee} {caseText})"
+        | KRuntimeExecute expression ->
+            $"(execute {runtimeExpressionText expression})"
+        | KRuntimeLet(bindingName, value, body) ->
+            $"(let {bindingName} {runtimeExpressionText value} {runtimeExpressionText body})"
+        | KRuntimeSequence(first, second) ->
+            $"(seq {runtimeExpressionText first} {runtimeExpressionText second})"
+        | KRuntimeWhile(condition, body) ->
+            $"(while {runtimeExpressionText condition} {runtimeExpressionText body})"
         | KRuntimeApply(callee, arguments) ->
             let argumentText =
                 arguments
@@ -898,6 +994,18 @@ module Compilation =
                 $"(apply {runtimeExpressionText callee})"
             else
                 $"(apply {runtimeExpressionText callee} {argumentText})"
+        | KRuntimeDictionaryValue(moduleName, traitName, instanceKey) ->
+            $"(dictionary {moduleName} {traitName} {instanceKey})"
+        | KRuntimeTraitCall(traitName, memberName, dictionary, arguments) ->
+            let argumentText =
+                arguments
+                |> List.map runtimeExpressionText
+                |> String.concat " "
+
+            if String.IsNullOrWhiteSpace(argumentText) then
+                $"(trait-call {traitName}.{memberName} {runtimeExpressionText dictionary})"
+            else
+                $"(trait-call {traitName}.{memberName} {runtimeExpressionText dictionary} {argumentText})"
         | KRuntimeUnary(operatorName, operand) ->
             $"({operatorName} {runtimeExpressionText operand})"
         | KRuntimeBinary(left, operatorName, right) ->
@@ -912,7 +1020,7 @@ module Compilation =
 
             $"({prefix}-string {partText})"
 
-    let private backendRepresentationText representation =
+    let rec private backendRepresentationText representation =
         match representation with
         | BackendRepInt64 -> "int64"
         | BackendRepFloat64 -> "float64"
@@ -920,6 +1028,8 @@ module Compilation =
         | BackendRepString -> "string"
         | BackendRepChar -> "char"
         | BackendRepUnit -> "unit"
+        | BackendRepRef elementRepresentation -> $"ref:{backendRepresentationText elementRepresentation}"
+        | BackendRepDictionary traitName -> $"dictionary:{traitName}"
         | BackendRepTaggedData(moduleName, typeName) -> $"tagged-data:{moduleName}.{typeName}"
         | BackendRepClosure environmentLayout -> $"closure:{environmentLayout}"
         | BackendRepIOAction -> "io-action"
@@ -1023,6 +1133,14 @@ module Compilation =
                 |> String.concat " "
 
             $"(match rep={backendRepresentationText resultRepresentation} {backendExpressionText scrutinee} {caseText})"
+        | BackendExecute(expression, resultRepresentation) ->
+            $"(execute rep={backendRepresentationText resultRepresentation} {backendExpressionText expression})"
+        | BackendLet(binding, value, body, resultRepresentation) ->
+            $"(let {binding.Name}:{backendRepresentationText binding.Representation} {backendExpressionText value} {backendExpressionText body} rep={backendRepresentationText resultRepresentation})"
+        | BackendSequence(first, second, resultRepresentation) ->
+            $"(seq rep={backendRepresentationText resultRepresentation} {backendExpressionText first} {backendExpressionText second})"
+        | BackendWhile(condition, body) ->
+            $"(while {backendExpressionText condition} {backendExpressionText body})"
         | BackendCall(callee, arguments, convention, resultRepresentation) ->
             let argumentText =
                 arguments
@@ -1030,6 +1148,18 @@ module Compilation =
                 |> String.concat " "
 
             $"(call rep={backendRepresentationText resultRepresentation} conv=[{backendCallingConventionText convention}] {backendExpressionText callee} {argumentText})"
+        | BackendDictionaryValue(moduleName, traitName, instanceKey, representation) ->
+            $"(dictionary rep={backendRepresentationText representation} {moduleName} {traitName} {instanceKey})"
+        | BackendTraitCall(traitName, memberName, dictionary, arguments, resultRepresentation) ->
+            let argumentText =
+                arguments
+                |> List.map backendExpressionText
+                |> String.concat " "
+
+            if String.IsNullOrWhiteSpace(argumentText) then
+                $"(trait-call rep={backendRepresentationText resultRepresentation} {traitName}.{memberName} {backendExpressionText dictionary})"
+            else
+                $"(trait-call rep={backendRepresentationText resultRepresentation} {traitName}.{memberName} {backendExpressionText dictionary} {argumentText})"
         | BackendConstructData(moduleName, typeName, constructorName, tag, fields, representation) ->
             let fieldText =
                 fields
@@ -1183,10 +1313,15 @@ module Compilation =
         | "pure"
         | "print"
         | "println"
-        | "printInt" ->
+        | "printInt"
+        | "printString"
+        | "primitiveIntToString"
+        | "newRef"
+        | "readRef" ->
             1
         | "and"
         | "or"
+        | "writeRef"
         | ">>="
         | ">>"
         | "+"
@@ -1221,9 +1356,15 @@ module Compilation =
         | "<="
         | ">=" ->
             Some BackendRepBoolean
+        | "primitiveIntToString" ->
+            Some BackendRepString
         | "print"
         | "println"
         | "printInt"
+        | "printString"
+        | "newRef"
+        | "readRef"
+        | "writeRef"
         | "pure"
         | ">>="
         | ">>" ->
@@ -1245,7 +1386,10 @@ module Compilation =
         | Some "String" -> Some BackendRepString
         | Some "Char" -> Some BackendRepChar
         | Some "Unit" -> Some BackendRepUnit
+        | Some head when head.StartsWith("__kappa_dict_", StringComparison.Ordinal) ->
+            Some(BackendRepDictionary(head.Substring("__kappa_dict_".Length)))
         | Some "IO" -> Some BackendRepIOAction
+        | Some "Ref" -> Some(BackendRepRef(backendOpaqueRepresentation None))
         | Some head -> Some(backendOpaqueRepresentation (Some head))
         | None -> None
 
@@ -1254,6 +1398,23 @@ module Compilation =
             left
         else
             backendOpaqueRepresentation None
+
+    let private executedIntrinsicResultRepresentation name =
+        match name with
+        | "print"
+        | "println"
+        | "printInt"
+        | "printString"
+        | "writeRef" ->
+            Some BackendRepUnit
+        | "primitiveIntToString" ->
+            Some BackendRepString
+        | "newRef" ->
+            Some(backendOpaqueRepresentation (Some "Ref"))
+        | "readRef" ->
+            Some(backendOpaqueRepresentation None)
+        | _ ->
+            intrinsicResultRepresentation name
 
     let rec private inferKCoreExpressionRepresentation expression =
         match expression with
@@ -1279,13 +1440,32 @@ module Compilation =
                     (fun state caseClause ->
                         mergeBackendRepresentations state (inferKCoreExpressionRepresentation caseClause.Body))
                     (inferKCoreExpressionRepresentation firstCase.Body)
+        | KCoreExecute(KCoreApply(KCoreName [ intrinsicName ], _)) ->
+            executedIntrinsicResultRepresentation intrinsicName
+            |> Option.defaultValue (backendOpaqueRepresentation None)
+        | KCoreExecute inner ->
+            inferKCoreExpressionRepresentation inner
+        | KCoreLet(_, _, body) ->
+            inferKCoreExpressionRepresentation body
+        | KCoreSequence(_, second) ->
+            inferKCoreExpressionRepresentation second
+        | KCoreWhile _ ->
+            BackendRepUnit
         | KCoreApply(KCoreName [ "pure" ], _)
         | KCoreApply(KCoreName [ ">>=" ], _)
         | KCoreApply(KCoreName [ ">>" ], _)
         | KCoreApply(KCoreName [ "print" ], _)
         | KCoreApply(KCoreName [ "println" ], _)
-        | KCoreApply(KCoreName [ "printInt" ], _) ->
+        | KCoreApply(KCoreName [ "printInt" ], _)
+        | KCoreApply(KCoreName [ "printString" ], _)
+        | KCoreApply(KCoreName [ "newRef" ], _)
+        | KCoreApply(KCoreName [ "readRef" ], _)
+        | KCoreApply(KCoreName [ "writeRef" ], _) ->
             BackendRepIOAction
+        | KCoreDictionaryValue(_, traitName, _) ->
+            BackendRepDictionary traitName
+        | KCoreTraitCall _ ->
+            backendOpaqueRepresentation None
         | KCoreApply _ ->
             backendOpaqueRepresentation None
         | KCoreUnary("not", _) ->
@@ -1580,11 +1760,29 @@ module Compilation =
                         let caseBound = Set.union bound (collectPatternBindings caseClause.Pattern)
                         Set.union state (collectClosureCaptures locals caseBound caseClause.Body))
                     scrutineeCaptures
+            | KRuntimeExecute expression ->
+                collectClosureCaptures locals bound expression
+            | KRuntimeLet(bindingName, value, body) ->
+                collectClosureCaptures locals bound value
+                |> Set.union (collectClosureCaptures locals (Set.add bindingName bound) body)
+            | KRuntimeSequence(first, second) ->
+                collectClosureCaptures locals bound first
+                |> Set.union (collectClosureCaptures locals bound second)
+            | KRuntimeWhile(condition, body) ->
+                collectClosureCaptures locals bound condition
+                |> Set.union (collectClosureCaptures locals bound body)
             | KRuntimeApply(callee, arguments) ->
                 arguments
                 |> List.fold
                     (fun state argument -> Set.union state (collectClosureCaptures locals bound argument))
                     (collectClosureCaptures locals bound callee)
+            | KRuntimeDictionaryValue _ ->
+                Set.empty
+            | KRuntimeTraitCall(_, _, dictionary, arguments) ->
+                arguments
+                |> List.fold
+                    (fun state argument -> Set.union state (collectClosureCaptures locals bound argument))
+                    (collectClosureCaptures locals bound dictionary)
             | KRuntimeUnary(_, operand) ->
                 collectClosureCaptures locals bound operand
             | KRuntimeBinary(left, _, right) ->
@@ -1700,6 +1898,47 @@ module Compilation =
                     lowerResolvedCall loweredArguments argumentRepresentations fallbackResultRepresentation resolvedName
                 | Result.Error _ ->
                     Result.Error $"unresolved runtime name '{runtimeName}'"
+
+            let executedIntrinsicRepresentation runtimeName argumentRepresentations =
+                match runtimeName, argumentRepresentations with
+                | ("print" | "println" | "printInt" | "printString" | "writeRef"), _ ->
+                    Some BackendRepUnit
+                | "primitiveIntToString", _ ->
+                    Some BackendRepString
+                | "newRef", [ elementRepresentation ] ->
+                    Some(BackendRepRef elementRepresentation)
+                | "readRef", [ BackendRepRef elementRepresentation ] ->
+                    Some elementRepresentation
+                | "readRef", _ ->
+                    Some(backendOpaqueRepresentation None)
+                | _ ->
+                    None
+
+            let executedBindingRepresentation moduleName bindingName fallbackRepresentation =
+                match tryLookupBindingInfo moduleName bindingName with
+                | Some bindingInfo ->
+                    match bindingInfo.ReturnRepresentation with
+                    | Some BackendRepIOAction -> fallbackRepresentation
+                    | Some representation -> representation
+                    | None -> fallbackRepresentation
+                | None ->
+                    fallbackRepresentation
+
+            let inferExecutedExpressionRepresentation
+                (loweredExpression: KBackendExpression)
+                (fallbackRepresentation: KBackendRepresentationClass)
+                =
+                match loweredExpression with
+                | BackendCall(BackendName(BackendIntrinsicName(moduleName, bindingName, _)), _, convention, _) ->
+                    match executedIntrinsicRepresentation bindingName convention.ParameterRepresentations with
+                    | Some representation -> representation
+                    | None -> executedBindingRepresentation moduleName bindingName fallbackRepresentation
+                | BackendCall(BackendName(BackendGlobalBindingName(moduleName, bindingName, _)), _, _, _) ->
+                    executedBindingRepresentation moduleName bindingName fallbackRepresentation
+                | _ when fallbackRepresentation = BackendRepIOAction ->
+                    BackendRepUnit
+                | _ ->
+                    fallbackRepresentation
 
             let rec lowerPattern
                 (locals: Map<string, KBackendRepresentationClass>)
@@ -1857,6 +2096,37 @@ module Compilation =
 
                             BackendMatch(loweredScrutinee, List.rev loweredCases, resultRepresentation),
                             resultRepresentation))
+                | KRuntimeExecute inner ->
+                    lowerExpression scopeLabel locals inner
+                    |> Result.map (fun (loweredInner, innerRepresentation) ->
+                        let resultRepresentation =
+                            inferExecutedExpressionRepresentation loweredInner innerRepresentation
+
+                        BackendExecute(loweredInner, resultRepresentation), resultRepresentation)
+                | KRuntimeLet(bindingName, value, body) ->
+                    lowerExpression scopeLabel locals value
+                    |> Result.bind (fun (loweredValue, valueRepresentation) ->
+                        let bindingParameter: KBackendParameter =
+                            { Name = bindingName
+                              Representation = valueRepresentation }
+
+                        let bodyLocals = locals |> Map.add bindingName valueRepresentation
+
+                        lowerExpression scopeLabel bodyLocals body
+                        |> Result.map (fun (loweredBody, bodyRepresentation) ->
+                            BackendLet(bindingParameter, loweredValue, loweredBody, bodyRepresentation), bodyRepresentation))
+                | KRuntimeSequence(first, second) ->
+                    lowerExpression scopeLabel locals first
+                    |> Result.bind (fun (loweredFirst, _) ->
+                        lowerExpression scopeLabel locals second
+                        |> Result.map (fun (loweredSecond, secondRepresentation) ->
+                            BackendSequence(loweredFirst, loweredSecond, secondRepresentation), secondRepresentation))
+                | KRuntimeWhile(condition, body) ->
+                    lowerExpression scopeLabel locals condition
+                    |> Result.bind (fun (loweredCondition, _) ->
+                        lowerExpression scopeLabel locals body
+                        |> Result.map (fun (loweredBody, _) ->
+                            BackendWhile(loweredCondition, loweredBody), BackendRepUnit))
                 | KRuntimeApply(callee, arguments) ->
                     let lowerArguments =
                         arguments
@@ -1945,6 +2215,38 @@ module Compilation =
                                 [ loweredLeft; loweredRight ]
                                 [ leftRepresentation; rightRepresentation ]
                                 resultRepresentation))
+                | KRuntimeDictionaryValue(moduleName, traitName, instanceKey) ->
+                    let representation = BackendRepDictionary traitName
+                    Result.Ok(BackendDictionaryValue(moduleName, traitName, instanceKey, representation), representation)
+                | KRuntimeTraitCall(traitName, memberName, dictionary, arguments) ->
+                    lowerExpression scopeLabel locals dictionary
+                    |> Result.bind (fun (loweredDictionary, _) ->
+                        let lowerArguments =
+                            arguments
+                            |> List.fold
+                                (fun state argument ->
+                                    state
+                                    |> Result.bind (fun (loweredArguments, argumentRepresentations) ->
+                                        lowerExpression scopeLabel locals argument
+                                        |> Result.map (fun (loweredArgument, argumentRepresentation) ->
+                                            loweredArgument :: loweredArguments,
+                                            argumentRepresentation :: argumentRepresentations)))
+                                (Result.Ok([], []))
+
+                        lowerArguments
+                        |> Result.map (fun (loweredArguments, argumentRepresentations) ->
+                            let loweredArguments = List.rev loweredArguments
+                            let _argumentRepresentations = List.rev argumentRepresentations
+                            let resultRepresentation = backendOpaqueRepresentation None
+
+                            BackendTraitCall(
+                                traitName,
+                                memberName,
+                                loweredDictionary,
+                                loweredArguments,
+                                resultRepresentation
+                            ),
+                            resultRepresentation))
                 | KRuntimePrefixedString(prefix, parts) ->
                     let rec lowerStringParts parts =
                         match parts with
@@ -3153,8 +3455,7 @@ module Compilation =
             |> List.sortBy (fun document -> document.FilePath)
 
         let kCore =
-            kFrontIR
-            |> List.map (lowerKCoreModule normalizedBackendProfile)
+            SurfaceElaboration.lowerKCoreModules normalizedBackendProfile kFrontIR
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
         let kRuntimeIR =

@@ -15,9 +15,12 @@
     <Compile Include="Lexer.fs" />
     <Compile Include="Parser.fs" />
     <Compile Include="Stdlib.fs" />
+    <Compile Include="TypeSignatures.fs" />
+    <Compile Include="TraitRuntime.fs" />
     <Compile Include="BackendTypes.fs" />
     <Compile Include="CheckpointVerification.fs" />
     <Compile Include="ZigCcBackend.fs" />
+    <Compile Include="SurfaceElaboration.fs" />
     <Compile Include="Compilation.fs" />
     <Compile Include="HostedRuntimeDotNetBackend.fs" />
     <Compile Include="IlDotNetBackend.fs" />

@@ -240,6 +240,7 @@ type CoreExpression =
     | IfThenElse of CoreExpression * CoreExpression * CoreExpression
     | Match of CoreExpression * MatchCase list
     | Do of DoStatement list
+    | MonadicSplice of CoreExpression
     | Apply of CoreExpression * CoreExpression list
     | Unary of operatorName: string * CoreExpression
     | Binary of CoreExpression * operatorName: string * CoreExpression
@@ -262,6 +263,9 @@ and MatchCase =
 and DoStatement =
     | DoLet of string * CoreExpression
     | DoBind of string * CoreExpression
+    | DoVar of string * CoreExpression
+    | DoAssign of string * CoreExpression
+    | DoWhile of condition: CoreExpression * body: DoStatement list
     | DoExpression of CoreExpression
 
 type BindingSignature =
@@ -329,6 +333,11 @@ type TraitDeclaration =
       HeaderTokens: Token list
       Members: TraitMember list }
 
+type InstanceDeclaration =
+    { TraitName: string
+      HeaderTokens: Token list
+      Members: LetDefinition list }
+
 type TopLevelDeclaration =
     | ImportDeclaration of isExport: bool * specs: ImportSpec list
     | FixityDeclarationNode of FixityDeclaration
@@ -338,6 +347,7 @@ type TopLevelDeclaration =
     | DataDeclarationNode of DataDeclaration
     | TypeAliasNode of TypeAlias
     | TraitDeclarationNode of TraitDeclaration
+    | InstanceDeclarationNode of InstanceDeclaration
     | UnknownDeclaration of Token list
 
 type CompilationUnit =
