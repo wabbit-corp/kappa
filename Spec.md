@@ -171,13 +171,14 @@ Imports are **not re-exported** by default (see `export` below).
 
 Module aliases and qualification:
 
-* `import M` brings the module name `M` into scope for qualified access (e.g. `M.x`).
-* `import M as A` brings only the alias `A` into scope for qualified access (e.g. `A.x`). The name `M` is not brought
-  into scope by this form.
+* `import M` brings the module name `M` into scope for qualified access (e.g. `M.x`) and, under §13.1.2, as a reified
+  module value.
+* `import M as A` brings only the alias `A` into scope for qualified access (e.g. `A.x`) and, under §13.1.2, as a
+  reified module value. The name `M` is not brought into scope by this form.
 * Selective imports (`import M.(...)`, `import M.*`, and `import M.* except (...)`) do not bring `M` into scope for
-  qualified access. To enable qualified access, use a separate `import M` (or `import M as M`).
-* `import "url" as A` brings only the alias `A` into scope for qualified access. The string literal itself never becomes
-  a qualifier.
+  qualified access or as a reified module value. To enable either, use a separate `import M` (or `import M as M`).
+* `import "url" as A` brings only the alias `A` into scope for qualified access and as a reified module value. The
+  string literal itself never becomes a qualifier.
 
 
 #### 2.3.1 Import item qualifiers (namespaces)
@@ -739,7 +740,7 @@ assertTotal, expect, instance, derive, effect, handle, deep, pattern,
 infix, postfix, prefix, left, right,
 var, while, break, continue, using, inout,
 yield, for, for?, group, by, distinct, order, skip, take, top, join, left, asc, desc,
-public, private, opaque, unhide, clarify,
+public, private, opaque, seal, unhide, clarify,
 ?., ?:
 ```
 
@@ -2130,8 +2131,16 @@ Record types are written:
 Field declaration grammar:
 
 ```text
-recordFieldDecl ::= [quantity] ident ':' type
+recordFieldDecl ::= [ 'opaque' ] [quantity] ident ':' type
 ```
+
+Opaque members:
+
+* A field marked `opaque` is an opaque compile-time member.
+* A record type containing one or more opaque members is a signature type.
+* An opaque member may be referenced by later field types via `this.label` exactly as an ordinary earlier field may.
+* Opaqueness affects introduction, projection transparency, and sealing (§5.5.10). It does not change dependency
+  analysis, lawful reordering, or canonical field order.
 
 * One-element record type: `(x : T,)`
 * The zero-field closed record has no distinct surface syntax in v0.1; it is identified with `Unit` / `()`.
@@ -2246,6 +2255,10 @@ Well-formedness:
 * Record field punning is permitted: in a record value, an entry written as just `label` is treated as `label = label`.
 * In such a punned entry, `label` resolves in the surrounding scope before reordering, and the resolved term must have
   the field type required for that label.
+* A record literal may be checked directly against an ordinary record type.
+* A record literal MUST NOT be checked directly against a signature type (that is, a record type containing one or more
+  opaque members).
+* Introduction of a signature value uses `seal ... as ...` (§5.5.10).
 
 #### 5.5.4 Field projection
 
@@ -2257,6 +2270,14 @@ Projects field `ℓ` from a record whose row is `r : RecRow`. Well-typed iff `Co
 inferred result type).
 
 The projection yields the field value at the field's declared quantity.
+
+Static member selection:
+
+* If the selected field has quantity `0`, the same projection form `rec.ℓ` may appear in any syntactic position
+  compatible with the field's sort or type.
+* This includes type position for fields such as `0 T : Type`, `0 F : Type -> Type`, and associated/package projections
+  such as `d.Item` or `m.Set`.
+* For signature types, static-member selection additionally obeys the opaqueness rules of §5.5.10.
 
 When a projection such as `rec.ℓ` is used in a context that demands a borrowed argument `(& _ : T)`, the implicit borrow
 applies to that field path rather than automatically to the whole record, subject to the disjoint-path borrowing rules
@@ -2549,9 +2570,102 @@ The local implicit context of §7.3.3 includes such unpacked implicit record-fie
 
 Interaction with `export` and interfaces:
 
-Functions returning records with implicit fields act as existential packages. The caller need not manually route the
-hidden type, dictionary, or proof; after binding the returned record, the unpacked implicit context may satisfy
-subsequent implicit obligations automatically.
+Functions returning records with implicit fields act as transparent dependent packages. The caller need not manually
+route the hidden type, dictionary, or proof; after binding the returned record, the unpacked implicit context may
+satisfy subsequent implicit obligations automatically.
+
+This mechanism does not itself create a sealing or opaqueness boundary: omitted implicit fields remain ordinary record
+members and are not hidden from projection or definitional equality. Sealed opaqueness is provided instead by
+`seal ... as ...` (§5.5.10).
+
+#### 5.5.10 Sealed packages and opaque members
+
+A signature type is a closed record type whose explicit field telescope contains one or more opaque members.
+
+Syntax:
+
+```text
+sealExpr ::= 'seal' expr 'as' type
+```
+
+`seal e as S` is an atomic expression for purposes of application and dotted forms.
+
+Examples:
+
+```kappa
+type SetSig : Type =
+    (opaque Set : Type -> Type,
+     singleton : forall (a : Type). a -> this.Set a,
+     union     : forall (a : Type). this.Set a -> this.Set a -> this.Set a)
+
+let M : SetSig =
+    seal
+        (Set = RBTreeSet,
+         singleton = rbSingleton,
+         union = rbUnion)
+    as SetSig
+```
+
+Well-formedness:
+
+* The ascribed type `S` of `seal e as S` must elaborate to a closed record type.
+* `seal` is permitted whether or not `S` contains opaque members.
+* If `S` has no opaque members, `seal` acts as explicit interface ascription and field hiding.
+* If `S` does contain opaque members, `seal` is the introduction form for values of type `S`.
+
+Signature matching:
+
+Let `S` have canonical explicit field order `(f1 : T1, ..., fn : Tn)` together with an opaqueness flag for each field.
+
+`seal e as S` is well-typed iff `e` provides at least the fields `f1 ... fn` and the following hold in canonical order:
+
+* for each field `fi`, the projection `e.fi` is well-typed at the declared field type `Ti` after substituting
+  `this.fj := e.fj` for every earlier field `fj` with `j < i`;
+* if `fi` is a transparent quantity-`0` field of `S`, then its defining equation must be available at the seal site;
+* if `fi` is opaque in `S`, no defining equation is required to remain available after sealing;
+* any fields of `e` not mentioned by `S` are hidden by the seal.
+
+Result type:
+
+* `seal e as S : S`.
+
+Meaning of the resulting package:
+
+Operationally and for KCore purposes, a sealed package carries:
+
+* runtime members for the non-erased fields of `S`;
+* manifest compile-time members for the transparent quantity-`0` fields of `S`; and
+* opaque compile-time members for the opaque fields of `S`.
+
+Projection and use:
+
+* If `p : S` and `S` contains a field `f`, then `p.f` is well-typed at the declared field type of `f`, with `this`
+  interpreted as `p`.
+* If `f` is opaque, `p.f` is nameable and may appear in later types and in client code, but its defining equation is
+  hidden across the seal.
+* If `f` is a transparent quantity-`0` field, `p.f` behaves as a manifest compile-time member and participates in
+  definitional equality according to §14.3.
+* If `f` is a non-erased term field, `p.f` is an ordinary term projection. Its runtime behavior is ordinary field
+  selection. Its compile-time transparency across the seal is governed by §14.3.
+* The receiver of package-member selection may be any pure term of signature type. It need not be a syntactic variable
+  or a special stable path.
+* This does not introduce implicit dereference through `var`; a `var`-bound name still denotes the underlying `Ref`
+  object (§8.5.1), so selecting package members through mutable state requires an explicit read in the ordinary way.
+
+Equality and non-generativity:
+
+* `seal` is pure and non-generative. It does not create fresh nominal identities by itself.
+* If `e1` and `e2` are definitionally equal, then `seal e1 as S` and `seal e2 as S` are definitionally equal.
+* If `e : S`, then `seal e as S` is definitionally equal to `e`.
+* Member selection is an ordinary dependent elimination form. Equality of receivers propagates through it by the
+  existing equality machinery of §5.6.1.
+* Therefore ordinary aliasing preserves member identity. If `let m = p`, then `m.f` and `p.f` denote the same member up
+  to ordinary definitional equality.
+
+No implicit subtyping:
+
+* Kappa has no ambient structural subtyping for records or signatures.
+* Hiding fields or opaqueness manifest definitions occurs only through explicit `seal ... as ...`.
 
 
 ### 5.6 Propositions via booleans and propositional equality
@@ -3291,8 +3405,7 @@ The `.` token is used for:
 
 * module qualification (`std.math.sin`)
 * type scope selection (`Vec.Cons`)
-* record field projection (`p.x`)
-* explicit dictionary member projection (`d.name`, `d.(==)`, `d.Name` in type position for associated types)
+* record or package member projection (`p.x`, `d.name`, `d.(==)`, `d.Name` in type position for associated members)
 * projection sections (`(.field)`, `(.field1.field2)`)
 * method-call sugar (`x.show`)
 * record update (`r.{ field = expr, ... }`)
@@ -3303,9 +3416,8 @@ The `?.` token is an additional dotted-form operator performing safe-navigation 
 
 The right-hand side of `?.` is restricted to member-access forms only. In v0.1 these are:
 
-* record field projection,
+* record or package member projection,
 * constructor-field projection,
-* explicit dictionary member projection, and
 * method-call sugar.
 
 Forms such as module qualification, type scope selection, projection sections, record update, and row extension are
@@ -7471,6 +7583,8 @@ Members in traits share the same two forms as ordinary bindings:
 * Declaration: `name : Type` (required).
 * Definition: `let name : Type = expr` (default).
 
+In addition, trait bodies may declare associated static members as specified in §12.2.1.
+
 #### 12.2.1 Overloaded member names
 
 For each term member `m : τ` declared in `trait Tr params`, elaboration introduces an overloaded term name of the shape:
@@ -7483,19 +7597,25 @@ A bare occurrence of `m` elaborates to projection from synthesized implicit evid
 
 An explicit dictionary projection such as `d.m` or `d.(op)` is the unsugared form.
 
-Associated type members do not induce term-level overloaded names.
+Associated static members do not induce term-level overloaded names.
 
-Associated type members:
+Associated static members:
 
-* A member declaration of the form `Name : Type` is an associated type member.
-* Inside the defining trait body, such a member may be referred to by its bare name `Name`.
-* An associated type member is an associated type component of the dictionary for that trait. It is projected only
-  through an explicit or implicit dictionary binder. For example, from:
+* A trait body may declare an associated static member with:
+
+  ```kappa
+  opaque Name : S
+  ```
+
+  where `S` is a compile-time sort or type.
+
+* Associated static members are projected from an explicit dictionary binder or value using ordinary member selection.
+  For example, from:
 
   ```kappa
   trait Iterator (it : Type) =
-      Item : Type
-      next : (1 this : it) -> Option (item : Item, rest : it)
+      opaque Item : Type
+      next : (1 this : it) -> Option (item : this.Item, rest : it)
   ```
 
   one may write:
@@ -7503,14 +7623,17 @@ Associated type members:
   ```kappa
   foo : (@ c : Type) -> (@ It : Iterator c) -> It.Item
   ```
-* There is no separate trait-scoped projection mechanism of the form `Trait.Name args` in the core language.
+* At minimum, associated static members are permitted at `Type` and at higher-kinded function spaces built from `Type`,
+  such as `Type -> Type`.
+* There is no separate trait-scoped projection mechanism of the form `Trait.Name args`; ordinary projection from an
+  explicit or implicit dictionary remains the core mechanism.
 
 Explicit dictionaries:
 
 For a dictionary `d : Dict (Tr args)`:
 
 * term members are projected as `d.name` or `d.(op)`,
-* associated type members are projected as `d.Name` in type position.
+* associated static members are projected as `d.Name` in type position.
 
 ### 12.3 Instances
 
@@ -7715,8 +7838,8 @@ Kappa uses multiple namespaces:
  * Effect labels introduced by effect-row syntax and used in `EffRow`-kinded rows and effect-operation selection.
 
 7. **Module namespace**:
- * Module qualifiers introduced by import M / import M as A.
- * Module names are not terms and cannot be used as values.
+ * Module qualifiers introduced by `import M` / `import M as A`.
+ * Imported module references may also be reified as pure module values under §13.1.2.
 
 Rules:
 
@@ -7746,10 +7869,9 @@ The `.` token is used for:
 * **Module qualification:** `std.math.sin`
 * **Type scope selection:** `Vec.Cons`
 * **Effect-label operation selection:** `state.get`
-* **Record field projection:** `p.x`
+* **Record or package member projection:** `p.x`, `d.name`, `d.(==)`, `d.Item`, `m.Set`
 * **Constructor-field projection under positive tag refinement:** `e.payload`
 * **Safe-navigation member access:** `e?.member`, desugared per §7.1.1.2
-* **Explicit dictionary member projection:** `d.name`, `d.(==)`, and `d.Name` (in type position for associated types)
 * **Method-call sugar:** `x.show`
 * **Record update / row extension:** (`r.{ y = 99 }`, `r.{ z := 0 }`)
 
@@ -7765,14 +7887,24 @@ Resolution of dotted forms proceeds by attempting the following interpretations:
 1. Module qualification
 2. Type scope selection
 3. Effect-label operation selection
-4. Record projection
+4. Record or package member projection
 5. Constructor-field projection under positive tag refinement
-6. Explicit dictionary member projection
-7. Method-call sugar
+6. Method-call sugar
 
-Method-call sugar is considered only if the dotted form is not already well-formed as a record projection,
-constructor-field projection, or explicit dictionary member projection at that use site. Therefore a record field,
-constructor field, or explicit dictionary member takes precedence over method-call sugar of the same name.
+Method-call sugar is considered only if the dotted form is not already well-formed as a record or package member
+projection, or as a constructor-field projection, at that use site. Therefore an ordinary member takes precedence over
+method-call sugar of the same name.
+
+Record and package member projection:
+
+* A dotted form `lhs.name` denotes member projection when `lhs` has a record type or signature type containing a field
+  `name`.
+* If that field has quantity `0`, the projection may appear in any syntactic position compatible with the field's sort
+  or type. This generalizes explicit dictionary associated-member projection.
+* If that field is a non-erased term field, the projection is an ordinary term expression.
+* Dictionaries are records/packages for purposes of this rule. Existing forms such as `d.name`, `d.(==)`, and `d.Item`
+  are instances of ordinary member projection.
+* If `lhs` has a signature type, member projection additionally obeys the opaqueness rules of §5.5.10.
 
 Effect-label operation selection:
 
@@ -7843,8 +7975,8 @@ Eligibility:
 
 A term name is eligible for method-call sugar iff:
 
-1. the dotted form has not already resolved as record projection or constructor-field projection or explicit dictionary
-   member projection under §13.1,
+1. the dotted form has not already resolved as record or package member projection or constructor-field projection under
+   §13.1,
 2. name resolves to a term f in scope, and
 3. the elaborated type of f is a Pi-telescope with exactly one explicit receiver-marked binder as defined in §7.2.
 
@@ -7906,6 +8038,43 @@ For any arguments supplied to the resulting lambda, beta-reduction yields an app
 placed exactly at the this binder position. Therefore lhs.name is definitionally equal to the corresponding eta-expanded
 form of applying f with lhs as the this argument, subject to the substitutions described above.
 
+#### 13.1.2 Reified module values
+
+An imported module reference may also be used as a pure module value.
+
+Examples:
+
+```kappa
+import std.set as SetMod
+
+let m = SetMod
+let one : m.Set Int = m.singleton 1
+```
+
+Rules:
+
+* A module reference brought into scope by `import M` or `import M as A` may appear where a pure term or compile-time
+  expression is expected.
+* In a bare identifier position, ordinary term resolution takes precedence. Reified-module resolution is used only when
+  no ordinary term binding is selected.
+* The locally visible reified module value uses the same visibility and transparency as ordinary qualified access
+  through that module reference in the current importing module.
+* In particular, local `clarify` or `unhide` affects the reified module value if and only if it affects ordinary
+  qualified access to the same member in that importing module.
+* Conceptually, a reified module value is a sealed package built from the module interface. If exported spellings
+  collide across namespaces, the conceptual package uses distinct internal namespace-tagged member labels; source dotted
+  selection on a reified module continues to use the ordinary namespace-resolution rules and is observationally
+  equivalent to selection of the corresponding tagged member.
+* Ordinary qualified module access and projection from the reified module value are required to agree. Thus `M.x` and,
+  after `let m = M`, `m.x` denote the same semantic object whenever both are well-formed.
+* The reified module value is pure and non-generative. Aliasing a module value does not freshen its opaque members.
+* Selective imports do not by themselves bring a reified module value into scope; use a separate `import M` or `import
+  M as A`.
+* Instances are not module-value members.
+
+A conforming implementation MAY realize qualified module access and reified-module projection by the same internal
+mechanism, provided the observable behavior matches the rules above.
+
 ### 13.2 Constructors via type scope
 
 Constructors are accessible through their type constructor:
@@ -7921,6 +8090,8 @@ default. If a module imports a type constructor, its constructors are available 
 
 As a concise unqualified bulk form, `import M.(type T(..))` imports the type constructor `T` and all of its constructors
 unqualified. Likewise `export M.(type T(..))` re-exports the type and all of its constructors.
+
+The qualifying type expression may itself be a selected static member, for example `M.Option.Some` or `m.Option.Some`.
 
 ## 14. Core Semantics
 
@@ -7945,6 +8116,8 @@ Elaboration performs (non-exhaustive):
 * insertion of coercions required by:
     * expected-type-directed variant injections and widenings (§5.4.3),
     * lawful record reorderings (§5.5.1.1),
+* signature matching, manifest recording, and opaqueness checking for `seal ... as ...`, and construction of reified
+  module values (§5.5.10, §13.1.2),
 * desugaring of:
     * pure `block` expressions and indented pure block suites to sequential local scope with closure-converted local
       declarations (§6.3.1, §14.1.1),
@@ -7983,8 +8156,8 @@ Escaping results:
 * No separate syntactic prohibition prevents a local type, trait, or alias from appearing in a value that leaves the
   block.
 * A value escapes exactly when the elaborated term remains well-typed after closure conversion.
-* In particular, local type constructors may escape through `Type`-valued results and existential-style packages,
-  provided the resulting elaborated interface type is well-typed.
+* In particular, local type constructors may escape through `Type`-valued results, transparent dependent packages, and
+  sealed packages of §5.5.10, provided the resulting elaborated interface type is well-typed.
 
 Local instances:
 
@@ -8011,6 +8184,11 @@ Evaluation order:
 * Function application evaluates the function expression, then the argument expression, then applies.
 * Record/tuple literals evaluate fields/elements left-to-right.
 * Record update evaluates the scrutinee record, then evaluates updated field expressions left-to-right.
+* `seal e as S` evaluates `e` and constructs a sealed package value whose runtime representation contains exactly the
+  non-erased members required by `S`, or an observationally equivalent implementation-defined representation.
+* Projection of a non-erased member from a sealed package evaluates by selecting that stored runtime member.
+* Quantity-`0` members of a sealed package participate only at compile time unless explicitly reified by library code or
+  backend intrinsics.
 * `if` evaluates the condition, then evaluates exactly one branch.
 * `match` evaluates the scrutinee once, then tests cases top-to-bottom; guards are evaluated only after the pattern
   matches.
@@ -8064,6 +8242,14 @@ Definitional equality also includes canonical normalization of:
 * union / variant rows: normalize member types to a canonical order with duplicate removal for elaboration and
   definitional equality; runtime tagging uses stable member-type identities instead of row-local ordinals (§5.4, §14.5),
 * record types/values: normalize to a canonical dependency-respecting field order (§5.5.1.1, §14.6).
+* seal congruence: if `e1 ≡ e2`, then `seal e1 as S ≡ seal e2 as S`;
+* seal idempotence: if `e : S`, then `seal e as S ≡ e`;
+* projection congruence: if `p1 ≡ p2`, then `p1.f ≡ p2.f` whenever both projections are well-typed;
+* transparent static-member unfolding: for a transparent quantity-`0` field `f` of a signature `S`, the projection
+  `(seal e as S).f` δ-reduces to the manifest equation recorded for `f` by the seal;
+* opaque-member opacity: if `f` is opaque in `S`, the projection `(seal e as S).f` does not δ-reduce across the seal;
+* projection of a non-erased field through a seal is not required to reduce for definitional equality. It remains a
+  well-typed neutral elimination form whose runtime behavior is ordinary projection.
 
 ### 14.3.1 Literal normalization
 
@@ -8860,7 +9046,9 @@ A module interface artifact MUST record at least:
   insofar as those entities are available to downstream code;
 * top-level instance heads and any metadata required for instance search and coherence under §§12.3 and 15.2.1;
 * the hashes or equivalent identity data required by §15 for exported definitions and instances;
-* enough definitional content for exported transparent items to support downstream definitional equality.
+* enough definitional content for exported transparent items to support downstream definitional equality;
+* enough metadata to reconstruct the reified-module view of §13.1.2, including the namespace-tagged exported-member
+  surface and the opaque-vs-transparent classification needed for local qualified access and module-value projection.
 
 A module interface artifact MUST distinguish the semantic object identity of an exported object from the current
 namespace bindings that expose it.
@@ -9393,6 +9581,7 @@ KCore retains all compile-time structure needed by the source semantics. In part
 * explicit binder quantities, explicit regions, and explicit implicit binders;
 * proof terms and equality evidence;
 * explicit handler forms, resumption quantities, and completion-carrying control structure;
+* explicit `seal` nodes, manifest static members, opaque static members, and package/member projections;
 * explicit modality-predicate evidence introduced by any enabled modal/coeffect extension;
 * local nominal identities as determined by §14.1.1.
 
