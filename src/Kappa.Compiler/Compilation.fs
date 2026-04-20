@@ -275,6 +275,7 @@ type WorkspaceCompilation =
     { SourceRoot: string
       PackageMode: bool
       BackendProfile: string
+      BackendIntrinsicIdentity: string
       Documents: ParsedDocument list
       KFrontIR: KFrontIRModule list
       KCore: KCoreModule list
@@ -1660,6 +1661,7 @@ module Compilation =
            checkpoint = checkpoint
            compilationRoot = workspace.SourceRoot
            backendProfile = workspace.BackendProfile
+           backendIntrinsicSet = workspace.BackendIntrinsicIdentity
            buildConfiguration = {| packageMode = workspace.PackageMode |} |}
 
     let private metadataSexpr workspace checkpoint =
@@ -1679,6 +1681,7 @@ module Compilation =
             sexprStringAtom "checkpoint" checkpoint
             sexprStringAtom "compilation-root" workspace.SourceRoot
             sexprStringAtom "backend-profile" workspace.BackendProfile
+            sexprStringAtom "backend-intrinsic-set" workspace.BackendIntrinsicIdentity
             buildConfigurationAtom
         ]
         |> String.concat " "
@@ -1840,6 +1843,7 @@ module Compilation =
                    checkpoint = checkpoint
                    compilationRoot = workspace.SourceRoot
                    backendProfile = workspace.BackendProfile
+                   backendIntrinsicSet = workspace.BackendIntrinsicIdentity
                    buildConfiguration = {| packageMode = workspace.PackageMode |}
                    documents = documents
                    diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
@@ -1856,6 +1860,7 @@ module Compilation =
                    checkpoint = checkpoint
                    compilationRoot = workspace.SourceRoot
                    backendProfile = workspace.BackendProfile
+                   backendIntrinsicSet = workspace.BackendIntrinsicIdentity
                    buildConfiguration = {| packageMode = workspace.PackageMode |}
                    modules = modules
                    diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
@@ -1872,6 +1877,7 @@ module Compilation =
                    checkpoint = checkpoint
                    compilationRoot = workspace.SourceRoot
                    backendProfile = workspace.BackendProfile
+                   backendIntrinsicSet = workspace.BackendIntrinsicIdentity
                    buildConfiguration = {| packageMode = workspace.PackageMode |}
                    modules = modules
                    diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
@@ -1891,6 +1897,7 @@ module Compilation =
                        phase = KFrontIRPhase.phaseName phase
                        compilationRoot = workspace.SourceRoot
                        backendProfile = workspace.BackendProfile
+                       backendIntrinsicSet = workspace.BackendIntrinsicIdentity
                        buildConfiguration = {| packageMode = workspace.PackageMode |}
                        documents = documents
                        diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
@@ -1990,7 +1997,10 @@ module Compilation =
             | _ ->
                 invalidOp $"Unknown checkpoint '{checkpoint}'."
 
-    let parse options inputs =
+    let parse (options: CompilationOptions) inputs =
+        let backendIntrinsicIdentity =
+            (Stdlib.intrinsicSetForBackendProfile options.BackendProfile).Identity
+
         let userDocuments =
             collectInputFiles options inputs
             |> List.map (parseFile options)
@@ -2025,6 +2035,7 @@ module Compilation =
             { SourceRoot = options.SourceRoot
               PackageMode = options.PackageMode
               BackendProfile = options.BackendProfile
+              BackendIntrinsicIdentity = backendIntrinsicIdentity
               Documents = documents
               KFrontIR = kFrontIR
               KCore = kCore

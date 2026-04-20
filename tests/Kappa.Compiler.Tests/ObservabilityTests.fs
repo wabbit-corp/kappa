@@ -74,6 +74,54 @@ let ``stage dumps serialize checkpoints in json and sexpr`` () =
     Assert.Contains("(binding (name \"answer\")", backendSexpr)
 
 [<Fact>]
+let ``workspace and stage dumps expose backend intrinsic identity`` () =
+    let supportedWorkspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-intrinsic-metadata-supported-root"
+            "interpreter"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.Equal("prelude-core-v1", supportedWorkspace.BackendIntrinsicIdentity)
+
+    let supportedJson =
+        match Compilation.dumpStage supportedWorkspace "KCore" StageDumpFormat.Json with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    Assert.Contains("\"backendProfile\": \"interpreter\"", supportedJson)
+    Assert.Contains("\"backendIntrinsicSet\": \"prelude-core-v1\"", supportedJson)
+
+    let unsupportedWorkspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-intrinsic-metadata-unsupported-root"
+            "custom-backend"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.Equal("none", unsupportedWorkspace.BackendIntrinsicIdentity)
+
+    let unsupportedSexpr =
+        match Compilation.dumpStage unsupportedWorkspace "KCore" StageDumpFormat.SExpression with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    Assert.Contains("(backend-profile \"custom-backend\")", unsupportedSexpr)
+    Assert.Contains("(backend-intrinsic-set \"none\")", unsupportedSexpr)
+
+[<Fact>]
 let ``checkpoint verification is available for frontend core and backend snapshots`` () =
     let workspace =
         compileInMemoryWorkspace
