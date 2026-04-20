@@ -2967,16 +2967,19 @@ Grammar:
   `let <-` bindings, and `using`):
 
   ```text
-  bindPat   ::= [quantity] pattern
-  localBind ::= 'let' bindPat [':' type] '=' expr
-  monadBind ::= 'let' bindPat '<-' expr
-  usingBind ::= 'using' pattern '<-' expr
+  bindPat             ::= [quantity] pattern
+  implicitLocalBinder ::= '(' '@' [quantity] ident ':' type ')'
+  localBind           ::= 'let' bindPat [':' type] '=' expr
+                        | 'let' implicitLocalBinder '=' expr
+  monadBind           ::= 'let' bindPat '<-' expr
+                        | 'let' implicitLocalBinder '<-' expr
+  usingBind           ::= 'using' pattern '<-' expr
   ```
 
   Because `using` always binds its pattern at borrowed quantity `&`, explicit quantity markers are not permitted in
   `usingBind`.
 
-* Each binding is:
+* Each ordinary pattern binding is:
 
   ```kappa
   bindPat [ : Type ] = expr
@@ -2990,6 +2993,18 @@ Refutable bindings (`let?`) are permitted only inside `do` blocks (§8.2.1) and 
 rejected in ordinary `let ... in` expressions.
 
 Pattern bindings in `let ... in`:
+
+Implicit local bindings:
+
+* `let (@q x : T) = expr` introduces the ordinary term variable `x : T` and additionally places `x` in the local
+  implicit context of §7.3.3 from the binding site onward.
+* `let (@q x : T) <- expr` is the monadic analogue inside `do`.
+* These forms are lexically scoped only. They are not instance declarations, do not affect the module export surface,
+  and do not participate in global instance search outside their lexical scope.
+* Their runtime semantics are otherwise exactly those of the corresponding ordinary local binding or monadic bind.
+* In v0.1 an implicit local binder binds only a simple identifier. Pattern implicit local binders are not supported.
+* Because the default-quantity rule for implicit binders is given by §7.3, ordinary runtime values SHOULD typically use
+  an explicit quantity such as `@ω`.
 
 * In `bindPat`, a quantity annotation applies uniformly to every variable bound by the underlying pattern.
 * `let & pat = expr` is legal and binds every variable introduced by `pat` at borrowed quantity `&`. It introduces
@@ -3647,6 +3662,26 @@ is `0`. Otherwise, the default is the unrestricted quantity `ω`.
 Users may override the default by writing the quantity explicitly, e.g. `(@0 x : T)`, `(@& x : T)`, `(@&[s] x : T)`, or
 `(@ω x : T)`.
 
+Implicit arguments in Kappa are lexical, not dynamic. After elaboration, omitting an implicit argument is equivalent to
+passing an ordinary in-scope term chosen by §7.3.3. Rebinding an implicit value in an inner lexical scope shadows outer
+candidates of the same type; there is no dynamic rebinding mechanism.
+
+Example:
+
+```kappa
+type Io = (print : String -> IO Unit)
+
+log : (@ω io : Io) -> String -> IO Unit
+let log (@ω io : Io) (msg : String) : IO Unit =
+    io.print msg
+
+main : IO Unit
+let main =
+    do
+        let (@ω io : Io) = stdIo
+        log "hello"
+```
+
 #### 7.3.1 Constraint sugar
 
 A constraint arrow
@@ -3698,16 +3733,27 @@ one, the compiler attempts to synthesize a term of type `G`.
 
 Resolution proceeds in this order:
 
-1. **Local implicit context**: if there is an in-scope implicit value whose type is definitionally equal to `G`, use it.
-   The local implicit context includes:
+1. **Local implicit context**: search lexical implicit bindings from innermost scope to outermost scope. The local
+   implicit context includes:
    * implicit binders introduced by `(@x : T)` parameters, and
+   * local implicit values introduced by `let (@q x : T) = ...` and `let (@q x : T) <- ...`, and
    * implicit record-field projections unpacked from bound records with implicit fields (§5.5.9),
-   * implicit assumptions introduced by control flow (see §7.4.1, §7.5.3, §10.4.1).
-   * For an in-scope implicit value or dictionary `d : Tr args`, coherent evidence obtained by projecting any declared
+   * implicit assumptions introduced by control flow (see §7.4.1, §7.5.3, §10.4.1),
+   * local instance declarations in scope, and
+   * for an in-scope implicit value or dictionary `d : Tr args`, coherent evidence obtained by projecting any declared
      supertraits of `Tr args` (§12.1.1).
 
-2. **Trait instance resolution**: if `G` is a trait constraint (e.g. `Eq Int`), attempt to resolve an instance from the
-   instance environment using the algorithm of §12.3.1.
+   At the first lexical scope level containing one or more candidates whose types are definitionally equal to `G`:
+   * if exactly one candidate is present, use it;
+   * if more than one candidate is present, the implicit goal is ambiguous and compilation fails.
+
+   Search does not continue to outer lexical levels once such a level is found.
+
+   Ordinary implicit-value search never consults imported top-level term bindings or exported module bindings. Only the
+   local implicit context is searched for non-`Constraint` goals.
+
+2. **Trait instance resolution**: if `G` is a trait constraint (e.g. `Eq Int`) and step 1 did not yield a unique local
+   candidate, attempt to resolve an instance from the instance environment using the algorithm of §12.3.1.
 
 3. **Boolean proposition normalization**:
     * If `G` is `b = True` and `b` normalizes (by definitional equality) to `True`, synthesize `refl`.
@@ -4282,6 +4328,8 @@ Kappa provides a standard effect-row-indexed computation type:
 Eff : EffRow -> Type -> Type
 ```
 
+Effect rows describe only handleable algebraic effects. Ordinary implicit values are not effect-row entries.
+
 For every effect row `r : EffRow`, the type constructor `Eff r` participates in the standard prelude interfaces:
 
 ```kappa
@@ -4730,6 +4778,10 @@ Valid do-items inside `do`:
     compile-time error.
   * Any quantity annotation on `bindPat` applies uniformly to every variable introduced by that pattern (§6.3).
 
+  The alternative form `let (@q x : T) <- expr` binds the simple variable `x` from the monadic result and additionally
+  places `x` in the local implicit context from the binding site onward. Its runtime semantics are otherwise the same as
+  an ordinary monadic bind.
+
   Linear state threading and shadowing:
   * A binding form in a `do` block may introduce a name already in scope; the new binding shadows the old one for all
     subsequent do-items.
@@ -4821,6 +4873,9 @@ Valid do-items inside `do`:
       carried only by the protected-scope exit machinery of §8.7.
     * Because `using` introduces borrowed bindings, user code may inspect them and pass them to other borrowed-accepting
       code, but may not consume them or let them escape their borrow scope.
+    * If a later value or closure, including one introduced by an implicit local binder, closes over bindings from
+      `pat`, it inherits the same region obligations and may not escape the protected scope except as permitted by
+      §5.1.6.
     The prelude minimum requires a trait providing at least this operation; this section uses the name `Releasable`.
 
     Normative elaboration is given in §8.7.4.
@@ -4838,6 +4893,8 @@ Valid do-items inside `do`:
     * If `bindPat` carries quantity `&` and `expr` is not already a borrowable stable expression, elaboration introduces
       a fresh hidden temporary root scoped to the remaining do-items, exactly as specified in §6.3 and §5.1.6.
     * Names bound by `bindPat` are in scope in subsequent do-items in the `do` block.
+
+  The alternative form `let (@q x : T) = expr` is permitted in a `do` block with the same meaning as in §6.3.
 
 * **Refutable local binding (`let?`)**:
 
