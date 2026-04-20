@@ -2940,11 +2940,22 @@ foo : Int -> Int
 let foo x = x + 1
 ```
 
-* The language does not designate the separate-signature form as canonical.
-* Inline annotations on a `let` definition are equally standard and are often clearer for short functions.
-* If an implementation requires a top-level function annotation, that requirement may be satisfied either by a separate
-  signature or by an inline annotation on the definition.
-* For **simple values**, `let x = 42` may omit the type and rely on inference.
+Rules:
+
+* Every exported top-level `let` definition MUST have an explicit top-level signature.
+* For purposes of this rule, export status is determined after applying `@PrivateByDefault`, `public`, and `private`.
+* A top-level `let` definition has an explicit top-level signature iff either:
+  * it is preceded by a separate signature declaration `name : T`, or
+  * every binder in the definition has an explicit type annotation and the definition has an explicit result-type
+    annotation.
+* Parameter-type annotations without an explicit result type, or an explicit result type with one or more untyped
+  binders, do not satisfy this rule.
+* A top-level non-exported, non-recursive definition MAY omit its signature and rely on inference.
+* A top-level simple value may omit its type when the previous rule permits inference.
+* Recursive and mutually recursive groups remain governed by §6.4: each member of such a group MUST have a preceding
+  separate top-level signature declaration.
+* The language does not designate the separate-signature form as canonical for non-recursive definitions; inline
+  annotations remain equally standard when they satisfy the explicit-signature rule above.
 
 ### 6.3 `let ... in` expression
 
@@ -3163,17 +3174,13 @@ Recursion policy:
 
 There is no `let rec`.
 
-A top-level binding is permitted to be (mutually) recursive only if it has a preceding top-level signature declaration.
+A top-level binding is permitted to be recursive only if it has a preceding top-level signature declaration.
 
-```kappa
-even : Nat -> Bool
-odd  : Nat -> Bool
+A mutually recursive top-level group is permitted only if every member of the group has a preceding top-level signature
+declaration.
 
-let even n = ...
-let odd  n = ...
-```
-
-Within such a definition body, the declared name(s) are in scope.
+An inline annotation on a recursive definition does not by itself introduce recursion; the recursive scope is determined
+from the preceding signature declarations.
 
 ### 6.5 `expect` declarations
 
@@ -9073,8 +9080,20 @@ Such queries SHOULD support at least:
 
 API names, packaging, and transport are implementation-defined.
 
-An implementation SHOULD use the same dependency-tracked query engine for tooling and batch compilation where possible,
-and SHOULD avoid maintaining semantically divergent batch and tooling frontends.
+An implementation that exposes editor, language-server, refactoring, or interactive-analysis features MUST use the same
+dependency-tracked semantic query system for tooling and batch compilation, or an observationally equivalent slice of
+that same system.
+
+Tooling results MUST be computed from KFrontIR, KCore, module interfaces, semantic object identities, compiler
+fingerprints, and query dependencies as defined in this chapter, not from a separately maintained semantic model that
+may diverge from `analyze`, `check`, `emit-interface`, or `compile`.
+
+Such an implementation MAY maintain presentation-level indexes or caches for latency, but it MUST NOT maintain a
+second, independently authoritative semantic frontend whose accepted programs, name resolution, typing, effect checking,
+instance resolution, or refactoring legality can differ from batch compilation.
+
+Purely presentation-level services such as syntax coloring, formatting, outline grouping, or snippet expansion MAY use
+lighter-weight mechanisms, provided they do not claim semantic authority.
 
 #### 17.2.6 Analysis sessions and invalidation
 
@@ -9254,6 +9273,12 @@ A conforming implementation MUST behave as if batch compilation proceeds as foll
    This includes at least `IMPORTS`, `DECLARATION_SHAPES`, `HEADER_TYPES`, `STATUS`, `IMPLICIT_SIGNATURES`, and any
    additional resolution or `CORE_LOWERING` needed to materialize exported signatures, importable fixities, instance
    heads, and exported transparent definitional content;
+
+   For exported top-level `let` definitions, interface readiness MUST depend on the explicit signatures required by
+   §6.2, not on inferring missing exported types from bodies. Consequently, once imported interfaces and declaration
+   headers are available, an implementation SHOULD make declaration-body queries for distinct top-level definitions
+   independently schedulable whenever they are not part of the same explicit recursive group and share no other
+   recorded dependencies.
 4. downstream modules may consult only imported interfaces for ordinary import resolution, downstream typechecking,
    instance search, and definitional equality.
    Imported implementation artifacts or source bodies are not required, except for same-module multi-fragment
