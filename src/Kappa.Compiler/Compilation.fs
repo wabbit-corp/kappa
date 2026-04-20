@@ -655,13 +655,13 @@ module Compilation =
             | ExpectDeclarationNode declaration -> Some declaration
             | _ -> None)
 
-    let private collectIntrinsicTerms (document: ParsedDocument) =
+    let private collectIntrinsicTerms (backendProfile: string) (document: ParsedDocument) =
         match document.ModuleName with
         | Some moduleName ->
             document.Syntax.Declarations
             |> List.choose (function
                 | ExpectDeclarationNode (ExpectTermDeclaration declaration)
-                    when Stdlib.intrinsicallySatisfiesExpect moduleName (ExpectTermDeclaration declaration) ->
+                    when Stdlib.intrinsicallySatisfiesExpect backendProfile moduleName (ExpectTermDeclaration declaration) ->
                     Some declaration.Name
                 | _ ->
                     None)
@@ -1001,7 +1001,7 @@ module Compilation =
           Diagnostics = document.Diagnostics
           ResolvedPhases = Set.ofList KFrontIRPhase.all }
 
-    let private lowerKCoreModule (frontendModule: KFrontIRModule) =
+    let private lowerKCoreModule (backendProfile: string) (frontendModule: KFrontIRModule) =
         let moduleName = moduleNameText frontendModule.ModuleIdentity
 
         let declarations =
@@ -1022,7 +1022,7 @@ module Compilation =
                 frontendModule.Declarations
                 |> List.choose (function
                     | ExpectDeclarationNode declaration
-                        when Stdlib.intrinsicallySatisfiesExpect moduleNameSegments declaration ->
+                        when Stdlib.intrinsicallySatisfiesExpect backendProfile moduleNameSegments declaration ->
                         match declaration with
                         | ExpectTermDeclaration termDeclaration -> Some termDeclaration.Name
                         | _ -> None
@@ -1379,7 +1379,7 @@ module Compilation =
         | ExpectTraitDeclaration declaration -> declaration.Span
         | ExpectTermDeclaration declaration -> declaration.Span
 
-    let private validateExpectDeclarations (documents: ParsedDocument list) =
+    let private validateExpectDeclarations (backendProfile: string) (documents: ParsedDocument list) =
         let diagnostics = DiagnosticBag()
 
         let documentsByModule =
@@ -1400,7 +1400,7 @@ module Compilation =
                 for declaration in collectExpectDeclarations document do
                     let satisfactionCount =
                         countOrdinarySatisfactions moduleDocuments declaration
-                        + if Stdlib.intrinsicallySatisfiesExpect moduleName declaration then 1 else 0
+                        + if Stdlib.intrinsicallySatisfiesExpect backendProfile moduleName declaration then 1 else 0
 
                     if satisfactionCount = 0 then
                         diagnostics.AddError(
@@ -2004,7 +2004,7 @@ module Compilation =
         let diagnostics =
             (documents |> List.collect (fun document -> document.Diagnostics))
             @ detectImportCycles documents
-            @ validateExpectDeclarations documents
+            @ validateExpectDeclarations options.BackendProfile documents
 
         let kFrontIR =
             documents
@@ -2013,7 +2013,7 @@ module Compilation =
 
         let kCore =
             kFrontIR
-            |> List.map lowerKCoreModule
+            |> List.map (lowerKCoreModule options.BackendProfile)
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
         let kBackendIR =

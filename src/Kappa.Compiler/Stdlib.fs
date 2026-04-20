@@ -5,6 +5,13 @@ open System.IO
 open System.Reflection
 
 module Stdlib =
+    type BackendIntrinsicSet =
+        { Identity: string
+          TypeNames: Set<string>
+          TraitNames: Set<string>
+          TermNames: Set<string>
+          ElaborationAvailableTermNames: Set<string> }
+
     let PreludeModuleName = [ "std"; "prelude" ]
     let PreludeModuleText = SyntaxFacts.moduleNameToText PreludeModuleName
 
@@ -86,20 +93,58 @@ module Stdlib =
                 "MonadError"
             ]
 
-    let IntrinsicTermNames =
+    let private intrinsicTermNames =
         Set.ofList [ "pure"; ">>="; ">>"; "True"; "False"; "not"; "and"; "or"; "negate"; "println"; "print"; "printInt" ]
+
+    let private preludeIntrinsicSet =
+        { Identity = "prelude-core-v1"
+          TypeNames = intrinsicTypeNames
+          TraitNames = intrinsicTraitNames
+          TermNames = intrinsicTermNames
+          ElaborationAvailableTermNames = intrinsicTermNames }
+
+    let private emptyIntrinsicSet =
+        { Identity = "none"
+          TypeNames = Set.empty
+          TraitNames = Set.empty
+          TermNames = Set.empty
+          ElaborationAvailableTermNames = Set.empty }
+
+    let normalizeBackendProfile (backendProfile: string) =
+        if String.IsNullOrWhiteSpace(backendProfile) then
+            "interpreter"
+        else
+            backendProfile.Trim().ToLowerInvariant()
+
+    let intrinsicSetForBackendProfile backendProfile =
+        match normalizeBackendProfile backendProfile with
+        | "interpreter"
+        | "dotnet"
+        | "dotnet-hosted"
+        | "dotnet-il" ->
+            preludeIntrinsicSet
+        | _ ->
+            emptyIntrinsicSet
+
+    let intrinsicTermNamesFor backendProfile moduleName =
+        if moduleName = PreludeModuleName then
+            (intrinsicSetForBackendProfile backendProfile).TermNames
+        else
+            Set.empty
 
     let private isPreludeExpectation moduleName =
         moduleName = PreludeModuleName
 
-    let intrinsicallySatisfiesExpect moduleName declaration =
+    let intrinsicallySatisfiesExpect backendProfile moduleName declaration =
         if not (isPreludeExpectation moduleName) then
             false
         else
+            let intrinsicSet = intrinsicSetForBackendProfile backendProfile
+
             match declaration with
             | ExpectTypeDeclaration declaration ->
-                intrinsicTypeNames.Contains(declaration.Name)
+                intrinsicSet.TypeNames.Contains(declaration.Name)
             | ExpectTraitDeclaration declaration ->
-                intrinsicTraitNames.Contains(declaration.Name)
+                intrinsicSet.TraitNames.Contains(declaration.Name)
             | ExpectTermDeclaration declaration ->
-                IntrinsicTermNames.Contains(declaration.Name)
+                intrinsicSet.TermNames.Contains(declaration.Name)

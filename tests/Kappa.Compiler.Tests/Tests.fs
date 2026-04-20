@@ -199,6 +199,35 @@ let ``compilation injects bundled std prelude and satisfies its intrinsic expect
     Assert.True(intrinsicExpect.IsSome, "Expected bundled std.prelude to declare intrinsic term 'not'.")
 
 [<Fact>]
+let ``supported backend profiles satisfy the current prelude intrinsic surface`` () =
+    let mainSource =
+        [
+            "module main"
+            "flag : Bool"
+            "let flag = not False"
+        ]
+        |> String.concat "\n"
+
+    for backendProfile in [ "interpreter"; "dotnet"; "dotnet-hosted"; "dotnet-il" ] do
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                $"memory-supported-intrinsics-{backendProfile}"
+                backendProfile
+                [ "main.kp", mainSource ]
+
+        Assert.False(
+            workspace.HasErrors,
+            $"Expected backend profile '{backendProfile}' to satisfy the current prelude intrinsics, got {workspace.Diagnostics}."
+        )
+
+        let preludeModule =
+            workspace.KCore
+            |> List.find (fun moduleDump -> moduleDump.Name = Stdlib.PreludeModuleText)
+
+        Assert.Contains("not", preludeModule.IntrinsicTerms)
+        Assert.Contains("printInt", preludeModule.IntrinsicTerms)
+
+[<Fact>]
 let ``implicit prelude import models the wildcard and constructor subset separately`` () =
     let imports = Stdlib.implicitImportsFor (Some [ "main" ])
 
@@ -239,6 +268,37 @@ let ``implicit prelude import models the wildcard and constructor subset separat
             failwithf "Unexpected implicit prelude constructor import: %A" other
     | other ->
         failwithf "Expected two implicit prelude import specs, got %A" other
+
+[<Fact>]
+let ``unknown backend profiles leave prelude expects unsatisfied`` () =
+    let mainSource =
+        [
+            "module main"
+            "flag : Bool"
+            "let flag = not False"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-unsupported-intrinsics-root"
+            "custom-backend"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected an unknown backend profile to leave prelude expects unsatisfied.")
+
+    let matchingDiagnostic =
+        workspace.Diagnostics
+        |> List.tryFind (fun diagnostic -> diagnostic.Message.Contains("Unsatisfied expect declaration for term 'not'", StringComparison.Ordinal))
+
+    Assert.True(matchingDiagnostic.IsSome, sprintf "Expected an unsatisfied prelude-term diagnostic, got %A" workspace.Diagnostics)
+
+    let preludeModule =
+        workspace.KCore
+        |> List.find (fun moduleDump -> moduleDump.Name = Stdlib.PreludeModuleText)
+
+    Assert.DoesNotContain("not", preludeModule.IntrinsicTerms)
+    Assert.DoesNotContain("printInt", preludeModule.IntrinsicTerms)
 
 [<Fact>]
 let ``compilation reports unsatisfied expect declarations outside std prelude`` () =
