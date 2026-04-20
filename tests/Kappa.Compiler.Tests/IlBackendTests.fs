@@ -375,4 +375,4 @@ let ``il backend requires explicit ctor imports for unqualified imported constru
     | Result.Ok artifact ->
         failwithf "Expected wildcard-imported constructor emission to fail, but emitted '%s'." artifact.AssemblyFilePath
     | Result.Error message ->
-        Assert.Contains("could not resolve callee 'Box'", message, StringComparison.OrdinalIgnoreCase)
+        Assert.Contains("unresolved runtime name 'Box'", message, StringComparison.OrdinalIgnoreCase)

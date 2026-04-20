@@ -1,5 +1,6 @@
 module ObservabilityTests
 
+open System
 open System.Text.Json
 open Kappa.Compiler
 open Harness
@@ -195,6 +196,92 @@ let ``checkpoint verification is available for frontend core and backend snapsho
     Assert.Empty(Compilation.verifyCheckpoint workspace "KFrontIR.CHECKERS")
     Assert.Empty(Compilation.verifyCheckpoint workspace "KCore")
     Assert.Empty(Compilation.verifyCheckpoint workspace "KBackendIR")
+
+[<Fact>]
+let ``backend verification rejects unresolved runtime names`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-verify-unresolved-name-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let malformedWorkspace =
+        { workspace with
+            KBackendIR =
+                workspace.KBackendIR
+                |> List.map (fun moduleDump ->
+                    if moduleDump.Name = "main" then
+                        { moduleDump with
+                            Bindings =
+                                moduleDump.Bindings
+                                |> List.map (fun binding ->
+                                    if binding.Name = "answer" then
+                                        { binding with Body = Some(KBackendName [ "mystery" ]) }
+                                    else
+                                        binding) }
+                    else
+                        moduleDump) }
+
+    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KBackendIR"
+
+    Assert.Contains(
+        diagnostics,
+        fun diagnostic ->
+            diagnostic.Message.Contains("unresolved runtime name 'mystery'", StringComparison.OrdinalIgnoreCase)
+    )
+
+[<Fact>]
+let ``backend verification rejects unsupported backend intrinsics`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-verify-unsupported-intrinsic-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let malformedPreludeBinding =
+        { Name = "mysteryIntrinsic"
+          Parameters = []
+          Body = None
+          Intrinsic = true
+          Provenance =
+            { FilePath = Stdlib.BundledPreludeVirtualPath
+              ModuleName = Stdlib.PreludeModuleText
+              DeclarationName = Some "mysteryIntrinsic"
+              IntroductionKind = "intrinsic" } }
+
+    let malformedWorkspace =
+        { workspace with
+            KBackendIR =
+                workspace.KBackendIR
+                |> List.map (fun moduleDump ->
+                    if moduleDump.Name = Stdlib.PreludeModuleText then
+                        { moduleDump with
+                            IntrinsicTerms = "mysteryIntrinsic" :: moduleDump.IntrinsicTerms
+                            Exports = "mysteryIntrinsic" :: moduleDump.Exports
+                            Bindings = malformedPreludeBinding :: moduleDump.Bindings }
+                    else
+                        moduleDump) }
+
+    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KBackendIR"
+
+    Assert.Contains(
+        diagnostics,
+        fun diagnostic ->
+            diagnostic.Message.Contains("intrinsic term 'mysteryIntrinsic'", StringComparison.OrdinalIgnoreCase)
+            && diagnostic.Message.Contains("provided by backend profile", StringComparison.OrdinalIgnoreCase)
+    )
 
 [<Fact>]
 let ``workspace materializes frontend core and backend modules`` () =
