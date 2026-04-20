@@ -46,6 +46,35 @@ let ``workspace exposes spec-shaped checkpoints and portable pipeline trace even
     Assert.Contains(("lowerKBackendIR", "KRuntimeIRUnit", "KRuntimeIR", "KBackendIR"), trace)
 
 [<Fact>]
+let ``zig backend exposes a post KBackendIR target checkpoint`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-zig-checkpoint-root"
+            "zig"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let checkpoints = Compilation.availableCheckpoints workspace
+
+    Assert.Contains("zig.c", checkpoints)
+
+    let trace =
+        Compilation.pipelineTrace workspace
+        |> List.map (fun step ->
+            PipelineTraceEvent.toPortableName step.Event,
+            PipelineTraceSubject.toPortableName step.Subject,
+            step.InputCheckpoint,
+            step.OutputCheckpoint)
+
+    Assert.Contains(("lowerTarget", "targetUnit", "KBackendIR", "zig.c"), trace)
+
+[<Fact>]
 let ``stage dumps serialize checkpoints in json and sexpr`` () =
     let workspace =
         compileInMemoryWorkspace
@@ -87,6 +116,41 @@ let ``stage dumps serialize checkpoints in json and sexpr`` () =
     Assert.Contains("(function (name \"answer\")", backendSexpr)
 
 [<Fact>]
+let ``zig target checkpoint dumps a manifest for the generated translation unit`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-zig-stage-dump-root"
+            "zig"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let zigJson =
+        match Compilation.dumpStage workspace "zig.c" StageDumpFormat.Json with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    Assert.Contains("\"checkpoint\": \"zig.c\"", zigJson)
+    Assert.Contains("\"inputCheckpoint\": \"KBackendIR\"", zigJson)
+    Assert.Contains("\"translationUnitName\": \"kappa.generated.c\"", zigJson)
+    Assert.Contains("\"entrySymbols\": [", zigJson)
+    Assert.Contains("kappa_module_main_answer", zigJson)
+
+    let zigSexpr =
+        match Compilation.dumpStage workspace "zig.c" StageDumpFormat.SExpression with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    Assert.Contains("(checkpoint \"zig.c\")", zigSexpr)
+    Assert.Contains("(input-checkpoint \"KBackendIR\")", zigSexpr)
+    Assert.Contains("(translation-unit-name \"kappa.generated.c\")", zigSexpr)
+
+[<Fact>]
 let ``workspace and stage dumps expose backend intrinsic identity`` () =
     let supportedWorkspace =
         compileInMemoryWorkspaceWithBackend
@@ -101,7 +165,7 @@ let ``workspace and stage dumps expose backend intrinsic identity`` () =
                 |> String.concat "\n"
             ]
 
-    Assert.Equal("prelude-core-v1", supportedWorkspace.BackendIntrinsicIdentity)
+    Assert.Equal("bootstrap-prelude-v1", supportedWorkspace.BackendIntrinsicIdentity)
 
     let supportedJson =
         match Compilation.dumpStage supportedWorkspace "KCore" StageDumpFormat.Json with
@@ -109,7 +173,7 @@ let ``workspace and stage dumps expose backend intrinsic identity`` () =
         | Result.Error message -> failwith message
 
     Assert.Contains("\"backendProfile\": \"interpreter\"", supportedJson)
-    Assert.Contains("\"backendIntrinsicSet\": \"prelude-core-v1\"", supportedJson)
+    Assert.Contains("\"backendIntrinsicSet\": \"bootstrap-prelude-v1\"", supportedJson)
 
     let unsupportedWorkspace =
         compileInMemoryWorkspaceWithBackend
@@ -150,7 +214,7 @@ let ``workspace and stage dumps expose elaboration available intrinsic terms`` (
             ]
 
     Assert.Contains("not", supportedWorkspace.ElaborationAvailableIntrinsicTerms)
-    Assert.Contains("printInt", supportedWorkspace.ElaborationAvailableIntrinsicTerms)
+    Assert.DoesNotContain("printInt", supportedWorkspace.ElaborationAvailableIntrinsicTerms)
 
     let supportedJson =
         match Compilation.dumpStage supportedWorkspace "KCore" StageDumpFormat.Json with
@@ -166,7 +230,7 @@ let ``workspace and stage dumps expose elaboration available intrinsic terms`` (
         |> Seq.toList
 
     Assert.Contains("not", supportedTerms)
-    Assert.Contains("printInt", supportedTerms)
+    Assert.DoesNotContain("printInt", supportedTerms)
 
     let unsupportedWorkspace =
         compileInMemoryWorkspaceWithBackend
@@ -208,6 +272,23 @@ let ``checkpoint verification is available for frontend core and backend snapsho
     Assert.Empty(Compilation.verifyCheckpoint workspace "KCore")
     Assert.Empty(Compilation.verifyCheckpoint workspace "KRuntimeIR")
     Assert.Empty(Compilation.verifyCheckpoint workspace "KBackendIR")
+
+[<Fact>]
+let ``zig target checkpoint verification is available`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-zig-verify-root"
+            "zig"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.Empty(Compilation.verifyCheckpoint workspace "zig.c")
 
 [<Fact>]
 let ``backend verification rejects missing backend modules`` () =
@@ -660,15 +741,98 @@ let ``workspace materializes frontend core and backend modules`` () =
     match backendBinding.Body with
     | Some(
         BackendCall(
-            BackendName(BackendIntrinsicName(_, "+", Some BackendRepInt64)),
+            BackendName(BackendIntrinsicName(moduleName, "+", Some BackendRepInt64)),
             [ BackendLiteral(LiteralValue.Integer 20L, BackendRepInt64)
               BackendLiteral(LiteralValue.Integer 22L, BackendRepInt64) ],
             _,
             BackendRepInt64
         )
-      ) -> ()
+      ) ->
+        Assert.Equal(Stdlib.PreludeModuleText, moduleName)
     | other ->
         failwithf "Unexpected KBackendIR function body: %A" other
+
+[<Fact>]
+let ``backend lowering resolves user defined operators through ordinary bindings`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-backend-user-operator-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "infix left 60 (++)"
+                    "let (++) x y = x + y"
+                    "let result = 20 ++ 22"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.Empty(Compilation.verifyCheckpoint workspace "KBackendIR")
+
+    let backendModule =
+        workspace.KBackendIR
+        |> List.find (fun moduleDump -> moduleDump.Name = "main")
+
+    let resultBinding =
+        backendModule.Functions
+        |> List.find (fun binding -> binding.Name = "result")
+
+    match resultBinding.Body with
+    | Some(
+        BackendCall(
+            BackendName(BackendGlobalBindingName(moduleName, "++", _)),
+            [ BackendLiteral(LiteralValue.Integer 20L, _)
+              BackendLiteral(LiteralValue.Integer 22L, _) ],
+            _,
+            _
+        )
+      ) ->
+        Assert.Equal("main", moduleName)
+    | other ->
+        failwithf "Unexpected backend operator lowering: %A" other
+
+[<Fact>]
+let ``backend verification accepts recursive list matches lowered through constructors`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-backend-list-root"
+            "zig"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "sumList : List Int -> Int"
+                    "let sumList xs ="
+                    "    match xs"
+                    "    case Nil -> 0"
+                    "    case head :: tail -> head + sumList tail"
+                    "let result = sumList (10 :: 20 :: 42 :: Nil)"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.Empty(Compilation.verifyCheckpoint workspace "KBackendIR")
+
+    let backendModule =
+        workspace.KBackendIR
+        |> List.find (fun moduleDump -> moduleDump.Name = "main")
+
+    let resultBinding =
+        backendModule.Functions
+        |> List.find (fun binding -> binding.Name = "result")
+
+    match resultBinding.Body with
+    | Some(
+        BackendCall(
+            BackendName(BackendGlobalBindingName("main", "sumList", _)),
+            [ BackendConstructData(_, "List", "::", _, _, _) ],
+            _,
+            _
+        )
+      ) -> ()
+    | other ->
+        failwithf "Unexpected recursive list backend lowering: %A" other
 
 [<Fact>]
 let ``core and backend artifacts remain usable after source documents are discarded`` () =

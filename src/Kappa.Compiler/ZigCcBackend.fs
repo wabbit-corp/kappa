@@ -845,7 +845,7 @@ module ZigCcBackend =
                   Definition = joinLines definitionLines }
         }
 
-    let private emitRuntimePrelude (context: GenerationContext) (entryFunctionName: string) =
+    let private emitRuntimePrelude (context: GenerationContext) =
         let preludeBoolTypeId = typeIdName Stdlib.PreludeModuleText "Bool"
 
         let typeIdLines =
@@ -1282,8 +1282,6 @@ module ZigCcBackend =
                 "    return kappa_unit();"
                 "}"
                 ""
-                $"static KValue* {entryFunctionName}(void* env, KValue** args, int argc);"
-                ""
                 "static void kappa_print_result_if_needed(KValue* value)"
                 "{"
                 "    if (!kappa_is_unit(value))"
@@ -1297,21 +1295,31 @@ module ZigCcBackend =
 
         joinLines runtimeLines
 
-    let emitArtifact (workspace: WorkspaceCompilation) (entryPoint: string) (outputDirectory: string) =
+    let private emitEntryPointProgram entryFunctionName =
+        joinLines
+            [
+                "int main(void)"
+                "{"
+                $"    KValue* result = {entryFunctionName}(NULL, NULL, 0);"
+                "    kappa_print_result_if_needed(result);"
+                "    return 0;"
+                "}"
+            ]
+
+    let private buildTranslationUnit (workspace: WorkspaceCompilation) =
         result {
             if workspace.HasErrors then
                 return!
                     Result.Error
                         $"Cannot emit native code for a workspace with diagnostics:{Environment.NewLine}{aggregateDiagnostics workspace.Diagnostics}"
 
-            let verificationDiagnostics = Compilation.verifyCheckpoint workspace "KRuntimeIR"
+            let verificationDiagnostics = CheckpointVerification.verifyCheckpoint workspace "KBackendIR"
 
             if not (List.isEmpty verificationDiagnostics) then
                 return!
                     Result.Error
-                        $"Cannot emit native code from malformed KRuntimeIR:{Environment.NewLine}{aggregateDiagnostics verificationDiagnostics}"
+                        $"Cannot emit native code from malformed KBackendIR:{Environment.NewLine}{aggregateDiagnostics verificationDiagnostics}"
 
-            let! entryModuleName, entryBindingName = resolveEntryPoint workspace entryPoint
             let context = buildContext workspace
 
             let topLevelFunctions =
@@ -1349,38 +1357,66 @@ module ZigCcBackend =
                 |> List.map (fun functionDump -> functionDump.Definition)
                 |> List.append (closureFunctions |> List.map (fun functionDump -> functionDump.Definition))
 
-            let! entryFunctionName =
-                lookupFunctionName context entryModuleName entryBindingName
-                |> resultOfOption $"zig could not resolve emitted entry point '{entryPoint}'."
+            let entrySymbols =
+                workspace.KBackendIR
+                |> List.collect (fun moduleDump ->
+                    moduleDump.EntryPoints
+                    |> List.choose (fun entryPointName ->
+                        lookupFunctionName context moduleDump.Name entryPointName))
+                |> List.distinct
+                |> List.sort
 
-            let sourceLines =
+            let functionSymbols =
+                context.FunctionNames
+                |> Map.toList
+                |> List.map snd
+                |> List.sort
+
+            let sourceText =
                 [
-                    yield emitRuntimePrelude context entryFunctionName
+                    yield emitRuntimePrelude context
                     if not (List.isEmpty prototypes) then
                         yield joinLines prototypes
                     if not (List.isEmpty supportDefinitions) then
                         yield joinLines supportDefinitions
                     if not (List.isEmpty definitions) then
                         yield joinLines definitions
-                    yield
-                        joinLines
-                        [
-                            "int main(void)"
-                            "{"
-                            $"    KValue* result = {entryFunctionName}(NULL, NULL, 0);"
-                            "    kappa_print_result_if_needed(result);"
-                            "    return 0;"
-                            "}"
-                        ]
                 ]
                 |> String.concat (Environment.NewLine + Environment.NewLine)
+
+            return
+                { TranslationUnitName = "kappa.generated.c"
+                  InputCheckpoint = "KBackendIR"
+                  EntrySymbols = entrySymbols
+                  FunctionSymbols = functionSymbols
+                  SourceText = sourceText }
+        }
+
+    let emitTranslationUnit (workspace: WorkspaceCompilation) =
+        buildTranslationUnit workspace
+
+    let emitArtifact (workspace: WorkspaceCompilation) (entryPoint: string) (outputDirectory: string) =
+        result {
+            let! translationUnit = buildTranslationUnit workspace
+            let! entryModuleName, entryBindingName = resolveEntryPoint workspace entryPoint
+            let context = buildContext workspace
+
+            let! entryFunctionName =
+                lookupFunctionName context entryModuleName entryBindingName
+                |> resultOfOption $"zig could not resolve emitted entry point '{entryPoint}'."
 
             let resolvedOutputDirectory = Path.GetFullPath(outputDirectory)
             Directory.CreateDirectory(resolvedOutputDirectory) |> ignore
 
-            let sourceFilePath = Path.Combine(resolvedOutputDirectory, "kappa.generated.c")
+            let sourceFilePath = Path.Combine(resolvedOutputDirectory, translationUnit.TranslationUnitName)
             let executableFilePath = executablePath resolvedOutputDirectory "kappa.generated"
-            File.WriteAllText(sourceFilePath, sourceLines)
+
+            let sourceText =
+                translationUnit.SourceText
+                + (Environment.NewLine + Environment.NewLine)
+                + emitEntryPointProgram entryFunctionName
+
+            File.WriteAllText(sourceFilePath, sourceText)
 
             return
                 { OutputDirectory = resolvedOutputDirectory

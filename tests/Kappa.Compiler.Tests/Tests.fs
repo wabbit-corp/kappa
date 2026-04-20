@@ -208,7 +208,7 @@ let ``supported backend profiles satisfy the current prelude intrinsic surface``
         ]
         |> String.concat "\n"
 
-    for backendProfile in [ "interpreter"; "dotnet"; "dotnet-hosted"; "dotnet-il"; "zig" ] do
+    for backendProfile in [ "interpreter"; "dotnet"; "dotnet-hosted"; "dotnet-il"; "zig"; "zigcc" ] do
         let workspace =
             compileInMemoryWorkspaceWithBackend
                 $"memory-supported-intrinsics-{backendProfile}"
@@ -226,6 +226,128 @@ let ``supported backend profiles satisfy the current prelude intrinsic surface``
 
         Assert.Contains("not", preludeModule.IntrinsicTerms)
         Assert.Contains("printInt", preludeModule.IntrinsicTerms)
+
+[<Fact>]
+let ``backend profile aliases normalize to the effective backend identity`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-backend-alias-root"
+            "zigcc"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.Equal("zig", workspace.BackendProfile)
+    Assert.Equal("bootstrap-prelude-v1", workspace.BackendIntrinsicIdentity)
+
+[<Fact>]
+let ``bundled bootstrap prelude exposes the current compiler contract`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-bootstrap-prelude-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let preludeDocument =
+        workspace.Documents
+        |> List.find (fun document -> document.ModuleName = Some Stdlib.PreludeModuleName)
+
+    let expectTypes =
+        preludeDocument.Syntax.Declarations
+        |> List.choose (function
+            | ExpectDeclarationNode (ExpectTypeDeclaration declaration) -> Some declaration.Name
+            | _ -> None)
+        |> List.sort
+
+    let expectTraits =
+        preludeDocument.Syntax.Declarations
+        |> List.choose (function
+            | ExpectDeclarationNode (ExpectTraitDeclaration declaration) -> Some declaration.Name
+            | _ -> None)
+        |> List.sort
+
+    let expectTerms =
+        preludeDocument.Syntax.Declarations
+        |> List.choose (function
+            | ExpectDeclarationNode (ExpectTermDeclaration declaration) -> Some declaration.Name
+            | _ -> None)
+        |> List.sort
+
+    let dataDeclarations =
+        preludeDocument.Syntax.Declarations
+        |> List.choose (function
+            | DataDeclarationNode declaration ->
+                Some(declaration.Name, declaration.Constructors |> List.map (fun constructor -> constructor.Name))
+            | _ -> None)
+        |> List.sortBy fst
+
+    Assert.Equal<string list>(
+        [ "Array"
+          "Bytes"
+          "Char"
+          "Float"
+          "IO"
+          "Int"
+          "Nat"
+          "Ref"
+          "Regex"
+          "String"
+          "Unit" ],
+        expectTypes
+    )
+
+    Assert.Equal<string list>(
+        [ "Applicative"
+          "Eq"
+          "Foldable"
+          "FromFloat"
+          "FromInteger"
+          "FromString"
+          "Functor"
+          "Monad"
+          "MonadError"
+          "Ord"
+          "Show"
+          "Traversable" ],
+        expectTraits
+    )
+
+    Assert.Equal<string list>(
+        [ ">>"
+          ">>="
+          "False"
+          "True"
+          "and"
+          "negate"
+          "not"
+          "or"
+          "print"
+          "printInt"
+          "println"
+          "pure" ],
+        expectTerms
+    )
+
+    Assert.Equal<(string * string list) list>(
+        [
+            "Bool", [ "True"; "False" ]
+            "List", [ "Nil"; "::" ]
+            "Option", [ "None"; "Some" ]
+            "Result", [ "Ok"; "Err" ]
+        ],
+        dataDeclarations
+    )
 
 [<Fact>]
 let ``implicit prelude import models the wildcard and constructor subset separately`` () =

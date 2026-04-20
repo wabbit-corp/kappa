@@ -267,9 +267,7 @@ module CheckpointVerification =
             |> Map.ofList
 
         let globallyAvailableIntrinsicTerms =
-            Set.union
-                (Stdlib.intrinsicTermNamesFor workspace.BackendProfile Stdlib.PreludeModuleName)
-                (set [ "+"; "-"; "*"; "/"; "&&"; "||"; "=="; "!="; "<"; ">"; "<="; ">="; "not"; "negate" ])
+            Stdlib.runtimeIntrinsicTermNamesFor workspace.BackendProfile Stdlib.PreludeModuleName
 
         let functionNames (moduleDump: KBackendModule) =
             moduleDump.Functions
@@ -308,7 +306,8 @@ module CheckpointVerification =
                 (moduleMap
                  |> Map.tryFind moduleName
                  |> Option.exists (fun moduleDump -> functionNames moduleDump |> Set.contains bindingName))
-                || globallyAvailableIntrinsicTerms.Contains bindingName
+                || (String.Equals(moduleName, Stdlib.PreludeModuleText, StringComparison.Ordinal)
+                    && globallyAvailableIntrinsicTerms.Contains bindingName)
             | BackendConstructorName(moduleName, typeName, constructorName, tag, arity, _) ->
                 constructorExists moduleName typeName constructorName tag arity
 

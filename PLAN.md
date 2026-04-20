@@ -26,10 +26,10 @@ Preferred resolution: adjust the compiler.
 - [ ] Introduce runtime-facing constructs for representation choice, runtime calls, data layout, field access, retained dictionaries/type parameters, and explicit runtime control.
 - [x] Strengthen `KBackendIR` verification so it checks the legality conditions from section 17.4.2 instead of only structural uniqueness checks.
 - [ ] Extend observability so `KBackendIR` dumps and post-`KBackendIR` CLR-lowering dumps expose the runtime information required by the spec.
-- [ ] Add a second post-`KBackendIR` lowering path using the standardized `zig` profile (implemented initially as generated C compiled by `zig cc`) so the runtime/data-layout boundary is exercised by more than the CLR backend.
-- [ ] Make the native lowering path consume `KBackendIR` directly rather than bypassing it through the interpreter or hosted-source runtime.
-- [ ] Keep the first native slice intentionally small but real: zero-argument entry points, recursive top-level functions, closures needed by `do` desugaring, tagged ADT allocation/matching, integer arithmetic/comparison, and `printInt`.
-- [ ] Expose at least one post-`KBackendIR` native-lowering checkpoint once the first `zig` lowering slice exists, so target-specific debugging is not CLR-only.
+- [x] Add a second post-`KBackendIR` lowering path using the standardized `zig` profile (implemented initially as generated C compiled by `zig cc`) so the runtime/data-layout boundary is exercised by more than the CLR backend.
+- [x] Make the native lowering path consume `KBackendIR` directly rather than bypassing it through the interpreter or hosted-source runtime.
+- [x] Keep the first native slice intentionally small but real: zero-argument entry points, recursive top-level functions, closures needed by `do` desugaring, tagged ADT allocation/matching, integer arithmetic/comparison, and `printInt`.
+- [x] Expose at least one post-`KBackendIR` native-lowering checkpoint once the first `zig` lowering slice exists, so target-specific debugging is not CLR-only.
 
 ## 4. `expect` satisfaction and backend intrinsics
 
@@ -57,7 +57,7 @@ Preferred resolution: adjust the spec or split the spec surface into profiles.
 - [ ] Decide whether M1 really intends the full section 2.7 prelude or a smaller bootstrap prelude.
 - [ ] If the goal is the full spec surface, expand the compiler prelude and intrinsic/runtime support until the missing mandatory names exist.
 - [ ] If the goal is a smaller bootstrap surface, update `Spec.md` to define that bootstrap prelude explicitly instead of leaving the current reduced prelude as an undocumented deviation.
-- [ ] Add tests that assert exactly the chosen prelude contract, so the bootstrap/full distinction is machine-checked.
+- [x] Add tests that assert exactly the chosen prelude contract, so the bootstrap/full distinction is machine-checked.
 
 ## 7. Appendix T standard harness
 
@@ -77,7 +77,9 @@ Preferred resolution: sequence the work so public behavior becomes honest first,
 
 - [x] Fix the public-profile mismatches first: `dotnet` backend routing, implicit prelude import semantics, and backend-scoped `expect` handling.
 - [ ] Then align the internal architecture: true `KBackendIR`, stronger verifier rules, and post-`KBackendIR` target-lowering checkpoints.
-- [ ] In parallel with that architectural cleanup, stand up the first real native path under the standardized `zig` profile by lowering `KBackendIR` to generated C and compiling it with `zig cc`.
+- [x] In parallel with that architectural cleanup, stand up the first real native path under the standardized `zig` profile by lowering `KBackendIR` to generated C and compiling it with `zig cc`.
 - [ ] Use the first `zig` slice to pressure-test what still belongs in `KBackendIR` versus what is really target-specific lowering state before expanding the CLR backend further.
 - [ ] Then decide whether section 2.7 stays normative for the current milestone or whether the spec needs a bootstrap prelude/profile split.
 - [ ] Finally, bring the test harness up to Appendix T and convert more of the existing suites to the standard directive set.
+
+Current M2 readiness note: the immediate pre-M2 honesty work is done. The compiler now normalizes the effective backend profile, verifies `KBackendIR` before native emission, lowers the standardized `zig` profile directly from `KBackendIR`, and exposes a post-`KBackendIR` `zig.c` checkpoint with verification and stage dumps. The remaining unchecked items are broader conformance work rather than blockers to starting M2.

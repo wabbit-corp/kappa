@@ -10,6 +10,7 @@ module Stdlib =
           TypeNames: Set<string>
           TraitNames: Set<string>
           TermNames: Set<string>
+          RuntimeTermNames: Set<string>
           ElaborationAvailableTermNames: Set<string> }
 
     let PreludeModuleName = [ "std"; "prelude" ]
@@ -62,6 +63,8 @@ module Stdlib =
     let BundledPreludeVirtualPath =
         Path.Combine(Path.GetFullPath("__kappa_stdlib__"), "std", "prelude.kp")
 
+    let ZigTargetCheckpointName = "zig.c"
+
     let loadBundledPreludeText () = bundledPreludeText.Value
 
     let shouldImplicitlyImportPrelude moduleName =
@@ -96,18 +99,26 @@ module Stdlib =
     let private intrinsicTermNames =
         Set.ofList [ "pure"; ">>="; ">>"; "True"; "False"; "not"; "and"; "or"; "negate"; "println"; "print"; "printInt" ]
 
+    let private runtimeOnlyIntrinsicTermNames =
+        Set.ofList [ "+"; "-"; "*"; "/"; "&&"; "||"; "=="; "!="; "<"; "<="; ">"; ">=" ]
+
+    let private elaborationAvailableIntrinsicTermNames =
+        Set.ofList [ "True"; "False"; "not"; "and"; "or"; "negate"; "+"; "-"; "*"; "/"; "&&"; "||"; "=="; "!="; "<"; "<="; ">"; ">=" ]
+
     let private preludeIntrinsicSet =
-        { Identity = "prelude-core-v1"
+        { Identity = "bootstrap-prelude-v1"
           TypeNames = intrinsicTypeNames
           TraitNames = intrinsicTraitNames
           TermNames = intrinsicTermNames
-          ElaborationAvailableTermNames = intrinsicTermNames }
+          RuntimeTermNames = Set.union intrinsicTermNames runtimeOnlyIntrinsicTermNames
+          ElaborationAvailableTermNames = elaborationAvailableIntrinsicTermNames }
 
     let private emptyIntrinsicSet =
         { Identity = "none"
           TypeNames = Set.empty
           TraitNames = Set.empty
           TermNames = Set.empty
+          RuntimeTermNames = Set.empty
           ElaborationAvailableTermNames = Set.empty }
 
     let normalizeBackendProfile (backendProfile: string) =
@@ -134,6 +145,19 @@ module Stdlib =
             (intrinsicSetForBackendProfile backendProfile).TermNames
         else
             Set.empty
+
+    let runtimeIntrinsicTermNamesFor backendProfile moduleName =
+        if moduleName = PreludeModuleName then
+            (intrinsicSetForBackendProfile backendProfile).RuntimeTermNames
+        else
+            Set.empty
+
+    let targetCheckpointNamesFor backendProfile =
+        match normalizeBackendProfile backendProfile with
+        | "zig" ->
+            [ ZigTargetCheckpointName ]
+        | _ ->
+            []
 
     let private isPreludeExpectation moduleName =
         moduleName = PreludeModuleName

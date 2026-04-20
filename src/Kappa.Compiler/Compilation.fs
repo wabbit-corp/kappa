@@ -1188,7 +1188,19 @@ module Compilation =
         | "and"
         | "or"
         | ">>="
-        | ">>" ->
+        | ">>"
+        | "+"
+        | "-"
+        | "*"
+        | "/"
+        | "&&"
+        | "||"
+        | "=="
+        | "!="
+        | "<"
+        | ">"
+        | "<="
+        | ">=" ->
             2
         | _ ->
             0
@@ -1199,7 +1211,15 @@ module Compilation =
         | "False"
         | "not"
         | "and"
-        | "or" ->
+        | "or"
+        | "&&"
+        | "||"
+        | "=="
+        | "!="
+        | "<"
+        | ">"
+        | "<="
+        | ">=" ->
             Some BackendRepBoolean
         | "print"
         | "println"
@@ -1392,8 +1412,9 @@ module Compilation =
           BindingInfos = bindingInfos
           ConstructorInfos = constructorInfos }
 
-    let private lowerKBackendModules (kCore: KCoreModule list) (kRuntimeIR: KRuntimeModule list) =
+    let private lowerKBackendModules (backendProfile: string) (kCore: KCoreModule list) (kRuntimeIR: KRuntimeModule list) =
         let context = buildBackendLoweringContext kCore kRuntimeIR
+        let availableRuntimeIntrinsics = Stdlib.runtimeIntrinsicTermNamesFor backendProfile Stdlib.PreludeModuleName
 
         let resolveQualifiedRuntimeModule (currentModule: KRuntimeModule) qualifierSegments =
             let qualifierText = SyntaxFacts.moduleNameToText qualifierSegments
@@ -1584,6 +1605,102 @@ module Compilation =
             let environmentLayouts = ResizeArray<KBackendEnvironmentLayout>()
             let mutable nextEnvironmentLayoutId = 0
 
+            let makeCallingConvention runtimeArity parameterRepresentations resultRepresentation =
+                { RuntimeArity = runtimeArity
+                  ParameterRepresentations = parameterRepresentations
+                  ResultRepresentation = resultRepresentation
+                  RetainedDictionaryParameters = [] }
+
+            let tryLookupBindingInfo moduleName bindingName =
+                context.BindingInfos |> Map.tryFind (moduleName, bindingName)
+
+            let lowerResolvedCall
+                (loweredArguments: KBackendExpression list)
+                (argumentRepresentations: KBackendRepresentationClass list)
+                (fallbackResultRepresentation: KBackendRepresentationClass)
+                (resolvedName: KBackendResolvedName)
+                : Result<KBackendExpression * KBackendRepresentationClass, string> =
+                match resolvedName with
+                | BackendConstructorName(moduleName, typeName, constructorName, tag, arity, representation)
+                    when arity = List.length loweredArguments ->
+                    Result.Ok(
+                        BackendConstructData(
+                            moduleName,
+                            typeName,
+                            constructorName,
+                            tag,
+                            loweredArguments,
+                            representation
+                        ),
+                        representation
+                    )
+                | BackendConstructorName(moduleName, typeName, constructorName, _, arity, _) ->
+                    Result.Error
+                        $"Constructor '{moduleName}.{typeName}.{constructorName}' expected {arity} arguments but received {List.length loweredArguments}."
+                | BackendGlobalBindingName(moduleName, bindingName, _)
+                | BackendIntrinsicName(moduleName, bindingName, _) ->
+                    let conventionResult =
+                        match tryLookupBindingInfo moduleName bindingName with
+                        | Some bindingInfo ->
+                            let resultRepresentation =
+                                bindingInfo.ReturnRepresentation
+                                |> Option.defaultValue fallbackResultRepresentation
+
+                            Result.Ok(
+                                makeCallingConvention
+                                    bindingInfo.Arity
+                                    argumentRepresentations
+                                    (Some resultRepresentation),
+                                resultRepresentation
+                            )
+                        | None when availableRuntimeIntrinsics.Contains bindingName && moduleName = Stdlib.PreludeModuleText ->
+                            let resultRepresentation =
+                                intrinsicResultRepresentation bindingName
+                                |> Option.defaultValue fallbackResultRepresentation
+
+                            Result.Ok(
+                                makeCallingConvention
+                                    (intrinsicRuntimeArity bindingName)
+                                    argumentRepresentations
+                                    (Some resultRepresentation),
+                                resultRepresentation
+                            )
+                        | None ->
+                            Result.Error $"Could not lower runtime call target '{moduleName}.{bindingName}' to KBackendIR."
+
+                    conventionResult
+                    |> Result.map (fun (convention, resultRepresentation) ->
+                        BackendCall(BackendName resolvedName, loweredArguments, convention, resultRepresentation), resultRepresentation)
+                | BackendLocalName _ ->
+                    let convention =
+                        makeCallingConvention
+                            (List.length loweredArguments)
+                            argumentRepresentations
+                            (Some fallbackResultRepresentation)
+
+                    Result.Ok(
+                        BackendCall(BackendName resolvedName, loweredArguments, convention, fallbackResultRepresentation),
+                        fallbackResultRepresentation
+                    )
+
+            let lowerNamedRuntimeCall
+                (locals: Map<string, KBackendRepresentationClass>)
+                (runtimeName: string)
+                (loweredArguments: KBackendExpression list)
+                (argumentRepresentations: KBackendRepresentationClass list)
+                (fallbackResultRepresentation: KBackendRepresentationClass)
+                : Result<KBackendExpression * KBackendRepresentationClass, string> =
+                match resolveRuntimeName runtimeModule locals [ runtimeName ] with
+                | Result.Ok(resolvedName, _) ->
+                    lowerResolvedCall loweredArguments argumentRepresentations fallbackResultRepresentation resolvedName
+                | Result.Error _ when availableRuntimeIntrinsics.Contains runtimeName ->
+                    let resolvedName =
+                        BackendIntrinsicName(Stdlib.PreludeModuleText, runtimeName, Some fallbackResultRepresentation)
+
+                    lowerResolvedCall loweredArguments argumentRepresentations fallbackResultRepresentation resolvedName
+                | Result.Error _ ->
+                    Result.Error $"unresolved runtime name '{runtimeName}'"
+
             let rec lowerPattern
                 (locals: Map<string, KBackendRepresentationClass>)
                 (patternRepresentation: KBackendRepresentationClass)
@@ -1757,87 +1874,55 @@ module Compilation =
                     |> Result.bind (fun (loweredArguments, argumentRepresentations) ->
                         let loweredArguments = List.rev loweredArguments
                         let argumentRepresentations = List.rev argumentRepresentations
+                        let fallbackResultRepresentation = backendOpaqueRepresentation None
 
                         match callee with
+                        | KRuntimeName [ runtimeName ] ->
+                            lowerNamedRuntimeCall
+                                locals
+                                runtimeName
+                                loweredArguments
+                                argumentRepresentations
+                                fallbackResultRepresentation
                         | KRuntimeName segments ->
                             resolveRuntimeName runtimeModule locals segments
                             |> Result.bind (fun (resolvedName, _) ->
-                                match resolvedName with
-                                | BackendConstructorName(moduleName, typeName, constructorName, tag, arity, representation)
-                                    when arity = List.length loweredArguments ->
-                                    Result.Ok(
-                                        BackendConstructData(
-                                            moduleName,
-                                            typeName,
-                                            constructorName,
-                                            tag,
-                                            loweredArguments,
-                                            representation
-                                        ),
-                                        representation
-                                    )
-                                | _ ->
-                                    let calleeExpression = BackendName resolvedName
-
-                                    let convention =
-                                        match resolvedName with
-                                        | BackendGlobalBindingName(moduleName, bindingName, _)
-                                        | BackendIntrinsicName(moduleName, bindingName, _) ->
-                                            let bindingInfo = context.BindingInfos[moduleName, bindingName]
-
-                                            { RuntimeArity = bindingInfo.Arity
-                                              ParameterRepresentations = argumentRepresentations
-                                              ResultRepresentation = bindingInfo.ReturnRepresentation
-                                              RetainedDictionaryParameters = [] }
-                                        | BackendConstructorName(_, _, _, _, arity, representation) ->
-                                            { RuntimeArity = arity
-                                              ParameterRepresentations = argumentRepresentations
-                                              ResultRepresentation = Some representation
-                                              RetainedDictionaryParameters = [] }
-                                        | BackendLocalName _ ->
-                                            { RuntimeArity = List.length loweredArguments
-                                              ParameterRepresentations = argumentRepresentations
-                                              ResultRepresentation = Some(backendOpaqueRepresentation None)
-                                              RetainedDictionaryParameters = [] }
-
-                                    let resultRepresentation =
-                                        convention.ResultRepresentation |> Option.defaultValue (backendOpaqueRepresentation None)
-
-                                    Result.Ok(BackendCall(calleeExpression, loweredArguments, convention, resultRepresentation), resultRepresentation))
+                                lowerResolvedCall
+                                    loweredArguments
+                                    argumentRepresentations
+                                    fallbackResultRepresentation
+                                    resolvedName)
                         | _ ->
                             lowerExpression scopeLabel locals callee
                             |> Result.map (fun (loweredCallee, _) ->
+                                let resultRepresentation = fallbackResultRepresentation
                                 let convention =
-                                    { RuntimeArity = List.length loweredArguments
-                                      ParameterRepresentations = argumentRepresentations
-                                      ResultRepresentation = Some(backendOpaqueRepresentation None)
-                                      RetainedDictionaryParameters = [] }
+                                    makeCallingConvention
+                                        (List.length loweredArguments)
+                                        argumentRepresentations
+                                        (Some resultRepresentation)
 
-                                let resultRepresentation = backendOpaqueRepresentation None
                                 BackendCall(loweredCallee, loweredArguments, convention, resultRepresentation), resultRepresentation))
                 | KRuntimeUnary(operatorName, operand) ->
                     lowerExpression scopeLabel locals operand
-                    |> Result.map (fun (loweredOperand, operandRepresentation) ->
+                    |> Result.bind (fun (loweredOperand, operandRepresentation) ->
                         let resultRepresentation =
                             match operatorName with
                             | "not" -> BackendRepBoolean
                             | "negate" -> operandRepresentation
                             | _ -> backendOpaqueRepresentation None
 
-                        let callee = BackendName(BackendIntrinsicName(runtimeModule.Name, operatorName, Some resultRepresentation))
-
-                        let convention =
-                            { RuntimeArity = 1
-                              ParameterRepresentations = [ operandRepresentation ]
-                              ResultRepresentation = Some resultRepresentation
-                              RetainedDictionaryParameters = [] }
-
-                        BackendCall(callee, [ loweredOperand ], convention, resultRepresentation), resultRepresentation)
+                        lowerNamedRuntimeCall
+                            locals
+                            operatorName
+                            [ loweredOperand ]
+                            [ operandRepresentation ]
+                            resultRepresentation)
                 | KRuntimeBinary(left, operatorName, right) ->
                     lowerExpression scopeLabel locals left
                     |> Result.bind (fun (loweredLeft, leftRepresentation) ->
                         lowerExpression scopeLabel locals right
-                        |> Result.map (fun (loweredRight, rightRepresentation) ->
+                        |> Result.bind (fun (loweredRight, rightRepresentation) ->
                             let resultRepresentation =
                                 match operatorName with
                                 | "&&"
@@ -1854,15 +1939,12 @@ module Compilation =
                                 | _ ->
                                     backendOpaqueRepresentation None
 
-                            let callee = BackendName(BackendIntrinsicName(runtimeModule.Name, operatorName, Some resultRepresentation))
-
-                            let convention =
-                                { RuntimeArity = 2
-                                  ParameterRepresentations = [ leftRepresentation; rightRepresentation ]
-                                  ResultRepresentation = Some resultRepresentation
-                                  RetainedDictionaryParameters = [] }
-
-                            BackendCall(callee, [ loweredLeft; loweredRight ], convention, resultRepresentation), resultRepresentation))
+                            lowerNamedRuntimeCall
+                                locals
+                                operatorName
+                                [ loweredLeft; loweredRight ]
+                                [ leftRepresentation; rightRepresentation ]
+                                resultRepresentation))
                 | KRuntimePrefixedString(prefix, parts) ->
                     let rec lowerStringParts parts =
                         match parts with
@@ -2598,6 +2680,72 @@ module Compilation =
         ]
         |> String.concat " "
 
+    let private targetCheckpointNames (workspace: WorkspaceCompilation) =
+        Stdlib.targetCheckpointNamesFor workspace.BackendProfile
+
+    let private tryEmitTargetTranslationUnit (workspace: WorkspaceCompilation) checkpoint =
+        match Stdlib.normalizeBackendProfile workspace.BackendProfile, checkpoint with
+        | "zig", checkpointName when checkpointName = Stdlib.ZigTargetCheckpointName ->
+            ZigCcBackend.emitTranslationUnit workspace
+        | _ ->
+            Result.Error $"Unknown checkpoint '{checkpoint}'."
+
+    let private verifyTargetCheckpoint (workspace: WorkspaceCompilation) checkpoint =
+        match tryEmitTargetTranslationUnit workspace checkpoint with
+        | Result.Ok _ ->
+            []
+        | Result.Error message ->
+            [ { Severity = Error
+                Message = message
+                Location = None } ]
+
+    let private renderTargetCheckpointJson
+        (workspace: WorkspaceCompilation)
+        (checkpoint: string)
+        (translationUnit: NativeTranslationUnit)
+        =
+        serializeJson
+            {| schemaVersion = "1"
+               languageVersion = languageVersion
+               compiler = {| id = compilerImplementationId; version = compilerImplementationVersion |}
+               checkpoint = checkpoint
+               compilationRoot = workspace.SourceRoot
+               backendProfile = workspace.BackendProfile
+               backendIntrinsicSet = workspace.BackendIntrinsicIdentity
+               elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms
+               buildConfiguration = {| packageMode = workspace.PackageMode |}
+               inputCheckpoint = translationUnit.InputCheckpoint
+               translationUnitName = translationUnit.TranslationUnitName
+               entrySymbols = translationUnit.EntrySymbols
+               functionSymbols = translationUnit.FunctionSymbols
+               sourceText = translationUnit.SourceText
+               diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
+
+    let private renderTargetCheckpointSexpr
+        (workspace: WorkspaceCompilation)
+        (checkpoint: string)
+        (translationUnit: NativeTranslationUnit)
+        =
+        let translationUnitAtom =
+            [
+                sexprStringAtom "input-checkpoint" translationUnit.InputCheckpoint
+                sexprStringAtom "translation-unit-name" translationUnit.TranslationUnitName
+                sexprStringList "entry-symbols" translationUnit.EntrySymbols
+                sexprStringList "function-symbols" translationUnit.FunctionSymbols
+                sexprStringAtom "source-text" translationUnit.SourceText
+            ]
+            |> String.concat " "
+            |> fun body -> $"(translation-unit {body})"
+
+        let diagnosticsAtom =
+            workspace.Diagnostics
+            |> List.map dumpDiagnostic
+            |> List.map renderDumpDiagnosticSexpr
+            |> String.concat " "
+            |> fun body -> if String.IsNullOrWhiteSpace(body) then "(diagnostics)" else $"(diagnostics {body})"
+
+        $"(stage-dump {metadataSexpr workspace checkpoint} {translationUnitAtom} {diagnosticsAtom})"
+
     let private traceStep eventName subject stepName inputCheckpoint outputCheckpoint changedRepresentation verificationAttempted verificationSucceeded =
         { Event = eventName
           Subject = subject
@@ -2623,116 +2771,145 @@ module Compilation =
             KFrontIRPhase.all
             |> List.pairwise
 
-        documents
-        |> List.collect (fun document ->
-            let label =
-                document.ModuleIdentity
-                |> Option.map SyntaxFacts.moduleNameToText
-                |> Option.defaultValue document.FilePath
+        let documentSteps =
+            documents
+            |> List.collect (fun document ->
+                let label =
+                    document.ModuleIdentity
+                    |> Option.map SyntaxFacts.moduleNameToText
+                    |> Option.defaultValue document.FilePath
 
-            let parseSteps =
+                let parseSteps =
+                    [
+                        traceStep
+                            PipelineTraceEvent.Parse
+                            PipelineTraceSubject.File
+                            $"parse {document.FilePath}"
+                            "surface-source"
+                            "surface-source"
+                            false
+                            false
+                            None
+                        traceStep
+                            PipelineTraceEvent.BuildKFrontIR
+                            PipelineTraceSubject.File
+                            $"build KFrontIR for {document.FilePath}"
+                            "surface-source"
+                            (KFrontIRPhase.checkpointName RAW)
+                            true
+                            false
+                            None
+                    ]
+
+                let phaseSteps =
+                    phaseTransitions
+                    |> List.map (fun (fromPhase, toPhase) ->
+                        traceStep
+                            PipelineTraceEvent.AdvancePhase
+                            PipelineTraceSubject.Module
+                            $"advance {label} to {KFrontIRPhase.phaseName toPhase}"
+                            (KFrontIRPhase.checkpointName fromPhase)
+                            (KFrontIRPhase.checkpointName toPhase)
+                            true
+                            false
+                            None)
+
+                let verifySteps =
+                    [
+                        traceStep
+                            PipelineTraceEvent.Verify
+                            PipelineTraceSubject.Module
+                            $"verify {label} at {frontendCheckpoint}"
+                            frontendCheckpoint
+                            frontendCheckpoint
+                            false
+                            true
+                            (Some frontendVerified)
+                        traceStep
+                            PipelineTraceEvent.LowerKCore
+                            PipelineTraceSubject.Module
+                            $"lower {label} to KCore"
+                            (KFrontIRPhase.checkpointName CORE_LOWERING)
+                            "KCore"
+                            true
+                            false
+                            None
+                        traceStep
+                            PipelineTraceEvent.Verify
+                            PipelineTraceSubject.KCoreUnit
+                            $"verify {label} at KCore"
+                            "KCore"
+                            "KCore"
+                            false
+                            true
+                            (Some coreVerified)
+                        traceStep
+                            PipelineTraceEvent.LowerKRuntimeIR
+                            PipelineTraceSubject.KCoreUnit
+                            $"lower {label} to KRuntimeIR"
+                            "KCore"
+                            "KRuntimeIR"
+                            true
+                            false
+                            None
+                        traceStep
+                            PipelineTraceEvent.Verify
+                            PipelineTraceSubject.KRuntimeIRUnit
+                            $"verify {label} at KRuntimeIR"
+                            "KRuntimeIR"
+                            "KRuntimeIR"
+                            false
+                            true
+                            (Some runtimeVerified)
+                        traceStep
+                            PipelineTraceEvent.LowerKBackendIR
+                            PipelineTraceSubject.KRuntimeIRUnit
+                            $"lower {label} to KBackendIR"
+                            "KRuntimeIR"
+                            "KBackendIR"
+                            true
+                            false
+                            None
+                        traceStep
+                            PipelineTraceEvent.Verify
+                            PipelineTraceSubject.KBackendIRUnit
+                            $"verify {label} at KBackendIR"
+                            "KBackendIR"
+                            "KBackendIR"
+                            false
+                            true
+                            (Some backendVerified)
+                    ]
+
+                parseSteps @ phaseSteps @ verifySteps)
+
+        let targetSteps =
+            targetCheckpointNames workspace
+            |> List.collect (fun checkpoint ->
+                let targetVerified = verifyTargetCheckpoint workspace checkpoint |> List.isEmpty
+
                 [
                     traceStep
-                        PipelineTraceEvent.Parse
-                        PipelineTraceSubject.File
-                        $"parse {document.FilePath}"
-                        "surface-source"
-                        "surface-source"
-                        false
-                        false
-                        None
-                    traceStep
-                        PipelineTraceEvent.BuildKFrontIR
-                        PipelineTraceSubject.File
-                        $"build KFrontIR for {document.FilePath}"
-                        "surface-source"
-                        (KFrontIRPhase.checkpointName RAW)
-                        true
-                        false
-                        None
-                ]
-
-            let phaseSteps =
-                phaseTransitions
-                |> List.map (fun (fromPhase, toPhase) ->
-                    traceStep
-                        PipelineTraceEvent.AdvancePhase
-                        PipelineTraceSubject.Module
-                        $"advance {label} to {KFrontIRPhase.phaseName toPhase}"
-                        (KFrontIRPhase.checkpointName fromPhase)
-                        (KFrontIRPhase.checkpointName toPhase)
-                        true
-                        false
-                        None)
-
-            let verifySteps =
-                [
-                    traceStep
-                        PipelineTraceEvent.Verify
-                        PipelineTraceSubject.Module
-                        $"verify {label} at {frontendCheckpoint}"
-                        frontendCheckpoint
-                        frontendCheckpoint
-                        false
-                        true
-                        (Some frontendVerified)
-                    traceStep
-                        PipelineTraceEvent.LowerKCore
-                        PipelineTraceSubject.Module
-                        $"lower {label} to KCore"
-                        (KFrontIRPhase.checkpointName CORE_LOWERING)
-                        "KCore"
-                        true
-                        false
-                        None
-                    traceStep
-                        PipelineTraceEvent.Verify
-                        PipelineTraceSubject.KCoreUnit
-                        $"verify {label} at KCore"
-                        "KCore"
-                        "KCore"
-                        false
-                        true
-                        (Some coreVerified)
-                    traceStep
-                        PipelineTraceEvent.LowerKRuntimeIR
-                        PipelineTraceSubject.KCoreUnit
-                        $"lower {label} to KRuntimeIR"
-                        "KCore"
-                        "KRuntimeIR"
-                        true
-                        false
-                        None
-                    traceStep
-                        PipelineTraceEvent.Verify
-                        PipelineTraceSubject.KRuntimeIRUnit
-                        $"verify {label} at KRuntimeIR"
-                        "KRuntimeIR"
-                        "KRuntimeIR"
-                        false
-                        true
-                        (Some runtimeVerified)
-                    traceStep
-                        PipelineTraceEvent.LowerKBackendIR
-                        PipelineTraceSubject.KRuntimeIRUnit
-                        $"lower {label} to KBackendIR"
-                        "KRuntimeIR"
+                        PipelineTraceEvent.LowerTarget
+                        PipelineTraceSubject.TargetUnit
+                        $"lower KBackendIR to {checkpoint}"
                         "KBackendIR"
+                        checkpoint
                         true
                         false
                         None
                     traceStep
                         PipelineTraceEvent.Verify
-                        PipelineTraceSubject.KBackendIRUnit
-                        $"verify {label} at KBackendIR"
-                        "KBackendIR"
-                        "KBackendIR"
+                        PipelineTraceSubject.TargetUnit
+                        $"verify target at {checkpoint}"
+                        checkpoint
+                        checkpoint
                         false
                         true
-                        (Some backendVerified)
-                ]
+                        (Some targetVerified)
+                ])
 
-            parseSteps @ phaseSteps @ verifySteps)
+        documentSteps @ targetSteps
 
     let private dumpStageJson (workspace: WorkspaceCompilation) checkpoint =
         match checkpoint with
@@ -2947,7 +3124,8 @@ module Compilation =
                 invalidOp $"Unknown checkpoint '{checkpoint}'."
 
     let parse (options: CompilationOptions) inputs =
-        let backendIntrinsicSet = Stdlib.intrinsicSetForBackendProfile options.BackendProfile
+        let normalizedBackendProfile = Stdlib.normalizeBackendProfile options.BackendProfile
+        let backendIntrinsicSet = Stdlib.intrinsicSetForBackendProfile normalizedBackendProfile
         let backendIntrinsicIdentity = backendIntrinsicSet.Identity
         let elaborationAvailableIntrinsicTerms =
             backendIntrinsicSet.ElaborationAvailableTermNames
@@ -2967,7 +3145,7 @@ module Compilation =
         let diagnostics =
             (documents |> List.collect (fun document -> document.Diagnostics))
             @ detectImportCycles documents
-            @ validateExpectDeclarations options.BackendProfile documents
+            @ validateExpectDeclarations normalizedBackendProfile documents
 
         let kFrontIR =
             documents
@@ -2976,7 +3154,7 @@ module Compilation =
 
         let kCore =
             kFrontIR
-            |> List.map (lowerKCoreModule options.BackendProfile)
+            |> List.map (lowerKCoreModule normalizedBackendProfile)
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
         let kRuntimeIR =
@@ -2985,13 +3163,13 @@ module Compilation =
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
         let kBackendIR =
-            lowerKBackendModules kCore kRuntimeIR
+            lowerKBackendModules normalizedBackendProfile kCore kRuntimeIR
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
         let workspace =
             { SourceRoot = options.SourceRoot
               PackageMode = options.PackageMode
-              BackendProfile = options.BackendProfile
+              BackendProfile = normalizedBackendProfile
               BackendIntrinsicIdentity = backendIntrinsicIdentity
               ElaborationAvailableIntrinsicTerms = elaborationAvailableIntrinsicTerms
               Documents = documents
@@ -3005,19 +3183,34 @@ module Compilation =
         { workspace with
             PipelineTrace = buildPipelineTrace workspace }
 
-    let availableCheckpoints (_: WorkspaceCompilation) =
+    let availableCheckpoints (workspace: WorkspaceCompilation) =
         CheckpointVerification.availableCheckpointNames
+        @ targetCheckpointNames workspace
+        |> List.distinct
 
     let verifyCheckpoint (workspace: WorkspaceCompilation) checkpoint =
-        CheckpointVerification.verifyCheckpoint workspace checkpoint
+        if targetCheckpointNames workspace |> List.contains checkpoint then
+            verifyTargetCheckpoint workspace checkpoint
+        else
+            CheckpointVerification.verifyCheckpoint workspace checkpoint
 
     let pipelineTrace (workspace: WorkspaceCompilation) =
         workspace.PipelineTrace
 
     let dumpStage (workspace: WorkspaceCompilation) checkpoint format =
-        if not (CheckpointVerification.availableCheckpointNames |> List.contains checkpoint) then
-            let available = String.concat ", " CheckpointVerification.availableCheckpointNames
-            Result.Error $"Unknown checkpoint '{checkpoint}'. Available checkpoints: {available}."
+        let available = availableCheckpoints workspace
+
+        if not (available |> List.contains checkpoint) then
+            let availableText = String.concat ", " available
+            Result.Error $"Unknown checkpoint '{checkpoint}'. Available checkpoints: {availableText}."
+        elif targetCheckpointNames workspace |> List.contains checkpoint then
+            tryEmitTargetTranslationUnit workspace checkpoint
+            |> Result.map (fun translationUnit ->
+                match format with
+                | StageDumpFormat.Json ->
+                    renderTargetCheckpointJson workspace checkpoint translationUnit
+                | StageDumpFormat.SExpression ->
+                    renderTargetCheckpointSexpr workspace checkpoint translationUnit)
         else
             match format with
             | StageDumpFormat.Json ->

@@ -23,3 +23,10 @@ type NativeArtifact =
       SourceFilePath: string
       ExecutableFilePath: string
       EntryPoint: string }
+
+type NativeTranslationUnit =
+    { TranslationUnitName: string
+      InputCheckpoint: string
+      EntrySymbols: string list
+      FunctionSymbols: string list
+      SourceText: string }
