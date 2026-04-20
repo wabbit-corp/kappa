@@ -83,3 +83,18 @@ Preferred resolution: sequence the work so public behavior becomes honest first,
 - [ ] Finally, bring the test harness up to Appendix T and convert more of the existing suites to the standard directive set.
 
 Current M2 readiness note: the immediate pre-M2 honesty work is done. The compiler now normalizes the effective backend profile, verifies `KBackendIR` before native emission, lowers the standardized `zig` profile directly from `KBackendIR`, and exposes a post-`KBackendIR` `zig.c` checkpoint with verification and stage dumps. The remaining unchecked items are broader conformance work rather than blockers to starting M2.
+
+## 9. Milestone 2 (`Traits` + `Ref` + `while`)
+
+Preferred resolution: adjust the compiler.
+
+- [x] Extend the surface syntax and parser for `instance` declarations, `var`, assignment forms, `while ... do ...`, and monadic splice `!(...)` inside `do`.
+- [x] Introduce an explicit M2 elaboration layer that rewrites constrained functions to explicit dictionary parameters, synthesizes dictionary artifacts for trait declarations and instances, and resolves instance evidence at call sites.
+- [x] Desugar mutable-variable forms through `newRef` / `readRef` / `writeRef` with the uniform reference semantics required by `Spec.md` §8.5.1.
+- [x] Lower `while ... do ...` through an internal recursive helper form that works on both real backends without depending on the hosted interpreter path.
+- [x] Extend the intrinsic/builtin surface with the M2 runtime contract (`MonadRef IO`, `newRef`, `readRef`, `writeRef`, `primitiveIntToString`, `printString`, and the concrete `Ref`/dictionary runtime support needed by the backends).
+- [x] Make the standardized `zig` profile compile and run the M2 target end-to-end.
+- [ ] Make the public CLR-backed `dotnet` profile compile and run the M2 target end-to-end.
+- [ ] Add direct compiler/backend tests that execute the M2 program shape on both `zig` and `dotnet`, then keep them green while refactoring.
+
+Current M2 status note: the interpreter and standardized `zig` backend both compile and run the M2 milestone program shape end-to-end. The remaining blocker is the public CLR-backed `dotnet` backend, whose `IlDotNetBackend` still rejects `KRuntimeExecute` / `KRuntimeLet` / `KRuntimeSequence` / `KRuntimeWhile` and `KRuntimeDictionaryValue` / `KRuntimeTraitCall`.
