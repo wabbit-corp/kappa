@@ -114,14 +114,17 @@ module Stdlib =
         if String.IsNullOrWhiteSpace(backendProfile) then
             "interpreter"
         else
-            backendProfile.Trim().ToLowerInvariant()
+            match backendProfile.Trim().ToLowerInvariant() with
+            | "zigcc" -> "zig"
+            | normalized -> normalized
 
     let intrinsicSetForBackendProfile backendProfile =
         match normalizeBackendProfile backendProfile with
         | "interpreter"
         | "dotnet"
         | "dotnet-hosted"
-        | "dotnet-il" ->
+        | "dotnet-il"
+        | "zig" ->
             preludeIntrinsicSet
         | _ ->
             emptyIntrinsicSet

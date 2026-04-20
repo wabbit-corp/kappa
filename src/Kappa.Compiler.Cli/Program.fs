@@ -26,7 +26,7 @@ module private Cli =
             "kp [--source-root <path>] [--backend <profile>] [--emit-dir <path>] [--native-aot] [--dump-tokens] [--dump-ast] [--dump-stage <checkpoint>] [--dump-format <json|sexpr>] [--trace] [--verify <checkpoint>] [--run <binding>] [inputs...]"
             ""
             "If no input paths are supplied, the compiler scans the source root for *.kp files."
-            "Runtime backends: interpreter | dotnet | dotnet-hosted | dotnet-il"
+            "Runtime backends: interpreter | dotnet | dotnet-hosted | dotnet-il | zig (alias: zigcc)"
         ]
         |> String.concat Environment.NewLine
 
@@ -472,6 +472,68 @@ let private runIlBackend (workspace: WorkspaceCompilation) (entryPoint: string) 
                     Console.Out.WriteLine(formatIlValue value)
                     0
 
+let private resolveZigExecutable () =
+    let configuredPath = Environment.GetEnvironmentVariable("KAPPA_ZIG_EXE")
+
+    if String.IsNullOrWhiteSpace(configuredPath) then
+        Result.Ok "zig"
+    else
+        let resolvedPath = configuredPath.Trim()
+
+        if File.Exists(resolvedPath) then
+            Result.Ok resolvedPath
+        else
+            Result.Error $"Configured Zig executable '{resolvedPath}' does not exist. Set KAPPA_ZIG_EXE to a valid zig executable path."
+
+let private runZigBackend
+    (workspace: WorkspaceCompilation)
+    (entryPoint: string)
+    (emitDirectory: string option)
+    (nativeAot: bool)
+    =
+    if nativeAot then
+        Console.Error.WriteLine("The zig backend does not use --native-aot. Native code is its default output.")
+        1
+    else
+        let outputDirectory =
+            emitDirectory
+            |> Option.defaultWith (fun () ->
+                Path.Combine(Path.GetTempPath(), "kappa-cli-zig", Guid.NewGuid().ToString("N")))
+
+        match resolveZigExecutable () with
+        | Result.Error message ->
+            Console.Error.WriteLine(message)
+            1
+        | Result.Ok zigExecutable ->
+            match Backend.emitZigArtifact workspace entryPoint outputDirectory with
+            | Result.Error message ->
+                Console.Error.WriteLine(message)
+                1
+            | Result.Ok artifact ->
+                try
+                    let compileResult =
+                        runProcess
+                            artifact.OutputDirectory
+                            zigExecutable
+                            $"cc -std=c11 -O0 -o \"{artifact.ExecutableFilePath}\" \"{artifact.SourceFilePath}\""
+
+                    if compileResult.ExitCode <> 0 then
+                        printProcessFailure "zig build failed." compileResult
+                        1
+                    else
+                        let runResult = runProcess artifact.OutputDirectory artifact.ExecutableFilePath ""
+
+                        if not (String.IsNullOrWhiteSpace(runResult.StandardOutput)) then
+                            Console.Out.Write(runResult.StandardOutput)
+
+                        if not (String.IsNullOrWhiteSpace(runResult.StandardError)) then
+                            Console.Error.Write(runResult.StandardError)
+
+                        runResult.ExitCode
+                with ex ->
+                    Console.Error.WriteLine($"Could not launch Zig toolchain '{zigExecutable}': {ex.Message}")
+                    1
+
 [<EntryPoint>]
 let main argv =
     match Cli.parse argv with
@@ -562,6 +624,9 @@ let main argv =
                         runDotNetBackend Backend.emitHostedDotNetArtifact workspace entryPoint options.EmitDirectory options.NativeAot
                     | "dotnet-il" ->
                         runIlBackend workspace entryPoint options.EmitDirectory
+                    | "zig"
+                    | "zigcc" ->
+                        runZigBackend workspace entryPoint options.EmitDirectory options.NativeAot
                     | other ->
-                        Console.Error.WriteLine($"Unsupported runtime backend '{other}'. Expected interpreter, dotnet, dotnet-hosted, or dotnet-il.")
+                        Console.Error.WriteLine($"Unsupported runtime backend '{other}'. Expected interpreter, dotnet, dotnet-hosted, dotnet-il, or zig.")
                         1

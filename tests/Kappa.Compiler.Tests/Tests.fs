@@ -208,7 +208,7 @@ let ``supported backend profiles satisfy the current prelude intrinsic surface``
         ]
         |> String.concat "\n"
 
-    for backendProfile in [ "interpreter"; "dotnet"; "dotnet-hosted"; "dotnet-il" ] do
+    for backendProfile in [ "interpreter"; "dotnet"; "dotnet-hosted"; "dotnet-il"; "zig" ] do
         let workspace =
             compileInMemoryWorkspaceWithBackend
                 $"memory-supported-intrinsics-{backendProfile}"

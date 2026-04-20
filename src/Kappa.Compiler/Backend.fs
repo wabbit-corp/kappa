@@ -205,3 +205,9 @@ internal static class Program
 
     let emitIlAssemblyArtifact (workspace: WorkspaceCompilation) (outputDirectory: string) =
         IlDotNetBackend.emitAssemblyArtifact workspace outputDirectory
+
+    let emitZigArtifact (workspace: WorkspaceCompilation) (entryPoint: string) (outputDirectory: string) =
+        ZigCcBackend.emitArtifact workspace entryPoint outputDirectory
+
+    let emitZigCcArtifact (workspace: WorkspaceCompilation) (entryPoint: string) (outputDirectory: string) =
+        emitZigArtifact workspace entryPoint outputDirectory

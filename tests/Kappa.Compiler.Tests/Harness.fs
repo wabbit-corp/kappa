@@ -203,6 +203,68 @@ let runProcess (workingDirectory: string) (fileName: string) (arguments: string)
       StandardOutput = standardOutput.Replace("\r\n", "\n")
       StandardError = standardError.Replace("\r\n", "\n") }
 
+let runProcessWithEnvironment
+    (workingDirectory: string)
+    (fileName: string)
+    (arguments: string)
+    (environmentVariables: (string * string) list)
+    =
+    let startInfo = ProcessStartInfo()
+    startInfo.WorkingDirectory <- workingDirectory
+    startInfo.FileName <- fileName
+    startInfo.Arguments <- arguments
+    startInfo.UseShellExecute <- false
+    startInfo.RedirectStandardOutput <- true
+    startInfo.RedirectStandardError <- true
+
+    for name, value in environmentVariables do
+        startInfo.Environment[name] <- value
+
+    use child = new Process()
+    child.StartInfo <- startInfo
+
+    if not (child.Start()) then
+        invalidOp $"Failed to start process '{fileName}'."
+
+    let standardOutput = child.StandardOutput.ReadToEnd()
+    let standardError = child.StandardError.ReadToEnd()
+    child.WaitForExit()
+
+    { ExitCode = child.ExitCode
+      StandardOutput = standardOutput.Replace("\r\n", "\n")
+      StandardError = standardError.Replace("\r\n", "\n") }
+
+let private repoRoot =
+    Path.GetFullPath(Path.Combine(__SOURCE_DIRECTORY__, "..", ".."))
+
+let private zigExecutablePath =
+    lazy
+        (let ensureScriptPath = Path.Combine(repoRoot, "scripts", "ensure-zig.ps1")
+         let shellProgram =
+             if RuntimeInformation.IsOSPlatform(OSPlatform.Windows) then
+                 "powershell"
+             else
+                 "pwsh"
+
+         let ensureResult =
+             runProcess
+                 repoRoot
+                 shellProgram
+                 $"-ExecutionPolicy Bypass -File \"{ensureScriptPath}\""
+
+         if ensureResult.ExitCode <> 0 then
+             failwithf "Failed to resolve the repo-local Zig toolchain: %s" ensureResult.StandardError
+
+         let zigPath = ensureResult.StandardOutput.Trim()
+
+         if String.IsNullOrWhiteSpace(zigPath) then
+             failwith "The repo-local Zig bootstrap script did not return an executable path."
+
+         zigPath)
+
+let ensureRepoZigExecutablePath () =
+    zigExecutablePath.Value
+
 type private TestAssemblyLoadContext(mainAssemblyPath: string) =
     inherit AssemblyLoadContext($"kappa-test-{Guid.NewGuid():N}", isCollectible = true)
 

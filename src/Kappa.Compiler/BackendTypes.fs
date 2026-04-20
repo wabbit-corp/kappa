@@ -17,3 +17,9 @@ type ClrAssemblyArtifact =
     { OutputDirectory: string
       AssemblyName: string
       AssemblyFilePath: string }
+
+type NativeArtifact =
+    { OutputDirectory: string
+      SourceFilePath: string
+      ExecutableFilePath: string
+      EntryPoint: string }
