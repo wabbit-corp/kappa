@@ -8660,7 +8660,8 @@ if the following conceptual tasks exist:
   `check` need not perform KBackendIR lowering or target lowering.
 
 * `emit-interface`:
-  produce the separate-compilation interface artifacts of §17.1.9, or an observationally equivalent in-memory result.
+  produce the separate-compilation interface artifacts of §17.1.9 and, on request, the canonical interface view of
+  §17.1.9.1, or observationally equivalent in-memory results.
 
 * `compile`:
   lower checked roots through KBackendIR and target-profile lowering to a final artifact.
@@ -8686,8 +8687,10 @@ A module interface artifact MUST record at least:
 * the module identity and dependency identities required by §§2.1-2.3.2;
 * the exported surface by namespace, including importable fixity declarations;
 * visibility and opacity classification of exported ordinary items;
-* the signatures of exported terms, types, traits, constructors, associated types, effect interfaces, and effect
-  operations, insofar as those entities are available to downstream code;
+* the signatures of exported terms, together with any interface-visible classification relevant to use sites, such as
+  pattern-head eligibility under §7.7;
+* the signatures of exported types, traits, constructors, associated types, effect interfaces, and effect operations,
+  insofar as those entities are available to downstream code;
 * top-level instance heads and any metadata required for instance search and coherence under §§12.3 and 15.2.1;
 * the hashes or equivalent identity data required by §15 for exported definitions and instances;
 * enough definitional content for exported transparent items to support downstream definitional equality.
@@ -8695,8 +8698,8 @@ A module interface artifact MUST record at least:
 A module interface artifact MUST distinguish the semantic object identity of an exported object from the current
 namespace bindings that expose it.
 
-An implementation SHOULD permit browsing and querying module interface artifacts, or semantic-object-store entries
-derived from them, without reparsing original source text.
+A conforming implementation MUST permit browsing and querying module interface artifacts, or semantic-object-store
+entries derived from them, without reparsing original source text.
 
 A module interface artifact MAY omit:
 
@@ -8712,6 +8715,39 @@ private bodies, or any combination thereof.
 It MAY embed the interface artifact or refer to it by stable identity.
 
 Ordinary downstream compilation MUST NOT require access to a target-specific implementation artifact.
+
+#### 17.1.9.1 Canonical interface view
+
+Because ordinary downstream compilation depends on module interface artifacts rather than implementation bodies, a
+conforming implementation MUST provide a canonical human-readable rendering of each module interface artifact.
+
+The canonical interface view is a source-like rendering derived from the module interface artifact itself rather than
+reparsed from the original source text. It is an observability and tooling artifact only; it does not change name
+resolution, hashing, or separate-compilation semantics.
+
+At minimum, the canonical interface view MUST include:
+
+* the module identity;
+* exported names by namespace;
+* importable fixity declarations;
+* visibility and opacity classification;
+* exported signatures of terms, together with any interface-visible classification relevant to use sites, such as
+  pattern-head eligibility under §7.7;
+* exported signatures of types, traits, constructors, associated types, effect interfaces, and effect operations,
+  insofar as those entities are available to downstream code;
+* exported instance heads and any interface-visible coherence metadata;
+* re-exports introduced by `export`; and
+* enough transparent definitional content to explain what downstream ordinary definitional equality may unfold.
+
+It MUST omit:
+
+* private bodies;
+* the hidden representation of opaque items;
+* implementation-only helper declarations that are not part of the module interface artifact; and
+* target-specific code.
+
+The rendering MUST be deterministic for fixed inputs and SHOULD use a source-like syntax close to ordinary Kappa
+declarations.
 
 #### 17.1.10 Execution strategies
 
@@ -8922,7 +8958,8 @@ Such queries SHOULD support at least:
 * find-usages and rename keyed by declaration-symbol identity;
 * type-directed search across the current project, imported interfaces, and any available semantic object store;
 * lookup, navigation, and find-usages by semantic object identity after name resolution;
-* browsing of interface artifacts or semantic object stores without reparsing source text; and
+* browsing of interface artifacts or semantic object stores without reparsing source text;
+* retrieving the canonical interface view of a module or semantic object-store entry without reparsing source text; and
 * source-to-source refactoring that preserves unchanged concrete syntax and trivia where possible.
 
 API names, packaging, and transport are implementation-defined.
