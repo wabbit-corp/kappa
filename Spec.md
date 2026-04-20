@@ -2975,6 +2975,16 @@ Rules:
 * The language does not designate the separate-signature form as canonical for non-recursive definitions; inline
   annotations remain equally standard when they satisfy the explicit-signature rule above.
 
+Additional rules:
+
+* For a top-level simple-name value binding of the form `let name : T = expr`, the annotation `: T` itself counts as an
+  explicit top-level signature and satisfies this section.
+* The alternative "every binder in the definition has an explicit type annotation and the definition has an explicit
+  result-type annotation" applies only to named function-definition forms.
+* A top-level pattern binding whose binder is not a single simple name MUST NOT be exported.
+* Consequently, the explicit-signature requirement of this section applies only to exported top-level `let` definitions
+  whose binder is a single simple name.
+
 ### 6.3 `let ... in` expression
 
 Local bindings can be written using a `let ... in` expression:
@@ -9015,8 +9025,8 @@ A conforming implementation MUST behave as if the following phases exist:
 * `HEADER_TYPES`: explicit declaration-header types, supertypes, associated types, effect-operation headers, record
   field quantities, record dependency graphs, and other header-level type information.
 * `STATUS`: visibility, opacity, export status, unsafe/debug gating, instance admissibility, and modifier legality.
-* `IMPLICIT_SIGNATURES`: inference of declaration result types or initializer types when later resolution requires a
-  signature that was omitted in source.
+* `IMPLICIT_SIGNATURES`: inference of declaration result types or initializer types only for declarations whose omitted
+  signatures are required by the current query, interface materialization, or a dependent declaration body.
 * `BODY_RESOLVE`: call resolution, type inference, implicit-argument insertion, quantity checking, region checking, flow
   facts, pattern reachability, handler typing, body-local declaration resolution, and generation of any modality
   predicates required by an enabled modal/coeffect extension.
@@ -9309,9 +9319,9 @@ A conforming implementation MUST behave as if batch compilation proceeds as foll
 1. discover the source files and module dependency graph;
 2. construct `RAW` KFrontIR for every source file;
 3. for each module in topological order, resolve enough of KFrontIR to make that module interface-ready.
-   This includes at least `IMPORTS`, `DECLARATION_SHAPES`, `HEADER_TYPES`, `STATUS`, `IMPLICIT_SIGNATURES`, and any
-   additional resolution or `CORE_LOWERING` needed to materialize exported signatures, importable fixities, instance
-   heads, and exported transparent definitional content;
+   This includes at least `IMPORTS`, `DECLARATION_SHAPES`, `HEADER_TYPES`, `STATUS`, and only the portion of
+   `IMPLICIT_SIGNATURES` required to materialize exported signatures, importable fixities, instance heads, and exported
+   transparent definitional content.
 
    For exported top-level `let` definitions, interface readiness MUST depend on the explicit signatures required by
    §6.2, not on inferring missing exported types from bodies. Consequently, once imported interfaces and declaration
