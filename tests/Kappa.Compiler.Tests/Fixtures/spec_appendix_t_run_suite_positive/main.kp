@@ -1,0 +1,3 @@
+module main
+
+let main = 42

@@ -1,0 +1,7 @@
+--! mode run
+--! backend interpreter
+--! entry main.main
+--! assertNoErrors
+--! assertExitCode 0
+--! assertStdout "42\n"
+--! assertStdoutContains "42"

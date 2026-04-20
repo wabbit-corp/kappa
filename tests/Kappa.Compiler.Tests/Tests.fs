@@ -317,6 +317,7 @@ let ``bundled bootstrap prelude exposes the current compiler contract`` () =
           "Functor"
           "Monad"
           "MonadError"
+          "MonadRef"
           "Ord"
           "Show"
           "Traversable" ],
@@ -330,12 +331,17 @@ let ``bundled bootstrap prelude exposes the current compiler contract`` () =
           "True"
           "and"
           "negate"
+          "newRef"
           "not"
           "or"
+          "primitiveIntToString"
           "print"
           "printInt"
+          "printString"
           "println"
-          "pure" ],
+          "pure"
+          "readRef"
+          "writeRef" ],
         expectTerms
     )
 

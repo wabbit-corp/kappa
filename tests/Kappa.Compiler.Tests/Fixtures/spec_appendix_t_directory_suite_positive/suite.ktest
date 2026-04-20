@@ -1,0 +1,6 @@
+-- Directory-suite assertions should be accepted from suite.ktest.
+--! backend interpreter
+--! assertNoErrors
+--! assertType answer Int
+--! assertFileDeclKinds main.kp signature, let
+--! assertTraceCount lowerKCore module >= 1

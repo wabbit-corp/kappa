@@ -180,34 +180,12 @@ let executablePath (directory: string) (baseName: string) =
     else
         Path.Combine(directory, baseName)
 
-let runProcess (workingDirectory: string) (fileName: string) (arguments: string) =
-    let startInfo = ProcessStartInfo()
-    startInfo.WorkingDirectory <- workingDirectory
-    startInfo.FileName <- fileName
-    startInfo.Arguments <- arguments
-    startInfo.UseShellExecute <- false
-    startInfo.RedirectStandardOutput <- true
-    startInfo.RedirectStandardError <- true
-
-    use child = new Process()
-    child.StartInfo <- startInfo
-
-    if not (child.Start()) then
-        invalidOp $"Failed to start process '{fileName}'."
-
-    let standardOutput = child.StandardOutput.ReadToEnd()
-    let standardError = child.StandardError.ReadToEnd()
-    child.WaitForExit()
-
-    { ExitCode = child.ExitCode
-      StandardOutput = standardOutput.Replace("\r\n", "\n")
-      StandardError = standardError.Replace("\r\n", "\n") }
-
-let runProcessWithEnvironment
+let private runProcessCore
     (workingDirectory: string)
     (fileName: string)
     (arguments: string)
     (environmentVariables: (string * string) list)
+    (standardInputText: string option)
     =
     let startInfo = ProcessStartInfo()
     startInfo.WorkingDirectory <- workingDirectory
@@ -216,6 +194,7 @@ let runProcessWithEnvironment
     startInfo.UseShellExecute <- false
     startInfo.RedirectStandardOutput <- true
     startInfo.RedirectStandardError <- true
+    startInfo.RedirectStandardInput <- standardInputText.IsSome
 
     for name, value in environmentVariables do
         startInfo.Environment[name] <- value
@@ -226,6 +205,13 @@ let runProcessWithEnvironment
     if not (child.Start()) then
         invalidOp $"Failed to start process '{fileName}'."
 
+    match standardInputText with
+    | Some inputText ->
+        child.StandardInput.Write(inputText)
+        child.StandardInput.Close()
+    | None ->
+        ()
+
     let standardOutput = child.StandardOutput.ReadToEnd()
     let standardError = child.StandardError.ReadToEnd()
     child.WaitForExit()
@@ -233,6 +219,34 @@ let runProcessWithEnvironment
     { ExitCode = child.ExitCode
       StandardOutput = standardOutput.Replace("\r\n", "\n")
       StandardError = standardError.Replace("\r\n", "\n") }
+
+let runProcess (workingDirectory: string) (fileName: string) (arguments: string) =
+    runProcessCore workingDirectory fileName arguments [] None
+
+let runProcessWithEnvironment
+    (workingDirectory: string)
+    (fileName: string)
+    (arguments: string)
+    (environmentVariables: (string * string) list)
+    =
+    runProcessCore workingDirectory fileName arguments environmentVariables None
+
+let runProcessWithInput
+    (workingDirectory: string)
+    (fileName: string)
+    (arguments: string)
+    (standardInputText: string option)
+    =
+    runProcessCore workingDirectory fileName arguments [] standardInputText
+
+let runProcessWithEnvironmentAndInput
+    (workingDirectory: string)
+    (fileName: string)
+    (arguments: string)
+    (environmentVariables: (string * string) list)
+    (standardInputText: string option)
+    =
+    runProcessCore workingDirectory fileName arguments environmentVariables standardInputText
 
 let private repoRoot =
     Path.GetFullPath(Path.Combine(__SOURCE_DIRECTORY__, "..", ".."))
@@ -293,6 +307,43 @@ let loadManagedAssembly (assemblyPath: string) =
     { Context = loadContext
       Assembly = assembly }
 
+type KpFixtureMode =
+    | Analyze
+    | Check
+    | Compile
+    | Run
+
+type KpFixtureDirectiveSource =
+    | KpSourceFile
+    | SuiteDirectiveFile
+
+type KpFixtureRelation =
+    | Equal
+    | NotEqual
+    | LessThan
+    | LessThanOrEqual
+    | GreaterThan
+    | GreaterThanOrEqual
+
+type KpFixtureConfiguration =
+    { Mode: KpFixtureMode
+      PackageMode: bool
+      BackendProfile: string
+      EntryPoint: string option
+      RunArgs: string list
+      StdinFile: string option
+      DumpFormat: StageDumpFormat }
+
+module KpFixtureConfiguration =
+    let defaultValue =
+        { Mode = KpFixtureMode.Check
+          PackageMode = true
+          BackendProfile = "interpreter"
+          EntryPoint = None
+          RunArgs = []
+          StdinFile = None
+          DumpFormat = StageDumpFormat.Json }
+
 type KpFixtureAssertion =
     | AssertNoErrors of filePath: string * lineNumber: int
     | AssertNoWarnings of filePath: string * lineNumber: int
@@ -300,10 +351,16 @@ type KpFixtureAssertion =
     | AssertWarningCount of expectedCount: int * filePath: string * lineNumber: int
     | AssertDiagnosticMatch of regexPattern: string * filePath: string * lineNumber: int
     | AssertType of target: string * expectedTypeText: string * filePath: string * lineNumber: int
+    | AssertFileDeclarationKinds of relativePath: string * expectedKinds: string list * filePath: string * lineNumber: int
     | AssertEval of target: string * expectedValueText: string * filePath: string * lineNumber: int
     | AssertEvalErrorContains of target: string * expectedText: string * filePath: string * lineNumber: int
     | AssertExecute of target: string * expectedValueText: string * filePath: string * lineNumber: int
     | AssertRunStdout of target: string * expectedOutputText: string * filePath: string * lineNumber: int
+    | AssertStdout of expectedOutputText: string * filePath: string * lineNumber: int
+    | AssertStdoutContains of expectedOutputText: string * filePath: string * lineNumber: int
+    | AssertStderrContains of expectedOutputText: string * filePath: string * lineNumber: int
+    | AssertExitCode of expectedCode: int * filePath: string * lineNumber: int
+    | AssertTraceCount of eventName: string * subjectName: string * relation: KpFixtureRelation * expectedCount: int * filePath: string * lineNumber: int
     | AssertModule of expectedModuleText: string * filePath: string * lineNumber: int
     | AssertModuleAttributes of expectedAttributes: string list * filePath: string * lineNumber: int
     | AssertDeclarationKinds of expectedKinds: string list * filePath: string * lineNumber: int
@@ -317,6 +374,7 @@ type KpFixtureCase =
     { Name: string
       Root: string
       SourceFiles: string list
+      Configuration: KpFixtureConfiguration
       Assertions: KpFixtureAssertion list }
 
     override this.ToString() = this.Name
@@ -386,8 +444,128 @@ let private decodeAssertionText (directiveName: string) (filePath: string) lineN
     else
         trimmed
 
+let private normalizeLineEndings (text: string) =
+    text.Replace("\r\n", "\n")
+
 let private normalizeExecutionOutput (text: string) =
-    text.Replace("\r\n", "\n").TrimEnd([| '\r'; '\n' |])
+    normalizeLineEndings text
+    |> fun normalized -> normalized.TrimEnd([| '\r'; '\n' |])
+
+let private parseFixtureMode (filePath: string) lineNumber (value: string) =
+    match value.Trim() with
+    | "analyze" -> KpFixtureMode.Analyze
+    | "check" -> KpFixtureMode.Check
+    | "compile" -> KpFixtureMode.Compile
+    | "run" -> KpFixtureMode.Run
+    | other ->
+        invalidOp $"Unsupported fixture mode '{other}' ({filePath}:{lineNumber})."
+
+let private parseFixtureDumpFormat (filePath: string) lineNumber (value: string) =
+    match value.Trim() with
+    | "json" -> StageDumpFormat.Json
+    | "sexpr" -> StageDumpFormat.SExpression
+    | other ->
+        invalidOp $"Unsupported fixture dump format '{other}' ({filePath}:{lineNumber})."
+
+let private parseFixtureRelation (filePath: string) lineNumber (value: string) =
+    match value.Trim() with
+    | "=" -> KpFixtureRelation.Equal
+    | "!=" -> KpFixtureRelation.NotEqual
+    | "<" -> KpFixtureRelation.LessThan
+    | "<=" -> KpFixtureRelation.LessThanOrEqual
+    | ">" -> KpFixtureRelation.GreaterThan
+    | ">=" -> KpFixtureRelation.GreaterThanOrEqual
+    | other ->
+        invalidOp $"Unsupported fixture relation '{other}' ({filePath}:{lineNumber})."
+
+let private parseDirectiveHeader (filePath: string) lineNumber (lineText: string) =
+    let trimmed = lineText.Trim()
+
+    if trimmed.StartsWith("--!", StringComparison.Ordinal) then
+        let body = trimmed.Substring(3).Trim()
+
+        if String.IsNullOrWhiteSpace(body) then
+            invalidOp $"Fixture directive at {filePath}:{lineNumber} is empty."
+
+        let firstSpace = body.IndexOf(' ')
+
+        let directiveName, directiveBody =
+            if firstSpace < 0 then
+                body, ""
+            else
+                body.Substring(0, firstSpace), body.Substring(firstSpace + 1).Trim()
+
+        Some(directiveName, directiveBody)
+    else
+        None
+
+let private parseStringLiteralArguments (directiveName: string) (filePath: string) lineNumber (directiveBody: string) =
+    let values = ResizeArray<string>()
+    let mutable index = 0
+
+    let skipWhitespace () =
+        while index < directiveBody.Length && Char.IsWhiteSpace(directiveBody[index]) do
+            index <- index + 1
+
+    skipWhitespace ()
+
+    while index < directiveBody.Length do
+        if directiveBody[index] <> '"' then
+            invalidOp $"{directiveName} expects one or more string literals ({filePath}:{lineNumber})."
+
+        let literalStart = index
+        index <- index + 1
+
+        let mutable escaped = false
+        let mutable closed = false
+
+        while index < directiveBody.Length && not closed do
+            let current = directiveBody[index]
+
+            if escaped then
+                escaped <- false
+                index <- index + 1
+            elif current = '\\' then
+                escaped <- true
+                index <- index + 1
+            elif current = '"' then
+                closed <- true
+                index <- index + 1
+            else
+                index <- index + 1
+
+        if not closed then
+            invalidOp $"{directiveName} contains an unterminated string literal ({filePath}:{lineNumber})."
+
+        let literalText = directiveBody.Substring(literalStart, index - literalStart)
+
+        match SyntaxFacts.tryDecodeStringLiteral literalText with
+        | Result.Ok value ->
+            values.Add(value)
+        | Result.Error message ->
+            invalidOp $"{directiveName} expects valid string literal text ({filePath}:{lineNumber}): {message}"
+
+        skipWhitespace ()
+
+    List.ofSeq values
+
+let private parseSingleStringLiteralArgument (directiveName: string) (filePath: string) lineNumber (directiveBody: string) =
+    match parseStringLiteralArguments directiveName filePath lineNumber directiveBody with
+    | [ value ] -> value
+    | [] ->
+        invalidOp $"{directiveName} expects a string literal ({filePath}:{lineNumber})."
+    | _ ->
+        invalidOp $"{directiveName} expects exactly one string literal ({filePath}:{lineNumber})."
+
+type private KpFixtureDirective =
+    | SetMode of KpFixtureMode * filePath: string * lineNumber: int
+    | SetPackageMode of packageMode: bool * filePath: string * lineNumber: int
+    | SetBackend of backendProfile: string * filePath: string * lineNumber: int
+    | SetEntry of entryPoint: string * filePath: string * lineNumber: int
+    | SetRunArgs of runArgs: string list * filePath: string * lineNumber: int
+    | SetStdinFile of relativePath: string * filePath: string * lineNumber: int
+    | SetDumpFormat of dumpFormat: StageDumpFormat * filePath: string * lineNumber: int
+    | AssertionDirective of KpFixtureAssertion
 
 let private legacyDirectiveAliases =
     Map.ofList
@@ -419,44 +597,84 @@ let private executeBindingWithCapturedOutput (workspace: WorkspaceCompilation) (
 
     result, normalizeExecutionOutput (builder.ToString())
 
-let private parseFixtureAssertion (filePath: string) lineNumber (lineText: string) =
-    let trimmed = lineText.Trim()
+let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePath: string) lineNumber (lineText: string) =
+    match parseDirectiveHeader filePath lineNumber lineText with
+    | None ->
+        None
+    | Some(rawDirectiveName, directiveBody) ->
+        let directiveName = canonicalizeDirectiveName rawDirectiveName
 
-    if trimmed.StartsWith("--!", StringComparison.Ordinal) then
-        let body = trimmed.Substring(3).Trim()
+        let ensureNoArguments () =
+            if not (String.IsNullOrWhiteSpace(directiveBody)) then
+                invalidOp $"{directiveName} does not take arguments ({filePath}:{lineNumber})."
 
-        if String.IsNullOrWhiteSpace(body) then
-            invalidOp $"Fixture assertion at {filePath}:{lineNumber} is empty."
+        let ensureSourceFileDirective () =
+            if sourceKind <> KpFixtureDirectiveSource.KpSourceFile then
+                invalidOp $"{directiveName} is only valid in .kp source files ({filePath}:{lineNumber})."
 
-        let firstSpace = body.IndexOf(' ')
-        let directiveName, directiveBody =
-            if firstSpace < 0 then
-                body, ""
-            else
-                body.Substring(0, firstSpace), body.Substring(firstSpace + 1).Trim()
+        let parseRelativePathAndList () =
+            let tokens =
+                directiveBody.Split([| ' '; '\t' |], 2, StringSplitOptions.RemoveEmptyEntries)
 
-        let directiveName = canonicalizeDirectiveName directiveName
+            if tokens.Length <> 2 then
+                invalidOp $"{directiveName} expects '<path> <value>' ({filePath}:{lineNumber})."
+
+            let expectedKinds = parseFixtureList tokens[1]
+
+            if List.isEmpty expectedKinds then
+                invalidOp $"{directiveName} expects a comma-separated list ({filePath}:{lineNumber})."
+
+            tokens[0], expectedKinds
 
         match directiveName with
+        | "mode" ->
+            if String.IsNullOrWhiteSpace(directiveBody) then
+                invalidOp $"mode expects one of analyze/check/compile/run ({filePath}:{lineNumber})."
+
+            Some(SetMode(parseFixtureMode filePath lineNumber directiveBody, filePath, lineNumber))
+        | "packageMode" ->
+            ensureNoArguments ()
+            Some(SetPackageMode(true, filePath, lineNumber))
+        | "scriptMode" ->
+            ensureNoArguments ()
+            Some(SetPackageMode(false, filePath, lineNumber))
+        | "backend" ->
+            if String.IsNullOrWhiteSpace(directiveBody) then
+                invalidOp $"backend expects a backend profile name ({filePath}:{lineNumber})."
+
+            Some(SetBackend(directiveBody.Trim(), filePath, lineNumber))
+        | "entry" ->
+            if String.IsNullOrWhiteSpace(directiveBody) then
+                invalidOp $"entry expects a qualified binding name ({filePath}:{lineNumber})."
+
+            Some(SetEntry(directiveBody.Trim(), filePath, lineNumber))
+        | "runArgs" ->
+            Some(SetRunArgs(parseStringLiteralArguments directiveName filePath lineNumber directiveBody, filePath, lineNumber))
+        | "stdinFile" ->
+            if String.IsNullOrWhiteSpace(directiveBody) then
+                invalidOp $"stdinFile expects a relative path ({filePath}:{lineNumber})."
+
+            Some(SetStdinFile(directiveBody.Trim(), filePath, lineNumber))
+        | "dumpFormat" ->
+            if String.IsNullOrWhiteSpace(directiveBody) then
+                invalidOp $"dumpFormat expects 'json' or 'sexpr' ({filePath}:{lineNumber})."
+
+            Some(SetDumpFormat(parseFixtureDumpFormat filePath lineNumber directiveBody, filePath, lineNumber))
         | "assertNoErrors" ->
-            if not (String.IsNullOrWhiteSpace(directiveBody)) then
-                invalidOp $"assertNoErrors does not take arguments ({filePath}:{lineNumber})."
-
-            Some(AssertNoErrors(filePath, lineNumber))
+            ensureNoArguments ()
+            Some(AssertionDirective(AssertNoErrors(filePath, lineNumber)))
         | "assertNoWarnings" ->
-            if not (String.IsNullOrWhiteSpace(directiveBody)) then
-                invalidOp $"assertNoWarnings does not take arguments ({filePath}:{lineNumber})."
-
-            Some(AssertNoWarnings(filePath, lineNumber))
+            ensureNoArguments ()
+            Some(AssertionDirective(AssertNoWarnings(filePath, lineNumber)))
         | "assertErrorCount" ->
-            Some(AssertErrorCount(parseNonNegativeInt directiveName filePath lineNumber directiveBody, filePath, lineNumber))
+            Some(AssertionDirective(AssertErrorCount(parseNonNegativeInt directiveName filePath lineNumber directiveBody, filePath, lineNumber)))
         | "assertWarningCount" ->
-            Some(AssertWarningCount(parseNonNegativeInt directiveName filePath lineNumber directiveBody, filePath, lineNumber))
+            Some(AssertionDirective(AssertWarningCount(parseNonNegativeInt directiveName filePath lineNumber directiveBody, filePath, lineNumber)))
         | "assertDiagnosticMatch" ->
             if String.IsNullOrWhiteSpace(directiveBody) then
                 invalidOp $"assertDiagnosticMatch expects a regular expression ({filePath}:{lineNumber})."
 
-            Some(AssertDiagnosticMatch(directiveBody, filePath, lineNumber))
+            Some(AssertionDirective(AssertDiagnosticMatch(directiveBody, filePath, lineNumber)))
         | "assertType" ->
             let targetAndType =
                 directiveBody.Split([| ' '; '\t' |], 2, StringSplitOptions.RemoveEmptyEntries)
@@ -464,54 +682,116 @@ let private parseFixtureAssertion (filePath: string) lineNumber (lineText: strin
             if targetAndType.Length <> 2 then
                 invalidOp $"assertType expects '<target> <type>' ({filePath}:{lineNumber})."
 
-            Some(AssertType(targetAndType[0], targetAndType[1].Trim(), filePath, lineNumber))
+            Some(AssertionDirective(AssertType(targetAndType[0], targetAndType[1].Trim(), filePath, lineNumber)))
+        | "assertFileDeclKinds" ->
+            let relativePath, expectedKinds = parseRelativePathAndList ()
+            Some(AssertionDirective(AssertFileDeclarationKinds(relativePath, expectedKinds, filePath, lineNumber)))
         | "assertEval" ->
             let target, expectedValueText = parseTargetAndBody "assertEval" filePath lineNumber directiveBody
-            Some(AssertEval(target, expectedValueText, filePath, lineNumber))
+            Some(AssertionDirective(AssertEval(target, expectedValueText, filePath, lineNumber)))
         | "assertEvalErrorContains" ->
             let target, expectedText = parseTargetAndBody "assertEvalErrorContains" filePath lineNumber directiveBody
-            Some(AssertEvalErrorContains(target, expectedText, filePath, lineNumber))
+            Some(AssertionDirective(AssertEvalErrorContains(target, expectedText, filePath, lineNumber)))
         | "assertExecute" ->
             let target, expectedValueText = parseTargetAndBody "assertExecute" filePath lineNumber directiveBody
-            Some(AssertExecute(target, expectedValueText, filePath, lineNumber))
+            Some(AssertionDirective(AssertExecute(target, expectedValueText, filePath, lineNumber)))
         | "assertRunStdout" ->
             let target, expectedOutputText = parseTargetAndBody "assertRunStdout" filePath lineNumber directiveBody
 
             Some(
-                AssertRunStdout(
-                    target,
-                    decodeAssertionText "assertRunStdout" filePath lineNumber expectedOutputText,
-                    filePath,
-                    lineNumber
+                AssertionDirective(
+                    AssertRunStdout(
+                        target,
+                        decodeAssertionText "assertRunStdout" filePath lineNumber expectedOutputText,
+                        filePath,
+                        lineNumber
+                    )
+                )
+            )
+        | "assertStdout" ->
+            Some(
+                AssertionDirective(
+                    AssertStdout(
+                        parseSingleStringLiteralArgument directiveName filePath lineNumber directiveBody,
+                        filePath,
+                        lineNumber
+                    )
+                )
+            )
+        | "assertStdoutContains" ->
+            Some(
+                AssertionDirective(
+                    AssertStdoutContains(
+                        parseSingleStringLiteralArgument directiveName filePath lineNumber directiveBody,
+                        filePath,
+                        lineNumber
+                    )
+                )
+            )
+        | "assertStderrContains" ->
+            Some(
+                AssertionDirective(
+                    AssertStderrContains(
+                        parseSingleStringLiteralArgument directiveName filePath lineNumber directiveBody,
+                        filePath,
+                        lineNumber
+                    )
+                )
+            )
+        | "assertExitCode" ->
+            Some(AssertionDirective(AssertExitCode(parseNonNegativeInt directiveName filePath lineNumber directiveBody, filePath, lineNumber)))
+        | "assertTraceCount" ->
+            let tokens =
+                directiveBody.Split([| ' '; '\t' |], StringSplitOptions.RemoveEmptyEntries)
+
+            if tokens.Length <> 4 then
+                invalidOp $"{directiveName} expects '<event> <subject> <relop> <n>' ({filePath}:{lineNumber})."
+
+            Some(
+                AssertionDirective(
+                    AssertTraceCount(
+                        tokens[0],
+                        tokens[1],
+                        parseFixtureRelation filePath lineNumber tokens[2],
+                        parseNonNegativeInt directiveName filePath lineNumber tokens[3],
+                        filePath,
+                        lineNumber
+                    )
                 )
             )
         | "assertModule" ->
             if String.IsNullOrWhiteSpace(directiveBody) then
                 invalidOp $"assertModule expects '<module>' ({filePath}:{lineNumber})."
 
-            Some(AssertModule(directiveBody, filePath, lineNumber))
+            Some(AssertionDirective(AssertModule(directiveBody, filePath, lineNumber)))
         | "assertModuleAttributes" ->
             let expectedAttributes = parseFixtureList directiveBody
 
             if List.isEmpty expectedAttributes then
                 invalidOp $"assertModuleAttributes expects a comma-separated list of attributes ({filePath}:{lineNumber})."
 
-            Some(AssertModuleAttributes(expectedAttributes, filePath, lineNumber))
+            Some(AssertionDirective(AssertModuleAttributes(expectedAttributes, filePath, lineNumber)))
         | "assertDeclKinds" ->
+            ensureSourceFileDirective ()
+
             let expectedKinds = parseFixtureList directiveBody
 
             if List.isEmpty expectedKinds then
                 invalidOp $"assertDeclKinds expects a comma-separated list of declaration kinds ({filePath}:{lineNumber})."
 
-            Some(AssertDeclarationKinds(expectedKinds, filePath, lineNumber))
+            Some(AssertionDirective(AssertDeclarationKinds(expectedKinds, filePath, lineNumber)))
         | "assertDeclDescriptors" ->
+            ensureSourceFileDirective ()
+
             let expectedDescriptors = parseFixtureList directiveBody
 
             if List.isEmpty expectedDescriptors then
                 invalidOp $"assertDeclDescriptors expects a comma-separated list of declaration descriptors ({filePath}:{lineNumber})."
 
-            Some(AssertDeclarationDescriptors(expectedDescriptors, filePath, lineNumber))
+            Some(AssertionDirective(AssertDeclarationDescriptors(expectedDescriptors, filePath, lineNumber)))
         | "assertDataConstructors" ->
+            ensureSourceFileDirective ()
+
             let typeAndConstructors =
                 directiveBody.Split([| ' '; '\t' |], 2, StringSplitOptions.RemoveEmptyEntries)
 
@@ -523,8 +803,10 @@ let private parseFixtureAssertion (filePath: string) lineNumber (lineText: strin
             if List.isEmpty expectedConstructors then
                 invalidOp $"assertDataConstructors expects at least one constructor ({filePath}:{lineNumber})."
 
-            Some(AssertDataConstructors(typeAndConstructors[0], expectedConstructors, filePath, lineNumber))
+            Some(AssertionDirective(AssertDataConstructors(typeAndConstructors[0], expectedConstructors, filePath, lineNumber)))
         | "assertTraitMembers" ->
+            ensureSourceFileDirective ()
+
             let traitAndMembers =
                 directiveBody.Split([| ' '; '\t' |], 2, StringSplitOptions.RemoveEmptyEntries)
 
@@ -536,31 +818,148 @@ let private parseFixtureAssertion (filePath: string) lineNumber (lineText: strin
             if List.isEmpty expectedMembers then
                 invalidOp $"assertTraitMembers expects at least one member ({filePath}:{lineNumber})."
 
-            Some(AssertTraitMembers(traitAndMembers[0], expectedMembers, filePath, lineNumber))
+            Some(AssertionDirective(AssertTraitMembers(traitAndMembers[0], expectedMembers, filePath, lineNumber)))
         | "assertContainsTokenKinds" ->
+            ensureSourceFileDirective ()
+
             let expectedKinds = parseFixtureList directiveBody
 
             if List.isEmpty expectedKinds then
                 invalidOp $"assertContainsTokenKinds expects a comma-separated list of token kinds ({filePath}:{lineNumber})."
 
-            Some(AssertContainsTokenKinds(expectedKinds, filePath, lineNumber))
+            Some(AssertionDirective(AssertContainsTokenKinds(expectedKinds, filePath, lineNumber)))
         | "assertContainsTokenTexts" ->
+            ensureSourceFileDirective ()
+
             let expectedTexts = parseFixtureList directiveBody
 
             if List.isEmpty expectedTexts then
                 invalidOp $"assertContainsTokenTexts expects a comma-separated list of token texts ({filePath}:{lineNumber})."
 
-            Some(AssertContainsTokenTexts(expectedTexts, filePath, lineNumber))
+            Some(AssertionDirective(AssertContainsTokenTexts(expectedTexts, filePath, lineNumber)))
         | other ->
             invalidOp $"Unsupported fixture assertion '{other}' at {filePath}:{lineNumber}."
-    else
-        None
 
-let private loadFixtureAssertions (filePath: string) =
+let private loadFixtureDirectives (sourceKind: KpFixtureDirectiveSource) (filePath: string) =
     File.ReadAllLines(filePath)
-    |> Array.mapi (fun index lineText -> parseFixtureAssertion filePath (index + 1) lineText)
+    |> Array.mapi (fun index lineText ->
+        let lineNumber = index + 1
+        let trimmed = lineText.Trim()
+
+        if sourceKind = KpFixtureDirectiveSource.SuiteDirectiveFile then
+            if String.IsNullOrWhiteSpace(trimmed) || trimmed.StartsWith("--", StringComparison.Ordinal) then
+                parseFixtureDirective sourceKind filePath lineNumber lineText
+            else
+                invalidOp $"Only directive, blank, or comment-only lines are allowed in '{filePath}' ({filePath}:{lineNumber})."
+        else
+            parseFixtureDirective sourceKind filePath lineNumber lineText)
     |> Array.choose id
     |> Array.toList
+
+type private KpFixtureConfigurationAccumulator =
+    { Mode: (KpFixtureMode * string * int) option
+      PackageMode: (bool * string * int) option
+      BackendProfile: (string * string * int) option
+      EntryPoint: (string * string * int) option
+      RunArgs: (string list * string * int) option
+      StdinFile: (string * string * int) option
+      DumpFormat: (StageDumpFormat * string * int) option }
+
+let private emptyFixtureConfigurationAccumulator =
+    { Mode = None
+      PackageMode = None
+      BackendProfile = None
+      EntryPoint = None
+      RunArgs = None
+      StdinFile = None
+      DumpFormat = None }
+
+let private mergeFixtureConfigurationValue fieldName existing next =
+    match existing with
+    | None ->
+        Some next
+    | Some(existingValue, existingFilePath, existingLineNumber) ->
+        let nextValue, nextFilePath, nextLineNumber = next
+
+        if existingValue = nextValue then
+            existing
+        else
+            invalidOp
+                $"Conflicting fixture configuration for {fieldName}: '{existingFilePath}:{existingLineNumber}' and '{nextFilePath}:{nextLineNumber}'."
+
+let private buildFixtureConfiguration (directives: KpFixtureDirective list) =
+    let accumulator =
+        directives
+        |> List.fold
+            (fun (state: KpFixtureConfigurationAccumulator) directive ->
+                match directive with
+                | SetMode(mode, filePath, lineNumber) ->
+                    { state with
+                        Mode = mergeFixtureConfigurationValue "mode" state.Mode (mode, filePath, lineNumber) }
+                | SetPackageMode(packageMode, filePath, lineNumber) ->
+                    { state with
+                        PackageMode =
+                            mergeFixtureConfigurationValue
+                                "packageMode/scriptMode"
+                                state.PackageMode
+                                (packageMode, filePath, lineNumber) }
+                | SetBackend(backendProfile, filePath, lineNumber) ->
+                    { state with
+                        BackendProfile =
+                            mergeFixtureConfigurationValue "backend" state.BackendProfile (backendProfile, filePath, lineNumber) }
+                | SetEntry(entryPoint, filePath, lineNumber) ->
+                    { state with
+                        EntryPoint = mergeFixtureConfigurationValue "entry" state.EntryPoint (entryPoint, filePath, lineNumber) }
+                | SetRunArgs(runArgs, filePath, lineNumber) ->
+                    { state with
+                        RunArgs = mergeFixtureConfigurationValue "runArgs" state.RunArgs (runArgs, filePath, lineNumber) }
+                | SetStdinFile(relativePath, filePath, lineNumber) ->
+                    { state with
+                        StdinFile = mergeFixtureConfigurationValue "stdinFile" state.StdinFile (relativePath, filePath, lineNumber) }
+                | SetDumpFormat(dumpFormat, filePath, lineNumber) ->
+                    { state with
+                        DumpFormat =
+                            mergeFixtureConfigurationValue "dumpFormat" state.DumpFormat (dumpFormat, filePath, lineNumber) }
+                | AssertionDirective _ ->
+                    state)
+            emptyFixtureConfigurationAccumulator
+
+    let configuration =
+        { KpFixtureConfiguration.defaultValue with
+            Mode = accumulator.Mode |> Option.map (fun (value, _, _) -> value) |> Option.defaultValue KpFixtureConfiguration.defaultValue.Mode
+            PackageMode =
+                accumulator.PackageMode
+                |> Option.map (fun (value, _, _) -> value)
+                |> Option.defaultValue KpFixtureConfiguration.defaultValue.PackageMode
+            BackendProfile =
+                accumulator.BackendProfile
+                |> Option.map (fun (value, _, _) -> value)
+                |> Option.defaultValue KpFixtureConfiguration.defaultValue.BackendProfile
+            EntryPoint = accumulator.EntryPoint |> Option.map (fun (value, _, _) -> value)
+            RunArgs = accumulator.RunArgs |> Option.map (fun (value, _, _) -> value) |> Option.defaultValue []
+            StdinFile = accumulator.StdinFile |> Option.map (fun (value, _, _) -> value)
+            DumpFormat =
+                accumulator.DumpFormat
+                |> Option.map (fun (value, _, _) -> value)
+                |> Option.defaultValue KpFixtureConfiguration.defaultValue.DumpFormat }
+
+    match configuration.Mode with
+    | KpFixtureMode.Run ->
+        if configuration.EntryPoint.IsNone then
+            invalidOp "mode run requires an entry directive."
+
+        configuration
+    | _ ->
+        if configuration.EntryPoint.IsSome then
+            invalidOp "entry is valid only for mode run."
+
+        if not (List.isEmpty configuration.RunArgs) then
+            invalidOp "runArgs is valid only for mode run."
+
+        if configuration.StdinFile.IsSome then
+            invalidOp "stdinFile is valid only for mode run."
+
+        configuration
 
 let discoverKpFixtureCases () =
     if not (Directory.Exists(fixturesRoot)) then
@@ -577,14 +976,28 @@ let discoverKpFixtureCases () =
             if List.isEmpty sourceFiles then
                 None
             else
+                let suiteDirectiveFilePath = Path.Combine(caseDirectory, "suite.ktest")
+
+                let directives =
+                    (if File.Exists(suiteDirectiveFilePath) then
+                         loadFixtureDirectives KpFixtureDirectiveSource.SuiteDirectiveFile suiteDirectiveFilePath
+                     else
+                         [])
+                    @ (sourceFiles |> List.collect (loadFixtureDirectives KpFixtureDirectiveSource.KpSourceFile))
+
+                let configuration = buildFixtureConfiguration directives
+
                 let assertions =
-                    sourceFiles
-                    |> List.collect loadFixtureAssertions
+                    directives
+                    |> List.choose (function
+                        | AssertionDirective assertion -> Some assertion
+                        | _ -> None)
 
                 Some
                     { Name = Path.GetFileName(caseDirectory)
                       Root = caseDirectory
                       SourceFiles = sourceFiles
+                      Configuration = configuration
                       Assertions = assertions })
         |> Seq.toList
 
@@ -609,6 +1022,7 @@ let private declarationKindText declaration =
     | DataDeclarationNode _ -> "data"
     | TypeAliasNode _ -> "type"
     | TraitDeclarationNode _ -> "trait"
+    | InstanceDeclarationNode _ -> "instance"
     | UnknownDeclaration _ -> "unknown"
 
 let private visibilityText visibility =
@@ -703,6 +1117,8 @@ let private declarationDescriptorText declaration =
         joinParts [ visibilityText declaration.Visibility; (if declaration.IsOpaque then "opaque" else ""); "type"; declaration.Name ]
     | TraitDeclarationNode declaration ->
         joinParts [ visibilityText declaration.Visibility; "trait"; declaration.Name ]
+    | InstanceDeclarationNode declaration ->
+        joinParts [ "instance"; declaration.TraitName ]
     | UnknownDeclaration _ ->
         "unknown"
 
@@ -878,6 +1294,140 @@ let private requireFixtureDocument (workspace: WorkspaceCompilation) (filePath: 
     | None ->
         failwithf "Could not find parsed document for '%s' (%s:%d)." filePath filePath lineNumber
 
+let private requireFixtureDocumentByRelativePath
+    (workspace: WorkspaceCompilation)
+    (suiteRoot: string)
+    (relativePath: string)
+    lineNumber
+    =
+    let fullPath = rootedFilePath suiteRoot relativePath |> Path.GetFullPath
+
+    match tryFindDocumentForFilePath workspace fullPath with
+    | Some document ->
+        document
+    | None ->
+        failwithf "Could not find parsed document for '%s' (%s:%d)." relativePath fullPath lineNumber
+
+let private compileFixtureWorkspace (fixtureCase: KpFixtureCase) =
+    let options =
+        { CompilationOptions.create fixtureCase.Root with
+            PackageMode = fixtureCase.Configuration.PackageMode
+            BackendProfile = fixtureCase.Configuration.BackendProfile }
+
+    Compilation.parse options [ fixtureCase.Root ]
+
+type private FixtureRunResult =
+    { ExitCode: int
+      StandardOutput: string
+      StandardError: string }
+
+let private executeInterpreterRun (workspace: WorkspaceCompilation) (entryPoint: string) =
+    let builder = StringBuilder()
+
+    let output: RuntimeOutput =
+        { Write = fun text -> builder.Append(text) |> ignore
+          WriteLine = fun text -> builder.AppendLine(text) |> ignore }
+
+    match Interpreter.executeBindingWithOutput workspace output entryPoint with
+    | Result.Ok value ->
+        if Interpreter.shouldPrintResult value then
+            builder.AppendLine(RuntimeValue.format value) |> ignore
+
+        { ExitCode = 0
+          StandardOutput = normalizeLineEndings (builder.ToString())
+          StandardError = "" }
+    | Result.Error issue ->
+        { ExitCode = 1
+          StandardOutput = normalizeLineEndings (builder.ToString())
+          StandardError = normalizeLineEndings issue.Message }
+
+let private readFixtureStandardInput (fixtureCase: KpFixtureCase) =
+    fixtureCase.Configuration.StdinFile
+    |> Option.map (fun relativePath ->
+        let fullPath = rootedFilePath fixtureCase.Root relativePath
+        File.ReadAllText(fullPath))
+
+let private renderProcessArguments (arguments: string list) =
+    arguments
+    |> List.map (fun argument ->
+        let escapedArgument =
+            argument.Replace("\\", "\\\\").Replace("\"", "\\\"")
+
+        $"\"{escapedArgument}\"")
+    |> String.concat " "
+
+let private executeBackendRun (fixtureCase: KpFixtureCase) (workspace: WorkspaceCompilation) (entryPoint: string) =
+    let outputDirectory = createScratchDirectory $"fixture-run-{fixtureCase.Name}-{fixtureCase.Configuration.BackendProfile}"
+    let renderedArguments = renderProcessArguments fixtureCase.Configuration.RunArgs
+    let stdinText = readFixtureStandardInput fixtureCase
+
+    match fixtureCase.Configuration.BackendProfile with
+    | "interpreter" ->
+        executeInterpreterRun workspace entryPoint
+    | "zig" ->
+        let artifact =
+            match Backend.emitZigArtifact workspace entryPoint outputDirectory with
+            | Result.Ok artifact -> artifact
+            | Result.Error message -> invalidOp message
+
+        let compileResult =
+            runProcessWithEnvironment
+                artifact.OutputDirectory
+                (ensureRepoZigExecutablePath ())
+                $"cc -std=c11 -O0 -o \"{artifact.ExecutableFilePath}\" \"{artifact.SourceFilePath}\""
+                []
+
+        if compileResult.ExitCode <> 0 then
+            { ExitCode = compileResult.ExitCode
+              StandardOutput = compileResult.StandardOutput
+              StandardError = compileResult.StandardError }
+        else
+            let runResult =
+                runProcessWithInput artifact.OutputDirectory artifact.ExecutableFilePath renderedArguments stdinText
+
+            { ExitCode = runResult.ExitCode
+              StandardOutput = runResult.StandardOutput
+              StandardError = runResult.StandardError }
+    | "dotnet" ->
+        let artifact =
+            match Backend.emitDotNetArtifact workspace entryPoint outputDirectory DotNetDeployment.Managed with
+            | Result.Ok artifact -> artifact
+            | Result.Error message -> invalidOp message
+
+        let runResult =
+            runProcessWithInput
+                outputDirectory
+                "dotnet"
+                ($"run --project \"{artifact.ProjectFilePath}\" -c Release"
+                 + if String.IsNullOrWhiteSpace(renderedArguments) then "" else $" -- {renderedArguments}")
+                stdinText
+
+        { ExitCode = runResult.ExitCode
+          StandardOutput = runResult.StandardOutput
+          StandardError = runResult.StandardError }
+    | other ->
+        invalidOp $"mode run does not support backend '{other}' yet."
+
+let private executeFixtureRun (fixtureCase: KpFixtureCase) (workspace: WorkspaceCompilation) =
+    match fixtureCase.Configuration.Mode, fixtureCase.Configuration.EntryPoint with
+    | KpFixtureMode.Run, Some entryPoint ->
+        executeBackendRun fixtureCase workspace entryPoint
+    | KpFixtureMode.Run, None ->
+        invalidOp $"Fixture '{fixtureCase.Name}' selected mode run but did not configure an entry point."
+    | _ ->
+        { ExitCode = 0
+          StandardOutput = ""
+          StandardError = "" }
+
+let private compareFixtureRelation relation actual expected =
+    match relation with
+    | KpFixtureRelation.Equal -> actual = expected
+    | KpFixtureRelation.NotEqual -> actual <> expected
+    | KpFixtureRelation.LessThan -> actual < expected
+    | KpFixtureRelation.LessThanOrEqual -> actual <= expected
+    | KpFixtureRelation.GreaterThan -> actual > expected
+    | KpFixtureRelation.GreaterThanOrEqual -> actual >= expected
+
 let private evaluateFixtureBinding (workspace: WorkspaceCompilation) (filePath: string) (target: string) =
     let bindingTarget = qualifyFixtureBindingTarget workspace filePath target
     bindingTarget, Interpreter.evaluateBinding workspace bindingTarget
@@ -891,8 +1441,7 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
     Assert.NotEmpty(fixtureCase.SourceFiles)
     Assert.NotEmpty(fixtureCase.Assertions)
 
-    let workspace =
-        Compilation.parse (CompilationOptions.create fixtureCase.Root) [ fixtureCase.Root ]
+    let workspace = compileFixtureWorkspace fixtureCase
 
     let expectsDiagnostics =
         fixtureCase.Assertions
@@ -907,6 +1456,12 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
             workspace.HasErrors,
             $"Fixture '{fixtureCase.Name}' failed to compile:{Environment.NewLine}{formatDiagnostics workspace.Diagnostics}"
         )
+
+    let runResult = lazy (executeFixtureRun fixtureCase workspace)
+
+    let requireRunMode assertionName =
+        if fixtureCase.Configuration.Mode <> KpFixtureMode.Run then
+            invalidOp $"'{assertionName}' is valid only for fixtures running in mode run."
 
     for assertion in fixtureCase.Assertions do
         match assertion with
@@ -938,6 +1493,18 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
                 Assert.Equal<string list>(expectedTokens, actualTokens)
             | None ->
                 failwithf "Could not find a declared top-level type for '%s' (%s:%d)." target filePath lineNumber
+        | AssertFileDeclarationKinds(relativePath, expectedKinds, _, lineNumber) ->
+            let document = requireFixtureDocumentByRelativePath workspace fixtureCase.Root relativePath lineNumber
+
+            let expected =
+                expectedKinds |> List.map normalizeFixtureText
+
+            let actual =
+                document.Syntax.Declarations
+                |> List.map declarationKindText
+                |> List.map normalizeFixtureText
+
+            Assert.Equal<string list>(expected, actual)
         | AssertEval(target, expectedValueText, filePath, lineNumber) ->
             let bindingTarget, evaluation = evaluateFixtureBinding workspace filePath target
 
@@ -994,6 +1561,44 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
                     issue.Message
                     filePath
                     lineNumber
+        | AssertStdout(expectedOutputText, _, _) ->
+            requireRunMode "assertStdout"
+
+            Assert.Equal(
+                normalizeLineEndings expectedOutputText,
+                runResult.Value.StandardOutput
+            )
+        | AssertStdoutContains(expectedOutputText, _, _) ->
+            requireRunMode "assertStdoutContains"
+
+            Assert.Contains(
+                normalizeLineEndings expectedOutputText,
+                runResult.Value.StandardOutput,
+                StringComparison.Ordinal
+            )
+        | AssertStderrContains(expectedOutputText, _, _) ->
+            requireRunMode "assertStderrContains"
+
+            Assert.Contains(
+                normalizeLineEndings expectedOutputText,
+                runResult.Value.StandardError,
+                StringComparison.Ordinal
+            )
+        | AssertExitCode(expectedCode, _, _) ->
+            requireRunMode "assertExitCode"
+            Assert.Equal(expectedCode, runResult.Value.ExitCode)
+        | AssertTraceCount(eventName, subjectName, relation, expectedCount, filePath, lineNumber) ->
+            let actualCount =
+                Compilation.pipelineTrace workspace
+                |> List.filter (fun step ->
+                    String.Equals(PipelineTraceEvent.toPortableName step.Event, eventName, StringComparison.Ordinal)
+                    && String.Equals(PipelineTraceSubject.toPortableName step.Subject, subjectName, StringComparison.Ordinal))
+                |> List.length
+
+            Assert.True(
+                compareFixtureRelation relation actualCount expectedCount,
+                $"Trace count assertion failed for ({eventName}, {subjectName}) in '{fixtureCase.Name}' ({filePath}:{lineNumber}). Actual count: {actualCount}."
+            )
         | AssertModule(expectedModuleText, filePath, lineNumber) ->
             let document = requireFixtureDocument workspace filePath lineNumber
 
