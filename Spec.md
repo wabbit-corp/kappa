@@ -1619,8 +1619,8 @@ Consequences:
 
 * the surface quantity forms of §5.1.5 remain the only user-written quantity forms in v0.1;
 * the quantity-satisfaction relation `⊑` ranges only over interval quantities and the borrow mode `&`;
-* borrow introduction, borrow lifetimes, path-sensitive borrowing, and erasure continue to be governed only by
-  §§5.1.5-5.1.7.
+* borrow introduction, borrow lifetimes, and path-sensitive borrowing continue to be governed only by §§5.1.5-5.1.7;
+* quantity-governed erasure continues to be governed by §§5.1.3-5.1.7 and §14.4.
 
 ### 5.1.5.2 Reserved modal/coeffect extension lane
 
@@ -9318,6 +9318,9 @@ A conforming implementation MUST behave as if batch compilation proceeds as foll
    headers are available, an implementation SHOULD make declaration-body queries for distinct top-level definitions
    independently schedulable whenever they are not part of the same explicit recursive group and share no other
    recorded dependencies.
+
+   If an enabled modal/coeffect extension contributes interface-visible obligations, evidence, or classifications,
+   interface readiness for the affected exports includes any required `MODAL_SOLVE` work for those exports.
 4. downstream modules may consult only imported interfaces for ordinary import resolution, downstream typechecking,
    instance search, and definitional equality.
    Imported implementation artifacts or source bodies are not required, except for same-module multi-fragment
