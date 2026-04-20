@@ -1382,7 +1382,8 @@ In addition to the universe hierarchy `Type0`, `Type1`, ... and the sort `Constr
 * In v0.1, the intended surface use of a `Universe` variable is as the argument of `Type`; ordinary computation on
   universe levels is not otherwise specified.
 
-* `Quantity` classifies exact usage intervals and the borrow mode `&`.
+* `Quantity` classifies exact usage intervals and the borrow mode `&`. It is reserved for ownership and usage
+  accounting only and is not a generic modal or coeffect grade sort; see §5.1.5.1.
 * `Quantity` is a valid target for universal quantification.
 * `Region` classifies explicit borrow lifetimes that may be named in surface types when a borrow relationship must cross
   an interface boundary.
@@ -1599,6 +1600,44 @@ Typing rule (non-escape of borrowed parameters):
 The temporary borrow created by borrow introduction ends exactly when the demanding context finishes. At function
 application, this is exactly when the call returns. Consequently a callee may not store such a temporary anonymous
 borrow in its result; only explicitly scoped regions may cross that boundary.
+
+### 5.1.5.1 Quantities are ownership-only
+
+The `Quantity` sort is reserved for ownership and usage accounting.
+
+In particular, quantities do not express information-flow labels, privacy or sensitivity grades, scheduling budgets,
+energy or cost annotations, or effect grades. Such analyses, if supported by a future version of Kappa, belong to a
+distinct modal/coeffect layer.
+
+Consequences:
+
+* the surface quantity forms of §5.1.5 remain the only user-written quantity forms in v0.1;
+* the quantity-satisfaction relation `⊑` ranges only over interval quantities and the borrow mode `&`;
+* borrow introduction, borrow lifetimes, path-sensitive borrowing, and erasure continue to be governed only by
+  §§5.1.5-5.1.7.
+
+### 5.1.5.2 Reserved modal/coeffect extension lane
+
+A future version of Kappa may add one or more graded modal or coeffect systems. Any such system MUST be distinct from
+`Quantity` and MUST satisfy all of the following:
+
+* it introduces its own type formers, binders, or other surface forms rather than extending the set of quantity
+  literals;
+* it defines its own admissibility, ordering, and combination rules for its grades;
+* it emits its own typing predicates or obligations during elaboration;
+* those predicates are solved separately from the core quantity checker;
+* failure of such predicates is reported as an ordinary compile-time error with source origins.
+
+If such a layer is added, it is orthogonal to ownership checking:
+
+* quantity checking still determines consumption, borrowing, erasure, and path-sensitive ownership;
+* modal/coeffect checking determines only the modality-specific property being tracked.
+
+Examples of candidate future modalities include information-flow labels, privacy/sensitivity grades, energy or cost
+budgets, and scheduling budgets.
+
+A conforming implementation MUST NOT reinterpret `Quantity`, `⊑`, or the borrow rules of this chapter as a
+general-purpose graded logic.
 
 ### 5.1.6 Borrow lifetimes and escape prevention
 
@@ -4267,6 +4306,11 @@ runPure : Eff <[ ]> a -> a
 
 `runPure` eliminates an `Eff` computation only when its effect row is empty. A computation may be passed to `runPure`
 only after all effects have been handled or otherwise eliminated.
+
+Effect rows are orthogonal to the reserved modal/coeffect extension lane of §5.1.5.2. `EffRow` classifies which
+effects may occur. A future effect-grade extension, if any, would classify some separate quantitative or policy
+property of computations and MUST be layered beside `EffRow` rather than by changing row membership, row equality, or
+`SplitEff`.
 
 #### 8.1.2 `effect` declarations
 
@@ -7775,6 +7819,10 @@ Elaboration performs (non-exhaustive):
 * construction and phase resolution of KFrontIR (§17.2),
 * name resolution across namespaces (term/type/constraint/ctor/module),
 * implicit argument insertion (§7.3),
+* quantity checking and borrow checking under §§5.1.5-5.1.7 using the syntax-directed ownership rules of the core
+  language,
+* generation of any predicates required by an enabled modal/coeffect extension of §5.1.5.2, followed by
+  modality-specific solving,
 * insertion of coercions required by:
     * expected-type-directed variant injections and widenings (§5.4.3),
     * lawful record reorderings (§5.5.1.1),
@@ -8867,7 +8915,11 @@ A conforming implementation MUST behave as if the following phases exist:
 * `IMPLICIT_SIGNATURES`: inference of declaration result types or initializer types when later resolution requires a
   signature that was omitted in source.
 * `BODY_RESOLVE`: call resolution, type inference, implicit-argument insertion, quantity checking, region checking, flow
-  facts, pattern reachability, handler typing, and body-local declaration resolution.
+  facts, pattern reachability, handler typing, body-local declaration resolution, and generation of any modality
+  predicates required by an enabled modal/coeffect extension.
+* `MODAL_SOLVE`: solving of predicates emitted during `BODY_RESOLVE` by any enabled modal/coeffect extension of
+  §5.1.5.2, together with attachment of solved evidence where required. This phase is a no-op when no such extension is
+  in use.
 * `CHECKERS`: diagnostic production from resolved KFrontIR and any stored resolution errors.
 * `CORE_LOWERING`: lowering of resolved KFrontIR to KCore.
 
@@ -9019,6 +9071,7 @@ queries exist:
 * advance node or declaration to phase `P`;
 * compute declaration header information;
 * compute declaration body resolution;
+* solve modality predicates for a declaration or module when an enabled modal/coeffect extension emits any;
 * compute module interface;
 * lower declaration or module to KCore;
 * evaluate elaboration-time expansion or normalization request;
@@ -9148,8 +9201,8 @@ A conforming implementation MUST behave as if batch compilation proceeds as foll
    instance search, and definitional equality.
    Imported implementation artifacts or source bodies are not required, except for same-module multi-fragment
    compilation or the unsafe/debug facilities of §16.3;
-5. once a module's required imports are interface-ready, `BODY_RESOLVE`, `CHECKERS`, and `CORE_LOWERING` for that
-   module may proceed in topological order or lazily per declaration;
+5. once a module's required imports are interface-ready, `BODY_RESOLVE`, `MODAL_SOLVE` when applicable, `CHECKERS`, and
+   `CORE_LOWERING` for that module may proceed in topological order or lazily per declaration;
 6. KBackendIR lowering and target-profile lowering occur only after KCore exists for the chosen compilation roots.
 
 An implementation MAY pipeline or parallelize these steps internally, provided the resulting behavior is as if the
@@ -9195,6 +9248,7 @@ KCore retains all compile-time structure needed by the source semantics. In part
 * explicit binder quantities, explicit regions, and explicit implicit binders;
 * proof terms and equality evidence;
 * explicit handler forms, resumption quantities, and completion-carrying control structure;
+* explicit modality-predicate evidence introduced by any enabled modal/coeffect extension;
 * local nominal identities as determined by §14.1.1.
 
 KCore contains no unresolved:
@@ -9203,7 +9257,12 @@ KCore contains no unresolved:
 * name-resolution obligations,
 * overloading obligations,
 * instance-search obligations,
+* unresolved modality predicates,
 * or type-inference obligations.
+
+The ownership rules of `Quantity` are fully decided before KCore is constructed. Any modal/coeffect information present
+in KCore appears only as separate evidence introduced by `MODAL_SOLVE`; it does not alter the meaning of quantity
+terms, quantity satisfaction, or borrow checking.
 
 #### 17.3.1 KCore provenance and explainability
 
@@ -9866,6 +9925,47 @@ block into maximal independent groups elaborated with `liftA2` / `<*>`, and then
 
 This is an as-if optimization: the resulting program MUST remain observationally equivalent to the monadic desugaring of
 §8.2 / §8.7.
+
+## Appendix M. Reserved modal/coeffect architecture (non-normative)
+
+This appendix is explanatory and imposes no user-visible surface syntax in v0.1.
+
+A future checker may use judgments of the form:
+
+```text
+Γ ⊢ e ⇒ A ▷ Q ; Φ
+Γ ⊢ e ⇐ A ▷ Q ; Φ
+```
+
+where:
+
+* `Q` is the ordinary quantity result of §§5.1.5-5.1.7.
+* `Φ` is a finite set of modality predicates emitted only by enabled modal/coeffect extensions.
+
+Operational intent:
+
+* `Q` is decided by the syntax-directed ownership rules and never requires a general solver.
+* `Φ` is accumulated during checking and may later be discharged by `MODAL_SOLVE`.
+* Sequential composition combines quantity usage by the ordinary quantity rules and combines modality obligations by
+  conjunction.
+* Alternative control-flow paths combine quantity usage by the ordinary join rules and emit any modality-specific join
+  constraints separately.
+* Effect rows remain orthogonal: rows classify which effects may occur; modality predicates classify additional graded
+  or policy properties.
+
+Schematic checker output:
+
+```text
+TcOut =
+  { type       : Type
+  , qtyUse     : QtySummary
+  , modalPreds : List ModalPred
+  , subst      : Subst
+  }
+```
+
+A future extension should therefore be implemented as "existing checker + extra predicates", not by generalizing
+`Quantity`, `⊑`, borrow introduction, or borrow lifetimes.
 
 ## Appendix T. Standard test harness
 
