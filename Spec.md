@@ -589,6 +589,7 @@ Traits (constraint namespace, restricted to trait):
 Equiv, Eq, Ord, Show,
 Functor, Applicative, Monad, Alternative,
 Foldable, Traversable, Filterable, FilterMap, Monoid, Iterator, InterpolatedMacro,
+FromComprehensionRaw,
 FromComprehension,
 FromInteger, FromFloat, FromString, FromStringType,
 MonadError, MonadFinally, MonadResource, MonadRef, Releasable
@@ -1214,13 +1215,18 @@ data SyntaxFragment : Type =
 trait InterpolatedMacro (t : Type) =
     buildInterpolated : List SyntaxFragment -> Syntax t
 
+trait FromComprehensionRaw (f : Type -> Type) =
+    fromComprehensionRaw : forall a. Syntax (f a) -> f a
+
 trait FromComprehension (f : Type -> Type) =
     fromComprehension : forall a. Syntax (f a) -> f a
 ```
 
-**Note**: The `Syntax` value passed to `fromComprehension` is the result of applying the normative desugaring rules from
-§10.10. Implementations of `FromComprehension` may inspect this `Syntax` (via the reflection API of §5.8.5) to perform
-custom optimizations or code generation.
+`FromComprehensionRaw` receives the original user-written comprehension syntax.
+
+`FromComprehension` receives the result of applying the normative desugaring rules from §10.10.
+
+Custom carriers may implement either trait. Carrier selection is defined in §10.9.
 
 Semantics:
 
@@ -2731,6 +2737,18 @@ Syntax quotes are hygienic.
 #### 5.8.5 Reflection API
 
 Implementations MUST provide a typed reflection API sufficient to inspect and construct syntax values.
+
+The reflection API MUST additionally provide an elaboration-time operation equivalent to:
+
+```kappa
+lowerComprehension :
+    forall (f : Type -> Type) (a : Type).
+    Syntax (f a) -> Syntax (f a)
+```
+
+When its argument is a comprehension syntax value produced for `FromComprehensionRaw`, `lowerComprehension` returns the
+result of applying the normative desugaring rules of §10.10 to that comprehension. If the argument is not such a
+comprehension syntax value, compilation fails with an elaboration-time error.
 
 #### 5.8.6 Restrictions on macro effects
 
@@ -6964,12 +6982,26 @@ MyCustomSet  {| clauses..., yield valueExpr |}
 MyCustomMap  { clauses..., yield keyExpr : valueExpr }
 ```
 
-This feature is supported by the `FromComprehension` trait (defined in §2.7). The compiler desugars the comprehension
-using the rules in §10.10 and then invokes `fromComprehension` on the carrier with the resulting `Syntax` value.
+This feature is supported by the `FromComprehensionRaw` and `FromComprehension` traits.
 
-Carriers are not required to implement every possible clause combination — they only need to accept the final desugared
-form. This keeps the interface minimal while still allowing sophisticated carriers (e.g. database query builders,
-streaming libraries, or effectful collection types) to intercept the entire pipeline.
+Carrier-selection rule:
+
+* If `FromComprehensionRaw f` is available, the compiler constructs a `Syntax` value for the original user-written
+  comprehension and invokes `fromComprehensionRaw`.
+* Otherwise, if `FromComprehension f` is available, the compiler desugars the comprehension using the rules in §10.10
+  and invokes `fromComprehension` on the resulting `Syntax` value.
+* If both traits are available, `FromComprehensionRaw` is preferred.
+
+A raw carrier implementation MAY inspect the surface comprehension directly, or it MAY call `lowerComprehension`
+(§5.8.5) to obtain the normative desugared pipeline of §10.10. This permits query-oriented, relational, or fixed-point
+carriers to extend the comprehension machinery without a separate parsing pipeline.
+
+The reflection API MUST preserve, at minimum, the custom-carrier prefix, delimiter kind (list/set/map), clause order,
+clause kinds, binder patterns, guards, join forms, grouping clauses, ordering clauses, paging clauses, and yield form
+of the original comprehension.
+
+Carriers are not required to implement every possible clause combination — they only need to accept the form they are
+invoked with.
 
 ### 10.10 Comprehension desugaring and required traits
 
@@ -7035,8 +7067,10 @@ Desugaring rules (list/set forms shown; map form analogous):
 The above is normative: implementations may produce equivalent code, but must preserve these semantics and constraint
 minimality. The lambdas shown in these desugaring rules are schematic meta-notation. Compiler-generated closures
 introduced solely to realize the comprehension pipeline are transparent to the abrupt-control boundary rules of §8.4 and
-§8.5. Custom carriers receive the fully desugared pipeline as `Syntax` via the `FromComprehension.fromComprehension`
-method. The compiler is not required to expose intermediate clause representations to carriers.
+§8.5. Custom carriers that rely on `FromComprehension` receive the fully desugared pipeline as `Syntax`. Custom
+carriers that rely on `FromComprehensionRaw` receive the original comprehension syntax and may call
+`lowerComprehension` to obtain the same desugared pipeline. The compiler MUST preserve the original clause
+representation until that handoff occurs.
 
 ### 10.10.1 Evaluation-count guarantees
 
@@ -8942,6 +8976,11 @@ Generated nodes may arise from:
 
 If a generated node corresponds to a user-written construct, the mapping from the generated node back to that construct
 MUST be retained for diagnostics and navigation.
+
+For comprehensions, KFrontIR MUST preserve the original clause structure, clause order, delimiter kind, and any
+custom-carrier prefix until `CORE_LOWERING`. Desugared pipeline nodes MAY be added, but the original comprehension node,
+or an observationally equivalent source-linked representation, MUST remain available for tooling and for the raw
+custom-carrier hook of §§4.3.4, 5.8.5, and 10.9.
 
 KFrontIR distinguishes source references from resolved semantic objects:
 
