@@ -36,5 +36,6 @@ dist/
 bin/
 obj/
 .dotnet/
+.tools/
 artifacts/
 TestResults/
