@@ -3045,6 +3045,15 @@ Implicit local bindings:
 * Because the default-quantity rule for implicit binders is given by §7.3, ordinary runtime values SHOULD typically use
   an explicit quantity such as `@ω`.
 
+Typing:
+
+* `let (@q x : T) = expr` is well-typed iff `expr` checks against `T`.
+* `let (@q x : T) <- expr` is well-typed in a `do` block iff `expr` has type `m A` for the enclosing monad `m` and `A`
+  is definitionally equal to `T`.
+* In either form, `x` is introduced as an ordinary term variable of type `T` and is additionally added to the local
+  implicit context of §7.3.3 from the binding site onward.
+* Quantity checking for `x` uses the ordinary rules for an implicit binder annotated with quantity `q`.
+
 * In `bindPat`, a quantity annotation applies uniformly to every variable bound by the underlying pattern.
 * `let & pat = expr` is legal and binds every variable introduced by `pat` at borrowed quantity `&`. It introduces
   borrowed views of the underlying value, is used by the normative desugaring of `using` (§8.7.4), and is subject to the
@@ -4814,8 +4823,8 @@ Valid do-items inside `do`:
   * Any quantity annotation on `bindPat` applies uniformly to every variable introduced by that pattern (§6.3).
 
   The alternative form `let (@q x : T) <- expr` binds the simple variable `x` from the monadic result and additionally
-  places `x` in the local implicit context from the binding site onward. Its runtime semantics are otherwise the same as
-  an ordinary monadic bind.
+  places `x` in the local implicit context from the binding site onward. Its typing is specified in §6.3. Its runtime
+  semantics are otherwise the same as an ordinary monadic bind.
 
   Linear state threading and shadowing:
   * A binding form in a `do` block may introduce a name already in scope; the new binding shadows the old one for all
@@ -4929,7 +4938,7 @@ Valid do-items inside `do`:
       a fresh hidden temporary root scoped to the remaining do-items, exactly as specified in §6.3 and §5.1.6.
     * Names bound by `bindPat` are in scope in subsequent do-items in the `do` block.
 
-  The alternative form `let (@q x : T) = expr` is permitted in a `do` block with the same meaning as in §6.3.
+  The alternative form `let (@q x : T) = expr` is permitted in a `do` block with the same meaning and typing as in §6.3.
 
 * **Refutable local binding (`let?`)**:
 
@@ -7591,8 +7600,10 @@ and therefore new ambiguity or coherence failures. This is by design.
 
 When solving a trait constraint goal `Tr args`, instance resolution proceeds as follows:
 
-1. **Local implicit context first** Search local implicit values, unpacked implicit record fields, and any local
-   instance declarations in scope first, innermost scope first. If this yields a unique solution, use it.
+1. **Local implicit context first.** For goals of trait-constraint form `Tr args`, perform step 1 of the
+   implicit-resolution procedure of §7.3.3. If that step yields a unique local candidate, use it. If that step yields
+   ambiguity, compilation fails. Only if that step yields no local candidate does instance resolution continue to step 2
+   below.
 
 2. **Then global instances** Collect all top-level instance declarations in the compilation unit's module closure whose
    instance heads unify with the goal.
