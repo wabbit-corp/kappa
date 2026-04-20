@@ -284,6 +284,279 @@ let ``backend verification rejects unsupported backend intrinsics`` () =
     )
 
 [<Fact>]
+let ``backend verification rejects missing imported runtime modules`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-verify-missing-import-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let missingImport =
+        { Source = Dotted [ "missing" ]
+          Alias = None
+          Selection = All }
+
+    let malformedWorkspace =
+        { workspace with
+            KBackendIR =
+                workspace.KBackendIR
+                |> List.map (fun moduleDump ->
+                    if moduleDump.Name = "main" then
+                        { moduleDump with Imports = missingImport :: moduleDump.Imports }
+                    else
+                        moduleDump) }
+
+    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KBackendIR"
+
+    Assert.Contains(
+        diagnostics,
+        fun diagnostic ->
+            diagnostic.Message.Contains("imported runtime module 'missing'", StringComparison.OrdinalIgnoreCase)
+            && diagnostic.Message.Contains("module 'main'", StringComparison.OrdinalIgnoreCase)
+    )
+
+[<Fact>]
+let ``backend verification rejects runtime bindings without bodies`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-verify-runtime-body-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let malformedWorkspace =
+        { workspace with
+            KBackendIR =
+                workspace.KBackendIR
+                |> List.map (fun moduleDump ->
+                    if moduleDump.Name = "main" then
+                        { moduleDump with
+                            Bindings =
+                                moduleDump.Bindings
+                                |> List.map (fun binding ->
+                                    if binding.Name = "answer" then
+                                        { binding with Body = None }
+                                    else
+                                        binding) }
+                    else
+                        moduleDump) }
+
+    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KBackendIR"
+
+    Assert.Contains(
+        diagnostics,
+        fun diagnostic ->
+            diagnostic.Message.Contains("runtime binding 'main.answer'", StringComparison.OrdinalIgnoreCase)
+            && diagnostic.Message.Contains("have a body", StringComparison.OrdinalIgnoreCase)
+    )
+
+[<Fact>]
+let ``backend verification rejects intrinsic bindings with bodies`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-verify-intrinsic-body-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let preludeModule =
+        workspace.KBackendIR
+        |> List.find (fun moduleDump -> moduleDump.Name = Stdlib.PreludeModuleText)
+
+    let intrinsicName =
+        preludeModule.Bindings
+        |> List.find (fun binding -> binding.Intrinsic)
+        |> fun binding -> binding.Name
+
+    let malformedWorkspace =
+        { workspace with
+            KBackendIR =
+                workspace.KBackendIR
+                |> List.map (fun moduleDump ->
+                    if moduleDump.Name = Stdlib.PreludeModuleText then
+                        { moduleDump with
+                            Bindings =
+                                moduleDump.Bindings
+                                |> List.map (fun binding ->
+                                    if binding.Name = intrinsicName then
+                                        { binding with Body = Some(KBackendLiteral LiteralValue.Unit) }
+                                    else
+                                        binding) }
+                    else
+                        moduleDump) }
+
+    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KBackendIR"
+
+    Assert.Contains(
+        diagnostics,
+        fun diagnostic ->
+            diagnostic.Message.Contains(
+                $"intrinsic binding '{Stdlib.PreludeModuleText}.{intrinsicName}'",
+                StringComparison.OrdinalIgnoreCase
+            )
+            && diagnostic.Message.Contains("omit a body", StringComparison.OrdinalIgnoreCase)
+    )
+
+[<Fact>]
+let ``backend verification rejects intrinsic bindings missing intrinsic listings`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-verify-intrinsic-listing-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let preludeModule =
+        workspace.KBackendIR
+        |> List.find (fun moduleDump -> moduleDump.Name = Stdlib.PreludeModuleText)
+
+    let intrinsicName =
+        preludeModule.Bindings
+        |> List.find (fun binding -> binding.Intrinsic)
+        |> fun binding -> binding.Name
+
+    let malformedWorkspace =
+        { workspace with
+            KBackendIR =
+                workspace.KBackendIR
+                |> List.map (fun moduleDump ->
+                    if moduleDump.Name = Stdlib.PreludeModuleText then
+                        { moduleDump with
+                            IntrinsicTerms =
+                                moduleDump.IntrinsicTerms
+                                |> List.filter (fun name -> not (String.Equals(name, intrinsicName, StringComparison.Ordinal))) }
+                    else
+                        moduleDump) }
+
+    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KBackendIR"
+
+    Assert.Contains(
+        diagnostics,
+        fun diagnostic ->
+            diagnostic.Message.Contains(
+                $"intrinsic binding '{Stdlib.PreludeModuleText}.{intrinsicName}'",
+                StringComparison.OrdinalIgnoreCase
+            )
+            && diagnostic.Message.Contains("listed in module intrinsic terms", StringComparison.OrdinalIgnoreCase)
+    )
+
+[<Fact>]
+let ``backend verification rejects duplicate closure parameters`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-verify-closure-parameters-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let malformedWorkspace =
+        { workspace with
+            KBackendIR =
+                workspace.KBackendIR
+                |> List.map (fun moduleDump ->
+                    if moduleDump.Name = "main" then
+                        { moduleDump with
+                            Bindings =
+                                moduleDump.Bindings
+                                |> List.map (fun binding ->
+                                    if binding.Name = "answer" then
+                                        { binding with Body = Some(KBackendClosure([ "x"; "x" ], KBackendName [ "x" ])) }
+                                    else
+                                        binding) }
+                    else
+                        moduleDump) }
+
+    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KBackendIR"
+
+    Assert.Contains(
+        diagnostics,
+        fun diagnostic ->
+            diagnostic.Message.Contains("closures in 'main.answer'", StringComparison.OrdinalIgnoreCase)
+            && diagnostic.Message.Contains("unique parameter names", StringComparison.OrdinalIgnoreCase)
+            && diagnostic.Message.Contains("'x' was duplicated", StringComparison.OrdinalIgnoreCase)
+    )
+
+[<Fact>]
+let ``backend verification rejects duplicate pattern binders`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-verify-pattern-binders-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let malformedBody =
+        KBackendMatch(
+            KBackendLiteral LiteralValue.Unit,
+            [
+                { Pattern =
+                    KBackendConstructorPattern(
+                        [ "::" ],
+                        [ KBackendNamePattern "x"; KBackendNamePattern "x" ]
+                    )
+                  Body = KBackendLiteral(LiteralValue.Integer 0L) }
+            ]
+        )
+
+    let malformedWorkspace =
+        { workspace with
+            KBackendIR =
+                workspace.KBackendIR
+                |> List.map (fun moduleDump ->
+                    if moduleDump.Name = "main" then
+                        { moduleDump with
+                            Bindings =
+                                moduleDump.Bindings
+                                |> List.map (fun binding ->
+                                    if binding.Name = "answer" then
+                                        { binding with Body = Some malformedBody }
+                                    else
+                                        binding) }
+                    else
+                        moduleDump) }
+
+    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KBackendIR"
+
+    Assert.Contains(
+        diagnostics,
+        fun diagnostic ->
+            diagnostic.Message.Contains("pattern binder names", StringComparison.OrdinalIgnoreCase)
+            && diagnostic.Message.Contains("'main.answer'", StringComparison.OrdinalIgnoreCase)
+            && diagnostic.Message.Contains("'x' was duplicated", StringComparison.OrdinalIgnoreCase)
+    )
+
+[<Fact>]
 let ``workspace materializes frontend core and backend modules`` () =
     let workspace =
         compileInMemoryWorkspace

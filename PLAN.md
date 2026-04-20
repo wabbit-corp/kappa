@@ -12,10 +12,10 @@ Preferred resolution: neither yet; establish the exact alignment map first.
 
 Preferred resolution: adjust the compiler.
 
-- [ ] Align the public `dotnet` backend with `Spec.md` section 17.10 so it lowers to real CLR artifacts containing CIL and metadata.
-- [ ] Repoint the public entry points that currently call `Backend.emitDotNetArtifact` and CLI `--backend dotnet` away from the hosted source-generating path and onto the real CLR backend.
-- [ ] Keep the hosted backend only as an explicitly nonstandard/bootstrap profile, renamed so it is not confused with the standardized `dotnet` profile.
-- [ ] Add conformance tests that compile and run the same program through the public `dotnet` profile and inspect the emitted managed artifact shape.
+- [x] Align the public `dotnet` backend with `Spec.md` section 17.10 so it lowers to real CLR artifacts containing CIL and metadata.
+- [x] Repoint the public entry points that currently call `Backend.emitDotNetArtifact` and CLI `--backend dotnet` away from the hosted source-generating path and onto the real CLR backend.
+- [x] Keep the hosted backend only as an explicitly nonstandard/bootstrap profile, renamed so it is not confused with the standardized `dotnet` profile.
+- [x] Add conformance tests that compile and run the same program through the public `dotnet` profile and inspect the emitted managed artifact shape.
 
 ## 3. `KBackendIR` shape and lowering semantics
 
@@ -24,24 +24,24 @@ Preferred resolution: adjust the compiler.
 - [ ] Audit the current `KBackendIR` model in `src/Kappa.Compiler/Compilation.fs` against `Spec.md` sections 17.4 and 17.4.1.
 - [ ] Decide whether to evolve the current `KBackendIR` into a true runtime IR or to insert a new explicit runtime IR and rename the current form.
 - [ ] Introduce runtime-facing constructs for representation choice, runtime calls, data layout, field access, retained dictionaries/type parameters, and explicit runtime control.
-- [ ] Strengthen `KBackendIR` verification so it checks the legality conditions from section 17.4.2 instead of only structural uniqueness checks.
+- [x] Strengthen `KBackendIR` verification so it checks the legality conditions from section 17.4.2 instead of only structural uniqueness checks.
 - [ ] Extend observability so `KBackendIR` dumps and post-`KBackendIR` CLR-lowering dumps expose the runtime information required by the spec.
 
 ## 4. `expect` satisfaction and backend intrinsics
 
 Preferred resolution: adjust the compiler.
 
-- [ ] Replace the hardcoded intrinsic satisfaction logic in `src/Kappa.Compiler/Stdlib.fs` with backend-profile-scoped intrinsic registries.
+- [x] Replace the hardcoded intrinsic satisfaction logic in `src/Kappa.Compiler/Stdlib.fs` with backend-profile-scoped intrinsic registries.
 - [ ] Model the selected backend profile and backend-intrinsic set as part of the effective build configuration and cache identity, as required by section 17.6.
 - [ ] Decide which intrinsics are elaboration-available and enforce that distinction during elaboration-time evaluation.
-- [ ] Add tests showing that the same `expect` can be satisfied or rejected depending on the selected backend profile and intrinsic set.
+- [x] Add tests showing that the same `expect` can be satisfied or rejected depending on the selected backend profile and intrinsic set.
 
 ## 5. Prelude import semantics
 
 Preferred resolution: adjust the compiler.
 
-- [ ] Fix implicit prelude handling so it matches sections 2.6 and 2.3.1 exactly: wildcard import plus only the fixed unqualified constructor subset.
-- [ ] Audit wildcard import resolution so constructors are not imported unqualified except where the spec explicitly permits it.
+- [x] Fix implicit prelude handling so it matches sections 2.6 and 2.3.1 exactly: wildcard import plus only the fixed unqualified constructor subset.
+- [x] Audit wildcard import resolution so constructors are not imported unqualified except where the spec explicitly permits it.
 - [ ] Add tests covering the boundary between term/type imports and constructor imports, including explicit `ctor` imports and `type T(..)` imports.
 - [ ] Re-check existing prelude fixtures after the import rules are corrected, because some current tests may be passing only because constructor import is too permissive.
 
@@ -71,7 +71,7 @@ Preferred resolution: adjust the compiler and harness, and narrow any claims unt
 
 Preferred resolution: sequence the work so public behavior becomes honest first, then broaden conformance.
 
-- [ ] Fix the public-profile mismatches first: `dotnet` backend routing, implicit prelude import semantics, and backend-scoped `expect` handling.
+- [x] Fix the public-profile mismatches first: `dotnet` backend routing, implicit prelude import semantics, and backend-scoped `expect` handling.
 - [ ] Then align the internal architecture: true `KBackendIR`, stronger verifier rules, and post-`KBackendIR` CLR lowering checkpoints.
 - [ ] Then decide whether section 2.7 stays normative for the current milestone or whether the spec needs a bootstrap prelude/profile split.
 - [ ] Finally, bring the test harness up to Appendix T and convert more of the existing suites to the standard directive set.
