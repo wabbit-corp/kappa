@@ -37,7 +37,7 @@ and RuntimeConstructed =
       Fields: RuntimeValue list }
 and RuntimeClosure =
     { Parameters: string list
-      Body: KBackendExpression
+      Body: KRuntimeExpression
       Scope: RuntimeScope }
 and BuiltinFunction =
     { Name: string
@@ -50,7 +50,7 @@ and RuntimeContext =
     { Modules: Map<string, RuntimeModule> }
 and RuntimeModule =
     { Name: string
-      Definitions: Map<string, KBackendBinding>
+      Definitions: Map<string, KRuntimeBinding>
       Constructors: Map<string, RuntimeConstructor>
       IntrinsicTerms: Set<string>
       Exports: Set<string>
@@ -99,7 +99,7 @@ module Interpreter =
 
     let private buildContextWithOutput (output: RuntimeOutput) (workspace: WorkspaceCompilation) =
         let moduleRuntimes =
-            workspace.KBackendIR
+            workspace.KRuntimeIR
             |> List.map (fun backendModule ->
                 let constructors =
                     backendModule.Constructors
@@ -263,31 +263,31 @@ module Interpreter =
             | BuiltinFunctionValue _ ->
                 error $"Cannot interpolate {RuntimeValue.format value} into an f-string."
 
-        let rec evaluateExpression (scope: RuntimeScope) (expression: KBackendExpression) : Result<RuntimeValue, EvaluationError> =
+        let rec evaluateExpression (scope: RuntimeScope) (expression: KRuntimeExpression) : Result<RuntimeValue, EvaluationError> =
             match expression with
-            | KBackendLiteral literal ->
+            | KRuntimeLiteral literal ->
                 ok (literalToValue literal)
-            | KBackendName segments ->
+            | KRuntimeName segments ->
                 resolveName scope segments
-            | KBackendPrefixedString (prefix, parts) ->
+            | KRuntimePrefixedString (prefix, parts) ->
                 evaluatePrefixedString scope prefix parts
-            | KBackendClosure (parameters, body) ->
+            | KRuntimeClosure (parameters, body) ->
                 ok
                     (FunctionValue
                         { Parameters = parameters
                           Body = body
                           Scope = scope })
-            | KBackendIfThenElse (condition, whenTrue, whenFalse) ->
+            | KRuntimeIfThenElse (condition, whenTrue, whenFalse) ->
                 evaluateExpression scope condition
                 |> Result.bind (function
                     | BooleanValue true -> evaluateExpression scope whenTrue
                     | BooleanValue false -> evaluateExpression scope whenFalse
                     | value ->
                         error $"Expected a Boolean in the if condition, but got {RuntimeValue.format value}.")
-            | KBackendMatch (scrutinee, cases) ->
+            | KRuntimeMatch (scrutinee, cases) ->
                 evaluateExpression scope scrutinee
                 |> Result.bind (fun value -> evaluateMatch scope value cases)
-            | KBackendApply (callee, arguments) ->
+            | KRuntimeApply (callee, arguments) ->
                 evaluateExpression scope callee
                 |> Result.bind (fun functionValue ->
                     arguments
@@ -300,7 +300,7 @@ module Interpreter =
                             | _, Result.Error issue -> Result.Error issue)
                         (Result.Ok [])
                     |> Result.bind (fun values -> apply functionValue (List.rev values)))
-            | KBackendUnary (operatorName, expression) ->
+            | KRuntimeUnary (operatorName, expression) ->
                 evaluateExpression scope expression
                 |> Result.bind (fun operand ->
                     if hasExplicitUnqualifiedName scope operatorName then
@@ -308,7 +308,7 @@ module Interpreter =
                         |> Result.bind (fun functionValue -> apply functionValue [ operand ])
                     else
                         applyBuiltinUnary operatorName operand)
-            | KBackendBinary (left, "&&", right) when not (hasExplicitUnqualifiedName scope "&&") ->
+            | KRuntimeBinary (left, "&&", right) when not (hasExplicitUnqualifiedName scope "&&") ->
                 evaluateExpression scope left
                 |> Result.bind (function
                     | BooleanValue false -> ok (BooleanValue false)
@@ -320,7 +320,7 @@ module Interpreter =
                                 error $"Operator '&&' expects Boolean operands, but got {RuntimeValue.format value}.")
                     | value ->
                         error $"Operator '&&' expects Boolean operands, but got {RuntimeValue.format value}.")
-            | KBackendBinary (left, "||", right) when not (hasExplicitUnqualifiedName scope "||") ->
+            | KRuntimeBinary (left, "||", right) when not (hasExplicitUnqualifiedName scope "||") ->
                 evaluateExpression scope left
                 |> Result.bind (function
                     | BooleanValue true -> ok (BooleanValue true)
@@ -332,7 +332,7 @@ module Interpreter =
                                 error $"Operator '||' expects Boolean operands, but got {RuntimeValue.format value}.")
                     | value ->
                         error $"Operator '||' expects Boolean operands, but got {RuntimeValue.format value}.")
-            | KBackendBinary (left, operatorName, right) ->
+            | KRuntimeBinary (left, operatorName, right) ->
                 evaluateExpression scope left
                 |> Result.bind (fun leftValue ->
                     evaluateExpression scope right
@@ -343,7 +343,7 @@ module Interpreter =
                         else
                             applyBuiltinBinary operatorName leftValue rightValue))
 
-        and evaluatePrefixedString (scope: RuntimeScope) (prefix: string) (parts: KBackendStringPart list) =
+        and evaluatePrefixedString (scope: RuntimeScope) (prefix: string) (parts: KRuntimeStringPart list) =
             if not (String.Equals(prefix, "f", StringComparison.Ordinal)) then
                 error $"Prefixed string '{prefix}\"...\"' is not supported by the interpreter yet."
             else
@@ -353,9 +353,9 @@ module Interpreter =
                         state
                         |> Result.bind (fun segments ->
                             match part with
-                            | KBackendStringText text ->
+                            | KRuntimeStringText text ->
                                 ok (text :: segments)
-                            | KBackendStringInterpolation expression ->
+                            | KRuntimeStringInterpolation expression ->
                                 evaluateExpression scope expression
                                 |> Result.bind renderInterpolatedValue
                                 |> Result.map (fun text -> text :: segments)))
@@ -366,12 +366,12 @@ module Interpreter =
                     |> String.concat ""
                     |> StringValue)
 
-        and evaluateMatch (scope: RuntimeScope) (scrutinee: RuntimeValue) (cases: KBackendMatchCase list) =
-            let rec tryCases remainingCases =
+        and evaluateMatch (scope: RuntimeScope) (scrutinee: RuntimeValue) (cases: KRuntimeMatchCase list) =
+            let rec tryCases (remainingCases: KRuntimeMatchCase list) =
                 match remainingCases with
                 | [] ->
                     error $"Non-exhaustive match for {RuntimeValue.format scrutinee}."
-                | caseClause :: rest ->
+                | (caseClause: KRuntimeMatchCase) :: rest ->
                     match tryMatchPattern scope scrutinee caseClause.Pattern with
                     | Result.Error issue ->
                         Result.Error issue
@@ -388,20 +388,20 @@ module Interpreter =
 
             tryCases cases
 
-        and tryMatchPattern (scope: RuntimeScope) (value: RuntimeValue) (pattern: KBackendPattern) =
+        and tryMatchPattern (scope: RuntimeScope) (value: RuntimeValue) (pattern: KRuntimePattern) =
             match pattern with
-            | KBackendWildcardPattern ->
+            | KRuntimeWildcardPattern ->
                 ok (Some [])
-            | KBackendNamePattern name ->
+            | KRuntimeNamePattern name ->
                 ok (Some [ name, value ])
-            | KBackendLiteralPattern literal ->
+            | KRuntimeLiteralPattern literal ->
                 let literalValue = literalToValue literal
 
                 if valuesEqual value literalValue then
                     ok (Some [])
                 else
                     ok None
-            | KBackendConstructorPattern(nameSegments, argumentPatterns) ->
+            | KRuntimeConstructorPattern(nameSegments, argumentPatterns) ->
                 resolveName scope nameSegments
                 |> Result.bind (fun constructorValue ->
                     let expectedConstructor =
@@ -801,7 +801,7 @@ module Interpreter =
             | _ ->
                 error $"Binding '{bindingName}' was not found in module '{runtimeModule.Name}'."
 
-        and evaluateDefinition (context: RuntimeContext) (moduleName: string) (definition: KBackendBinding) : Result<RuntimeValue, EvaluationError> =
+        and evaluateDefinition (context: RuntimeContext) (moduleName: string) (definition: KRuntimeBinding) : Result<RuntimeValue, EvaluationError> =
             match definition.Body with
             | None ->
                 error $"Binding '{definition.Name}' does not belong to the executable backend subset."

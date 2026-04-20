@@ -97,6 +97,7 @@ type PipelineTraceEvent =
     | EmitInterface
     | EvaluateElaboration
     | LowerKCore
+    | LowerKRuntimeIR
     | LowerKBackendIR
     | LowerTarget
     | Reuse
@@ -111,6 +112,7 @@ module PipelineTraceEvent =
         | EmitInterface -> "emitInterface"
         | EvaluateElaboration -> "evaluateElaboration"
         | LowerKCore -> "lowerKCore"
+        | LowerKRuntimeIR -> "lowerKRuntimeIR"
         | LowerKBackendIR -> "lowerKBackendIR"
         | LowerTarget -> "lowerTarget"
         | Reuse -> "reuse"
@@ -122,6 +124,7 @@ type PipelineTraceSubject =
     | Module
     | Interface
     | KCoreUnit
+    | KRuntimeIRUnit
     | KBackendIRUnit
     | TargetUnit
 
@@ -133,6 +136,7 @@ module PipelineTraceSubject =
         | Module -> "module"
         | Interface -> "interface"
         | KCoreUnit -> "KCoreUnit"
+        | KRuntimeIRUnit -> "KRuntimeIRUnit"
         | KBackendIRUnit -> "KBackendIRUnit"
         | TargetUnit -> "targetUnit"
 
@@ -220,42 +224,181 @@ type KCoreModule =
       IntrinsicTerms: string list
       Declarations: KCoreDeclaration list }
 
-type KBackendExpression =
-    | KBackendLiteral of LiteralValue
-    | KBackendName of string list
-    | KBackendClosure of string list * KBackendExpression
-    | KBackendIfThenElse of KBackendExpression * KBackendExpression * KBackendExpression
-    | KBackendMatch of KBackendExpression * KBackendMatchCase list
-    | KBackendApply of KBackendExpression * KBackendExpression list
-    | KBackendUnary of operatorName: string * KBackendExpression
-    | KBackendBinary of KBackendExpression * operatorName: string * KBackendExpression
-    | KBackendPrefixedString of prefix: string * parts: KBackendStringPart list
+type KRuntimeExpression =
+    | KRuntimeLiteral of LiteralValue
+    | KRuntimeName of string list
+    | KRuntimeClosure of string list * KRuntimeExpression
+    | KRuntimeIfThenElse of KRuntimeExpression * KRuntimeExpression * KRuntimeExpression
+    | KRuntimeMatch of KRuntimeExpression * KRuntimeMatchCase list
+    | KRuntimeApply of KRuntimeExpression * KRuntimeExpression list
+    | KRuntimeUnary of operatorName: string * KRuntimeExpression
+    | KRuntimeBinary of KRuntimeExpression * operatorName: string * KRuntimeExpression
+    | KRuntimePrefixedString of prefix: string * parts: KRuntimeStringPart list
 
-and KBackendStringPart =
-    | KBackendStringText of string
-    | KBackendStringInterpolation of KBackendExpression
+and KRuntimeStringPart =
+    | KRuntimeStringText of string
+    | KRuntimeStringInterpolation of KRuntimeExpression
 
-and KBackendPattern =
-    | KBackendWildcardPattern
-    | KBackendNamePattern of string
-    | KBackendLiteralPattern of LiteralValue
-    | KBackendConstructorPattern of string list * KBackendPattern list
+and KRuntimePattern =
+    | KRuntimeWildcardPattern
+    | KRuntimeNamePattern of string
+    | KRuntimeLiteralPattern of LiteralValue
+    | KRuntimeConstructorPattern of string list * KRuntimePattern list
 
-and KBackendMatchCase =
-    { Pattern: KBackendPattern
-      Body: KBackendExpression }
+and KRuntimeMatchCase =
+    { Pattern: KRuntimePattern
+      Body: KRuntimeExpression }
 
-type KBackendConstructor =
+type KRuntimeConstructor =
     { Name: string
       Arity: int
       TypeName: string
       Provenance: KCoreOrigin }
 
-type KBackendBinding =
+type KRuntimeBinding =
     { Name: string
       Parameters: string list
-      Body: KBackendExpression option
+      Body: KRuntimeExpression option
       Intrinsic: bool
+      Provenance: KCoreOrigin }
+
+type KRuntimeModule =
+    { Name: string
+      SourceFile: string
+      Imports: ImportSpec list
+      Exports: string list
+      IntrinsicTerms: string list
+      Constructors: KRuntimeConstructor list
+      Bindings: KRuntimeBinding list }
+
+type KBackendRepresentationClass =
+    | BackendRepInt64
+    | BackendRepFloat64
+    | BackendRepBoolean
+    | BackendRepString
+    | BackendRepChar
+    | BackendRepUnit
+    | BackendRepTaggedData of moduleName: string * typeName: string
+    | BackendRepClosure of environmentLayout: string
+    | BackendRepIOAction
+    | BackendRepOpaque of string option
+
+type KBackendParameter =
+    { Name: string
+      Representation: KBackendRepresentationClass }
+
+type KBackendCapture =
+    { Name: string
+      Representation: KBackendRepresentationClass }
+
+type KBackendCallingConvention =
+    { RuntimeArity: int
+      ParameterRepresentations: KBackendRepresentationClass list
+      ResultRepresentation: KBackendRepresentationClass option
+      RetainedDictionaryParameters: string list }
+
+type KBackendResolvedName =
+    | BackendLocalName of name: string * representation: KBackendRepresentationClass option
+    | BackendGlobalBindingName of moduleName: string * bindingName: string * representation: KBackendRepresentationClass option
+    | BackendIntrinsicName of moduleName: string * bindingName: string * representation: KBackendRepresentationClass option
+    | BackendConstructorName of
+        moduleName: string *
+        typeName: string *
+        constructorName: string *
+        tag: int *
+        arity: int *
+        representation: KBackendRepresentationClass
+
+type KBackendExpression =
+    | BackendLiteral of LiteralValue * KBackendRepresentationClass
+    | BackendName of KBackendResolvedName
+    | BackendClosure of
+        parameters: KBackendParameter list *
+        captures: KBackendCapture list *
+        environmentLayout: string *
+        body: KBackendExpression *
+        convention: KBackendCallingConvention *
+        representation: KBackendRepresentationClass
+    | BackendIfThenElse of
+        condition: KBackendExpression *
+        whenTrue: KBackendExpression *
+        whenFalse: KBackendExpression *
+        resultRepresentation: KBackendRepresentationClass
+    | BackendMatch of
+        scrutinee: KBackendExpression *
+        cases: KBackendMatchCase list *
+        resultRepresentation: KBackendRepresentationClass
+    | BackendCall of
+        callee: KBackendExpression *
+        arguments: KBackendExpression list *
+        convention: KBackendCallingConvention *
+        resultRepresentation: KBackendRepresentationClass
+    | BackendConstructData of
+        moduleName: string *
+        typeName: string *
+        constructorName: string *
+        tag: int *
+        fields: KBackendExpression list *
+        representation: KBackendRepresentationClass
+    | BackendPrefixedString of
+        prefix: string *
+        parts: KBackendStringPart list *
+        resultRepresentation: KBackendRepresentationClass
+
+and KBackendStringPart =
+    | BackendStringText of string
+    | BackendStringInterpolation of KBackendExpression
+
+and KBackendPatternBinding =
+    { Name: string
+      Representation: KBackendRepresentationClass }
+
+and KBackendPattern =
+    | BackendWildcardPattern
+    | BackendBindPattern of KBackendPatternBinding
+    | BackendLiteralPattern of LiteralValue * KBackendRepresentationClass
+    | BackendConstructorPattern of
+        moduleName: string *
+        typeName: string *
+        constructorName: string *
+        tag: int *
+        fieldPatterns: KBackendPattern list
+
+and KBackendMatchCase =
+    { Pattern: KBackendPattern
+      Body: KBackendExpression }
+
+type KBackendEnvironmentLayout =
+    { Name: string
+      Slots: KBackendCapture list }
+
+type KBackendConstructorLayout =
+    { Name: string
+      Tag: int
+      FieldRepresentations: KBackendRepresentationClass list
+      Provenance: KCoreOrigin }
+
+type KBackendDataLayout =
+    { TypeName: string
+      RepresentationClass: string
+      TagEncoding: string
+      Constructors: KBackendConstructorLayout list
+      Provenance: KCoreOrigin }
+
+type KBackendControlForm =
+    | StructuredExpression
+
+type KBackendFunction =
+    { Name: string
+      Parameters: KBackendParameter list
+      CallingConvention: KBackendCallingConvention
+      ReturnRepresentation: KBackendRepresentationClass option
+      EnvironmentLayout: string option
+      Intrinsic: bool
+      Exported: bool
+      EntryPoint: bool
+      ControlForm: KBackendControlForm
+      Body: KBackendExpression option
       Provenance: KCoreOrigin }
 
 type KBackendModule =
@@ -263,9 +406,11 @@ type KBackendModule =
       SourceFile: string
       Imports: ImportSpec list
       Exports: string list
+      EntryPoints: string list
       IntrinsicTerms: string list
-      Constructors: KBackendConstructor list
-      Bindings: KBackendBinding list }
+      DataLayouts: KBackendDataLayout list
+      EnvironmentLayouts: KBackendEnvironmentLayout list
+      Functions: KBackendFunction list }
 
 type WorkspaceCompilation =
     { SourceRoot: string
@@ -276,6 +421,7 @@ type WorkspaceCompilation =
       Documents: ParsedDocument list
       KFrontIR: KFrontIRModule list
       KCore: KCoreModule list
+      KRuntimeIR: KRuntimeModule list
       KBackendIR: KBackendModule list
       Diagnostics: Diagnostic list
       PipelineTrace: PipelineTraceStep list }

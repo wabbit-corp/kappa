@@ -385,11 +385,11 @@ let private resolveIlEntryPoint (workspace: WorkspaceCompilation) (entryPoint: s
         |> Array.toList
 
     let tryMatchBinding moduleName bindingName =
-        workspace.KBackendIR
-        |> List.tryFind (fun moduleDump -> String.Equals(moduleDump.Name, moduleName, StringComparison.Ordinal))
+        workspace.KRuntimeIR
+        |> List.tryFind (fun (moduleDump: KRuntimeModule) -> String.Equals(moduleDump.Name, moduleName, StringComparison.Ordinal))
         |> Option.bind (fun moduleDump ->
             moduleDump.Bindings
-            |> List.tryFind (fun binding ->
+            |> List.tryFind (fun (binding: KRuntimeBinding) ->
                 String.Equals(binding.Name, bindingName, StringComparison.Ordinal)
                 && not binding.Intrinsic
                 && List.isEmpty binding.Parameters))
@@ -399,10 +399,10 @@ let private resolveIlEntryPoint (workspace: WorkspaceCompilation) (entryPoint: s
         Result.Error "Expected a binding name to run."
     | [ bindingName ] ->
         let matches =
-            workspace.KBackendIR
-            |> List.choose (fun moduleDump ->
+            workspace.KRuntimeIR
+            |> List.choose (fun (moduleDump: KRuntimeModule) ->
                 moduleDump.Bindings
-                |> List.tryFind (fun binding ->
+                |> List.tryFind (fun (binding: KRuntimeBinding) ->
                     String.Equals(binding.Name, bindingName, StringComparison.Ordinal)
                     && not binding.Intrinsic
                     && List.isEmpty binding.Parameters)

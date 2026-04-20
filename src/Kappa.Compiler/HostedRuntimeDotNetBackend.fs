@@ -110,13 +110,13 @@ module HostedRuntimeDotNetBackend =
 
     let rec private emitBackendPattern pattern =
         match pattern with
-        | KBackendWildcardPattern ->
+        | KRuntimeWildcardPattern ->
             "Pattern.Wildcard()"
-        | KBackendNamePattern name ->
+        | KRuntimeNamePattern name ->
             $"Pattern.FromName({csharpString name})"
-        | KBackendLiteralPattern literal ->
+        | KRuntimeLiteralPattern literal ->
             $"Pattern.FromLiteral({emitLiteralValue literal})"
-        | KBackendConstructorPattern(name, arguments) ->
+        | KRuntimeConstructorPattern(name, arguments) ->
             let argumentsCode =
                 match arguments with
                 | [] -> "System.Array.Empty<Pattern>()"
@@ -130,15 +130,15 @@ module HostedRuntimeDotNetBackend =
 
     let rec private emitBackendExpression expression =
         match expression with
-        | KBackendLiteral literal ->
+        | KRuntimeLiteral literal ->
             $"new LiteralExpression({emitLiteralValue literal})"
-        | KBackendName segments ->
+        | KRuntimeName segments ->
             $"new NameExpression({emitStringArray segments})"
-        | KBackendClosure(parameters, body) ->
+        | KRuntimeClosure(parameters, body) ->
             $"new ClosureExpression({emitStringArray parameters}, {emitBackendExpression body})"
-        | KBackendIfThenElse(condition, whenTrue, whenFalse) ->
+        | KRuntimeIfThenElse(condition, whenTrue, whenFalse) ->
             $"new IfExpression({emitBackendExpression condition}, {emitBackendExpression whenTrue}, {emitBackendExpression whenFalse})"
-        | KBackendMatch(scrutinee, cases) ->
+        | KRuntimeMatch(scrutinee, cases) ->
             let casesCode =
                 match cases with
                 | [] -> "System.Array.Empty<MatchCase>()"
@@ -150,7 +150,7 @@ module HostedRuntimeDotNetBackend =
                     |> fun body -> $"new MatchCase[] {{ {body} }}"
 
             $"new MatchExpression({emitBackendExpression scrutinee}, {casesCode})"
-        | KBackendApply(callee, arguments) ->
+        | KRuntimeApply(callee, arguments) ->
             let argumentsCode =
                 match arguments with
                 | [] -> "System.Array.Empty<KExpr>()"
@@ -161,19 +161,19 @@ module HostedRuntimeDotNetBackend =
                     |> fun body -> $"new KExpr[] {{ {body} }}"
 
             $"new ApplyExpression({emitBackendExpression callee}, {argumentsCode})"
-        | KBackendUnary(operatorName, operand) ->
+        | KRuntimeUnary(operatorName, operand) ->
             $"new UnaryExpression({csharpString operatorName}, {emitBackendExpression operand})"
-        | KBackendBinary(left, operatorName, right) ->
+        | KRuntimeBinary(left, operatorName, right) ->
             $"new BinaryExpression({emitBackendExpression left}, {csharpString operatorName}, {emitBackendExpression right})"
-        | KBackendPrefixedString(prefix, parts) ->
+        | KRuntimePrefixedString(prefix, parts) ->
             let partsCode =
                 match parts with
                 | [] -> "System.Array.Empty<StringPart>()"
                 | _ ->
                     parts
                     |> List.map (function
-                        | KBackendStringText text -> $"StringPart.FromText({csharpString text})"
-                        | KBackendStringInterpolation inner -> $"StringPart.FromInterpolation({emitBackendExpression inner})")
+                        | KRuntimeStringText text -> $"StringPart.FromText({csharpString text})"
+                        | KRuntimeStringInterpolation inner -> $"StringPart.FromInterpolation({emitBackendExpression inner})")
                     |> String.concat ", "
                     |> fun body -> $"new StringPart[] {{ {body} }}"
 
@@ -1674,7 +1674,7 @@ internal static class KappaRunner
                 builder.Append(item) |> ignore)
             builder.Append(" }") |> ignore
 
-    let private appendBinding (builder: StringBuilder) (binding: KBackendBinding) =
+    let private appendBinding (builder: StringBuilder) (binding: KRuntimeBinding) =
         builder.Append("new BindingSpec(") |> ignore
         builder.Append(csharpString binding.Name).Append(", ") |> ignore
         binding.Parameters |> List.map csharpString |> appendArray builder "string"
@@ -1688,13 +1688,13 @@ internal static class KappaRunner
 
         builder.Append(", ").Append(if binding.Intrinsic then "true" else "false").Append(")") |> ignore
 
-    let private appendConstructor (builder: StringBuilder) (constructor: KBackendConstructor) =
+    let private appendConstructor (builder: StringBuilder) (constructor: KRuntimeConstructor) =
         builder.Append("new ConstructorSpec(") |> ignore
         builder.Append(csharpString constructor.Name).Append(", ") |> ignore
         builder.Append(constructor.Arity).Append(", ") |> ignore
         builder.Append(csharpString constructor.TypeName).Append(")") |> ignore
 
-    let private appendModule (builder: StringBuilder) (moduleDump: KBackendModule) =
+    let private appendModule (builder: StringBuilder) (moduleDump: KRuntimeModule) =
         builder.Append("            [") |> ignore
         builder.Append(csharpString moduleDump.Name).Append("] = new RuntimeModuleSpec(") |> ignore
         builder.Append(csharpString moduleDump.Name).Append(", ") |> ignore
@@ -1741,7 +1741,7 @@ internal static class KappaRunner
         builder.AppendLine("        new Dictionary<string, RuntimeModuleSpec>(StringComparer.Ordinal)") |> ignore
         builder.AppendLine("        {") |> ignore
 
-        workspace.KBackendIR
+        workspace.KRuntimeIR
         |> List.sortBy (fun moduleDump -> moduleDump.Name)
         |> List.iteri (fun index moduleDump ->
             if index > 0 then
@@ -1764,7 +1764,7 @@ internal static class KappaRunner
             Result.Error "Expected a binding name to run."
         | [ bindingName ] ->
             let matches =
-                workspace.KBackendIR
+                workspace.KRuntimeIR
                 |> List.choose (fun moduleDump ->
                     if moduleDump.Bindings |> List.exists (fun binding -> String.Equals(binding.Name, bindingName, StringComparison.Ordinal) && not binding.Intrinsic) then
                         Some(moduleDump.Name, bindingName)
@@ -1782,7 +1782,7 @@ internal static class KappaRunner
             let moduleName = segments |> List.take (segments.Length - 1) |> String.concat "."
             let bindingName = List.last segments
 
-            match workspace.KBackendIR |> List.tryFind (fun moduleDump -> String.Equals(moduleDump.Name, moduleName, StringComparison.Ordinal)) with
+            match workspace.KRuntimeIR |> List.tryFind (fun moduleDump -> String.Equals(moduleDump.Name, moduleName, StringComparison.Ordinal)) with
             | Some moduleDump when moduleDump.Bindings |> List.exists (fun binding -> String.Equals(binding.Name, bindingName, StringComparison.Ordinal) && not binding.Intrinsic) ->
                 Result.Ok(moduleName, bindingName)
             | Some _ ->
@@ -1799,10 +1799,10 @@ internal static class KappaRunner
         if workspace.HasErrors then
             Result.Error $"Cannot emit a runnable backend artifact for a workspace with diagnostics:{Environment.NewLine}{aggregateDiagnostics workspace.Diagnostics}"
         else
-            let verificationDiagnostics = Compilation.verifyCheckpoint workspace "KBackendIR"
+            let verificationDiagnostics = Compilation.verifyCheckpoint workspace "KRuntimeIR"
 
             if not (List.isEmpty verificationDiagnostics) then
-                Result.Error $"Cannot emit malformed KBackendIR:{Environment.NewLine}{aggregateDiagnostics verificationDiagnostics}"
+                Result.Error $"Cannot emit malformed KRuntimeIR:{Environment.NewLine}{aggregateDiagnostics verificationDiagnostics}"
             else
                 match resolveEntryPoint workspace entryPoint with
                 | Result.Error message ->

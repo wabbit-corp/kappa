@@ -55,24 +55,70 @@ module Compilation =
           Imports: string list
           Declarations: DumpDeclaration list }
 
-    type DumpBackendBinding =
+    type DumpRuntimeBinding =
         { Name: string
           Parameters: string list
           Body: string
           Intrinsic: bool }
 
-    type DumpBackendConstructor =
+    type DumpRuntimeConstructor =
         { Name: string
           Arity: int
           TypeName: string }
 
-    type DumpBackendModule =
+    type DumpRuntimeModule =
         { Name: string
           SourceFile: string
           Exports: string list
           IntrinsicTerms: string list
-          Constructors: DumpBackendConstructor list
-          Bindings: DumpBackendBinding list }
+          Constructors: DumpRuntimeConstructor list
+          Bindings: DumpRuntimeBinding list }
+
+    type DumpBackendParameter =
+        { Name: string
+          Representation: string }
+
+    type DumpBackendCapture =
+        { Name: string
+          Representation: string }
+
+    type DumpBackendFunction =
+        { Name: string
+          Parameters: DumpBackendParameter list
+          CallingConvention: string
+          ReturnRepresentation: string option
+          EnvironmentLayout: string option
+          Intrinsic: bool
+          Exported: bool
+          EntryPoint: bool
+          ControlForm: string
+          Body: string }
+
+    type DumpBackendConstructorLayout =
+        { Name: string
+          Tag: int
+          FieldRepresentations: string list }
+
+    type DumpBackendDataLayout =
+        { TypeName: string
+          RepresentationClass: string
+          TagEncoding: string
+          Constructors: DumpBackendConstructorLayout list }
+
+    type DumpBackendEnvironmentLayout =
+        { Name: string
+          Slots: DumpBackendCapture list }
+
+    type DumpBackendModule =
+        { Name: string
+          SourceFile: string
+          Imports: string list
+          Exports: string list
+          EntryPoints: string list
+          IntrinsicTerms: string list
+          DataLayouts: DumpBackendDataLayout list
+          EnvironmentLayouts: DumpBackendEnvironmentLayout list
+          Functions: DumpBackendFunction list }
 
     let private compilerImplementationId = "kappa.compiler"
     let private compilerImplementationVersion = "0.1.0"
@@ -755,116 +801,251 @@ module Compilation =
           IntrinsicTerms = intrinsicTerms |> List.distinct |> List.sort
           Declarations = declarations }
 
-    let rec private lowerKBackendPattern pattern =
+    let rec private lowerKRuntimePattern pattern =
         match pattern with
         | KCoreWildcardPattern ->
-            KBackendWildcardPattern
+            KRuntimeWildcardPattern
         | KCoreNamePattern name ->
-            KBackendNamePattern name
+            KRuntimeNamePattern name
         | KCoreLiteralPattern literal ->
-            KBackendLiteralPattern literal
+            KRuntimeLiteralPattern literal
         | KCoreConstructorPattern(name, arguments) ->
-            KBackendConstructorPattern(name, arguments |> List.map lowerKBackendPattern)
+            KRuntimeConstructorPattern(name, arguments |> List.map lowerKRuntimePattern)
 
-    let rec private lowerKBackendExpression expression =
+    let rec private lowerKRuntimeExpression expression =
         match expression with
         | KCoreLiteral literal ->
-            KBackendLiteral literal
+            KRuntimeLiteral literal
         | KCoreName segments ->
-            KBackendName segments
+            KRuntimeName segments
         | KCoreLambda(parameters, body) ->
-            KBackendClosure(parameters |> List.map (fun parameter -> parameter.Name), lowerKBackendExpression body)
+            KRuntimeClosure(parameters |> List.map (fun parameter -> parameter.Name), lowerKRuntimeExpression body)
         | KCoreIfThenElse(condition, whenTrue, whenFalse) ->
-            KBackendIfThenElse(
-                lowerKBackendExpression condition,
-                lowerKBackendExpression whenTrue,
-                lowerKBackendExpression whenFalse
+            KRuntimeIfThenElse(
+                lowerKRuntimeExpression condition,
+                lowerKRuntimeExpression whenTrue,
+                lowerKRuntimeExpression whenFalse
             )
         | KCoreMatch(scrutinee, cases) ->
-            KBackendMatch(
-                lowerKBackendExpression scrutinee,
+            KRuntimeMatch(
+                lowerKRuntimeExpression scrutinee,
                 cases
                 |> List.map (fun caseClause ->
-                    { Pattern = lowerKBackendPattern caseClause.Pattern
-                      Body = lowerKBackendExpression caseClause.Body })
+                    { Pattern = lowerKRuntimePattern caseClause.Pattern
+                      Body = lowerKRuntimeExpression caseClause.Body })
             )
         | KCoreApply(callee, arguments) ->
-            KBackendApply(lowerKBackendExpression callee, arguments |> List.map lowerKBackendExpression)
+            KRuntimeApply(lowerKRuntimeExpression callee, arguments |> List.map lowerKRuntimeExpression)
         | KCoreUnary(operatorName, operand) ->
-            KBackendUnary(operatorName, lowerKBackendExpression operand)
+            KRuntimeUnary(operatorName, lowerKRuntimeExpression operand)
         | KCoreBinary(left, operatorName, right) ->
-            KBackendBinary(lowerKBackendExpression left, operatorName, lowerKBackendExpression right)
+            KRuntimeBinary(lowerKRuntimeExpression left, operatorName, lowerKRuntimeExpression right)
         | KCorePrefixedString(prefix, parts) ->
-            KBackendPrefixedString(
+            KRuntimePrefixedString(
                 prefix,
                 parts
                 |> List.map (function
-                    | KCoreStringText text -> KBackendStringText text
-                    | KCoreStringInterpolation inner -> KBackendStringInterpolation(lowerKBackendExpression inner))
+                    | KCoreStringText text -> KRuntimeStringText text
+                    | KCoreStringInterpolation inner -> KRuntimeStringInterpolation(lowerKRuntimeExpression inner))
             )
 
-    let rec private backendPatternText pattern =
+    let rec private runtimePatternText pattern =
         match pattern with
-        | KBackendWildcardPattern -> "_"
-        | KBackendNamePattern name -> name
-        | KBackendLiteralPattern(LiteralValue.Integer value) -> string value
-        | KBackendLiteralPattern(LiteralValue.Float value) -> string value
-        | KBackendLiteralPattern(LiteralValue.String value) -> $"\"{value}\""
-        | KBackendLiteralPattern(LiteralValue.Character value) -> $"'{value}'"
-        | KBackendLiteralPattern LiteralValue.Unit -> "()"
-        | KBackendConstructorPattern(name, arguments) ->
+        | KRuntimeWildcardPattern -> "_"
+        | KRuntimeNamePattern name -> name
+        | KRuntimeLiteralPattern(LiteralValue.Integer value) -> string value
+        | KRuntimeLiteralPattern(LiteralValue.Float value) -> string value
+        | KRuntimeLiteralPattern(LiteralValue.String value) -> $"\"{value}\""
+        | KRuntimeLiteralPattern(LiteralValue.Character value) -> $"'{value}'"
+        | KRuntimeLiteralPattern LiteralValue.Unit -> "()"
+        | KRuntimeConstructorPattern(name, arguments) ->
             let nameText = String.concat "." name
 
             match arguments with
             | [] ->
                 nameText
             | _ ->
-                let argumentText = arguments |> List.map backendPatternText |> String.concat " "
+                let argumentText = arguments |> List.map runtimePatternText |> String.concat " "
                 $"({nameText} {argumentText})"
+
+    let rec private runtimeExpressionText expression =
+        match expression with
+        | KRuntimeLiteral(LiteralValue.Integer value) -> string value
+        | KRuntimeLiteral(LiteralValue.Float value) -> string value
+        | KRuntimeLiteral(LiteralValue.String value) -> $"\"{value}\""
+        | KRuntimeLiteral(LiteralValue.Character value) -> $"'{value}'"
+        | KRuntimeLiteral LiteralValue.Unit -> "()"
+        | KRuntimeName segments -> String.concat "." segments
+        | KRuntimeClosure(parameters, body) ->
+            let names = String.concat " " parameters
+            $"(closure ({names}) {runtimeExpressionText body})"
+        | KRuntimeIfThenElse(condition, whenTrue, whenFalse) ->
+            $"(if {runtimeExpressionText condition} {runtimeExpressionText whenTrue} {runtimeExpressionText whenFalse})"
+        | KRuntimeMatch(scrutinee, cases) ->
+            let caseText =
+                cases
+                |> List.map (fun caseClause -> $"(case {runtimePatternText caseClause.Pattern} {runtimeExpressionText caseClause.Body})")
+                |> String.concat " "
+
+            $"(match {runtimeExpressionText scrutinee} {caseText})"
+        | KRuntimeApply(callee, arguments) ->
+            let argumentText =
+                arguments
+                |> List.map runtimeExpressionText
+                |> String.concat " "
+
+            if String.IsNullOrWhiteSpace(argumentText) then
+                $"(apply {runtimeExpressionText callee})"
+            else
+                $"(apply {runtimeExpressionText callee} {argumentText})"
+        | KRuntimeUnary(operatorName, operand) ->
+            $"({operatorName} {runtimeExpressionText operand})"
+        | KRuntimeBinary(left, operatorName, right) ->
+            $"({operatorName} {runtimeExpressionText left} {runtimeExpressionText right})"
+        | KRuntimePrefixedString(prefix, parts) ->
+            let partText =
+                parts
+                |> List.map (function
+                    | KRuntimeStringText text -> $"text:{text}"
+                    | KRuntimeStringInterpolation inner -> $"interp:{runtimeExpressionText inner}")
+                |> String.concat " | "
+
+            $"({prefix}-string {partText})"
+
+    let private backendRepresentationText representation =
+        match representation with
+        | BackendRepInt64 -> "int64"
+        | BackendRepFloat64 -> "float64"
+        | BackendRepBoolean -> "bool"
+        | BackendRepString -> "string"
+        | BackendRepChar -> "char"
+        | BackendRepUnit -> "unit"
+        | BackendRepTaggedData(moduleName, typeName) -> $"tagged-data:{moduleName}.{typeName}"
+        | BackendRepClosure environmentLayout -> $"closure:{environmentLayout}"
+        | BackendRepIOAction -> "io-action"
+        | BackendRepOpaque(Some label) -> $"opaque:{label}"
+        | BackendRepOpaque None -> "opaque"
+
+    let private backendCallingConventionText (convention: KBackendCallingConvention) =
+        let parameterText =
+            convention.ParameterRepresentations
+            |> List.map backendRepresentationText
+            |> String.concat ", "
+
+        let resultText =
+            convention.ResultRepresentation
+            |> Option.map backendRepresentationText
+            |> Option.defaultValue "void"
+
+        let dictionaryText =
+            if List.isEmpty convention.RetainedDictionaryParameters then
+                ""
+            else
+                let names = convention.RetainedDictionaryParameters |> String.concat ", "
+                $" dict=[{names}]"
+
+        $"arity={convention.RuntimeArity} params=[{parameterText}] result={resultText}{dictionaryText}"
+
+    let private backendResolvedNameText resolvedName =
+        match resolvedName with
+        | BackendLocalName(name, representation) ->
+            match representation with
+            | Some rep -> $"{name}:{backendRepresentationText rep}"
+            | None -> name
+        | BackendGlobalBindingName(moduleName, bindingName, representation) ->
+            match representation with
+            | Some rep -> $"{moduleName}.{bindingName}:{backendRepresentationText rep}"
+            | None -> $"{moduleName}.{bindingName}"
+        | BackendIntrinsicName(moduleName, bindingName, representation) ->
+            match representation with
+            | Some rep -> $"intrinsic {moduleName}.{bindingName}:{backendRepresentationText rep}"
+            | None -> $"intrinsic {moduleName}.{bindingName}"
+        | BackendConstructorName(moduleName, typeName, constructorName, tag, arity, representation) ->
+            $"ctor {moduleName}.{typeName}.{constructorName}@{tag}/{arity}:{backendRepresentationText representation}"
+
+    let rec private backendPatternText pattern =
+        match pattern with
+        | BackendWildcardPattern -> "_"
+        | BackendBindPattern binding -> $"{binding.Name}:{backendRepresentationText binding.Representation}"
+        | BackendLiteralPattern(LiteralValue.Integer value, representation) ->
+            $"{value}:{backendRepresentationText representation}"
+        | BackendLiteralPattern(LiteralValue.Float value, representation) ->
+            $"{value}:{backendRepresentationText representation}"
+        | BackendLiteralPattern(LiteralValue.String value, representation) ->
+            $"\"{value}\":{backendRepresentationText representation}"
+        | BackendLiteralPattern(LiteralValue.Character value, representation) ->
+            $"'{value}':{backendRepresentationText representation}"
+        | BackendLiteralPattern(LiteralValue.Unit, representation) ->
+            $"():{backendRepresentationText representation}"
+        | BackendConstructorPattern(moduleName, typeName, constructorName, tag, fieldPatterns) ->
+            let fields =
+                fieldPatterns
+                |> List.map backendPatternText
+                |> String.concat " "
+
+            if String.IsNullOrWhiteSpace(fields) then
+                $"({moduleName}.{typeName}.{constructorName}@{tag})"
+            else
+                $"({moduleName}.{typeName}.{constructorName}@{tag} {fields})"
 
     let rec private backendExpressionText expression =
         match expression with
-        | KBackendLiteral(LiteralValue.Integer value) -> string value
-        | KBackendLiteral(LiteralValue.Float value) -> string value
-        | KBackendLiteral(LiteralValue.String value) -> $"\"{value}\""
-        | KBackendLiteral(LiteralValue.Character value) -> $"'{value}'"
-        | KBackendLiteral LiteralValue.Unit -> "()"
-        | KBackendName segments -> String.concat "." segments
-        | KBackendClosure(parameters, body) ->
-            let names = String.concat " " parameters
-            $"(closure ({names}) {backendExpressionText body})"
-        | KBackendIfThenElse(condition, whenTrue, whenFalse) ->
-            $"(if {backendExpressionText condition} {backendExpressionText whenTrue} {backendExpressionText whenFalse})"
-        | KBackendMatch(scrutinee, cases) ->
+        | BackendLiteral(LiteralValue.Integer value, representation) ->
+            $"{value}:{backendRepresentationText representation}"
+        | BackendLiteral(LiteralValue.Float value, representation) ->
+            $"{value}:{backendRepresentationText representation}"
+        | BackendLiteral(LiteralValue.String value, representation) ->
+            $"\"{value}\":{backendRepresentationText representation}"
+        | BackendLiteral(LiteralValue.Character value, representation) ->
+            $"'{value}':{backendRepresentationText representation}"
+        | BackendLiteral(LiteralValue.Unit, representation) ->
+            $"():{backendRepresentationText representation}"
+        | BackendName resolvedName ->
+            backendResolvedNameText resolvedName
+        | BackendClosure(parameters, captures, environmentLayout, body, convention, representation) ->
+            let parameterText =
+                parameters
+                |> List.map (fun parameter -> $"{parameter.Name}:{backendRepresentationText parameter.Representation}")
+                |> String.concat " "
+
+            let captureText =
+                captures
+                |> List.map (fun capture -> $"{capture.Name}:{backendRepresentationText capture.Representation}")
+                |> String.concat " "
+
+            $"(closure env={environmentLayout} rep={backendRepresentationText representation} conv=[{backendCallingConventionText convention}] params=({parameterText}) captures=({captureText}) {backendExpressionText body})"
+        | BackendIfThenElse(condition, whenTrue, whenFalse, resultRepresentation) ->
+            $"(if rep={backendRepresentationText resultRepresentation} {backendExpressionText condition} {backendExpressionText whenTrue} {backendExpressionText whenFalse})"
+        | BackendMatch(scrutinee, cases, resultRepresentation) ->
             let caseText =
                 cases
                 |> List.map (fun caseClause -> $"(case {backendPatternText caseClause.Pattern} {backendExpressionText caseClause.Body})")
                 |> String.concat " "
 
-            $"(match {backendExpressionText scrutinee} {caseText})"
-        | KBackendApply(callee, arguments) ->
+            $"(match rep={backendRepresentationText resultRepresentation} {backendExpressionText scrutinee} {caseText})"
+        | BackendCall(callee, arguments, convention, resultRepresentation) ->
             let argumentText =
                 arguments
                 |> List.map backendExpressionText
                 |> String.concat " "
 
-            if String.IsNullOrWhiteSpace(argumentText) then
-                $"(apply {backendExpressionText callee})"
-            else
-                $"(apply {backendExpressionText callee} {argumentText})"
-        | KBackendUnary(operatorName, operand) ->
-            $"({operatorName} {backendExpressionText operand})"
-        | KBackendBinary(left, operatorName, right) ->
-            $"({operatorName} {backendExpressionText left} {backendExpressionText right})"
-        | KBackendPrefixedString(prefix, parts) ->
+            $"(call rep={backendRepresentationText resultRepresentation} conv=[{backendCallingConventionText convention}] {backendExpressionText callee} {argumentText})"
+        | BackendConstructData(moduleName, typeName, constructorName, tag, fields, representation) ->
+            let fieldText =
+                fields
+                |> List.map backendExpressionText
+                |> String.concat " "
+
+            $"(construct {moduleName}.{typeName}.{constructorName}@{tag} rep={backendRepresentationText representation} {fieldText})"
+        | BackendPrefixedString(prefix, parts, resultRepresentation) ->
             let partText =
                 parts
                 |> List.map (function
-                    | KBackendStringText text -> $"text:{text}"
-                    | KBackendStringInterpolation inner -> $"interp:{backendExpressionText inner}")
+                    | BackendStringText text -> $"text:{text}"
+                    | BackendStringInterpolation inner -> $"interp:{backendExpressionText inner}")
                 |> String.concat " | "
 
-            $"({prefix}-string {partText})"
+            $"({prefix}-string rep={backendRepresentationText resultRepresentation} {partText})"
 
     let private isPrivateByDefaultAttributes attributes =
         attributes
@@ -883,7 +1064,7 @@ module Compilation =
         not declaration.IsOpaque
         && isExportedVisibility moduleDump.ModuleAttributes declaration.Visibility
 
-    let private lowerKBackendModule (coreModule: KCoreModule) =
+    let private lowerKRuntimeModule (coreModule: KCoreModule) =
         let termBindings =
             coreModule.Declarations
             |> List.choose (fun declaration ->
@@ -892,7 +1073,7 @@ module Compilation =
                     Some
                         { Name = binding.Name.Value
                           Parameters = binding.Parameters |> List.map (fun parameter -> parameter.Name)
-                          Body = binding.Body |> Option.map lowerKBackendExpression
+                          Body = binding.Body |> Option.map lowerKRuntimeExpression
                           Intrinsic = false
                           Provenance = binding.Provenance }
                 | _ ->
@@ -957,6 +1138,872 @@ module Compilation =
           IntrinsicTerms = coreModule.IntrinsicTerms
           Constructors = constructors
           Bindings = termBindings @ intrinsicBindings }
+
+    type private BackendLoweringBindingInfo =
+        { ModuleName: string
+          Name: string
+          Intrinsic: bool
+          Arity: int
+          ReturnRepresentation: KBackendRepresentationClass option }
+
+    type private BackendLoweringConstructorInfo =
+        { ModuleName: string
+          TypeName: string
+          Name: string
+          Tag: int
+          Arity: int
+          FieldRepresentations: KBackendRepresentationClass list
+          Representation: KBackendRepresentationClass
+          Provenance: KCoreOrigin }
+
+    type private BackendLoweringContext =
+        { RuntimeModules: Map<string, KRuntimeModule>
+          CoreModules: Map<string, KCoreModule>
+          BindingInfos: Map<string * string, BackendLoweringBindingInfo>
+          ConstructorInfos: Map<string * string, BackendLoweringConstructorInfo> }
+
+    let private backendLiteralRepresentation literal =
+        match literal with
+        | LiteralValue.Integer _ -> BackendRepInt64
+        | LiteralValue.Float _ -> BackendRepFloat64
+        | LiteralValue.String _ -> BackendRepString
+        | LiteralValue.Character _ -> BackendRepChar
+        | LiteralValue.Unit -> BackendRepUnit
+
+    let private backendOpaqueRepresentation name =
+        BackendRepOpaque name
+
+    let private intrinsicRuntimeArity name =
+        match name with
+        | "True"
+        | "False" ->
+            0
+        | "not"
+        | "negate"
+        | "pure"
+        | "print"
+        | "println"
+        | "printInt" ->
+            1
+        | "and"
+        | "or"
+        | ">>="
+        | ">>" ->
+            2
+        | _ ->
+            0
+
+    let private intrinsicResultRepresentation name =
+        match name with
+        | "True"
+        | "False"
+        | "not"
+        | "and"
+        | "or" ->
+            Some BackendRepBoolean
+        | "print"
+        | "println"
+        | "printInt"
+        | "pure"
+        | ">>="
+        | ">>" ->
+            Some BackendRepIOAction
+        | _ ->
+            None
+
+    let private tryBackendRepresentationFromTypeText (typeText: string option) =
+        let tryTypeHead (text: string) =
+            text.Replace("(", " ")
+                .Replace(")", " ")
+                .Split([| ' '; '\t' |], StringSplitOptions.RemoveEmptyEntries)
+            |> Array.tryHead
+
+        match typeText |> Option.bind tryTypeHead with
+        | Some "Int" -> Some BackendRepInt64
+        | Some "Float" -> Some BackendRepFloat64
+        | Some "Bool" -> Some BackendRepBoolean
+        | Some "String" -> Some BackendRepString
+        | Some "Char" -> Some BackendRepChar
+        | Some "Unit" -> Some BackendRepUnit
+        | Some "IO" -> Some BackendRepIOAction
+        | Some head -> Some(backendOpaqueRepresentation (Some head))
+        | None -> None
+
+    let private mergeBackendRepresentations left right =
+        if left = right then
+            left
+        else
+            backendOpaqueRepresentation None
+
+    let rec private inferKCoreExpressionRepresentation expression =
+        match expression with
+        | KCoreLiteral literal ->
+            backendLiteralRepresentation literal
+        | KCoreName [ "True" ]
+        | KCoreName [ "False" ] ->
+            BackendRepBoolean
+        | KCoreName _ ->
+            backendOpaqueRepresentation None
+        | KCoreLambda _ ->
+            backendOpaqueRepresentation (Some "Function")
+        | KCoreIfThenElse(_, whenTrue, whenFalse) ->
+            mergeBackendRepresentations
+                (inferKCoreExpressionRepresentation whenTrue)
+                (inferKCoreExpressionRepresentation whenFalse)
+        | KCoreMatch(_, cases) ->
+            match cases with
+            | [] -> backendOpaqueRepresentation None
+            | firstCase :: rest ->
+                rest
+                |> List.fold
+                    (fun state caseClause ->
+                        mergeBackendRepresentations state (inferKCoreExpressionRepresentation caseClause.Body))
+                    (inferKCoreExpressionRepresentation firstCase.Body)
+        | KCoreApply(KCoreName [ "pure" ], _)
+        | KCoreApply(KCoreName [ ">>=" ], _)
+        | KCoreApply(KCoreName [ ">>" ], _)
+        | KCoreApply(KCoreName [ "print" ], _)
+        | KCoreApply(KCoreName [ "println" ], _)
+        | KCoreApply(KCoreName [ "printInt" ], _) ->
+            BackendRepIOAction
+        | KCoreApply _ ->
+            backendOpaqueRepresentation None
+        | KCoreUnary("not", _) ->
+            BackendRepBoolean
+        | KCoreUnary("negate", operand) ->
+            inferKCoreExpressionRepresentation operand
+        | KCoreUnary _ ->
+            backendOpaqueRepresentation None
+        | KCoreBinary(_, ("&&" | "||" | "==" | "!=" | "<" | ">" | "<=" | ">="), _) ->
+            BackendRepBoolean
+        | KCoreBinary(left, ("+" | "-" | "*" | "/"), right) ->
+            match inferKCoreExpressionRepresentation left, inferKCoreExpressionRepresentation right with
+            | BackendRepFloat64, _
+            | _, BackendRepFloat64 ->
+                BackendRepFloat64
+            | BackendRepInt64, BackendRepInt64 ->
+                BackendRepInt64
+            | _ ->
+                backendOpaqueRepresentation None
+        | KCoreBinary _ ->
+            backendOpaqueRepresentation None
+        | KCorePrefixedString _ ->
+            BackendRepString
+
+    let private selectionImportsRuntimeTermName selection name =
+        match selection with
+        | QualifiedOnly ->
+            false
+        | Items items ->
+            items
+            |> List.exists (fun item ->
+                String.Equals(item.Name, name, StringComparison.Ordinal)
+                && (item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Term))
+        | All ->
+            true
+        | AllExcept excludedNames ->
+            not (List.contains name excludedNames)
+
+    let private selectionImportsRuntimeConstructorName selection name =
+        match selection with
+        | QualifiedOnly ->
+            false
+        | Items items ->
+            items
+            |> List.exists (fun item ->
+                String.Equals(item.Name, name, StringComparison.Ordinal)
+                && item.Namespace = Some ImportNamespace.Constructor)
+        | All
+        | AllExcept _ ->
+            false
+
+    let private buildBackendLoweringContext (kCore: KCoreModule list) (kRuntimeIR: KRuntimeModule list) =
+        let runtimeModules =
+            kRuntimeIR
+            |> List.map (fun moduleDump -> moduleDump.Name, moduleDump)
+            |> Map.ofList
+
+        let coreModules =
+            kCore
+            |> List.map (fun moduleDump -> moduleDump.Name, moduleDump)
+            |> Map.ofList
+
+        let bindingInfos =
+            kRuntimeIR
+            |> List.collect (fun runtimeModule ->
+                let coreModule = coreModules[runtimeModule.Name]
+
+                runtimeModule.Bindings
+                |> List.map (fun binding ->
+                    let coreBinding =
+                        coreModule.Declarations
+                        |> List.tryPick (fun declaration ->
+                            match declaration.Binding with
+                            | Some coreBinding when coreBinding.Name = Some binding.Name ->
+                                Some coreBinding
+                            | _ ->
+                                None)
+
+                    let returnRepresentation =
+                        if binding.Intrinsic then
+                            intrinsicResultRepresentation binding.Name
+                        else
+                            coreBinding
+                            |> Option.bind (fun coreBinding ->
+                                tryBackendRepresentationFromTypeText coreBinding.ReturnTypeText
+                                |> Option.orElseWith (fun () ->
+                                    coreBinding.Body |> Option.map inferKCoreExpressionRepresentation))
+
+                    let arity =
+                        if binding.Intrinsic then
+                            intrinsicRuntimeArity binding.Name
+                        else
+                            List.length binding.Parameters
+
+                    (runtimeModule.Name, binding.Name),
+                    { ModuleName = runtimeModule.Name
+                      Name = binding.Name
+                      Intrinsic = binding.Intrinsic
+                      Arity = arity
+                      ReturnRepresentation = returnRepresentation }))
+            |> Map.ofList
+
+        let constructorInfos =
+            kRuntimeIR
+            |> List.collect (fun runtimeModule ->
+                runtimeModule.Constructors
+                |> List.groupBy (fun constructor -> constructor.TypeName)
+                |> List.collect (fun (_, constructors) ->
+                    constructors
+                    |> List.mapi (fun tag constructor ->
+                        (runtimeModule.Name, constructor.Name),
+                        { ModuleName = runtimeModule.Name
+                          TypeName = constructor.TypeName
+                          Name = constructor.Name
+                          Tag = tag
+                          Arity = constructor.Arity
+                          FieldRepresentations = List.replicate constructor.Arity (backendOpaqueRepresentation None)
+                          Representation = BackendRepTaggedData(runtimeModule.Name, constructor.TypeName)
+                          Provenance = constructor.Provenance })))
+            |> Map.ofList
+
+        { RuntimeModules = runtimeModules
+          CoreModules = coreModules
+          BindingInfos = bindingInfos
+          ConstructorInfos = constructorInfos }
+
+    let private lowerKBackendModules (kCore: KCoreModule list) (kRuntimeIR: KRuntimeModule list) =
+        let context = buildBackendLoweringContext kCore kRuntimeIR
+
+        let resolveQualifiedRuntimeModule (currentModule: KRuntimeModule) qualifierSegments =
+            let qualifierText = SyntaxFacts.moduleNameToText qualifierSegments
+
+            if String.Equals(qualifierText, currentModule.Name, StringComparison.Ordinal) then
+                Some currentModule
+            else
+                context.RuntimeModules
+                |> Map.tryFind qualifierText
+                |> Option.orElseWith (fun () ->
+                    currentModule.Imports
+                    |> List.tryPick (fun (spec: ImportSpec) ->
+                        match spec.Source, spec.Alias, spec.Selection with
+                        | Dotted moduleSegments, Some alias, QualifiedOnly when qualifierSegments = [ alias ] ->
+                            context.RuntimeModules |> Map.tryFind (SyntaxFacts.moduleNameToText moduleSegments)
+                        | Dotted moduleSegments, None, QualifiedOnly when qualifierSegments = moduleSegments ->
+                            context.RuntimeModules |> Map.tryFind (SyntaxFacts.moduleNameToText moduleSegments)
+                        | _ ->
+                            None))
+
+        let resolveRuntimeName currentModule (locals: Map<string, KBackendRepresentationClass>) segments =
+            let bindingNames (moduleDump: KRuntimeModule) =
+                moduleDump.Bindings |> List.map (fun binding -> binding.Name) |> Set.ofList
+
+            let constructorNames (moduleDump: KRuntimeModule) =
+                moduleDump.Constructors |> List.map (fun constructor -> constructor.Name) |> Set.ofList
+
+            let resolvedNameRepresentation resolvedName =
+                match resolvedName with
+                | BackendLocalName(_, Some representation) ->
+                    representation
+                | BackendLocalName _ ->
+                    backendOpaqueRepresentation None
+                | BackendGlobalBindingName(moduleName, bindingName, _) ->
+                    let bindingInfo = context.BindingInfos[moduleName, bindingName]
+
+                    if bindingInfo.Arity = 0 then
+                        bindingInfo.ReturnRepresentation |> Option.defaultValue (backendOpaqueRepresentation None)
+                    else
+                        backendOpaqueRepresentation (Some "Function")
+                | BackendIntrinsicName(moduleName, bindingName, _) ->
+                    let bindingInfo = context.BindingInfos[moduleName, bindingName]
+
+                    if bindingInfo.Arity = 0 then
+                        bindingInfo.ReturnRepresentation |> Option.defaultValue (backendOpaqueRepresentation (Some "Intrinsic"))
+                    else
+                        backendOpaqueRepresentation (Some "Intrinsic")
+                | BackendConstructorName(_, _, _, _, arity, representation) ->
+                    if arity = 0 then representation else backendOpaqueRepresentation (Some "Constructor")
+
+            let tryResolveModuleMember (targetModule: KRuntimeModule) memberName =
+                if bindingNames targetModule |> Set.contains memberName then
+                    let bindingInfo = context.BindingInfos[targetModule.Name, memberName]
+
+                    if bindingInfo.Intrinsic then
+                        Some(BackendIntrinsicName(targetModule.Name, memberName, bindingInfo.ReturnRepresentation))
+                    else
+                        Some(BackendGlobalBindingName(targetModule.Name, memberName, bindingInfo.ReturnRepresentation))
+                elif constructorNames targetModule |> Set.contains memberName then
+                    let constructorInfo = context.ConstructorInfos[targetModule.Name, memberName]
+
+                    Some(
+                        BackendConstructorName(
+                            targetModule.Name,
+                            constructorInfo.TypeName,
+                            constructorInfo.Name,
+                            constructorInfo.Tag,
+                            constructorInfo.Arity,
+                            constructorInfo.Representation
+                        )
+                    )
+                else
+                    None
+
+            match segments with
+            | [] ->
+                Result.Error "empty runtime name"
+            | [ name ] when locals.ContainsKey name ->
+                let resolved = BackendLocalName(name, Map.tryFind name locals)
+                Result.Ok(resolved, resolvedNameRepresentation resolved)
+            | [ name ] ->
+                let currentBinding =
+                    tryResolveModuleMember currentModule name
+
+                match currentBinding with
+                | Some resolved ->
+                    Result.Ok(resolved, resolvedNameRepresentation resolved)
+                | None ->
+                    let importedMatches =
+                        currentModule.Imports
+                        |> List.choose (fun (spec: ImportSpec) ->
+                            match spec.Source with
+                            | Url _ ->
+                                None
+                            | Dotted moduleSegments ->
+                                let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
+
+                                match context.RuntimeModules |> Map.tryFind importedModuleName with
+                                | Some importedModule when selectionImportsRuntimeTermName spec.Selection name ->
+                                    tryResolveModuleMember importedModule name |> Option.map (fun resolved -> importedModuleName, resolved)
+                                | Some importedModule when selectionImportsRuntimeConstructorName spec.Selection name ->
+                                    tryResolveModuleMember importedModule name |> Option.map (fun resolved -> importedModuleName, resolved)
+                                | _ ->
+                                    None)
+                        |> List.distinctBy fst
+
+                    match importedMatches with
+                    | [ _, resolved ] ->
+                        Result.Ok(resolved, resolvedNameRepresentation resolved)
+                    | _ :: _ :: _ ->
+                        Result.Error $"ambiguous runtime name '{name}'"
+                    | [] ->
+                        Result.Error $"unresolved runtime name '{name}'"
+            | _ ->
+                let qualifierSegments = segments |> List.take (segments.Length - 1)
+                let memberName = List.last segments
+
+                match resolveQualifiedRuntimeModule currentModule qualifierSegments with
+                | Some targetModule ->
+                    match tryResolveModuleMember targetModule memberName with
+                    | Some resolved ->
+                        Result.Ok(resolved, resolvedNameRepresentation resolved)
+                    | None ->
+                        let text = String.concat "." segments
+                        Result.Error $"unresolved runtime name '{text}'"
+                | None ->
+                    Result.Error $"unresolved module qualifier '{SyntaxFacts.moduleNameToText qualifierSegments}'"
+
+        let rec collectClosureCaptures (locals: Set<string>) (bound: Set<string>) expression =
+            match expression with
+            | KRuntimeLiteral _ ->
+                Set.empty
+            | KRuntimeName [ name ] when Set.contains name locals && not (Set.contains name bound) ->
+                Set.singleton name
+            | KRuntimeName _ ->
+                Set.empty
+            | KRuntimeClosure(parameters, body) ->
+                collectClosureCaptures locals (Set.union bound (parameters |> Set.ofList)) body
+            | KRuntimeIfThenElse(condition, whenTrue, whenFalse) ->
+                collectClosureCaptures locals bound condition
+                |> Set.union (collectClosureCaptures locals bound whenTrue)
+                |> Set.union (collectClosureCaptures locals bound whenFalse)
+            | KRuntimeMatch(scrutinee, cases) ->
+                let scrutineeCaptures = collectClosureCaptures locals bound scrutinee
+
+                cases
+                |> List.fold
+                    (fun state caseClause ->
+                        let rec collectPatternBindings pattern =
+                            match pattern with
+                            | KRuntimeWildcardPattern
+                            | KRuntimeLiteralPattern _ ->
+                                Set.empty
+                            | KRuntimeNamePattern name ->
+                                Set.singleton name
+                            | KRuntimeConstructorPattern(_, arguments) ->
+                                arguments
+                                |> List.fold
+                                    (fun patternState argumentPattern ->
+                                        Set.union patternState (collectPatternBindings argumentPattern))
+                                    Set.empty
+
+                        let caseBound = Set.union bound (collectPatternBindings caseClause.Pattern)
+                        Set.union state (collectClosureCaptures locals caseBound caseClause.Body))
+                    scrutineeCaptures
+            | KRuntimeApply(callee, arguments) ->
+                arguments
+                |> List.fold
+                    (fun state argument -> Set.union state (collectClosureCaptures locals bound argument))
+                    (collectClosureCaptures locals bound callee)
+            | KRuntimeUnary(_, operand) ->
+                collectClosureCaptures locals bound operand
+            | KRuntimeBinary(left, _, right) ->
+                collectClosureCaptures locals bound left
+                |> Set.union (collectClosureCaptures locals bound right)
+            | KRuntimePrefixedString(_, parts) ->
+                parts
+                |> List.fold
+                    (fun state part ->
+                        match part with
+                        | KRuntimeStringText _ ->
+                            state
+                        | KRuntimeStringInterpolation inner ->
+                            Set.union state (collectClosureCaptures locals bound inner))
+                    Set.empty
+
+        let lowerModule (runtimeModule: KRuntimeModule) : Result<KBackendModule, string> =
+            let environmentLayouts = ResizeArray<KBackendEnvironmentLayout>()
+            let mutable nextEnvironmentLayoutId = 0
+
+            let rec lowerPattern
+                (locals: Map<string, KBackendRepresentationClass>)
+                (patternRepresentation: KBackendRepresentationClass)
+                (pattern: KRuntimePattern)
+                : Result<KBackendPattern * Map<string, KBackendRepresentationClass>, string> =
+                match pattern with
+                | KRuntimeWildcardPattern ->
+                    Result.Ok(BackendWildcardPattern, Map.empty)
+                | KRuntimeLiteralPattern literal ->
+                    Result.Ok(BackendLiteralPattern(literal, backendLiteralRepresentation literal), Map.empty)
+                | KRuntimeNamePattern name ->
+                    let binding: KBackendPatternBinding =
+                        { Name = name
+                          Representation = patternRepresentation }
+
+                    Result.Ok(BackendBindPattern binding, Map.ofList [ name, patternRepresentation ])
+                | KRuntimeConstructorPattern(nameSegments, argumentPatterns) ->
+                    let constructorText = String.concat "." nameSegments
+
+                    resolveRuntimeName runtimeModule locals nameSegments
+                    |> Result.bind (fun (resolvedName, _) ->
+                        match resolvedName with
+                        | BackendConstructorName(moduleName, typeName, constructorName, tag, _, _) ->
+                            let constructorInfo = context.ConstructorInfos[moduleName, constructorName]
+
+                            ((Result.Ok([], Map.empty)), List.zip argumentPatterns constructorInfo.FieldRepresentations)
+                            ||> List.fold (fun state (argumentPattern, fieldRepresentation) ->
+                                state
+                                |> Result.bind (fun (patterns, discoveredLocals) ->
+                                    lowerPattern locals fieldRepresentation argumentPattern
+                                    |> Result.map (fun (loweredPattern, patternLocals) ->
+                                        loweredPattern :: patterns,
+                                        Map.fold (fun mapState key value -> Map.add key value mapState) discoveredLocals patternLocals)))
+                            |> Result.map (fun (patterns, discoveredLocals) ->
+                                BackendConstructorPattern(moduleName, typeName, constructorName, tag, List.rev patterns),
+                                discoveredLocals)
+                        | _ ->
+                            Result.Error $"Pattern '{constructorText}' does not resolve to a constructor.")
+
+            let rec lowerExpression
+                (scopeLabel: string)
+                (locals: Map<string, KBackendRepresentationClass>)
+                (expression: KRuntimeExpression)
+                : Result<KBackendExpression * KBackendRepresentationClass, string> =
+                match expression with
+                | KRuntimeLiteral literal ->
+                    let representation = backendLiteralRepresentation literal
+                    Result.Ok(BackendLiteral(literal, representation), representation)
+                | KRuntimeName segments ->
+                    resolveRuntimeName runtimeModule locals segments
+                    |> Result.map (fun (resolvedName, representation) ->
+                        BackendName resolvedName, representation)
+                | KRuntimeClosure(parameters, body) ->
+                    let parameterRepresentations: KBackendParameter list =
+                        parameters
+                        |> List.map (fun name ->
+                            { Name = name
+                              Representation = backendOpaqueRepresentation None })
+
+                    let parameterLocals =
+                        parameterRepresentations
+                        |> List.map (fun parameter -> parameter.Name, parameter.Representation)
+                        |> Map.ofList
+
+                    let captureNames =
+                        collectClosureCaptures (locals |> Map.toSeq |> Seq.map fst |> Set.ofSeq) (parameters |> Set.ofList) body
+                        |> Set.toList
+                        |> List.sort
+
+                    let captures: KBackendCapture list =
+                        captureNames
+                        |> List.choose (fun name ->
+                            locals
+                            |> Map.tryFind name
+                            |> Option.map (fun representation ->
+                                    { Name = name
+                                      Representation = representation }))
+
+                    let environmentLayoutName =
+                        nextEnvironmentLayoutId <- nextEnvironmentLayoutId + 1
+                        $"{scopeLabel}$env{nextEnvironmentLayoutId}"
+
+                    environmentLayouts.Add
+                        { Name = environmentLayoutName
+                          Slots = captures }
+
+                    let closureLocals =
+                        captures
+                        |> List.map (fun capture -> capture.Name, capture.Representation)
+                        |> List.append (parameterRepresentations |> List.map (fun parameter -> parameter.Name, parameter.Representation))
+                        |> Map.ofList
+
+                    lowerExpression $"{scopeLabel}$closure{nextEnvironmentLayoutId}" closureLocals body
+                    |> Result.map (fun (loweredBody, resultRepresentation) ->
+                        let convention =
+                            { RuntimeArity = List.length parameters
+                              ParameterRepresentations = parameterRepresentations |> List.map (fun parameter -> parameter.Representation)
+                              ResultRepresentation = Some resultRepresentation
+                              RetainedDictionaryParameters = [] }
+
+                        let representation = BackendRepClosure environmentLayoutName
+
+                        BackendClosure(
+                            parameterRepresentations,
+                            captures,
+                            environmentLayoutName,
+                            loweredBody,
+                            convention,
+                            representation
+                        ),
+                        representation)
+                | KRuntimeIfThenElse(condition, whenTrue, whenFalse) ->
+                    lowerExpression scopeLabel locals condition
+                    |> Result.bind (fun (loweredCondition, _) ->
+                        lowerExpression scopeLabel locals whenTrue
+                        |> Result.bind (fun (loweredTrue, trueRepresentation) ->
+                            lowerExpression scopeLabel locals whenFalse
+                            |> Result.map (fun (loweredFalse, falseRepresentation) ->
+                                let resultRepresentation =
+                                    mergeBackendRepresentations trueRepresentation falseRepresentation
+
+                                BackendIfThenElse(
+                                    loweredCondition,
+                                    loweredTrue,
+                                    loweredFalse,
+                                    resultRepresentation
+                                ),
+                                resultRepresentation)))
+                | KRuntimeMatch(scrutinee, cases) ->
+                    lowerExpression scopeLabel locals scrutinee
+                    |> Result.bind (fun (loweredScrutinee, scrutineeRepresentation) ->
+                        ((Result.Ok([], [])), cases)
+                        ||> List.fold (fun state caseClause ->
+                            state
+                            |> Result.bind (fun (loweredCases, caseRepresentations) ->
+                                lowerPattern locals scrutineeRepresentation caseClause.Pattern
+                                |> Result.bind (fun (loweredPattern, discoveredLocals) ->
+                                    let caseLocals =
+                                        Map.fold (fun mapState key value -> Map.add key value mapState) locals discoveredLocals
+
+                                    lowerExpression scopeLabel caseLocals caseClause.Body
+                                     |> Result.map (fun (loweredBody, bodyRepresentation) ->
+                                         { Pattern = loweredPattern
+                                           Body = loweredBody }
+                                         :: loweredCases,
+                                         bodyRepresentation :: caseRepresentations))))
+                        |> Result.map (fun (loweredCases, caseRepresentations) ->
+                            let resultRepresentation =
+                                match List.rev caseRepresentations with
+                                | [] ->
+                                    backendOpaqueRepresentation None
+                                | first :: rest ->
+                                    rest |> List.fold mergeBackendRepresentations first
+
+                            BackendMatch(loweredScrutinee, List.rev loweredCases, resultRepresentation),
+                            resultRepresentation))
+                | KRuntimeApply(callee, arguments) ->
+                    let lowerArguments =
+                        arguments
+                        |> List.fold
+                            (fun state argument ->
+                                state
+                                |> Result.bind (fun (loweredArguments, argumentRepresentations) ->
+                                    lowerExpression scopeLabel locals argument
+                                    |> Result.map (fun (loweredArgument, argumentRepresentation) ->
+                                        loweredArgument :: loweredArguments,
+                                        argumentRepresentation :: argumentRepresentations)))
+                            (Result.Ok([], []))
+
+                    lowerArguments
+                    |> Result.bind (fun (loweredArguments, argumentRepresentations) ->
+                        let loweredArguments = List.rev loweredArguments
+                        let argumentRepresentations = List.rev argumentRepresentations
+
+                        match callee with
+                        | KRuntimeName segments ->
+                            resolveRuntimeName runtimeModule locals segments
+                            |> Result.bind (fun (resolvedName, _) ->
+                                match resolvedName with
+                                | BackendConstructorName(moduleName, typeName, constructorName, tag, arity, representation)
+                                    when arity = List.length loweredArguments ->
+                                    Result.Ok(
+                                        BackendConstructData(
+                                            moduleName,
+                                            typeName,
+                                            constructorName,
+                                            tag,
+                                            loweredArguments,
+                                            representation
+                                        ),
+                                        representation
+                                    )
+                                | _ ->
+                                    let calleeExpression = BackendName resolvedName
+
+                                    let convention =
+                                        match resolvedName with
+                                        | BackendGlobalBindingName(moduleName, bindingName, _)
+                                        | BackendIntrinsicName(moduleName, bindingName, _) ->
+                                            let bindingInfo = context.BindingInfos[moduleName, bindingName]
+
+                                            { RuntimeArity = bindingInfo.Arity
+                                              ParameterRepresentations = argumentRepresentations
+                                              ResultRepresentation = bindingInfo.ReturnRepresentation
+                                              RetainedDictionaryParameters = [] }
+                                        | BackendConstructorName(_, _, _, _, arity, representation) ->
+                                            { RuntimeArity = arity
+                                              ParameterRepresentations = argumentRepresentations
+                                              ResultRepresentation = Some representation
+                                              RetainedDictionaryParameters = [] }
+                                        | BackendLocalName _ ->
+                                            { RuntimeArity = List.length loweredArguments
+                                              ParameterRepresentations = argumentRepresentations
+                                              ResultRepresentation = Some(backendOpaqueRepresentation None)
+                                              RetainedDictionaryParameters = [] }
+
+                                    let resultRepresentation =
+                                        convention.ResultRepresentation |> Option.defaultValue (backendOpaqueRepresentation None)
+
+                                    Result.Ok(BackendCall(calleeExpression, loweredArguments, convention, resultRepresentation), resultRepresentation))
+                        | _ ->
+                            lowerExpression scopeLabel locals callee
+                            |> Result.map (fun (loweredCallee, _) ->
+                                let convention =
+                                    { RuntimeArity = List.length loweredArguments
+                                      ParameterRepresentations = argumentRepresentations
+                                      ResultRepresentation = Some(backendOpaqueRepresentation None)
+                                      RetainedDictionaryParameters = [] }
+
+                                let resultRepresentation = backendOpaqueRepresentation None
+                                BackendCall(loweredCallee, loweredArguments, convention, resultRepresentation), resultRepresentation))
+                | KRuntimeUnary(operatorName, operand) ->
+                    lowerExpression scopeLabel locals operand
+                    |> Result.map (fun (loweredOperand, operandRepresentation) ->
+                        let resultRepresentation =
+                            match operatorName with
+                            | "not" -> BackendRepBoolean
+                            | "negate" -> operandRepresentation
+                            | _ -> backendOpaqueRepresentation None
+
+                        let callee = BackendName(BackendIntrinsicName(runtimeModule.Name, operatorName, Some resultRepresentation))
+
+                        let convention =
+                            { RuntimeArity = 1
+                              ParameterRepresentations = [ operandRepresentation ]
+                              ResultRepresentation = Some resultRepresentation
+                              RetainedDictionaryParameters = [] }
+
+                        BackendCall(callee, [ loweredOperand ], convention, resultRepresentation), resultRepresentation)
+                | KRuntimeBinary(left, operatorName, right) ->
+                    lowerExpression scopeLabel locals left
+                    |> Result.bind (fun (loweredLeft, leftRepresentation) ->
+                        lowerExpression scopeLabel locals right
+                        |> Result.map (fun (loweredRight, rightRepresentation) ->
+                            let resultRepresentation =
+                                match operatorName with
+                                | "&&"
+                                | "||"
+                                | "=="
+                                | "!="
+                                | "<"
+                                | ">"
+                                | "<="
+                                | ">=" ->
+                                    BackendRepBoolean
+                                | "+" | "-" | "*" | "/" ->
+                                    mergeBackendRepresentations leftRepresentation rightRepresentation
+                                | _ ->
+                                    backendOpaqueRepresentation None
+
+                            let callee = BackendName(BackendIntrinsicName(runtimeModule.Name, operatorName, Some resultRepresentation))
+
+                            let convention =
+                                { RuntimeArity = 2
+                                  ParameterRepresentations = [ leftRepresentation; rightRepresentation ]
+                                  ResultRepresentation = Some resultRepresentation
+                                  RetainedDictionaryParameters = [] }
+
+                            BackendCall(callee, [ loweredLeft; loweredRight ], convention, resultRepresentation), resultRepresentation))
+                | KRuntimePrefixedString(prefix, parts) ->
+                    let rec lowerStringParts parts =
+                        match parts with
+                        | [] ->
+                            Result.Ok []
+                        | KRuntimeStringText text :: rest ->
+                            lowerStringParts rest
+                            |> Result.map (fun loweredRest -> BackendStringText text :: loweredRest)
+                        | KRuntimeStringInterpolation inner :: rest ->
+                            lowerExpression scopeLabel locals inner
+                            |> Result.bind (fun (loweredInner, _) ->
+                                lowerStringParts rest
+                                |> Result.map (fun loweredRest -> BackendStringInterpolation loweredInner :: loweredRest))
+
+                    lowerStringParts parts
+                    |> Result.map (fun loweredParts ->
+                        let representation = BackendRepString
+                        BackendPrefixedString(prefix, loweredParts, representation), representation)
+
+            let lowerBinding (binding: KRuntimeBinding) =
+                let bindingInfo = context.BindingInfos[runtimeModule.Name, binding.Name]
+                let exported = List.contains binding.Name runtimeModule.Exports
+                let entryPoint = exported && bindingInfo.Arity = 0 && not bindingInfo.Intrinsic
+
+                let parameterRepresentations: KBackendParameter list =
+                    if binding.Intrinsic then
+                        List.init bindingInfo.Arity (fun _ ->
+                            { Name = "_"
+                              Representation = backendOpaqueRepresentation None })
+                    else
+                        match context.CoreModules[runtimeModule.Name].Declarations
+                              |> List.tryPick (fun declaration ->
+                                  match declaration.Binding with
+                                  | Some coreBinding when coreBinding.Name = Some binding.Name -> Some coreBinding
+                                  | _ -> None) with
+                        | Some coreBinding ->
+                            coreBinding.Parameters
+                            |> List.map (fun parameter ->
+                                { Name = parameter.Name
+                                  Representation =
+                                    tryBackendRepresentationFromTypeText parameter.TypeText
+                                    |> Option.defaultValue (backendOpaqueRepresentation None) })
+                        | None ->
+                            binding.Parameters
+                            |> List.map (fun name ->
+                                { Name = name
+                                  Representation = backendOpaqueRepresentation None })
+
+                let convention =
+                    { RuntimeArity = bindingInfo.Arity
+                      ParameterRepresentations = parameterRepresentations |> List.map (fun parameter -> parameter.Representation)
+                      ResultRepresentation = bindingInfo.ReturnRepresentation
+                      RetainedDictionaryParameters = [] }
+
+                let bodyResult =
+                    if binding.Intrinsic then
+                        Result.Ok None
+                    else
+                        let locals =
+                            parameterRepresentations
+                            |> List.map (fun parameter -> parameter.Name, parameter.Representation)
+                            |> Map.ofList
+
+                        match binding.Body with
+                        | None ->
+                            Result.Ok None
+                        | Some body ->
+                            lowerExpression $"{runtimeModule.Name}.{binding.Name}" locals body
+                            |> Result.map (fun (loweredBody, _) -> Some loweredBody)
+
+                bodyResult
+                |> Result.mapError (fun issue ->
+                    $"Could not lower runtime binding '{runtimeModule.Name}.{binding.Name}' to KBackendIR: {issue}")
+                |> Result.map (fun body ->
+                    { Name = binding.Name
+                      Parameters = parameterRepresentations
+                      CallingConvention = convention
+                      ReturnRepresentation = bindingInfo.ReturnRepresentation
+                      EnvironmentLayout = None
+                      Intrinsic = binding.Intrinsic
+                      Exported = exported
+                      EntryPoint = entryPoint
+                      ControlForm = StructuredExpression
+                      Body = body
+                      Provenance = binding.Provenance })
+
+            let backendFunctions =
+                ((Result.Ok []), runtimeModule.Bindings)
+                ||> List.fold (fun state binding ->
+                    state
+                    |> Result.bind (fun loweredBindings ->
+                        lowerBinding binding
+                        |> Result.map (fun loweredBinding -> loweredBinding :: loweredBindings)))
+                |> Result.map List.rev
+
+            let dataLayouts =
+                context.ConstructorInfos
+                |> Map.toList
+                |> List.choose (fun ((moduleName, _), constructorInfo) ->
+                    if String.Equals(moduleName, runtimeModule.Name, StringComparison.Ordinal) then
+                        Some constructorInfo
+                    else
+                        None)
+                |> List.groupBy (fun constructorInfo -> constructorInfo.TypeName)
+                |> List.map (fun (typeName, constructors) ->
+                    { TypeName = typeName
+                      RepresentationClass = "tagged-object"
+                      TagEncoding = "ordinal"
+                      Constructors =
+                        constructors
+                        |> List.sortBy (fun constructor -> constructor.Tag)
+                        |> List.map (fun constructor ->
+                            { Name = constructor.Name
+                              Tag = constructor.Tag
+                              FieldRepresentations = constructor.FieldRepresentations
+                              Provenance = constructor.Provenance })
+                      Provenance = constructors.Head.Provenance })
+                |> List.sortBy (fun layout -> layout.TypeName)
+
+            backendFunctions
+            |> Result.map (fun backendFunctions ->
+                { Name = runtimeModule.Name
+                  SourceFile = runtimeModule.SourceFile
+                  Imports = runtimeModule.Imports
+                  Exports = runtimeModule.Exports
+                  EntryPoints =
+                    backendFunctions
+                    |> List.filter (fun binding -> binding.EntryPoint)
+                    |> List.map (fun binding -> binding.Name)
+                  IntrinsicTerms = runtimeModule.IntrinsicTerms
+                  DataLayouts = dataLayouts
+                  EnvironmentLayouts = environmentLayouts |> Seq.toList
+                  Functions = backendFunctions })
+
+        kRuntimeIR
+        |> List.choose (fun runtimeModule ->
+            match lowerModule runtimeModule with
+            | Result.Ok backendModule ->
+                Some backendModule
+            | Result.Error _ ->
+                None)
 
     let private dumpDiagnostic (diagnostic: Diagnostic) =
         { Severity = severityText diagnostic.Severity
@@ -1038,7 +2085,7 @@ module Compilation =
           Imports = moduleDump.Imports |> List.map importSpecText
           Declarations = moduleDump.Declarations |> List.map dumpKCoreDeclaration }
 
-    let private dumpBackendModule (moduleDump: KBackendModule) =
+    let private dumpRuntimeModule (moduleDump: KRuntimeModule) =
         let constructors =
             moduleDump.Constructors
             |> List.map (fun constructor ->
@@ -1051,7 +2098,7 @@ module Compilation =
             |> List.map (fun binding ->
                 { Name = binding.Name
                   Parameters = binding.Parameters
-                  Body = binding.Body |> Option.map backendExpressionText |> Option.defaultValue "<intrinsic>"
+                  Body = binding.Body |> Option.map runtimeExpressionText |> Option.defaultValue "<intrinsic>"
                   Intrinsic = binding.Intrinsic })
 
         { Name = moduleDump.Name
@@ -1060,6 +2107,61 @@ module Compilation =
           IntrinsicTerms = moduleDump.IntrinsicTerms
           Constructors = constructors
           Bindings = bindings }
+
+    let private dumpBackendModule (moduleDump: KBackendModule) =
+        let functions =
+            moduleDump.Functions
+            |> List.map (fun binding ->
+                { Name = binding.Name
+                  Parameters =
+                    binding.Parameters
+                    |> List.map (fun parameter ->
+                        { Name = parameter.Name
+                          Representation = backendRepresentationText parameter.Representation })
+                  CallingConvention = backendCallingConventionText binding.CallingConvention
+                  ReturnRepresentation = binding.ReturnRepresentation |> Option.map backendRepresentationText
+                  EnvironmentLayout = binding.EnvironmentLayout
+                  Intrinsic = binding.Intrinsic
+                  Exported = binding.Exported
+                  EntryPoint = binding.EntryPoint
+                  ControlForm =
+                    match binding.ControlForm with
+                    | StructuredExpression -> "structured-expression"
+                  Body = binding.Body |> Option.map backendExpressionText |> Option.defaultValue "<intrinsic>" })
+
+        let dataLayouts =
+            moduleDump.DataLayouts
+            |> List.map (fun layout ->
+                { TypeName = layout.TypeName
+                  RepresentationClass = layout.RepresentationClass
+                  TagEncoding = layout.TagEncoding
+                  Constructors =
+                    layout.Constructors
+                    |> List.map (fun constructor ->
+                        { Name = constructor.Name
+                          Tag = constructor.Tag
+                          FieldRepresentations =
+                            constructor.FieldRepresentations |> List.map backendRepresentationText }) })
+
+        let environmentLayouts =
+            moduleDump.EnvironmentLayouts
+            |> List.map (fun layout ->
+                { Name = layout.Name
+                  Slots =
+                    layout.Slots
+                    |> List.map (fun slot ->
+                        { Name = slot.Name
+                          Representation = backendRepresentationText slot.Representation }) })
+
+        { Name = moduleDump.Name
+          SourceFile = moduleDump.SourceFile
+          Imports = moduleDump.Imports |> List.map importSpecText
+          Exports = moduleDump.Exports
+          EntryPoints = moduleDump.EntryPoints
+          IntrinsicTerms = moduleDump.IntrinsicTerms
+          DataLayouts = dataLayouts
+          EnvironmentLayouts = environmentLayouts
+          Functions = functions }
 
     let private countOrdinarySatisfactions (moduleDocuments: ParsedDocument list) declaration =
         let declarations =
@@ -1313,7 +2415,7 @@ module Compilation =
         |> String.concat " "
         |> fun body -> $"(module {body})"
 
-    let private renderDumpBackendBindingSexpr (binding: DumpBackendBinding) =
+    let private renderDumpRuntimeBindingSexpr (binding: DumpRuntimeBinding) =
         [
             sexprStringAtom "name" binding.Name
             sexprStringList "parameters" binding.Parameters
@@ -1323,7 +2425,7 @@ module Compilation =
         |> String.concat " "
         |> fun body -> $"(binding {body})"
 
-    let private renderDumpBackendConstructorSexpr (constructor: DumpBackendConstructor) =
+    let private renderDumpRuntimeConstructorSexpr (constructor: DumpRuntimeConstructor) =
         [
             sexprStringAtom "name" constructor.Name
             sexprAtom "arity" (string constructor.Arity)
@@ -1332,7 +2434,7 @@ module Compilation =
         |> String.concat " "
         |> fun body -> $"(constructor {body})"
 
-    let private renderDumpBackendModuleSexpr (moduleDump: DumpBackendModule) =
+    let private renderDumpRuntimeModuleSexpr (moduleDump: DumpRuntimeModule) =
         [
             sexprStringAtom "name" moduleDump.Name
             sexprStringAtom "source-file" moduleDump.SourceFile
@@ -1340,16 +2442,124 @@ module Compilation =
             sexprStringList "intrinsic-terms" moduleDump.IntrinsicTerms
             let constructorBody =
                 moduleDump.Constructors
-                |> List.map renderDumpBackendConstructorSexpr
+                |> List.map renderDumpRuntimeConstructorSexpr
                 |> String.concat " "
 
             if String.IsNullOrWhiteSpace(constructorBody) then "(constructors)" else $"(constructors {constructorBody})"
             let bindingBody =
                 moduleDump.Bindings
-                |> List.map renderDumpBackendBindingSexpr
+                |> List.map renderDumpRuntimeBindingSexpr
                 |> String.concat " "
 
             if String.IsNullOrWhiteSpace(bindingBody) then "(bindings)" else $"(bindings {bindingBody})"
+        ]
+        |> String.concat " "
+        |> fun body -> $"(module {body})"
+
+    let private renderDumpBackendParameterSexpr (parameter: DumpBackendParameter) =
+        [
+            sexprStringAtom "name" parameter.Name
+            sexprStringAtom "representation" parameter.Representation
+        ]
+        |> String.concat " "
+        |> fun body -> $"(parameter {body})"
+
+    let private renderDumpBackendCaptureSexpr (capture: DumpBackendCapture) =
+        [
+            sexprStringAtom "name" capture.Name
+            sexprStringAtom "representation" capture.Representation
+        ]
+        |> String.concat " "
+        |> fun body -> $"(slot {body})"
+
+    let private renderDumpBackendFunctionSexpr (binding: DumpBackendFunction) =
+        [
+            sexprStringAtom "name" binding.Name
+            let parameterBody =
+                binding.Parameters
+                |> List.map renderDumpBackendParameterSexpr
+                |> String.concat " "
+
+            if String.IsNullOrWhiteSpace(parameterBody) then "(parameters)" else $"(parameters {parameterBody})"
+            sexprStringAtom "calling-convention" binding.CallingConvention
+            binding.ReturnRepresentation
+            |> Option.map (sexprStringAtom "return-representation")
+            |> Option.defaultValue (sexprAtom "return-representation" "nil")
+            binding.EnvironmentLayout
+            |> Option.map (sexprStringAtom "environment-layout")
+            |> Option.defaultValue (sexprAtom "environment-layout" "nil")
+            sexprAtom "intrinsic" (if binding.Intrinsic then "true" else "false")
+            sexprAtom "exported" (if binding.Exported then "true" else "false")
+            sexprAtom "entry-point" (if binding.EntryPoint then "true" else "false")
+            sexprStringAtom "control-form" binding.ControlForm
+            sexprStringAtom "body" binding.Body
+        ]
+        |> String.concat " "
+        |> fun body -> $"(function {body})"
+
+    let private renderDumpBackendConstructorLayoutSexpr (constructor: DumpBackendConstructorLayout) =
+        [
+            sexprStringAtom "name" constructor.Name
+            sexprAtom "tag" (string constructor.Tag)
+            sexprStringList "field-representations" constructor.FieldRepresentations
+        ]
+        |> String.concat " "
+        |> fun body -> $"(constructor {body})"
+
+    let private renderDumpBackendDataLayoutSexpr (layout: DumpBackendDataLayout) =
+        [
+            sexprStringAtom "type-name" layout.TypeName
+            sexprStringAtom "representation-class" layout.RepresentationClass
+            sexprStringAtom "tag-encoding" layout.TagEncoding
+            let constructorBody =
+                layout.Constructors
+                |> List.map renderDumpBackendConstructorLayoutSexpr
+                |> String.concat " "
+
+            if String.IsNullOrWhiteSpace(constructorBody) then "(constructors)" else $"(constructors {constructorBody})"
+        ]
+        |> String.concat " "
+        |> fun body -> $"(data-layout {body})"
+
+    let private renderDumpBackendEnvironmentLayoutSexpr (layout: DumpBackendEnvironmentLayout) =
+        [
+            sexprStringAtom "name" layout.Name
+            let slotBody =
+                layout.Slots
+                |> List.map renderDumpBackendCaptureSexpr
+                |> String.concat " "
+
+            if String.IsNullOrWhiteSpace(slotBody) then "(slots)" else $"(slots {slotBody})"
+        ]
+        |> String.concat " "
+        |> fun body -> $"(environment-layout {body})"
+
+    let private renderDumpBackendModuleSexpr (moduleDump: DumpBackendModule) =
+        [
+            sexprStringAtom "name" moduleDump.Name
+            sexprStringAtom "source-file" moduleDump.SourceFile
+            sexprStringList "imports" moduleDump.Imports
+            sexprStringList "exports" moduleDump.Exports
+            sexprStringList "entry-points" moduleDump.EntryPoints
+            sexprStringList "intrinsic-terms" moduleDump.IntrinsicTerms
+            let dataLayoutBody =
+                moduleDump.DataLayouts
+                |> List.map renderDumpBackendDataLayoutSexpr
+                |> String.concat " "
+
+            if String.IsNullOrWhiteSpace(dataLayoutBody) then "(data-layouts)" else $"(data-layouts {dataLayoutBody})"
+            let environmentLayoutBody =
+                moduleDump.EnvironmentLayouts
+                |> List.map renderDumpBackendEnvironmentLayoutSexpr
+                |> String.concat " "
+
+            if String.IsNullOrWhiteSpace(environmentLayoutBody) then "(environment-layouts)" else $"(environment-layouts {environmentLayoutBody})"
+            let functionBody =
+                moduleDump.Functions
+                |> List.map renderDumpBackendFunctionSexpr
+                |> String.concat " "
+
+            if String.IsNullOrWhiteSpace(functionBody) then "(functions)" else $"(functions {functionBody})"
         ]
         |> String.concat " "
         |> fun body -> $"(module {body})"
@@ -1406,6 +2616,7 @@ module Compilation =
         let frontendCheckpoint = KFrontIRPhase.checkpointName CHECKERS
         let frontendVerified = CheckpointVerification.verifyCheckpoint workspace frontendCheckpoint |> List.isEmpty
         let coreVerified = CheckpointVerification.verifyCheckpoint workspace "KCore" |> List.isEmpty
+        let runtimeVerified = CheckpointVerification.verifyCheckpoint workspace "KRuntimeIR" |> List.isEmpty
         let backendVerified = CheckpointVerification.verifyCheckpoint workspace "KBackendIR" |> List.isEmpty
 
         let phaseTransitions =
@@ -1484,10 +2695,28 @@ module Compilation =
                         true
                         (Some coreVerified)
                     traceStep
-                        PipelineTraceEvent.LowerKBackendIR
+                        PipelineTraceEvent.LowerKRuntimeIR
                         PipelineTraceSubject.KCoreUnit
-                        $"lower {label} to KBackendIR"
+                        $"lower {label} to KRuntimeIR"
                         "KCore"
+                        "KRuntimeIR"
+                        true
+                        false
+                        None
+                    traceStep
+                        PipelineTraceEvent.Verify
+                        PipelineTraceSubject.KRuntimeIRUnit
+                        $"verify {label} at KRuntimeIR"
+                        "KRuntimeIR"
+                        "KRuntimeIR"
+                        false
+                        true
+                        (Some runtimeVerified)
+                    traceStep
+                        PipelineTraceEvent.LowerKBackendIR
+                        PipelineTraceSubject.KRuntimeIRUnit
+                        $"lower {label} to KBackendIR"
+                        "KRuntimeIR"
                         "KBackendIR"
                         true
                         false
@@ -1530,6 +2759,24 @@ module Compilation =
                 workspace.KCore
                 |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
                 |> List.map dumpCoreModule
+
+            serializeJson
+                {| schemaVersion = "1"
+                   languageVersion = languageVersion
+                   compiler = {| id = compilerImplementationId; version = compilerImplementationVersion |}
+                   checkpoint = checkpoint
+                   compilationRoot = workspace.SourceRoot
+                   backendProfile = workspace.BackendProfile
+                   backendIntrinsicSet = workspace.BackendIntrinsicIdentity
+                   elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms
+                   buildConfiguration = {| packageMode = workspace.PackageMode |}
+                   modules = modules
+                   diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
+        | "KRuntimeIR" ->
+            let modules =
+                workspace.KRuntimeIR
+                |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
+                |> List.map dumpRuntimeModule
 
             serializeJson
                 {| schemaVersion = "1"
@@ -1629,6 +2876,27 @@ module Compilation =
                 if String.IsNullOrWhiteSpace(diagnostics) then "(diagnostics)" else $"(diagnostics {diagnostics})"
 
             $"(stage-dump {metadataSexpr workspace checkpoint} {modulesAtom} {diagnosticsAtom})"
+        | "KRuntimeIR" ->
+            let modules =
+                workspace.KRuntimeIR
+                |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
+                |> List.map dumpRuntimeModule
+                |> List.map renderDumpRuntimeModuleSexpr
+                |> String.concat " "
+
+            let diagnostics =
+                workspace.Diagnostics
+                |> List.map dumpDiagnostic
+                |> List.map renderDumpDiagnosticSexpr
+                |> String.concat " "
+
+            let modulesAtom =
+                if String.IsNullOrWhiteSpace(modules) then "(modules)" else $"(modules {modules})"
+
+            let diagnosticsAtom =
+                if String.IsNullOrWhiteSpace(diagnostics) then "(diagnostics)" else $"(diagnostics {diagnostics})"
+
+            $"(stage-dump {metadataSexpr workspace checkpoint} {modulesAtom} {diagnosticsAtom})"
         | "KBackendIR" ->
             let modules =
                 workspace.KBackendIR
@@ -1711,9 +2979,13 @@ module Compilation =
             |> List.map (lowerKCoreModule options.BackendProfile)
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
-        let kBackendIR =
+        let kRuntimeIR =
             kCore
-            |> List.map lowerKBackendModule
+            |> List.map lowerKRuntimeModule
+            |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
+
+        let kBackendIR =
+            lowerKBackendModules kCore kRuntimeIR
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
         let workspace =
@@ -1725,6 +2997,7 @@ module Compilation =
               Documents = documents
               KFrontIR = kFrontIR
               KCore = kCore
+              KRuntimeIR = kRuntimeIR
               KBackendIR = kBackendIR
               Diagnostics = diagnostics
               PipelineTrace = [] }

@@ -25,7 +25,7 @@ module Backend =
             |> Array.toList
 
         let tryMatchBinding moduleName bindingName =
-            workspace.KBackendIR
+            workspace.KRuntimeIR
             |> List.tryFind (fun moduleDump -> String.Equals(moduleDump.Name, moduleName, StringComparison.Ordinal))
             |> Option.bind (fun moduleDump ->
                 moduleDump.Bindings
@@ -39,7 +39,7 @@ module Backend =
             Result.Error "Expected a binding name to run."
         | [ bindingName ] ->
             let matches =
-                workspace.KBackendIR
+                workspace.KRuntimeIR
                 |> List.choose (fun moduleDump ->
                     moduleDump.Bindings
                     |> List.tryFind (fun binding ->

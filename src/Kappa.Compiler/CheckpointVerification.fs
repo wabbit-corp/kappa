@@ -13,6 +13,7 @@ module CheckpointVerification =
             "surface-source"
             yield! KFrontIRPhase.all |> List.map KFrontIRPhase.checkpointName
             "KCore"
+            "KRuntimeIR"
             "KBackendIR"
         ]
 
@@ -77,305 +78,440 @@ module CheckpointVerification =
         | Url _ ->
             None
 
-    let private selectionImportsBackendTermName selection name =
-        match selection with
-        | QualifiedOnly ->
-            false
-        | Items items ->
-            items
-            |> List.exists (fun item ->
-                String.Equals(item.Name, name, StringComparison.Ordinal)
-                && (item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Term))
-        | All ->
-            true
-        | AllExcept excludedNames ->
-            not (List.contains name excludedNames)
+    let private availableIntrinsicTerms backendProfile moduleName =
+        if String.Equals(moduleName, Stdlib.PreludeModuleText, StringComparison.Ordinal) then
+            Stdlib.intrinsicTermNamesFor backendProfile Stdlib.PreludeModuleName
+        else
+            Set.empty
 
-    let private selectionImportsBackendConstructorName selection name =
-        match selection with
-        | QualifiedOnly ->
-            false
-        | Items items ->
-            items
-            |> List.exists (fun item ->
-                String.Equals(item.Name, name, StringComparison.Ordinal)
-                && item.Namespace = Some ImportNamespace.Constructor)
-        | All
-        | AllExcept _ ->
-            false
-
-    let private verifyKBackendIRCheckpoint (workspace: WorkspaceCompilation) =
-        let backendModules : KBackendModule list =
-            workspace.KBackendIR
-            |> List.sortBy (fun (moduleDump: KBackendModule) -> moduleDump.SourceFile)
-
-        let moduleMap : Map<string, KBackendModule> =
-            backendModules
-            |> List.map (fun (moduleDump: KBackendModule) -> moduleDump.Name, moduleDump)
-            |> Map.ofList
-
-        let bindingNames (moduleDump: KBackendModule) : Set<string> =
-            moduleDump.Bindings
-            |> List.map (fun (binding: KBackendBinding) -> binding.Name)
-            |> Set.ofList
-
-        let constructorNames (moduleDump: KBackendModule) : Set<string> =
-            moduleDump.Constructors
-            |> List.map (fun (constructor: KBackendConstructor) -> constructor.Name)
-            |> Set.ofList
-
-        let availableIntrinsicTerms (moduleName: string) : Set<string> =
-            if String.Equals(moduleName, Stdlib.PreludeModuleText, StringComparison.Ordinal) then
-                Stdlib.intrinsicTermNamesFor workspace.BackendProfile Stdlib.PreludeModuleName
-            else
-                Set.empty
-
-        let tryResolveQualifiedBackendModule
-            (currentModule: KBackendModule)
-            (qualifierSegments: string list)
-            : KBackendModule option =
-            let qualifierText = SyntaxFacts.moduleNameToText qualifierSegments
-
-            if String.Equals(qualifierText, currentModule.Name, StringComparison.Ordinal) then
-                Some currentModule
-            else
-                moduleMap
-                |> Map.tryFind qualifierText
-                |> Option.orElseWith (fun () ->
-                    currentModule.Imports
-                    |> List.tryPick (fun (spec: ImportSpec) ->
-                        match spec.Source, spec.Alias, spec.Selection with
-                        | Dotted moduleSegments, Some alias, QualifiedOnly when qualifierSegments = [ alias ] ->
-                            moduleMap |> Map.tryFind (SyntaxFacts.moduleNameToText moduleSegments)
-                        | Dotted moduleSegments, None, QualifiedOnly when qualifierSegments = moduleSegments ->
-                            moduleMap |> Map.tryFind (SyntaxFacts.moduleNameToText moduleSegments)
-                        | _ ->
-                            None))
-
-        let resolveUnqualifiedBackendExpressionName
-            (currentModule: KBackendModule)
-            (locals: Set<string>)
-            (name: string)
-            : Result<unit, string> =
-            if Set.contains name locals then
-                Result.Ok()
-            elif bindingNames currentModule |> Set.contains name then
-                Result.Ok()
-            elif constructorNames currentModule |> Set.contains name then
-                Result.Ok()
-            else
-                let importedTermMatches =
-                    currentModule.Imports
-                    |> List.choose (fun (spec: ImportSpec) ->
-                        importedModuleName spec
-                        |> Option.bind (fun importedName ->
-                            moduleMap
-                            |> Map.tryFind importedName
-                            |> Option.bind (fun (importedModule: KBackendModule) ->
-                                if selectionImportsBackendTermName spec.Selection name
-                                   && List.contains name importedModule.Exports
-                                   && (bindingNames importedModule |> Set.contains name) then
-                                    Some importedName
-                                else
-                                    None)))
-                    |> List.distinct
-
-                match importedTermMatches with
-                | [ _ ] ->
-                    Result.Ok()
-                | _ :: _ :: _ ->
-                    Result.Error $"ambiguous runtime name '{name}'"
-                | [] ->
-                    let importedConstructorMatches =
-                        currentModule.Imports
-                        |> List.choose (fun (spec: ImportSpec) ->
-                            importedModuleName spec
-                            |> Option.bind (fun importedName ->
-                                moduleMap
-                                |> Map.tryFind importedName
-                                |> Option.bind (fun (importedModule: KBackendModule) ->
-                                    if selectionImportsBackendConstructorName spec.Selection name
-                                       && List.contains name importedModule.Exports
-                                       && (constructorNames importedModule |> Set.contains name) then
-                                        Some importedName
-                                    else
-                                        None)))
-                        |> List.distinct
-
-                    match importedConstructorMatches with
-                    | [ _ ] ->
-                        Result.Ok()
-                    | _ :: _ :: _ ->
-                        Result.Error $"ambiguous runtime name '{name}'"
-                    | [] ->
-                        Result.Error $"unresolved runtime name '{name}'"
-
-        let resolveBackendExpressionName
-            (currentModule: KBackendModule)
-            (locals: Set<string>)
-            (segments: string list)
-            : Result<unit, string> =
-            match segments with
-            | [] ->
-                Result.Error "empty runtime name"
-            | [ name ] ->
-                resolveUnqualifiedBackendExpressionName currentModule locals name
-            | _ ->
-                let qualifierSegments = segments |> List.take (segments.Length - 1)
-                let bindingName = List.last segments
-
-                match tryResolveQualifiedBackendModule currentModule qualifierSegments with
-                | None ->
-                    Result.Error $"unresolved module qualifier '{SyntaxFacts.moduleNameToText qualifierSegments}'"
-                | Some targetModule when bindingNames targetModule |> Set.contains bindingName ->
-                    Result.Ok()
-                | Some targetModule when constructorNames targetModule |> Set.contains bindingName ->
-                    Result.Ok()
-                | Some _ ->
-                    let nameText = String.concat "." segments
-                    Result.Error $"unresolved runtime name '{nameText}'"
-
-        let rec verifyBackendPattern
-            (currentModule: KBackendModule)
-            (bindingLabel: string)
-            (locals: Set<string>)
-            (pattern: KBackendPattern)
-            : Set<string> * Diagnostic list =
-            match pattern with
-            | KBackendWildcardPattern
-            | KBackendLiteralPattern _ ->
+    let private verifyRuntimePattern checkpoint bindingLabel (pattern: KRuntimePattern) =
+        let rec verify locals runtimePattern =
+            match runtimePattern with
+            | KRuntimeWildcardPattern
+            | KRuntimeLiteralPattern _ ->
                 locals, []
-            | KBackendNamePattern name ->
+            | KRuntimeNamePattern name ->
                 if Set.contains name locals then
                     locals,
-                    [ makeDiagnostic $"Checkpoint 'KBackendIR' requires unique pattern binder names within '{bindingLabel}', but '{name}' was duplicated." ]
+                    [ makeDiagnostic $"Checkpoint '{checkpoint}' requires unique pattern binder names within '{bindingLabel}', but '{name}' was duplicated." ]
                 else
                     Set.add name locals, []
-            | KBackendConstructorPattern(nameSegments, argumentPatterns) ->
-                let resolutionDiagnostics =
-                    match resolveBackendExpressionName currentModule Set.empty nameSegments with
-                    | Result.Ok() ->
-                        []
-                    | Result.Error issue ->
-                        let patternText = String.concat "." nameSegments
-                        [ makeDiagnostic $"Checkpoint 'KBackendIR' requires fully resolved constructor patterns, but '{patternText}' in '{bindingLabel}' has {issue}." ]
-
-                ((locals, resolutionDiagnostics), argumentPatterns)
-                ||> List.fold (fun (localsSoFar, diagnosticsSoFar) (argumentPattern: KBackendPattern) ->
-                    let nextLocals, nextDiagnostics =
-                        verifyBackendPattern currentModule bindingLabel localsSoFar argumentPattern
-
+            | KRuntimeConstructorPattern(_, argumentPatterns) ->
+                ((locals, []), argumentPatterns)
+                ||> List.fold (fun (localsSoFar, diagnosticsSoFar) argumentPattern ->
+                    let nextLocals, nextDiagnostics = verify localsSoFar argumentPattern
                     nextLocals, diagnosticsSoFar @ nextDiagnostics)
 
-        let rec verifyBackendExpression
-            (currentModule: KBackendModule)
-            (bindingLabel: string)
-            (locals: Set<string>)
-            (expression: KBackendExpression)
-            : Diagnostic list =
-            match expression with
-            | KBackendLiteral _ ->
+        verify Set.empty pattern
+
+    let private verifyRuntimeExpression checkpoint bindingLabel (expression: KRuntimeExpression) =
+        let rec verify locals runtimeExpression =
+            match runtimeExpression with
+            | KRuntimeLiteral _
+            | KRuntimeName _ ->
                 []
-            | KBackendName segments ->
-                match resolveBackendExpressionName currentModule locals segments with
-                | Result.Ok() ->
-                    []
-                | Result.Error issue ->
-                    let nameText = String.concat "." segments
-                    [ makeDiagnostic $"Checkpoint 'KBackendIR' requires fully resolved runtime names, but '{nameText}' in '{bindingLabel}' has {issue}." ]
-            | KBackendClosure(parameters, body) ->
+            | KRuntimeClosure(parameters, body) ->
                 let duplicateParameters =
                     parameters
                     |> List.countBy id
                     |> List.filter (fun (_, count) -> count > 1)
                     |> List.map (fun (name, _) ->
-                        makeDiagnostic $"Checkpoint 'KBackendIR' requires closures in '{bindingLabel}' to have unique parameter names, but '{name}' was duplicated.")
+                        makeDiagnostic $"Checkpoint '{checkpoint}' requires closures in '{bindingLabel}' to have unique parameter names, but '{name}' was duplicated.")
 
                 let extendedLocals =
                     parameters
                     |> List.fold (fun state parameterName -> Set.add parameterName state) locals
 
-                duplicateParameters @ verifyBackendExpression currentModule bindingLabel extendedLocals body
-            | KBackendIfThenElse(condition, whenTrue, whenFalse) ->
-                verifyBackendExpression currentModule bindingLabel locals condition
-                @ verifyBackendExpression currentModule bindingLabel locals whenTrue
-                @ verifyBackendExpression currentModule bindingLabel locals whenFalse
-            | KBackendMatch(scrutinee, cases) ->
-                verifyBackendExpression currentModule bindingLabel locals scrutinee
+                duplicateParameters @ verify extendedLocals body
+            | KRuntimeIfThenElse(condition, whenTrue, whenFalse) ->
+                verify locals condition @ verify locals whenTrue @ verify locals whenFalse
+            | KRuntimeMatch(scrutinee, cases) ->
+                verify locals scrutinee
                 @ (cases
-                   |> List.collect (fun (caseClause: KBackendMatchCase) ->
+                   |> List.collect (fun (caseClause: KRuntimeMatchCase) ->
                        let caseLocals, patternDiagnostics =
-                           verifyBackendPattern currentModule bindingLabel locals caseClause.Pattern
+                           verifyRuntimePattern checkpoint bindingLabel caseClause.Pattern
 
-                       patternDiagnostics @ verifyBackendExpression currentModule bindingLabel caseLocals caseClause.Body))
-            | KBackendApply(callee, arguments) ->
-                verifyBackendExpression currentModule bindingLabel locals callee
-                @ (arguments
-                   |> List.collect (fun (argument: KBackendExpression) ->
-                       verifyBackendExpression currentModule bindingLabel locals argument))
-            | KBackendUnary(_, operand) ->
-                verifyBackendExpression currentModule bindingLabel locals operand
-            | KBackendBinary(left, _, right) ->
-                verifyBackendExpression currentModule bindingLabel locals left
-                @ verifyBackendExpression currentModule bindingLabel locals right
-            | KBackendPrefixedString(_, parts) ->
+                       patternDiagnostics @ verify (Set.union locals caseLocals) caseClause.Body))
+            | KRuntimeApply(callee, arguments) ->
+                verify locals callee
+                @ (arguments |> List.collect (verify locals))
+            | KRuntimeUnary(_, operand) ->
+                verify locals operand
+            | KRuntimeBinary(left, _, right) ->
+                verify locals left @ verify locals right
+            | KRuntimePrefixedString(_, parts) ->
                 parts
                 |> List.collect (function
-                    | KBackendStringText _ ->
+                    | KRuntimeStringText _ ->
                         []
-                    | KBackendStringInterpolation inner ->
-                        verifyBackendExpression currentModule bindingLabel locals inner)
+                    | KRuntimeStringInterpolation inner ->
+                        verify locals inner)
+
+        verify Set.empty expression
+
+    let private verifyKRuntimeIRCheckpoint (workspace: WorkspaceCompilation) =
+        let runtimeModules =
+            workspace.KRuntimeIR
+            |> List.sortBy (fun (moduleDump: KRuntimeModule) -> moduleDump.SourceFile)
+
+        let moduleMap =
+            runtimeModules
+            |> List.map (fun moduleDump -> moduleDump.Name, moduleDump)
+            |> Map.ofList
 
         [
             yield! verifyKCoreCheckpoint workspace
 
-            for moduleDump in backendModules do
+            for moduleDump in runtimeModules do
                 for spec in moduleDump.Imports do
                     match importedModuleName spec with
                     | Some importedName when not (moduleMap.ContainsKey importedName) ->
-                        yield makeDiagnostic $"Checkpoint 'KBackendIR' requires imported runtime module '{importedName}' to be present for module '{moduleDump.Name}'."
+                        yield makeDiagnostic $"Checkpoint 'KRuntimeIR' requires imported runtime module '{importedName}' to be present for module '{moduleDump.Name}'."
                     | _ ->
                         ()
 
                 let duplicateBindings =
                     moduleDump.Bindings
-                    |> List.countBy (fun (binding: KBackendBinding) -> binding.Name)
+                    |> List.countBy (fun binding -> binding.Name)
                     |> List.filter (fun (_, count) -> count > 1)
 
                 for bindingName, _ in duplicateBindings do
-                    yield makeDiagnostic $"Checkpoint 'KBackendIR' requires unique binding identities within module '{moduleDump.Name}', but '{bindingName}' was duplicated."
+                    yield makeDiagnostic $"Checkpoint 'KRuntimeIR' requires unique binding identities within module '{moduleDump.Name}', but '{bindingName}' was duplicated."
 
                 let duplicateConstructors =
                     moduleDump.Constructors
-                    |> List.countBy (fun (constructor: KBackendConstructor) -> constructor.Name)
+                    |> List.countBy (fun constructor -> constructor.Name)
                     |> List.filter (fun (_, count) -> count > 1)
 
                 for constructorName, _ in duplicateConstructors do
-                    yield makeDiagnostic $"Checkpoint 'KBackendIR' requires unique constructor identities within module '{moduleDump.Name}', but '{constructorName}' was duplicated."
+                    yield makeDiagnostic $"Checkpoint 'KRuntimeIR' requires unique constructor identities within module '{moduleDump.Name}', but '{constructorName}' was duplicated."
 
-                let supportedIntrinsics = availableIntrinsicTerms moduleDump.Name
+                let supportedIntrinsics = availableIntrinsicTerms workspace.BackendProfile moduleDump.Name
+
+                for intrinsicName in moduleDump.IntrinsicTerms do
+                    if not (supportedIntrinsics.Contains intrinsicName) then
+                        yield makeDiagnostic $"Checkpoint 'KRuntimeIR' requires intrinsic term '{intrinsicName}' in module '{moduleDump.Name}' to be provided by backend profile '{workspace.BackendProfile}'."
+
+                for binding in moduleDump.Bindings do
+                    if binding.Intrinsic then
+                        if binding.Body.IsSome then
+                            yield makeDiagnostic $"Checkpoint 'KRuntimeIR' requires intrinsic binding '{moduleDump.Name}.{binding.Name}' to omit a body."
+
+                        if not (List.contains binding.Name moduleDump.IntrinsicTerms) then
+                            yield makeDiagnostic $"Checkpoint 'KRuntimeIR' requires intrinsic binding '{moduleDump.Name}.{binding.Name}' to be listed in module intrinsic terms."
+
+                        if not (supportedIntrinsics.Contains binding.Name) then
+                            yield makeDiagnostic $"Checkpoint 'KRuntimeIR' requires intrinsic term '{binding.Name}' in module '{moduleDump.Name}' to be provided by backend profile '{workspace.BackendProfile}'."
+                    else
+                        match binding.Body with
+                        | None ->
+                            yield makeDiagnostic $"Checkpoint 'KRuntimeIR' requires runtime binding '{moduleDump.Name}.{binding.Name}' to have a body."
+                        | Some body ->
+                            let bindingLabel = $"{moduleDump.Name}.{binding.Name}"
+                            yield! verifyRuntimeExpression "KRuntimeIR" bindingLabel body
+        ]
+
+    let private verifyKBackendPattern
+        (moduleMap: Map<string, KBackendModule>)
+        checkpoint
+        bindingLabel
+        (pattern: KBackendPattern)
+        =
+        let rec verify locals backendPattern =
+            match backendPattern with
+            | BackendWildcardPattern
+            | BackendLiteralPattern _ ->
+                locals, []
+            | BackendBindPattern binding ->
+                if Set.contains binding.Name locals then
+                    locals,
+                    [ makeDiagnostic $"Checkpoint '{checkpoint}' requires unique pattern binder names within '{bindingLabel}', but '{binding.Name}' was duplicated." ]
+                else
+                    Set.add binding.Name locals, []
+            | BackendConstructorPattern(moduleName, typeName, constructorName, tag, fieldPatterns) ->
+                let constructorExists =
+                    moduleMap
+                    |> Map.tryFind moduleName
+                    |> Option.exists (fun moduleDump ->
+                        moduleDump.DataLayouts
+                        |> List.exists (fun layout ->
+                            String.Equals(layout.TypeName, typeName, StringComparison.Ordinal)
+                            && (layout.Constructors
+                                |> List.exists (fun constructor ->
+                                    String.Equals(constructor.Name, constructorName, StringComparison.Ordinal)
+                                    && constructor.Tag = tag))))
+
+                let diagnostics =
+                    if constructorExists then
+                        []
+                    else
+                        let constructorText = $"{moduleName}.{typeName}.{constructorName}@{tag}"
+                        [ makeDiagnostic $"Checkpoint '{checkpoint}' requires resolved constructor patterns, but '{constructorText}' in '{bindingLabel}' is not present in the backend module graph." ]
+
+                ((locals, diagnostics), fieldPatterns)
+                ||> List.fold (fun (localsSoFar, diagnosticsSoFar) fieldPattern ->
+                    let nextLocals, nextDiagnostics = verify localsSoFar fieldPattern
+                    nextLocals, diagnosticsSoFar @ nextDiagnostics)
+
+        verify Set.empty pattern
+
+    let private verifyKBackendIRCheckpoint (workspace: WorkspaceCompilation) =
+        let backendModules =
+            workspace.KBackendIR
+            |> List.sortBy (fun (moduleDump: KBackendModule) -> moduleDump.SourceFile)
+
+        let moduleMap =
+            backendModules
+            |> List.map (fun moduleDump -> moduleDump.Name, moduleDump)
+            |> Map.ofList
+
+        let globallyAvailableIntrinsicTerms =
+            Set.union
+                (Stdlib.intrinsicTermNamesFor workspace.BackendProfile Stdlib.PreludeModuleName)
+                (set [ "+"; "-"; "*"; "/"; "&&"; "||"; "=="; "!="; "<"; ">"; "<="; ">="; "not"; "negate" ])
+
+        let functionNames (moduleDump: KBackendModule) =
+            moduleDump.Functions
+            |> List.map (fun binding -> binding.Name)
+            |> Set.ofList
+
+        let dataLayoutNames (moduleDump: KBackendModule) =
+            moduleDump.DataLayouts
+            |> List.map (fun layout -> layout.TypeName)
+            |> Set.ofList
+
+        let environmentLayoutNames (moduleDump: KBackendModule) =
+            moduleDump.EnvironmentLayouts
+            |> List.map (fun layout -> layout.Name)
+            |> Set.ofList
+
+        let constructorExists moduleName typeName constructorName tag fieldCount =
+            moduleMap
+            |> Map.tryFind moduleName
+            |> Option.exists (fun moduleDump ->
+                moduleDump.DataLayouts
+                |> List.exists (fun layout ->
+                    String.Equals(layout.TypeName, typeName, StringComparison.Ordinal)
+                    && (layout.Constructors
+                        |> List.exists (fun constructor ->
+                            String.Equals(constructor.Name, constructorName, StringComparison.Ordinal)
+                            && constructor.Tag = tag
+                            && List.length constructor.FieldRepresentations = fieldCount))))
+
+        let resolvedNameExists (resolvedName: KBackendResolvedName) =
+            match resolvedName with
+            | BackendLocalName _ ->
+                true
+            | BackendGlobalBindingName(moduleName, bindingName, _)
+            | BackendIntrinsicName(moduleName, bindingName, _) ->
+                (moduleMap
+                 |> Map.tryFind moduleName
+                 |> Option.exists (fun moduleDump -> functionNames moduleDump |> Set.contains bindingName))
+                || globallyAvailableIntrinsicTerms.Contains bindingName
+            | BackendConstructorName(moduleName, typeName, constructorName, tag, arity, _) ->
+                constructorExists moduleName typeName constructorName tag arity
+
+        let resolvedNameText (resolvedName: KBackendResolvedName) =
+            match resolvedName with
+            | BackendLocalName(name, _) ->
+                name
+            | BackendGlobalBindingName(moduleName, bindingName, _) ->
+                $"{moduleName}.{bindingName}"
+            | BackendIntrinsicName(moduleName, bindingName, _) ->
+                $"intrinsic {moduleName}.{bindingName}"
+            | BackendConstructorName(moduleName, typeName, constructorName, tag, _, _) ->
+                $"{moduleName}.{typeName}.{constructorName}@{tag}"
+
+        let rec verifyBackendExpression (currentModule: KBackendModule) bindingLabel backendExpression =
+            match backendExpression with
+            | BackendLiteral _ ->
+                []
+            | BackendName resolvedName ->
+                if resolvedNameExists resolvedName then
+                    []
+                else
+                    [ makeDiagnostic $"Checkpoint 'KBackendIR' requires resolved runtime names, but '{resolvedNameText resolvedName}' in '{bindingLabel}' is not present in the backend module graph." ]
+            | BackendClosure(parameters, captures, environmentLayout, body, convention, representation) ->
+                let duplicateParameters =
+                    parameters
+                    |> List.countBy (fun parameter -> parameter.Name)
+                    |> List.filter (fun (_, count) -> count > 1)
+                    |> List.map (fun (name, _) ->
+                        makeDiagnostic $"Checkpoint 'KBackendIR' requires closures in '{bindingLabel}' to have unique parameter names, but '{name}' was duplicated.")
+
+                let duplicateCaptures =
+                    captures
+                    |> List.countBy (fun capture -> capture.Name)
+                    |> List.filter (fun (_, count) -> count > 1)
+                    |> List.map (fun (name, _) ->
+                        makeDiagnostic $"Checkpoint 'KBackendIR' requires closures in '{bindingLabel}' to have unique capture names, but '{name}' was duplicated.")
+
+                let environmentDiagnostics =
+                    if environmentLayoutNames currentModule |> Set.contains environmentLayout then
+                        []
+                    else
+                        [ makeDiagnostic $"Checkpoint 'KBackendIR' requires closure environment layout '{environmentLayout}' in '{bindingLabel}' to be present in module '{currentModule.Name}'." ]
+
+                let conventionDiagnostics =
+                    [
+                        if convention.RuntimeArity <> List.length parameters then
+                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires closure '{bindingLabel}' to have a calling convention arity matching its parameter count."
+
+                        if convention.ParameterRepresentations <> (parameters |> List.map (fun parameter -> parameter.Representation)) then
+                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires closure '{bindingLabel}' to have calling convention parameter representations that match its parameters."
+
+                        match representation with
+                        | BackendRepClosure layoutName when not (String.Equals(layoutName, environmentLayout, StringComparison.Ordinal)) ->
+                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires closure '{bindingLabel}' to have a representation that references environment layout '{environmentLayout}'."
+                        | BackendRepClosure _ -> ()
+                        | _ ->
+                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires closure '{bindingLabel}' to use a closure representation."
+                    ]
+
+                duplicateParameters
+                @ duplicateCaptures
+                @ environmentDiagnostics
+                @ conventionDiagnostics
+                @ verifyBackendExpression currentModule bindingLabel body
+            | BackendIfThenElse(condition, whenTrue, whenFalse, _) ->
+                verifyBackendExpression currentModule bindingLabel condition
+                @ verifyBackendExpression currentModule bindingLabel whenTrue
+                @ verifyBackendExpression currentModule bindingLabel whenFalse
+            | BackendMatch(scrutinee, cases, _) ->
+                verifyBackendExpression currentModule bindingLabel scrutinee
+                @ (cases
+                   |> List.collect (fun caseClause ->
+                       let _, patternDiagnostics =
+                           verifyKBackendPattern moduleMap "KBackendIR" bindingLabel caseClause.Pattern
+
+                       patternDiagnostics @ verifyBackendExpression currentModule bindingLabel caseClause.Body))
+            | BackendCall(callee, arguments, convention, _) ->
+                let conventionDiagnostics =
+                    [
+                        if convention.RuntimeArity <> List.length arguments then
+                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires calls in '{bindingLabel}' to have an argument count matching the calling convention arity."
+
+                        if List.length convention.ParameterRepresentations <> List.length arguments then
+                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires calls in '{bindingLabel}' to have a parameter representation for each argument."
+                    ]
+
+                conventionDiagnostics
+                @ verifyBackendExpression currentModule bindingLabel callee
+                @ (arguments |> List.collect (verifyBackendExpression currentModule bindingLabel))
+            | BackendConstructData(moduleName, typeName, constructorName, tag, fields, _) ->
+                let constructorDiagnostics =
+                    if constructorExists moduleName typeName constructorName tag (List.length fields) then
+                        []
+                    else
+                        let constructorText = $"{moduleName}.{typeName}.{constructorName}@{tag}"
+                        [ makeDiagnostic $"Checkpoint 'KBackendIR' requires constructed data '{constructorText}' in '{bindingLabel}' to match a backend data layout." ]
+
+                constructorDiagnostics @ (fields |> List.collect (verifyBackendExpression currentModule bindingLabel))
+            | BackendPrefixedString(_, parts, _) ->
+                parts
+                |> List.collect (function
+                    | BackendStringText _ ->
+                        []
+                    | BackendStringInterpolation inner ->
+                        verifyBackendExpression currentModule bindingLabel inner)
+
+        [
+            yield! verifyKRuntimeIRCheckpoint workspace
+
+            let runtimeModuleNames =
+                workspace.KRuntimeIR
+                |> List.map (fun moduleDump -> moduleDump.Name)
+                |> Set.ofList
+
+            for runtimeModuleName in runtimeModuleNames do
+                if not (moduleMap.ContainsKey runtimeModuleName) then
+                    yield makeDiagnostic $"Checkpoint 'KBackendIR' requires a backend module for runtime module '{runtimeModuleName}'."
+
+            for moduleDump in backendModules do
+                for spec in moduleDump.Imports do
+                    match importedModuleName spec with
+                    | Some importedName when not (moduleMap.ContainsKey importedName) ->
+                        yield makeDiagnostic $"Checkpoint 'KBackendIR' requires imported backend module '{importedName}' to be present for module '{moduleDump.Name}'."
+                    | _ ->
+                        ()
+
+                let duplicateFunctions =
+                    moduleDump.Functions
+                    |> List.countBy (fun binding -> binding.Name)
+                    |> List.filter (fun (_, count) -> count > 1)
+
+                for functionName, _ in duplicateFunctions do
+                    yield makeDiagnostic $"Checkpoint 'KBackendIR' requires unique function identities within module '{moduleDump.Name}', but '{functionName}' was duplicated."
+
+                let duplicateDataLayouts =
+                    moduleDump.DataLayouts
+                    |> List.countBy (fun layout -> layout.TypeName)
+                    |> List.filter (fun (_, count) -> count > 1)
+
+                for typeName, _ in duplicateDataLayouts do
+                    yield makeDiagnostic $"Checkpoint 'KBackendIR' requires unique data-layout identities within module '{moduleDump.Name}', but '{typeName}' was duplicated."
+
+                let duplicateEnvironmentLayouts =
+                    moduleDump.EnvironmentLayouts
+                    |> List.countBy (fun layout -> layout.Name)
+                    |> List.filter (fun (_, count) -> count > 1)
+
+                for layoutName, _ in duplicateEnvironmentLayouts do
+                    yield makeDiagnostic $"Checkpoint 'KBackendIR' requires unique environment-layout identities within module '{moduleDump.Name}', but '{layoutName}' was duplicated."
+
+                let supportedIntrinsics = availableIntrinsicTerms workspace.BackendProfile moduleDump.Name
 
                 for intrinsicName in moduleDump.IntrinsicTerms do
                     if not (supportedIntrinsics.Contains intrinsicName) then
                         yield makeDiagnostic $"Checkpoint 'KBackendIR' requires intrinsic term '{intrinsicName}' in module '{moduleDump.Name}' to be provided by backend profile '{workspace.BackendProfile}'."
 
-                for binding in moduleDump.Bindings do
+                for entryPointName in moduleDump.EntryPoints do
+                    match moduleDump.Functions |> List.tryFind (fun binding -> String.Equals(binding.Name, entryPointName, StringComparison.Ordinal)) with
+                    | None ->
+                        yield makeDiagnostic $"Checkpoint 'KBackendIR' requires listed entry point '{moduleDump.Name}.{entryPointName}' to be present as a function."
+                    | Some binding when not binding.EntryPoint ->
+                        yield makeDiagnostic $"Checkpoint 'KBackendIR' requires listed entry point '{moduleDump.Name}.{entryPointName}' to be marked as an entry point."
+                    | Some _ ->
+                        ()
+
+                for binding in moduleDump.Functions do
+                    let bindingLabel = $"{moduleDump.Name}.{binding.Name}"
+
+                    if binding.CallingConvention.RuntimeArity <> List.length binding.Parameters then
+                        yield makeDiagnostic $"Checkpoint 'KBackendIR' requires function '{bindingLabel}' to have a calling convention arity matching its parameter count."
+
+                    if binding.CallingConvention.ParameterRepresentations <> (binding.Parameters |> List.map (fun parameter -> parameter.Representation)) then
+                        yield makeDiagnostic $"Checkpoint 'KBackendIR' requires function '{bindingLabel}' to have calling convention parameter representations that match its parameters."
+
+                    match binding.EnvironmentLayout with
+                    | Some layoutName when not (environmentLayoutNames moduleDump |> Set.contains layoutName) ->
+                        yield makeDiagnostic $"Checkpoint 'KBackendIR' requires function '{bindingLabel}' to reference an environment layout present in module '{moduleDump.Name}'."
+                    | _ ->
+                        ()
+
+                    if binding.EntryPoint then
+                        if not binding.Exported then
+                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires entry point '{bindingLabel}' to be exported."
+
+                        if not (List.contains binding.Name moduleDump.EntryPoints) then
+                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires function '{bindingLabel}' marked as an entry point to be listed in module entry points."
+
                     if binding.Intrinsic then
                         if binding.Body.IsSome then
-                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires intrinsic binding '{moduleDump.Name}.{binding.Name}' to omit a body."
+                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires intrinsic function '{bindingLabel}' to omit a body."
 
                         if not (List.contains binding.Name moduleDump.IntrinsicTerms) then
-                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires intrinsic binding '{moduleDump.Name}.{binding.Name}' to be listed in module intrinsic terms."
+                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires intrinsic function '{bindingLabel}' to be listed in module intrinsic terms."
 
                         if not (supportedIntrinsics.Contains binding.Name) then
                             yield makeDiagnostic $"Checkpoint 'KBackendIR' requires intrinsic term '{binding.Name}' in module '{moduleDump.Name}' to be provided by backend profile '{workspace.BackendProfile}'."
                     else
                         match binding.Body with
                         | None ->
-                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires runtime binding '{moduleDump.Name}.{binding.Name}' to have a body."
+                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires function '{bindingLabel}' to have a body."
                         | Some body ->
-                            let bindingLabel = $"{moduleDump.Name}.{binding.Name}"
-                            yield! verifyBackendExpression moduleDump bindingLabel (binding.Parameters |> Set.ofList) body
+                            yield! verifyBackendExpression moduleDump bindingLabel body
         ]
 
     let verifyCheckpoint (workspace: WorkspaceCompilation) checkpoint =
@@ -384,6 +520,8 @@ module CheckpointVerification =
             verifySurfaceSource workspace
         | "KCore" ->
             verifyKCoreCheckpoint workspace
+        | "KRuntimeIR" ->
+            verifyKRuntimeIRCheckpoint workspace
         | "KBackendIR" ->
             verifyKBackendIRCheckpoint workspace
         | _ ->

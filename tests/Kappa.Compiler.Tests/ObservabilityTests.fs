@@ -27,6 +27,7 @@ let ``workspace exposes spec-shaped checkpoints and portable pipeline trace even
     Assert.Contains("KFrontIR.IMPORTS", checkpoints)
     Assert.Contains("KFrontIR.CHECKERS", checkpoints)
     Assert.Contains("KCore", checkpoints)
+    Assert.Contains("KRuntimeIR", checkpoints)
     Assert.Contains("KBackendIR", checkpoints)
 
     let trace =
@@ -41,7 +42,8 @@ let ``workspace exposes spec-shaped checkpoints and portable pipeline trace even
     Assert.Contains(("buildKFrontIR", "file", "surface-source", "KFrontIR.RAW"), trace)
     Assert.Contains(("advancePhase", "module", "KFrontIR.RAW", "KFrontIR.IMPORTS"), trace)
     Assert.Contains(("lowerKCore", "module", "KFrontIR.CORE_LOWERING", "KCore"), trace)
-    Assert.Contains(("lowerKBackendIR", "KCoreUnit", "KCore", "KBackendIR"), trace)
+    Assert.Contains(("lowerKRuntimeIR", "KCoreUnit", "KCore", "KRuntimeIR"), trace)
+    Assert.Contains(("lowerKBackendIR", "KRuntimeIRUnit", "KRuntimeIR", "KBackendIR"), trace)
 
 [<Fact>]
 let ``stage dumps serialize checkpoints in json and sexpr`` () =
@@ -66,6 +68,15 @@ let ``stage dumps serialize checkpoints in json and sexpr`` () =
     Assert.Contains("\"phase\": \"RAW\"", rawJson)
     Assert.Contains("\"moduleIdentity\": \"main\"", rawJson)
 
+    let runtimeSexpr =
+        match Compilation.dumpStage workspace "KRuntimeIR" StageDumpFormat.SExpression with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    Assert.Contains("(checkpoint \"KRuntimeIR\")", runtimeSexpr)
+    Assert.Contains("(module (name \"main\")", runtimeSexpr)
+    Assert.Contains("(binding (name \"answer\")", runtimeSexpr)
+
     let backendSexpr =
         match Compilation.dumpStage workspace "KBackendIR" StageDumpFormat.SExpression with
         | Result.Ok dump -> dump
@@ -73,7 +84,7 @@ let ``stage dumps serialize checkpoints in json and sexpr`` () =
 
     Assert.Contains("(checkpoint \"KBackendIR\")", backendSexpr)
     Assert.Contains("(module (name \"main\")", backendSexpr)
-    Assert.Contains("(binding (name \"answer\")", backendSexpr)
+    Assert.Contains("(function (name \"answer\")", backendSexpr)
 
 [<Fact>]
 let ``workspace and stage dumps expose backend intrinsic identity`` () =
@@ -195,13 +206,14 @@ let ``checkpoint verification is available for frontend core and backend snapsho
 
     Assert.Empty(Compilation.verifyCheckpoint workspace "KFrontIR.CHECKERS")
     Assert.Empty(Compilation.verifyCheckpoint workspace "KCore")
+    Assert.Empty(Compilation.verifyCheckpoint workspace "KRuntimeIR")
     Assert.Empty(Compilation.verifyCheckpoint workspace "KBackendIR")
 
 [<Fact>]
-let ``backend verification rejects unresolved runtime names`` () =
+let ``backend verification rejects missing backend modules`` () =
     let workspace =
         compileInMemoryWorkspace
-            "memory-verify-unresolved-name-root"
+            "memory-verify-missing-backend-module-root"
             [
                 "main.kp",
                 [
@@ -215,25 +227,14 @@ let ``backend verification rejects unresolved runtime names`` () =
         { workspace with
             KBackendIR =
                 workspace.KBackendIR
-                |> List.map (fun moduleDump ->
-                    if moduleDump.Name = "main" then
-                        { moduleDump with
-                            Bindings =
-                                moduleDump.Bindings
-                                |> List.map (fun binding ->
-                                    if binding.Name = "answer" then
-                                        { binding with Body = Some(KBackendName [ "mystery" ]) }
-                                    else
-                                        binding) }
-                    else
-                        moduleDump) }
+                |> List.filter (fun moduleDump -> not (String.Equals(moduleDump.Name, "main", StringComparison.Ordinal))) }
 
     let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KBackendIR"
 
     Assert.Contains(
         diagnostics,
         fun diagnostic ->
-            diagnostic.Message.Contains("unresolved runtime name 'mystery'", StringComparison.OrdinalIgnoreCase)
+            diagnostic.Message.Contains("backend module for runtime module 'main'", StringComparison.OrdinalIgnoreCase)
     )
 
 [<Fact>]
@@ -263,8 +264,8 @@ let ``backend verification rejects unsupported backend intrinsics`` () =
 
     let malformedWorkspace =
         { workspace with
-            KBackendIR =
-                workspace.KBackendIR
+            KRuntimeIR =
+                workspace.KRuntimeIR
                 |> List.map (fun moduleDump ->
                     if moduleDump.Name = Stdlib.PreludeModuleText then
                         { moduleDump with
@@ -274,7 +275,7 @@ let ``backend verification rejects unsupported backend intrinsics`` () =
                     else
                         moduleDump) }
 
-    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KBackendIR"
+    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KRuntimeIR"
 
     Assert.Contains(
         diagnostics,
@@ -304,15 +305,15 @@ let ``backend verification rejects missing imported runtime modules`` () =
 
     let malformedWorkspace =
         { workspace with
-            KBackendIR =
-                workspace.KBackendIR
+            KRuntimeIR =
+                workspace.KRuntimeIR
                 |> List.map (fun moduleDump ->
                     if moduleDump.Name = "main" then
                         { moduleDump with Imports = missingImport :: moduleDump.Imports }
                     else
                         moduleDump) }
 
-    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KBackendIR"
+    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KRuntimeIR"
 
     Assert.Contains(
         diagnostics,
@@ -337,8 +338,8 @@ let ``backend verification rejects runtime bindings without bodies`` () =
 
     let malformedWorkspace =
         { workspace with
-            KBackendIR =
-                workspace.KBackendIR
+            KRuntimeIR =
+                workspace.KRuntimeIR
                 |> List.map (fun moduleDump ->
                     if moduleDump.Name = "main" then
                         { moduleDump with
@@ -352,7 +353,7 @@ let ``backend verification rejects runtime bindings without bodies`` () =
                     else
                         moduleDump) }
 
-    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KBackendIR"
+    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KRuntimeIR"
 
     Assert.Contains(
         diagnostics,
@@ -376,7 +377,7 @@ let ``backend verification rejects intrinsic bindings with bodies`` () =
             ]
 
     let preludeModule =
-        workspace.KBackendIR
+        workspace.KRuntimeIR
         |> List.find (fun moduleDump -> moduleDump.Name = Stdlib.PreludeModuleText)
 
     let intrinsicName =
@@ -386,8 +387,8 @@ let ``backend verification rejects intrinsic bindings with bodies`` () =
 
     let malformedWorkspace =
         { workspace with
-            KBackendIR =
-                workspace.KBackendIR
+            KRuntimeIR =
+                workspace.KRuntimeIR
                 |> List.map (fun moduleDump ->
                     if moduleDump.Name = Stdlib.PreludeModuleText then
                         { moduleDump with
@@ -395,13 +396,13 @@ let ``backend verification rejects intrinsic bindings with bodies`` () =
                                 moduleDump.Bindings
                                 |> List.map (fun binding ->
                                     if binding.Name = intrinsicName then
-                                        { binding with Body = Some(KBackendLiteral LiteralValue.Unit) }
+                                        { binding with Body = Some(KRuntimeLiteral LiteralValue.Unit) }
                                     else
                                         binding) }
                     else
                         moduleDump) }
 
-    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KBackendIR"
+    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KRuntimeIR"
 
     Assert.Contains(
         diagnostics,
@@ -428,7 +429,7 @@ let ``backend verification rejects intrinsic bindings missing intrinsic listings
             ]
 
     let preludeModule =
-        workspace.KBackendIR
+        workspace.KRuntimeIR
         |> List.find (fun moduleDump -> moduleDump.Name = Stdlib.PreludeModuleText)
 
     let intrinsicName =
@@ -438,8 +439,8 @@ let ``backend verification rejects intrinsic bindings missing intrinsic listings
 
     let malformedWorkspace =
         { workspace with
-            KBackendIR =
-                workspace.KBackendIR
+            KRuntimeIR =
+                workspace.KRuntimeIR
                 |> List.map (fun moduleDump ->
                     if moduleDump.Name = Stdlib.PreludeModuleText then
                         { moduleDump with
@@ -449,7 +450,7 @@ let ``backend verification rejects intrinsic bindings missing intrinsic listings
                     else
                         moduleDump) }
 
-    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KBackendIR"
+    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KRuntimeIR"
 
     Assert.Contains(
         diagnostics,
@@ -477,8 +478,8 @@ let ``backend verification rejects duplicate closure parameters`` () =
 
     let malformedWorkspace =
         { workspace with
-            KBackendIR =
-                workspace.KBackendIR
+            KRuntimeIR =
+                workspace.KRuntimeIR
                 |> List.map (fun moduleDump ->
                     if moduleDump.Name = "main" then
                         { moduleDump with
@@ -486,13 +487,13 @@ let ``backend verification rejects duplicate closure parameters`` () =
                                 moduleDump.Bindings
                                 |> List.map (fun binding ->
                                     if binding.Name = "answer" then
-                                        { binding with Body = Some(KBackendClosure([ "x"; "x" ], KBackendName [ "x" ])) }
+                                        { binding with Body = Some(KRuntimeClosure([ "x"; "x" ], KRuntimeName [ "x" ])) }
                                     else
                                         binding) }
                     else
                         moduleDump) }
 
-    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KBackendIR"
+    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KRuntimeIR"
 
     Assert.Contains(
         diagnostics,
@@ -517,22 +518,22 @@ let ``backend verification rejects duplicate pattern binders`` () =
             ]
 
     let malformedBody =
-        KBackendMatch(
-            KBackendLiteral LiteralValue.Unit,
+        KRuntimeMatch(
+            KRuntimeLiteral LiteralValue.Unit,
             [
                 { Pattern =
-                    KBackendConstructorPattern(
+                    KRuntimeConstructorPattern(
                         [ "::" ],
-                        [ KBackendNamePattern "x"; KBackendNamePattern "x" ]
+                        [ KRuntimeNamePattern "x"; KRuntimeNamePattern "x" ]
                     )
-                  Body = KBackendLiteral(LiteralValue.Integer 0L) }
+                  Body = KRuntimeLiteral(LiteralValue.Integer 0L) }
             ]
         )
 
     let malformedWorkspace =
         { workspace with
-            KBackendIR =
-                workspace.KBackendIR
+            KRuntimeIR =
+                workspace.KRuntimeIR
                 |> List.map (fun moduleDump ->
                     if moduleDump.Name = "main" then
                         { moduleDump with
@@ -546,7 +547,7 @@ let ``backend verification rejects duplicate pattern binders`` () =
                     else
                         moduleDump) }
 
-    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KBackendIR"
+    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KRuntimeIR"
 
     Assert.Contains(
         diagnostics,
@@ -554,6 +555,49 @@ let ``backend verification rejects duplicate pattern binders`` () =
             diagnostic.Message.Contains("pattern binder names", StringComparison.OrdinalIgnoreCase)
             && diagnostic.Message.Contains("'main.answer'", StringComparison.OrdinalIgnoreCase)
             && diagnostic.Message.Contains("'x' was duplicated", StringComparison.OrdinalIgnoreCase)
+    )
+
+[<Fact>]
+let ``backend verification rejects malformed calling conventions`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-verify-backend-calling-convention-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let malformedWorkspace =
+        { workspace with
+            KBackendIR =
+                workspace.KBackendIR
+                |> List.map (fun moduleDump ->
+                    if moduleDump.Name = "main" then
+                        { moduleDump with
+                            Functions =
+                                moduleDump.Functions
+                                |> List.map (fun binding ->
+                                    if binding.Name = "answer" then
+                                        { binding with
+                                            CallingConvention =
+                                                { binding.CallingConvention with
+                                                    RuntimeArity = binding.CallingConvention.RuntimeArity + 1 } }
+                                    else
+                                        binding) }
+                    else
+                        moduleDump) }
+
+    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KBackendIR"
+
+    Assert.Contains(
+        diagnostics,
+        fun diagnostic ->
+            diagnostic.Message.Contains("function 'main.answer'", StringComparison.OrdinalIgnoreCase)
+            && diagnostic.Message.Contains("calling convention arity", StringComparison.OrdinalIgnoreCase)
     )
 
 [<Fact>]
@@ -592,18 +636,39 @@ let ``workspace materializes frontend core and backend modules`` () =
     | other ->
         failwithf "Unexpected KCore body: %A" other
 
+    let runtimeModule =
+        workspace.KRuntimeIR
+        |> List.find (fun moduleDump -> moduleDump.Name = "main")
+
+    let runtimeBinding =
+        runtimeModule.Bindings
+        |> List.find (fun binding -> binding.Name = "answer")
+
+    match runtimeBinding.Body with
+    | Some(KRuntimeBinary(KRuntimeLiteral(LiteralValue.Integer 20L), "+", KRuntimeLiteral(LiteralValue.Integer 22L))) -> ()
+    | other ->
+        failwithf "Unexpected KRuntimeIR body: %A" other
+
     let backendModule =
         workspace.KBackendIR
         |> List.find (fun moduleDump -> moduleDump.Name = "main")
 
     let backendBinding =
-        backendModule.Bindings
+        backendModule.Functions
         |> List.find (fun binding -> binding.Name = "answer")
 
     match backendBinding.Body with
-    | Some(KBackendBinary(KBackendLiteral(LiteralValue.Integer 20L), "+", KBackendLiteral(LiteralValue.Integer 22L))) -> ()
+    | Some(
+        BackendCall(
+            BackendName(BackendIntrinsicName(_, "+", Some BackendRepInt64)),
+            [ BackendLiteral(LiteralValue.Integer 20L, BackendRepInt64)
+              BackendLiteral(LiteralValue.Integer 22L, BackendRepInt64) ],
+            _,
+            BackendRepInt64
+        )
+      ) -> ()
     | other ->
-        failwithf "Unexpected KBackendIR body: %A" other
+        failwithf "Unexpected KBackendIR function body: %A" other
 
 [<Fact>]
 let ``core and backend artifacts remain usable after source documents are discarded`` () =
@@ -638,10 +703,11 @@ let ``core and backend artifacts remain usable after source documents are discar
     Assert.Contains("\"checkpoint\": \"KCore\"", coreJson)
     Assert.Contains("\"name\": \"main\"", coreJson)
     Assert.Empty(Compilation.verifyCheckpoint materializedOnlyWorkspace "KCore")
+    Assert.Empty(Compilation.verifyCheckpoint materializedOnlyWorkspace "KRuntimeIR")
     Assert.Empty(Compilation.verifyCheckpoint materializedOnlyWorkspace "KBackendIR")
 
     match Interpreter.evaluateBinding materializedOnlyWorkspace "main.result" with
     | Result.Ok value ->
         Assert.Equal("42", RuntimeValue.format value)
     | Result.Error issue ->
-        failwithf "Expected KBackendIR execution to succeed, got %s" issue.Message
+        failwithf "Expected KRuntimeIR execution to succeed, got %s" issue.Message

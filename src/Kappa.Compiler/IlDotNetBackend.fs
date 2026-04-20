@@ -57,12 +57,12 @@ module IlDotNetBackend =
           EmittedTypeName: string option }
 
     type private BindingInfo =
-        { Binding: KBackendBinding
+        { Binding: KRuntimeBinding
           ParameterTypes: (string * IlType) list
           ReturnType: IlType
           EmittedMethodName: string }
 
-    type private RawModuleInfo = ModuleSurface<KBackendBinding>
+    type private RawModuleInfo = ModuleSurface<KRuntimeBinding>
     type private ModuleInfo = ModuleSurface<BindingInfo>
 
     type private EmissionEnvironment =
@@ -371,7 +371,7 @@ module IlDotNetBackend =
     let private buildRawModuleSkeletons (workspace: WorkspaceCompilation) =
         let rawDataTypes = buildRawDataTypes workspace
 
-        workspace.KBackendIR
+        workspace.KRuntimeIR
         |> List.map (fun moduleDump ->
             let bindings =
                 moduleDump.Bindings
@@ -914,11 +914,11 @@ module IlDotNetBackend =
 
             and inferPatternBindings currentModule active expectedType pattern =
                 match pattern with
-                | KBackendWildcardPattern ->
+                | KRuntimeWildcardPattern ->
                     Result.Ok(Map.empty<string, IlType>)
-                | KBackendNamePattern name ->
+                | KRuntimeNamePattern name ->
                     Result.Ok(Map.ofList [ name, expectedType ])
-                | KBackendLiteralPattern literal ->
+                | KRuntimeLiteralPattern literal ->
                     let literalType =
                         match literal with
                         | LiteralValue.Integer _ -> IlPrimitive IlInt64
@@ -932,7 +932,7 @@ module IlDotNetBackend =
                     else
                         Result.Error
                             $"IL backend cannot match literal of type {formatIlType literalType} against {formatIlType expectedType}."
-                | KBackendConstructorPattern(nameSegments, argumentPatterns) ->
+                | KRuntimeConstructorPattern(nameSegments, argumentPatterns) ->
                     match tryResolveConstructor rawModules currentModule nameSegments with
                     | None ->
                         let patternName = String.concat "." nameSegments
@@ -998,27 +998,27 @@ module IlDotNetBackend =
                                     $"IL backend could not resolve name '{nameText}'. Locals in scope: [{localsText}]."
 
                 match expression with
-                | KBackendLiteral(LiteralValue.Integer _) ->
+                | KRuntimeLiteral(LiteralValue.Integer _) ->
                     ensureExpected (IlPrimitive IlInt64)
-                | KBackendLiteral(LiteralValue.Float _) ->
+                | KRuntimeLiteral(LiteralValue.Float _) ->
                     ensureExpected (IlPrimitive IlFloat64)
-                | KBackendLiteral(LiteralValue.String _) ->
+                | KRuntimeLiteral(LiteralValue.String _) ->
                     ensureExpected (IlPrimitive IlString)
-                | KBackendLiteral(LiteralValue.Character _) ->
+                | KRuntimeLiteral(LiteralValue.Character _) ->
                     ensureExpected (IlPrimitive IlChar)
-                | KBackendLiteral LiteralValue.Unit ->
+                | KRuntimeLiteral LiteralValue.Unit ->
                     Result.Error "IL backend does not emit Unit values yet."
-                | KBackendName segments ->
+                | KRuntimeName segments ->
                     inferNamedValue segments
-                | KBackendUnary("-", operand) ->
+                | KRuntimeUnary("-", operand) ->
                     inferExpressionType currentModule localTypes active None operand
                     |> Result.bind (function
                         | IlPrimitive IlInt64 -> ensureExpected (IlPrimitive IlInt64)
                         | IlPrimitive IlFloat64 -> ensureExpected (IlPrimitive IlFloat64)
                         | other -> Result.Error $"Unary '-' is not supported for {formatIlType other}.")
-                | KBackendUnary(operatorName, _) ->
+                | KRuntimeUnary(operatorName, _) ->
                     Result.Error $"IL backend does not support unary operator '{operatorName}' yet."
-                | KBackendBinary(left, operatorName, right) ->
+                | KRuntimeBinary(left, operatorName, right) ->
                     let builtinOperators =
                         Set.ofList [ "+"; "-"; "*"; "/"; "=="; "!="; "<"; "<="; ">"; ">="; "&&"; "||" ]
 
@@ -1054,8 +1054,8 @@ module IlDotNetBackend =
 
                         builtinResult
                     else
-                        inferExpressionType currentModule localTypes active expectedType (KBackendApply(KBackendName [ operatorName ], [ left; right ]))
-                | KBackendIfThenElse(condition, whenTrue, whenFalse) ->
+                        inferExpressionType currentModule localTypes active expectedType (KRuntimeApply(KRuntimeName [ operatorName ], [ left; right ]))
+                | KRuntimeIfThenElse(condition, whenTrue, whenFalse) ->
                     result {
                         let! conditionType = inferExpressionType currentModule localTypes active None condition
 
@@ -1072,7 +1072,7 @@ module IlDotNetBackend =
 
                         return trueType
                     }
-                | KBackendMatch(scrutinee, cases) ->
+                | KRuntimeMatch(scrutinee, cases) ->
                     result {
                         let! scrutineeType = inferExpressionType currentModule localTypes active None scrutinee
 
@@ -1108,14 +1108,14 @@ module IlDotNetBackend =
 
                             return head
                     }
-                | KBackendApply(KBackendName segments, arguments) ->
+                | KRuntimeApply(KRuntimeName segments, arguments) ->
                     let nameText = String.concat "." segments
                     let builtinOperators =
                         Set.ofList [ "+"; "-"; "*"; "/"; "=="; "!="; "<"; "<="; ">"; ">="; "&&"; "||" ]
 
                     match segments, arguments with
                     | [ operatorName ], [ left; right ] when builtinOperators.Contains(operatorName) ->
-                        inferExpressionType currentModule localTypes active expectedType (KBackendBinary(left, operatorName, right))
+                        inferExpressionType currentModule localTypes active expectedType (KRuntimeBinary(left, operatorName, right))
                     | _ ->
                         match tryResolveBinding rawModules currentModule segments with
                         | Some(targetModule, bindingInfo) ->
@@ -1140,11 +1140,11 @@ module IlDotNetBackend =
                                 inferConstructorTypeFromArguments inferExpressionType currentModule localTypes active expectedType arguments constructorInfo
                             | None ->
                                 Result.Error $"IL backend could not resolve callee '{nameText}'."
-                | KBackendApply _ ->
+                | KRuntimeApply _ ->
                     Result.Error "IL backend currently supports application only when the callee is a named binding."
-                | KBackendClosure _ ->
+                | KRuntimeClosure _ ->
                     Result.Error "IL backend does not support closures yet."
-                | KBackendPrefixedString _ ->
+                | KRuntimePrefixedString _ ->
                     Result.Error "IL backend does not support prefixed strings yet."
 
             rawModules
@@ -1271,11 +1271,11 @@ module IlDotNetBackend =
 
             let rec inferPatternBindings expectedType pattern =
                 match pattern with
-                | KBackendWildcardPattern ->
+                | KRuntimeWildcardPattern ->
                     Result.Ok(Map.empty<string, IlType>)
-                | KBackendNamePattern name ->
+                | KRuntimeNamePattern name ->
                     Result.Ok(Map.ofList [ name, expectedType ])
-                | KBackendLiteralPattern literal ->
+                | KRuntimeLiteralPattern literal ->
                     let literalType =
                         match literal with
                         | LiteralValue.Integer _ -> IlPrimitive IlInt64
@@ -1289,7 +1289,7 @@ module IlDotNetBackend =
                     else
                         Result.Error
                             $"IL backend cannot match literal of type {formatIlType literalType} against {formatIlType expectedType}."
-                | KBackendConstructorPattern(nameSegments, argumentPatterns) ->
+                | KRuntimeConstructorPattern(nameSegments, argumentPatterns) ->
                     match tryResolveConstructor modules currentModule nameSegments with
                     | None ->
                         let patternName = String.concat "." nameSegments
@@ -1323,22 +1323,22 @@ module IlDotNetBackend =
                         Result.Ok actualType
 
                 match expression with
-                | KBackendLiteral(LiteralValue.Integer _) ->
+                | KRuntimeLiteral(LiteralValue.Integer _) ->
                     ensureExpected (IlPrimitive IlInt64)
-                | KBackendLiteral(LiteralValue.Float _) ->
+                | KRuntimeLiteral(LiteralValue.Float _) ->
                     ensureExpected (IlPrimitive IlFloat64)
-                | KBackendLiteral(LiteralValue.String _) ->
+                | KRuntimeLiteral(LiteralValue.String _) ->
                     ensureExpected (IlPrimitive IlString)
-                | KBackendLiteral(LiteralValue.Character _) ->
+                | KRuntimeLiteral(LiteralValue.Character _) ->
                     ensureExpected (IlPrimitive IlChar)
-                | KBackendLiteral LiteralValue.Unit ->
+                | KRuntimeLiteral LiteralValue.Unit ->
                     Result.Error "IL backend does not emit Unit values yet."
-                | KBackendName [ "True" ]
-                | KBackendName [ "False" ] ->
+                | KRuntimeName [ "True" ]
+                | KRuntimeName [ "False" ] ->
                     ensureExpected (IlPrimitive IlBool)
-                | KBackendName [ name ] when localTypes |> Map.containsKey name ->
+                | KRuntimeName [ name ] when localTypes |> Map.containsKey name ->
                     ensureExpected localTypes[name]
-                | KBackendName segments ->
+                | KRuntimeName segments ->
                     let nameText = String.concat "." segments
 
                     match tryResolveBinding modules currentModule segments with
@@ -1368,15 +1368,15 @@ module IlDotNetBackend =
 
                             Result.Error
                                 $"IL backend could not resolve name '{nameText}'. Locals in scope: [{localsText}]."
-                | KBackendUnary("-", operand) ->
+                | KRuntimeUnary("-", operand) ->
                     infer operand None
                     |> Result.bind (function
                         | IlPrimitive IlInt64 -> ensureExpected (IlPrimitive IlInt64)
                         | IlPrimitive IlFloat64 -> ensureExpected (IlPrimitive IlFloat64)
                         | other -> Result.Error $"Unary '-' is not supported for {formatIlType other}.")
-                | KBackendUnary(operatorName, _) ->
+                | KRuntimeUnary(operatorName, _) ->
                     Result.Error $"IL backend does not support unary operator '{operatorName}' yet."
-                | KBackendBinary(left, operatorName, right) ->
+                | KRuntimeBinary(left, operatorName, right) ->
                     let builtinOperators =
                         Set.ofList [ "+"; "-"; "*"; "/"; "=="; "!="; "<"; "<="; ">"; ">="; "&&"; "||" ]
 
@@ -1412,8 +1412,8 @@ module IlDotNetBackend =
 
                         builtinResult
                     else
-                        infer (KBackendApply(KBackendName [ operatorName ], [ left; right ])) expectedType
-                | KBackendIfThenElse(condition, whenTrue, whenFalse) ->
+                        infer (KRuntimeApply(KRuntimeName [ operatorName ], [ left; right ])) expectedType
+                | KRuntimeIfThenElse(condition, whenTrue, whenFalse) ->
                     result {
                         let! conditionType = infer condition None
 
@@ -1430,7 +1430,7 @@ module IlDotNetBackend =
 
                         return trueType
                     }
-                | KBackendMatch(scrutinee, cases) ->
+                | KRuntimeMatch(scrutinee, cases) ->
                     result {
                         let! scrutineeType = infer scrutinee None
 
@@ -1465,14 +1465,14 @@ module IlDotNetBackend =
 
                             return head
                     }
-                | KBackendApply(KBackendName segments, arguments) ->
+                | KRuntimeApply(KRuntimeName segments, arguments) ->
                     let nameText = String.concat "." segments
                     let builtinOperators =
                         Set.ofList [ "+"; "-"; "*"; "/"; "=="; "!="; "<"; "<="; ">"; ">="; "&&"; "||" ]
 
                     match segments, arguments with
                     | [ operatorName ], [ left; right ] when builtinOperators.Contains(operatorName) ->
-                        infer (KBackendBinary(left, operatorName, right)) expectedType
+                        infer (KRuntimeBinary(left, operatorName, right)) expectedType
                     | _ ->
                         match tryResolveBinding modules currentModule segments with
                         | Some(_, bindingInfo) ->
@@ -1502,11 +1502,11 @@ module IlDotNetBackend =
                                     constructorInfo
                             | None ->
                                 Result.Error $"IL backend could not resolve callee '{nameText}'."
-                | KBackendApply _ ->
+                | KRuntimeApply _ ->
                     Result.Error "IL backend currently supports application only when the callee is a named binding."
-                | KBackendClosure _ ->
+                | KRuntimeClosure _ ->
                     Result.Error "IL backend does not support closures yet."
-                | KBackendPrefixedString _ ->
+                | KRuntimePrefixedString _ ->
                     Result.Error "IL backend does not support prefixed strings yet."
 
             and inferBody bodyLocals expectedType bodyExpression =
@@ -1647,11 +1647,11 @@ module IlDotNetBackend =
 
         let rec emitPatternMatch currentScope expectedType pattern valueLocal failureLabel =
             match pattern with
-            | KBackendWildcardPattern ->
+            | KRuntimeWildcardPattern ->
                 Result.Ok currentScope
-            | KBackendNamePattern name ->
+            | KRuntimeNamePattern name ->
                 Result.Ok(currentScope |> Map.add name { Location = Local valueLocal; Type = expectedType })
-            | KBackendLiteralPattern literal ->
+            | KRuntimeLiteralPattern literal ->
                 result {
                     emitLoadLocal il valueLocal
                     do! emitLiteral il literal
@@ -1659,7 +1659,7 @@ module IlDotNetBackend =
                     il.Emit(OpCodes.Brfalse, (failureLabel: Label))
                     return currentScope
                 }
-            | KBackendConstructorPattern(nameSegments, argumentPatterns) ->
+            | KRuntimeConstructorPattern(nameSegments, argumentPatterns) ->
                 match tryResolveConstructor state.Environment.Modules currentModule nameSegments with
                 | None ->
                     let patternName = String.concat "." nameSegments
@@ -1692,10 +1692,10 @@ module IlDotNetBackend =
                                         emitPatternMatch scope fieldType argumentPattern fieldLocal failureLabel))
                                 (Result.Ok currentScope))
 
-        let emitMatch scrutinee cases =
+        let emitMatch (scrutinee: KRuntimeExpression) (cases: KRuntimeMatchCase list) =
             result {
                 let! scrutineeType = inferExpressionType currentModule localTypes None scrutinee
-                let! matchType = inferExpressionType currentModule localTypes expectedType (KBackendMatch(scrutinee, cases))
+                let! matchType = inferExpressionType currentModule localTypes expectedType (KRuntimeMatch(scrutinee, cases))
 
                 let scrutineeLocal = il.DeclareLocal(resolveClrType state Map.empty scrutineeType)
                 let resultLocal = il.DeclareLocal(resolveClrType state Map.empty matchType)
@@ -1704,7 +1704,7 @@ module IlDotNetBackend =
                 do! emitExpression state currentModule localValues (Some scrutineeType) il scrutinee
                 il.Emit(OpCodes.Stloc, scrutineeLocal)
 
-                let rec emitCases remainingCases =
+                let rec emitCases (remainingCases: KRuntimeMatchCase list) =
                     match remainingCases with
                     | [] ->
                         let exceptionCtor = typeof<InvalidOperationException>.GetConstructor([| typeof<string> |])
@@ -1712,7 +1712,7 @@ module IlDotNetBackend =
                         il.Emit(OpCodes.Newobj, exceptionCtor)
                         il.Emit(OpCodes.Throw)
                         Result.Ok()
-                    | caseClause :: rest ->
+                    | (caseClause: KRuntimeMatchCase) :: rest ->
                         let nextCaseLabel = il.DefineLabel()
 
                         emitPatternMatch localValues scrutineeType caseClause.Pattern scrutineeLocal nextCaseLabel
@@ -1730,18 +1730,18 @@ module IlDotNetBackend =
             }
 
         match expression with
-        | KBackendLiteral literal ->
+        | KRuntimeLiteral literal ->
             emitLiteral il literal
-        | KBackendName [ "True" ] ->
+        | KRuntimeName [ "True" ] ->
             il.Emit(OpCodes.Ldc_I4_1)
             Result.Ok()
-        | KBackendName [ "False" ] ->
+        | KRuntimeName [ "False" ] ->
             il.Emit(OpCodes.Ldc_I4_0)
             Result.Ok()
-        | KBackendName [ name ] when localValues |> Map.containsKey name ->
+        | KRuntimeName [ name ] when localValues |> Map.containsKey name ->
             loadValue il localValues[name]
             Result.Ok()
-        | KBackendName segments ->
+        | KRuntimeName segments ->
             let nameText = String.concat "." segments
 
             match tryResolveBinding state.Environment.Modules currentModule segments with
@@ -1762,7 +1762,7 @@ module IlDotNetBackend =
                         localValues |> Map.toList |> List.map fst |> String.concat ", "
 
                     Result.Error $"IL backend could not resolve name '{nameText}'. Locals in scope: [{localsText}]."
-        | KBackendUnary("-", operand) ->
+        | KRuntimeUnary("-", operand) ->
             result {
                 let! operandType = inferExpressionType currentModule localTypes None operand
                 do! emitExpression state currentModule localValues (Some operandType) il operand
@@ -1774,9 +1774,9 @@ module IlDotNetBackend =
                 | other ->
                     return! Result.Error $"Unary '-' is not supported for {formatIlType other}."
             }
-        | KBackendUnary(operatorName, _) ->
+        | KRuntimeUnary(operatorName, _) ->
             Result.Error $"IL backend does not support unary operator '{operatorName}' yet."
-        | KBackendBinary(left, "&&", right) ->
+        | KRuntimeBinary(left, "&&", right) ->
             let falseLabel = il.DefineLabel()
             let endLabel = il.DefineLabel()
 
@@ -1789,7 +1789,7 @@ module IlDotNetBackend =
                 il.Emit(OpCodes.Ldc_I4_0)
                 il.MarkLabel(endLabel)
             }
-        | KBackendBinary(left, "||", right) ->
+        | KRuntimeBinary(left, "||", right) ->
             let trueLabel = il.DefineLabel()
             let endLabel = il.DefineLabel()
 
@@ -1802,7 +1802,7 @@ module IlDotNetBackend =
                 il.Emit(OpCodes.Ldc_I4_1)
                 il.MarkLabel(endLabel)
             }
-        | KBackendBinary(left, operatorName, right) ->
+        | KRuntimeBinary(left, operatorName, right) ->
             let supportedBuiltinOperators =
                 Set.ofList [ "+"; "-"; "*"; "/"; "=="; "!="; "<"; "<="; ">"; ">=" ]
 
@@ -1815,8 +1815,8 @@ module IlDotNetBackend =
                     localValues
                     expectedType
                     il
-                    (KBackendApply(KBackendName [ operatorName ], [ left; right ]))
-        | KBackendIfThenElse(condition, whenTrue, whenFalse) ->
+                    (KRuntimeApply(KRuntimeName [ operatorName ], [ left; right ]))
+        | KRuntimeIfThenElse(condition, whenTrue, whenFalse) ->
             result {
                 let! resultType = inferExpressionType currentModule localTypes expectedType expression
                 let falseLabel = il.DefineLabel()
@@ -1830,16 +1830,16 @@ module IlDotNetBackend =
                 do! emitExpression state currentModule localValues (Some resultType) il whenFalse
                 il.MarkLabel(endLabel)
             }
-        | KBackendMatch(scrutinee, cases) ->
+        | KRuntimeMatch(scrutinee, cases) ->
             emitMatch scrutinee cases
-        | KBackendApply(KBackendName segments, arguments) ->
+        | KRuntimeApply(KRuntimeName segments, arguments) ->
             let nameText = String.concat "." segments
             let builtinOperators =
                 Set.ofList [ "+"; "-"; "*"; "/"; "=="; "!="; "<"; "<="; ">"; ">="; "&&"; "||" ]
 
             match segments, arguments with
             | [ operatorName ], [ left; right ] when builtinOperators.Contains(operatorName) ->
-                emitExpression state currentModule localValues expectedType il (KBackendBinary(left, operatorName, right))
+                emitExpression state currentModule localValues expectedType il (KRuntimeBinary(left, operatorName, right))
             | _ ->
                 match tryResolveBinding state.Environment.Modules currentModule segments with
                 | Some(targetModule, bindingInfo) ->
@@ -1863,11 +1863,11 @@ module IlDotNetBackend =
                         emitConstructorApplication constructorInfo arguments expectedType
                     | None ->
                         Result.Error $"IL backend could not resolve callee '{nameText}'."
-        | KBackendApply _ ->
+        | KRuntimeApply _ ->
             Result.Error "IL backend currently supports application only when the callee is a named binding."
-        | KBackendClosure _ ->
+        | KRuntimeClosure _ ->
             Result.Error "IL backend does not support closures yet."
-        | KBackendPrefixedString _ ->
+        | KRuntimePrefixedString _ ->
             Result.Error "IL backend does not support prefixed strings yet."
 
     let private emitMethodBody (state: EmissionState) (moduleInfo: ModuleInfo) (bindingInfo: BindingInfo) =
@@ -2028,10 +2028,10 @@ module IlDotNetBackend =
         if workspace.HasErrors then
             Result.Error $"Cannot emit a CLR assembly for a workspace with diagnostics:{Environment.NewLine}{aggregateDiagnostics workspace.Diagnostics}"
         else
-            let verificationDiagnostics = Compilation.verifyCheckpoint workspace "KBackendIR"
+            let verificationDiagnostics = Compilation.verifyCheckpoint workspace "KRuntimeIR"
 
             if not (List.isEmpty verificationDiagnostics) then
-                Result.Error $"Cannot emit malformed KBackendIR:{Environment.NewLine}{aggregateDiagnostics verificationDiagnostics}"
+                Result.Error $"Cannot emit malformed KRuntimeIR:{Environment.NewLine}{aggregateDiagnostics verificationDiagnostics}"
             else
                 match buildEnvironment workspace with
                 | Result.Error message ->
