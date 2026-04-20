@@ -1,5 +1,6 @@
 module ObservabilityTests
 
+open System.Text.Json
 open Kappa.Compiler
 open Harness
 open Xunit
@@ -120,6 +121,62 @@ let ``workspace and stage dumps expose backend intrinsic identity`` () =
 
     Assert.Contains("(backend-profile \"custom-backend\")", unsupportedSexpr)
     Assert.Contains("(backend-intrinsic-set \"none\")", unsupportedSexpr)
+
+[<Fact>]
+let ``workspace and stage dumps expose elaboration available intrinsic terms`` () =
+    let supportedWorkspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-elaboration-intrinsics-supported-root"
+            "interpreter"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.Contains("not", supportedWorkspace.ElaborationAvailableIntrinsicTerms)
+    Assert.Contains("printInt", supportedWorkspace.ElaborationAvailableIntrinsicTerms)
+
+    let supportedJson =
+        match Compilation.dumpStage supportedWorkspace "KCore" StageDumpFormat.Json with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    use supportedDocument = JsonDocument.Parse(supportedJson)
+
+    let supportedTerms =
+        supportedDocument.RootElement.GetProperty("elaborationAvailableIntrinsicTerms").EnumerateArray()
+        |> Seq.map (fun item -> item.GetString())
+        |> Seq.filter (isNull >> not)
+        |> Seq.toList
+
+    Assert.Contains("not", supportedTerms)
+    Assert.Contains("printInt", supportedTerms)
+
+    let unsupportedWorkspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-elaboration-intrinsics-unsupported-root"
+            "custom-backend"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.Empty(unsupportedWorkspace.ElaborationAvailableIntrinsicTerms)
+
+    let unsupportedSexpr =
+        match Compilation.dumpStage unsupportedWorkspace "KCore" StageDumpFormat.SExpression with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    Assert.Contains("(elaboration-available-intrinsic-terms)", unsupportedSexpr)
 
 [<Fact>]
 let ``checkpoint verification is available for frontend core and backend snapshots`` () =

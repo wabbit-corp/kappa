@@ -276,6 +276,7 @@ type WorkspaceCompilation =
       PackageMode: bool
       BackendProfile: string
       BackendIntrinsicIdentity: string
+      ElaborationAvailableIntrinsicTerms: string list
       Documents: ParsedDocument list
       KFrontIR: KFrontIRModule list
       KCore: KCoreModule list
@@ -1662,6 +1663,7 @@ module Compilation =
            compilationRoot = workspace.SourceRoot
            backendProfile = workspace.BackendProfile
            backendIntrinsicSet = workspace.BackendIntrinsicIdentity
+           elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms
            buildConfiguration = {| packageMode = workspace.PackageMode |} |}
 
     let private metadataSexpr workspace checkpoint =
@@ -1682,6 +1684,7 @@ module Compilation =
             sexprStringAtom "compilation-root" workspace.SourceRoot
             sexprStringAtom "backend-profile" workspace.BackendProfile
             sexprStringAtom "backend-intrinsic-set" workspace.BackendIntrinsicIdentity
+            sexprStringList "elaboration-available-intrinsic-terms" workspace.ElaborationAvailableIntrinsicTerms
             buildConfigurationAtom
         ]
         |> String.concat " "
@@ -1844,6 +1847,7 @@ module Compilation =
                    compilationRoot = workspace.SourceRoot
                    backendProfile = workspace.BackendProfile
                    backendIntrinsicSet = workspace.BackendIntrinsicIdentity
+                   elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms
                    buildConfiguration = {| packageMode = workspace.PackageMode |}
                    documents = documents
                    diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
@@ -1861,6 +1865,7 @@ module Compilation =
                    compilationRoot = workspace.SourceRoot
                    backendProfile = workspace.BackendProfile
                    backendIntrinsicSet = workspace.BackendIntrinsicIdentity
+                   elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms
                    buildConfiguration = {| packageMode = workspace.PackageMode |}
                    modules = modules
                    diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
@@ -1878,6 +1883,7 @@ module Compilation =
                    compilationRoot = workspace.SourceRoot
                    backendProfile = workspace.BackendProfile
                    backendIntrinsicSet = workspace.BackendIntrinsicIdentity
+                   elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms
                    buildConfiguration = {| packageMode = workspace.PackageMode |}
                    modules = modules
                    diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
@@ -1898,6 +1904,7 @@ module Compilation =
                        compilationRoot = workspace.SourceRoot
                        backendProfile = workspace.BackendProfile
                        backendIntrinsicSet = workspace.BackendIntrinsicIdentity
+                       elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms
                        buildConfiguration = {| packageMode = workspace.PackageMode |}
                        documents = documents
                        diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
@@ -1998,8 +2005,12 @@ module Compilation =
                 invalidOp $"Unknown checkpoint '{checkpoint}'."
 
     let parse (options: CompilationOptions) inputs =
-        let backendIntrinsicIdentity =
-            (Stdlib.intrinsicSetForBackendProfile options.BackendProfile).Identity
+        let backendIntrinsicSet = Stdlib.intrinsicSetForBackendProfile options.BackendProfile
+        let backendIntrinsicIdentity = backendIntrinsicSet.Identity
+        let elaborationAvailableIntrinsicTerms =
+            backendIntrinsicSet.ElaborationAvailableTermNames
+            |> Set.toList
+            |> List.sort
 
         let userDocuments =
             collectInputFiles options inputs
@@ -2036,6 +2047,7 @@ module Compilation =
               PackageMode = options.PackageMode
               BackendProfile = options.BackendProfile
               BackendIntrinsicIdentity = backendIntrinsicIdentity
+              ElaborationAvailableIntrinsicTerms = elaborationAvailableIntrinsicTerms
               Documents = documents
               KFrontIR = kFrontIR
               KCore = kCore
