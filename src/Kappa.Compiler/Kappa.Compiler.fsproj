@@ -11,9 +11,11 @@
     <Compile Include="Diagnostics.fs" />
     <Compile Include="Syntax.fs" />
     <Compile Include="CoreParsing.fs" />
+    <Compile Include="CompilationModel.fs" />
     <Compile Include="Lexer.fs" />
     <Compile Include="Parser.fs" />
     <Compile Include="Stdlib.fs" />
+    <Compile Include="CheckpointVerification.fs" />
     <Compile Include="Compilation.fs" />
     <Compile Include="BackendTypes.fs" />
     <Compile Include="HostedRuntimeDotNetBackend.fs" />
