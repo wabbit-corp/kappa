@@ -2262,8 +2262,25 @@ module Compilation =
                             BackendLet(bindingParameter, loweredValue, loweredBody, bodyRepresentation), bodyRepresentation))
                 | KRuntimeDoScope(nestedScopeLabel, body) ->
                     lowerExpression nestedScopeLabel locals body
-                | KRuntimeScheduleExit(_, _, body) ->
+                | KRuntimeScheduleExit(_, action, body) ->
                     lowerExpression scopeLabel locals body
+                    |> Result.bind (fun (loweredBody, bodyRepresentation) ->
+                        lowerExitAction scopeLabel locals action
+                        |> Result.map (fun (loweredAction, _) ->
+                            let resultBinding: KBackendParameter =
+                                { Name = "__kappa_scope_result"
+                                  Representation = bodyRepresentation }
+
+                            let resultName =
+                                BackendName(BackendLocalName(resultBinding.Name, Some bodyRepresentation))
+
+                            BackendLet(
+                                resultBinding,
+                                loweredBody,
+                                BackendSequence(loweredAction, resultName, bodyRepresentation),
+                                bodyRepresentation
+                            ),
+                            bodyRepresentation))
                 | KRuntimeSequence(first, second) ->
                     lowerExpression scopeLabel locals first
                     |> Result.bind (fun (loweredFirst, _) ->
@@ -2414,6 +2431,22 @@ module Compilation =
                     |> Result.map (fun loweredParts ->
                         let representation = BackendRepString
                         BackendPrefixedString(prefix, loweredParts, representation), representation)
+
+            and lowerExitAction
+                (scopeLabel: string)
+                (locals: Map<string, KBackendRepresentationClass>)
+                (action: KRuntimeExitAction)
+                : Result<KBackendExpression * KBackendRepresentationClass, string> =
+                let cleanupExpression =
+                    match action with
+                    | KRuntimeDeferred expression ->
+                        KRuntimeExecute expression
+                    | KRuntimeRelease(_, KRuntimeTraitCall(traitName, memberName, dictionary, []), resource) ->
+                        KRuntimeExecute(KRuntimeTraitCall(traitName, memberName, dictionary, [ resource ]))
+                    | KRuntimeRelease(_, release, resource) ->
+                        KRuntimeExecute(KRuntimeApply(release, [ resource ]))
+
+                lowerExpression scopeLabel locals cleanupExpression
 
             let lowerBinding (binding: KRuntimeBinding) =
                 let bindingInfo = context.BindingInfos[runtimeModule.Name, binding.Name]

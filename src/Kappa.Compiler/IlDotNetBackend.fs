@@ -76,7 +76,7 @@ module IlDotNetBackend =
         { ModuleName: string
           TraitName: string
           InstanceKey: string
-          HeadType: IlType
+          HeadTypes: IlType list
           MemberBindings: Map<string, string> }
 
     type private RawModuleInfo = ModuleSurface<KRuntimeBinding>
@@ -192,8 +192,8 @@ module IlDotNetBackend =
     let private refIlType elementType =
         IlNamed("std.prelude", "Ref", [ elementType ])
 
-    let private dictionaryIlType traitName argumentType =
-        IlNamed("std.prelude", TraitRuntime.dictionaryTypeName traitName, [ argumentType ])
+    let private dictionaryIlType traitName argumentTypes =
+        IlNamed("std.prelude", TraitRuntime.dictionaryTypeName traitName, argumentTypes)
 
     let private isUnitIlType ilType =
         ilType = unitIlType
@@ -633,6 +633,59 @@ module IlDotNetBackend =
         | Result.Ok parsedType ->
             Result.Ok parsedType
 
+    let private splitLeadingTypeArgumentTokens argumentCount tokens =
+        let tokens = significantTokens tokens
+
+        let takeAtom remaining =
+            match remaining with
+            | [] ->
+                [], []
+            | first :: _ when first.Kind = LeftParen ->
+                let tokenArray = remaining |> List.toArray
+                let mutable depth = 0
+                let mutable index = 0
+                let mutable keepReading = true
+
+                while keepReading && index < tokenArray.Length do
+                    match tokenArray[index].Kind with
+                    | LeftParen ->
+                        depth <- depth + 1
+                    | RightParen ->
+                        depth <- depth - 1
+
+                        if depth = 0 then
+                            keepReading <- false
+                    | _ ->
+                        ()
+
+                    index <- index + 1
+
+                List.ofArray tokenArray[0 .. index - 1], List.ofArray tokenArray[index ..]
+            | first :: rest ->
+                [ first ], rest
+
+        let rec loop remaining count groups =
+            if count <= 1 then
+                List.rev (remaining :: groups)
+            else
+                let group, rest = takeAtom remaining
+                loop rest (count - 1) (group :: groups)
+
+        loop tokens (max 1 argumentCount) []
+
+    let private parseInstanceHeadTypes rawModules currentModule argumentCount tokens =
+        tokens
+        |> splitLeadingTypeArgumentTokens argumentCount
+        |> List.fold
+            (fun stateResult group ->
+                result {
+                    let! collected = stateResult
+                    let! parsed = parseType rawModules currentModule Set.empty group
+                    return parsed :: collected
+                })
+            (Result.Ok [])
+        |> Result.map List.rev
+
     let private parseTypeText (rawModules: Map<string, RawModuleInfo>) currentModule (text: string) =
         parseType rawModules currentModule Set.empty (typeTextTokens text)
 
@@ -816,7 +869,24 @@ module IlDotNetBackend =
                     None))
         |> Map.ofList
 
+    let private buildTraitArities (workspace: WorkspaceCompilation) =
+        workspace.Documents
+        |> List.choose (fun document ->
+            document.ModuleName
+            |> Option.map (fun moduleName ->
+                SyntaxFacts.moduleNameToText moduleName, document.Syntax.Declarations))
+        |> List.collect (fun (moduleName, declarations) ->
+            declarations
+            |> List.choose (function
+                | TraitDeclarationNode declaration ->
+                    Some((moduleName, declaration.Name), parseTypeParameters declaration.HeaderTokens |> List.length)
+                | _ ->
+                    None))
+        |> Map.ofList
+
     let private buildTraitInstances (rawModules: Map<string, RawModuleInfo>) (workspace: WorkspaceCompilation) =
+        let traitArities = buildTraitArities workspace
+
         workspace.Documents
         |> List.choose (fun document ->
             document.ModuleName
@@ -839,8 +909,17 @@ module IlDotNetBackend =
                                         let instanceKey =
                                             TraitRuntime.instanceKeyFromTokens instanceDeclaration.HeaderTokens
 
-                                        let! headType =
-                                            parseType rawModules moduleName Set.empty instanceDeclaration.HeaderTokens
+                                        let argumentCount =
+                                            traitArities
+                                            |> Map.tryFind (moduleName, instanceDeclaration.TraitName)
+                                            |> Option.defaultValue 1
+
+                                        let! headTypes =
+                                            parseInstanceHeadTypes
+                                                rawModules
+                                                moduleName
+                                                argumentCount
+                                                instanceDeclaration.HeaderTokens
 
                                         let memberBindings =
                                             instanceDeclaration.Members
@@ -858,7 +937,7 @@ module IlDotNetBackend =
                                             { ModuleName = moduleName
                                               TraitName = instanceDeclaration.TraitName
                                               InstanceKey = instanceKey
-                                              HeadType = headType
+                                              HeadTypes = headTypes
                                               MemberBindings = memberBindings }
 
                                         return instanceInfo :: collected
@@ -930,6 +1009,7 @@ module IlDotNetBackend =
               "printString"
               "printInt"
               "primitiveIntToString"
+              "pure"
               "newRef"
               "readRef"
               "writeRef"
@@ -946,6 +1026,8 @@ module IlDotNetBackend =
             Some([ IlPrimitive IlInt64 ], unitIlType)
         | "primitiveIntToString", [ IlPrimitive IlInt64 ] ->
             Some([ IlPrimitive IlInt64 ], IlPrimitive IlString)
+        | "pure", [ valueType ] ->
+            Some([ valueType ], valueType)
         | "newRef", [ valueType ] ->
             Some([ valueType ], refIlType valueType)
         | "readRef", [ IlNamed("std.prelude", "Ref", [ valueType ]) ] ->
@@ -1586,7 +1668,7 @@ module IlDotNetBackend =
                                 && String.Equals(instanceInfo.InstanceKey, instanceKey, StringComparison.Ordinal))
                         with
                         | Some instanceInfo ->
-                            ensureExpected (dictionaryIlType traitName instanceInfo.HeadType)
+                            ensureExpected (dictionaryIlType traitName instanceInfo.HeadTypes)
                         | None ->
                             Result.Error $"IL backend could not resolve trait instance '{moduleName}.{traitName}.{instanceKey}'."
                     | KRuntimeTraitCall(traitName, memberName, dictionary, arguments) ->
@@ -1687,7 +1769,7 @@ module IlDotNetBackend =
             typedefof<StrongBox<_>>.MakeGenericType([| resolveClrType state typeParameters elementType |])
         | IlNamed("std.prelude", "IO", [ elementType ]) ->
             resolveClrType state typeParameters elementType
-        | IlNamed("std.prelude", typeName, [ _ ]) when isDictionaryTypeName typeName ->
+        | IlNamed("std.prelude", typeName, _) when isDictionaryTypeName typeName ->
             typeof<Tuple<string, string, string>>
         | IlNamed(moduleName, typeName, arguments) ->
             let emission = state.DataTypeBuilders[moduleName, typeName]
@@ -2170,7 +2252,7 @@ module IlDotNetBackend =
                 | KRuntimeDictionaryValue(moduleName, traitName, instanceKey) ->
                     match tryFindTraitInstance state.Environment moduleName traitName instanceKey with
                     | Some instanceInfo ->
-                        ensureExpected (dictionaryIlType traitName instanceInfo.HeadType)
+                        ensureExpected (dictionaryIlType traitName instanceInfo.HeadTypes)
                     | None ->
                         Result.Error $"IL backend could not resolve trait instance '{moduleName}.{traitName}.{instanceKey}'."
                 | KRuntimeTraitCall(traitName, memberName, dictionary, arguments) ->
@@ -2365,6 +2447,8 @@ module IlDotNetBackend =
                         do! emitUnitValue il
                     | "primitiveIntToString", _ ->
                         il.Emit(OpCodes.Call, typeof<Convert>.GetMethod("ToString", [| typeof<int64> |]))
+                    | "pure", _ ->
+                        ()
                     | "newRef", refType ->
                         let clrResultType = resolveClrType state typeParameters refType
                         let argumentClrType = resolveClrType state typeParameters argumentTypes[0]
@@ -2390,6 +2474,15 @@ module IlDotNetBackend =
                     | _ ->
                         return! Result.Error $"IL backend intrinsic '{name}' is not implemented yet."
             }
+
+        let cleanupExpressionForExitAction action =
+            match action with
+            | KRuntimeDeferred expression ->
+                KRuntimeExecute expression
+            | KRuntimeRelease(_, KRuntimeTraitCall(traitName, memberName, dictionary, []), resource) ->
+                KRuntimeExecute(KRuntimeTraitCall(traitName, memberName, dictionary, [ resource ]))
+            | KRuntimeRelease(_, release, resource) ->
+                KRuntimeExecute(KRuntimeApply(release, [ resource ]))
 
         let emitTraitCall traitName memberName dictionary arguments =
             result {
@@ -2780,8 +2873,19 @@ module IlDotNetBackend =
             }
         | KRuntimeDoScope(_, body) ->
             emitExpression state currentModule typeParameters localValues expectedType il body
-        | KRuntimeScheduleExit(_, _, body) ->
-            emitExpression state currentModule typeParameters localValues expectedType il body
+        | KRuntimeScheduleExit(_, action, body) ->
+            result {
+                let cleanupExpression = cleanupExpressionForExitAction action
+                let! bodyType = inferExpressionType currentModule localTypes expectedType body
+                let resultLocal = il.DeclareLocal(resolveClrType state typeParameters bodyType)
+
+                do! emitExpression state currentModule typeParameters localValues (Some bodyType) il body
+                il.Emit(OpCodes.Stloc, resultLocal)
+
+                do! emitExpression state currentModule typeParameters localValues (Some unitIlType) il cleanupExpression
+                il.Emit(OpCodes.Pop)
+                il.Emit(OpCodes.Ldloc, resultLocal)
+            }
         | KRuntimeSequence(first, second) ->
             result {
                 let! firstType = inferExpressionType currentModule localTypes None first
