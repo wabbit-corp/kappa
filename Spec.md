@@ -6378,11 +6378,12 @@ When `MonadError m` is present, primary-error selection across multiple exited s
 application of §8.7.2. Equivalently, the propagated error is the first error encountered in the actual inner-to-outer
 unwinding sequence, while later finalizer errors may be suppressed or discarded but do not replace it.
 
-### 8.7.3 Completion-aware sequencing (meta-level)
+### 8.7.3 Completion-aware sequencing (schematic helpers over the KCore kernel)
 
 For an enclosing monad `m`, we write computations of the form `m (Completion(RetCtx, A))`.
 
-Define the following meta-level operators (expressible in core via `>>=` and `match` in the compiler IR):
+Using the explicit `Completion` constructors of §17.3.1.4, the following helpers are definable in KCore or an
+observationally equivalent internal representation:
 
 * Lifting a normal monadic computation:
 
@@ -6486,62 +6487,40 @@ The cases below define `⟦...⟧` for arbitrary `A`.
 
 #### `defer` and `using`
 
+Let `S_current` be the resolved label of the current dynamic `do`-scope.
+
 * `defer d; rest`:
 
-  `⟦defer d; rest⟧ = finally ⟦rest⟧ d`
-
-  where `finally` is the `MonadFinally` method for the enclosing monad `m`, instantiated at the completion result type
-  of `⟦rest⟧`. Nested `defer`s therefore unwind in LIFO order. When an implicit `MonadError m` is also available, nested
-  finalizers select the propagated error according to §8.7.2: the first error wins, and later finalizer errors may be
-  suppressed or discarded.
+  `⟦defer d; rest⟧ = ScheduleExit S_current (Deferred d) ⟦rest⟧`
 
 * `defer@L d; rest`:
 
-  `⟦defer@L d; rest⟧ = scheduleDeferred(L, d, ⟦rest⟧)`
+  `⟦defer@L d; rest⟧ = ScheduleExit L (Deferred d) ⟦rest⟧`
 
-  where `scheduleDeferred` is the meta-level operation that pushes `d` onto the exit-action stack of the resolved
-  `do`-scope frame labeled `L` in the dynamic `ScopeStack(m)` of §8.7.2.1, without otherwise changing the immediate
-  completion behavior of `⟦rest⟧`. If `L` is the current `do`-scope's label, this is observationally equivalent to
-  `finally ⟦rest⟧ d`.
+  If `L` names an outer `do`-scope, the deferred action remains attached to that outer scope and is not run merely
+  because inner scopes exit.
 
 * `using pat0 <- acquire; rest`:
 
-  elaborates by protected-scope splitting, not by ordinary `defer` closure capture:
+  elaborates by protected-scope splitting, not by ordinary closure capture:
 
   1. Run `acquire : m A` to obtain an owned resource `__res : A` at quantity `@1`.
   2. Select `rel = Releasable.release` from the implicit `Releasable m A` evidence.
-  3. Push the exit action `Release[A] rel __res` onto the current `do`-scope frame.
-  4. Elaborate `rest` under borrowed bindings `let & pat0 = __res`.
+  3. Introduce `pat0` as the ordinary borrowed binding of the protected resource against the hidden stable root `__res`.
+  4. Attach `Release[A] rel __res` to the current scope with `ScheduleExit`.
+  5. Continue with `rest`.
 
-  After step 3, `__res` is no longer available as an ordinary user-visible term. Its owned `@1` obligation lives only in
-  the scheduled release action attached to the current scope frame. The borrowed bindings introduced by `pat0` remain
-  valid only within `rest` and are subject to the borrow-escape rules of §5.1.6.
-
-  If `pat0` is a destructuring pattern, each name bound by `pat0` is a borrowed projection of the same hidden owned
-  resource represented by the scheduled `Release[A] rel __res` action.
-
-  This rule is primitive to `using`. It is NOT elaborated through `defer (rel __res)` or through a user-visible lambda,
-  because ordinary closure capture would move `__res` before the borrowed view is introduced and would therefore violate
-  the linearity rules of §§5.1.5 and 7.2.1.
-
-  Implementations MAY lower this primitive to backend-supported `try`/`finally`, state-machine code, RAII-style cleanup,
-  or other equivalent machinery, but MUST preserve the ownership split and unwinding behavior specified here.
-
-  Equivalent `bracket` view:
-
-  If a correct `MonadResource` implementation is available, the protected resource-scope rule above is observationally
-  equivalent to:
+  Schematically:
 
   ```kappa
-  bracket acquire Releasable.release (\(& pat0) ->
-      ⟦rest⟧
-  )
+  ⟦using pat0 <- acquire; rest⟧ =
+      bindC (lift acquire) (\__res ->
+          ScheduleExit S_current (Release[A] rel __res)
+              (⟦rest⟧ under the borrowed binding of pat0 against __res))
   ```
 
-  where the generated closure returns `m (Completion(RetCtx, A))` for the surrounding `do`-scope result type `A`. Any
-  `return`, `break`, or `continue` inside `rest` therefore becomes an ordinary `Completion(...)` payload that `bracket`
-  ferries outward after executing `release` exactly once. This equivalence relies on the compiler-generated closure
-  being transparent to abrupt-control target resolution, as specified in §§8.2.3, 8.4, and 8.5.
+Any `return`, `break`, or `continue` inside `rest` therefore becomes an ordinary `Completion(...)` payload that
+`DoScope` ferries outward after executing the scheduled exit action exactly once.
 
 #### `return`
 
