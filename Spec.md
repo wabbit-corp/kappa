@@ -8561,9 +8561,10 @@ position and the following application arguments aligned with the remaining expl
 A resolved receiver-projection property counts as a fully applied projection call for §5.1.7.2. In particular:
 
 * in an ordinary value-demanding position, it lowers to a non-consuming read of the selected yielded place;
-* in a borrow-demanding position, it lowers through the projection-borrow rules of §§5.1.7.2 and 17.3.1.2; and
+* in a borrow-demanding position, it lowers through the projection-borrow rules of §§5.1.7.2, 17.3.1.2, and 17.3.1.3;
+  and
 * under `~`, the parenthesized form `~(lhs.name)` counts as a parenthesized fully applied projection call and uses the
-  branchwise `MovePlace` / `FillPlace` lowering of §§8.8 and 17.3.1.2.
+  branchwise `MovePlace` / `FillPlace` lowering of §§8.8 and 17.3.1.3.
 
 #### 13.1.2 Reified module values
 
@@ -10125,7 +10126,7 @@ KCore retains all compile-time structure needed by the source semantics. In part
   bindings or equivalent refined case contexts, not merely frontend-only side facts;
 * explicit handler forms, resumption quantities, and completion-carrying control structure;
 * explicit application spines aligned with Pi telescopes;
-* explicit stable places and pure read / move / fill operations over stable subpaths;
+* explicit stable places, scoped place borrows, and pure read / move / fill operations over stable subpaths;
 * surface `projection` calls do not survive as distinct KCore forms; they elaborate to ordinary control flow whose
   leaves use the existing stable-place machinery;
 * explicit `seal` nodes, manifest compile-time members, opaque compile-time members, and package/member projections;
@@ -10225,25 +10226,50 @@ A `var`-bound `Ref` is not itself a `Place`. Surface constructs that admit `var`
 `readRef` to a fresh hidden root, then ordinary `MovePlace` / `FillPlace` on that root, followed by `writeRef` when
 write-back is required.
 
-Borrow introduction, path-sensitive field consumption, record update filling, safe-navigation borrowed-alias
-propagation, and `inout` write-back are defined in terms of these place forms or an observationally equivalent internal
-representation.
+Path-sensitive field consumption, record update filling, safe-navigation borrowed-alias propagation, and `inout`
+write-back are defined in terms of these place forms or an observationally equivalent internal representation.
 
-This subsection does not introduce a distinct KCore borrow term. Borrow introduction remains an elaboration rule that
-produces ordinary explicit borrowed arguments or binders while referring to places.
+#### 17.3.1.2 Scoped borrowing of places
 
-#### 17.3.1.2 Projection lowering
+A conforming implementation MUST behave as if KCore contains a scoped borrow eliminator:
+
+```text
+WithBorrowPlace p as (ρ, x) in e
+```
+
+where:
+
+* `p` is a stable place selecting a value of type `A`;
+* `ρ : Region` is a rigid region variable fresh for the form unless supplied by the elaboration context;
+* `x` is available in `e` as a borrowed alias of `p` under region `ρ`.
+
+Operationally:
+
+* if `p` is rooted at quantity `1`, ownership of the addressed path is suspended for the dynamic extent of `e` and
+  restored on exit;
+* otherwise the borrow is read-only for the dynamic extent of `e`.
+
+Typing and escape:
+
+* The body `e` is checked in a context where `x` is available at borrowed quantity and where `ρ` is in scope.
+* Values whose types mention `ρ` may not escape the scope of the form unless `ρ` was already explicit in the surrounding
+  interface.
+* Exiting the body restores the caller's ownership obligations for the borrowed place.
+
+Surface borrow introduction, borrowed local bindings, borrowed `?.` aliases, and `using`-introduced borrowed bindings
+elaborate through this form or an observationally equivalent internal representation.
+
+#### 17.3.1.3 Projection lowering
 
 A conforming implementation MUST behave as if a fully applied call to a `projection` definition (§6.1.1) does not
 survive as a distinct KCore form.
 
 Instead, after ordinary dependent substitution of actual arguments for formal parameters, the projection body is inlined
 at the use site and elaborated to ordinary KCore control flow whose leaves are stable-place operations or equivalent
-stable-place borrow introductions:
+scoped place borrows:
 
 * in an ordinary non-consuming value-demanding position, each leaf `yield p` elaborates as `ReadPlace p`;
-* in a borrow-demanding position, each leaf `yield p` elaborates as the ordinary borrowed argument or borrowed binding
-  that would have been produced for the stable place `p` at that site;
+* in a borrow-demanding position, each leaf `yield p` elaborates through `WithBorrowPlace p` as defined in §17.3.1.2;
 * under `~`, each leaf `yield p` elaborates through the existing `MovePlace p` / `FillPlace p` rewrite of §8.8.
 
 Different leaves of the same projection call may target stable places rooted in different `place` arguments, provided
@@ -10256,7 +10282,7 @@ the translated leaves above.
 Projection calls therefore add no new runtime reference type and no new KCore place primitive; they are a reusable
 surface abstraction over ordinary control flow plus the existing stable-place machinery.
 
-#### 17.3.1.3 KCore intrinsic compile-time types
+#### 17.3.1.4 KCore intrinsic compile-time types
 
 A conforming implementation MUST behave as if KCore supports ordinary binding, projection, application, sealing, and
 packaging of inhabitants of the intrinsic compile-time types of §5.1.3.
