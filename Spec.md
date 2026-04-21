@@ -1347,6 +1347,21 @@ Kappa is dependently typed with a stratified universe hierarchy.
     * `Type1 : Type2`
     * in general, `Type u : Type (u+1)` at the meta-level.
 
+Intrinsic compile-time types:
+
+```text
+Universe   : Type0
+Quantity   : Type0
+Region     : Type0
+Constraint : Type0
+```
+
+The intrinsic compile-time row and label types `RecRow`, `VarRow`, `EffRow`, `Label`, and `EffLabel` are introduced in
+§5.3.1 and each inhabit `Type0`.
+
+`Type u` is a primitive universe family indexed by `u : Universe`. It is not specified as ordinary first-order function
+application, even though `Universe` itself is a type.
+
 Surface syntax:
 
 * `Type0`, `Type1`, `Type2`, ... denote fixed universe levels.
@@ -1359,8 +1374,8 @@ Surface syntax:
   forall (u : Universe) (a : Type u) (b : Type u). ...
   ```
 
-  In `Type u`, the identifier `u` is a user-bound variable of the built-in sort `Universe`. This is the surface
-  mechanism for forcing multiple occurrences to live in the same universe level.
+  In `Type u`, the identifier `u` is a user-bound variable of the intrinsic compile-time type `Universe`. This is the
+  surface mechanism for forcing multiple occurrences to live in the same universe level.
 * `*` is syntactic sugar for `Type`.
 
 #### 5.1.1 Cumulativity
@@ -1379,34 +1394,38 @@ constraint solving. Occurrences of `Type u` therefore share exactly the same use
 introducing fresh metavariables. If the constraints are unsatisfiable, compilation fails. Unconstrained universe
 metavariables may be generalized at top-level (implementation-defined).
 
-### 5.1.3 Constraints, static classes, and dictionaries
+### 5.1.3 Constraints and dictionaries
 
-In addition to the universe hierarchy `Type0`, `Type1`, ... Kappa has the built-in static classes `Universe`,
-`Quantity`, `Region`, and `Constraint`.
+`Universe`, `Quantity`, `Region`, `Constraint`, `RecRow`, `VarRow`, `EffRow`, `Label`, and `EffLabel` are intrinsic
+compile-time types, not extra meta-level sorts.
 
-The row and label classes `RecRow`, `VarRow`, `EffRow`, `Label`, and `EffLabel` are introduced in §5.3.1.
+Terms of these intrinsic compile-time types may be used in ordinary explicit binders, record fields, package members,
+projections, existential witnesses, and local bindings wherever the surrounding surface form otherwise permits them.
 
-Together with `Type` / `Type u` and quantity-`0` function spaces over those classifiers, these participate in the
-static object layer of §5.1.4.1.
+This section does not by itself add arbitrary new surface constructors or eliminators for raw inhabitants of `Universe`,
+`Quantity`, or `Region`. Surface v0.1 provides only the forms explicitly specified elsewhere. KCore and elaboration,
+however, MAY carry such terms as ordinary compile-time bindable values.
+
+Intended use:
 
 * `Universe` classifies universe levels that may appear in explicit forms such as `Type u`.
-* `Universe` is a valid target for universal quantification and for ordinary explicit binders, subject to the static
-  object rules of §5.1.4.1.
-* In v0.1, the intended surface use of a `Universe` value remains as the argument of `Type`; ordinary arithmetic or
-  generic computation on universe levels is not otherwise specified.
-
-* `Quantity` classifies exact usage intervals and the borrow mode `&`.
-* `Quantity` is a valid target for universal quantification and for ordinary explicit binders, subject to the static
-  object rules of §5.1.4.1.
-* `Quantity` is reserved for ownership and usage accounting only; see §5.1.5.1.
-
+* `Quantity` classifies exact usage intervals and the borrow mode `&`. It remains reserved for ownership and usage
+  accounting only; see §5.1.5.1.
 * `Region` classifies explicit borrow lifetimes that may be named in surface types when a borrow relationship must cross
   an interface boundary.
-* `Region` is a valid target for universal quantification and for ordinary explicit binders, subject to the static
-  object rules of §5.1.4.1.
-
 * `Constraint` classifies constraint descriptors such as `Eq Int`, `Monad IO`, or `ContainsRec r l T`.
-* A term of type `Constraint` is a compile-time descriptor, not coherent evidence for that constraint.
+
+Constraint descriptors and coherent evidence are distinct:
+
+* A trait declaration `trait Tr ... = ...` introduces a trait constructor `Tr` whose fully applied applications are
+  terms of type `Constraint`.
+* A concrete constraint descriptor such as `Eq Int`, `Monad IO`, or `ContainsRec r l T` is not coherent evidence by
+  itself.
+* Concrete constraint descriptors may appear:
+  * in implicit binders `(@x : C)`,
+  * in constraint arrows `C => T`,
+  * in instance heads, and
+  * as arguments to built-ins that abstract over constraints.
 
 Built-in reification:
 
@@ -1414,14 +1433,12 @@ Built-in reification:
 Dict : Constraint -> Type
 ```
 
-`Dict C` is the explicit dictionary type corresponding to the concrete constraint `C`.
+`Dict C` is the explicit dictionary type corresponding to the concrete constraint descriptor `C`.
 
 Usage rules:
 
-* A value of a concrete constraint `C` may only be bound implicitly.
+* A value of a concrete constraint descriptor `C` may only be bound implicitly.
 * An explicit parameter, field, or result may not have concrete type `C`; use `Dict C`.
-* This does not forbid explicit values of type `Constraint` itself, which are ordinary erased static objects under
-  §5.1.4.1.
 * There is an implicit coercion from coherent evidence `ev : C` to `Dict C`.
 * There is no coercion from `Dict C` to `C`.
 * `Dict C` never participates in implicit resolution.
@@ -1430,73 +1447,49 @@ Usage rules:
 * Explicit `Dict C` values are ordinary runtime values unless eliminated by specialization, inlining, or dead-code
   erasure.
 * Implicit evidence may be erased when the implementation proves that it is unused after elaboration.
-* A binder may range over constraints themselves, e.g. `(c : Constraint) -> ...`; this quantifies over constraint
+* A binder may range over `Constraint` itself, e.g. `(c : Constraint) -> ...`; this quantifies over constraint
   descriptors and does not introduce coherent evidence for `c`.
 
 ### 5.1.4 Erasure and elaboration time
 
-`Type` and universe terms are compile-time entities. Kappa does not require runtime type information.
+Kappa distinguishes computational values from compile-time values.
 
-* Runtime erasure is governed by quantities (§5.1.5, §14.4), subject to the special treatment of constraint evidence and
-  `Dict` values in §5.1.3: quantity-0 binders and their corresponding arguments are erased unless elaboration requires
-  retaining evidence to realize trait-member selection.
-* Implementations may provide library mechanisms to reify type information explicitly when needed (e.g. `Dict C`, quoted
-  representations), but there is no implicit runtime reflection.
+Compile-time values are:
 
-#### 5.1.4.1 Static object layer
+* inhabitants of the intrinsic compile-time types `Universe`, `Quantity`, `Region`, `Constraint`, `RecRow`, `VarRow`,
+  `EffRow`, `Label`, and `EffLabel`;
+* universe terms appearing in `Type u`;
+* inhabitants of compile-time function spaces built entirely from such types and from `Type u`.
 
-Kappa has a genuine static object layer. Static objects are compile-time values that may be named, rebound, projected,
-packaged, and returned, but have no implicit runtime representation.
+Compile-time values are ordinary terms for binding, projection, packaging, sealing, opening, and definitional equality,
+but Kappa does not require implicit runtime reflection over them.
 
-A static-object classifier is any of:
+Runtime erasure is governed as follows:
 
-* `Universe`
-* `Quantity`
-* `Region`
-* `Constraint`
-* `RecRow`, `VarRow`, `EffRow`, `Label`, or `EffLabel`
-* `Type` or `Type u`
-* a function type whose binders are all quantity-`0` and whose codomain is again a static-object classifier
+* For computational binders and fields, runtime erasure is governed by quantities (§5.1.5, §14.4), subject to the
+  special treatment of coherent constraint evidence and `Dict` values in §5.1.3.
+* For compile-time binders, fields, arguments, and package members, erasure is by classifier rather than by written
+  quantity: they are compile-time only and are erased unless preserved by an explicit reified runtime carrier such as
+  `Dict C` or another representation type supplied by the implementation or libraries.
+* Implementations may provide library mechanisms to reify type information or other compile-time information explicitly
+  when needed, but there is no implicit runtime reflection.
 
-Examples of static-object classifiers include:
+#### 5.1.4.1 Compile-time bindings and fields
 
-```kappa
-Universe
-Quantity
-Region
-Constraint
-Type
-Type u
-Type -> Type
-RecRow
-Label
-```
+A binder, record field, or package member is compile-time if its annotation elaborates to one of the intrinsic
+compile-time types of §5.1.3, to `Type u`, or to a compile-time function space built from them.
 
-A binder, record field, or package member declared against a static-object classifier is a static binder, static field,
-or static member.
+Compile-time bindings and fields:
 
-Rules:
+* may carry any quantity annotation otherwise admitted by the surrounding grammar;
+* may be named, rebound, projected, packaged, sealed, opened, and returned;
+* participate in ordinary source-level typing, definitional equality, hashing, and interface identity; and
+* are erased according to §§5.1.4 and 14.4 unless preserved by an explicit reified carrier.
 
-* The default quantity of a static binder or static field is `0`.
-* A static binder or static field MUST NOT be declared at any nonzero quantity.
-* Static binders and static fields are erased at runtime under §14.4.
-* Static objects may be passed, returned, projected, sealed, opened, and stored in records exactly as other quantity-`0`
-  compile-time values.
-* Static objects do not participate in borrowing, place movement, `inout`, or any other ownership operation of
-  §§5.1.5-5.1.7.
-* Writing `let y = x` where `x` is static simply binds `y` to the same static object; there is no special prohibition on
-  rebinding static objects.
-* Packaging or rebinding a static object does not discharge region escape. If a static object mentions a fresh anonymous
-  rigid region introduced by a local borrow, the ordinary skolem-escape rule of §5.1.6 still applies.
+Writing `let y = x` where `x` is compile-time simply binds `y` to the same compile-time value.
 
-An ordinary runtime value such as `42 : Int` is not static merely because `Int : Type`. Staticity is determined by the
-declared classifier of the bound thing, not by the fact that all ordinary types themselves live in a universe.
-
-This layer does not by itself add arbitrary computation over all static objects. Operations on universes, quantities,
-regions, rows, labels, and constraints are only those explicitly specified elsewhere.
-
-Programs that need runtime reflection or transport of static information MUST use an explicit reified carrier, such as
-`Dict C` for constraints or an implementation-defined representation type.
+Packaging or rebinding a compile-time value does not discharge region escape. If a compile-time value mentions a fresh
+anonymous rigid region introduced by a local borrow, the ordinary skolem-escape rule of §5.1.6 still applies.
 
 ### 5.1.5 Quantities
 
@@ -1974,8 +1967,8 @@ forall a. T        ==   (@0 a : Type) -> T
 forall (a : S). T  ==   (@0 a : S) -> T
 ```
 
-This includes quantification over the built-in sorts `Quantity` and `Region`, and `Universe`, e.g. `forall (q :
-Quantity). T`, `forall (s : Region). T`, and `forall (u : Universe). T`.
+This includes quantification over the intrinsic compile-time types `Quantity`, `Region`, and `Universe`, e.g.
+`forall (q : Quantity). T`, `forall (s : Region). T`, and `forall (u : Universe). T`.
 
 Examples:
 
