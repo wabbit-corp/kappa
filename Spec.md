@@ -3577,6 +3577,14 @@ Rules:
     those same binders.
 * A `place` binder may be inspected by ordinary pure expressions in the body, but may be yielded only as a place
   expression, not stored or returned as a first-class value.
+* Selector-observation rule:
+  * In selector positions, a `place` binder (or any stable subprojection rooted in that binder) is observed through the
+    scoped borrow primitive of §17.3.1.2 rather than by consuming the selected place.
+  * Concretely, any non-`yield` use of such a place is elaborated as if the implementation had introduced a fresh
+    scoped borrow of that place for the dynamic extent of the containing selector expression.
+  * A consuming use of a `place` binder inside selector code is ill-formed.
+  * Therefore selector code may inspect candidate places in order to decide which place to `yield`, but it may not move
+    from them while making that decision.
 * A projection definition must be fully applied at every use site. Partial application of a projection definition is
   ill-formed.
 
@@ -10425,6 +10433,10 @@ scoped place borrows:
   post-expression path state is joined as specified in §5.1.7.2;
 * in a borrow-demanding position, each leaf `yield p` elaborates through `WithBorrowPlace p` as defined in §17.3.1.2;
 * under `~`, each leaf `yield p` elaborates through the existing `MovePlace p` / `FillPlace p` rewrite of §8.8.
+
+When elaborating selector expressions inside a `projection` body, non-`yield` occurrences of place-rooted terms are
+lowered through `WithBorrowPlace` rather than `ReadPlace`, unless an observationally equivalent internal representation
+is used.
 
 Different leaves of the same projection call may target stable places rooted in different `place` arguments, provided
 each leaf satisfies the projection-definition rules of §6.1.1.
