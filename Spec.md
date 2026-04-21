@@ -10661,6 +10661,7 @@ Introduction kinds are implementation-defined, but MUST distinguish at least:
 * record reordering;
 * place lowering / path restoration;
 * projection lowering;
+* branch-refinement lowering;
 * completion-kernel lowering;
 * exit-action scheduling;
 * safe-navigation or section lowering; and
