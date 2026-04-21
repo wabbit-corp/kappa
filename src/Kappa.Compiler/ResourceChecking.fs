@@ -1,6 +1,7 @@
 namespace Kappa.Compiler
 
 open System
+open Kappa.Compiler.ResourceModel
 
 module ResourceChecking =
     let private linearDropCode = "E_QTT_LINEAR_DROP"
@@ -11,63 +12,10 @@ module ResourceChecking =
         { Diagnostics: Diagnostic list
           OwnershipFactsByFile: Map<string, OwnershipFactSet> }
 
-    type private FunctionSignature =
-        { Name: string
-          ParameterQuantities: Quantity option list }
-
-    type private ResourcePlace =
-        { Root: string
-          Path: string list }
-
-    type private BorrowRegion =
-        { Id: string
-          ExplicitName: string option
-          OwnerScope: string }
-
-    type private ResourceBinding =
-        { Id: string
-          Name: string
-          DeclaredQuantity: Quantity option
-          Place: ResourcePlace
-          BorrowRegion: BorrowRegion option
-          CapturedRegions: Set<string>
-          CapturedBindingOrigins: SourceLocation list
-          UseMinimum: int
-          UseMaximum: int
-          CheckLinearDrop: bool
-          ClosureFactId: string option
-          Origin: SourceLocation option
-          FirstConsumeOrigin: SourceLocation option }
-
-    type private CheckState =
-        { ScopeId: string
-          Bindings: Map<string, ResourceBinding>
-          Diagnostics: Diagnostic list
-          Events: OwnershipUseFact list
-          BorrowRegions: OwnershipBorrowRegionFact list
-          UsingScopes: OwnershipUsingScopeFact list
-          Closures: OwnershipClosureFact list
-          DeferredFacts: string list
-          NextBindingId: int
-          NextEventId: int
-          NextRegionId: int
-          NextUsingScopeId: int
-          NextClosureId: int }
+    type private CheckState = ResourceContext
 
     let private emptyState scopeId =
-        { ScopeId = scopeId
-          Bindings = Map.empty
-          Diagnostics = []
-          Events = []
-          BorrowRegions = []
-          UsingScopes = []
-          Closures = []
-          DeferredFacts = []
-          NextBindingId = 0
-          NextEventId = 0
-          NextRegionId = 0
-          NextUsingScopeId = 0
-          NextClosureId = 0 }
+        ResourceModel.ResourceContext.empty scopeId
 
     let private diagnosticLocation (document: ParsedDocument) =
         document.Source.GetLocation(TextSpan.FromBounds(0, 0))

@@ -17,6 +17,7 @@
     <Compile Include="Stdlib.fs" />
     <Compile Include="TypeSignatures.fs" />
     <Compile Include="TraitRuntime.fs" />
+    <Compile Include="ResourceModel.fs" />
     <Compile Include="ResourceChecking.fs" />
     <Compile Include="BackendTypes.fs" />
     <Compile Include="CheckpointVerification.fs" />
