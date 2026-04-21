@@ -1463,7 +1463,7 @@ Compile-time values are:
 * inhabitants of the intrinsic compile-time types `Universe`, `Quantity`, `Region`, `Constraint`, `RecRow`, `VarRow`,
   `EffRow`, `Label`, and `EffLabel`;
 * universe terms appearing in `Type u`;
-* inhabitants of the elaboration-time reflection types `CoreCtx`, `Symbol`, and `Core Γ t` of §5.8.5;
+* inhabitants of the elaboration-time reflection types `CoreCtx`, `Symbol`, `Core Γ t`, and `CoreEq x y` of §5.8.5;
 * inhabitants of compile-time function spaces built entirely from such types and from `Type u`.
 
 Compile-time values are ordinary terms for binding, projection, packaging, sealing, opening, and definitional equality,
@@ -3237,6 +3237,9 @@ Outside quoted blocks, `$(s)` is an elaboration-time splice in term and type pos
 * In a type position, `$(s)` requires `s : Syntax Type`.
 * `$(s)` consumes `Syntax`, not `Core` or `Code`. Staged code is executed only via `runCode` on `ClosedCode` (§5.9.4).
   Semantic reflection values of §5.8.5 must first be reified back to `Syntax` before they can be spliced.
+* `$(...)` and `reifyCore` are the only normative re-entry points from elaboration-time reflection to object-language
+  code. Implementations MUST NOT provide a generic splice or coercion from arbitrary compile-time values, rows, labels,
+  constraints, lexical contexts, or exact-equality witnesses directly into ordinary runtime terms or types.
 * `$(s)` is the only elaboration-time splice form for `Syntax`.
 * `!` remains reserved for the monadic splice form inside `do` blocks (§5.7.1) and is not a synonym for `$(...)`.
 
@@ -3281,10 +3284,16 @@ Built-in elaboration-time reflection types:
 ```kappa
 CoreCtx : Type
 Core    : CoreCtx -> Type -> Type
+CoreEq  :
+    forall (@0 Γ : CoreCtx) (@0 t : Type).
+    Core Γ t -> Core Γ t -> Type
 Symbol  : Type
 ```
 
 `Core Γ t` denotes an elaborated, well-scoped core term of object-language type `t` in lexical context `Γ`.
+
+`CoreEq x y` denotes macro-level exact equality between reflected core terms `x` and `y` of the same object-language
+type in the same lexical context.
 
 `Core` applies uniformly to reflected terms, reflected types, reflected rows, reflected labels, and reflected
 constraints. For example:
@@ -3294,8 +3303,8 @@ constraints. For example:
 * `Core Γ RecRow`, `Core Γ VarRow`, and `Core Γ EffRow` are reflected row expressions;
 * `Core Γ Constraint` is a reflected constraint expression.
 
-`CoreCtx`, `Core Γ t`, and `Symbol` are compile-time reflection types. Values of these types are elaboration-time only,
-are erased, and MUST NOT be required at runtime or by `runCode`.
+`CoreCtx`, `Core Γ t`, `CoreEq x y`, and `Symbol` are compile-time reflection types. Values of these types are
+elaboration-time only, are erased, and MUST NOT be required at runtime or by `runCode`.
 
 Implementations MUST provide elaboration-time operations equivalent to:
 
@@ -3303,6 +3312,10 @@ Implementations MUST provide elaboration-time operations equivalent to:
 asCore :
     forall (@0 t : Type).
     Syntax t -> exists (Γ : CoreCtx). Core Γ t
+
+asCoreIn :
+    forall (@0 Γ : CoreCtx) (@0 t : Type).
+    Syntax t -> Core Γ t
 
 reifyCore :
     forall (@0 Γ : CoreCtx) (@0 t : Type).
@@ -3320,9 +3333,32 @@ normalize :
     forall (@0 Γ : CoreCtx) (@0 t : Type).
     Core Γ t -> Core Γ t
 
+proveDefEq :
+    forall (@0 Γ : CoreCtx) (@0 t : Type).
+    (x : Core Γ t) -> (y : Core Γ t) -> CoreEq x y
+
 defEq :
     forall (@0 Γ : CoreCtx) (@0 a : Type) (@0 b : Type).
     Core Γ a -> Core Γ b -> Bool
+
+reflCoreEq :
+    forall (@0 Γ : CoreCtx) (@0 t : Type) (@0 x : Core Γ t).
+    CoreEq x x
+
+symCoreEq :
+    forall (@0 Γ : CoreCtx) (@0 t : Type) (@0 x : Core Γ t) (@0 y : Core Γ t).
+    CoreEq x y -> CoreEq y x
+
+transCoreEq :
+    forall (@0 Γ : CoreCtx) (@0 t : Type)
+           (@0 x : Core Γ t) (@0 y : Core Γ t) (@0 z : Core Γ t).
+    CoreEq x y -> CoreEq y z -> CoreEq x z
+
+substCoreEq :
+    forall (@0 Γ : CoreCtx) (@0 t : Type)
+           (@0 P : Core Γ t -> Type)
+           (@0 x : Core Γ t) (@0 y : Core Γ t).
+    CoreEq x y -> P x -> P y
 
 headSymbol :
     forall (@0 Γ : CoreCtx) (@0 t : Type).
@@ -3336,28 +3372,38 @@ Normative meaning:
 
 * `asCore` elaborates and typechecks its input using the ordinary elaborator and returns the resulting lexical context
   together with the elaborated core term.
+* `asCoreIn` elaborates and typechecks its input using exactly the supplied lexical context `Γ`. If the syntax value is
+  ill-scoped in `Γ`, or if ordinary elaboration at that source site would require a different lexical context,
+  compilation fails with an elaboration-time error.
 * `reifyCore` reifies a core term back to hygienic `Syntax`. Consequently `$(reifyCore e)` is the canonical way to
   splice the result of semantic reflection.
-* `inferType`, `whnf`, `normalize`, and `defEq` use the same elaboration, normalization, and definitional-equality
-  machinery that ordinary Kappa elaboration would use at that source site.
+* `inferType`, `whnf`, `normalize`, `defEq`, and `proveDefEq` use the same elaboration, normalization, and
+  definitional-equality machinery that ordinary Kappa elaboration would use at that source site.
+* `proveDefEq x y` succeeds iff the elaborator judges the reflected core terms `x` and `y` definitionally equal under
+  the ordinary reduction rules and the current visibility / opacity environment. Otherwise it is an elaboration-time
+  error.
+* `defEq` is the Boolean convenience query. For reflected terms of the same object-language type and lexical context,
+  `defEq x y = True` iff `proveDefEq x y` would succeed.
+* `reflCoreEq`, `symCoreEq`, `transCoreEq`, and `substCoreEq` are the witness-level exact-equality operations for
+  semantic reflection.
+* `substCoreEq reflCoreEq v` reduces to `v`.
 * `headSymbol` returns `Some s` only when the weak-head-normal form of the given core term has a global declaration
   head. It returns `None` for variables, binders, locals, literals, and other non-global heads.
 * `sameSymbol` compares resolved declaration identity, not spelling. Module aliases, re-export paths, import style, and
   local qualification do not affect symbol identity.
 
-Definitional equality for macros:
+Exact equality for macros:
 
-* `defEq` is the macro-level exact-equality query.
-* It is distinct from propositional equality (`=`), `Equiv`, and any user-defined comparison function.
-* `defEq x y = True` iff the elaborator judges the two reflected core terms definitionally equal under the ordinary
-  reduction rules and the current visibility / opacity environment.
-* `defEq`, `whnf`, and `normalize` MUST obey the current module's ordinary visibility, opacity, `unhide`, and `clarify`
-  rules. In particular, an opaque definition remains opaque unless ordinary elaboration at that source site could unfold
-  it.
+* `CoreEq` and `proveDefEq` are the witness-bearing macro-level exact-equality facilities.
+* They are distinct from propositional equality (`=`), `Equiv`, and any user-defined comparison function.
+* `defEq`, `proveDefEq`, `whnf`, `normalize`, and `substCoreEq` MUST obey the current module's ordinary visibility,
+  opacity, `unhide`, and `clarify` rules. In particular, an opaque definition remains opaque unless ordinary elaboration
+  at that source site could unfold it.
 
 Shared-context discipline:
 
 * The context witness returned by `asCore` is the lexical context of the reflected term.
+* `asCoreIn` allows additional syntax values to be elaborated against an already-known lexical context witness.
 * Semantic reflection operations MUST preserve scope. No API operation may construct an ill-scoped `Core Γ t`.
 * Operations that inspect or introduce binders MUST make the induced context extension explicit in their types or in the
   returned existential package.
@@ -10670,7 +10716,7 @@ Rules:
 
 * `Universe`, `Quantity`, `Region`, `Constraint`, `RecRow`, `VarRow`, `EffRow`, `Label`, and `EffLabel` are ordinary
   compile-time types in KCore.
-* `CoreCtx`, `Symbol`, and `Core Γ t` are ordinary elaboration-time-only compile-time types in KCore.
+* `CoreCtx`, `Symbol`, `Core Γ t`, and `CoreEq x y` are ordinary elaboration-time-only compile-time types in KCore.
 * `Type u` is a primitive universe family indexed by `u : Universe`; it is not required to be represented as ordinary
   first-order application.
 * `Core Γ t` values are well-scoped and well-typed by construction. Public reflection operations MUST preserve that
