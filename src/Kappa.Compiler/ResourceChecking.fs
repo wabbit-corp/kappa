@@ -755,25 +755,82 @@ module ResourceChecking =
         | Some segments -> [ simple; $"{SyntaxFacts.moduleNameToText segments}.{simple}" ]
         | None -> [ simple ]
 
+    let private splitTopLevelArrows (tokens: Token list) =
+        let rec loop depth current remaining segments =
+            match remaining with
+            | [] ->
+                List.rev ((List.rev current) :: segments)
+            | token :: tail when token.Kind = LeftParen ->
+                loop (depth + 1) (token :: current) tail segments
+            | token :: tail when token.Kind = RightParen ->
+                loop (max 0 (depth - 1)) (token :: current) tail segments
+            | token :: tail when token.Kind = Arrow && depth = 0 ->
+                loop depth [] tail ((List.rev current) :: segments)
+            | token :: tail ->
+                loop depth (token :: current) tail segments
+
+        loop 0 [] tokens []
+
+    let private quantityFromSignatureSegment (tokens: Token list) =
+        let significant =
+            tokens
+            |> List.filter (fun token ->
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent
+                | EndOfFile -> false
+                | _ -> true)
+
+        if significant |> List.exists (fun token -> token.Text = "&") then
+            Some(QuantityBorrow None)
+        else
+            match significant with
+            | token :: _ when token.Text = "1" -> Some QuantityOne
+            | token :: _ when token.Text = "0" -> Some QuantityZero
+            | token :: _ when token.Text = "omega" -> Some QuantityOmega
+            | _ -> None
+
+    let private signatureParameterQuantities tokens =
+        let segments =
+            splitTopLevelArrows tokens
+            |> List.filter (List.isEmpty >> not)
+
+        if List.length segments <= 1 then
+            []
+        else
+            segments
+            |> List.take (segments.Length - 1)
+            |> List.map quantityFromSignatureSegment
+
+    let private signatureEntries (document: ParsedDocument) name quantities =
+        signatureName document.ModuleName name
+        |> List.map (fun signatureName ->
+            signatureName,
+            { Name = signatureName
+              ParameterQuantities = quantities })
+
     let private collectSignatures (documents: ParsedDocument list) =
         documents
         |> List.collect (fun document ->
             document.Syntax.Declarations
             |> List.choose (function
+                | SignatureDeclaration declaration ->
+                    Some(signatureEntries document declaration.Name (signatureParameterQuantities declaration.TypeTokens))
+                | ExpectDeclarationNode (ExpectTermDeclaration declaration) ->
+                    Some(signatureEntries document declaration.Name (signatureParameterQuantities declaration.TypeTokens))
                 | LetDeclaration definition ->
                     definition.Name
                     |> Option.map (fun name ->
-                        signatureName document.ModuleName name
-                        |> List.map (fun signatureName ->
-                            signatureName,
-                            { Name = signatureName
-                              ParameterQuantities =
-                                definition.Parameters
-                                |> List.map (fun (parameter: Parameter) ->
-                                    if parameter.IsInout then
-                                        Some QuantityOne
-                                    else
-                                        parameter.Quantity) }))
+                        signatureEntries
+                            document
+                            name
+                            (definition.Parameters
+                             |> List.map (fun (parameter: Parameter) ->
+                                 if parameter.IsInout then
+                                     Some QuantityOne
+                                 else
+                                     parameter.Quantity)))
                 | _ -> None)
             |> List.concat)
         |> Map.ofList

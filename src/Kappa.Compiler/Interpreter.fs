@@ -149,30 +149,35 @@ module Interpreter =
                 None
 
         let tryCreateIntrinsicTermValue moduleName name =
-            if not (String.Equals(moduleName, Stdlib.PreludeModuleText, StringComparison.Ordinal)) then
+            let isPreludeModule =
+                String.Equals(moduleName, Stdlib.PreludeModuleText, StringComparison.Ordinal)
+
+            match name with
+            | "True" when isPreludeModule -> Some(BooleanValue true)
+            | "False" when isPreludeModule -> Some(BooleanValue false)
+            | "pure"
+            | ">>="
+            | ">>"
+            | "not"
+            | "and"
+            | "or"
+            | "negate"
+            | "println"
+            | "print"
+            | "printInt"
+            | "printString"
+            | "primitiveIntToString"
+            | "newRef"
+            | "readRef"
+            | "writeRef" when isPreludeModule ->
+                Some(BuiltinFunctionValue { Name = name; Arguments = [] })
+            | "openFile"
+            | "primitiveReadData"
+            | "readData"
+            | "primitiveCloseFile" ->
+                Some(BuiltinFunctionValue { Name = name; Arguments = [] })
+            | _ ->
                 None
-            else
-                match name with
-                | "True" -> Some(BooleanValue true)
-                | "False" -> Some(BooleanValue false)
-                | "pure"
-                | ">>="
-                | ">>"
-                | "not"
-                | "and"
-                | "or"
-                | "negate"
-                | "println"
-                | "print"
-                | "printInt"
-                | "printString"
-                | "primitiveIntToString"
-                | "newRef"
-                | "readRef"
-                | "writeRef" ->
-                    Some(BuiltinFunctionValue { Name = name; Arguments = [] })
-                | _ ->
-                    None
 
         let constructorValue constructor =
             if constructor.Arity = 0 then
@@ -736,6 +741,26 @@ module Interpreter =
                 error $"Intrinsic 'primitiveIntToString' expects an Int, but got {RuntimeValue.format value}."
             | "primitiveIntToString", _ ->
                 error "Intrinsic 'primitiveIntToString' received too many arguments."
+            | "openFile", [ StringValue value ] ->
+                ok (Some(IOActionValue(fun () -> ok (StringValue($"<file:{value}>")))))
+            | "openFile", arguments when List.length arguments < 1 ->
+                ok None
+            | "openFile", [ value ] ->
+                error $"Intrinsic 'openFile' expects a String, but got {RuntimeValue.format value}."
+            | "openFile", _ ->
+                error "Intrinsic 'openFile' received too many arguments."
+            | ("primitiveReadData" | "readData"), [ _ ] ->
+                ok (Some(IOActionValue(fun () -> ok (StringValue "chunk"))))
+            | ("primitiveReadData" | "readData"), arguments when List.length arguments < 1 ->
+                ok None
+            | ("primitiveReadData" | "readData"), _ ->
+                error "Intrinsic 'readData' received too many arguments."
+            | "primitiveCloseFile", [ _ ] ->
+                toUnitIoAction (fun () -> output.Write("closed"))
+            | "primitiveCloseFile", arguments when List.length arguments < 1 ->
+                ok None
+            | "primitiveCloseFile", _ ->
+                error "Intrinsic 'primitiveCloseFile' received too many arguments."
             | "newRef", [ value ] ->
                 ok (Some(IOActionValue(fun () -> ok (RefCellValue { Value = value }))))
             | "newRef", arguments when List.length arguments < 1 ->
@@ -900,6 +925,8 @@ module Interpreter =
                 let currentModule = scope.Context.Modules[scope.CurrentModule]
 
                 if currentModule.Definitions.ContainsKey(name) then
+                    forceBinding currentModule name
+                elif currentModule.IntrinsicTerms.Contains(name) then
                     forceBinding currentModule name
                 elif currentModule.Constructors.ContainsKey(name) then
                     forceBinding currentModule name

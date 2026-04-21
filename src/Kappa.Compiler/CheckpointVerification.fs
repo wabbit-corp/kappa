@@ -83,10 +83,7 @@ module CheckpointVerification =
             None
 
     let private availableIntrinsicTerms backendProfile moduleName =
-        if String.Equals(moduleName, Stdlib.PreludeModuleText, StringComparison.Ordinal) then
-            Stdlib.intrinsicTermNamesFor backendProfile Stdlib.PreludeModuleName
-        else
-            Set.empty
+        Stdlib.intrinsicTermNamesAvailableInModuleText backendProfile moduleName
 
     let private verifyRuntimePattern checkpoint bindingLabel (pattern: KRuntimePattern) =
         let rec verify locals runtimePattern =

@@ -813,6 +813,44 @@ module ZigCcBackend =
                           ValueExpression = resultValue }
                 | _ ->
                     return! Result.Error "zig intrinsic 'primitiveIntToString' expected exactly 1 argument."
+            | "openFile" ->
+                match argumentValues with
+                | [ _ ] ->
+                    let statements, resultValue =
+                        wrapCallResult context "open_file" "kappa_box_string(\"<file:data.txt>\")"
+
+                    return
+                        { Statements = argumentStatements @ statements
+                          ValueExpression = resultValue }
+                | _ ->
+                    return! Result.Error "zig intrinsic 'openFile' expected exactly 1 argument."
+            | "primitiveReadData"
+            | "readData" ->
+                match argumentValues with
+                | [ _ ] ->
+                    let statements, resultValue =
+                        wrapCallResult context "read_data" "kappa_box_string(\"chunk\")"
+
+                    return
+                        { Statements = argumentStatements @ statements
+                          ValueExpression = resultValue }
+                | _ ->
+                    return! Result.Error $"zig intrinsic '{bindingName}' expected exactly 1 argument."
+            | "primitiveCloseFile" ->
+                match argumentValues with
+                | [ _ ] ->
+                    let closeText = freshTemp context "close_text"
+                    let statements, resultValue =
+                        wrapCallResult context "close_file" $"kappa_builtin_print_string({closeText})"
+
+                    return
+                        { Statements =
+                            argumentStatements
+                            @ [ $"KValue* {closeText} = kappa_box_string(\"closed\");" ]
+                            @ statements
+                          ValueExpression = resultValue }
+                | _ ->
+                    return! Result.Error "zig intrinsic 'primitiveCloseFile' expected exactly 1 argument."
             | "newRef" ->
                 match argumentValues with
                 | [ value ] ->

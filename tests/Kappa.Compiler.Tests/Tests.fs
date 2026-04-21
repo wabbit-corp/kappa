@@ -243,7 +243,7 @@ let ``backend profile aliases normalize to the effective backend identity`` () =
             ]
 
     Assert.Equal("zig", workspace.BackendProfile)
-    Assert.Equal("bootstrap-prelude-v1", workspace.BackendIntrinsicIdentity)
+    Assert.Equal("bootstrap-prelude-v2", workspace.BackendIntrinsicIdentity)
 
 [<Fact>]
 let ``bundled bootstrap prelude exposes the current compiler contract`` () =

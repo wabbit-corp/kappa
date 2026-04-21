@@ -1445,6 +1445,10 @@ module Compilation =
         | "printInt"
         | "printString"
         | "primitiveIntToString"
+        | "openFile"
+        | "primitiveReadData"
+        | "readData"
+        | "primitiveCloseFile"
         | "newRef"
         | "readRef" ->
             1
@@ -1487,6 +1491,11 @@ module Compilation =
             Some BackendRepBoolean
         | "primitiveIntToString" ->
             Some BackendRepString
+        | "openFile"
+        | "primitiveReadData"
+        | "readData"
+        | "primitiveCloseFile" ->
+            Some BackendRepIOAction
         | "print"
         | "println"
         | "printInt"
@@ -1538,6 +1547,13 @@ module Compilation =
             Some BackendRepUnit
         | "primitiveIntToString" ->
             Some BackendRepString
+        | "openFile" ->
+            Some(backendOpaqueRepresentation (Some "File"))
+        | "primitiveReadData"
+        | "readData" ->
+            Some BackendRepString
+        | "primitiveCloseFile" ->
+            Some BackendRepUnit
         | "newRef" ->
             Some(backendOpaqueRepresentation (Some "Ref"))
         | "readRef" ->
@@ -1591,6 +1607,10 @@ module Compilation =
         | KCoreApply(KCoreName [ "println" ], _)
         | KCoreApply(KCoreName [ "printInt" ], _)
         | KCoreApply(KCoreName [ "printString" ], _)
+        | KCoreApply(KCoreName [ "openFile" ], _)
+        | KCoreApply(KCoreName [ "primitiveReadData" ], _)
+        | KCoreApply(KCoreName [ "readData" ], _)
+        | KCoreApply(KCoreName [ "primitiveCloseFile" ], _)
         | KCoreApply(KCoreName [ "newRef" ], _)
         | KCoreApply(KCoreName [ "readRef" ], _)
         | KCoreApply(KCoreName [ "writeRef" ], _) ->
@@ -2050,6 +2070,12 @@ module Compilation =
                     Some BackendRepUnit
                 | "primitiveIntToString", _ ->
                     Some BackendRepString
+                | "openFile", _ ->
+                    Some(backendOpaqueRepresentation (Some "File"))
+                | ("primitiveReadData" | "readData"), _ ->
+                    Some BackendRepString
+                | "primitiveCloseFile", _ ->
+                    Some BackendRepUnit
                 | "newRef", [ elementRepresentation ] ->
                     Some(BackendRepRef elementRepresentation)
                 | "readRef", [ BackendRepRef elementRepresentation ] ->

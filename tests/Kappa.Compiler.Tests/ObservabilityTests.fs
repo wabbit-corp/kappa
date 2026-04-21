@@ -70,7 +70,7 @@ let ``analysis session records effective build inputs for query identity`` () =
     Assert.Equal(workspace.SourceRoot, session.SourceRoot)
     Assert.Equal(workspace.BuildConfigurationIdentity, session.BuildConfigurationIdentity)
     Assert.Equal("dotnet", session.BackendProfile)
-    Assert.Equal("bootstrap-prelude-v1", session.BackendIntrinsicSet)
+    Assert.Equal("bootstrap-prelude-v2", session.BackendIntrinsicSet)
     Assert.Equal("managed", session.DeploymentMode)
     Assert.Contains("backendProfile=dotnet", session.Identity)
     Assert.Contains("deploymentMode=managed", session.Identity)
@@ -128,7 +128,7 @@ let ``query plan records stable query kinds checkpoints and dependencies`` () =
             Assert.False(String.IsNullOrWhiteSpace(query.InputKey))
             Assert.False(String.IsNullOrWhiteSpace(query.OutputCheckpoint))
             Assert.Equal("zig", query.BackendProfile)
-            Assert.Equal("bootstrap-prelude-v1", query.BackendIntrinsicSet)
+            Assert.Equal("bootstrap-prelude-v2", query.BackendIntrinsicSet)
     )
 
 [<Fact>]
@@ -167,7 +167,7 @@ let ``compiler fingerprints and incremental units expose dependency inputs`` () 
 
     let backendFingerprint = mainFingerprint BackendFingerprint
     Assert.Equal("zig", backendFingerprint.BackendProfile)
-    Assert.Equal("bootstrap-prelude-v1", backendFingerprint.BackendIntrinsicSet)
+    Assert.Equal("bootstrap-prelude-v2", backendFingerprint.BackendIntrinsicSet)
     Assert.Contains(workspace.BuildConfigurationIdentity, backendFingerprint.Identity)
 
     let units = Compilation.incrementalUnits workspace
@@ -947,9 +947,9 @@ let ``workspace and stage dumps expose backend intrinsic identity`` () =
                 |> String.concat "\n"
             ]
 
-    Assert.Equal("bootstrap-prelude-v1", supportedWorkspace.BackendIntrinsicIdentity)
+    Assert.Equal("bootstrap-prelude-v2", supportedWorkspace.BackendIntrinsicIdentity)
     Assert.Contains("backendProfile=interpreter", supportedWorkspace.BuildConfigurationIdentity)
-    Assert.Contains("backendIntrinsicSet=bootstrap-prelude-v1", supportedWorkspace.BuildConfigurationIdentity)
+    Assert.Contains("backendIntrinsicSet=bootstrap-prelude-v2", supportedWorkspace.BuildConfigurationIdentity)
 
     let supportedJson =
         match Compilation.dumpStage supportedWorkspace "KCore" StageDumpFormat.Json with
@@ -957,8 +957,8 @@ let ``workspace and stage dumps expose backend intrinsic identity`` () =
         | Result.Error message -> failwith message
 
     Assert.Contains("\"backendProfile\": \"interpreter\"", supportedJson)
-    Assert.Contains("\"backendIntrinsicSet\": \"bootstrap-prelude-v1\"", supportedJson)
-    Assert.Contains("\"identity\": \"packageMode=true;backendProfile=interpreter;backendIntrinsicSet=bootstrap-prelude-v1", supportedJson)
+    Assert.Contains("\"backendIntrinsicSet\": \"bootstrap-prelude-v2\"", supportedJson)
+    Assert.Contains("\"identity\": \"packageMode=true;backendProfile=interpreter;backendIntrinsicSet=bootstrap-prelude-v2", supportedJson)
 
     let unsupportedWorkspace =
         compileInMemoryWorkspaceWithBackend

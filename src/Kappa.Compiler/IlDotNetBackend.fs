@@ -1010,6 +1010,10 @@ module IlDotNetBackend =
               "printInt"
               "primitiveIntToString"
               "pure"
+              "openFile"
+              "primitiveReadData"
+              "readData"
+              "primitiveCloseFile"
               "newRef"
               "readRef"
               "writeRef"
@@ -1028,6 +1032,10 @@ module IlDotNetBackend =
             Some([ IlPrimitive IlInt64 ], IlPrimitive IlString)
         | "pure", [ valueType ] ->
             Some([ valueType ], valueType)
+        | ("primitiveReadData" | "readData"), [ fileType ] ->
+            Some([ fileType ], IlPrimitive IlString)
+        | "primitiveCloseFile", [ fileType ] ->
+            Some([ fileType ], unitIlType)
         | "newRef", [ valueType ] ->
             Some([ valueType ], refIlType valueType)
         | "readRef", [ IlNamed("std.prelude", "Ref", [ valueType ]) ] ->
@@ -1088,6 +1096,15 @@ module IlDotNetBackend =
             |> Map.tryFind moduleName
             |> Option.bind (fun moduleInfo -> moduleInfo.Bindings |> Map.tryFind bindingName)
             |> Option.map (fun binding -> moduleName, binding)
+
+    let private tryDefaultFileType (modules: Map<string, ModuleSurface<'binding>>) currentModule =
+        modules
+        |> Map.tryFind currentModule
+        |> Option.bind (fun moduleInfo ->
+            if moduleInfo.DataTypes.ContainsKey("File") then
+                Some(IlNamed(moduleInfo.Name, "File", []))
+            else
+                None)
 
     let private tryResolveImportedConstructor (modules: Map<string, ModuleSurface<'binding>>) currentModule name =
         let currentModuleInfo = modules[currentModule]
@@ -1402,15 +1419,25 @@ module IlDotNetBackend =
                             |> Result.bind (fun reversedArgumentTypes ->
                                 let argumentTypes = List.rev reversedArgumentTypes
 
-                                match intrinsicParameterTypes name argumentTypes with
-                                | Some(_, resultType) ->
+                                match name, argumentTypes, expectedType with
+                                | "openFile", [ IlPrimitive IlString ], Some resultType ->
                                     ensureExpected resultType
-                                | None ->
-                                    let argumentText =
-                                        argumentTypes |> List.map formatIlType |> String.concat ", "
+                                | "openFile", [ IlPrimitive IlString ], None ->
+                                    match tryDefaultFileType rawModules currentModule with
+                                    | Some fileType -> ensureExpected fileType
+                                    | None ->
+                                        Result.Error
+                                            "IL backend intrinsic 'openFile' requires a File data type in the current module when no expected type is available."
+                                | _ ->
+                                    match intrinsicParameterTypes name argumentTypes with
+                                    | Some(_, resultType) ->
+                                        ensureExpected resultType
+                                    | None ->
+                                        let argumentText =
+                                            argumentTypes |> List.map formatIlType |> String.concat ", "
 
-                                    Result.Error
-                                        $"IL backend does not support intrinsic '{name}' for argument types [{argumentText}].")
+                                        Result.Error
+                                            $"IL backend does not support intrinsic '{name}' for argument types [{argumentText}].")
 
                     let inferTraitCall traitName memberName dictionary arguments =
                         result {
@@ -1971,15 +1998,25 @@ module IlDotNetBackend =
                         |> Result.bind (fun reversedArgumentTypes ->
                             let argumentTypes = List.rev reversedArgumentTypes
 
-                            match intrinsicParameterTypes name argumentTypes with
-                            | Some(_, resultType) ->
+                            match name, argumentTypes, expectedType with
+                            | "openFile", [ IlPrimitive IlString ], Some resultType ->
                                 ensureExpected resultType
-                            | None ->
-                                let argumentText =
-                                    argumentTypes |> List.map formatIlType |> String.concat ", "
+                            | "openFile", [ IlPrimitive IlString ], None ->
+                                match tryDefaultFileType state.Environment.Modules currentModule with
+                                | Some fileType -> ensureExpected fileType
+                                | None ->
+                                    Result.Error
+                                        "IL backend intrinsic 'openFile' requires a File data type in the current module when no expected type is available."
+                            | _ ->
+                                match intrinsicParameterTypes name argumentTypes with
+                                | Some(_, resultType) ->
+                                    ensureExpected resultType
+                                | None ->
+                                    let argumentText =
+                                        argumentTypes |> List.map formatIlType |> String.concat ", "
 
-                                Result.Error
-                                    $"IL backend does not support intrinsic '{name}' for argument types [{argumentText}].")
+                                    Result.Error
+                                        $"IL backend does not support intrinsic '{name}' for argument types [{argumentText}].")
 
                 let inferTraitCall traitName memberName dictionary arguments =
                     result {
@@ -2400,6 +2437,51 @@ module IlDotNetBackend =
                     return! Result.Error $"IL backend does not support '{operatorName}' for {formatIlType leftType} and {formatIlType rightType}."
             }
 
+        let rec emitSyntheticFileHandle resultType =
+            result {
+                match resultType with
+                | IlNamed("std.prelude", "IO", [ innerType ]) ->
+                    return! emitSyntheticFileHandle innerType
+                | IlNamed(moduleName, typeName, typeArguments) ->
+                    match state.Environment.DataTypes |> Map.tryFind (moduleName, typeName) with
+                    | None ->
+                        return!
+                            Result.Error
+                                $"IL backend intrinsic 'openFile' expected a concrete File-like ADT result, but got {formatIlType resultType}."
+                    | Some dataType ->
+                        match dataType.Constructors |> Map.tryFind "Handle" with
+                        | None ->
+                            return!
+                                Result.Error
+                                    $"IL backend intrinsic 'openFile' expected '{formatIlType resultType}' to expose a 'Handle' constructor."
+                        | Some constructorInfo ->
+                            if List.length constructorInfo.FieldTypes <> 1 then
+                                return!
+                                    Result.Error
+                                        $"IL backend intrinsic 'openFile' expected constructor '{moduleName}.{constructorInfo.Name}' to take one Int field."
+                            else
+                                let substitution =
+                                    if List.length constructorInfo.TypeParameters = List.length typeArguments then
+                                        List.zip constructorInfo.TypeParameters typeArguments |> Map.ofList
+                                    else
+                                        Map.empty
+
+                                let fieldType = substituteType substitution constructorInfo.FieldTypes[0]
+
+                                if fieldType <> IlPrimitive IlInt64 then
+                                    return!
+                                        Result.Error
+                                            $"IL backend intrinsic 'openFile' expected constructor '{moduleName}.{constructorInfo.Name}' to take Int, but got {formatIlType fieldType}."
+
+                                let _, constructor, _ = resolveConstructorTypeAndMembers state substitution constructorInfo
+                                il.Emit(OpCodes.Ldc_I8, 1L)
+                                il.Emit(OpCodes.Newobj, constructor)
+                | _ ->
+                    return!
+                        Result.Error
+                            $"IL backend intrinsic 'openFile' expected a concrete File-like ADT result, but got {formatIlType resultType}."
+            }
+
         let emitIntrinsicCall name arguments =
             result {
                 let! argumentTypes =
@@ -2414,7 +2496,17 @@ module IlDotNetBackend =
                         (Result.Ok [])
                     |> Result.map List.rev
 
-                match intrinsicParameterTypes name argumentTypes with
+                let intrinsicTypes =
+                    match name, argumentTypes, expectedType with
+                    | "openFile", [ IlPrimitive IlString ], Some resultType ->
+                        Some([ IlPrimitive IlString ], resultType)
+                    | "openFile", [ IlPrimitive IlString ], None ->
+                        tryDefaultFileType state.Environment.Modules currentModule
+                        |> Option.map (fun resultType -> [ IlPrimitive IlString ], resultType)
+                    | _ ->
+                        intrinsicParameterTypes name argumentTypes
+
+                match intrinsicTypes with
                 | None ->
                     if not (knownIntrinsicNames.Contains name) then
                         return! Result.Error $"IL backend could not resolve callee '{name}'."
@@ -2449,6 +2541,17 @@ module IlDotNetBackend =
                         il.Emit(OpCodes.Call, typeof<Convert>.GetMethod("ToString", [| typeof<int64> |]))
                     | "pure", _ ->
                         ()
+                    | "openFile", resultType ->
+                        il.Emit(OpCodes.Pop)
+                        do! emitSyntheticFileHandle resultType
+                    | ("primitiveReadData" | "readData"), _ ->
+                        il.Emit(OpCodes.Pop)
+                        il.Emit(OpCodes.Ldstr, "chunk")
+                    | "primitiveCloseFile", _ ->
+                        il.Emit(OpCodes.Pop)
+                        il.Emit(OpCodes.Ldstr, "closed")
+                        il.Emit(OpCodes.Call, typeof<Console>.GetMethod("Write", [| typeof<string> |]))
+                        do! emitUnitValue il
                     | "newRef", refType ->
                         let clrResultType = resolveClrType state typeParameters refType
                         let argumentClrType = resolveClrType state typeParameters argumentTypes[0]

@@ -115,6 +115,10 @@ module Stdlib =
                 "printInt"
                 "printString"
                 "primitiveIntToString"
+                "openFile"
+                "primitiveReadData"
+                "readData"
+                "primitiveCloseFile"
                 "newRef"
                 "readRef"
                 "writeRef"
@@ -126,8 +130,11 @@ module Stdlib =
     let private elaborationAvailableIntrinsicTermNames =
         Set.ofList [ "True"; "False"; "not"; "and"; "or"; "negate"; "+"; "-"; "*"; "/"; "&&"; "||"; "=="; "!="; "<"; "<="; ">"; ">=" ]
 
+    let private moduleLocalIntrinsicTermNames =
+        Set.ofList [ "openFile"; "primitiveReadData"; "readData"; "primitiveCloseFile" ]
+
     let private preludeIntrinsicSet =
-        { Identity = "bootstrap-prelude-v1"
+        { Identity = "bootstrap-prelude-v2"
           TypeNames = intrinsicTypeNames
           TraitNames = intrinsicTraitNames
           TermNames = intrinsicTermNames
@@ -186,16 +193,30 @@ module Stdlib =
     let private isPreludeExpectation moduleName =
         moduleName = PreludeModuleName
 
-    let intrinsicallySatisfiesExpect backendProfile moduleName declaration =
-        if not (isPreludeExpectation moduleName) then
-            false
-        else
-            let intrinsicSet = intrinsicSetForBackendProfile backendProfile
+    let intrinsicTermNamesAvailableInModule backendProfile moduleName =
+        let intrinsicSet = intrinsicSetForBackendProfile backendProfile
 
-            match declaration with
-            | ExpectTypeDeclaration declaration ->
-                intrinsicSet.TypeNames.Contains(declaration.Name)
-            | ExpectTraitDeclaration declaration ->
-                intrinsicSet.TraitNames.Contains(declaration.Name)
-            | ExpectTermDeclaration declaration ->
-                intrinsicSet.TermNames.Contains(declaration.Name)
+        if isPreludeExpectation moduleName then
+            intrinsicSet.TermNames
+        else
+            Set.intersect intrinsicSet.TermNames moduleLocalIntrinsicTermNames
+
+    let intrinsicTermNamesAvailableInModuleText backendProfile moduleName =
+        let intrinsicSet = intrinsicSetForBackendProfile backendProfile
+
+        if moduleName = PreludeModuleText then
+            intrinsicSet.TermNames
+        else
+            Set.intersect intrinsicSet.TermNames moduleLocalIntrinsicTermNames
+
+    let intrinsicallySatisfiesExpect backendProfile moduleName declaration =
+        let intrinsicSet = intrinsicSetForBackendProfile backendProfile
+
+        match declaration with
+        | ExpectTypeDeclaration declaration ->
+            isPreludeExpectation moduleName && intrinsicSet.TypeNames.Contains(declaration.Name)
+        | ExpectTraitDeclaration declaration ->
+            isPreludeExpectation moduleName && intrinsicSet.TraitNames.Contains(declaration.Name)
+        | ExpectTermDeclaration declaration ->
+            intrinsicTermNamesAvailableInModule backendProfile moduleName
+            |> Set.contains declaration.Name
