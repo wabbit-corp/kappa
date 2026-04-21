@@ -1909,17 +1909,18 @@ A place expression is either:
 * a fully applied call to a `projection` definition (§6.1.1).
 
 A fully applied projection call is not a first-class runtime reference. It denotes a computed selection of one stable
-place rooted in the unique `place` parameter of the called projection definition.
+place rooted in one of the `place` parameters of the called projection definition.
 
 After substituting actual arguments for formal parameters, each reachable `yield` in the projection body determines one
-yielded stable-place alternative. Every yielded alternative of a projection definition must be rooted in that same
-unique `place` parameter.
+yielded stable-place alternative. Every yielded alternative of a projection definition must be rooted in one of the
+declaration's `place` binders.
 
 Static footprint summary:
 
 * The static footprint of a stable place is its ordinary footprint under §5.1.7.
 * The static footprint of a fully applied projection call is the union of the ordinary footprints of all its yielded
-  stable-place alternatives, after applying the dependency-closure rule of §5.1.7 to each alternative.
+  stable-place alternatives, regardless of which `place` binder each alternative is rooted in, after applying the
+  dependency-closure rule of §5.1.7 to each alternative.
 * Borrow-overlap checks, disjointness checks, and `~` admissibility checks use this static footprint summary.
 * Runtime read / move / fill uses only the single yielded stable place selected by evaluation of the projection body.
 
@@ -3395,7 +3396,7 @@ Modifier rules:
 
 #### 6.1.1 Projection definitions
 
-A projection definition names a pure computed place selector rooted in exactly one place parameter.
+A projection definition names a pure computed place selector rooted in one or more place parameters.
 
 Example:
 
@@ -3405,6 +3406,12 @@ projection focusedBuffer (place ed : Editor) : Buffer =
         yield ed.left
     else
         yield ed.right
+
+projection longer (place x : String) (place y : String) : String =
+    if size x >= size y then
+        yield x
+    else
+        yield y
 ```
 
 Grammar:
@@ -3423,15 +3430,16 @@ Rules:
 
 * A projection definition is top-level only.
 * `opaque` does not apply to projection definitions.
-* A projection definition must contain exactly one `place` binder.
+* A projection definition must contain one or more `place` binders.
 * All other binders are ordinary explicit or implicit function binders except `inout`. They may be erased and may be
   dependent.
 * A projection definition is pure; its declared result type must not be monadic.
 * Each reachable path of the body must end in exactly one `yield`.
+* All reachable `yield` operands must have the declared result type.
 * The operand of each `yield` must elaborate to either:
-  * a stable place rooted in the declaration's unique `place` binder; or
-  * a fully applied call to another projection definition whose unique `place` argument is itself rooted in that same
-    binder.
+  * a stable place rooted in one of the declaration's `place` binders; or
+  * a fully applied call to another projection definition whose yielded alternatives are themselves rooted in one of
+    those same binders.
 * A `place` binder may be inspected by ordinary pure expressions in the body, but may be yielded only as a place
   expression, not stored or returned as a first-class value.
 * A projection definition must be fully applied at every use site. Partial application of a projection definition is
@@ -6644,8 +6652,8 @@ or the pure analogue `let pat = func ~x1 ... ~xk args`, elaboration proceeds as 
    * If the marked argument is a stable place, proceed exactly as in the stable-place case of this section.
    * If the marked argument is a parenthesized fully applied projection call, first inline the projection body once at
      that site by substituting the actual arguments for the formal parameters. Then elaborate the resulting ordinary
-     control flow branchwise. Each `yield` leaf must denote a stable place rooted in the unique `place` argument of the
-     projection.
+     control flow branchwise. Each `yield` leaf must denote a stable place rooted in one of the projection's `place`
+     arguments.
    * In each leaf branch, the argument actually passed to the callee is the value at that yielded stable place. In KCore
      this behaves as `MovePlace` on that stable place, or an observationally equivalent internal form (§17.3.1.1).
 3. Determine the returned record type `R`:
@@ -10194,6 +10202,9 @@ stable-place borrow introductions:
 * in a borrow-demanding position, each leaf `yield p` elaborates as the ordinary borrowed argument or borrowed binding
   that would have been produced for the stable place `p` at that site;
 * under `~`, each leaf `yield p` elaborates through the existing `MovePlace p` / `FillPlace p` rewrite of §8.8.
+
+Different leaves of the same projection call may target stable places rooted in different `place` arguments, provided
+each leaf satisfies the projection-definition rules of §6.1.1.
 
 The selector expression of a projection call is evaluated exactly once per projection call occurrence. If the source
 projection body contains `if` or `match`, the elaborated KCore contains corresponding ordinary branching structure with
