@@ -4785,7 +4785,7 @@ Typechecking and elaboration rules:
   @p : LacksCtor __scrut ⟨C⟩
   ```
 
-  where `⟨C⟩ : CtorTag` is the internal constructor-tag constant of §17.3.1.7.
+  where `⟨C⟩ : CtorTag` is the internal constructor-tag constant of §17.3.1.8.
 
 * Within the success continuation, occurrences of the tested expression are elaborated against `__scrut`.
 
@@ -4952,7 +4952,7 @@ typechecked under additional erased implicit evidence:
 @p : HasCtor s ⟨C⟩
 ```
 
-where `⟨C⟩ : CtorTag` is the internal constructor-tag constant of §17.3.1.7.
+where `⟨C⟩ : CtorTag` is the internal constructor-tag constant of §17.3.1.8.
 
 Residual negative evidence:
 
@@ -5579,6 +5579,48 @@ case release name r k ->
     ...; k ()
 ```
 
+#### 8.1.4.1 KCore realization and interaction with abrupt completion
+
+The control model of shallow handlers is realized in KCore by the effect-operation and handler kernel of §17.3.1.5.
+
+In an ordinary effect context, a shallow handler consumes a computation of type:
+
+```text
+Eff <[label : E | r]> a
+```
+
+and produces a computation of type:
+
+```text
+Eff r b
+```
+
+When a shallow handler appears inside the completion-carrying elaboration of §8.7, the handled computation is instead:
+
+```text
+Eff <[label : E | r]> (Completion(RetCtx, a))
+```
+
+and the handler result is:
+
+```text
+Eff r (Completion(RetCtx, b))
+```
+
+In this completion-carrying case:
+
+* the surface clause `case return x -> e_ret` handles only the `Normal x` case;
+* `Break`, `Continue`, and `Return[...]` completions propagate outward unchanged unless user-written code explicitly
+  matches on them after elaboration; and
+* a captured shallow resumption has type:
+
+  ```text
+  (1 _ : B) -> Eff <[label : E | r]> (Completion(RetCtx, a))
+  ```
+
+This does not introduce a second control system. It is ordinary composition of the handler kernel with the
+completion-and-scope kernel.
+
 #### 8.1.5 Deep handlers (`deep handle`)
 
 Deep handlers automatically reinstall themselves around their resumptions. They are surface sugar over shallow handlers
@@ -5633,6 +5675,9 @@ let __go __comp =
 in
     __go expr
 ```
+
+The shallow `handle` used in this desugaring is the surface form whose KCore realization is specified by §§8.1.4.1 and
+17.3.1.5.
 
 where `q` and `B` are the declared resumption quantity and instantiated result type of `op1`, and where `__go` and
 `__k_shallow` are fresh identifiers inaccessible to user code.
@@ -9100,10 +9145,12 @@ Elaboration performs (non-exhaustive):
 * desugaring of:
     * pure `block` expressions and indented pure block suites to sequential local scope with closure-converted local
       declarations (§6.3.1, §14.1.1),
-    * `do` blocks and control-flow sugar to the completion-and-scope KCore kernel of §17.3.1.4, expressed inside the
-      enclosing monad (§8.2, §8.7, §17.3.1.4),
+    * `do` blocks, abrupt control, and exit-action scheduling to the structured completion-and-scope kernel (§8.2,
+      §8.7, §17.3.1.4),
+    * shallow handlers to the structured effect-operation and handler kernel (§8.1.4, §14.8, §17.3.1.5),
+    * deep handlers to recursive drivers over the shallow-handler kernel (§8.1.5, §14.8, §17.3.1.5),
     * lowering of boolean and constructor-refinement control flow to explicit erased branch evidence (§7.4.1, §7.5.4,
-      §17.3.1.7),
+      §17.3.1.8),
     * comprehensions to combinator pipelines (§10.10),
     * existential-package sugar and unpacking (`exists`, `open ... as exists ...`) to anonymous sealed packages and
       ordinary local bindings (§5.5.11),
@@ -9151,6 +9198,19 @@ Escaped local nominal families:
   semantic-identity rules of §§17.1.9 and 17.3.4.1.
 * A local nominal family may appear in an exported interface only if its captured arguments are representable in the
   interface artifact. Otherwise export is a compile-time error in the defining module.
+
+Interaction with continuations and handlers:
+
+* Capturing a local declaration inside a shallow or deep resumption is closure capture of the same semantic kind as
+  capturing it inside an ordinary closure.
+* Multi-shot resumption duplicates captured control state, not local nominal family identity.
+* Therefore reusing a continuation MUST NOT create fresh local nominal families; the family identity remains the
+  declaration-site identity defined above.
+* Any escaped occurrence of a local nominal family arising through a resumed computation is represented as an
+  application of that family identity to its closure-converted captured arguments, exactly as for any other escaping
+  local nominal family.
+* Interface representability and exported semantic identity of such escaped local nominal families remain governed by
+  the ordinary rules of this subsection together with §§14.8, 17.1.9, and 17.3.4.1.
 
 Escaping results:
 
@@ -9364,8 +9424,10 @@ represented explicitly.
 
 ### 14.8 Runtime model for handlers and resumptions
 
-This section constrains backend implementations of `handle` and `deep handle`. The concrete representation is
-implementation-defined, but the observable behavior below is mandatory.
+This section constrains backend implementations of the KCore effect-operation and handler kernel of §17.3.1.5 and
+therefore of surface `handle` and `deep handle`.
+
+The concrete runtime representation is implementation-defined, but the observable behavior below is mandatory.
 
 #### 14.8.1 Captured continuation boundary
 
@@ -10881,7 +10943,64 @@ This subsection defines KCore structure only. A conforming implementation MAY re
 explicit frame objects, or other equivalent internal machinery, provided the observable behavior is the same as this
 kernel.
 
-#### 17.3.1.5 KCore intrinsic compile-time types
+#### 17.3.1.5 KCore effect-operation and handler kernel
+
+A conforming implementation MUST behave as if KCore contains an explicit effect-operation and shallow-handler kernel for
+the effect features of §8.1 and the runtime constraints of §14.8.
+
+For a handled label `label`, effect interface `E`, surrounding effect row `r_all`, and residual effect row `r` such that
+`SplitEff r_all label E r` is solvable, KCore additionally behaves as if it contains:
+
+```text
+OpCall        : EffLabel -> OpSymbol -> ArgSpine -> Eff r_all B
+HandleShallow : EffLabel -> HandlerSpec(label, E, r_all, r, A, B) -> Eff r_all A -> Eff r B
+```
+
+where:
+
+```text
+HandlerSpec(label, E, r_all, r, A, B) =
+  { onReturn : A -> Eff r B
+  , onOp[op_i] :
+        Π (x1 : A1) ... (xn : An).
+          (q_i k : B_i -> Eff r_all A) ->
+          Eff r B
+      for each declared operation
+      q_i op_i : Π (x1 : A1) ... (xn : An). B_i
+      of E
+  }
+```
+
+`OpSymbol` denotes the resolved semantic identity of an operation declared by `E`. `ArgSpine` is the fully elaborated
+argument spine for that operation.
+
+Meaning:
+
+* `OpCall label op args` performs the resolved operation `op` at effect label `label`.
+* The nearest dynamically enclosing `HandleShallow` for the same `label` intercepts that `OpCall`.
+* In the matching operation clause, the bound continuation `k` is an ordinary KCore function value representing the
+  captured computation suffix from the `OpCall` site to that handler boundary, exactly as constrained by §14.8.
+* Applying `k` resumes that captured suffix.
+* The quantity of `k` is the declared resumption quantity `q_i` of the intercepted operation and is checked by the
+  ordinary quantity rules.
+* `HandleShallow` handles only the selected label. Operations at all other labels propagate outward unchanged.
+* A `HandleShallow` return clause is applied only when the handled computation completes normally.
+* If the handled computation is itself completion-carrying, for example of type `Eff r_all (Completion(RetCtx, A))`,
+  then propagation of `Break`, `Continue`, and `Return[...]` is determined by the surface elaboration rule of §8.1.4.1
+  rather than by any extra KCore control primitive.
+* The captured continuation boundary includes any active `DoScope` frames inside that dynamic segment, so exit actions
+  are cloned or consumed exactly as specified by §§8.1.3.1, 8.7.2, and 14.8.
+
+Surface `handle label in expr` elaborates through `HandleShallow`.
+
+Surface `deep handle label in expr` does not require a distinct KCore primitive. It elaborates to an internal recursive
+driver over `HandleShallow` as specified in §8.1.5.
+
+This subsection defines KCore structure only. A conforming implementation MAY realize these forms by CPS, exceptions,
+heap-allocated frames, stack copying, segmented stacks, defunctionalized state machines, or other equivalent internal
+machinery, provided the observable behavior is the same as this kernel and the runtime constraints of §14.8.
+
+#### 17.3.1.6 KCore intrinsic compile-time types
 
 A conforming implementation MUST behave as if KCore supports ordinary binding, projection, application, sealing, and
 packaging of inhabitants of the intrinsic compile-time types of §5.1.3 and of the elaboration-time reflection types of
@@ -10906,7 +11025,7 @@ Rules:
 * Reflection values MUST NOT survive lowering to KBackendIR except through ordinary reification to `Syntax` followed by
   ordinary elaboration.
 
-#### 17.3.1.6 KCore capture-annotated types
+#### 17.3.1.7 KCore capture-annotated types
 
 A conforming implementation MUST behave as if KCore contains an explicit capture-annotation former:
 
@@ -10938,7 +11057,7 @@ Meaning:
 A conforming implementation MAY realize this with another internal representation, provided ordinary downstream
 typechecking, interface emission, definitional equality, and erasure are observationally equivalent to the rules above.
 
-#### 17.3.1.7 KCore branch and refinement evidence
+#### 17.3.1.8 KCore branch and refinement evidence
 
 A conforming implementation MUST behave as if KCore contains explicit erased evidence for branch-local boolean and
 constructor refinements.
@@ -10999,6 +11118,9 @@ Introduction kinds are implementation-defined, but MUST distinguish at least:
 * projection lowering;
 * branch-refinement lowering;
 * completion-kernel lowering;
+* effect-operation lowering;
+* handler-kernel lowering;
+* deep-handler driver insertion;
 * exit-action scheduling;
 * safe-navigation or section lowering; and
 * local-declaration closure conversion.
