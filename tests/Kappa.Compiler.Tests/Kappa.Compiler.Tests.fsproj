@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <Compile Include="Harness.fs" />
+    <Compile Include="ResourceModelTests.fs" />
     <Compile Include="FixtureTests.fs" />
     <Compile Include="Tests.fs" />
     <Compile Include="CoreTests.fs" />

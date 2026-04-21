@@ -121,16 +121,16 @@ module ResourceChecking =
 
     let private quantityConsumes quantity =
         match quantity with
-        | Some QuantityOne -> true
+        | Some quantity -> ResourceQuantity.isExactOne quantity
         | _ -> false
 
     let private quantityBorrows quantity =
         match quantity with
-        | Some(QuantityBorrow _) -> true
+        | Some quantity -> ResourceQuantity.isBorrow quantity
         | _ -> false
 
     let private quantityText quantity =
-        quantity |> Option.map Quantity.toSurfaceText
+        quantity |> Option.map ResourceQuantity.toSurfaceText
 
     let private bindingDemand binding =
         match binding.BorrowRegion with
@@ -212,7 +212,7 @@ module ResourceChecking =
 
     let private introduceBorrowRegionForQuantity ownerScope quantity state =
         match quantity with
-        | Some(QuantityBorrow explicitRegion) ->
+        | Some(ResourceQuantity.Borrow explicitRegion) ->
             let region, state = introduceBorrowRegion ownerScope explicitRegion state
             Some region, state
         | _ -> None, state
@@ -697,24 +697,26 @@ module ResourceChecking =
                         Some closureId, current
                     | _ -> None, current
 
-                let checkDrop = binding.Quantity = Some QuantityOne
+                let declaredQuantity = binding.Quantity |> Option.map ResourceQuantity.ofSurface
+                let checkDrop = declaredQuantity |> Option.exists ResourceQuantity.isExactOne
                 let capturedBindingOrigins =
                     capturedBindings
                     |> List.choose (fun binding -> binding.Origin)
 
                 let borrowRegion, current =
-                    introduceBorrowRegionForQuantity $"{current.ScopeId}.let" binding.Quantity current
+                    introduceBorrowRegionForQuantity $"{current.ScopeId}.let" declaredQuantity current
 
-                let current = addPatternBindings document binding binding.Quantity borrowRegion captured capturedBindingOrigins checkDrop closureFactId current
+                let current = addPatternBindings document binding declaredQuantity borrowRegion captured capturedBindingOrigins checkDrop closureFactId current
                 loop current rest
             | DoBind(binding, expression) :: rest ->
                 let current = checkExpression document signatures current expression
-                let checkDrop = binding.Quantity = Some QuantityOne
+                let declaredQuantity = binding.Quantity |> Option.map ResourceQuantity.ofSurface
+                let checkDrop = declaredQuantity |> Option.exists ResourceQuantity.isExactOne
 
                 let borrowRegion, current =
-                    introduceBorrowRegionForQuantity $"{current.ScopeId}.bind" binding.Quantity current
+                    introduceBorrowRegionForQuantity $"{current.ScopeId}.bind" declaredQuantity current
 
-                let current = addPatternBindings document binding binding.Quantity borrowRegion Set.empty [] checkDrop None current
+                let current = addPatternBindings document binding declaredQuantity borrowRegion Set.empty [] checkDrop None current
                 loop current rest
             | DoUsing(pattern, expression) :: rest ->
                 let current = checkExpression document signatures current expression
@@ -735,7 +737,7 @@ module ResourceChecking =
                     |> List.fold (fun state name ->
                         addBinding
                             name
-                            (Some(QuantityBorrow None))
+                            (Some(ResourceQuantity.Borrow None))
                             (Some region)
                             Set.empty
                             []
@@ -814,12 +816,12 @@ module ResourceChecking =
                 | _ -> true)
 
         if significant |> List.exists (fun token -> token.Text = "&") then
-            Some(QuantityBorrow None)
+            Some(ResourceQuantity.Borrow None)
         else
             match significant with
-            | token :: _ when token.Text = "1" -> Some QuantityOne
-            | token :: _ when token.Text = "0" -> Some QuantityZero
-            | token :: _ when token.Text = "omega" -> Some QuantityOmega
+            | token :: _ when token.Text = "1" -> Some ResourceQuantity.one
+            | token :: _ when token.Text = "0" -> Some ResourceQuantity.zero
+            | token :: _ when token.Text = "omega" -> Some ResourceQuantity.omega
             | _ -> None
 
     let private signatureParameterQuantities tokens =
@@ -859,20 +861,23 @@ module ResourceChecking =
                             (definition.Parameters
                              |> List.map (fun (parameter: Parameter) ->
                                  if parameter.IsInout then
-                                     Some QuantityOne
+                                     Some ResourceQuantity.one
                                  else
-                                     parameter.Quantity)))
+                                     parameter.Quantity |> Option.map ResourceQuantity.ofSurface)))
                 | _ -> None)
             |> List.concat)
         |> Map.ofList
 
     let private addParameterBinding (document: ParsedDocument) (parameter: Parameter) state =
         let quantity =
-            if parameter.IsInout then Some QuantityOne else parameter.Quantity
+            if parameter.IsInout then
+                Some ResourceQuantity.one
+            else
+                parameter.Quantity |> Option.map ResourceQuantity.ofSurface
 
         let region: BorrowRegion option =
             match quantity with
-            | Some(QuantityBorrow explicitRegion) ->
+            | Some(ResourceQuantity.Borrow explicitRegion) ->
                 Some
                     { Id = defaultArg explicitRegion $"rho_param_{parameter.Name}"
                       ExplicitName = explicitRegion
