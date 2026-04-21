@@ -535,6 +535,50 @@ module ResourceChecking =
                 document
                 state
 
+    let private checkEscapingLambda (document: ParsedDocument) expression state =
+        match expression with
+        | Lambda _ ->
+            let captured = capturedRegions state expression
+
+            if Set.isEmpty captured then
+                state
+            else
+                let capturedBindingList = capturedBindings state expression
+
+                let state =
+                    capturedBindingList
+                    |> List.fold (fun current binding ->
+                        addEvent "capture" (findUseLocation document binding.Name 1) binding current) state
+
+                let closureId, state = addClosureFact None capturedBindingList captured state
+
+                let escapeOrigin =
+                    capturedBindingList
+                    |> List.tryPick (fun binding -> findUseLocation document binding.Name 1)
+
+                let relatedLocations =
+                    capturedBindingList
+                    |> List.collect (fun binding ->
+                        [
+                            match binding.Origin with
+                            | Some location ->
+                                { Message = $"Captured binding '{binding.Name}'."
+                                  Location = location }
+                            | None -> ()
+                        ])
+                    |> List.distinctBy (fun related -> related.Location.FilePath, related.Location.Span.Start, related.Message)
+
+                addDiagnostic
+                    borrowEscapeCode
+                    "A lambda that captures a borrowed region cannot escape its protected scope."
+                    escapeOrigin
+                    relatedLocations
+                    document
+                    state
+                |> markClosureEscaped closureId
+        | _ ->
+            state
+
     let private tryCalleeName (expression: CoreExpression) =
         match expression with
         | Name [ name ] -> Some name
@@ -849,7 +893,9 @@ module ResourceChecking =
                 definition.Parameters
                 |> List.fold (fun state parameter -> addParameterBinding document parameter state) (emptyState scopeId)
 
-            checkExpression document signatures initialState body
+            match body with
+            | Lambda _ -> checkEscapingLambda document body initialState
+            | _ -> checkExpression document signatures initialState body
         | None ->
             emptyState scopeId
 
