@@ -4324,6 +4324,52 @@ This form is specified directly and does not depend on any library helper name.
 `?:` is right-associative at low precedence (`2`, above `|>` at `1` and below comparison / arithmetic operators). It is
 a reserved token and cannot be redefined by user fixity declarations.
 
+### 7.1.2A Constructor-test expressions (`is`) and short-circuit boolean operators
+
+The contextual form
+
+```kappa
+e is C
+```
+
+is an ordinary boolean expression.
+
+Typing:
+
+* `e is C : Bool`.
+* `e` must have a type whose head is a `data` type or another constructor-based built-in type such as `Bool`.
+* `C` must be a constructor of the scrutinee type.
+
+Evaluation:
+
+* `e` is evaluated exactly once.
+* The result is `True` iff the top-level constructor of the resulting value is `C`; otherwise the result is `False`.
+
+Parsing:
+
+* `is` is a built-in non-associative infix test form.
+* It binds weaker than postfix/member selection and application, and stronger than `&&` and `||`.
+* It is not governed by user fixity declarations.
+
+The operator tokens `&&` and `||` are the canonical short-circuit boolean connectives of the surface language.
+
+Typing:
+
+* `a && b : Bool` iff `a : Bool` and `b : Bool`.
+* `a || b : Bool` iff `a : Bool` and `b : Bool`.
+
+Semantics:
+
+* `a && b` behaves as if elaborated to `if a then b else False`.
+* `a || b` behaves as if elaborated to `if a then True else b`.
+* The right operand is evaluated only when required by these equations.
+
+These equations are semantic, not merely library equalities. A conforming implementation MUST preserve their
+short-circuit evaluation-count behavior even when it lowers them differently internally.
+
+The prelude names `and` and `or` remain ordinary terms. They do not by themselves receive short-circuiting or
+flow-sensitive treatment.
+
 ### 7.1.3 Application-boundary subsumption
 
 Kappa does not support deep subtyping. However, to maintain ecosystem coherence between linear, borrowed, and
@@ -4652,134 +4698,69 @@ let eqInt : Dict (Eq Int) = summon (Eq Int)
 
 ### 7.4 Conditionals
 
-`if` is an expression.
+`if` is an expression:
 
 ```text
-ifExpr     ::= 'if' condList 'then' expr ('elif' condList 'then' expr)* 'else' expr
-condList   ::= condClause (',' condClause)*
-condClause ::= expr
-             | 'let' pattern '=' expr
-             | expr 'is' ctor
-
-ctor       ::= ctorName
-             | typeName '.' ctorName
+ifExpr ::= 'if' expr 'then' expr ('elif' expr 'then' expr)* 'else' expr
 ```
 
-A condition list is evaluated left-to-right and short-circuits on the first failing clause.
+Rules:
 
-Clause forms:
-
-* A plain expression clause `e` is a boolean condition. It must have type `Bool`.
-* A pattern clause `let pat = e` is a refutable pattern condition. It succeeds iff matching `e` against `pat` succeeds.
-* A tag-test clause `e is C` succeeds iff the top-level constructor of `e` is `C`.
-
-A single-clause conditional is the ordinary special case:
-
-```kappa
-if cond then t else f
-if let pat = e then t else f
-if e is C then t else f
-```
-
-Scope and evaluation:
-
-* Clauses are elaborated and evaluated in source order.
-* Later clauses are checked in the environment produced by earlier successful clauses.
-* The `then` branch is checked in the success environment of the full condition list.
-* The `else` branch is checked in the failure environment of the first failing clause, as determined by the recursive
-  elaboration below.
 * Outside `do`, `if` must have a final `else`.
 * `elif` is sugar for `else if`.
 * All branches must have the same type.
-
-Normative recursive elaboration:
-
-Let `rest(cs, t, f)` denote the conditional formed by the remaining clause list `cs`, with success branch `t` and
-failure branch `f`, where `rest([], t, f) = t`.
-
-Then:
-
-* `if b, cs then t else f` behaves as if elaborated to:
+* The condition expression must have type `Bool`.
+* Because `is` is an ordinary boolean expression (§7.1.2A), forms such as
 
   ```kappa
-  if b then
-      rest(cs, t, f)
-  else
-      f
+  if e is C then ...
+  if e is C && p then ...
+  if x > 0 || y is Done then ...
   ```
 
-* `if let pat = e, cs then t else f` behaves as if elaborated to:
-
-  ```kappa
-  match e
-  case pat -> rest(cs, t, f)
-  case _   -> f
-  ```
-
-* `if e is C, cs then t else f` behaves as if elaborated to:
-
-  ```kappa
-  if e is C then
-      rest(cs, t, f)
-  else
-      f
-  ```
-
-Pattern-clause droppability restriction:
-
-* A plain pattern clause `let pat = e` is permitted only when every value discarded by failure of `pat` is droppable,
-  using the same droppability rule as the plain `let? pat = expr` form of §8.2.1.
-* If that proof is unavailable, the condition is ill-formed. Use `match`, or in `do`, use `let? ... else residuePat ->
-  ...`.
+  are ordinary conditionals rather than special `if` grammar.
 
 Inside a `do` block, an `if` without `else` is allowed as sugar (see §8).
 
-### 7.4.1 Clause success and failure evidence
+### 7.4.1 Flow-sensitive branch evidence for atomic conditions
 
-Boolean clauses introduce boolean assumptions into the implicit context.
+Branch-local refinement for conditionals is assigned after recursively applying the short-circuit lowering rules of
+§7.4.2.
 
-For a boolean clause:
+Plain boolean case:
 
 ```kappa
-if cond then e1 else e2
+if cond then t else f
 ```
 
-Typechecking rules:
+If the outermost condition form is not the constructor-test form below, then:
 
-* `cond` must have type `Bool`.
-
-* The success continuation is checked under additional erased implicit evidence:
+* `t` is checked under additional erased implicit evidence:
 
   ```kappa
   @p : cond = True
   ```
 
-* The failure continuation is checked under additional erased implicit evidence:
+* `f` is checked under additional erased implicit evidence:
 
   ```kappa
   @p : cond = False
   ```
 
-For chained condition lists, each later clause and the final `then` branch are checked under the accumulated success
-evidence of all earlier successful clauses.
+Constructor-test case:
 
-Tag-test clauses introduce constructor-tag assumptions and branch-local flow refinement:
+If the outermost condition form is `e is C`, then:
 
-```kappa
-if e is C then t else f
-```
+* the scrutinee expression `e` is evaluated exactly once and elaborated through a fresh hidden scrutinee term
+  `__scrut`;
 
-Typechecking and elaboration rules:
-
-* The scrutinee expression `e` is evaluated exactly once and elaborated through a fresh hidden scrutinee term `__scrut`.
-
-* The success continuation is checked under additional erased implicit evidence:
+* the success branch is checked under additional erased implicit evidence:
 
   ```kappa
   @p : HasCtor __scrut ⟨C⟩
   ```
 
-* The failure continuation is checked under additional erased implicit evidence:
+* the failure branch is checked under additional erased implicit evidence:
 
   ```kappa
   @p : LacksCtor __scrut ⟨C⟩
@@ -4787,36 +4768,76 @@ Typechecking and elaboration rules:
 
   where `⟨C⟩ : CtorTag` is the internal constructor-tag constant of §17.3.1.8.
 
-* Within the success continuation, occurrences of the tested expression are elaborated against `__scrut`.
+* within each branch, occurrences of the original tested expression are elaborated against `__scrut`;
 
-* The success evidence MUST be strong enough that:
+* constructor discrimination is observational only and does not by itself discharge any quantity obligation of the
+  scrutinee;
+
+* if the scrutinee is itself a borrowed view or a borrowed alias of a stable place, the refinement applies to that same
+  underlying root/path and remains valid only for the same borrow lifetime;
+
+* the success evidence MUST be strong enough that:
+
   * a subsequent `match __scrut` may treat non-`C` cases as unreachable; and
   * if `C` declares named explicit parameters, dotted projection `__scrut.field` may refer to those named constructor
-    parameters via constructor-field projection (§13.1).
+    parameters via constructor-field projection (§13.1);
 
-* The success evidence additionally includes any index equalities forced by constructor `C`, exactly as in the
-  corresponding constructor branch of `match` (§7.5.1A).
+* if the constructor declaration forces index equalities, the success evidence additionally includes those equalities,
+  exactly as in the corresponding constructor branch of `match`;
 
-* The failure evidence excludes `C` for subsequent branch-local reachability and matching, but does not by itself expose
+* the failure evidence excludes `C` for subsequent branch-local reachability and matching, but does not by itself expose
   constructor fields.
 
-Pattern clauses introduce bindings but no negative residual fact:
+These erased assumptions participate in implicit resolution (§7.3.3).
+
+`elif` introduces no separate rule beyond its desugaring to nested `else if`.
+
+### 7.4.2 Flow typing through `&&`, `||`, and `not`
+
+Flow typing is defined over ordinary boolean syntax rather than a separate condition-list grammar.
+
+A flow-sensitive condition position is:
+
+* the condition of `if`;
+* the guard of `case pat if guard`;
+* the condition of `while` when that condition is a pure `Bool` expression; and
+* any later construct explicitly defined in terms of the success or failure environment of a boolean condition.
+
+In such a position, the implementation MUST behave as if the following equations were applied recursively before the
+branch-evidence rules of §7.4.1:
 
 ```kappa
-if let pat = e then t else f
+if a && b then t else f
+≡ if a then
+      if b then t else f
+  else
+      f
+
+if a || b then t else f
+≡ if a then
+      t
+  else
+      if b then t else f
+
+if not a then t else f
+≡ if a then f else t
 ```
 
 Rules:
 
-* The success continuation is checked under the bindings and refinements introduced by matching `pat` against `e`.
-* The failure continuation receives no additional negative evidence beyond the ordinary control-flow fact that the
-  pattern clause failed.
-* If the implementation needs a concrete representative for `e`, it MAY elaborate through a fresh hidden scrutinee term
-  evaluated once before matching.
+* The right operand of `&&` is checked only in the success environment of the left operand.
+* The right operand of `||` is checked only in the failure environment of the left operand.
+* The `not` equation applies only when the outermost condition form is an application of the term `not` to one argument
+  and that application has type `Bool`.
+* These equations apply recursively. In particular, `a` and `b` may themselves contain `&&`, `||`, `not`, constructor
+  tests, stable aliases, or any other boolean-valued expressions.
+* Branch bodies may therefore be typechecked multiple times under different branch-local facts when a condition contains
+  `||` or nested combinations.
+* A conforming implementation MAY share those bodies or lower them differently internally, provided branch-local
+  refinement and runtime evaluation count are observationally equivalent to the equations above.
+* No additional surface condition syntax is introduced.
 
-All erased clause evidence participates in implicit resolution (§7.3.3).
-
-### 7.4.2 Stable aliases and transport of refinement evidence
+### 7.4.3 Stable aliases and transport of refinement evidence
 
 Flow typing is defined over stable scrutinee representatives rather than over raw surface spelling.
 
@@ -5049,6 +5070,10 @@ Rules:
     ```kappa
     @p : guard = True
     ```
+
+* A guarded case is a flow-sensitive condition position for purposes of §7.4.2. If `guard` contains `&&`, `||`, or
+  `not`, the body is checked as if that guard were recursively lowered by §7.4.2 before the guard-success evidence of
+  this subsection is assigned.
 
 * Guard failure does not by itself exclude `pat` from subsequent cases. It excludes only the conjunction of `pat` and
   `guard`.
@@ -6202,29 +6227,26 @@ Rules:
 * After a do-level conditional
 
   ```kappa
-  if condList then thenExpr else elseExpr
+  if cond then thenExpr else elseExpr
   ```
 
   followed by later do-items:
 
-* if `elseExpr` is terminal and `thenExpr` can continue, the later do-items are checked under the success environment
-  of `condList`;
+* if `cond` contains `&&`, `||`, or `not`, these rules apply after the recursive lowering of §7.4.2;
 
-* if `thenExpr` is terminal and `elseExpr` can continue, the later do-items are checked under the failure environment of
-  `condList`;
+* if `elseExpr` is terminal and `thenExpr` can continue, the later do-items are checked under the success facts of the
+  continuing branch of that lowered conditional;
+
+* if `thenExpr` is terminal and `elseExpr` can continue, the later do-items are checked under the failure facts of the
+  continuing branch of that lowered conditional;
 
 * if both branches can continue, this subsection introduces no additional postcondition facts.
 
-* The success environment of `condList` contains:
-
-  * the success evidence of its boolean and tag-test clauses; and
-  * any bindings introduced by its successful pattern clauses.
-
-* The failure environment of `condList` contains only the failure evidence of the first failing boolean or tag-test
-  clause. It does not contain bindings introduced by successful earlier pattern clauses.
+* The atomic branch facts introduced by such a lowered conditional are exactly those of §7.4.1 together with the alias
+  transport of §7.4.3.
 
 * Rebinding, assignment, consuming use, or path-state invalidation discards any surviving fact whose stable subject is
-  no longer available under §7.4.2.
+  no longer available under §7.4.3.
 
 ### 8.2.3 Labeled `do` blocks and labeled control flow
 
@@ -6422,6 +6444,9 @@ These are **syntactic sugar** over monadic operations.
   Typing of `cond`:
   * `cond` may have type `Bool` or type `m Bool` where `m` is the enclosing `do`-block's monad.
   * If `cond : Bool`, it is implicitly lifted to `pure cond : m Bool` for the purpose of desugaring.
+  * When the condition is a pure `Bool` expression, it is a flow-sensitive condition position for purposes of
+    §§7.4.1-7.4.3 and §8.2.2A. When the condition is monadic (`m Bool`), no decomposition of that monadic test is
+    performed beyond the ordinary branch facts of the final boolean result.
 
   Desugaring (schematic): `while cond do body` elaborates to an internal recursive loop in the monad. (The core language
   supports recursion even though surface Kappa has no `let rec`.)
@@ -11139,7 +11164,7 @@ Rules:
 * Refinement evidence is stable under equality transport. If the local erased context contains `@p : x = y`, then the
   implementation MUST behave as if `HasCtor x t` and `HasCtor y t` are inter-derivable, and likewise `LacksCtor x t`
   and `LacksCtor y t`.
-* A stable-alias binding of §7.4.2 MAY therefore be realized purely by erased equality evidence plus ordinary transport;
+* A stable-alias binding of §7.4.3 MAY therefore be realized purely by erased equality evidence plus ordinary transport;
   no separate runtime representation is required.
 * Branch refinement is observationally non-consuming. Introduction or use of branch-local refinement evidence does not
   by itself discharge any quantity obligation of the refined subject.
@@ -11873,7 +11898,7 @@ For Kappa v1, the intended support profile is:
 * branch-local positive and negative narrowing;
 * stable-alias transport;
 * reachability-based propagation past terminal `do` branches;
-* loop-body and post-loop propagation for pure `while` condition lists;
+* loop-body and post-loop propagation for pure `while` boolean conditions;
 * checked one-way and two-way refinement predicates;
 * linearity-aware, non-consuming narrowing;
 * reborrow-respecting narrowing of borrowed scrutinees; and
