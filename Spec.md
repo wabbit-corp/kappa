@@ -4488,7 +4488,8 @@ Resolution proceeds in this order:
    * implicit binders introduced by `(@x : T)` parameters, and
    * local implicit values introduced by `let (@q x : T) = ...` and `let (@q x : T) <- ...`, and
    * implicit record-field projections unpacked from bound records with implicit fields (§5.5.9),
-   * implicit assumptions introduced by control flow (see §7.4.1, §7.5.3, §10.4.1),
+   * explicit erased branch evidence introduced by control flow, including boolean equality evidence and constructor
+     refinement evidence (§7.4.1, §7.5.4, and any later branch form that introduces such evidence),
    * local instance declarations in scope, and
    * for an in-scope implicit value or dictionary `d : Tr args`, coherent evidence obtained by projecting any declared
      supertraits of `Tr args` (§12.1.1).
@@ -4739,20 +4740,36 @@ case False -> eF   -- eF checked under  @p : b = False
 
 This applies equally to `try match` success/error branches when the matched value is a `Bool`.
 
-#### 7.5.4 Match branch refinement evidence
+#### 7.5.4 Constructor branches introduce explicit refinement evidence
 
-Pattern matching introduces explicit erased branch evidence corresponding to the branch-local refinements established by
-the selected pattern and by earlier failed cases.
+When a `match` scrutinee `s` is checked against a top-level constructor branch headed by constructor `C`, that branch is
+typechecked under additional erased implicit evidence:
 
-Rules:
+```kappa
+@p : HasCtor s ⟨C⟩
+```
 
-* The match scrutinee is elaborated through a hidden scrutinee term in the same style as §7.4.1.
-* A branch selected by a constructor pattern for `C` is checked under erased `HasCtor` evidence for that hidden
-  scrutinee and the internal constructor tag `⟨C⟩` of §17.3.1.6.
-* Later branches are checked under any erased `LacksCtor` evidence implied by earlier failed constructor cases when that
-  evidence is sound for the scrutinee type and pattern form.
-* These evidence bindings are erased, introduce no fresh user-visible term bindings, and participate in implicit
-  resolution only as branch-local refinement evidence.
+where `⟨C⟩ : CtorTag` is the internal constructor-tag constant of §17.3.1.6.
+
+Residual negative evidence:
+
+* If a branch is a top-level unguarded catch-all branch reached only after one or more preceding top-level unguarded
+  constructor branches on the same scrutinee have failed, that branch MAY additionally be checked under the
+  corresponding negative evidence:
+
+  ```kappa
+  @p1 : LacksCtor s ⟨C1⟩
+  ...
+  @pn : LacksCtor s ⟨Cn⟩
+  ```
+
+  for the excluded constructors `C1 ... Cn`.
+
+* Guarded branches do not contribute negative evidence past the guard boundary, because guard failure does not exclude
+  the constructor itself.
+
+This evidence is erased and exists only for typechecking, refinement, reachability, and elaboration. It does not affect
+runtime representation.
 
 ### 7.6 Patterns (overview)
 
@@ -8549,17 +8566,19 @@ let tick = do
     state.put (n + 1)
 ```
 
-Constructor-field projection under positive tag refinement:
+Constructor-field projection under refinement is justified only by explicit positive constructor evidence.
 
-* Suppose the current branch or comprehension row carries a positive tag-test refinement proving that the receiver
-  expression `lhs` has top-level constructor `C` (as introduced by §7.4.1 or §10.4).
-* If `C` declares a named explicit parameter `field`, then `lhs.field` is well-formed as a constructor-field projection.
-* Such a projection has the type of that constructor parameter after the usual substitution of the scrutinee's indices
-  and earlier constructor arguments.
-* Operationally, `lhs.field` behaves as if the compiler had matched `lhs` against `C`, extracted the named parameter
-  `field`, and treated all non-`C` branches as `impossible` under the current refinement.
-* If `C` does not declare a named explicit parameter `field`, this interpretation does not apply. Users must use `match`
-  to access unnamed constructor payloads.
+Suppose the local implicit context contains erased evidence
+
+```kappa
+@p : HasCtor lhs ⟨C⟩
+```
+
+and constructor `C` declares a named explicit parameter `field : T`. Then `lhs.field` is a valid constructor-field
+projection, with result type obtained from `C`'s declaration after instantiating the constructor parameters at `lhs`.
+
+The positive evidence required here is introduced by forms such as `if lhs is C then ...` (§7.4.1) and constructor
+branches of `match` (§7.5.4). No implementation-defined hidden refinement state is required.
 
 Constructor-field example:
 
@@ -10588,40 +10607,40 @@ Rules:
 * Reflection values MUST NOT survive lowering to KBackendIR except through ordinary reification to `Syntax` followed by
   ordinary elaboration.
 
-#### 17.3.1.6 Erased branch evidence and constructor tags
+#### 17.3.1.6 KCore branch and refinement evidence
 
-A conforming implementation MUST behave as if KCore contains explicit erased evidence for branch-local refinements
-introduced by boolean tests, constructor-tag tests, and pattern matching.
+A conforming implementation MUST behave as if KCore contains explicit erased evidence for branch-local boolean and
+constructor refinements.
 
-KCore contains an internal constructor-tag classifier:
-
-```text
-CtorTag
-```
-
-For each constructor `C` that is name-resolvable at the test site, KCore may use an internal constructor-tag constant
-`⟨C⟩ : CtorTag` whose identity is derived from the resolved constructor identity, not from source spelling.
-
-KCore also behaves as if it contains erased evidence predicates:
+Internal compile-time type and proof families:
 
 ```text
-HasCtor scrut tag
-LacksCtor scrut tag
+CtorTag   : Type
+HasCtor   : forall (@0 a : Type). a -> CtorTag -> Type
+LacksCtor : forall (@0 a : Type). a -> CtorTag -> Type
 ```
 
-Meaning:
+Every constructor declaration `C` determines a canonical internal tag constant:
 
-* `HasCtor scrut ⟨C⟩` is evidence that the already evaluated scrutinee `scrut` has top-level constructor `C`.
-* `LacksCtor scrut ⟨C⟩` is evidence that the already evaluated scrutinee `scrut` does not have top-level constructor
-  `C`.
-* These predicates are compile-time refinement evidence only. They are erased and do not by themselves inspect or
-  duplicate runtime payloads.
-* `HasCtor` evidence may justify constructor-field projection and unreachable-case elimination for the corresponding
-  scrutinee.
-* `LacksCtor` evidence may justify branch-local reachability and exhaustiveness refinements, but does not expose
-  constructor fields.
-* User source cannot fabricate `HasCtor` or `LacksCtor` evidence except through the ordinary control-flow forms that
-  introduce the corresponding refinements.
+```text
+⟨C⟩ : CtorTag
+```
+
+Rules:
+
+* `HasCtor v ⟨C⟩` is proof-irrelevant erased evidence that the top-level constructor of `v` is `C`.
+* `LacksCtor v ⟨C⟩` is proof-irrelevant erased evidence that the top-level constructor of `v` is not `C`.
+* `HasCtor` evidence may be introduced only by successful elaboration of a constructor test or constructor branch.
+* `LacksCtor` evidence may be introduced only by the failing branch of a constructor test or by a residual branch after
+  excluding one or more top-level constructor branches as specified in §7.5.4.
+* These proof terms are compile-time only and are erased before KBackendIR.
+* Constructor-field projection, reachability, and branch-local refinement consume this evidence; they do not depend on
+  hidden implementation-defined refinement state.
+
+Boolean branch evidence continues to use ordinary propositional equality:
+
+* `if b then t else f` introduces branch-local erased evidence `b = True` / `b = False`.
+* `match b` on boolean constructors behaves likewise.
 
 #### 17.3.2 KCore provenance and explainability
 
