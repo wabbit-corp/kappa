@@ -3654,6 +3654,9 @@ module Compilation =
                 backendIntrinsicIdentity
                 elaborationAvailableIntrinsicTerms
 
+        let analysisSessionIdentity =
+            $"sourceRoot={options.SourceRoot};{buildConfigurationIdentity}"
+
         let userDocuments =
             collectInputFiles options inputs
             |> List.map (parseFile options)
@@ -3694,6 +3697,7 @@ module Compilation =
               DeploymentMode = deploymentMode
               BackendIntrinsicIdentity = backendIntrinsicIdentity
               BuildConfigurationIdentity = buildConfigurationIdentity
+              AnalysisSessionIdentity = analysisSessionIdentity
               ElaborationAvailableIntrinsicTerms = elaborationAvailableIntrinsicTerms
               Documents = documents
               KFrontIR = kFrontIR
@@ -3749,6 +3753,121 @@ module Compilation =
               Owner = DeferredRuntimeObligation
               Description = "Handler frames and resumptions are deferred until the post-M3 effect-handler milestone." }
         ]
+
+    let analysisSession (workspace: WorkspaceCompilation) =
+        { Identity = workspace.AnalysisSessionIdentity
+          SourceRoot = workspace.SourceRoot
+          PackageMode = workspace.PackageMode
+          BuildConfigurationIdentity = workspace.BuildConfigurationIdentity
+          BackendProfile = workspace.BackendProfile
+          BackendIntrinsicSet = workspace.BackendIntrinsicIdentity
+          DeploymentMode = workspace.DeploymentMode }
+
+    let private queryId queryKind inputKey outputCheckpoint =
+        $"{QueryKind.toPortableName queryKind}:{inputKey}->{outputCheckpoint}"
+
+    let private queryRecord
+        (workspace: WorkspaceCompilation)
+        queryKind
+        inputKey
+        outputCheckpoint
+        requiredPhase
+        dependencyIds
+        =
+        { Id = queryId queryKind inputKey outputCheckpoint
+          QueryKind = queryKind
+          InputKey = inputKey
+          OutputCheckpoint = outputCheckpoint
+          RequiredPhase = requiredPhase
+          AnalysisSessionIdentity = workspace.AnalysisSessionIdentity
+          BuildConfigurationIdentity = workspace.BuildConfigurationIdentity
+          BackendProfile = workspace.BackendProfile
+          BackendIntrinsicSet = workspace.BackendIntrinsicIdentity
+          DependencyIds = dependencyIds }
+
+    let queryPlan (workspace: WorkspaceCompilation) =
+        let documents =
+            workspace.KFrontIR
+            |> List.sortBy (fun document -> document.FilePath)
+
+        let documentQueries =
+            documents
+            |> List.collect (fun document ->
+                let inputKey = document.FilePath
+                let parse =
+                    queryRecord workspace ParseSourceFileQuery inputKey "surface-source" None []
+
+                let raw =
+                    queryRecord
+                        workspace
+                        BuildKFrontIRQuery
+                        inputKey
+                        (KFrontIRPhase.checkpointName RAW)
+                        (Some RAW)
+                        [ parse.Id ]
+
+                let phaseQueries =
+                    ((raw, []), KFrontIRPhase.all |> List.tail)
+                    ||> List.fold (fun (previous, collected) phase ->
+                        let checkpoint = KFrontIRPhase.checkpointName phase
+
+                        let current =
+                            queryRecord
+                                workspace
+                                AdvanceKFrontIRPhaseQuery
+                                inputKey
+                                checkpoint
+                                (Some phase)
+                                [ previous.Id ]
+
+                        current, collected @ [ current ])
+                    |> snd
+
+                let diagnostics =
+                    let checkers =
+                        phaseQueries
+                        |> List.find (fun query -> query.OutputCheckpoint = KFrontIRPhase.checkpointName CHECKERS)
+
+                    queryRecord
+                        workspace
+                        ComputeDiagnosticsQuery
+                        inputKey
+                        $"{KFrontIRPhase.checkpointName CHECKERS}.diagnostics"
+                        (Some CHECKERS)
+                        [ checkers.Id ]
+
+                let core =
+                    let coreLowering =
+                        phaseQueries
+                        |> List.find (fun query -> query.OutputCheckpoint = KFrontIRPhase.checkpointName CORE_LOWERING)
+
+                    queryRecord workspace LowerKCoreQuery inputKey "KCore" (Some CORE_LOWERING) [ coreLowering.Id ]
+
+                let runtime =
+                    queryRecord workspace LowerKRuntimeIRQuery inputKey "KRuntimeIR" None [ core.Id ]
+
+                let backend =
+                    queryRecord workspace LowerKBackendIRQuery inputKey "KBackendIR" None [ runtime.Id ]
+
+                [ parse; raw ] @ phaseQueries @ [ diagnostics; core; runtime; backend ])
+
+        let backendDependencies =
+            documentQueries
+            |> List.filter (fun query -> query.QueryKind = LowerKBackendIRQuery)
+            |> List.map (fun query -> query.Id)
+
+        let targetQueries =
+            targetCheckpointNames workspace
+            |> List.map (fun checkpoint ->
+                queryRecord
+                    workspace
+                    LowerTargetQuery
+                    workspace.SourceRoot
+                    checkpoint
+                    None
+                    backendDependencies)
+
+        documentQueries @ targetQueries
 
     let pipelineTrace (workspace: WorkspaceCompilation) =
         workspace.PipelineTrace

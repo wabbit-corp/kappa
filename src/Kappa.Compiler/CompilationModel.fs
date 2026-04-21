@@ -59,6 +59,7 @@ type KFrontIRPhase =
     | STATUS
     | IMPLICIT_SIGNATURES
     | BODY_RESOLVE
+    | MODAL_SOLVE
     | CHECKERS
     | CORE_LOWERING
 
@@ -72,6 +73,7 @@ module KFrontIRPhase =
             STATUS
             IMPLICIT_SIGNATURES
             BODY_RESOLVE
+            MODAL_SOLVE
             CHECKERS
             CORE_LOWERING
         ]
@@ -85,6 +87,7 @@ module KFrontIRPhase =
         | STATUS -> "KFrontIR.STATUS"
         | IMPLICIT_SIGNATURES -> "KFrontIR.IMPLICIT_SIGNATURES"
         | BODY_RESOLVE -> "KFrontIR.BODY_RESOLVE"
+        | MODAL_SOLVE -> "KFrontIR.MODAL_SOLVE"
         | CHECKERS -> "KFrontIR.CHECKERS"
         | CORE_LOWERING -> "KFrontIR.CORE_LOWERING"
 
@@ -131,6 +134,49 @@ type PortableRuntimeObligation =
     { Name: string
       Owner: PortableRuntimeObligationOwner
       Description: string }
+
+type AnalysisSession =
+    { Identity: string
+      SourceRoot: string
+      PackageMode: bool
+      BuildConfigurationIdentity: string
+      BackendProfile: string
+      BackendIntrinsicSet: string
+      DeploymentMode: string }
+
+type QueryKind =
+    | ParseSourceFileQuery
+    | BuildKFrontIRQuery
+    | AdvanceKFrontIRPhaseQuery
+    | ComputeDiagnosticsQuery
+    | LowerKCoreQuery
+    | LowerKRuntimeIRQuery
+    | LowerKBackendIRQuery
+    | LowerTargetQuery
+
+module QueryKind =
+    let toPortableName queryKind =
+        match queryKind with
+        | ParseSourceFileQuery -> "parseSourceFile"
+        | BuildKFrontIRQuery -> "buildKFrontIR"
+        | AdvanceKFrontIRPhaseQuery -> "advanceKFrontIRPhase"
+        | ComputeDiagnosticsQuery -> "computeDiagnostics"
+        | LowerKCoreQuery -> "lowerKCore"
+        | LowerKRuntimeIRQuery -> "lowerKRuntimeIR"
+        | LowerKBackendIRQuery -> "lowerKBackendIR"
+        | LowerTargetQuery -> "lowerTarget"
+
+type QueryRecord =
+    { Id: string
+      QueryKind: QueryKind
+      InputKey: string
+      OutputCheckpoint: string
+      RequiredPhase: KFrontIRPhase option
+      AnalysisSessionIdentity: string
+      BuildConfigurationIdentity: string
+      BackendProfile: string
+      BackendIntrinsicSet: string
+      DependencyIds: string list }
 
 type PipelineTraceEvent =
     | Parse
@@ -501,6 +547,7 @@ type WorkspaceCompilation =
       DeploymentMode: string
       BackendIntrinsicIdentity: string
       BuildConfigurationIdentity: string
+      AnalysisSessionIdentity: string
       ElaborationAvailableIntrinsicTerms: string list
       Documents: ParsedDocument list
       KFrontIR: KFrontIRModule list

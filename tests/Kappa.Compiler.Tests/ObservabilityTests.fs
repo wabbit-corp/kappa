@@ -26,6 +26,7 @@ let ``workspace exposes spec-shaped checkpoints and portable pipeline trace even
     Assert.Contains("surface-source", checkpoints)
     Assert.Contains("KFrontIR.RAW", checkpoints)
     Assert.Contains("KFrontIR.IMPORTS", checkpoints)
+    Assert.Contains("KFrontIR.MODAL_SOLVE", checkpoints)
     Assert.Contains("KFrontIR.CHECKERS", checkpoints)
     Assert.Contains("KCore", checkpoints)
     Assert.Contains("KRuntimeIR", checkpoints)
@@ -42,9 +43,93 @@ let ``workspace exposes spec-shaped checkpoints and portable pipeline trace even
     Assert.Contains(("parse", "file", "surface-source", "surface-source"), trace)
     Assert.Contains(("buildKFrontIR", "file", "surface-source", "KFrontIR.RAW"), trace)
     Assert.Contains(("advancePhase", "module", "KFrontIR.RAW", "KFrontIR.IMPORTS"), trace)
+    Assert.Contains(("advancePhase", "module", "KFrontIR.BODY_RESOLVE", "KFrontIR.MODAL_SOLVE"), trace)
+    Assert.Contains(("advancePhase", "module", "KFrontIR.MODAL_SOLVE", "KFrontIR.CHECKERS"), trace)
     Assert.Contains(("lowerKCore", "module", "KFrontIR.CORE_LOWERING", "KCore"), trace)
     Assert.Contains(("lowerKRuntimeIR", "KCoreUnit", "KCore", "KRuntimeIR"), trace)
     Assert.Contains(("lowerKBackendIR", "KRuntimeIRUnit", "KRuntimeIR", "KBackendIR"), trace)
+
+[<Fact>]
+let ``analysis session records effective build inputs for query identity`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-analysis-session-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let session = Compilation.analysisSession workspace
+
+    Assert.Equal(workspace.AnalysisSessionIdentity, session.Identity)
+    Assert.Equal(workspace.SourceRoot, session.SourceRoot)
+    Assert.Equal(workspace.BuildConfigurationIdentity, session.BuildConfigurationIdentity)
+    Assert.Equal("dotnet", session.BackendProfile)
+    Assert.Equal("bootstrap-prelude-v1", session.BackendIntrinsicSet)
+    Assert.Equal("managed", session.DeploymentMode)
+    Assert.Contains("backendProfile=dotnet", session.Identity)
+    Assert.Contains("deploymentMode=managed", session.Identity)
+
+[<Fact>]
+let ``query plan records stable query kinds checkpoints and dependencies`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-query-plan-root"
+            "zig"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let queries = Compilation.queryPlan workspace
+
+    let queryByCheckpoint checkpoint =
+        queries
+        |> List.find (fun query -> query.OutputCheckpoint = checkpoint)
+
+    let rawQuery = queryByCheckpoint "KFrontIR.RAW"
+    Assert.Equal(BuildKFrontIRQuery, rawQuery.QueryKind)
+    Assert.Equal(Some RAW, rawQuery.RequiredPhase)
+    Assert.Equal(workspace.AnalysisSessionIdentity, rawQuery.AnalysisSessionIdentity)
+    Assert.Equal(workspace.BuildConfigurationIdentity, rawQuery.BuildConfigurationIdentity)
+
+    let modalSolveQuery = queryByCheckpoint "KFrontIR.MODAL_SOLVE"
+    Assert.Equal(AdvanceKFrontIRPhaseQuery, modalSolveQuery.QueryKind)
+    Assert.Equal(Some MODAL_SOLVE, modalSolveQuery.RequiredPhase)
+    Assert.Contains((queryByCheckpoint "KFrontIR.BODY_RESOLVE").Id, modalSolveQuery.DependencyIds)
+
+    let coreQuery = queryByCheckpoint "KCore"
+    Assert.Equal(LowerKCoreQuery, coreQuery.QueryKind)
+    Assert.Equal(Some CORE_LOWERING, coreQuery.RequiredPhase)
+    Assert.Contains((queryByCheckpoint "KFrontIR.CORE_LOWERING").Id, coreQuery.DependencyIds)
+
+    let backendQuery = queryByCheckpoint "KBackendIR"
+    Assert.Equal(LowerKBackendIRQuery, backendQuery.QueryKind)
+    Assert.Contains((queryByCheckpoint "KRuntimeIR").Id, backendQuery.DependencyIds)
+
+    let targetQuery = queryByCheckpoint "zig.c"
+    Assert.Equal(LowerTargetQuery, targetQuery.QueryKind)
+    Assert.Equal(None, targetQuery.RequiredPhase)
+    Assert.Contains(backendQuery.Id, targetQuery.DependencyIds)
+
+    Assert.All(
+        queries,
+        fun query ->
+            Assert.False(String.IsNullOrWhiteSpace(query.Id))
+            Assert.False(String.IsNullOrWhiteSpace(query.InputKey))
+            Assert.False(String.IsNullOrWhiteSpace(query.OutputCheckpoint))
+            Assert.Equal("zig", query.BackendProfile)
+            Assert.Equal("bootstrap-prelude-v1", query.BackendIntrinsicSet)
+    )
 
 [<Fact>]
 let ``checkpoint contract makes implementation defined runtime IR and profile targets explicit`` () =
