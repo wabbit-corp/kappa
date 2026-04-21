@@ -28,7 +28,16 @@ module Compilation =
           StartLine: int option
           StartColumn: int option
           EndLine: int option
-          EndColumn: int option }
+          EndColumn: int option
+          RelatedOrigins: DumpRelatedOrigin list }
+
+    and DumpRelatedOrigin =
+        { Message: string
+          FilePath: string
+          StartLine: int
+          StartColumn: int
+          EndLine: int
+          EndColumn: int }
 
     type DumpOwnershipBinding =
         { Id: string
@@ -2475,6 +2484,14 @@ module Compilation =
                 None)
 
     let private dumpDiagnostic (diagnostic: Diagnostic) =
+        let dumpRelatedOrigin (related: DiagnosticRelatedLocation) =
+            { Message = related.Message
+              FilePath = related.Location.FilePath
+              StartLine = related.Location.Start.Line
+              StartColumn = related.Location.Start.Column
+              EndLine = related.Location.End.Line
+              EndColumn = related.Location.End.Column }
+
         { Code = diagnostic.Code
           Stage = diagnostic.Stage
           Phase = diagnostic.Phase
@@ -2484,7 +2501,8 @@ module Compilation =
           StartLine = diagnostic.Location |> Option.map (fun location -> location.Start.Line)
           StartColumn = diagnostic.Location |> Option.map (fun location -> location.Start.Column)
           EndLine = diagnostic.Location |> Option.map (fun location -> location.End.Line)
-          EndColumn = diagnostic.Location |> Option.map (fun location -> location.End.Column) }
+          EndColumn = diagnostic.Location |> Option.map (fun location -> location.End.Column)
+          RelatedOrigins = diagnostic.RelatedLocations |> List.map dumpRelatedOrigin }
 
     let private dumpDeclaration (declaration: TopLevelDeclaration) =
         { Kind = declarationKindText declaration
@@ -2795,7 +2813,8 @@ module Compilation =
                               Stage = Some "KFrontIR"
                               Phase = Some(KFrontIRPhase.phaseName CHECKERS)
                               Message = $"Import cycle detected: {message}"
-                              Location = None }
+                              Location = None
+                              RelatedLocations = [] }
                         )
                 | true, 2 ->
                     ()
@@ -2850,7 +2869,24 @@ module Compilation =
         else
             $"({name} {items})"
 
+    let private renderDumpRelatedOriginSexpr (related: DumpRelatedOrigin) =
+        [
+            sexprStringAtom "message" related.Message
+            sexprStringAtom "file" related.FilePath
+            sexprAtom "start-line" (string related.StartLine)
+            sexprAtom "start-column" (string related.StartColumn)
+            sexprAtom "end-line" (string related.EndLine)
+            sexprAtom "end-column" (string related.EndColumn)
+        ]
+        |> String.concat " "
+        |> fun body -> $"(related-origin {body})"
+
     let private renderDumpDiagnosticSexpr (diagnostic: DumpDiagnostic) =
+        let relatedOrigins =
+            diagnostic.RelatedOrigins
+            |> List.map renderDumpRelatedOriginSexpr
+            |> String.concat " "
+
         [
             sexprStringAtom "code" diagnostic.Code
             sexprOptionalStringAtom "stage" diagnostic.Stage
@@ -2862,6 +2898,7 @@ module Compilation =
             diagnostic.StartColumn |> Option.map (fun value -> sexprAtom "start-column" (string value)) |> Option.defaultValue (sexprAtom "start-column" "nil")
             diagnostic.EndLine |> Option.map (fun value -> sexprAtom "end-line" (string value)) |> Option.defaultValue (sexprAtom "end-line" "nil")
             diagnostic.EndColumn |> Option.map (fun value -> sexprAtom "end-column" (string value)) |> Option.defaultValue (sexprAtom "end-column" "nil")
+            if String.IsNullOrWhiteSpace(relatedOrigins) then "(related-origins)" else $"(related-origins {relatedOrigins})"
         ]
         |> String.concat " "
         |> fun body -> $"(diagnostic {body})"
@@ -3410,7 +3447,8 @@ module Compilation =
                 Stage = Some "target-lowering"
                 Phase = None
                 Message = message
-                Location = None } ]
+                Location = None
+                RelatedLocations = [] } ]
 
     let private renderTargetCheckpointJson
         (workspace: WorkspaceCompilation)

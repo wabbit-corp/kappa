@@ -5,13 +5,18 @@ type DiagnosticSeverity =
     | Warning
     | Error
 
+type DiagnosticRelatedLocation =
+    { Message: string
+      Location: SourceLocation }
+
 type Diagnostic =
     { Severity: DiagnosticSeverity
       Code: string
       Stage: string option
       Phase: string option
       Message: string
-      Location: SourceLocation option }
+      Location: SourceLocation option
+      RelatedLocations: DiagnosticRelatedLocation list }
 
 module Diagnostic =
     let defaultCode severity =
@@ -27,6 +32,7 @@ type DiagnosticBag() =
         severity: DiagnosticSeverity,
         message: string,
         ?location: SourceLocation,
+        ?relatedLocations: DiagnosticRelatedLocation seq,
         ?code: string,
         ?stage: string,
         ?phase: string
@@ -37,7 +43,8 @@ type DiagnosticBag() =
               Stage = stage
               Phase = phase
               Message = message
-              Location = location }
+              Location = location
+              RelatedLocations = relatedLocations |> Option.map Seq.toList |> Option.defaultValue [] }
         )
 
     member this.AddInfo(message: string, ?location: SourceLocation, ?code: string, ?stage: string, ?phase: string) =

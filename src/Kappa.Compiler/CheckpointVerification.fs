@@ -9,7 +9,8 @@ module CheckpointVerification =
           Stage = Some "checkpoint-verification"
           Phase = None
           Message = message
-          Location = None }
+          Location = None
+          RelatedLocations = [] }
 
     let availableCheckpointNames =
         [

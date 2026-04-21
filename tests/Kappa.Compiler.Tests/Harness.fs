@@ -350,6 +350,7 @@ type KpFixtureAssertion =
     | AssertErrorCount of expectedCount: int * filePath: string * lineNumber: int
     | AssertWarningCount of expectedCount: int * filePath: string * lineNumber: int
     | AssertDiagnosticCodes of expectedCodes: string list * filePath: string * lineNumber: int
+    | AssertDiagnosticAt of relativePath: string * severity: DiagnosticSeverity * code: string * expectedLine: int * expectedColumn: int option * filePath: string * lineNumber: int
     | AssertDiagnosticMatch of regexPattern: string * filePath: string * lineNumber: int
     | AssertType of target: string * expectedTypeText: string * filePath: string * lineNumber: int
     | AssertFileDeclarationKinds of relativePath: string * expectedKinds: string list * filePath: string * lineNumber: int
@@ -470,6 +471,14 @@ let private parseFixtureDumpFormat (filePath: string) lineNumber (value: string)
     | "sexpr" -> StageDumpFormat.SExpression
     | other ->
         invalidOp $"Unsupported fixture dump format '{other}' ({filePath}:{lineNumber})."
+
+let private parseFixtureDiagnosticSeverity (filePath: string) lineNumber (value: string) =
+    match value.Trim().ToLowerInvariant() with
+    | "info" -> DiagnosticSeverity.Info
+    | "warning" -> DiagnosticSeverity.Warning
+    | "error" -> DiagnosticSeverity.Error
+    | other ->
+        invalidOp $"Unsupported diagnostic severity '{other}' ({filePath}:{lineNumber})."
 
 let private parseFixtureRelation (filePath: string) lineNumber (value: string) =
     match value.Trim() with
@@ -700,6 +709,42 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
                 invalidOp $"assertDiagnosticCodes expects a comma-separated list of diagnostic codes ({filePath}:{lineNumber})."
 
             Some(AssertionDirective(AssertDiagnosticCodes(expectedCodes, filePath, lineNumber)))
+        | "assertDiagnosticAt" ->
+            let tokens =
+                directiveBody.Split([| ' '; '\t' |], StringSplitOptions.RemoveEmptyEntries)
+
+            if tokens.Length <> 4 && tokens.Length <> 5 then
+                invalidOp $"assertDiagnosticAt expects '<path> <severity> <code> <line> [column]' ({filePath}:{lineNumber})."
+
+            let expectedLine = parseNonNegativeInt directiveName filePath lineNumber tokens[3]
+
+            if expectedLine = 0 then
+                invalidOp $"assertDiagnosticAt expects a 1-based line number ({filePath}:{lineNumber})."
+
+            let expectedColumn =
+                if tokens.Length = 5 then
+                    let parsedColumn = parseNonNegativeInt directiveName filePath lineNumber tokens[4]
+
+                    if parsedColumn = 0 then
+                        invalidOp $"assertDiagnosticAt expects a 1-based column number ({filePath}:{lineNumber})."
+
+                    Some parsedColumn
+                else
+                    None
+
+            Some(
+                AssertionDirective(
+                    AssertDiagnosticAt(
+                        tokens[0],
+                        parseFixtureDiagnosticSeverity filePath lineNumber tokens[1],
+                        tokens[2],
+                        expectedLine,
+                        expectedColumn,
+                        filePath,
+                        lineNumber
+                    )
+                )
+            )
         | "assertType" ->
             let targetAndType =
                 directiveBody.Split([| ' '; '\t' |], 2, StringSplitOptions.RemoveEmptyEntries)
@@ -1530,6 +1575,7 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
             | AssertErrorCount(expectedCount, _, _) when expectedCount > 0 -> true
             | AssertWarningCount(expectedCount, _, _) when expectedCount > 0 -> true
             | AssertDiagnosticCodes _ -> true
+            | AssertDiagnosticAt _ -> true
             | AssertDiagnosticMatch _ -> true
             | _ -> false)
 
@@ -1565,6 +1611,30 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
                 |> List.map normalizeFixtureText
 
             Assert.Equal<string list>(expected, actual)
+        | AssertDiagnosticAt(relativePath, severity, code, expectedLine, expectedColumn, _, lineNumber) ->
+            let expectedPath = rootedFilePath fixtureCase.Root relativePath |> Path.GetFullPath
+            let normalizedCode = normalizeFixtureText code
+
+            let matches diagnostic =
+                match diagnostic.Location with
+                | Some location ->
+                    diagnostic.Severity = severity
+                    && normalizeFixtureText diagnostic.Code = normalizedCode
+                    && String.Equals(Path.GetFullPath(location.FilePath), expectedPath, StringComparison.OrdinalIgnoreCase)
+                    && location.Start.Line = expectedLine
+                    && (expectedColumn |> Option.forall (fun column -> location.Start.Column = column))
+                | None ->
+                    false
+
+            let expectedColumnText =
+                expectedColumn
+                |> Option.map (fun column -> $":{column}")
+                |> Option.defaultValue ""
+
+            Assert.True(
+                workspace.Diagnostics |> List.exists matches,
+                $"Could not find diagnostic {severity} {code} at {relativePath}:{expectedLine}{expectedColumnText} ({fixtureCase.Name}:{lineNumber}). Actual diagnostics:{Environment.NewLine}{formatDiagnostics workspace.Diagnostics}"
+            )
         | AssertDiagnosticMatch(pattern, _, lineNumber) ->
             let regex =
                 try

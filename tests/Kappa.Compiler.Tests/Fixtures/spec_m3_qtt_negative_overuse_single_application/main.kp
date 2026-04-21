@@ -11,3 +11,4 @@ let main : IO Unit = do
 
 --! assertErrorCount 1
 --! assertDiagnosticCodes E_QTT_LINEAR_OVERUSE
+--! assertDiagnosticAt main.kp error E_QTT_LINEAR_OVERUSE 10

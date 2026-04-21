@@ -12,3 +12,4 @@ let leak : IO (Unit -> File) = do
 
 --! assertErrorCount 1
 --! assertDiagnosticCodes E_QTT_BORROW_ESCAPE
+--! assertDiagnosticAt main.kp error E_QTT_BORROW_ESCAPE 11

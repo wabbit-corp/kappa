@@ -31,10 +31,13 @@ module ResourceChecking =
           Place: ResourcePlace
           BorrowRegion: BorrowRegion option
           CapturedRegions: Set<string>
+          CapturedBindingOrigins: SourceLocation list
           UseMinimum: int
           UseMaximum: int
           CheckLinearDrop: bool
-          ClosureFactId: string option }
+          ClosureFactId: string option
+          Origin: SourceLocation option
+          FirstConsumeOrigin: SourceLocation option }
 
     type private CheckState =
         { ScopeId: string
@@ -67,14 +70,102 @@ module ResourceChecking =
     let private diagnosticLocation (document: ParsedDocument) =
         document.Source.GetLocation(TextSpan.FromBounds(0, 0))
 
-    let private addDiagnostic code message (document: ParsedDocument) (state: CheckState) =
+    let private isIdentifierBoundary (line: string) index =
+        index < 0
+        || index >= line.Length
+        || not (SyntaxFacts.isIdentifierPart line[index])
+
+    let private identifierColumns name (line: string) =
+        let rec loop start columns =
+            let index = line.IndexOf(name, start, StringComparison.Ordinal)
+
+            if index < 0 then
+                List.rev columns
+            else
+                let before = index - 1
+                let after = index + name.Length
+
+                let columns =
+                    if isIdentifierBoundary line before && isIdentifierBoundary line after then
+                        (index + 1) :: columns
+                    else
+                        columns
+
+                loop (index + max 1 name.Length) columns
+
+        if String.IsNullOrWhiteSpace(name) then [] else loop 0 []
+
+    let private lineContainsIdentifier name line =
+        identifierColumns name line |> List.isEmpty |> not
+
+    let private trySplitBindingLine (line: string) =
+        let equalsIndex = line.IndexOf("=", StringComparison.Ordinal)
+        let bindIndex = line.IndexOf("<-", StringComparison.Ordinal)
+
+        match equalsIndex, bindIndex with
+        | -1, -1 -> None
+        | -1, index -> Some(line.Substring(0, index))
+        | index, -1 -> Some(line.Substring(0, index))
+        | equalsIndex, bindIndex -> Some(line.Substring(0, min equalsIndex bindIndex))
+
+    let private isBinderLineFor (name: string) (line: string) =
+        let trimmed = line.TrimStart()
+
+        if trimmed.StartsWith("--", StringComparison.Ordinal) then
+            false
+        elif trimmed.StartsWith("let ", StringComparison.Ordinal) then
+            trySplitBindingLine line
+            |> Option.exists (lineContainsIdentifier name)
+        elif trimmed.StartsWith("using ", StringComparison.Ordinal) then
+            match line.IndexOf("<-", StringComparison.Ordinal) with
+            | index when index >= 0 -> line.Substring(0, index) |> lineContainsIdentifier name
+            | _ -> false
+        else
+            false
+
+    let private findIdentifierLocationWhere (document: ParsedDocument) name predicate =
+        [ 0 .. document.Source.LineCount - 1 ]
+        |> List.tryPick (fun lineIndex ->
+            let line = document.Source.GetLineText(lineIndex)
+
+            if predicate line then
+                identifierColumns name line
+                |> List.tryHead
+                |> Option.map (fun column ->
+                    let start = document.Source.LineStarts[lineIndex] + column - 1
+                    document.Source.GetLocation(TextSpan.FromBounds(start, start + name.Length)))
+            else
+                None)
+
+    let private findBinderLocation (document: ParsedDocument) name =
+        findIdentifierLocationWhere document name (isBinderLineFor name)
+
+    let private findUseLocation (document: ParsedDocument) name ordinal =
+        let locations =
+            [ 0 .. document.Source.LineCount - 1 ]
+            |> List.collect (fun lineIndex ->
+                let line = document.Source.GetLineText(lineIndex)
+                let trimmed = line.TrimStart()
+
+                if trimmed.StartsWith("--", StringComparison.Ordinal) || isBinderLineFor name line then
+                    []
+                else
+                    identifierColumns name line
+                    |> List.map (fun column ->
+                        let start = document.Source.LineStarts[lineIndex] + column - 1
+                        document.Source.GetLocation(TextSpan.FromBounds(start, start + name.Length))))
+
+        locations |> List.tryItem (max 0 (ordinal - 1))
+
+    let private addDiagnostic code message location relatedLocations (document: ParsedDocument) (state: CheckState) =
         let diagnostic: Diagnostic =
             { Severity = Error
               Code = code
               Stage = Some "KFrontIR"
               Phase = Some(KFrontIRPhase.phaseName BODY_RESOLVE)
               Message = message
-              Location = Some(diagnosticLocation document) }
+              Location = location |> Option.orElseWith (fun () -> Some(diagnosticLocation document))
+              RelatedLocations = relatedLocations }
 
         { state with
             Diagnostics = state.Diagnostics @ [ diagnostic ] }
@@ -114,9 +205,9 @@ module ResourceChecking =
           BindingPlaceRoot = binding.Place.Root
           BindingPlacePath = binding.Place.Path
           BindingBorrowRegionId = binding.BorrowRegion |> Option.map (fun region -> region.Id)
-          BindingOrigin = None }
+          BindingOrigin = binding.Origin }
 
-    let private addEvent useKind binding (state: CheckState) =
+    let private addEvent useKind origin binding (state: CheckState) =
         let event: OwnershipUseFact =
             { UseId = $"{state.ScopeId}.u{state.NextEventId}"
               UseKindName = useKind
@@ -124,15 +215,15 @@ module ResourceChecking =
               UseTargetName = binding.Name
               UsePlaceRoot = binding.Place.Root
               UsePlacePath = binding.Place.Path
-              UseOrigin = None }
+              UseOrigin = origin }
 
         { state with
             Events = state.Events @ [ event ]
             NextEventId = state.NextEventId + 1 }
 
-    let private addNamedEvent useKind name (state: CheckState) =
+    let private addNamedEvent useKind origin name (state: CheckState) =
         match Map.tryFind name state.Bindings with
-        | Some binding -> addEvent useKind binding state
+        | Some binding -> addEvent useKind origin binding state
         | None ->
             let event: OwnershipUseFact =
                 { UseId = $"{state.ScopeId}.u{state.NextEventId}"
@@ -141,7 +232,7 @@ module ResourceChecking =
                   UseTargetName = name
                   UsePlaceRoot = name
                   UsePlacePath = []
-                  UseOrigin = None }
+                  UseOrigin = origin }
 
             { state with
                 Events = state.Events @ [ event ]
@@ -291,7 +382,7 @@ module ResourceChecking =
             })
         |> Set.ofSeq
 
-    let private addBinding name quantity borrowRegion capturedRegions checkDrop closureFactId (state: CheckState) =
+    let private addBinding name quantity borrowRegion capturedRegions capturedBindingOrigins checkDrop closureFactId origin (state: CheckState) =
         let place: ResourcePlace =
             { Root = name
               Path = [] }
@@ -303,40 +394,72 @@ module ResourceChecking =
               Place = place
               BorrowRegion = borrowRegion
               CapturedRegions = capturedRegions
+              CapturedBindingOrigins = capturedBindingOrigins
               UseMinimum = 0
               UseMaximum = 0
               CheckLinearDrop = checkDrop
-              ClosureFactId = closureFactId }
+              ClosureFactId = closureFactId
+              Origin = origin
+              FirstConsumeOrigin = None }
 
         { state with
             Bindings = Map.add name binding state.Bindings
             NextBindingId = state.NextBindingId + 1 }
 
-    let private addPatternBindings (binding: BindPattern) quantity capturedRegions checkDrop closureFactId state =
+    let private addPatternBindings (document: ParsedDocument) (binding: BindPattern) quantity capturedRegions capturedBindingOrigins checkDrop closureFactId state =
         collectPatternNames binding.Pattern
         |> List.fold (fun current name ->
-            addBinding name quantity None capturedRegions checkDrop closureFactId current) state
+            addBinding
+                name
+                quantity
+                None
+                capturedRegions
+                capturedBindingOrigins
+                checkDrop
+                closureFactId
+                (findBinderLocation document name)
+                current) state
 
     let private consumeBinding (document: ParsedDocument) name (state: CheckState) =
         match Map.tryFind name state.Bindings with
         | None -> state
         | Some binding ->
+            let consumeOrigin = findUseLocation document name (binding.UseMaximum + 1)
+
             let state =
                 if binding.UseMaximum >= 1 then
+                    let relatedLocations =
+                        [
+                            match binding.FirstConsumeOrigin with
+                            | Some location ->
+                                { Message = "First consume of the linear resource."
+                                  Location = location }
+                            | None -> ()
+
+                            match binding.Origin with
+                            | Some location ->
+                                { Message = "Linear resource binding."
+                                  Location = location }
+                            | None -> ()
+                        ]
+
                     addDiagnostic
                         linearOveruseCode
                         $"Linear resource '{name}' is consumed more than once."
+                        consumeOrigin
+                        relatedLocations
                         document
                         state
                 else
                     state
 
-            let state = addEvent "consume" binding state
+            let state = addEvent "consume" consumeOrigin binding state
 
             let updated =
                 { binding with
                     UseMinimum = binding.UseMinimum + 1
-                    UseMaximum = binding.UseMaximum + 1 }
+                    UseMaximum = binding.UseMaximum + 1
+                    FirstConsumeOrigin = binding.FirstConsumeOrigin |> Option.orElse consumeOrigin }
 
             { state with
                 Bindings = Map.add name updated state.Bindings }
@@ -377,22 +500,45 @@ module ResourceChecking =
         if Set.isEmpty escaped then
             state
         else
+            let escapeOrigin =
+                match expression with
+                | Name [ name ] -> findUseLocation document name 1
+                | _ -> None
+
+            let relatedLocations =
+                capturedBindings state expression
+                |> List.collect (fun binding ->
+                    [
+                        match binding.Origin with
+                        | Some location ->
+                            { Message = $"Captured binding '{binding.Name}'."
+                              Location = location }
+                        | None -> ()
+
+                        for location in binding.CapturedBindingOrigins do
+                            { Message = "Borrow introduction captured by the escaping value."
+                              Location = location }
+                    ])
+                |> List.distinctBy (fun related -> related.Location.FilePath, related.Location.Span.Start, related.Message)
+
             let state =
                 match expression with
                 | Name [ name ] ->
                     match Map.tryFind name state.Bindings with
                     | Some binding ->
-                        let state = addEvent "escape" binding state
+                        let state = addEvent "escape" escapeOrigin binding state
 
                         match binding.ClosureFactId with
                         | Some closureId -> markClosureEscaped closureId state
                         | None -> state
-                    | None -> addNamedEvent "escape" name state
+                    | None -> addNamedEvent "escape" escapeOrigin name state
                 | _ -> state
 
             addDiagnostic
                 borrowEscapeCode
                 "A value that captures a borrowed region cannot escape its protected scope."
+                escapeOrigin
+                relatedLocations
                 document
                 state
 
@@ -464,7 +610,7 @@ module ResourceChecking =
                         consumeBinding document name current
                     | Some quantity, Name [ name ] when quantityBorrows quantity ->
                         current
-                        |> addNamedEvent "borrow" name
+                        |> addNamedEvent "borrow" (findUseLocation document name 1) name
                         |> fun current -> checkExpression document signatures current argument
                     | Some quantity, _ when quantityBorrows quantity ->
                         checkExpression document signatures current argument
@@ -497,7 +643,8 @@ module ResourceChecking =
 
                 let current =
                     capturedBindings
-                    |> List.fold (fun state binding -> addEvent "capture" binding state) current
+                    |> List.fold (fun state binding ->
+                        addEvent "capture" (findUseLocation document binding.Name 1) binding state) current
 
                 let closureName =
                     match expression, collectPatternNames binding.Pattern with
@@ -512,12 +659,16 @@ module ResourceChecking =
                     | _ -> None, current
 
                 let checkDrop = binding.Quantity = Some QuantityOne
-                let current = addPatternBindings binding binding.Quantity captured checkDrop closureFactId current
+                let capturedBindingOrigins =
+                    capturedBindings
+                    |> List.choose (fun binding -> binding.Origin)
+
+                let current = addPatternBindings document binding binding.Quantity captured capturedBindingOrigins checkDrop closureFactId current
                 loop current rest
             | DoBind(binding, expression) :: rest ->
                 let current = checkExpression document signatures current expression
                 let checkDrop = binding.Quantity = Some QuantityOne
-                let current = addPatternBindings binding binding.Quantity Set.empty checkDrop None current
+                let current = addPatternBindings document binding binding.Quantity Set.empty [] checkDrop None current
                 loop current rest
             | DoUsing(pattern, expression) :: rest ->
                 let current = checkExpression document signatures current expression
@@ -540,12 +691,21 @@ module ResourceChecking =
                 let current =
                     collectPatternNames pattern
                     |> List.fold (fun state name ->
-                        addBinding name (Some(QuantityBorrow None)) (Some region) Set.empty false None state) current
+                        addBinding
+                            name
+                            (Some(QuantityBorrow None))
+                            (Some region)
+                            Set.empty
+                            []
+                            false
+                            None
+                            (findBinderLocation document name)
+                            state) current
 
                 loop current rest
             | DoVar(name, expression) :: rest ->
                 let current = checkExpression document signatures current expression
-                let current = addBinding name None None Set.empty false None current
+                let current = addBinding name None None Set.empty [] false None (findBinderLocation document name) current
                 loop current rest
             | DoAssign(_, expression) :: rest ->
                 let current = checkExpression document signatures current expression
@@ -567,6 +727,8 @@ module ResourceChecking =
                 addDiagnostic
                     linearDropCode
                     $"Linear resource '{binding.Name}' is not consumed on every path."
+                    binding.Origin
+                    []
                     document
                     current
             else
@@ -602,7 +764,7 @@ module ResourceChecking =
             |> List.concat)
         |> Map.ofList
 
-    let private addParameterBinding (parameter: Parameter) state =
+    let private addParameterBinding (document: ParsedDocument) (parameter: Parameter) state =
         let quantity =
             if parameter.IsInout then Some QuantityOne else parameter.Quantity
 
@@ -620,14 +782,14 @@ module ResourceChecking =
             | Some region -> addBorrowRegionFact region state
             | None -> state
 
-        addBinding parameter.Name quantity region Set.empty false None state
+        addBinding parameter.Name quantity region Set.empty [] false None (findBinderLocation document parameter.Name) state
 
     let private checkDefinition (signatures: Map<string, FunctionSignature>) (document: ParsedDocument) scopeId (definition: LetDefinition) =
         match definition.Body with
         | Some body ->
             let initialState =
                 definition.Parameters
-                |> List.fold (fun state parameter -> addParameterBinding parameter state) (emptyState scopeId)
+                |> List.fold (fun state parameter -> addParameterBinding document parameter state) (emptyState scopeId)
 
             checkExpression document signatures initialState body
         | None ->

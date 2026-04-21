@@ -483,6 +483,67 @@ let ``BODY_RESOLVE dump exposes M3 ownership facts`` () =
     )
 
 [<Fact>]
+let ``M3 overuse diagnostics expose primary and related origins`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m3-diagnostic-origin-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    ""
+                    "data File : Type ="
+                    "    Handle Int"
+                    ""
+                    "let consume (1 f : File) = ()"
+                    ""
+                    "let main : IO Unit = do"
+                    "    let 1 file = Handle 1"
+                    "    consume file"
+                    "    consume file"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let diagnostic =
+        workspace.Diagnostics
+        |> List.find (fun diagnostic -> diagnostic.Code = "E_QTT_LINEAR_OVERUSE")
+
+    match diagnostic.Location with
+    | Some location ->
+        Assert.Equal(11, location.Start.Line)
+    | None ->
+        failwith "Expected overuse diagnostic to have a primary origin."
+
+    Assert.Contains(
+        diagnostic.RelatedLocations,
+        fun related ->
+            related.Message.Contains("First consume", StringComparison.Ordinal)
+            && related.Location.Start.Line = 10
+    )
+
+    Assert.Contains(
+        diagnostic.RelatedLocations,
+        fun related ->
+            related.Message.Contains("binding", StringComparison.OrdinalIgnoreCase)
+            && related.Location.Start.Line = 9
+    )
+
+    let bodyResolveJson =
+        match Compilation.dumpStage workspace "KFrontIR.BODY_RESOLVE" StageDumpFormat.Json with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    use document = JsonDocument.Parse(bodyResolveJson)
+
+    let dumpedDiagnostic =
+        document.RootElement.GetProperty("diagnostics").EnumerateArray()
+        |> Seq.find (fun item -> item.GetProperty("code").GetString() = "E_QTT_LINEAR_OVERUSE")
+
+    Assert.Equal(11, dumpedDiagnostic.GetProperty("startLine").GetInt32())
+    Assert.Equal(2, dumpedDiagnostic.GetProperty("relatedOrigins").GetArrayLength())
+
+[<Fact>]
 let ``stage dumps expose checkpoint contract metadata`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend
