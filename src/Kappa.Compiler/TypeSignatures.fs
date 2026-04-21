@@ -11,7 +11,7 @@ module TypeSignatures =
 
     type TraitConstraint =
         { TraitName: string
-          Argument: TypeExpr }
+          Arguments: TypeExpr list }
 
     type TypeScheme =
         { Forall: string list
@@ -238,17 +238,13 @@ module TypeSignatures =
                 let constraintParser = Parser(constraintTokens)
 
                 match constraintParser.ParseType() with
-                | Some(TypeName(name, [ argument ])) ->
+                | Some(TypeName(name, arguments)) ->
                     Some
                         { TraitName =
                             match name with
                             | [ singleName ] -> singleName
                             | _ -> SyntaxFacts.moduleNameToText name
-                          Argument = argument }
-                | Some(TypeName([ traitName ], [])) ->
-                    Some
-                        { TraitName = traitName
-                          Argument = TypeName([ "Unit" ], []) }
+                          Arguments = arguments }
                 | _ ->
                     None
 
@@ -443,7 +439,7 @@ module TypeSignatures =
 
     let applyConstraintSubstitution substitution (constraintInfo: TraitConstraint) =
         { constraintInfo with
-            Argument = applySubstitution substitution constraintInfo.Argument }
+            Arguments = constraintInfo.Arguments |> List.map (applySubstitution substitution) }
 
     let applySchemeSubstitution substitution (scheme: TypeScheme) =
         { scheme with

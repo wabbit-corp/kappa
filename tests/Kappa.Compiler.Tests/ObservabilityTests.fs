@@ -549,6 +549,75 @@ let ``KCore preserves using as protected release schedule`` () =
     Assert.Contains("__kappa_using_file_", coreSexpr)
 
 [<Fact>]
+let ``KCore using release action selects Releasable evidence`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m3-kcore-releasable-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    ""
+                    "data File : Type ="
+                    "    Handle Int"
+                    ""
+                    "trait Releasable m a ="
+                    "    release : a -> IO Unit"
+                    ""
+                    "instance Releasable IO File ="
+                    "    let release f = printString \"closed\""
+                    ""
+                    "openFile : String -> IO File"
+                    "let openFile name = pure (Handle 1)"
+                    "let readData (& file : File) = pure \"chunk\""
+                    ""
+                    "let main : IO Unit = do"
+                    "    using file <- openFile \"data.txt\""
+                    "    readData file"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let coreModule =
+        workspace.KCore
+        |> List.find (fun moduleDump -> moduleDump.Name = "main")
+
+    let mainBinding =
+        coreModule.Declarations
+        |> List.pick (fun declaration ->
+            match declaration.Binding with
+            | Some binding when binding.Name = Some "main" -> Some binding
+            | _ -> None)
+
+    match mainBinding.Body with
+    | Some(
+        KCoreDoScope(
+            _,
+            KCoreLet(
+                hiddenOwnedName,
+                _,
+                KCoreScheduleExit(
+                    _,
+                    KCoreRelease(
+                        Some "File",
+                        KCoreTraitCall(
+                            "Releasable",
+                            "release",
+                            KCoreDictionaryValue("main", "Releasable", "IO_File"),
+                            []
+                        ),
+                        KCoreName [ releasedName ]
+                    ),
+                    _
+                )
+            )
+        )
+      ) ->
+        Assert.Equal(hiddenOwnedName, releasedName)
+    | other ->
+        failwithf "Expected using release action to select Releasable IO File evidence, got %A" other
+
+[<Fact>]
 let ``M3 overuse diagnostics expose primary and related origins`` () =
     let workspace =
         compileInMemoryWorkspace

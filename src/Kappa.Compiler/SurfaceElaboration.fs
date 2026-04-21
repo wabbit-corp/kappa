@@ -19,7 +19,7 @@ module SurfaceElaboration =
         { ModuleName: string
           TraitName: string
           InstanceKey: string
-          HeadType: TypeExpr
+          HeadTypes: TypeExpr list
           Members: Map<string, LetDefinition> }
 
     type private BindingSchemeInfo =
@@ -134,8 +134,8 @@ module SurfaceElaboration =
     let private refType argumentType =
         TypeName([ "Ref" ], [ argumentType ])
 
-    let private dictionaryType traitName argumentType =
-        TypeName([ TraitRuntime.dictionaryTypeName traitName ], [ argumentType ])
+    let private dictionaryType traitName argumentTypes =
+        TypeName([ TraitRuntime.dictionaryTypeName traitName ], argumentTypes)
 
     let private unwrapIoType typeExpr =
         match typeExpr with
@@ -168,8 +168,54 @@ module SurfaceElaboration =
         | _ ->
             None
 
-    let private tryParseInstanceHeadType (declaration: InstanceDeclaration) =
-        declaration.HeaderTokens |> TypeSignatures.parseType
+    let private splitLeadingTypeArgumentTokens argumentCount tokens =
+        let tokens = significantTokens tokens
+
+        let takeAtom remaining =
+            match remaining with
+            | [] ->
+                [], []
+            | first :: rest when first.Kind = LeftParen ->
+                let mutable depth = 0
+                let mutable index = 0
+                let mutable keepReading = true
+                let tokenArray = remaining |> List.toArray
+
+                while keepReading && index < tokenArray.Length do
+                    match tokenArray[index].Kind with
+                    | LeftParen -> depth <- depth + 1
+                    | RightParen ->
+                        depth <- depth - 1
+
+                        if depth = 0 then
+                            keepReading <- false
+                    | _ -> ()
+
+                    index <- index + 1
+
+                List.ofArray tokenArray[0 .. index - 1], List.ofArray tokenArray[index ..]
+            | first :: rest ->
+                [ first ], rest
+
+        let rec loop remaining count groups =
+            if count <= 1 then
+                List.rev (remaining :: groups)
+            else
+                let group, rest = takeAtom remaining
+                loop rest (count - 1) (group :: groups)
+
+        loop tokens (max 1 argumentCount) []
+
+    let private tryParseInstanceHeadTypes argumentCount (declaration: InstanceDeclaration) =
+        let parsed =
+            declaration.HeaderTokens
+            |> splitLeadingTypeArgumentTokens argumentCount
+            |> List.map TypeSignatures.parseType
+
+        if parsed |> List.exists Option.isNone then
+            None
+        else
+            Some(parsed |> List.choose id)
 
     let private buildModuleSurfaceInfo (frontendModule: KFrontIRModule) =
         let moduleName = moduleNameText frontendModule.ModuleIdentity
@@ -219,12 +265,18 @@ module SurfaceElaboration =
             frontendModule.Declarations
             |> List.choose (function
                 | InstanceDeclarationNode declaration ->
-                    tryParseInstanceHeadType declaration
-                    |> Option.map (fun headType ->
+                    let argumentCount =
+                        traits
+                        |> Map.tryFind declaration.TraitName
+                        |> Option.map (fun traitInfo -> traitInfo.TypeParameters.Length)
+                        |> Option.defaultValue 1
+
+                    tryParseInstanceHeadTypes argumentCount declaration
+                    |> Option.map (fun headTypes ->
                         { ModuleName = moduleName
                           TraitName = declaration.TraitName
                           InstanceKey = TraitRuntime.instanceKeyFromTokens declaration.HeaderTokens
-                          HeadType = headType
+                          HeadTypes = headTypes
                           Members =
                             declaration.Members
                             |> List.choose (fun memberDeclaration ->
@@ -372,8 +424,10 @@ module SurfaceElaboration =
         |> List.tryPick (fun instanceInfo ->
             if not (String.Equals(instanceInfo.TraitName, constraintInfo.TraitName, StringComparison.Ordinal)) then
                 None
+            elif List.length instanceInfo.HeadTypes <> List.length constraintInfo.Arguments then
+                None
             else
-                TypeSignatures.tryUnify instanceInfo.HeadType constraintInfo.Argument
+                TypeSignatures.tryUnifyMany (List.zip instanceInfo.HeadTypes constraintInfo.Arguments)
                 |> Option.map (fun _ -> instanceInfo))
 
     let private makeSyntheticBindingDeclaration
@@ -569,6 +623,35 @@ module SurfaceElaboration =
             | DoWhile _ :: rest ->
                 inferDoResultType localTypes rest
 
+        and buildUsingReleaseAction localTypes expression hiddenOwnedName =
+            let defaultRelease =
+                KCoreRelease(None, KCoreName [ "release" ], KCoreName [ hiddenOwnedName ])
+
+            match inferExpressionType localTypes expression with
+            | Some(TypeName(monadName, [ resourceType ])) ->
+                let monadType = TypeName(monadName, [])
+
+                let releasableConstraint =
+                    { TraitName = "Releasable"
+                      Arguments = [ monadType; resourceType ] }
+
+                match resolveConstraintInstance environment releasableConstraint with
+                | Some instanceInfo ->
+                    KCoreRelease(
+                        Some(TypeSignatures.toText resourceType),
+                        KCoreTraitCall(
+                            "Releasable",
+                            "release",
+                            KCoreDictionaryValue(instanceInfo.ModuleName, instanceInfo.TraitName, instanceInfo.InstanceKey),
+                            []
+                        ),
+                        KCoreName [ hiddenOwnedName ]
+                    )
+                | None ->
+                    defaultRelease
+            | _ ->
+                defaultRelease
+
         and lowerDoStatements scopeLabel localTypes statements =
             let bindPatternName (binding: BindPattern) =
                 match binding.Pattern with
@@ -621,7 +704,7 @@ module SurfaceElaboration =
                     loweredValue,
                     KCoreScheduleExit(
                         scopeLabel,
-                        KCoreRelease(None, KCoreName [ "release" ], KCoreName [ hiddenOwnedName ]),
+                        buildUsingReleaseAction localTypes expression hiddenOwnedName,
                         KCoreLet(bindingName, KCoreName [ hiddenOwnedName ], lowerDoStatements scopeLabel nextLocals rest)
                     )
                 )
@@ -788,7 +871,7 @@ module SurfaceElaboration =
             |> List.map (fun (constraintInfo, dictionaryParameterName) ->
                 lowerKCoreParameter
                     dictionaryParameterName
-                    (Some(TypeSignatures.toText (dictionaryType constraintInfo.TraitName constraintInfo.Argument))))
+                    (Some(TypeSignatures.toText (dictionaryType constraintInfo.TraitName constraintInfo.Arguments))))
 
         let loweredBody =
             definition.Body
@@ -822,6 +905,9 @@ module SurfaceElaboration =
         |> List.map (fun (memberName, memberInfo) ->
             let parameterTypes, resultType = TypeSignatures.schemeParts memberInfo.Scheme
             let dictionaryParameterName = "__kappa_dict"
+            let dictionaryArgumentTypes =
+                traitInfo.TypeParameters |> List.map TypeVariable
+
             let valueParameterNames =
                 parameterTypes
                 |> List.mapi (fun index _ -> $"arg{index}")
@@ -829,17 +915,10 @@ module SurfaceElaboration =
             let parameters =
                 lowerKCoreParameter
                     dictionaryParameterName
-                    (Some(TypeSignatures.toText (dictionaryType traitInfo.Name memberInfo.Scheme.Body |> function
-                        | TypeArrow(parameterType, _) -> parameterType
-                        | _ -> TypeVariable "_")))
+                    (Some(TypeSignatures.toText (dictionaryType traitInfo.Name dictionaryArgumentTypes)))
                 :: (List.zip valueParameterNames parameterTypes
                     |> List.map (fun (parameterName, parameterType) ->
                         lowerKCoreParameter parameterName (Some(TypeSignatures.toText parameterType))))
-
-            let dictionaryArgumentType =
-                match parameterTypes with
-                | parameterType :: _ -> parameterType
-                | [] -> unitType
 
             let body =
                 KCoreTraitCall(
@@ -859,7 +938,7 @@ module SurfaceElaboration =
             makeSyntheticBindingDeclaration
                 (TraitRuntime.dispatchBindingName traitInfo.Name memberName)
                 ({ Name = dictionaryParameterName
-                   TypeText = Some(TypeSignatures.toText (dictionaryType traitInfo.Name dictionaryArgumentType)) }
+                   TypeText = Some(TypeSignatures.toText (dictionaryType traitInfo.Name dictionaryArgumentTypes)) }
                  :: (List.zip valueParameterNames parameterTypes
                      |> List.map (fun (parameterName, parameterType) ->
                          { Name = parameterName
@@ -878,10 +957,9 @@ module SurfaceElaboration =
             surfaceIndex[moduleName].Traits[instanceInfo.TraitName]
 
         let substitution =
-            match traitInfo.TypeParameters with
-            | [ parameterName ] ->
-                Map.ofList [ parameterName, instanceInfo.HeadType ]
-            | _ ->
+            if List.length traitInfo.TypeParameters = List.length instanceInfo.HeadTypes then
+                List.zip traitInfo.TypeParameters instanceInfo.HeadTypes |> Map.ofList
+            else
                 Map.empty
 
         let visibleBindings = mergeVisibleBindings surfaceIndex moduleName
@@ -935,7 +1013,7 @@ module SurfaceElaboration =
             makeSyntheticBindingDeclaration
                 (TraitRuntime.instanceDictionaryBindingName instanceInfo.TraitName instanceInfo.InstanceKey)
                 []
-                (Some(TypeSignatures.toText (dictionaryType instanceInfo.TraitName instanceInfo.HeadType)))
+                (Some(TypeSignatures.toText (dictionaryType instanceInfo.TraitName instanceInfo.HeadTypes)))
                 (KCoreDictionaryValue(moduleName, instanceInfo.TraitName, instanceInfo.InstanceKey))
                 provenance
 
