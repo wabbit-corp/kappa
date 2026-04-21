@@ -650,6 +650,39 @@ let ``observability metadata is comparable across interpreter zig and dotnet pro
         Assert.Equal(dumpCheckpoint, checkpointContract.GetProperty("name").GetString())
 
 [<Fact>]
+let ``portable runtime obligations classify backend neutral backend specific and deferred work`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-runtime-obligations-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let obligations = Compilation.portableRuntimeObligations workspace
+
+    let obligation name =
+        obligations |> List.find (fun obligation -> obligation.Name = name)
+
+    Assert.Equal(KBackendIRGuaranteed, (obligation "tagged-data-layout").Owner)
+    Assert.Equal(KBackendIRGuaranteed, (obligation "runtime-calling-convention").Owner)
+    Assert.Equal(BackendSpecificRuntime, (obligation "memory-management").Owner)
+    Assert.Equal(DeferredRuntimeObligation, (obligation "deterministic-cleanup").Owner)
+    Assert.Equal(DeferredRuntimeObligation, (obligation "effect-handlers").Owner)
+
+    Assert.All(
+        obligations,
+        fun obligation ->
+            Assert.False(String.IsNullOrWhiteSpace(obligation.Name))
+            Assert.False(String.IsNullOrWhiteSpace(obligation.Description))
+    )
+
+[<Fact>]
 let ``verify all checkpoints reports target failures after malformed KBackendIR`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend

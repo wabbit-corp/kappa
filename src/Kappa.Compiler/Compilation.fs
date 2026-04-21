@@ -3728,6 +3728,28 @@ module Compilation =
               Succeeded = List.isEmpty diagnostics
               Diagnostics = diagnostics })
 
+    let portableRuntimeObligations (_workspace: WorkspaceCompilation) =
+        [
+            { Name = "tagged-data-layout"
+              Owner = KBackendIRGuaranteed
+              Description = "KBackendIR fixes tagged ADT layout, constructor tags, and field representation classes before target lowering." }
+            { Name = "runtime-calling-convention"
+              Owner = KBackendIRGuaranteed
+              Description = "KBackendIR functions, closures, calls, and entrypoints carry fixed runtime arity and representation-level calling conventions." }
+            { Name = "retained-dictionaries-and-intrinsics"
+              Owner = KBackendIRGuaranteed
+              Description = "Retained dictionaries and runtime backend intrinsics must have concrete KBackendIR representations or verification rejects the checkpoint." }
+            { Name = "memory-management"
+              Owner = BackendSpecificRuntime
+              Description = "Allocation and collection strategy is backend-specific; target lowering must preserve KBackendIR value and lifetime semantics." }
+            { Name = "deterministic-cleanup"
+              Owner = DeferredRuntimeObligation
+              Description = "Cleanup scopes, defer, and using/finally lowering are deferred until M3 introduces resource tracking and cleanup forms." }
+            { Name = "effect-handlers"
+              Owner = DeferredRuntimeObligation
+              Description = "Handler frames and resumptions are deferred until the post-M3 effect-handler milestone." }
+        ]
+
     let pipelineTrace (workspace: WorkspaceCompilation) =
         workspace.PipelineTrace
 

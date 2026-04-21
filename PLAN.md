@@ -64,7 +64,7 @@ Preferred resolution: adjust the compiler.
 Preferred resolution: adjust the compiler.
 
 - [ ] Audit the current `KBackendIR` model in `src/Kappa.Compiler/Compilation.fs` against `Spec.md` sections 17.4 and 17.4.1.
-- [ ] Decide whether to evolve the current `KBackendIR` into a true runtime IR or to insert a new explicit runtime IR and rename the current form.
+- [x] Decide whether to evolve the current `KBackendIR` into a true runtime IR or to insert a new explicit runtime IR and rename the current form.
 - [ ] Introduce runtime-facing constructs for representation choice, runtime calls, data layout, field access, retained dictionaries/type parameters, and explicit runtime control.
 - [x] Strengthen `KBackendIR` verification so it checks the legality conditions from section 17.4.2 instead of only structural uniqueness checks.
 - [ ] Extend observability so `KBackendIR` dumps and post-`KBackendIR` CLR-lowering dumps expose the runtime information required by the spec.
@@ -118,14 +118,14 @@ Preferred resolution: adjust the compiler and harness, and narrow any claims unt
 Preferred resolution: sequence the work so public behavior becomes honest first, then broaden conformance.
 
 - [x] Fix the public-profile mismatches first: `dotnet` backend routing, implicit prelude import semantics, and backend-scoped `expect` handling.
-- [ ] Before starting M3 implementation work, align the 17.1-17.6 pipeline contracts: named checkpoints, trace/dump semantics, KFrontIR/KCore/KBackendIR shape, portable runtime obligations, and backend-intrinsic build identity.
+- [x] Before starting M3 implementation work, align the 17.1-17.6 pipeline contracts: named checkpoints, trace/dump semantics, KFrontIR/KCore/KBackendIR shape, portable runtime obligations, and backend-intrinsic build identity.
 - [ ] Then align the internal architecture: true `KBackendIR`, stronger verifier rules, and post-`KBackendIR` target-lowering checkpoints.
 - [x] In parallel with that architectural cleanup, stand up the first real native path under the standardized `zig` profile by lowering `KBackendIR` to generated C and compiling it with `zig cc`.
 - [ ] Use the first `zig` slice to pressure-test what still belongs in `KBackendIR` versus what is really target-specific lowering state before expanding the CLR backend further.
 - [ ] Then decide whether section 2.7 stays normative for the current milestone or whether the spec needs a bootstrap prelude/profile split.
 - [ ] Finally, bring the test harness up to Appendix T and convert more of the existing suites to the standard directive set.
 
-Current milestone status note: M2 execution is complete, but 17.1-17.6 discrepancies should be treated as the next blocking cleanup before M3 implementation. The compiler now normalizes the effective backend profile, verifies `KBackendIR` before native emission, lowers the standardized `zig` profile directly from `KBackendIR`, exposes a post-`KBackendIR` `zig.c` checkpoint with verification and stage dumps, and runs the M2 target shape on the interpreter, `zig`, and public CLR-backed `dotnet` profiles.
+Current milestone status note: M2 execution is complete, and the 17.1-17.6 pipeline-contract cleanup is no longer a blocker for starting M3. The compiler now normalizes the effective backend profile, verifies `KBackendIR` before native emission, lowers the standardized `zig` profile directly from `KBackendIR`, exposes post-`KBackendIR` `zig.c` and `dotnet.clr` checkpoints with verification and stage dumps, and runs the M2 target shape on the interpreter, `zig`, and public CLR-backed `dotnet` profiles.
 
 ## 9. Milestone 2 (`Traits` + `Ref` + `while`)
 
@@ -149,17 +149,17 @@ Preferred resolution: adjust the compiler before adding M3 ownership semantics, 
 - [x] Audit sections 17.1-17.6 against the current implementation and tests, with explicit notes for `KRuntimeIR` as an implementation-defined intermediate versus spec-named checkpoints.
 - [x] Define the canonical pipeline graph and checkpoint contract for `surface-source`, `KFrontIR.*`, `KCore`, `KRuntimeIR`, `KBackendIR`, and post-`KBackendIR` target units.
 - [x] Decide whether current `KRuntimeIR` remains an implementation-defined post-KCore form or should be folded into a spec-shaped `KBackendIR` lowering sequence.
-- [ ] Decide whether current `KBackendIR` evolves into the true runtime-facing IR from sections 17.4 and 17.4.1, or whether it should be renamed and a new spec-shaped `KBackendIR` inserted.
+- [x] Decide whether current `KBackendIR` evolves into the true runtime-facing IR from sections 17.4 and 17.4.1, or whether it should be renamed and a new spec-shaped `KBackendIR` inserted.
 - [x] Make stage dumps expose the information required by 17.1.3-17.1.6 without relying on backend-specific implementation details.
 - [x] Add or update checkpoint verification so legality witnesses cover KFrontIR, KCore, KRuntimeIR if retained, KBackendIR, and target-lowering checkpoints consistently.
 - [x] Add a post-`KBackendIR` CLR target checkpoint and dump beside the existing `zig.c` target checkpoint, so target-specific debugging is not ZigCc-only.
 - [x] Model selected backend profile, intrinsic set, and elaboration-available intrinsic set as part of the effective build configuration/cache identity required by 17.1.2 and 17.6.
 - [x] Thread deployment mode into artifact-level build configuration identity where target emission has deployment-specific behavior.
-- [ ] Clarify portable runtime obligations from 17.5 in the compiler model: which obligations are guaranteed by KBackendIR, which are backend-specific, and which are still out of scope.
+- [x] Clarify portable runtime obligations from 17.5 in the compiler model: which obligations are guaranteed by KBackendIR, which are backend-specific, and which are still out of scope.
 - [x] Add regression tests that compare pipeline trace, checkpoint availability, dump shape, verification behavior, and backend identity for interpreter, ZigCc, and CLR dotnet profiles.
-- [ ] Only start M3 QTT implementation after this track has either resolved the discrepancy or documented a deliberate spec adjustment.
+- [x] Only start M3 QTT implementation after this track has either resolved the discrepancy or documented a deliberate spec adjustment.
 
-Current 17.1-17.6 status note: partially implemented but not stable enough to build QTT erasure and resource-safe target lowering on top without risking avoidable refactors. Completed cleanup slices: both ZigCc and CLR now expose post-`KBackendIR` target checkpoints with dumpable manifests; stage metadata now carries an effective build configuration identity including backend profile, intrinsic sets, and deployment mode; the compiler now exposes a typed checkpoint contract, includes that contract in JSON/S-expression stage dumps, and verifies all contract checkpoints through one API. Current decision: retain `KRuntimeIR` as an implementation-defined checkpoint under section 17.4.9, with `KBackendIR` remaining the spec-named backend-neutral runtime checkpoint and all public target-lowering checkpoints consuming `KBackendIR`.
+Current 17.1-17.6 status note: the pipeline-contract prerequisite for M3 is resolved enough to begin QTT work without knowingly building on a contradictory checkpoint model. Completed cleanup slices: both ZigCc and CLR now expose post-`KBackendIR` target checkpoints with dumpable manifests; stage metadata now carries an effective build configuration identity including backend profile, intrinsic sets, and deployment mode; the compiler now exposes a typed checkpoint contract, includes that contract in JSON/S-expression stage dumps, verifies all contract checkpoints through one API, and exposes a portable runtime-obligation classification. Current decisions: retain `KRuntimeIR` as an implementation-defined checkpoint under section 17.4.9; evolve the current `KBackendIR` in place into the full spec-shaped runtime IR rather than renaming it or inserting another public `KBackendIR`; keep all public target-lowering checkpoints consuming `KBackendIR`.
 
 ## 11. Milestone 3 (`QTT` + borrowing + deterministic resources)
 

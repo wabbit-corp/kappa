@@ -122,6 +122,16 @@ type CheckpointVerificationResult =
       Succeeded: bool
       Diagnostics: Diagnostic list }
 
+type PortableRuntimeObligationOwner =
+    | KBackendIRGuaranteed
+    | BackendSpecificRuntime
+    | DeferredRuntimeObligation
+
+type PortableRuntimeObligation =
+    { Name: string
+      Owner: PortableRuntimeObligationOwner
+      Description: string }
+
 type PipelineTraceEvent =
     | Parse
     | BuildKFrontIR
