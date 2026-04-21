@@ -47,6 +47,7 @@ module ResourceChecking =
           BorrowRegions: OwnershipBorrowRegionFact list
           UsingScopes: OwnershipUsingScopeFact list
           Closures: OwnershipClosureFact list
+          DeferredFacts: string list
           NextBindingId: int
           NextEventId: int
           NextRegionId: int
@@ -61,6 +62,7 @@ module ResourceChecking =
           BorrowRegions = []
           UsingScopes = []
           Closures = []
+          DeferredFacts = []
           NextBindingId = 0
           NextEventId = 0
           NextRegionId = 0
@@ -258,6 +260,12 @@ module ResourceChecking =
 
         { state with
             UsingScopes = state.UsingScopes @ [ fact ] }
+
+    let private addDeferredFact fact state =
+        if state.DeferredFacts |> List.contains fact then
+            state
+        else
+            { state with DeferredFacts = state.DeferredFacts @ [ fact ] }
 
     let private addClosureFact name capturedBindings capturedRegions (state: CheckState) =
         let closureId = $"{state.ScopeId}.c{state.NextClosureId}"
@@ -485,6 +493,7 @@ module ResourceChecking =
             BorrowRegions = left.BorrowRegions @ right.BorrowRegions
             UsingScopes = left.UsingScopes @ right.UsingScopes
             Closures = left.Closures @ right.Closures
+            DeferredFacts = (left.DeferredFacts @ right.DeferredFacts) |> List.distinct |> List.sort
             NextBindingId = max left.NextBindingId right.NextBindingId
             NextEventId = max left.NextEventId right.NextEventId
             NextRegionId = max left.NextRegionId right.NextRegionId
@@ -560,7 +569,9 @@ module ResourceChecking =
             let right = checkExpression document signatures state whenFalse
             mergeBranchState left right
         | Match(scrutinee, cases) ->
-            let state = checkExpression document signatures state scrutinee
+            let state =
+                checkExpression document signatures state scrutinee
+                |> addDeferredFact "match-pattern-resource-checking"
 
             match cases with
             | [] -> state
@@ -714,7 +725,10 @@ module ResourceChecking =
                 let current = checkExpression document signatures current expression
                 loop current rest
             | DoWhile(condition, body) :: rest ->
-                let current = checkExpression document signatures current condition
+                let current =
+                    checkExpression document signatures current condition
+                    |> addDeferredFact "while-resource-fixed-point"
+
                 let bodyState = checkDoStatements document signatures current body
                 let current = mergeBranchState current bodyState
                 loop current rest
@@ -837,12 +851,18 @@ module ResourceChecking =
             |> List.collect (fun state -> state.Diagnostics)
             |> List.map (fun diagnostic -> diagnostic.Code)
 
+        let deferred =
+            states
+            |> List.collect (fun state -> state.DeferredFacts)
+            |> List.distinct
+            |> List.sort
+
         { OwnershipBindings = bindings
           OwnershipUses = uses
           OwnershipBorrowRegions = borrowRegions
           OwnershipUsingScopes = usingScopes
           OwnershipClosures = closures
-          OwnershipDeferred = []
+          OwnershipDeferred = deferred
           OwnershipDiagnostics = diagnosticCodes }
 
     let private checkDocument signatures (document: ParsedDocument) =

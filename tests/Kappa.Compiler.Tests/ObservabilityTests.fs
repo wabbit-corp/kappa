@@ -544,6 +544,42 @@ let ``M3 overuse diagnostics expose primary and related origins`` () =
     Assert.Equal(2, dumpedDiagnostic.GetProperty("relatedOrigins").GetArrayLength())
 
 [<Fact>]
+let ``BODY_RESOLVE dump exposes deferred ownership facts for unsupported control flow`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m3-deferred-ownership-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    ""
+                    "let main : IO Unit = do"
+                    "    while False do"
+                    "        printInt 0"
+                    "    printInt 1"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let bodyResolveJson =
+        match Compilation.dumpStage workspace "KFrontIR.BODY_RESOLVE" StageDumpFormat.Json with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    use document = JsonDocument.Parse(bodyResolveJson)
+
+    let mainDocument =
+        document.RootElement.GetProperty("documents").EnumerateArray()
+        |> Seq.find (fun item -> item.GetProperty("moduleIdentity").GetString() = "main")
+
+    let deferred =
+        mainDocument.GetProperty("ownership").GetProperty("deferred").EnumerateArray()
+        |> Seq.map (fun item -> item.GetString())
+        |> Seq.toList
+
+    Assert.Contains("while-resource-fixed-point", deferred)
+
+[<Fact>]
 let ``stage dumps expose checkpoint contract metadata`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend
