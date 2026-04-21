@@ -1445,23 +1445,58 @@ Usage rules:
 
 #### 5.1.4.1 Static object layer
 
-The static object layer contains values used by typechecking, elaboration, normalization, and static selection rather
-than by ordinary runtime computation.
+Kappa has a genuine static object layer. Static objects are compile-time values that may be named, rebound, projected,
+packaged, and returned, but have no implicit runtime representation.
 
-Static object classifiers include:
+A static-object classifier is any of:
 
-* `Type` and `Type u`;
-* `Universe`, `Quantity`, `Region`, and `Constraint`;
-* the row and label classes of §5.3.1; and
-* quantity-`0` function spaces over those classifiers.
+* `Universe`
+* `Quantity`
+* `Region`
+* `Constraint`
+* `RecRow`, `VarRow`, `EffRow`, `Label`, or `EffLabel`
+* `Type` or `Type u`
+* a function type whose binders are all quantity-`0` and whose codomain is again a static-object classifier
+
+Examples of static-object classifiers include:
+
+```kappa
+Universe
+Quantity
+Region
+Constraint
+Type
+Type u
+Type -> Type
+RecRow
+Label
+```
+
+A binder, record field, or package member declared against a static-object classifier is a static binder, static field,
+or static member.
 
 Rules:
 
-* Static objects may be named by explicit binders and universal quantification where their classifier admits it.
-* A quantity-`0` binder over a static object is elaboration-time information and is erased after elaboration unless
-  explicitly reified or retained under the constraint-evidence rules of §5.1.3.
-* Binding a value of type `Constraint` binds a constraint descriptor. It does not introduce coherent evidence for the
-  described constraint.
+* The default quantity of a static binder or static field is `0`.
+* A static binder or static field MUST NOT be declared at any nonzero quantity.
+* Static binders and static fields are erased at runtime under §14.4.
+* Static objects may be passed, returned, projected, sealed, opened, and stored in records exactly as other quantity-`0`
+  compile-time values.
+* Static objects do not participate in borrowing, place movement, `inout`, or any other ownership operation of
+  §§5.1.5-5.1.7.
+* Writing `let y = x` where `x` is static simply binds `y` to the same static object; there is no special prohibition on
+  rebinding static objects.
+* Packaging or rebinding a static object does not discharge region escape. If a static object mentions a fresh anonymous
+  rigid region introduced by a local borrow, the ordinary skolem-escape rule of §5.1.6 still applies.
+
+An ordinary runtime value such as `42 : Int` is not static merely because `Int : Type`. Staticity is determined by the
+declared classifier of the bound thing, not by the fact that all ordinary types themselves live in a universe.
+
+This layer does not by itself add arbitrary computation over all static objects. Operations on universes, quantities,
+regions, rows, labels, and constraints are only those explicitly specified elsewhere.
+
+Programs that need runtime reflection or transport of static information MUST use an explicit reified carrier, such as
+`Dict C` for constraints or an implementation-defined representation type.
 
 ### 5.1.5 Quantities
 
