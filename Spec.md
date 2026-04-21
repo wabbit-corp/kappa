@@ -4794,6 +4794,9 @@ Typechecking and elaboration rules:
   * if `C` declares named explicit parameters, dotted projection `__scrut.field` may refer to those named constructor
     parameters via constructor-field projection (§13.1).
 
+* The success evidence additionally includes any index equalities forced by constructor `C`, exactly as in the
+  corresponding constructor branch of `match` (§7.5.1A).
+
 * The failure evidence excludes `C` for subsequent branch-local reachability and matching, but does not by itself expose
   constructor fields.
 
@@ -4908,6 +4911,36 @@ Implementations should:
 
 As a user-facing way to state and check unreachability, a branch may use `-> impossible` (§7.5.2). Such a branch is
 valid only when the compiler can verify the case is unreachable.
+
+#### 7.5.1A Index refinement from constructor knowledge
+
+Positive constructor knowledge refines not only the outer constructor tag but also any equalities on indices or
+parameters forced by that constructor declaration.
+
+Rules:
+
+* In a constructor branch of `match`, the branch-local environment includes all index equalities and parameter
+  refinements forced by the matched constructor.
+* The same index refinement is introduced by `if e is C then ... else ...`.
+* The same index refinement is introduced by any refinement-predicate clause whose branch fact is `e is C`.
+* These equalities participate in definitional equality, reachability, and implicit resolution within the refined
+  branch.
+* Accordingly, constructor tests on indexed families may narrow associated indices whenever the constructor declaration
+  forces those indices to specific values or shapes.
+
+#### 7.5.1B Discriminating erased scrutinees
+
+A constructor test, constructor-field projection, or pattern match whose discriminating scrutinee is available only at
+quantity `0` is permitted only when the scrutinee's constructor shape is already forced by non-erased information.
+
+Rules:
+
+* If the scrutinee is available only at quantity `0`, discrimination is well-formed only when the implementation can
+  prove from definitional equality, index unification, or already-available refinement evidence that the tested
+  constructor is the only possible constructor.
+* Otherwise, matching or testing that scrutinee is a compile-time error.
+* This rule applies equally to `if e is C`, `match e`, constructor-field projection made possible by refinement, and any
+  future surface form that inspects constructor shape.
 
 #### 7.5.2 `impossible` (unreachable branch bodies)
 
