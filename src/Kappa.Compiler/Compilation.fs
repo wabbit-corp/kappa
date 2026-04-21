@@ -2998,6 +2998,39 @@ module Compilation =
     let private targetCheckpointNames (workspace: WorkspaceCompilation) =
         Stdlib.targetCheckpointNamesFor workspace.BackendProfile
 
+    let private checkpointContract name kind inputCheckpoint requiredBySpec profileSpecific =
+        { Name = name
+          CheckpointKind = kind
+          InputCheckpoint = inputCheckpoint
+          RequiredBySpec = requiredBySpec
+          ProfileSpecific = profileSpecific }
+
+    let private frontendCheckpointContracts =
+        let rec loop inputCheckpoint phases =
+            match phases with
+            | [] -> []
+            | phase :: remainingPhases ->
+                let checkpoint = KFrontIRPhase.checkpointName phase
+
+                checkpointContract checkpoint KFrontIRCheckpoint (Some inputCheckpoint) true false
+                :: loop checkpoint remainingPhases
+
+        loop "surface-source" KFrontIRPhase.all
+
+    let private baseCheckpointContracts =
+        [
+            checkpointContract "surface-source" SurfaceSourceCheckpoint None true false
+            yield! frontendCheckpointContracts
+            checkpointContract "KCore" KCoreCheckpoint (Some(KFrontIRPhase.checkpointName CORE_LOWERING)) true false
+            checkpointContract "KRuntimeIR" ImplementationDefinedCheckpoint (Some "KCore") false false
+            checkpointContract "KBackendIR" KBackendIRCheckpoint (Some "KRuntimeIR") true false
+        ]
+
+    let private targetCheckpointContracts (workspace: WorkspaceCompilation) =
+        targetCheckpointNames workspace
+        |> List.map (fun checkpoint ->
+            checkpointContract checkpoint TargetLoweringCheckpoint (Some "KBackendIR") true true)
+
     let private emitClrTargetManifest (workspace: WorkspaceCompilation) =
         let verificationDiagnostics = CheckpointVerification.verifyCheckpoint workspace "KBackendIR"
 
@@ -3590,10 +3623,14 @@ module Compilation =
         { workspace with
             PipelineTrace = buildPipelineTrace workspace }
 
-    let availableCheckpoints (workspace: WorkspaceCompilation) =
-        CheckpointVerification.availableCheckpointNames
-        @ targetCheckpointNames workspace
+    let checkpointContracts (workspace: WorkspaceCompilation) =
+        baseCheckpointContracts
+        @ targetCheckpointContracts workspace
         |> List.distinct
+
+    let availableCheckpoints (workspace: WorkspaceCompilation) =
+        checkpointContracts workspace
+        |> List.map (fun contract -> contract.Name)
 
     let verifyCheckpoint (workspace: WorkspaceCompilation) checkpoint =
         if targetCheckpointNames workspace |> List.contains checkpoint then

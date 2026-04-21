@@ -90,6 +90,21 @@ module KFrontIRPhase =
         checkpointName phase
         |> fun checkpoint -> checkpoint.Substring("KFrontIR.".Length)
 
+type CheckpointKind =
+    | SurfaceSourceCheckpoint
+    | KFrontIRCheckpoint
+    | KCoreCheckpoint
+    | ImplementationDefinedCheckpoint
+    | KBackendIRCheckpoint
+    | TargetLoweringCheckpoint
+
+type CheckpointContract =
+    { Name: string
+      CheckpointKind: CheckpointKind
+      InputCheckpoint: string option
+      RequiredBySpec: bool
+      ProfileSpecific: bool }
+
 type PipelineTraceEvent =
     | Parse
     | BuildKFrontIR

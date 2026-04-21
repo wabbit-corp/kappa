@@ -46,6 +46,122 @@ let ``workspace exposes spec-shaped checkpoints and portable pipeline trace even
     Assert.Contains(("lowerKBackendIR", "KRuntimeIRUnit", "KRuntimeIR", "KBackendIR"), trace)
 
 [<Fact>]
+let ``checkpoint contract makes implementation defined runtime IR and profile targets explicit`` () =
+    let source =
+        [
+            "main.kp",
+            [
+                "module main"
+                "let answer = 42"
+            ]
+            |> String.concat "\n"
+        ]
+
+    let interpreterWorkspace =
+        compileInMemoryWorkspaceWithBackend "memory-contract-interpreter-root" "interpreter" source
+
+    let zigWorkspace =
+        compileInMemoryWorkspaceWithBackend "memory-contract-zig-root" "zig" source
+
+    let dotnetWorkspace =
+        compileInMemoryWorkspaceWithBackend "memory-contract-dotnet-root" "dotnet" source
+
+    let interpreterContracts = Compilation.checkpointContracts interpreterWorkspace
+    let interpreterNames = interpreterContracts |> List.map (fun contract -> contract.Name)
+
+    Assert.Equal<string list>(Compilation.availableCheckpoints interpreterWorkspace, interpreterNames)
+    Assert.DoesNotContain("zig.c", interpreterNames)
+    Assert.DoesNotContain("dotnet.clr", interpreterNames)
+
+    let runtimeContract =
+        interpreterContracts
+        |> List.find (fun contract -> contract.Name = "KRuntimeIR")
+
+    Assert.Equal(ImplementationDefinedCheckpoint, runtimeContract.CheckpointKind)
+    Assert.Equal(Some "KCore", runtimeContract.InputCheckpoint)
+    Assert.False(runtimeContract.RequiredBySpec)
+    Assert.False(runtimeContract.ProfileSpecific)
+
+    let backendContract =
+        interpreterContracts
+        |> List.find (fun contract -> contract.Name = "KBackendIR")
+
+    Assert.Equal(KBackendIRCheckpoint, backendContract.CheckpointKind)
+    Assert.Equal(Some "KRuntimeIR", backendContract.InputCheckpoint)
+    Assert.True(backendContract.RequiredBySpec)
+    Assert.False(backendContract.ProfileSpecific)
+
+    let zigContract =
+        Compilation.checkpointContracts zigWorkspace
+        |> List.find (fun contract -> contract.Name = "zig.c")
+
+    Assert.Equal(TargetLoweringCheckpoint, zigContract.CheckpointKind)
+    Assert.Equal(Some "KBackendIR", zigContract.InputCheckpoint)
+    Assert.True(zigContract.RequiredBySpec)
+    Assert.True(zigContract.ProfileSpecific)
+
+    let dotnetContract =
+        Compilation.checkpointContracts dotnetWorkspace
+        |> List.find (fun contract -> contract.Name = "dotnet.clr")
+
+    Assert.Equal(TargetLoweringCheckpoint, dotnetContract.CheckpointKind)
+    Assert.Equal(Some "KBackendIR", dotnetContract.InputCheckpoint)
+    Assert.True(dotnetContract.RequiredBySpec)
+    Assert.True(dotnetContract.ProfileSpecific)
+
+[<Fact>]
+let ``pipeline trace records representation changes and verification outcomes`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-trace-contract-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let trace = Compilation.pipelineTrace workspace
+
+    let findStep event outputCheckpoint =
+        trace
+        |> List.find (fun step -> step.Event = event && step.OutputCheckpoint = outputCheckpoint)
+
+    let parseStep = findStep PipelineTraceEvent.Parse "surface-source"
+    Assert.False(parseStep.ChangedRepresentation)
+    Assert.False(parseStep.VerificationAttempted)
+    Assert.Equal(None, parseStep.VerificationSucceeded)
+
+    let frontendStep = findStep PipelineTraceEvent.BuildKFrontIR "KFrontIR.RAW"
+    Assert.True(frontendStep.ChangedRepresentation)
+    Assert.False(frontendStep.VerificationAttempted)
+    Assert.Equal(None, frontendStep.VerificationSucceeded)
+
+    let backendVerifyStep = findStep PipelineTraceEvent.Verify "KBackendIR"
+    Assert.False(backendVerifyStep.ChangedRepresentation)
+    Assert.True(backendVerifyStep.VerificationAttempted)
+    Assert.Equal(Some true, backendVerifyStep.VerificationSucceeded)
+
+    let targetLoweringStep = findStep PipelineTraceEvent.LowerTarget "dotnet.clr"
+    Assert.True(targetLoweringStep.ChangedRepresentation)
+    Assert.False(targetLoweringStep.VerificationAttempted)
+    Assert.Equal(None, targetLoweringStep.VerificationSucceeded)
+
+    let targetVerifyStep =
+        trace
+        |> List.find (fun step ->
+            step.Event = PipelineTraceEvent.Verify
+            && step.InputCheckpoint = "dotnet.clr"
+            && step.OutputCheckpoint = "dotnet.clr")
+
+    Assert.False(targetVerifyStep.ChangedRepresentation)
+    Assert.True(targetVerifyStep.VerificationAttempted)
+    Assert.Equal(Some true, targetVerifyStep.VerificationSucceeded)
+
+[<Fact>]
 let ``zig backend exposes a post KBackendIR target checkpoint`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend

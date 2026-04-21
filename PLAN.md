@@ -146,9 +146,9 @@ Current M2 status note: the interpreter, standardized `zig` backend, and public 
 
 Preferred resolution: adjust the compiler before adding M3 ownership semantics, because QTT erasure and resource-safe lowering depend on stable checkpoint and IR contracts.
 
-- [ ] Audit sections 17.1-17.6 against the current implementation and tests, with explicit notes for `KRuntimeIR` as an implementation-defined intermediate versus spec-named checkpoints.
-- [ ] Define the canonical pipeline graph and checkpoint contract for `surface-source`, `KFrontIR.*`, `KCore`, `KRuntimeIR`, `KBackendIR`, and post-`KBackendIR` target units.
-- [ ] Decide whether current `KRuntimeIR` remains an implementation-defined post-KCore form or should be folded into a spec-shaped `KBackendIR` lowering sequence.
+- [x] Audit sections 17.1-17.6 against the current implementation and tests, with explicit notes for `KRuntimeIR` as an implementation-defined intermediate versus spec-named checkpoints.
+- [x] Define the canonical pipeline graph and checkpoint contract for `surface-source`, `KFrontIR.*`, `KCore`, `KRuntimeIR`, `KBackendIR`, and post-`KBackendIR` target units.
+- [x] Decide whether current `KRuntimeIR` remains an implementation-defined post-KCore form or should be folded into a spec-shaped `KBackendIR` lowering sequence.
 - [ ] Decide whether current `KBackendIR` evolves into the true runtime-facing IR from sections 17.4 and 17.4.1, or whether it should be renamed and a new spec-shaped `KBackendIR` inserted.
 - [ ] Make stage dumps expose the information required by 17.1.3-17.1.6 without relying on backend-specific implementation details.
 - [ ] Add or update checkpoint verification so legality witnesses cover KFrontIR, KCore, KRuntimeIR if retained, KBackendIR, and target-lowering checkpoints consistently.
@@ -159,7 +159,7 @@ Preferred resolution: adjust the compiler before adding M3 ownership semantics, 
 - [ ] Add regression tests that compare pipeline trace, checkpoint availability, dump shape, verification behavior, and backend identity for interpreter, ZigCc, and CLR dotnet profiles.
 - [ ] Only start M3 QTT implementation after this track has either resolved the discrepancy or documented a deliberate spec adjustment.
 
-Current 17.1-17.6 status note: partially implemented but not stable enough to build QTT erasure and resource-safe target lowering on top without risking avoidable refactors. Completed cleanup slices: both ZigCc and CLR now expose post-`KBackendIR` target checkpoints with dumpable manifests; stage metadata now carries an effective build configuration identity including backend profile and intrinsic sets.
+Current 17.1-17.6 status note: partially implemented but not stable enough to build QTT erasure and resource-safe target lowering on top without risking avoidable refactors. Completed cleanup slices: both ZigCc and CLR now expose post-`KBackendIR` target checkpoints with dumpable manifests; stage metadata now carries an effective build configuration identity including backend profile and intrinsic sets; the compiler now exposes a typed checkpoint contract. Current decision: retain `KRuntimeIR` as an implementation-defined checkpoint under section 17.4.9, with `KBackendIR` remaining the spec-named backend-neutral runtime checkpoint and all public target-lowering checkpoints consuming `KBackendIR`.
 
 ## 11. Milestone 3 (`QTT` + borrowing + deterministic resources)
 
