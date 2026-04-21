@@ -11864,6 +11864,24 @@ block into maximal independent groups elaborated with `liftA2` / `<*>`, and then
 This is an as-if optimization: the resulting program MUST remain observationally equivalent to the monadic desugaring of
 §8.2 / §8.7.
 
+## Appendix H. Flow-typing checklist (non-normative)
+
+A conforming implementation SHOULD evaluate the flow-typing subsystem against a stable benchmark such as If-T.
+
+For Kappa v1, the intended support profile is:
+
+* branch-local positive and negative narrowing;
+* stable-alias transport;
+* reachability-based propagation past terminal `do` branches;
+* loop-body and post-loop propagation for pure `while` condition lists;
+* checked one-way and two-way refinement predicates;
+* linearity-aware, non-consuming narrowing;
+* reborrow-respecting narrowing of borrowed scrutinees; and
+* constructor and index refinement.
+
+A conforming implementation MAY deliberately omit more expensive global analyses, such as backward fixpoint narrowing,
+provided that omission is documented together with the rationale and the observable conservatism it introduces.
+
 ## Appendix M. Reserved modal/coeffect architecture (non-normative)
 
 This appendix is explanatory and imposes no user-visible surface syntax in v0.1.
