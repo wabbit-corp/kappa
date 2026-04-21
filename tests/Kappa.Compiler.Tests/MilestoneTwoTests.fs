@@ -90,11 +90,11 @@ let ``zig backend runs the milestone two trait and ref program`` () =
     Assert.Equal(0, compileResult.ExitCode)
 
     let runResult = runProcess artifact.OutputDirectory artifact.ExecutableFilePath ""
-    Assert.Equal(0, runResult.ExitCode)
+    Assert.True(runResult.ExitCode = 0, runResult.StandardError + runResult.StandardOutput)
     Assert.Equal("012", runResult.StandardOutput.Trim())
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
-[<Fact(Skip = "M2 end-to-end backend execution is still under construction.")>]
+[<Fact>]
 let ``dotnet backend runs the milestone two trait and ref program`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend
@@ -116,6 +116,6 @@ let ``dotnet backend runs the milestone two trait and ref program`` () =
     let runResult =
         runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
 
-    Assert.Equal(0, runResult.ExitCode)
+    Assert.True(runResult.ExitCode = 0, runResult.StandardError + runResult.StandardOutput)
     Assert.Equal("012", runResult.StandardOutput.Trim())
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)

@@ -91,6 +91,16 @@ using System.Reflection;
 
 internal static class Program
 {{
+    private static bool ShouldPrintResult(object? value)
+    {{
+        return value switch
+        {{
+            null => false,
+            ValueTuple => false,
+            _ => true
+        }};
+    }}
+
     private static string FormatValue(object? value)
     {{
         return value switch
@@ -128,7 +138,12 @@ internal static class Program
             }}
 
             var value = method.Invoke(null, Array.Empty<object>());
-            Console.Out.WriteLine(FormatValue(value));
+
+            if (ShouldPrintResult(value))
+            {{
+                Console.Out.WriteLine(FormatValue(value));
+            }}
+
             return 0;
         }}
         catch (TargetInvocationException ex)
