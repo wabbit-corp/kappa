@@ -4627,28 +4627,41 @@ else e4
 These assumptions participate in implicit resolution (§7.3.3). In particular, `witness (c2)` within the `elif c2` branch
 can retrieve a proof of `c2 = True` (via §5.6 coercion).
 
-Tag-test conditionals introduce constructor-tag assumptions and branch-local flow refinement:
+Tag-test conditionals introduce explicit erased refinement evidence rather than implementation-defined hidden
+assumptions:
 
 ```kappa
 if e is C then t else f
 ```
 
-Typechecking rules:
+Typechecking and elaboration rules:
 
-* `t` is checked under an implementation-defined implicit assumption that the top-level constructor of `e` is `C`.
-* `f` is checked under the corresponding negative assumption that the top-level constructor of `e` is not `C`.
-* These assumptions introduce no new user-visible term bindings, but they do refine the original scrutinee expression
-  `e` for branch-local typechecking.
-* In the success branch, the refinement MUST be strong enough that:
-  * a subsequent `match e` may treat non-`C` cases as unreachable, and
-  * if `C` declares named explicit parameters, dotted projection `e.field` may refer to those named constructor
+* The scrutinee expression `e` is evaluated exactly once and elaborated through a fresh hidden scrutinee term `__scrut`.
+* The success branch `t` is checked under additional erased implicit evidence:
+
+  ```kappa
+  @p : HasCtor __scrut ⟨C⟩
+  ```
+
+* The failure branch `f` is checked under additional erased implicit evidence:
+
+  ```kappa
+  @p : LacksCtor __scrut ⟨C⟩
+  ```
+
+  where `⟨C⟩ : CtorTag` is the internal constructor-tag constant of §17.3.1.6.
+
+* These assumptions introduce no fresh user-visible term bindings.
+* Within each branch, occurrences of the original tested expression are elaborated against the hidden scrutinee
+  `__scrut`.
+* The success-branch evidence MUST be strong enough that:
+  * a subsequent `match __scrut` may treat non-`C` cases as unreachable; and
+  * if `C` declares named explicit parameters, dotted projection `__scrut.field` may refer to those named constructor
     parameters via constructor-field projection (§13.1).
-* If `C` has only positional / unnamed arguments, `if e is C` still does not expose them directly; use `match` to bind
-  them.
-* In the failure branch, the refinement MUST be strong enough that a subsequent `match e` may treat the `C` case as
-  unreachable.
-* In mixed `elif` chains, branch assumptions accumulate in the obvious way: earlier failed tests contribute negative
-  assumptions, and the selected `elif ... is C` branch additionally contributes its positive assumption.
+* The failure-branch evidence excludes `C` for subsequent branch-local reachability and matching, but does not by itself
+  expose constructor fields.
+
+These erased assumptions participate in implicit resolution (§7.3.3) exactly like the boolean assumptions above.
 
 
 ### 7.5 `match` expressions
@@ -4725,6 +4738,21 @@ case False -> eF   -- eF checked under  @p : b = False
 ```
 
 This applies equally to `try match` success/error branches when the matched value is a `Bool`.
+
+#### 7.5.4 Match branch refinement evidence
+
+Pattern matching introduces explicit erased branch evidence corresponding to the branch-local refinements established by
+the selected pattern and by earlier failed cases.
+
+Rules:
+
+* The match scrutinee is elaborated through a hidden scrutinee term in the same style as §7.4.1.
+* A branch selected by a constructor pattern for `C` is checked under erased `HasCtor` evidence for that hidden
+  scrutinee and the internal constructor tag `⟨C⟩` of §17.3.1.6.
+* Later branches are checked under any erased `LacksCtor` evidence implied by earlier failed constructor cases when that
+  evidence is sound for the scrutinee type and pattern form.
+* These evidence bindings are erased, introduce no fresh user-visible term bindings, and participate in implicit
+  resolution only as branch-local refinement evidence.
 
 ### 7.6 Patterns (overview)
 
@@ -8769,6 +8797,8 @@ Elaboration performs (non-exhaustive):
       declarations (§6.3.1, §14.1.1),
     * `do` blocks and control-flow sugar to the completion-and-scope KCore kernel of §17.3.1.4, expressed inside the
       enclosing monad (§8.2, §8.7, §17.3.1.4),
+    * lowering of boolean and constructor-refinement control flow to explicit erased branch evidence (§7.4.1, §7.5.4,
+      §17.3.1.6),
     * comprehensions to combinator pipelines (§10.10),
     * existential-package sugar and unpacking (`exists`, `open ... as exists ...`) to anonymous sealed packages and
       ordinary local bindings (§5.5.11),
@@ -10557,6 +10587,41 @@ Rules:
   elaboration-time evaluator primitives.
 * Reflection values MUST NOT survive lowering to KBackendIR except through ordinary reification to `Syntax` followed by
   ordinary elaboration.
+
+#### 17.3.1.6 Erased branch evidence and constructor tags
+
+A conforming implementation MUST behave as if KCore contains explicit erased evidence for branch-local refinements
+introduced by boolean tests, constructor-tag tests, and pattern matching.
+
+KCore contains an internal constructor-tag classifier:
+
+```text
+CtorTag
+```
+
+For each constructor `C` that is name-resolvable at the test site, KCore may use an internal constructor-tag constant
+`⟨C⟩ : CtorTag` whose identity is derived from the resolved constructor identity, not from source spelling.
+
+KCore also behaves as if it contains erased evidence predicates:
+
+```text
+HasCtor scrut tag
+LacksCtor scrut tag
+```
+
+Meaning:
+
+* `HasCtor scrut ⟨C⟩` is evidence that the already evaluated scrutinee `scrut` has top-level constructor `C`.
+* `LacksCtor scrut ⟨C⟩` is evidence that the already evaluated scrutinee `scrut` does not have top-level constructor
+  `C`.
+* These predicates are compile-time refinement evidence only. They are erased and do not by themselves inspect or
+  duplicate runtime payloads.
+* `HasCtor` evidence may justify constructor-field projection and unreachable-case elimination for the corresponding
+  scrutinee.
+* `LacksCtor` evidence may justify branch-local reachability and exhaustiveness refinements, but does not expose
+  constructor fields.
+* User source cannot fabricate `HasCtor` or `LacksCtor` evidence except through the ordinary control-flow forms that
+  introduce the corresponding refinements.
 
 #### 17.3.2 KCore provenance and explainability
 
