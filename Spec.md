@@ -2239,6 +2239,19 @@ Field declaration grammar:
 recordFieldDecl ::= [ 'opaque' ] [ '@' ] [quantity] ident ':' type
 ```
 
+The annotation after `:` may elaborate either to an ordinary computational type or to a compile-time type in the sense
+of §5.1.4.1.
+
+A field whose annotation elaborates to a compile-time type is a compile-time member.
+
+Compile-time members:
+
+* may carry any quantity annotation admitted by the general field syntax;
+* may be transparent or `opaque`;
+* participate in dependency analysis, lawful reordering, projection, sealing, and existential packaging exactly as
+  ordinary fields do; and
+* are erased at runtime according to §§5.1.4 and 14.4 unless preserved by an explicit reified carrier.
+
 When both `@` and an explicit quantity are present, the surface spelling is `@q name : T`, not `q @name : T`.
 
 Opaque members:
@@ -2387,13 +2400,17 @@ Place preservation:
 * An ordinary value binding of `rec.ℓ` still binds the projected value, not an alias to the place, unless the
   surrounding construct explicitly preserves place identity under §5.1.7.1.
 
-Static member selection:
+Compile-time member selection:
 
-* If the selected field has quantity `0`, the same projection form `rec.ℓ` may appear in any syntactic position
-  compatible with the field's sort or type.
-* This includes type position for fields such as `0 T : Type`, `0 F : Type -> Type`, and associated/package projections
-  such as `d.Item` or `m.Set`.
-* For signature types, static-member selection additionally obeys the opaqueness rules of §5.5.10.
+* If the selected field is compile-time in the sense of §5.1.4.1, the same projection form `rec.ℓ` may appear in any
+  syntactic position compatible with the field's compile-time type, regardless of the field's written quantity.
+* This includes:
+  * type position for members such as `T : Type` or `F : Type -> Type`,
+  * quantity position for members such as `Q : Quantity`,
+  * region position for members such as `S : Region`,
+  * row or label position for members such as `R : RecRow` or `L : Label`, and
+  * associated/package projections such as `d.Item`, `d.Q`, or `m.Set`.
+* For signature types, compile-time member selection additionally obeys the opaqueness rules of §5.5.10.
 
 When a projection such as `rec.ℓ` is used in a context that demands a borrowed argument `(& _ : T)`, the implicit borrow
 applies to that field path rather than automatically to the whole record, subject to the disjoint-path borrowing rules
@@ -2622,16 +2639,18 @@ Syntax and formation:
 
 * A field declared as `@label : T` is an implicit field.
 * Sort restriction:
-  * The type `T` of an implicit field must elaborate either to `Constraint`, to some universe `Type u`, or to a boolean
-    proposition accepted by the coercion rule of §5.6.2 (so a bare boolean field type `@p : b` elaborates to `@p : b =
-    True`).
-  * Ordinary term-level data types such as `String`, `Bytes`, or `IO a` cannot be marked as implicit record fields.
+  * The type `T` of an implicit field must elaborate either to:
+    * a concrete constraint descriptor `C : Constraint`,
+    * a compile-time type in the sense of §5.1.4.1, or
+    * a boolean proposition accepted by the coercion rule of §5.6.2 (so a bare boolean field type `@p : b` elaborates to
+      `@p : b = True`).
+  * Ordinary computational data types such as `String`, `Bytes`, or `IO a` cannot be marked as implicit record fields.
 * Implicit record fields are the record-field analogue of implicit binders. Accordingly, §5.1.3's prohibition on
   explicit fields of constraint type does not apply to fields marked with `@`.
 * Quantity:
   * Implicit record fields follow the same defaulting rule as implicit binders (§7.3).
-  * If the field type elaborates to `Constraint` or to `Type u`, the field defaults to quantity `0` and is erased at
-    runtime.
+  * If the field type elaborates to a concrete constraint descriptor or to a compile-time type of §5.1.4.1, the default
+    quantity when omitted is `0`. Erasure of the field value is still governed by §§5.1.4 and 14.4.
 
 Introduction (construction):
 
