@@ -5178,6 +5178,9 @@ Rules:
 * `opaque` does not apply to `effect` declarations.
 * An `effect` declaration introduces an effect-interface constructor in the type namespace.
 * Effect labels are separate identifiers in the effect-label namespace and are introduced by effect-row syntax.
+* A binder or package member of compile-time type `EffLabel` introduces an effect-label identifier that is admissible in
+  effect-row syntax, in `handle label in expr`, and in effect-operation selection `label.op`, subject to the ordinary
+  scope rules for that binder.
 * A row entry `<[l : E | r]>` associates the effect label `l` with the effect interface `E`.
 * Each operation signature in the body is an operation declaration of the effect interface.
 * An operation declaration may be prefixed with a quantity `q`. If omitted, the resumption quantity defaults to `1`.
@@ -5194,6 +5197,10 @@ Rules:
   * the signature must elaborate to a Pi-type (function type),
   * an operation may not perform the effect it declares, meaning its declared result type must not itself mention the
     handled effect label.
+* The restriction that an operation's declared result type must not mention the handled effect label forbids only direct
+  dependence on the same handled label of that operation. It does not forbid result types that mention other effect
+  labels, abstract effect-row variables, or explicitly quantified / existentially packaged `EffLabel` and `EffRow`
+  witnesses.
 
 #### 8.1.3 Effect application and linear soundness
 
