@@ -8792,13 +8792,32 @@ Lexical identity:
 * Distinct dynamic evaluations instantiate the same local declaration family at different captured arguments.
 * Implementations MUST NOT treat local `data` or `trait` declarations as runtime-fresh generative names.
 
+Escaped local nominal families:
+
+* Closure conversion of a local nominal declaration defines a local nominal family abstracted over the captured
+  arguments Γ of that declaration.
+* The family has one canonical family identity per declaration site, not per dynamic evaluation.
+* Distinct dynamic evaluations instantiate the same local nominal family at different captured arguments.
+* An occurrence of a local nominal outside its defining block is represented semantically as an application of that
+  family identity to the corresponding captured arguments chosen by closure conversion.
+* Two such occurrences denote the same escaped local nominal application iff:
+  * they refer to the same local nominal family identity; and
+  * their corresponding captured arguments are definitionally equal.
+* If an escaping type, compile-time term, transparent dependent package, or sealed package mentions a local nominal
+  family, that family becomes part of the exported semantic meaning and is subject to the interface-artifact and
+  semantic-identity rules of §§17.1.9 and 17.3.4.1.
+* A local nominal family may appear in an exported interface only if its captured arguments are representable in the
+  interface artifact. Otherwise export is a compile-time error in the defining module.
+
 Escaping results:
 
 * No separate syntactic prohibition prevents a local type, trait, or alias from appearing in a value that leaves the
   block.
 * A value escapes exactly when the elaborated term remains well-typed after closure conversion.
 * In particular, local type constructors may escape through `Type`-valued results, transparent dependent packages, and
-  sealed packages of §5.5.10, provided the resulting elaborated interface type is well-typed.
+  sealed packages of §5.5.10, provided:
+  * the resulting elaborated interface type is well-typed; and
+  * every escaped local nominal family mentioned by that interface is representable under §§17.1.9 and 17.3.4.1.
 
 Local instances:
 
@@ -9700,11 +9719,24 @@ A module interface artifact MUST record at least:
   * and the static footprint summary required by §§5.1.7.2 and 8.8;
 * the signatures of exported types, traits, constructors, associated static members, effect interfaces, and effect
   operations, insofar as those entities are available to downstream code;
+* any escaped local nominal families referenced by exported signatures, exported compile-time members, or transparent
+  definitional content, together with:
+  * their canonical family identities under §17.3.4.1,
+  * their nominal kind,
+  * their closure-converted capture telescope, and
+  * any transparency / manifest-definitional metadata needed for downstream definitional equality;
+* any applications of such escaped local nominal families that occur in exported types or compile-time terms, recorded
+  by family identity together with the corresponding interface-representable captured arguments;
 * top-level instance heads and any metadata required for instance search and coherence under §§12.3 and 15.2.1;
-* the hashes or equivalent identity data required by §15 for exported definitions and instances;
+* the hashes or equivalent identity data required by §15 for exported definitions, instances, and escaped local nominal
+  families recorded by the interface artifact;
 * enough definitional content for exported transparent items to support downstream definitional equality;
 * enough metadata to reconstruct the reified-module view of §13.1.2, including the namespace-tagged exported-member
   surface and the opaque-vs-transparent classification needed for local qualified access and module-value projection.
+
+If an exported signature, exported compile-time member, or transparent definitional equation would mention a local
+nominal family that cannot be represented using the preceding interface-artifact data, the module is ill-formed for
+export and compilation fails in the defining module.
 
 A module interface artifact MUST distinguish the semantic object identity of an exported object from the current
 namespace bindings that expose it.
@@ -9748,6 +9780,9 @@ At minimum, the canonical interface view MUST include:
 * exported signatures of types, traits, constructors, associated static members, effect interfaces, and effect
   operations, insofar as those entities are available to downstream code;
 * exported instance heads and any interface-visible coherence metadata;
+* deterministic rendered names or references for any escaped local nominal families needed to explain exported types,
+  compile-time members, or transparent definitional content, together with enough information to recover their family
+  identities and captured-argument applications under §17.3.4.1;
 * re-exports introduced by `export`; and
 * enough transparent definitional content to explain what downstream ordinary definitional equality may unfold.
 
@@ -10250,7 +10285,7 @@ KCore retains all compile-time structure needed by the source semantics. In part
 * surface `exists` and `open ... as exists ...` do not survive as distinct KCore forms; they elaborate to ordinary
   `seal`, package projections, and local bindings over implementation-internal witness members (§5.5.11);
 * explicit modality-predicate evidence introduced by any enabled modal/coeffect extension;
-* local nominal identities as determined by §14.1.1.
+* local nominal family identities and their captured-argument applications as determined by §14.1.1.
 
 KCore contains no unresolved:
 
@@ -10536,8 +10571,8 @@ semantic elaboration-time evaluation under the restrictions of §5.8.6.
 
 #### 17.3.4 Semantic object identities
 
-After `CORE_LOWERING`, each top-level KCore object that may be imported, browsed, documented, cached, or compiled has a
-canonical semantic object identity.
+After `CORE_LOWERING`, each semantic object that may be imported, browsed, documented, cached, compiled, or mentioned by
+a module interface artifact has a canonical semantic object identity.
 
 Semantic objects include at least:
 
@@ -10546,7 +10581,9 @@ Semantic objects include at least:
 * constructors;
 * traits and associated static members;
 * effect interfaces and effect operations;
-* instances; and
+* instances;
+* escaped local nominal families that appear in exported signatures, exported compile-time members, transparent
+  definitional content, or other interface-visible semantic artifacts; and
 * any other implementation-defined top-level semantic artifact that is imported, browsed, or separately cached.
 
 A semantic object identity is distinct from:
@@ -10567,6 +10604,46 @@ equality is at least as fine as KCore semantic identity.
 
 Tooling and caches that operate after name resolution SHOULD prefer semantic object identity to source spelling when
 tracking references, rename targets, usages, deduplication, and compiled artifact reuse.
+
+#### 17.3.4.1 Escaped local nominal family identities
+
+An escaped local nominal family is a local nominal declaration from §14.1.1 whose family identity, or an application of
+that family, appears in a module interface artifact.
+
+Canonical family identity:
+
+Each escaped local nominal family has a canonical family identity determined by:
+
+* the semantic object identity of the enclosing top-level semantic object after closure conversion;
+* the stable declaration-site path of the local declaration within that enclosing object; and
+* the nominal kind of the declaration (`data`, `type`, `trait`, constructor family, or other implementation-defined
+  nominal kind).
+
+Rules:
+
+* Renaming local binders, reformatting, or changing unrelated declarations does not change the family identity.
+* Changing the enclosing top-level semantic object, the declaration-site path, or the nominal kind does change the
+  family identity.
+* Distinct dynamic evaluations do not create fresh family identities.
+
+Applications:
+
+* A reference to an escaped local nominal in an exported type or compile-time term is represented as an application of
+  the family identity to the closure-converted captured arguments.
+* Equality of two escaped local nominal applications is determined by:
+  * equality of their family identities; and
+  * definitional equality of their corresponding captured arguments.
+
+Interface representability:
+
+* A captured argument of an escaped local nominal family is interface-representable iff it can itself be encoded by the
+  module interface artifact using the ordinary exported type language, compile-time terms, semantic object identities,
+  and transparent definitional content available under §17.1.9.
+* If an escaped local nominal family would require a captured argument that is not interface-representable, export is a
+  compile-time error in the defining module.
+
+An implementation MAY realize escaped local nominal family identities using hashes or another stable identity scheme,
+provided equality is at least as fine as the semantic equality above.
 
 #### 17.3.5 Semantic object stores
 
