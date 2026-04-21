@@ -4974,7 +4974,27 @@ Residual negative evidence:
 This evidence is erased and exists only for typechecking, refinement, reachability, and elaboration. It does not affect
 runtime representation.
 
-#### 7.5.5 Guarded cases introduce guard-success evidence
+#### 7.5.5 Narrowing is non-consuming
+
+Constructor discrimination is observational only.
+
+Rules:
+
+* Evaluating a scrutinee for `if e is C` or `match e` does not by itself consume the scrutinee, even when that scrutinee
+  is available at quantity `1`.
+* For typing, constructor discrimination behaves as if elaboration borrowed the scrutinee only for branch selection.
+* Each branch is checked independently with the original scrutinee still available at its original quantity, refined by
+  that branch's evidence.
+* A selected branch may then consume the refined scrutinee or its refined components according to the ordinary quantity
+  rules.
+* Consumptions in different branches are not accumulated against one another. They are checked branchwise and joined
+  only through the ordinary control-flow rules after the branching construct.
+* If the discriminated scrutinee is itself a borrowed view or a borrowed alias of a stable place, the refinement applies
+  to the same underlying root/path and remains valid only for the same borrow lifetime.
+* Constructor-field projections made available by such a refinement are borrowed projections of that same underlying
+  source path, not copied values.
+
+#### 7.5.6 Guarded cases introduce guard-success evidence
 
 In a guarded case
 
@@ -11088,6 +11108,8 @@ Rules:
   and `LacksCtor y t`.
 * A stable-alias binding of §7.4.2 MAY therefore be realized purely by erased equality evidence plus ordinary transport;
   no separate runtime representation is required.
+* Branch refinement is observationally non-consuming. Introduction or use of branch-local refinement evidence does not
+  by itself discharge any quantity obligation of the refined subject.
 * These proof terms are compile-time only and are erased before KBackendIR.
 * Constructor-field projection, reachability, and branch-local refinement consume this evidence; they do not depend on
   hidden implementation-defined refinement state.
