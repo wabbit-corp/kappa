@@ -132,6 +132,90 @@ let ``query plan records stable query kinds checkpoints and dependencies`` () =
     )
 
 [<Fact>]
+let ``compiler fingerprints and incremental units expose dependency inputs`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-incremental-units-root"
+            "zig"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let fingerprints = Compilation.compilerFingerprints workspace
+
+    let fingerprintKinds = fingerprints |> List.map (fun fingerprint -> fingerprint.FingerprintKind)
+    Assert.Contains(SourceFingerprint, fingerprintKinds)
+    Assert.Contains(HeaderFingerprint, fingerprintKinds)
+    Assert.Contains(InterfaceFingerprint, fingerprintKinds)
+    Assert.Contains(BodyFingerprint, fingerprintKinds)
+    Assert.Contains(BackendFingerprint, fingerprintKinds)
+
+    let mainFingerprint kind =
+        fingerprints
+        |> List.find (fun fingerprint ->
+            fingerprint.FingerprintKind = kind
+            && fingerprint.InputKey.EndsWith("main.kp", StringComparison.OrdinalIgnoreCase))
+
+    let sourceFingerprint = mainFingerprint SourceFingerprint
+    Assert.False(String.IsNullOrWhiteSpace(sourceFingerprint.Identity))
+    Assert.Equal(workspace.AnalysisSessionIdentity, sourceFingerprint.AnalysisSessionIdentity)
+
+    let backendFingerprint = mainFingerprint BackendFingerprint
+    Assert.Equal("zig", backendFingerprint.BackendProfile)
+    Assert.Equal("bootstrap-prelude-v1", backendFingerprint.BackendIntrinsicSet)
+    Assert.Contains(workspace.BuildConfigurationIdentity, backendFingerprint.Identity)
+
+    let units = Compilation.incrementalUnits workspace
+
+    let unitKinds = units |> List.map (fun unit -> unit.UnitKind)
+    Assert.Contains(SourceFileTextUnit, unitKinds)
+    Assert.Contains(ModuleImportSurfaceUnit, unitKinds)
+    Assert.Contains(DeclarationHeaderUnit, unitKinds)
+    Assert.Contains(DeclarationBodyUnit, unitKinds)
+    Assert.Contains(MacroExpansionUnit, unitKinds)
+    Assert.Contains(ModuleInterfaceUnit, unitKinds)
+    Assert.Contains(KCoreModuleUnit, unitKinds)
+    Assert.Contains(KBackendIRModuleUnit, unitKinds)
+    Assert.Contains(TargetLoweringUnit, unitKinds)
+
+    let mainUnit kind =
+        units
+        |> List.find (fun unit ->
+            unit.UnitKind = kind
+            && unit.InputKey.Contains("main.kp", StringComparison.OrdinalIgnoreCase))
+
+    Assert.NotNull(mainUnit SourceFileTextUnit)
+    Assert.NotNull(mainUnit ModuleImportSurfaceUnit)
+    Assert.NotNull(mainUnit DeclarationHeaderUnit)
+    Assert.NotNull(mainUnit DeclarationBodyUnit)
+    Assert.NotNull(mainUnit MacroExpansionUnit)
+    Assert.NotNull(mainUnit ModuleInterfaceUnit)
+    Assert.NotNull(mainUnit KCoreModuleUnit)
+    Assert.NotNull(mainUnit KBackendIRModuleUnit)
+
+    let backendUnit = mainUnit KBackendIRModuleUnit
+    Assert.Contains((mainUnit KCoreModuleUnit).Id, backendUnit.DependencyUnitIds)
+
+    let targetUnit =
+        units |> List.find (fun unit -> unit.UnitKind = TargetLoweringUnit && unit.OutputCheckpoint = Some "zig.c")
+
+    Assert.Contains(backendUnit.Id, targetUnit.DependencyUnitIds)
+
+    Assert.All(
+        units,
+        fun unit ->
+            Assert.Equal(workspace.AnalysisSessionIdentity, unit.AnalysisSessionIdentity)
+            Assert.Equal(workspace.BuildConfigurationIdentity, unit.BuildConfigurationIdentity)
+            Assert.Equal("zig", unit.BackendProfile)
+            Assert.False(String.IsNullOrWhiteSpace(unit.Id))
+    )
+
+[<Fact>]
 let ``checkpoint contract makes implementation defined runtime IR and profile targets explicit`` () =
     let source =
         [

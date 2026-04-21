@@ -178,6 +178,69 @@ type QueryRecord =
       BackendIntrinsicSet: string
       DependencyIds: string list }
 
+type CompilerFingerprintKind =
+    | SourceFingerprint
+    | HeaderFingerprint
+    | InterfaceFingerprint
+    | BodyFingerprint
+    | BackendFingerprint
+
+module CompilerFingerprintKind =
+    let toPortableName fingerprintKind =
+        match fingerprintKind with
+        | SourceFingerprint -> "source"
+        | HeaderFingerprint -> "header"
+        | InterfaceFingerprint -> "interface"
+        | BodyFingerprint -> "body"
+        | BackendFingerprint -> "backend"
+
+type CompilerFingerprint =
+    { Id: string
+      FingerprintKind: CompilerFingerprintKind
+      InputKey: string
+      Identity: string
+      AnalysisSessionIdentity: string
+      BuildConfigurationIdentity: string
+      BackendProfile: string
+      BackendIntrinsicSet: string
+      DependencyFingerprintIds: string list }
+
+type IncrementalUnitKind =
+    | SourceFileTextUnit
+    | ModuleImportSurfaceUnit
+    | DeclarationHeaderUnit
+    | DeclarationBodyUnit
+    | MacroExpansionUnit
+    | ModuleInterfaceUnit
+    | KCoreModuleUnit
+    | KBackendIRModuleUnit
+    | TargetLoweringUnit
+
+module IncrementalUnitKind =
+    let toPortableName unitKind =
+        match unitKind with
+        | SourceFileTextUnit -> "source-file-text"
+        | ModuleImportSurfaceUnit -> "module-import-surface"
+        | DeclarationHeaderUnit -> "declaration-header"
+        | DeclarationBodyUnit -> "declaration-body"
+        | MacroExpansionUnit -> "macro-expansion"
+        | ModuleInterfaceUnit -> "module-interface"
+        | KCoreModuleUnit -> "KCore-module"
+        | KBackendIRModuleUnit -> "KBackendIR-module"
+        | TargetLoweringUnit -> "target-lowering"
+
+type IncrementalUnit =
+    { Id: string
+      UnitKind: IncrementalUnitKind
+      InputKey: string
+      OutputCheckpoint: string option
+      FingerprintIds: string list
+      DependencyUnitIds: string list
+      AnalysisSessionIdentity: string
+      BuildConfigurationIdentity: string
+      BackendProfile: string
+      BackendIntrinsicSet: string }
+
 type PipelineTraceEvent =
     | Parse
     | BuildKFrontIR
