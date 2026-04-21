@@ -440,7 +440,11 @@ type KCoreModule =
       IntrinsicTerms: string list
       Declarations: KCoreDeclaration list }
 
-type KRuntimeExpression =
+type KRuntimeExitAction =
+    | KRuntimeDeferred of KRuntimeExpression
+    | KRuntimeRelease of resourceTypeText: string option * release: KRuntimeExpression * resource: KRuntimeExpression
+
+and KRuntimeExpression =
     | KRuntimeLiteral of LiteralValue
     | KRuntimeName of string list
     | KRuntimeClosure of string list * KRuntimeExpression
@@ -448,6 +452,8 @@ type KRuntimeExpression =
     | KRuntimeMatch of KRuntimeExpression * KRuntimeMatchCase list
     | KRuntimeExecute of KRuntimeExpression
     | KRuntimeLet of bindingName: string * value: KRuntimeExpression * body: KRuntimeExpression
+    | KRuntimeDoScope of scopeLabel: string * body: KRuntimeExpression
+    | KRuntimeScheduleExit of scopeLabel: string * action: KRuntimeExitAction * body: KRuntimeExpression
     | KRuntimeSequence of KRuntimeExpression * KRuntimeExpression
     | KRuntimeWhile of condition: KRuntimeExpression * body: KRuntimeExpression
     | KRuntimeApply of KRuntimeExpression * KRuntimeExpression list

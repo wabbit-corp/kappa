@@ -1558,6 +1558,10 @@ module IlDotNetBackend =
                             let extendedLocals = localTypes |> Map.add bindingName valueType
                             return! inferExpressionType currentModule extendedLocals active expectedType body
                         }
+                    | KRuntimeDoScope(_, body) ->
+                        inferExpressionType currentModule localTypes active expectedType body
+                    | KRuntimeScheduleExit(_, _, body) ->
+                        inferExpressionType currentModule localTypes active expectedType body
                     | KRuntimeSequence(first, second) ->
                         result {
                             do! inferExpressionType currentModule localTypes active None first |> Result.map (fun _ -> ())
@@ -2144,6 +2148,10 @@ module IlDotNetBackend =
                         let extendedLocals = localTypes |> Map.add bindingName valueType
                         return! inferBody extendedLocals expectedType body
                     }
+                | KRuntimeDoScope(_, body) ->
+                    infer body expectedType
+                | KRuntimeScheduleExit(_, _, body) ->
+                    infer body expectedType
                 | KRuntimeSequence(first, second) ->
                     result {
                         do! infer first None |> Result.map (fun _ -> ())
@@ -2770,6 +2778,10 @@ module IlDotNetBackend =
 
                 do! emitExpression state currentModule typeParameters extendedLocals expectedType il body
             }
+        | KRuntimeDoScope(_, body) ->
+            emitExpression state currentModule typeParameters localValues expectedType il body
+        | KRuntimeScheduleExit(_, _, body) ->
+            emitExpression state currentModule typeParameters localValues expectedType il body
         | KRuntimeSequence(first, second) ->
             result {
                 let! firstType = inferExpressionType currentModule localTypes None first

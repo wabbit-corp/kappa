@@ -154,6 +154,10 @@ module HostedRuntimeDotNetBackend =
             emitBackendExpression expression
         | KRuntimeLet(bindingName, value, body) ->
             $"new ApplyExpression(new ClosureExpression(new[] {{ {csharpString bindingName} }}, {emitBackendExpression body}), new KExpr[] {{ {emitBackendExpression value} }})"
+        | KRuntimeDoScope(_, body) ->
+            emitBackendExpression body
+        | KRuntimeScheduleExit(_, _, body) ->
+            emitBackendExpression body
         | KRuntimeSequence(first, second) ->
             $"new ApplyExpression(new ClosureExpression(new[] {{ \"_\" }}, {emitBackendExpression second}), new KExpr[] {{ {emitBackendExpression first} }})"
         | KRuntimeWhile(_, _) ->

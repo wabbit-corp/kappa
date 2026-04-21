@@ -319,6 +319,10 @@ module Interpreter =
                             Locals = scope.Locals.Add(bindingName, value) }
 
                     evaluateExpression nextScope bodyExpression)
+            | KRuntimeDoScope (_, bodyExpression) ->
+                evaluateExpression scope bodyExpression
+            | KRuntimeScheduleExit (_, _, bodyExpression) ->
+                evaluateExpression scope bodyExpression
             | KRuntimeSequence (firstExpression, secondExpression) ->
                 evaluateExpression scope firstExpression
                 |> Result.bind (fun _ -> evaluateExpression scope secondExpression)

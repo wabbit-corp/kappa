@@ -618,6 +618,80 @@ let ``KCore using release action selects Releasable evidence`` () =
         failwithf "Expected using release action to select Releasable IO File evidence, got %A" other
 
 [<Fact>]
+let ``KRuntimeIR preserves using release schedules for backend lowering`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m3-kruntime-using-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    ""
+                    "data File : Type ="
+                    "    Handle Int"
+                    ""
+                    "trait Releasable m a ="
+                    "    release : a -> IO Unit"
+                    ""
+                    "instance Releasable IO File ="
+                    "    let release f = printString \"closed\""
+                    ""
+                    "openFile : String -> IO File"
+                    "let openFile name = pure (Handle 1)"
+                    "let readData (& file : File) = pure \"chunk\""
+                    ""
+                    "let main : IO Unit = do"
+                    "    using file <- openFile \"data.txt\""
+                    "    readData file"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let runtimeModule =
+        workspace.KRuntimeIR
+        |> List.find (fun moduleDump -> moduleDump.Name = "main")
+
+    let mainBinding =
+        runtimeModule.Bindings
+        |> List.find (fun binding -> binding.Name = "main")
+
+    match mainBinding.Body with
+    | Some(
+        KRuntimeDoScope(
+            _,
+            KRuntimeLet(
+                hiddenOwnedName,
+                _,
+                KRuntimeScheduleExit(
+                    _,
+                    KRuntimeRelease(
+                        Some "File",
+                        KRuntimeTraitCall(
+                            "Releasable",
+                            "release",
+                            KRuntimeDictionaryValue("main", "Releasable", "IO_File"),
+                            []
+                        ),
+                        KRuntimeName [ releasedName ]
+                    ),
+                    _
+                )
+            )
+        )
+      ) ->
+        Assert.Equal(hiddenOwnedName, releasedName)
+    | other ->
+        failwithf "Expected KRuntimeIR to preserve using release schedule, got %A" other
+
+    let runtimeSexpr =
+        match Compilation.dumpStage workspace "KRuntimeIR" StageDumpFormat.SExpression with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    Assert.Contains("schedule-exit", runtimeSexpr)
+    Assert.Contains("release", runtimeSexpr)
+
+[<Fact>]
 let ``M3 overuse diagnostics expose primary and related origins`` () =
     let workspace =
         compileInMemoryWorkspace

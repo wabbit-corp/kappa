@@ -989,7 +989,14 @@ module Compilation =
         | KCoreConstructorPattern(name, arguments) ->
             KRuntimeConstructorPattern(name, arguments |> List.map lowerKRuntimePattern)
 
-    let rec private lowerKRuntimeExpression expression =
+    let rec private lowerKRuntimeExitAction action =
+        match action with
+        | KCoreDeferred expression ->
+            KRuntimeDeferred(lowerKRuntimeExpression expression)
+        | KCoreRelease(resourceTypeText, release, resource) ->
+            KRuntimeRelease(resourceTypeText, lowerKRuntimeExpression release, lowerKRuntimeExpression resource)
+
+    and private lowerKRuntimeExpression expression =
         match expression with
         | KCoreLiteral literal ->
             KRuntimeLiteral literal
@@ -1015,10 +1022,10 @@ module Compilation =
             KRuntimeExecute(lowerKRuntimeExpression inner)
         | KCoreLet(bindingName, value, body) ->
             KRuntimeLet(bindingName, lowerKRuntimeExpression value, lowerKRuntimeExpression body)
-        | KCoreDoScope(_, body) ->
-            lowerKRuntimeExpression body
-        | KCoreScheduleExit(_, _, body) ->
-            lowerKRuntimeExpression body
+        | KCoreDoScope(scopeLabel, body) ->
+            KRuntimeDoScope(scopeLabel, lowerKRuntimeExpression body)
+        | KCoreScheduleExit(scopeLabel, action, body) ->
+            KRuntimeScheduleExit(scopeLabel, lowerKRuntimeExitAction action, lowerKRuntimeExpression body)
         | KCoreSequence(first, second) ->
             KRuntimeSequence(lowerKRuntimeExpression first, lowerKRuntimeExpression second)
         | KCoreWhile(condition, body) ->
@@ -1066,7 +1073,15 @@ module Compilation =
                 let argumentText = arguments |> List.map runtimePatternText |> String.concat " "
                 $"({nameText} {argumentText})"
 
-    let rec private runtimeExpressionText expression =
+    let rec private runtimeExitActionText action =
+        match action with
+        | KRuntimeDeferred expression ->
+            $"(deferred {runtimeExpressionText expression})"
+        | KRuntimeRelease(resourceTypeText, release, resource) ->
+            let typeText = resourceTypeText |> Option.defaultValue "unknown"
+            $"(release (type {typeText}) (handler {runtimeExpressionText release}) (resource {runtimeExpressionText resource}))"
+
+    and private runtimeExpressionText expression =
         match expression with
         | KRuntimeLiteral(LiteralValue.Integer value) -> string value
         | KRuntimeLiteral(LiteralValue.Float value) -> string value
@@ -1090,6 +1105,10 @@ module Compilation =
             $"(execute {runtimeExpressionText expression})"
         | KRuntimeLet(bindingName, value, body) ->
             $"(let {bindingName} {runtimeExpressionText value} {runtimeExpressionText body})"
+        | KRuntimeDoScope(scopeLabel, body) ->
+            $"(do-scope {scopeLabel} {runtimeExpressionText body})"
+        | KRuntimeScheduleExit(scopeLabel, action, body) ->
+            $"(schedule-exit {scopeLabel} {runtimeExitActionText action} {runtimeExpressionText body})"
         | KRuntimeSequence(first, second) ->
             $"(seq {runtimeExpressionText first} {runtimeExpressionText second})"
         | KRuntimeWhile(condition, body) ->
@@ -1879,6 +1898,18 @@ module Compilation =
             | KRuntimeLet(bindingName, value, body) ->
                 collectClosureCaptures locals bound value
                 |> Set.union (collectClosureCaptures locals (Set.add bindingName bound) body)
+            | KRuntimeDoScope(_, body) ->
+                collectClosureCaptures locals bound body
+            | KRuntimeScheduleExit(_, action, body) ->
+                let actionCaptures =
+                    match action with
+                    | KRuntimeDeferred expression ->
+                        collectClosureCaptures locals bound expression
+                    | KRuntimeRelease(_, release, resource) ->
+                        collectClosureCaptures locals bound release
+                        |> Set.union (collectClosureCaptures locals bound resource)
+
+                Set.union actionCaptures (collectClosureCaptures locals bound body)
             | KRuntimeSequence(first, second) ->
                 collectClosureCaptures locals bound first
                 |> Set.union (collectClosureCaptures locals bound second)
@@ -2229,6 +2260,10 @@ module Compilation =
                         lowerExpression scopeLabel bodyLocals body
                         |> Result.map (fun (loweredBody, bodyRepresentation) ->
                             BackendLet(bindingParameter, loweredValue, loweredBody, bodyRepresentation), bodyRepresentation))
+                | KRuntimeDoScope(nestedScopeLabel, body) ->
+                    lowerExpression nestedScopeLabel locals body
+                | KRuntimeScheduleExit(_, _, body) ->
+                    lowerExpression scopeLabel locals body
                 | KRuntimeSequence(first, second) ->
                     lowerExpression scopeLabel locals first
                     |> Result.bind (fun (loweredFirst, _) ->

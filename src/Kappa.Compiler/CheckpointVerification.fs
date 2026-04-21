@@ -141,6 +141,17 @@ module CheckpointVerification =
                 verify locals expression
             | KRuntimeLet(bindingName, value, body) ->
                 verify locals value @ verify (Set.add bindingName locals) body
+            | KRuntimeDoScope(_, body) ->
+                verify locals body
+            | KRuntimeScheduleExit(_, action, body) ->
+                let actionDiagnostics =
+                    match action with
+                    | KRuntimeDeferred expression ->
+                        verify locals expression
+                    | KRuntimeRelease(_, release, resource) ->
+                        verify locals release @ verify locals resource
+
+                actionDiagnostics @ verify locals body
             | KRuntimeSequence(first, second) ->
                 verify locals first @ verify locals second
             | KRuntimeWhile(condition, body) ->
