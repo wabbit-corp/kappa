@@ -321,8 +321,19 @@ module Interpreter =
                     evaluateExpression nextScope bodyExpression)
             | KRuntimeDoScope (_, bodyExpression) ->
                 evaluateExpression scope bodyExpression
-            | KRuntimeScheduleExit (_, _, bodyExpression) ->
-                evaluateExpression scope bodyExpression
+            | KRuntimeScheduleExit (_, action, bodyExpression) ->
+                let bodyResult = evaluateExpression scope bodyExpression
+                let exitResult = executeExitAction scope action
+
+                match bodyResult, exitResult with
+                | Result.Ok value, Result.Ok () ->
+                    ok value
+                | Result.Ok _, Result.Error issue ->
+                    Result.Error issue
+                | Result.Error issue, Result.Ok () ->
+                    Result.Error issue
+                | Result.Error issue, Result.Error _ ->
+                    Result.Error issue
             | KRuntimeSequence (firstExpression, secondExpression) ->
                 evaluateExpression scope firstExpression
                 |> Result.bind (fun _ -> evaluateExpression scope secondExpression)
@@ -595,6 +606,21 @@ module Interpreter =
                 action ()
             | other ->
                 error $"Expected an IO action, but got {RuntimeValue.format other}."
+
+        and executeExitAction scope action =
+            match action with
+            | KRuntimeDeferred expression ->
+                evaluateExpression scope expression
+                |> Result.bind executeIoAction
+                |> Result.map (fun _ -> ())
+            | KRuntimeRelease(_, releaseExpression, resourceExpression) ->
+                evaluateExpression scope releaseExpression
+                |> Result.bind (fun releaseValue ->
+                    evaluateExpression scope resourceExpression
+                    |> Result.bind (fun resourceValue ->
+                        apply releaseValue [ resourceValue ]
+                        |> Result.bind executeIoAction
+                        |> Result.map (fun _ -> ())))
 
         and toUnitIoAction (action: unit -> unit) =
             ok
