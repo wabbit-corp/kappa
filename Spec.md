@@ -734,8 +734,8 @@ match, case, is, impossible,
 try, except, finally,
 data, type, trait, module,
 import, export, as, except,
-do, block, return,
-forall,
+do, block, return, open,
+forall, exists,
 assertTotal, expect, instance, derive, effect, handle, deep, pattern,
 infix, postfix, prefix, left, right,
 var, while, break, continue, using, inout,
@@ -2488,7 +2488,7 @@ let g (x : A) (y : B) : R = ...
 -- type: A -> B -> R
 ```
 
-#### 5.5.9 Implicit record fields and existential unpacking
+#### 5.5.9 Implicit record fields and transparent unpacking
 
 Record types may declare implicit fields using the `@` prefix. This mechanism formalizes dependent pairs, packed
 existentials, and refined types.
@@ -2634,8 +2634,9 @@ Meaning of the resulting package:
 Operationally and for KCore purposes, a sealed package carries:
 
 * runtime members for the non-erased fields of `S`;
-* manifest compile-time members for the transparent quantity-`0` fields of `S`; and
-* opaque compile-time members for the opaque fields of `S`.
+* manifest compile-time equations for the transparent quantity-`0` fields of `S`; and
+* opacity metadata for the opaque fields of `S`, together with any runtime representation required by their declared
+  quantities.
 
 Projection and use:
 
@@ -2666,6 +2667,152 @@ No implicit subtyping:
 
 * Kappa has no ambient structural subtyping for records or signatures.
 * Hiding fields or opaqueness manifest definitions occurs only through explicit `seal ... as ...`.
+
+#### 5.5.11 Anonymous existential packages (`exists`)
+
+The `exists` surface form is anonymous sealed-package sugar. It does not introduce a distinct KCore type former.
+Instead it elaborates to the sealed-package machinery of §5.5.10.
+
+Type syntax:
+
+```text
+existsType   ::= 'exists' existsBinder+ '.' type
+existsBinder ::= ident
+               | '(' ident ':' type ')'
+```
+
+`exists a. T` is sugar for `exists (a : Type). T`.
+
+Multiple binders associate to the right and may depend on earlier binders, exactly as for `forall`.
+
+Surface-name restrictions:
+
+* Within one `exists` type, witness binder names must be pairwise distinct.
+* A witness binder name MUST NOT be `value`, because `value` is the fixed payload-field name used by this sugar.
+
+Canonical elaboration of existential types:
+
+A surface existential type
+
+```kappa
+exists (a1 : S1) ... (an : Sn). T
+```
+
+elaborates to the closed signature type
+
+```text
+(opaque 0 ⟨wit1⟩ : S1,
+ ...
+ opaque 0 ⟨witn⟩ : Sn[⟨wit1⟩/a1, ..., ⟨wit(n-1)⟩/a(n-1)],
+ value : T[⟨wit1⟩/a1, ..., ⟨witn⟩/an])
+```
+
+where `⟨wit1⟩ ... ⟨witn⟩` are fresh implementation-internal member labels that are not source-addressable.
+
+Consequences:
+
+* Source binder names in `exists` are binders only; they are not public field labels.
+* Alpha-equivalent existential types are equivalent because elaboration uses the same anonymous internal witness-member
+  shape.
+* There is no special case for record-valued bodies: `exists (a : Type). (x : a, y : a)` elaborates to a package with
+  one payload field `value`, not to a widened record with fields `x` and `y` at the outer level.
+* The only ordinary source-visible member guaranteed by this sugar is `value`.
+
+Erasure and witness quantity:
+
+* Each existential witness elaborates to an `opaque 0` member.
+* Therefore existential witnesses are quantity-`0` values and are erased at runtime under the ordinary erasure rules of
+  §14.4, except where the existing special treatment of constraint evidence in §5.1.3 requires retention.
+* This means `exists` packages anonymous quantity-`0` witnesses together with a payload.
+* Transparent dependent records / Σ already remain available for user-written packages that should stay transparently
+  projectable rather than sealed.
+
+Introduction:
+
+A value of existential type is introduced by ordinary sealing:
+
+```kappa
+let p : exists (a : Type). Option a =
+    seal
+        (a = Int,
+         value = Some 1)
+    as exists (a : Type). Option a
+```
+
+For purposes of surface signature matching only, `seal e as exists (a1 : S1) ... (an : Sn). T` checks `e` against the
+anonymous existential surface view
+
+```text
+(opaque 0 a1 : S1,
+ ...
+ opaque 0 an : Sn,
+ value : T)
+```
+
+with the ordinary dependency substitutions induced by the binder order.
+
+After checking, the witness field names `a1 ... an` are rewritten to the canonical internal witness labels
+`⟨wit1⟩ ... ⟨witn⟩`. Those source names do not survive as ordinary projection labels outside the seal.
+
+Projection:
+
+* If `p` has existential type, `p.value` is an ordinary payload projection.
+* The typechecker may represent the type of `p.value` internally using the hidden witness selections carried by `p`.
+* Source code that needs stable names for those hidden witnesses must use `open ... as exists ...` below.
+
+Unpacking:
+
+```text
+openExistsExpr ::= 'open' expr 'as' 'exists' '(' ident (',' ident)* ')' '.' pattern 'in' expr
+```
+
+Examples:
+
+```kappa
+let size =
+    open p as exists (a). x in
+        match x
+        case Option.None   -> 0
+        case Option.Some _ -> 1
+```
+
+Rules:
+
+* In `open e as exists (a1, ..., an). pat in body`, the expression `e` must have a type definitionally equal to
+  `exists (b1 : S1) ... (bn : Sn). T`.
+* The number of witness binders in the `open` form must equal the number of existential binders in the type of `e`.
+* The witness binders `a1 ... an` must be pairwise distinct.
+* No witness binder introduced by the `open` form may also be bound by `pat`.
+* `pat` must be irrefutable for the payload type `T` after substituting the locally bound witnesses.
+* The binders `a1 ... an` are introduced in `body` as ordinary quantity-`0` local bindings at sorts/types
+  `S1 ... Sn`.
+* The names bound by `pat` are introduced in `body` exactly as in an ordinary irrefutable `let` binding.
+* Any implicit-field unpacking induced by binding `pat` occurs exactly as specified in §5.5.9.
+
+Normative elaboration:
+
+`open e as exists (a1, ..., an). pat in body` behaves as if elaborated to:
+
+```kappa
+let __pkg = e
+let 0 a1 = __pkg.⟨wit1⟩
+...
+let 0 an = __pkg.⟨witn⟩
+let pat = __pkg.value
+in body
+```
+
+where `__pkg` is fresh and the witness selections are the same hidden members determined by the elaborated existential
+type of `e`.
+
+Relationship to `seal` and equality:
+
+Because `exists` is anonymous-package sugar over §5.5.10:
+
+* it is pure and non-generative;
+* equality of receivers propagates to equality of the hidden witnesses and of `.value` by the ordinary equality rules
+  for projections and seals;
+* ordinary aliasing preserves existential identity.
 
 
 ### 5.6 Propositions via booleans and propositional equality
@@ -8123,6 +8270,8 @@ Elaboration performs (non-exhaustive):
       declarations (§6.3.1, §14.1.1),
     * `do` blocks and control-flow sugar to monadic core (§8.2, §8.7),
     * comprehensions to combinator pipelines (§10.10),
+    * existential-package sugar and unpacking (`exists`, `open ... as exists ...`) to anonymous sealed packages and
+      ordinary local bindings (§5.5.11),
     * `try match` and `try` to error-handling combinators (§9),
     * method-call sugar (§13.1),
 * termination checking (§6.4),
@@ -8241,7 +8390,10 @@ Definitional equality also includes canonical normalization of:
 * optional-type sugar: `T?` normalizes to `Option T` for all `T`,
 * union / variant rows: normalize member types to a canonical order with duplicate removal for elaboration and
   definitional equality; runtime tagging uses stable member-type identities instead of row-local ordinals (§5.4, §14.5),
-* record types/values: normalize to a canonical dependency-respecting field order (§5.5.1.1, §14.6).
+* record types/values: normalize to a canonical dependency-respecting field order (§5.5.1.1, §14.6),
+* existential-package sugar: normalize surface `exists (a1 : S1) ... (an : Sn). T` to the canonical
+  anonymous-package signature form of §5.5.11, using implementation-internal witness-member labels and the fixed
+  payload label `value`;
 * seal congruence: if `e1 ≡ e2`, then `seal e1 as S ≡ seal e2 as S`;
 * seal idempotence: if `e : S`, then `seal e as S ≡ e`;
 * projection congruence: if `p1 ≡ p2`, then `p1.f ≡ p2.f` whenever both projections are well-typed;
@@ -9582,6 +9734,8 @@ KCore retains all compile-time structure needed by the source semantics. In part
 * proof terms and equality evidence;
 * explicit handler forms, resumption quantities, and completion-carrying control structure;
 * explicit `seal` nodes, manifest static members, opaque static members, and package/member projections;
+* surface `exists` and `open ... as exists ...` do not survive as distinct KCore forms; they elaborate to ordinary
+  `seal`, package projections, and local bindings over implementation-internal witness members (§5.5.11);
 * explicit modality-predicate evidence introduced by any enabled modal/coeffect extension;
 * local nominal identities as determined by §14.1.1.
 
