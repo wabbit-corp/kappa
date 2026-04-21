@@ -1,0 +1,14 @@
+module main
+
+data File : Type =
+    Handle Int
+
+let step (inout file : File) : IO File = pure file
+
+let main : IO Unit = do
+    let 1 file = Handle 1
+    step file
+
+--! assertErrorCount 1
+--! assertDiagnosticCodes E_QTT_INOUT_MARKER_REQUIRED
+--! assertDiagnosticAt main.kp error E_QTT_INOUT_MARKER_REQUIRED 10

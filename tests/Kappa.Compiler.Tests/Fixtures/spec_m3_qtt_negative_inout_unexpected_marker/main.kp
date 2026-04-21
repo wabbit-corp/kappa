@@ -1,0 +1,14 @@
+module main
+
+data File : Type =
+    Handle Int
+
+let consume (1 file : File) = ()
+
+let main : IO Unit = do
+    let 1 file = Handle 1
+    consume ~file
+
+--! assertErrorCount 1
+--! assertDiagnosticCodes E_QTT_INOUT_MARKER_UNEXPECTED
+--! assertDiagnosticAt main.kp error E_QTT_INOUT_MARKER_UNEXPECTED 10

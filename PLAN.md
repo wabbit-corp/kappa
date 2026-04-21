@@ -205,6 +205,7 @@ Preferred resolution: adjust the compiler, keeping QTT information explicit thro
 - [x] Implement the M3 intrinsic/runtime contract initially as backend-profile intrinsics: `openFile`, `readData`, `primitiveCloseFile`, and any minimal file-handle test shim needed by the positive target.
   The first shim is intentionally deterministic for tests: `openFile` produces a File-like handle, `readData` returns `"chunk"`, and `primitiveCloseFile` writes `"closed"`.
 - [ ] Implement `inout` / `~` as a type-directed elaboration rewrite after the resource context exists, not as parser-only sugar.
+  The first call-site contract is enforced: resolved `inout` parameters require `~`, and `~` on ordinary parameters reports `E_QTT_INOUT_MARKER_UNEXPECTED`. Full record/place write-back rewriting remains open.
 - [ ] Define and implement a canonical ownership-fact dump schema at `KFrontIR.BODY_RESOLVE` and `KFrontIR.CHECKERS`.
   Required deterministic fact groups: bindings (`id`, origin, kind, declared quantity, inferred demand/borrow obligation, state), uses/events (origin, use kind, target binding/place), borrow regions (id, explicit vs anonymous, introduction origin, owner scope), `using` scopes (surface origin, hidden owned binding, shared region, hidden release obligation), closures (capture set, inferred quantity, inferred region environment, escape status), and diagnostics (stable code, primary origin, related origins).
   Unknown or unsupported facts must be emitted explicitly as `unknown`/`deferred`, not omitted.

@@ -67,7 +67,8 @@ module ResourceModel =
 
     type FunctionSignature =
         { Name: string
-          ParameterQuantities: ResourceQuantity option list }
+          ParameterQuantities: ResourceQuantity option list
+          ParameterInout: bool list }
 
     type ResourcePlace =
         { Root: string

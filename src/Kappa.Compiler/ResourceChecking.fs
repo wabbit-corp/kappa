@@ -8,6 +8,8 @@ module ResourceChecking =
     let private linearOveruseCode = "E_QTT_LINEAR_OVERUSE"
     let private borrowConsumeCode = "E_QTT_BORROW_CONSUME"
     let private borrowEscapeCode = "E_QTT_BORROW_ESCAPE"
+    let private inoutMarkerRequiredCode = "E_QTT_INOUT_MARKER_REQUIRED"
+    let private inoutMarkerUnexpectedCode = "E_QTT_INOUT_MARKER_UNEXPECTED"
 
     type CheckResult =
         { Diagnostics: Diagnostic list
@@ -95,7 +97,7 @@ module ResourceChecking =
             else
                 None)
 
-    let private findUseLocation (document: ParsedDocument) name ordinal =
+    let private useLocations (document: ParsedDocument) name =
         let lineMap = tokensByLine document
 
         document.Syntax.Tokens
@@ -104,6 +106,18 @@ module ResourceChecking =
                 Some(tokenLocation document token)
             else
                 None)
+
+    let private findUseLocation (document: ParsedDocument) name ordinal =
+        useLocations document name
+        |> List.tryItem (max 0 (ordinal - 1))
+
+    let private findLastUseLocation (document: ParsedDocument) name =
+        useLocations document name
+        |> List.tryLast
+
+    let private findUseLocationAfter (document: ParsedDocument) name (origin: SourceLocation) ordinal =
+        useLocations document name
+        |> List.filter (fun location -> location.Span.Start >= origin.Span.End)
         |> List.tryItem (max 0 (ordinal - 1))
 
     let private addDiagnostic code message location relatedLocations (document: ParsedDocument) (state: CheckState) =
@@ -118,6 +132,21 @@ module ResourceChecking =
 
         { state with
             Diagnostics = state.Diagnostics @ [ diagnostic ] }
+
+    let private findBindingUseLocation (document: ParsedDocument) (binding: ResourceBinding) ordinal =
+        match binding.Origin with
+        | Some origin ->
+            findUseLocationAfter document binding.Name origin ordinal
+            |> Option.orElseWith (fun () -> findUseLocation document binding.Name ordinal)
+        | None ->
+            findUseLocation document binding.Name ordinal
+
+    let private argumentLocation (document: ParsedDocument) argument =
+        match argument with
+        | Name [ name ]
+        | InoutArgument(Name [ name ]) ->
+            findLastUseLocation document name
+        | _ -> None
 
     let private quantityConsumes quantity =
         match quantity with
@@ -399,7 +428,7 @@ module ResourceChecking =
         match Map.tryFind name state.Bindings with
         | None -> state
         | Some binding ->
-            let consumeOrigin = findUseLocation document name (binding.UseMaximum + 1)
+            let consumeOrigin = findBindingUseLocation document binding (binding.UseMaximum + 1)
 
             let state =
                 if binding.BorrowRegion.IsSome then
@@ -635,11 +664,47 @@ module ResourceChecking =
                 |> Option.map (fun signature -> signature.ParameterQuantities)
                 |> Option.defaultValue []
 
+            let parameterInout =
+                calleeName
+                |> Option.bind (fun name -> Map.tryFind name signatures)
+                |> Option.map (fun signature -> signature.ParameterInout)
+                |> Option.defaultValue []
+
             ((state, 0), arguments)
             ||> List.fold (fun (current, index) argument ->
                 let quantity =
                     parameterQuantities
                     |> List.tryItem index
+
+                let expectsInout =
+                    parameterInout
+                    |> List.tryItem index
+                    |> Option.defaultValue false
+
+                let hasInoutMarker =
+                    match argument with
+                    | InoutArgument _ -> true
+                    | _ -> false
+
+                let current =
+                    if expectsInout && not hasInoutMarker then
+                        addDiagnostic
+                            inoutMarkerRequiredCode
+                            "An argument supplied to an 'inout' parameter must be marked with '~'."
+                            (argumentLocation document argument)
+                            []
+                            document
+                            current
+                    elif hasInoutMarker && not expectsInout then
+                        addDiagnostic
+                            inoutMarkerUnexpectedCode
+                            "The '~' marker can only be used for an 'inout' parameter."
+                            (argumentLocation document argument)
+                            []
+                            document
+                            current
+                    else
+                        current
 
                 let next =
                     match quantity, argument with
@@ -836,12 +901,13 @@ module ResourceChecking =
             |> List.take (segments.Length - 1)
             |> List.map quantityFromSignatureSegment
 
-    let private signatureEntries (document: ParsedDocument) name quantities =
+    let private signatureEntries (document: ParsedDocument) name quantities parameterInout =
         signatureName document.ModuleName name
         |> List.map (fun signatureName ->
             signatureName,
             { Name = signatureName
-              ParameterQuantities = quantities })
+              ParameterQuantities = quantities
+              ParameterInout = parameterInout })
 
     let private collectSignatures (documents: ParsedDocument list) =
         documents
@@ -849,21 +915,27 @@ module ResourceChecking =
             document.Syntax.Declarations
             |> List.choose (function
                 | SignatureDeclaration declaration ->
-                    Some(signatureEntries document declaration.Name (signatureParameterQuantities declaration.TypeTokens))
+                    let quantities = signatureParameterQuantities declaration.TypeTokens
+                    Some(signatureEntries document declaration.Name quantities (quantities |> List.map (fun _ -> false)))
                 | ExpectDeclarationNode (ExpectTermDeclaration declaration) ->
-                    Some(signatureEntries document declaration.Name (signatureParameterQuantities declaration.TypeTokens))
+                    let quantities = signatureParameterQuantities declaration.TypeTokens
+                    Some(signatureEntries document declaration.Name quantities (quantities |> List.map (fun _ -> false)))
                 | LetDeclaration definition ->
                     definition.Name
                     |> Option.map (fun name ->
+                        let quantities =
+                            definition.Parameters
+                            |> List.map (fun (parameter: Parameter) ->
+                                if parameter.IsInout then
+                                    Some ResourceQuantity.one
+                                else
+                                    parameter.Quantity |> Option.map ResourceQuantity.ofSurface)
+
                         signatureEntries
                             document
                             name
-                            (definition.Parameters
-                             |> List.map (fun (parameter: Parameter) ->
-                                 if parameter.IsInout then
-                                     Some ResourceQuantity.one
-                                 else
-                                     parameter.Quantity |> Option.map ResourceQuantity.ofSurface)))
+                            quantities
+                            (definition.Parameters |> List.map (fun parameter -> parameter.IsInout)))
                 | _ -> None)
             |> List.concat)
         |> Map.ofList
