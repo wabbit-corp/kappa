@@ -8619,7 +8619,7 @@ Definitional equality also includes canonical normalization of:
 * seal congruence: if `e1 ≡ e2`, then `seal e1 as S ≡ seal e2 as S`;
 * seal idempotence: if `e : S`, then `seal e as S ≡ e`;
 * projection congruence: if `p1 ≡ p2`, then `p1.f ≡ p2.f` whenever both projections are well-typed;
-* transparent static-member unfolding: for a transparent quantity-`0` field `f` of a signature `S`, the projection
+* transparent static-member unfolding: for a transparent compile-time field `f` of a signature `S`, the projection
   `(seal e as S).f` δ-reduces to the manifest equation recorded for `f` by the seal;
 * opaque-member opacity: if `f` is opaque in `S`, the projection `(seal e as S).f` does not δ-reduce across the seal;
 * projection of a non-erased field through a seal is not required to reduce for definitional equality. It remains a
@@ -8633,21 +8633,25 @@ numeric literals appearing as type indices are normalized before comparison.
 
 ### 14.4 Erasure
 
-Types and universe terms are compile-time only and do not require runtime representation.
+Intrinsic compile-time values, including universes, `Type u` terms, quantities, regions, constraint descriptors, rows,
+labels, proof terms used only for compile-time reasoning, and erased indices, do not require implicit runtime
+representation.
 
-Every binder at quantity `0` is erased at runtime, except where elaboration retains constraint evidence as permitted by
-§5.1.3. This applies equally to record fields declared at quantity `0`.
+The runtime representation of a term is obtained by deleting:
 
-The runtime representation of a term is obtained by deleting all quantity-0 binders and their corresponding arguments at
-applications, except for retained constraint evidence and explicit `Dict` values governed by §5.1.3.
+* all computational binders and fields whose quantity is `0`, together with the corresponding erased arguments at
+  applications, except for retained coherent constraint evidence and explicit `Dict` values governed by §5.1.3; and
+* all binders, fields, arguments, and package members whose values are compile-time values in the sense of §5.1.4.1,
+  regardless of their written quantity annotation, unless preserved by an explicit reified runtime carrier.
 
-All quantities other than `0` are computationally relevant and remain in the runtime term.
+For computational binders and fields, quantities other than `0` are runtime-relevant and remain in the runtime term.
+For compile-time binders and fields, runtime relevance is determined by classifier rather than by written quantity.
 
-This erasure is sound: runtime behavior of ω-use terms is preserved.
+This erasure is sound: runtime behavior of the computational fragment is preserved.
 
-The quantity-0 fragment and the runtime fragment are largely disjoint machinery: the quantity-0 fragment is primarily
-the typechecker, while the runtime fragment contains all non-zero quantities together with any constraint-evidence
-representation retained after elaboration under §5.1.3.
+The compile-time fragment and the runtime fragment are largely disjoint machinery.
+The compile-time fragment is primarily the typechecker, elaborator, and normalization engine, while the runtime fragment
+contains computational values together with any evidence or metadata that has been explicitly reified.
 
 Lowering from KCore to KBackendIR occurs only after the erasure obligations of this section have been discharged
 (§17.4).
@@ -9418,8 +9422,8 @@ A module interface artifact MUST record at least:
   elaboration, including binder names, explicitness, quantities, receiver markers, and any `inout`-relevant
   formal-parameter information, plus any interface-visible classification relevant to use sites, such as pattern-head
   eligibility under §7.7;
-* the signatures of exported types, traits, constructors, associated types, effect interfaces, and effect operations,
-  insofar as those entities are available to downstream code;
+* the signatures of exported types, traits, constructors, associated static members, effect interfaces, and effect
+  operations, insofar as those entities are available to downstream code;
 * top-level instance heads and any metadata required for instance search and coherence under §§12.3 and 15.2.1;
 * the hashes or equivalent identity data required by §15 for exported definitions and instances;
 * enough definitional content for exported transparent items to support downstream definitional equality;
@@ -9465,8 +9469,8 @@ At minimum, the canonical interface view MUST include:
 * exported signatures of terms, together with the corresponding binder metadata needed for downstream application-site
   elaboration and any interface-visible classification relevant to use sites, such as pattern-head eligibility under
   §7.7;
-* exported signatures of types, traits, constructors, associated types, effect interfaces, and effect operations,
-  insofar as those entities are available to downstream code;
+* exported signatures of types, traits, constructors, associated static members, effect interfaces, and effect
+  operations, insofar as those entities are available to downstream code;
 * exported instance heads and any interface-visible coherence metadata;
 * re-exports introduced by `export`; and
 * enough transparent definitional content to explain what downstream ordinary definitional equality may unfold.
@@ -9598,8 +9602,8 @@ A conforming implementation MUST behave as if the following phases exist:
   and fixity-environment setup.
 * `DECLARATION_SHAPES`: namespace population, declaration-symbol creation, raw declaration headers, binder lists, local
   nominal identities, and raw block-scope declaration structure.
-* `HEADER_TYPES`: explicit declaration-header types, supertypes, associated types, effect-operation headers, record
-  field quantities, record dependency graphs, and other header-level type information.
+* `HEADER_TYPES`: explicit declaration-header types, supertypes, associated static members, effect-operation headers,
+  record field quantities, record dependency graphs, and other header-level type information.
 * `STATUS`: visibility, opacity, export status, unsafe/debug gating, instance admissibility, and modifier legality.
 * `IMPLICIT_SIGNATURES`: inference of declaration result types or initializer types only for declarations whose omitted
   signatures are required by the current query, interface materialization, or a dependent declaration body.
@@ -9954,7 +9958,8 @@ KCore is after:
 
 KCore retains all compile-time structure needed by the source semantics. In particular, KCore may contain:
 
-* `Type`, universes, `Constraint`, `Quantity`, `Region`, rows, and labels;
+* intrinsic compile-time types and their inhabitants, including `Universe`, `Quantity`, `Region`, `Constraint`, row
+  types, label types, universe terms, and `Type u`;
 * explicit binder quantities, explicit regions, and explicit implicit binders;
 * proof terms and equality evidence;
 * branch assumptions and refinements introduced by §§7.4.1, 7.5.3, and 10.4.1 as explicit local proof/evidence
@@ -9962,7 +9967,7 @@ KCore retains all compile-time structure needed by the source semantics. In part
 * explicit handler forms, resumption quantities, and completion-carrying control structure;
 * explicit application spines aligned with Pi telescopes;
 * explicit places and pure path operations over stable subpaths;
-* explicit `seal` nodes, manifest static members, opaque static members, and package/member projections;
+* explicit `seal` nodes, manifest compile-time members, opaque compile-time members, and package/member projections;
 * surface `exists` and `open ... as exists ...` do not survive as distinct KCore forms; they elaborate to ordinary
   `seal`, package projections, and local bindings over implementation-internal witness members (§5.5.11);
 * explicit modality-predicate evidence introduced by any enabled modal/coeffect extension;
@@ -10066,6 +10071,23 @@ representation.
 This subsection does not introduce a distinct KCore borrow term. Borrow introduction remains an elaboration rule that
 produces ordinary explicit borrowed arguments or binders while referring to places.
 
+#### 17.3.1.2 KCore intrinsic compile-time types
+
+A conforming implementation MUST behave as if KCore supports ordinary binding, projection, application, sealing, and
+packaging of inhabitants of the intrinsic compile-time types of §5.1.3.
+
+Rules:
+
+* `Universe`, `Quantity`, `Region`, `Constraint`, `RecRow`, `VarRow`, `EffRow`, `Label`, and `EffLabel` are ordinary
+  compile-time types in KCore.
+* `Type u` is a primitive universe family indexed by `u : Universe`; it is not required to be represented as ordinary
+  first-order application.
+* Compile-time binders, fields, and package members may carry any quantity annotation otherwise admitted by source or
+  KCore.
+* Erasure of compile-time terms is classifier-based under §§5.1.4 and 14.4.
+* Raw terms of type `Constraint` are descriptors only. Coherent evidence for a concrete descriptor `C` is separate and
+  is reified explicitly by `Dict C`.
+
 #### 17.3.2 KCore provenance and explainability
 
 Every synthetic KCore node introduced during elaboration MUST carry provenance sufficient to explain why it exists.
@@ -10127,7 +10149,7 @@ Semantic objects include at least:
 * term definitions and declarations;
 * type definitions and aliases;
 * constructors;
-* traits and associated types;
+* traits and associated static members;
 * effect interfaces and effect operations;
 * instances; and
 * any other implementation-defined top-level semantic artifact that is imported, browsed, or separately cached.
@@ -10213,11 +10235,9 @@ KBackendIR contains only runtime-relevant constructs. In particular, it contains
 The following do not appear in KBackendIR except insofar as they are explicitly reified by a library or backend
 intrinsic:
 
-* universes and `Type`;
-* row terms and row constraints;
-* `Constraint`-sorted evidence erased under §5.1.3 and §14.4;
-* anonymous or explicit region variables;
-* quantity-`0` binders or fields;
+* intrinsic compile-time types and their inhabitants, including universes, `Type u`, row terms, label terms, raw
+  `Constraint` descriptors, and anonymous or explicit region variables;
+* quantity-`0` computational binders or fields;
 * proof terms whose only purpose is compile-time reasoning;
 * erased indices of dependent data.
 
@@ -10227,8 +10247,8 @@ A conforming implementation MUST behave as if lowering from KCore to KBackendIR 
 stages:
 
 * `ERASURE`:
-  eliminate or discharge runtime-irrelevant universes, rows, regions, quantity-`0` binders, proof-only terms, and
-  erased indices in accordance with §14.4.
+  eliminate or discharge compile-time-only intrinsic type inhabitants, quantity-`0` computational binders, proof-only
+  terms, and erased indices in accordance with §14.4.
 
 * `CONTROL_LOWERING`:
   lower source-level abrupt control, completion-carrying control, handlers, resumptions, `defer`, `using`, `try`, and
@@ -10491,8 +10511,8 @@ elaboration and erasure.
 Portable ABI rules:
 
 * portable ABI functions are first-order after erasure;
-* implicit parameters, `Constraint`-sorted parameters, quantity-`0` parameters, and proof-only parameters are erased and
-  are not ABI-visible;
+* implicit parameters, coherent constraint-evidence parameters, quantity-`0` parameters, and proof-only parameters are
+  erased and are not ABI-visible;
 * resumption values, handler frames, cleanup frames, local nominal declarations, and anonymous borrow regions are not
   portable ABI values;
 * direct borrowed parameters and direct borrowed results are not part of the portable subset;
