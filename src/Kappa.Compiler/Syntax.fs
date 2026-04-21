@@ -31,6 +31,7 @@ type Keyword =
     | Import
     | Impossible
     | In
+    | Inout
     | Infix
     | Instance
     | Is
@@ -91,6 +92,7 @@ module Keyword =
             "import", Import
             "impossible", Impossible
             "in", In
+            "inout", Inout
             "infix", Infix
             "instance", Instance
             "is", Is
@@ -214,9 +216,33 @@ type LiteralValue =
     | Character of char
     | Unit
 
+type Quantity =
+    | QuantityZero
+    | QuantityOne
+    | QuantityBorrow of regionName: string option
+    | QuantityOmega
+    | QuantityAtMostOne
+    | QuantityAtLeastOne
+    | QuantityVariable of string
+
+module Quantity =
+    let toSurfaceText quantity =
+        match quantity with
+        | QuantityZero -> "0"
+        | QuantityOne -> "1"
+        | QuantityBorrow None -> "&"
+        | QuantityBorrow (Some regionName) -> $"&[{regionName}]"
+        | QuantityOmega -> "\u03c9"
+        | QuantityAtMostOne -> "<=1"
+        | QuantityAtLeastOne -> ">=1"
+        | QuantityVariable name -> name
+
 type Parameter =
     { Name: string
-      TypeTokens: Token list option }
+      TypeTokens: Token list option
+      Quantity: Quantity option
+      IsImplicit: bool
+      IsInout: bool }
 
 type FixityAssociativity =
     | NonAssociative
@@ -242,6 +268,7 @@ type CoreExpression =
     | Do of DoStatement list
     | MonadicSplice of CoreExpression
     | Apply of CoreExpression * CoreExpression list
+    | InoutArgument of CoreExpression
     | Unary of operatorName: string * CoreExpression
     | Binary of CoreExpression * operatorName: string * CoreExpression
     | PrefixedString of prefix: string * parts: InterpolatedStringPart list
@@ -260,11 +287,16 @@ and MatchCase =
     { Pattern: CorePattern
       Body: CoreExpression }
 
+and BindPattern =
+    { Pattern: CorePattern
+      Quantity: Quantity option }
+
 and DoStatement =
-    | DoLet of string * CoreExpression
-    | DoBind of string * CoreExpression
+    | DoLet of BindPattern * CoreExpression
+    | DoBind of BindPattern * CoreExpression
     | DoVar of string * CoreExpression
     | DoAssign of string * CoreExpression
+    | DoUsing of CorePattern * CoreExpression
     | DoWhile of condition: CoreExpression * body: DoStatement list
     | DoExpression of CoreExpression
 

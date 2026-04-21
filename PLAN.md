@@ -171,9 +171,10 @@ Current 17.1-17.6 status note: the checkpoint/build-identity prerequisite for M3
 Preferred resolution: adjust the compiler, keeping QTT information explicit through elaboration and erased before backend-specific lowering.
 
 - [ ] Start with data-driven M3 tests before implementation: one positive `using`/linear-file program and at least three negative programs for dropped owned resources, duplicated owned resources, and borrowed-region escape through a returned closure.
-- [ ] Audit `Spec.md` sections 5.1.5-5.1.7, 7.1.3, 8.7.4, 8.8, 14.4, and the relevant KCore sections before changing the typechecker, then record any spec/compiler mismatch discovered during implementation.
-- [ ] Extend the lexer/parser for quantity binders (`0`, `1`, `&`, and `omega`), borrowed binders (`(& x : T)` and `(&[s] x : T)`), `using pat <- expr`, `inout`, and `~` call-site syntax.
-- [ ] Add syntax and checkpoint tests that prove quantity annotations round-trip into the pre-elaboration observable forms without changing runtime semantics.
+- [x] Audit `Spec.md` sections 5.1.5-5.1.7, 7.1.3, 8.7.4, 8.8, 14.4, and the relevant KCore sections before changing the typechecker, then record any spec/compiler mismatch discovered during implementation.
+- [x] Extend the lexer/parser for quantity binders (`0`, `1`, `&`, and `omega`), borrowed binders (`(& x : T)` and `(&[s] x : T)`), `using pat <- expr`, `inout`, and `~` call-site syntax.
+- [x] Add data-driven syntax fixtures that prove quantity annotations round-trip into the pre-elaboration observable forms without changing runtime semantics.
+- [ ] Add checkpoint-level tests for QTT metadata once the resource checker starts attaching ownership, borrow-region, and place facts to KCore observability.
 - [ ] Introduce a typed quantity/region/place model rather than representing quantities as ad hoc strings on binders.
 - [ ] Replace the simple name-to-type typing environment in the affected checker paths with a resource context that tracks type, quantity obligation, stable place, region, and use state.
 - [ ] Implement syntax-directed context splitting and consumption for applications, `let`, `do`, `match`, closures, and control-flow joins.
@@ -192,4 +193,4 @@ Preferred resolution: adjust the compiler, keeping QTT information explicit thro
 - [ ] Add regression tests that execute the M3 positive program on the interpreter, standardized `zig`/ZigCc backend, and public `dotnet` profile, then keep all three green while refactoring.
 - [ ] Stop for a cleanup pass after the first green M3 slice: separate resource-context logic, borrow-region logic, and backend cleanup lowering so M4 effect-handler work does not inherit a monolith.
 
-Current M3 status note: not started. Treat the 17.1-17.6 pipeline-contract track as the immediate prerequisite. Once that foundation is stable, the first M3 slice should be test-first and should reject the three negative ownership cases before expanding syntax coverage beyond the target program shape.
+Current M3 status note: started with the source/KFrontIR surface slice. The compiler now parses and preserves typed quantity metadata for function parameters and do-bind patterns, parses borrowed binders with optional explicit regions, parses `using pat <- expr` with the spec-required rejection of explicit quantity markers, and parses `inout` parameters plus `~` call-site markers. Data-driven fixtures cover those surfaces. The next M3 slice should introduce the resource-context/place model, add checkpoint-level QTT observability, and then add the three required negative fixtures for dropped owned resources, duplicated owned resources, and borrowed-region escape.

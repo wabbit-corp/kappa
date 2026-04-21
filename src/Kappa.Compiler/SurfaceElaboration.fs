@@ -99,7 +99,7 @@ module SurfaceElaboration =
         { Name = name
           TypeText = typeText }
 
-    let rec private lowerKCorePattern pattern =
+    let rec private lowerKCorePattern (pattern: CorePattern) =
         match pattern with
         | WildcardPattern ->
             KCoreWildcardPattern
@@ -459,6 +459,8 @@ module SurfaceElaboration =
                 inferDoResultType localTypes statements
             | MonadicSplice inner ->
                 inferExpressionType localTypes inner |> Option.map unwrapIoType
+            | InoutArgument inner ->
+                inferExpressionType localTypes inner
             | Apply(Name [ calleeName ], arguments) ->
                 let argumentTypes =
                     arguments |> List.map (inferExpressionType localTypes)
@@ -495,6 +497,11 @@ module SurfaceElaboration =
                 Some stringType
 
         and inferDoResultType localTypes statements =
+            let bindPatternName (binding: BindPattern) =
+                match binding.Pattern with
+                | NamePattern name -> Some name
+                | _ -> None
+
             match statements with
             | [] ->
                 Some unitType
@@ -502,18 +509,25 @@ module SurfaceElaboration =
                 inferExpressionType localTypes expression |> Option.map unwrapIoType
             | DoExpression _ :: rest ->
                 inferDoResultType localTypes rest
-            | DoLet(bindingName, expression) :: rest ->
+            | DoLet(binding, expression) :: rest ->
                 let nextLocals =
-                    match inferExpressionType localTypes expression with
-                    | Some valueType -> Map.add bindingName valueType localTypes
-                    | None -> localTypes
+                    match bindPatternName binding, inferExpressionType localTypes expression with
+                    | Some bindingName, Some valueType -> Map.add bindingName valueType localTypes
+                    | _ -> localTypes
 
                 inferDoResultType nextLocals rest
-            | DoBind(bindingName, expression) :: rest ->
+            | DoBind(binding, expression) :: rest ->
                 let nextLocals =
-                    match inferExpressionType localTypes expression with
-                    | Some valueType -> Map.add bindingName (unwrapIoType valueType) localTypes
-                    | None -> localTypes
+                    match bindPatternName binding, inferExpressionType localTypes expression with
+                    | Some bindingName, Some valueType -> Map.add bindingName (unwrapIoType valueType) localTypes
+                    | _ -> localTypes
+
+                inferDoResultType nextLocals rest
+            | DoUsing(pattern, expression) :: rest ->
+                let nextLocals =
+                    match pattern, inferExpressionType localTypes expression with
+                    | NamePattern bindingName, Some valueType -> Map.add bindingName (unwrapIoType valueType) localTypes
+                    | _ -> localTypes
 
                 inferDoResultType nextLocals rest
             | DoVar(bindingName, expression) :: rest ->
@@ -529,6 +543,11 @@ module SurfaceElaboration =
                 inferDoResultType localTypes rest
 
         and lowerDoStatements localTypes statements =
+            let bindPatternName (binding: BindPattern) =
+                match binding.Pattern with
+                | NamePattern name -> name
+                | _ -> "__pattern"
+
             match statements with
             | [] ->
                 KCoreLiteral LiteralValue.Unit
@@ -536,7 +555,8 @@ module SurfaceElaboration =
                 KCoreExecute(lowerExpression localTypes expression)
             | DoExpression expression :: rest ->
                 KCoreSequence(KCoreExecute(lowerExpression localTypes expression), lowerDoStatements localTypes rest)
-            | DoLet(bindingName, expression) :: rest ->
+            | DoLet(binding, expression) :: rest ->
+                let bindingName = bindPatternName binding
                 let loweredValue = lowerExpression localTypes expression
 
                 let nextLocals =
@@ -545,7 +565,22 @@ module SurfaceElaboration =
                     | None -> localTypes
 
                 KCoreLet(bindingName, loweredValue, lowerDoStatements nextLocals rest)
-            | DoBind(bindingName, expression) :: rest ->
+            | DoBind(binding, expression) :: rest ->
+                let bindingName = bindPatternName binding
+                let loweredValue = KCoreExecute(lowerExpression localTypes expression)
+
+                let nextLocals =
+                    match inferExpressionType localTypes expression with
+                    | Some valueType -> Map.add bindingName (unwrapIoType valueType) localTypes
+                    | None -> localTypes
+
+                KCoreLet(bindingName, loweredValue, lowerDoStatements nextLocals rest)
+            | DoUsing(pattern, expression) :: rest ->
+                let bindingName =
+                    match pattern with
+                    | NamePattern name -> name
+                    | _ -> "__using"
+
                 let loweredValue = KCoreExecute(lowerExpression localTypes expression)
 
                 let nextLocals =
@@ -616,6 +651,8 @@ module SurfaceElaboration =
                 lowerDoStatements localTypes statements
             | MonadicSplice inner ->
                 KCoreExecute(lowerExpression localTypes inner)
+            | InoutArgument inner ->
+                lowerExpression localTypes inner
             | Apply(Name [ calleeName ], arguments)
                 when not (Map.containsKey calleeName localTypes)
                      && not (Map.containsKey calleeName environment.VisibleBindings)

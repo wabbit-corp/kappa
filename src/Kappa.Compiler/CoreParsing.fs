@@ -6,6 +6,109 @@ type LetHeaderParseResult =
     { Parameters: Parameter list
       ReturnTypeTokens: Token list option }
 
+module private SurfaceBinderParsing =
+    let makeParameter name typeTokens quantity isImplicit isInout =
+        { Name = name
+          TypeTokens = typeTokens
+          Quantity = quantity
+          IsImplicit = isImplicit
+          IsInout = isInout }
+
+    let private tokenTextEquals expected (token: Token) =
+        String.Equals(token.Text, expected, StringComparison.Ordinal)
+
+    let private isOmegaText text =
+        String.Equals(text, "\u03c9", StringComparison.Ordinal)
+        || String.Equals(text, "omega", StringComparison.Ordinal)
+
+    let tryParseQuantityPrefix (tokens: Token list) =
+        match tokens with
+        | { Kind = IntegerLiteral; Text = "0" } :: rest ->
+            Some(QuantityZero, rest)
+        | { Kind = IntegerLiteral; Text = "1" } :: rest ->
+            Some(QuantityOne, rest)
+        | { Kind = Operator; Text = "&" } :: { Kind = LeftBracket } :: regionToken :: { Kind = RightBracket } :: rest
+            when Token.isName regionToken ->
+            Some(QuantityBorrow(Some(SyntaxFacts.trimIdentifierQuotes regionToken.Text)), rest)
+        | { Kind = Operator; Text = "&" } :: rest ->
+            Some(QuantityBorrow None, rest)
+        | { Kind = Operator; Text = "<=" } :: { Kind = IntegerLiteral; Text = "1" } :: rest ->
+            Some(QuantityAtMostOne, rest)
+        | { Kind = Operator; Text = ">=" } :: { Kind = IntegerLiteral; Text = "1" } :: rest ->
+            Some(QuantityAtLeastOne, rest)
+        | head :: rest when Token.isName head && isOmegaText head.Text ->
+            Some(QuantityOmega, rest)
+        | head :: rest when Token.isName head ->
+            // Quantity variables are only unambiguous when another binder name follows.
+            match rest with
+            | next :: _ when Token.isName next ->
+                Some(QuantityVariable(SyntaxFacts.trimIdentifierQuotes head.Text), rest)
+            | _ ->
+                None
+        | _ ->
+            None
+
+    let parseParameterFromTokens (diagnostics: DiagnosticBag) (source: SourceText) eofSpan (tokens: Token list) =
+        let unsupported span =
+            diagnostics.AddError("Unsupported parameter binder syntax.", source.GetLocation(span))
+
+        let rec parseBody isImplicit isInout explicitQuantity remaining =
+            let quantity, bodyTokens =
+                if isInout then
+                    Some QuantityOne, remaining
+                else
+                    match explicitQuantity with
+                    | Some quantity -> Some quantity, remaining
+                    | None ->
+                        match tryParseQuantityPrefix remaining with
+                        | Some(quantity, rest) -> Some quantity, rest
+                        | None -> None, remaining
+
+            match bodyTokens with
+            | [] ->
+                diagnostics.AddError("Expected a parameter binder.", source.GetLocation(eofSpan))
+                None
+            | head :: tail when Token.isName head ->
+                let name = SyntaxFacts.trimIdentifierQuotes head.Text
+
+                let typeTokens =
+                    match tail with
+                    | [] -> None
+                    | colon :: rest when colon.Kind = Colon -> Some rest
+                    | _ ->
+                        unsupported head.Span
+                        None
+
+                Some(makeParameter name typeTokens quantity isImplicit isInout)
+            | head :: _ ->
+                diagnostics.AddError("Expected a parameter name.", source.GetLocation(head.Span))
+                None
+
+        match tokens with
+        | [] ->
+            diagnostics.AddError("Expected a parameter binder.", source.GetLocation(eofSpan))
+            None
+        | { Kind = AtSign } :: rest ->
+            parseBody true false None rest
+        | head :: rest when Token.isKeyword Keyword.Inout head ->
+            parseBody false true (Some QuantityOne) rest
+        | _ ->
+            parseBody false false None tokens
+
+    let parseBindPatternFromTokens (parsePattern: Token list -> CorePattern) (tokens: Token list) =
+        match tryParseQuantityPrefix tokens with
+        | Some(quantity, rest) ->
+            { Pattern = parsePattern rest
+              Quantity = Some quantity }
+        | None ->
+            { Pattern = parsePattern tokens
+              Quantity = None }
+
+    let trySingleName pattern =
+        match pattern with
+        | NamePattern name -> Some name
+        | _ -> None
+
 type private PatternParser(tokens: Token list, source: SourceText, diagnostics: DiagnosticBag, fixities: FixityTable) =
     let eofSpan =
         match List.tryLast tokens with
@@ -360,12 +463,14 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
         let nestedParser = PatternParser(tokens, source, diagnostics, fixities)
         nestedParser.Parse()
 
+    member private this.ParseBindPatternFromTokens(tokens: Token list) =
+        SurfaceBinderParsing.parseBindPatternFromTokens this.ParsePatternFromTokens tokens
+
     member private _.MakeOperatorSection body =
         let parameterName = "__sectionArg"
 
         Lambda(
-            [ { Name = parameterName
-                TypeTokens = None } ],
+            [ SurfaceBinderParsing.makeParameter parameterName None None false false ],
             body
         )
 
@@ -432,27 +537,7 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
         List.ofSeq segments
 
     member private this.ParseParameterFromTokens(tokens: Token list) =
-        match tokens with
-        | [] ->
-            diagnostics.AddError("Expected a parameter binder.", source.GetLocation(eofSpan))
-            None
-        | head :: tail when Token.isName head ->
-            let name = SyntaxFacts.trimIdentifierQuotes head.Text
-
-            let typeTokens =
-                match tail with
-                | [] -> None
-                | colon :: rest when colon.Kind = Colon -> Some rest
-                | _ ->
-                    diagnostics.AddError("Unsupported parameter binder syntax.", source.GetLocation(head.Span))
-                    None
-
-            Some
-                { Name = name
-                  TypeTokens = typeTokens }
-        | head :: _ ->
-            diagnostics.AddError("Expected a parameter name.", source.GetLocation(head.Span))
-            None
+        SurfaceBinderParsing.parseParameterFromTokens diagnostics source eofSpan tokens
 
     member private this.ParseParenthesizedBinder() =
         let start = this.Current
@@ -498,8 +583,12 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
                 | None -> keepReading <- false
             | _ when this.IsNameToken(this.Current) ->
                 parameters.Add(
-                    { Name = SyntaxFacts.trimIdentifierQuotes (this.Advance().Text)
-                      TypeTokens = None }
+                    SurfaceBinderParsing.makeParameter
+                        (SyntaxFacts.trimIdentifierQuotes (this.Advance().Text))
+                        None
+                        None
+                        false
+                        false
                 )
             | _ ->
                 diagnostics.AddError("Expected a lambda parameter or '->'.", source.GetLocation(this.Current.Span))
@@ -640,6 +729,36 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
         Match(scrutinee, List.ofSeq cases)
 
     member private this.ParseDoLine(lineTokens: Token list) =
+        let tryFindTopLevelSplit (tokens: Token list) predicate =
+            let tokenArray = List.toArray tokens
+            let mutable depth = 0
+            let mutable index = 0
+            let mutable splitIndex = -1
+
+            while index < tokenArray.Length && splitIndex = -1 do
+                match tokenArray[index].Kind with
+                | LeftParen
+                | LeftBracket
+                | LeftBrace
+                | LeftSetBrace ->
+                    depth <- depth + 1
+                | RightParen
+                | RightBracket
+                | RightBrace
+                | RightSetBrace ->
+                    depth <- max 0 (depth - 1)
+                | _ when depth = 0 && predicate tokenArray[index] ->
+                    splitIndex <- index
+                | _ ->
+                    ()
+
+                index <- index + 1
+
+            if splitIndex < 0 then
+                None
+            else
+                Some(tokenArray, splitIndex)
+
         let parseDoBlockTokens (tokens: Token list) =
             let lines = ResizeArray<Token list>()
             let tokenArray = List.toArray tokens
@@ -715,29 +834,73 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
             |> List.filter (List.isEmpty >> not)
             |> List.map this.ParseDoLine
 
+        let stripBindingTypeAnnotation (tokens: Token list) =
+            match tryFindTopLevelSplit tokens (fun token -> token.Kind = Colon) with
+            | Some(tokenArray, splitIndex) ->
+                tokenArray[0 .. splitIndex - 1] |> Array.toList
+            | None ->
+                tokens
+
         match lineTokens with
         | varToken :: nameToken :: equalsToken :: rest
             when Token.isKeyword Keyword.Var varToken && Token.isName nameToken && equalsToken.Kind = Equals ->
             let name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
             DoVar(name, this.ParseStandaloneExpression(rest))
-        | letToken :: nameToken :: rest when Token.isKeyword Keyword.Let letToken && Token.isName nameToken ->
-            let mutable splitIndex = -1
-            let tokenArray = List.toArray rest
-            let mutable index = 0
+        | usingToken :: rest when Token.isKeyword Keyword.Using usingToken ->
+            match tryFindTopLevelSplit rest (fun token -> token.Kind = Operator && token.Text = "<-") with
+            | Some(tokenArray, splitIndex) ->
+                let patternTokens = tokenArray[0 .. splitIndex - 1] |> Array.toList
 
-            while index < tokenArray.Length && splitIndex = -1 do
-                if tokenArray[index].Kind = Equals then
-                    splitIndex <- index
+                let patternTokens =
+                    match SurfaceBinderParsing.tryParseQuantityPrefix patternTokens with
+                    | Some(_, restPatternTokens) ->
+                        let location =
+                            match patternTokens with
+                            | head :: _ -> head.Span
+                            | [] -> usingToken.Span
 
-                index <- index + 1
+                        diagnostics.AddError(
+                            "'using' binds its pattern at borrowed quantity '&'; explicit quantity markers are not permitted.",
+                            source.GetLocation(location)
+                        )
 
-            if splitIndex < 0 then
-                diagnostics.AddError("Expected '=' in the do binding.", source.GetLocation(nameToken.Span))
+                        restPatternTokens
+                    | None ->
+                        patternTokens
+
+                if List.isEmpty patternTokens then
+                    diagnostics.AddError(
+                        "Expected a pattern in the using binding.",
+                        source.GetLocation(usingToken.Span)
+                    )
+
+                let expressionTokens = tokenArray[splitIndex + 1 ..] |> Array.toList
+                DoUsing(this.ParsePatternFromTokens patternTokens, this.ParseStandaloneExpression(expressionTokens))
+            | None ->
+                diagnostics.AddError("Expected '<-' in the using binding.", source.GetLocation(usingToken.Span))
                 DoExpression(Literal LiteralValue.Unit)
-            else
-                let name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
-                let expressionTokens = List.ofArray tokenArray[splitIndex + 1 ..]
-                DoLet(name, this.ParseStandaloneExpression(expressionTokens))
+        | letToken :: rest when Token.isKeyword Keyword.Let letToken ->
+            match
+                tryFindTopLevelSplit
+                    rest
+                    (fun token -> token.Kind = Equals || (token.Kind = Operator && token.Text = "<-"))
+            with
+            | Some(tokenArray, splitIndex) ->
+                let bindingTokens =
+                    tokenArray[0 .. splitIndex - 1]
+                    |> Array.toList
+                    |> stripBindingTypeAnnotation
+
+                let expressionTokens = tokenArray[splitIndex + 1 ..] |> Array.toList
+                let binding = this.ParseBindPatternFromTokens bindingTokens
+
+                if tokenArray[splitIndex].Kind = Operator && tokenArray[splitIndex].Text = "<-" then
+                    DoBind(binding, this.ParseStandaloneExpression(expressionTokens))
+                else
+                    DoLet(binding, this.ParseStandaloneExpression(expressionTokens))
+            | None ->
+                diagnostics.AddError("Expected '=' or '<-' in the do binding.", source.GetLocation(letToken.Span))
+                DoExpression(Literal LiteralValue.Unit)
         | whileToken :: rest when Token.isKeyword Keyword.While whileToken ->
             let tokenArray = List.toArray rest
             let mutable splitIndex = -1
@@ -769,8 +932,11 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
             let name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
             DoAssign(name, this.ParseStandaloneExpression(rest))
         | nameToken :: operatorToken :: rest when Token.isName nameToken && operatorToken.Kind = Operator && operatorToken.Text = "<-" ->
-            let name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
-            DoBind(name, this.ParseStandaloneExpression(rest))
+            let binding =
+                { Pattern = NamePattern(SyntaxFacts.trimIdentifierQuotes nameToken.Text)
+                  Quantity = None }
+
+            DoBind(binding, this.ParseStandaloneExpression(rest))
         | _ ->
             DoExpression(this.ParseStandaloneExpression(lineTokens))
 
@@ -908,6 +1074,9 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
                 // Splice should bind tightly to the next atomic/application form without
                 // swallowing surrounding infix operators in the enclosing expression.
                 MonadicSplice(this.ParseApplicationExpression())
+            elif this.Current.Text = "~" then
+                this.Advance() |> ignore
+                InoutArgument(this.ParseApplicationExpression())
             else
                 match FixityTable.tryFindPrefix this.Current.Text fixities with
                 | Some precedence ->
@@ -922,12 +1091,15 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
     member private this.CanStartApplicationArgumentAfterHead(token: Token) =
         match token.Kind with
         | Operator ->
-            match FixityTable.tryFindPrefix token.Text fixities with
-            | Some _ ->
-                FixityTable.tryFindInfix token.Text fixities |> Option.isNone
-                && FixityTable.tryFindPostfix token.Text fixities |> Option.isNone
-            | None ->
-                false
+            if token.Text = "~" then
+                true
+            else
+                match FixityTable.tryFindPrefix token.Text fixities with
+                | Some _ ->
+                    FixityTable.tryFindInfix token.Text fixities |> Option.isNone
+                    && FixityTable.tryFindPostfix token.Text fixities |> Option.isNone
+                | None ->
+                    false
         | _ ->
             this.IsExpressionStart(token)
 
@@ -1029,8 +1201,12 @@ module CoreParsing =
             | Identifier
             | Keyword _ ->
                 parameters.Add(
-                    { Name = SyntaxFacts.trimIdentifierQuotes tokenArray[index].Text
-                      TypeTokens = None }
+                    SurfaceBinderParsing.makeParameter
+                        (SyntaxFacts.trimIdentifierQuotes tokenArray[index].Text)
+                        None
+                        None
+                        false
+                        false
                 )
 
                 index <- index + 1
@@ -1053,26 +1229,9 @@ module CoreParsing =
                 else
                     let innerTokens = List.ofArray tokenArray[index + 1 .. endIndex - 2]
 
-                    match innerTokens with
-                    | [] ->
-                        diagnostics.AddError("Expected a parameter binder.", source.GetLocation(startToken.Span))
-                    | head :: tail when Token.isName head ->
-                        let name = SyntaxFacts.trimIdentifierQuotes head.Text
-
-                        let typeTokens =
-                            match tail with
-                            | [] -> None
-                            | colon :: rest when colon.Kind = Colon -> Some rest
-                            | _ ->
-                                diagnostics.AddError("Unsupported parameter binder syntax.", source.GetLocation(head.Span))
-                                None
-
-                        parameters.Add(
-                            { Name = name
-                              TypeTokens = typeTokens }
-                        )
-                    | head :: _ ->
-                        diagnostics.AddError("Expected a parameter name.", source.GetLocation(head.Span))
+                    match SurfaceBinderParsing.parseParameterFromTokens diagnostics source startToken.Span innerTokens with
+                    | Some parameter -> parameters.Add(parameter)
+                    | None -> ()
 
                     index <- endIndex
             | _ ->

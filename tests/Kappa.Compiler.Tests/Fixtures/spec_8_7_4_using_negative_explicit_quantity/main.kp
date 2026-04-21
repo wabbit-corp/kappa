@@ -1,0 +1,13 @@
+module main
+
+data File : Type =
+    Handle Int
+
+let openFile name = pure (Handle 1)
+
+let main : IO Unit = do
+    using & file <- openFile "data.txt"
+    printInt 0
+
+--! assertErrorCount 1
+--! assertDiagnosticMatch explicit quantity markers are not permitted

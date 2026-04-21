@@ -1,0 +1,13 @@
+module main
+
+data File : Type =
+    Handle Int
+
+let main : IO Unit = do
+    let 1 file = Handle 1
+    let & borrowed = file
+    let typed : Int = 1
+    printInt 0
+
+--! assertNoErrors
+--! assertDoItemDescriptors main let 1 file, let & borrowed, let typed, expression

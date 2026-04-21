@@ -1,0 +1,16 @@
+module main
+
+data File : Type =
+    Handle Int
+
+let openFile name = pure (Handle 1)
+let readData (& f : File) = pure "chunk"
+
+let main : IO Unit = do
+    using file <- openFile "data.txt"
+    readData file
+    printInt 0
+
+--! assertNoErrors
+--! assertParameterQuantities readData &
+--! assertDoItemDescriptors main using file, expression, expression

@@ -365,6 +365,9 @@ type KpFixtureAssertion =
     | AssertModuleAttributes of expectedAttributes: string list * filePath: string * lineNumber: int
     | AssertDeclarationKinds of expectedKinds: string list * filePath: string * lineNumber: int
     | AssertDeclarationDescriptors of expectedDescriptors: string list * filePath: string * lineNumber: int
+    | AssertParameterQuantities of bindingName: string * expectedQuantities: string list * filePath: string * lineNumber: int
+    | AssertInoutParameters of bindingName: string * expectedNames: string list * filePath: string * lineNumber: int
+    | AssertDoItemDescriptors of bindingName: string * expectedDescriptors: string list * filePath: string * lineNumber: int
     | AssertDataConstructors of typeName: string * expectedConstructors: string list * filePath: string * lineNumber: int
     | AssertTraitMembers of traitName: string * expectedMembers: string list * filePath: string * lineNumber: int
     | AssertContainsTokenKinds of expectedKinds: string list * filePath: string * lineNumber: int
@@ -626,6 +629,20 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
 
             tokens[0], expectedKinds
 
+        let parseTargetAndList directiveDescription =
+            let tokens =
+                directiveBody.Split([| ' '; '\t' |], 2, StringSplitOptions.RemoveEmptyEntries)
+
+            if tokens.Length <> 2 then
+                invalidOp $"{directiveName} expects '<{directiveDescription}> <value-list>' ({filePath}:{lineNumber})."
+
+            let expectedItems = parseFixtureList tokens[1]
+
+            if List.isEmpty expectedItems then
+                invalidOp $"{directiveName} expects a comma-separated list ({filePath}:{lineNumber})."
+
+            tokens[0], expectedItems
+
         match directiveName with
         | "mode" ->
             if String.IsNullOrWhiteSpace(directiveBody) then
@@ -789,6 +806,18 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
                 invalidOp $"assertDeclDescriptors expects a comma-separated list of declaration descriptors ({filePath}:{lineNumber})."
 
             Some(AssertionDirective(AssertDeclarationDescriptors(expectedDescriptors, filePath, lineNumber)))
+        | "assertParameterQuantities" ->
+            ensureSourceFileDirective ()
+            let bindingName, expectedQuantities = parseTargetAndList "binding"
+            Some(AssertionDirective(AssertParameterQuantities(bindingName, expectedQuantities, filePath, lineNumber)))
+        | "assertInoutParameters" ->
+            ensureSourceFileDirective ()
+            let bindingName, expectedNames = parseTargetAndList "binding"
+            Some(AssertionDirective(AssertInoutParameters(bindingName, expectedNames, filePath, lineNumber)))
+        | "assertDoItemDescriptors" ->
+            ensureSourceFileDirective ()
+            let bindingName, expectedDescriptors = parseTargetAndList "binding"
+            Some(AssertionDirective(AssertDoItemDescriptors(bindingName, expectedDescriptors, filePath, lineNumber)))
         | "assertDataConstructors" ->
             ensureSourceFileDirective ()
 
@@ -1184,6 +1213,50 @@ let private tryFindTraitDeclaration traitName (document: ParsedDocument) =
             Some declaration
         | _ ->
             None)
+
+let private tryFindLetDefinition bindingName (document: ParsedDocument) =
+    document.Syntax.Declarations
+    |> List.tryPick (function
+        | LetDeclaration declaration when declaration.Name = Some bindingName ->
+            Some declaration
+        | _ ->
+            None)
+
+let rec private fixturePatternText pattern =
+    match pattern with
+    | WildcardPattern -> "_"
+    | NamePattern name -> name
+    | LiteralPattern(LiteralValue.Integer value) -> string value
+    | LiteralPattern(LiteralValue.Float value) -> string value
+    | LiteralPattern(LiteralValue.String value) -> $"\"{value}\""
+    | LiteralPattern(LiteralValue.Character value) -> $"'{value}'"
+    | LiteralPattern LiteralValue.Unit -> "()"
+    | ConstructorPattern(name, arguments) ->
+        let nameText = String.concat "." name
+
+        match arguments with
+        | [] -> nameText
+        | _ ->
+            let argumentText = arguments |> List.map fixturePatternText |> String.concat " "
+            $"{nameText} {argumentText}"
+
+let private fixtureBindPatternText (binding: BindPattern) =
+    let quantityText =
+        binding.Quantity
+        |> Option.map (fun quantity -> Quantity.toSurfaceText quantity + " ")
+        |> Option.defaultValue ""
+
+    quantityText + fixturePatternText binding.Pattern
+
+let private doItemDescriptor statement =
+    match statement with
+    | DoLet(binding, _) -> $"let {fixtureBindPatternText binding}"
+    | DoBind(binding, _) -> $"<- {fixtureBindPatternText binding}"
+    | DoUsing(pattern, _) -> $"using {fixturePatternText pattern}"
+    | DoVar(name, _) -> $"var {name}"
+    | DoAssign(name, _) -> $"assign {name}"
+    | DoWhile _ -> "while"
+    | DoExpression _ -> "expression"
 
 let private qualifyFixtureBindingTarget (workspace: WorkspaceCompilation) (filePath: string) (target: string) =
     if target.Contains(".", StringComparison.Ordinal) then
@@ -1644,6 +1717,60 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
                 |> List.map normalizeFixtureText
 
             Assert.Equal<string list>(expected, actual)
+        | AssertParameterQuantities(bindingName, expectedQuantities, filePath, lineNumber) ->
+            let document = requireFixtureDocument workspace filePath lineNumber
+
+            match tryFindLetDefinition bindingName document with
+            | Some definition ->
+                let expected =
+                    expectedQuantities |> List.map normalizeFixtureText
+
+                let actual =
+                    definition.Parameters
+                    |> List.map (fun parameter ->
+                        parameter.Quantity
+                        |> Option.map Quantity.toSurfaceText
+                        |> Option.defaultValue "<default>")
+                    |> List.map normalizeFixtureText
+
+                Assert.Equal<string list>(expected, actual)
+            | None ->
+                failwithf "Could not find let declaration '%s' (%s:%d)." bindingName filePath lineNumber
+        | AssertInoutParameters(bindingName, expectedNames, filePath, lineNumber) ->
+            let document = requireFixtureDocument workspace filePath lineNumber
+
+            match tryFindLetDefinition bindingName document with
+            | Some definition ->
+                let expected =
+                    expectedNames |> List.map normalizeFixtureText
+
+                let actual =
+                    definition.Parameters
+                    |> List.filter (fun parameter -> parameter.IsInout)
+                    |> List.map (fun parameter -> parameter.Name)
+                    |> List.map normalizeFixtureText
+
+                Assert.Equal<string list>(expected, actual)
+            | None ->
+                failwithf "Could not find let declaration '%s' (%s:%d)." bindingName filePath lineNumber
+        | AssertDoItemDescriptors(bindingName, expectedDescriptors, filePath, lineNumber) ->
+            let document = requireFixtureDocument workspace filePath lineNumber
+
+            match tryFindLetDefinition bindingName document with
+            | Some { Body = Some(Do statements) } ->
+                let expected =
+                    expectedDescriptors |> List.map normalizeFixtureText
+
+                let actual =
+                    statements
+                    |> List.map doItemDescriptor
+                    |> List.map normalizeFixtureText
+
+                Assert.Equal<string list>(expected, actual)
+            | Some _ ->
+                failwithf "Let declaration '%s' does not have a do body (%s:%d)." bindingName filePath lineNumber
+            | None ->
+                failwithf "Could not find let declaration '%s' (%s:%d)." bindingName filePath lineNumber
         | AssertDataConstructors(typeName, expectedConstructors, filePath, lineNumber) ->
             let document = requireFixtureDocument workspace filePath lineNumber
 

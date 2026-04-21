@@ -386,39 +386,33 @@ module Compilation =
 
                 $"(match {render scrutinee} {caseText})"
             | Do statements ->
+                let renderBindPattern binding =
+                    let quantityText =
+                        binding.Quantity
+                        |> Option.map (fun quantity -> Quantity.toSurfaceText quantity + " ")
+                        |> Option.defaultValue ""
+
+                    quantityText + renderPattern binding.Pattern
+
+                let rec renderDoStatement statement =
+                    match statement with
+                    | DoLet(binding, body) -> $"(let {renderBindPattern binding} {render body})"
+                    | DoBind(binding, body) -> $"(<- {renderBindPattern binding} {render body})"
+                    | DoVar(name, body) -> $"(var {name} {render body})"
+                    | DoAssign(name, body) -> $"(assign {name} {render body})"
+                    | DoUsing(pattern, body) -> $"(using {renderPattern pattern} {render body})"
+                    | DoWhile(condition, body) ->
+                        let bodyText =
+                            body
+                            |> List.map renderDoStatement
+                            |> String.concat " "
+
+                        $"(while {render condition} {bodyText})"
+                    | DoExpression body -> $"(expr {render body})"
+
                 let statementText =
                     statements
-                    |> List.map (function
-                        | DoLet(name, body) -> $"(let {name} {render body})"
-                        | DoBind(name, body) -> $"(<- {name} {render body})"
-                        | DoVar(name, body) -> $"(var {name} {render body})"
-                        | DoAssign(name, body) -> $"(assign {name} {render body})"
-                        | DoWhile(condition, body) ->
-                            let bodyText =
-                                body
-                                |> List.map (function
-                                    | DoLet(innerName, innerBody) -> $"(let {innerName} {render innerBody})"
-                                    | DoBind(innerName, innerBody) -> $"(<- {innerName} {render innerBody})"
-                                    | DoVar(innerName, innerBody) -> $"(var {innerName} {render innerBody})"
-                                    | DoAssign(innerName, innerBody) -> $"(assign {innerName} {render innerBody})"
-                                    | DoWhile(innerCondition, innerStatements) ->
-                                        let nested =
-                                            innerStatements
-                                            |> List.map (fun statement -> statement |> function
-                                                | DoLet(nestedName, nestedBody) -> $"(let {nestedName} {render nestedBody})"
-                                                | DoBind(nestedName, nestedBody) -> $"(<- {nestedName} {render nestedBody})"
-                                                | DoVar(nestedName, nestedBody) -> $"(var {nestedName} {render nestedBody})"
-                                                | DoAssign(nestedName, nestedBody) -> $"(assign {nestedName} {render nestedBody})"
-                                                | DoWhile _ -> "(while ...)"
-                                                | DoExpression nestedBody -> $"(expr {render nestedBody})")
-                                            |> String.concat " "
-
-                                        $"(while {render innerCondition} {nested})"
-                                    | DoExpression innerBody -> $"(expr {render innerBody})")
-                                |> String.concat " "
-
-                            $"(while {render condition} {bodyText})"
-                        | DoExpression body -> $"(expr {render body})")
+                    |> List.map renderDoStatement
                     |> String.concat " "
 
                 $"(do {statementText})"
@@ -434,6 +428,8 @@ module Compilation =
                     $"(apply {render callee})"
                 else
                     $"(apply {render callee} {argumentText})"
+            | InoutArgument inner ->
+                $"(~ {render inner})"
             | Unary(operatorName, operand) ->
                 $"({operatorName} {render operand})"
             | Binary(left, operatorName, right) ->
@@ -647,7 +643,7 @@ module Compilation =
         { Name = parameter.Name
           TypeText = parameter.TypeTokens |> Option.map tokensText }
 
-    let rec private lowerKCorePattern pattern =
+    let rec private lowerKCorePattern (pattern: CorePattern) =
         match pattern with
         | WildcardPattern ->
             KCoreWildcardPattern
@@ -659,6 +655,18 @@ module Compilation =
             KCoreConstructorPattern(name, arguments |> List.map lowerKCorePattern)
 
     let rec private desugarDoExpression statements =
+        let bindPatternName (binding: BindPattern) =
+            match binding.Pattern with
+            | NamePattern name -> name
+            | _ -> "__pattern"
+
+        let makeLambdaParameter name =
+            { Name = name
+              TypeTokens = None
+              Quantity = None
+              IsImplicit = false
+              IsInout = false }
+
         match statements with
         | [] ->
             Literal LiteralValue.Unit
@@ -667,28 +675,45 @@ module Compilation =
         | DoExpression expression :: rest ->
             Apply(Name [ ">>" ], [ expression; desugarDoExpression rest ])
         | DoVar(name, expression) :: rest ->
-            desugarDoExpression (DoBind(name, Apply(Name [ "newRef" ], [ expression ])) :: rest)
+            let binding =
+                { Pattern = NamePattern name
+                  Quantity = None }
+
+            desugarDoExpression (DoBind(binding, Apply(Name [ "newRef" ], [ expression ])) :: rest)
         | DoAssign(name, expression) :: rest ->
             desugarDoExpression (DoExpression(Apply(Name [ "writeRef" ], [ Name [ name ]; expression ])) :: rest)
         | DoWhile(_, _) :: _ ->
             Literal LiteralValue.Unit
-        | DoBind(name, expression) :: rest ->
+        | DoUsing(pattern, expression) :: rest ->
+            let name =
+                match pattern with
+                | NamePattern name -> name
+                | _ -> "__using"
+
+            let binding =
+                { Pattern = NamePattern name
+                  Quantity = Some(QuantityBorrow None) }
+
+            desugarDoExpression (DoBind(binding, expression) :: rest)
+        | DoBind(binding, expression) :: rest ->
+            let name = bindPatternName binding
+
             Apply(
                 Name [ ">>=" ],
                 [
                     expression
                     Lambda(
-                        [ { Name = name
-                            TypeTokens = None } ],
+                        [ makeLambdaParameter name ],
                         desugarDoExpression rest
                     )
                 ]
             )
-        | DoLet(name, expression) :: rest ->
+        | DoLet(binding, expression) :: rest ->
+            let name = bindPatternName binding
+
             Apply(
                 Lambda(
-                    [ { Name = name
-                        TypeTokens = None } ],
+                    [ makeLambdaParameter name ],
                     desugarDoExpression rest
                 ),
                 [ expression ]
@@ -722,6 +747,8 @@ module Compilation =
             lowerKCoreExpression inner
         | Apply(callee, arguments) ->
             KCoreApply(lowerKCoreExpression callee, arguments |> List.map lowerKCoreExpression)
+        | InoutArgument inner ->
+            lowerKCoreExpression inner
         | Unary(operatorName, operand) ->
             KCoreUnary(operatorName, lowerKCoreExpression operand)
         | Binary(left, operatorName, right) ->

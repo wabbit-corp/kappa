@@ -476,7 +476,8 @@ let ``parser captures recursive list matches and do blocks`` () =
         | Some(
             Do
                 [ DoLet(
-                    "nums",
+                    { Pattern = NamePattern "nums"
+                      Quantity = None },
                     Binary(
                         Literal(LiteralValue.Integer 10L),
                         "::",
@@ -491,7 +492,11 @@ let ``parser captures recursive list matches and do blocks`` () =
                         )
                     )
                   )
-                  DoLet("total", Apply(Name [ "sumList" ], [ Name [ "nums" ] ]))
+                  DoLet(
+                      { Pattern = NamePattern "total"
+                        Quantity = None },
+                      Apply(Name [ "sumList" ], [ Name [ "nums" ] ])
+                  )
                   DoExpression(Apply(Name [ "printInt" ], [ Name [ "total" ] ])) ]
           ) -> ()
         | other ->
