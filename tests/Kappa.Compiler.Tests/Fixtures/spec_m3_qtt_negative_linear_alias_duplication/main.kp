@@ -1,0 +1,16 @@
+module main
+
+data File : Type =
+    Handle Int
+
+let consume (1 file : File) = ()
+
+let main : IO Unit = do
+    let 1 file = Handle 1
+    let alias = file
+    consume file
+    consume alias
+
+--! assertErrorCount 1
+--! assertDiagnosticCodes E_QTT_LINEAR_OVERUSE
+--! assertDiagnosticAt main.kp error E_QTT_LINEAR_OVERUSE 11

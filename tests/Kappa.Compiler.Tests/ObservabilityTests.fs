@@ -483,6 +483,49 @@ let ``BODY_RESOLVE dump exposes M3 ownership facts`` () =
     )
 
 [<Fact>]
+let ``BODY_RESOLVE dump records linear move events`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m3-linear-move-event-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    ""
+                    "data File : Type ="
+                    "    Handle Int"
+                    ""
+                    "let consume (1 file : File) = ()"
+                    ""
+                    "let main : IO Unit = do"
+                    "    let 1 file = Handle 1"
+                    "    let alias = file"
+                    "    consume alias"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let bodyResolveJson =
+        match Compilation.dumpStage workspace "KFrontIR.BODY_RESOLVE" StageDumpFormat.Json with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    use document = JsonDocument.Parse(bodyResolveJson)
+
+    let mainDocument =
+        document.RootElement.GetProperty("documents").EnumerateArray()
+        |> Seq.find (fun item -> item.GetProperty("moduleIdentity").GetString() = "main")
+
+    let uses = mainDocument.GetProperty("ownership").GetProperty("uses").EnumerateArray()
+
+    Assert.Contains(
+        uses,
+        fun item ->
+            item.GetProperty("useKind").GetString() = "move"
+            && item.GetProperty("targetName").GetString() = "file"
+    )
+
+[<Fact>]
 let ``KCore dump preserves M3 ownership facts before erasure`` () =
     let workspace =
         compileInMemoryWorkspace

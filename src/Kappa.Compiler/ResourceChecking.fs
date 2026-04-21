@@ -424,6 +424,16 @@ module ResourceChecking =
                 (findBinderLocation document name)
                 current) state
 
+    let private tryMovedLinearBinding expression (state: CheckState) =
+        match expression with
+        | Name [ name ] ->
+            Map.tryFind name state.Bindings
+            |> Option.filter (fun binding ->
+                binding.DeclaredQuantity
+                |> Option.exists ResourceQuantity.isExactOne)
+        | _ ->
+            None
+
     let private consumeBinding (document: ParsedDocument) name (state: CheckState) =
         match Map.tryFind name state.Bindings with
         | None -> state
@@ -730,6 +740,8 @@ module ResourceChecking =
             match remaining with
             | [] -> current
             | DoLet(binding, expression) :: rest ->
+                let movedLinearBinding = tryMovedLinearBinding expression current
+
                 let captured =
                     match expression with
                     | Lambda _ -> capturedRegions current expression
@@ -762,7 +774,21 @@ module ResourceChecking =
                         Some closureId, current
                     | _ -> None, current
 
-                let declaredQuantity = binding.Quantity |> Option.map ResourceQuantity.ofSurface
+                let declaredQuantity =
+                    binding.Quantity
+                    |> Option.map ResourceQuantity.ofSurface
+                    |> Option.orElseWith (fun () ->
+                        movedLinearBinding
+                        |> Option.bind (fun sourceBinding -> sourceBinding.DeclaredQuantity))
+
+                let current =
+                    movedLinearBinding
+                    |> Option.map (fun sourceBinding ->
+                        current
+                        |> addEvent "move" (findBindingUseLocation document sourceBinding 1) sourceBinding
+                        |> consumeBinding document sourceBinding.Name)
+                    |> Option.defaultValue current
+
                 let checkDrop = declaredQuantity |> Option.exists ResourceQuantity.isExactOne
                 let capturedBindingOrigins =
                     capturedBindings
