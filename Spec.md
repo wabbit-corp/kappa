@@ -9587,6 +9587,12 @@ A module interface artifact MUST record at least:
   elaboration, including binder names, explicitness, quantities, receiver markers, and any `inout`-relevant
   formal-parameter information, plus any interface-visible classification relevant to use sites, such as pattern-head
   eligibility under §7.7;
+* for each exported projection definition, enough metadata to perform downstream projection-call elaboration and
+  admissibility checking, including:
+  * projection-vs-ordinary-term classification,
+  * place-binder positions and any receiver marker,
+  * the normalized selector tree or observationally equivalent lowering summary needed for §17.3.1.2,
+  * and the static footprint summary required by §§5.1.7.2 and 8.8;
 * the signatures of exported types, traits, constructors, associated static members, effect interfaces, and effect
   operations, insofar as those entities are available to downstream code;
 * top-level instance heads and any metadata required for instance search and coherence under §§12.3 and 15.2.1;
