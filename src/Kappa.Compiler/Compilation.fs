@@ -3690,6 +3690,15 @@ module Compilation =
         else
             CheckpointVerification.verifyCheckpoint workspace checkpoint
 
+    let verifyAllCheckpoints (workspace: WorkspaceCompilation) =
+        checkpointContracts workspace
+        |> List.map (fun contract ->
+            let diagnostics = verifyCheckpoint workspace contract.Name
+
+            { Checkpoint = contract.Name
+              Succeeded = List.isEmpty diagnostics
+              Diagnostics = diagnostics })
+
     let pipelineTrace (workspace: WorkspaceCompilation) =
         workspace.PipelineTrace
 

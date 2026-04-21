@@ -115,6 +115,11 @@ type CheckpointContract =
       RequiredBySpec: bool
       ProfileSpecific: bool }
 
+type CheckpointVerificationResult =
+    { Checkpoint: string
+      Succeeded: bool
+      Diagnostics: Diagnostic list }
+
 type PipelineTraceEvent =
     | Parse
     | BuildKFrontIR

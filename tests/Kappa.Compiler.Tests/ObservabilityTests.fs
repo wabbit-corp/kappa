@@ -505,6 +505,74 @@ let ``checkpoint verification is available for frontend core and backend snapsho
     Assert.Empty(Compilation.verifyCheckpoint workspace "KBackendIR")
 
 [<Fact>]
+let ``verify all checkpoints follows checkpoint contracts for each backend profile`` () =
+    let source =
+        [
+            "main.kp",
+            [
+                "module main"
+                "let answer = 42"
+            ]
+            |> String.concat "\n"
+        ]
+
+    for backendProfile in [ "interpreter"; "zig"; "dotnet" ] do
+        let workspace =
+            compileInMemoryWorkspaceWithBackend $"memory-verify-all-{backendProfile}-root" backendProfile source
+
+        let contractNames =
+            Compilation.checkpointContracts workspace
+            |> List.map (fun contract -> contract.Name)
+
+        let results = Compilation.verifyAllCheckpoints workspace
+
+        Assert.Equal<string list>(contractNames, results |> List.map (fun result -> result.Checkpoint))
+
+        for result in results do
+            if not result.Succeeded then
+                let diagnosticText =
+                    result.Diagnostics
+                    |> List.map (fun diagnostic -> diagnostic.Message)
+                    |> String.concat "\n"
+
+                failwithf "Expected checkpoint '%s' for backend '%s' to verify, got:\n%s" result.Checkpoint backendProfile diagnosticText
+
+[<Fact>]
+let ``verify all checkpoints reports target failures after malformed KBackendIR`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-verify-all-target-failure-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let malformedWorkspace = { workspace with KBackendIR = [] }
+
+    let results = Compilation.verifyAllCheckpoints malformedWorkspace
+
+    let backendResult =
+        results |> List.find (fun result -> result.Checkpoint = "KBackendIR")
+
+    Assert.False(backendResult.Succeeded)
+
+    let targetResult =
+        results |> List.find (fun result -> result.Checkpoint = "dotnet.clr")
+
+    Assert.False(targetResult.Succeeded)
+
+    Assert.Contains(
+        targetResult.Diagnostics,
+        fun diagnostic ->
+            diagnostic.Message.Contains("Cannot emit CLR target manifest", StringComparison.OrdinalIgnoreCase)
+    )
+
+[<Fact>]
 let ``zig target checkpoint verification is available`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend
