@@ -191,6 +191,7 @@ Preferred resolution: adjust the compiler, keeping QTT information explicit thro
 - [ ] Replace the simple name-to-type typing environment in the affected checker paths with a lexical resource context that tracks binder kind, origin, declared quantity, inferred demand or borrow obligation, current place, region environment, availability/consumption state, and active `using` obligations.
 - [ ] Implement syntax-directed context splitting and consumption for applications, `let`, `do`, `match`, lambdas/closures, and control-flow joins.
 - [ ] Implement the quantity satisfaction relation from `Spec.md`, including the strict separation between owned (`1`) and borrowed (`&`) obligations.
+  First strict-separation rule is covered: passing a borrowed `using` binding to a consuming `1` parameter now reports `E_QTT_BORROW_CONSUME`.
 - [ ] Implement stable-place analysis and borrow introduction for variables, parameters, hidden temporaries, and the initial field/path subset required by M3.
 - [ ] Implement skolem borrow regions for `using` and borrowed binders, including closure-capture tainting and non-escape diagnostics.
 - [ ] Implement deterministic release scheduling for `using pat <- expr` as the primitive split from the spec: keep one hidden owned resource in the scope frame, expose only borrowed pattern bindings in the protected body, create one shared rigid region for the whole pattern, and schedule exactly-once release on all exits.

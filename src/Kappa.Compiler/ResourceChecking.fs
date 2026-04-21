@@ -6,6 +6,7 @@ open Kappa.Compiler.ResourceModel
 module ResourceChecking =
     let private linearDropCode = "E_QTT_LINEAR_DROP"
     let private linearOveruseCode = "E_QTT_LINEAR_OVERUSE"
+    let private borrowConsumeCode = "E_QTT_BORROW_CONSUME"
     let private borrowEscapeCode = "E_QTT_BORROW_ESCAPE"
 
     type CheckResult =
@@ -381,7 +382,24 @@ module ResourceChecking =
             let consumeOrigin = findUseLocation document name (binding.UseMaximum + 1)
 
             let state =
-                if binding.UseMaximum >= 1 then
+                if binding.BorrowRegion.IsSome then
+                    let relatedLocations =
+                        [
+                            match binding.Origin with
+                            | Some location ->
+                                { Message = "Borrowed resource binding."
+                                  Location = location }
+                            | None -> ()
+                        ]
+
+                    addDiagnostic
+                        borrowConsumeCode
+                        $"Borrowed resource '{name}' cannot be consumed."
+                        consumeOrigin
+                        relatedLocations
+                        document
+                        state
+                elif binding.UseMaximum >= 1 then
                     let relatedLocations =
                         [
                             match binding.FirstConsumeOrigin with

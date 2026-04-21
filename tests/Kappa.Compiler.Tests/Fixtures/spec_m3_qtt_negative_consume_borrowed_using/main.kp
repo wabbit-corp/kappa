@@ -1,0 +1,15 @@
+module main
+
+data File : Type =
+    Handle Int
+
+let openFile name = pure (Handle 1)
+let consume (1 file : File) = ()
+
+let main : IO Unit = do
+    using file <- openFile "data.txt"
+    consume file
+
+--! assertErrorCount 1
+--! assertDiagnosticCodes E_QTT_BORROW_CONSUME
+--! assertDiagnosticAt main.kp error E_QTT_BORROW_CONSUME 11
