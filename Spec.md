@@ -9808,6 +9808,8 @@ KCore retains all compile-time structure needed by the source semantics. In part
 * `Type`, universes, `Constraint`, `Quantity`, `Region`, rows, and labels;
 * explicit binder quantities, explicit regions, and explicit implicit binders;
 * proof terms and equality evidence;
+* branch assumptions and refinements introduced by §§7.4.1, 7.5.3, and 10.4.1 as explicit local proof/evidence
+  bindings or equivalent refined case contexts, not merely frontend-only side facts;
 * explicit handler forms, resumption quantities, and completion-carrying control structure;
 * explicit application spines aligned with Pi telescopes;
 * explicit `seal` nodes, manifest static members, opaque static members, and package/member projections;
