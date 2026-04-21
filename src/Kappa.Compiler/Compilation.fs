@@ -2948,53 +2948,6 @@ module Compilation =
         |> String.concat " "
         |> fun body -> $"(module {body})"
 
-    let private buildConfigurationJson workspace =
-        {| identity = workspace.BuildConfigurationIdentity
-           packageMode = workspace.PackageMode
-           backendProfile = workspace.BackendProfile
-           backendIntrinsicSet = workspace.BackendIntrinsicIdentity
-           elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms |}
-
-    let private metadataJson workspace checkpoint =
-        {| schemaVersion = "1"
-           languageVersion = languageVersion
-           compiler = {| id = compilerImplementationId; version = compilerImplementationVersion |}
-           checkpoint = checkpoint
-           compilationRoot = workspace.SourceRoot
-           backendProfile = workspace.BackendProfile
-           backendIntrinsicSet = workspace.BackendIntrinsicIdentity
-           elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms
-           buildConfiguration = buildConfigurationJson workspace |}
-
-    let private metadataSexpr workspace checkpoint =
-        let compilerAtom =
-            let idAtom = sexprStringAtom "id" compilerImplementationId
-            let versionAtom = sexprStringAtom "version" compilerImplementationVersion
-            $"(compiler {idAtom} {versionAtom})"
-
-        let buildConfigurationAtom =
-            let identityAtom = sexprStringAtom "identity" workspace.BuildConfigurationIdentity
-            let packageModeAtom = sexprAtom "package-mode" (if workspace.PackageMode then "true" else "false")
-            let backendProfileAtom = sexprStringAtom "backend-profile" workspace.BackendProfile
-            let backendIntrinsicSetAtom = sexprStringAtom "backend-intrinsic-set" workspace.BackendIntrinsicIdentity
-            let elaborationAvailableAtom =
-                sexprStringList "elaboration-available-intrinsic-terms" workspace.ElaborationAvailableIntrinsicTerms
-
-            $"(build-configuration {identityAtom} {packageModeAtom} {backendProfileAtom} {backendIntrinsicSetAtom} {elaborationAvailableAtom})"
-
-        [
-            sexprStringAtom "schema-version" "1"
-            sexprStringAtom "language-version" languageVersion
-            compilerAtom
-            sexprStringAtom "checkpoint" checkpoint
-            sexprStringAtom "compilation-root" workspace.SourceRoot
-            sexprStringAtom "backend-profile" workspace.BackendProfile
-            sexprStringAtom "backend-intrinsic-set" workspace.BackendIntrinsicIdentity
-            sexprStringList "elaboration-available-intrinsic-terms" workspace.ElaborationAvailableIntrinsicTerms
-            buildConfigurationAtom
-        ]
-        |> String.concat " "
-
     let private targetCheckpointNames (workspace: WorkspaceCompilation) =
         Stdlib.targetCheckpointNamesFor workspace.BackendProfile
 
@@ -3030,6 +2983,101 @@ module Compilation =
         targetCheckpointNames workspace
         |> List.map (fun checkpoint ->
             checkpointContract checkpoint TargetLoweringCheckpoint (Some "KBackendIR") true true)
+
+    let private contractsForWorkspace (workspace: WorkspaceCompilation) =
+        baseCheckpointContracts
+        @ targetCheckpointContracts workspace
+        |> List.distinct
+
+    let private checkpointContractFor workspace checkpoint =
+        contractsForWorkspace workspace
+        |> List.tryFind (fun contract -> String.Equals(contract.Name, checkpoint, StringComparison.Ordinal))
+
+    let private checkpointContractJson workspace checkpoint =
+        match checkpointContractFor workspace checkpoint with
+        | Some contract ->
+            {| name = contract.Name
+               kind = CheckpointKind.toPortableName contract.CheckpointKind
+               inputCheckpoint = contract.InputCheckpoint |> Option.toObj
+               requiredBySpec = contract.RequiredBySpec
+               profileSpecific = contract.ProfileSpecific |}
+        | None ->
+            {| name = checkpoint
+               kind = "unknown"
+               inputCheckpoint = null
+               requiredBySpec = false
+               profileSpecific = false |}
+
+    let private renderCheckpointContractSexpr workspace checkpoint =
+        let contract =
+            checkpointContractFor workspace checkpoint
+            |> Option.defaultValue (
+                checkpointContract checkpoint ImplementationDefinedCheckpoint None false false
+            )
+
+        let inputAtom =
+            match contract.InputCheckpoint with
+            | Some inputCheckpoint -> sexprStringAtom "input-checkpoint" inputCheckpoint
+            | None -> sexprAtom "input-checkpoint" "none"
+
+        [
+            sexprStringAtom "name" contract.Name
+            sexprStringAtom "kind" (CheckpointKind.toPortableName contract.CheckpointKind)
+            inputAtom
+            sexprAtom "required-by-spec" (if contract.RequiredBySpec then "true" else "false")
+            sexprAtom "profile-specific" (if contract.ProfileSpecific then "true" else "false")
+        ]
+        |> String.concat " "
+        |> fun body -> $"(checkpoint-contract {body})"
+
+    let private buildConfigurationJson workspace =
+        {| identity = workspace.BuildConfigurationIdentity
+           packageMode = workspace.PackageMode
+           backendProfile = workspace.BackendProfile
+           backendIntrinsicSet = workspace.BackendIntrinsicIdentity
+           elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms |}
+
+    let private metadataJson workspace checkpoint =
+        {| schemaVersion = "1"
+           languageVersion = languageVersion
+           compiler = {| id = compilerImplementationId; version = compilerImplementationVersion |}
+           checkpoint = checkpoint
+           compilationRoot = workspace.SourceRoot
+           backendProfile = workspace.BackendProfile
+           backendIntrinsicSet = workspace.BackendIntrinsicIdentity
+           elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms
+           buildConfiguration = buildConfigurationJson workspace
+           checkpointContract = checkpointContractJson workspace checkpoint |}
+
+    let private metadataSexpr workspace checkpoint =
+        let compilerAtom =
+            let idAtom = sexprStringAtom "id" compilerImplementationId
+            let versionAtom = sexprStringAtom "version" compilerImplementationVersion
+            $"(compiler {idAtom} {versionAtom})"
+
+        let buildConfigurationAtom =
+            let identityAtom = sexprStringAtom "identity" workspace.BuildConfigurationIdentity
+            let packageModeAtom = sexprAtom "package-mode" (if workspace.PackageMode then "true" else "false")
+            let backendProfileAtom = sexprStringAtom "backend-profile" workspace.BackendProfile
+            let backendIntrinsicSetAtom = sexprStringAtom "backend-intrinsic-set" workspace.BackendIntrinsicIdentity
+            let elaborationAvailableAtom =
+                sexprStringList "elaboration-available-intrinsic-terms" workspace.ElaborationAvailableIntrinsicTerms
+
+            $"(build-configuration {identityAtom} {packageModeAtom} {backendProfileAtom} {backendIntrinsicSetAtom} {elaborationAvailableAtom})"
+
+        [
+            sexprStringAtom "schema-version" "1"
+            sexprStringAtom "language-version" languageVersion
+            compilerAtom
+            sexprStringAtom "checkpoint" checkpoint
+            sexprStringAtom "compilation-root" workspace.SourceRoot
+            sexprStringAtom "backend-profile" workspace.BackendProfile
+            sexprStringAtom "backend-intrinsic-set" workspace.BackendIntrinsicIdentity
+            sexprStringList "elaboration-available-intrinsic-terms" workspace.ElaborationAvailableIntrinsicTerms
+            buildConfigurationAtom
+            renderCheckpointContractSexpr workspace checkpoint
+        ]
+        |> String.concat " "
 
     let private emitClrTargetManifest (workspace: WorkspaceCompilation) =
         let verificationDiagnostics = CheckpointVerification.verifyCheckpoint workspace "KBackendIR"
@@ -3131,6 +3179,7 @@ module Compilation =
                backendIntrinsicSet = workspace.BackendIntrinsicIdentity
                elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms
                buildConfiguration = buildConfigurationJson workspace
+               checkpointContract = checkpointContractJson workspace checkpoint
                artifactKind = translationUnit.ArtifactKind
                inputCheckpoint = translationUnit.InputCheckpoint
                translationUnitName = translationUnit.TranslationUnitName
@@ -3348,6 +3397,7 @@ module Compilation =
                    backendIntrinsicSet = workspace.BackendIntrinsicIdentity
                    elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms
                    buildConfiguration = buildConfigurationJson workspace
+                   checkpointContract = checkpointContractJson workspace checkpoint
                    documents = documents
                    diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
         | "KCore" ->
@@ -3366,6 +3416,7 @@ module Compilation =
                    backendIntrinsicSet = workspace.BackendIntrinsicIdentity
                    elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms
                    buildConfiguration = buildConfigurationJson workspace
+                   checkpointContract = checkpointContractJson workspace checkpoint
                    modules = modules
                    diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
         | "KRuntimeIR" ->
@@ -3384,6 +3435,7 @@ module Compilation =
                    backendIntrinsicSet = workspace.BackendIntrinsicIdentity
                    elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms
                    buildConfiguration = buildConfigurationJson workspace
+                   checkpointContract = checkpointContractJson workspace checkpoint
                    modules = modules
                    diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
         | "KBackendIR" ->
@@ -3402,6 +3454,7 @@ module Compilation =
                    backendIntrinsicSet = workspace.BackendIntrinsicIdentity
                    elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms
                    buildConfiguration = buildConfigurationJson workspace
+                   checkpointContract = checkpointContractJson workspace checkpoint
                    modules = modules
                    diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
         | _ ->
@@ -3423,6 +3476,7 @@ module Compilation =
                        backendIntrinsicSet = workspace.BackendIntrinsicIdentity
                        elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms
                        buildConfiguration = buildConfigurationJson workspace
+                       checkpointContract = checkpointContractJson workspace checkpoint
                        documents = documents
                        diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
             | _ ->
@@ -3624,9 +3678,7 @@ module Compilation =
             PipelineTrace = buildPipelineTrace workspace }
 
     let checkpointContracts (workspace: WorkspaceCompilation) =
-        baseCheckpointContracts
-        @ targetCheckpointContracts workspace
-        |> List.distinct
+        contractsForWorkspace workspace
 
     let availableCheckpoints (workspace: WorkspaceCompilation) =
         checkpointContracts workspace

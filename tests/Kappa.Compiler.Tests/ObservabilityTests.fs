@@ -232,6 +232,63 @@ let ``stage dumps serialize checkpoints in json and sexpr`` () =
     Assert.Contains("(function (name \"answer\")", backendSexpr)
 
 [<Fact>]
+let ``stage dumps expose checkpoint contract metadata`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-stage-contract-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let backendJson =
+        match Compilation.dumpStage workspace "KBackendIR" StageDumpFormat.Json with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    use backendDocument = JsonDocument.Parse(backendJson)
+
+    let backendContract =
+        backendDocument.RootElement.GetProperty("checkpointContract")
+
+    Assert.Equal("KBackendIR", backendContract.GetProperty("name").GetString())
+    Assert.Equal("KBackendIR", backendContract.GetProperty("kind").GetString())
+    Assert.Equal("KRuntimeIR", backendContract.GetProperty("inputCheckpoint").GetString())
+    Assert.True(backendContract.GetProperty("requiredBySpec").GetBoolean())
+    Assert.False(backendContract.GetProperty("profileSpecific").GetBoolean())
+
+    let targetJson =
+        match Compilation.dumpStage workspace "dotnet.clr" StageDumpFormat.Json with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    use targetDocument = JsonDocument.Parse(targetJson)
+
+    let targetContract =
+        targetDocument.RootElement.GetProperty("checkpointContract")
+
+    Assert.Equal("dotnet.clr", targetContract.GetProperty("name").GetString())
+    Assert.Equal("target-lowering", targetContract.GetProperty("kind").GetString())
+    Assert.Equal("KBackendIR", targetContract.GetProperty("inputCheckpoint").GetString())
+    Assert.True(targetContract.GetProperty("requiredBySpec").GetBoolean())
+    Assert.True(targetContract.GetProperty("profileSpecific").GetBoolean())
+
+    let runtimeSexpr =
+        match Compilation.dumpStage workspace "KRuntimeIR" StageDumpFormat.SExpression with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    Assert.Contains("(checkpoint-contract", runtimeSexpr)
+    Assert.Contains("(kind \"implementation-defined\")", runtimeSexpr)
+    Assert.Contains("(input-checkpoint \"KCore\")", runtimeSexpr)
+    Assert.Contains("(required-by-spec false)", runtimeSexpr)
+
+[<Fact>]
 let ``zig target checkpoint dumps a manifest for the generated translation unit`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend

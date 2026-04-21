@@ -98,6 +98,16 @@ type CheckpointKind =
     | KBackendIRCheckpoint
     | TargetLoweringCheckpoint
 
+module CheckpointKind =
+    let toPortableName checkpointKind =
+        match checkpointKind with
+        | SurfaceSourceCheckpoint -> "surface-source"
+        | KFrontIRCheckpoint -> "KFrontIR"
+        | KCoreCheckpoint -> "KCore"
+        | ImplementationDefinedCheckpoint -> "implementation-defined"
+        | KBackendIRCheckpoint -> "KBackendIR"
+        | TargetLoweringCheckpoint -> "target-lowering"
+
 type CheckpointContract =
     { Name: string
       CheckpointKind: CheckpointKind
