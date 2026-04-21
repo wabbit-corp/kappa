@@ -6235,10 +6235,12 @@ This section defines the normative meaning of `do` blocks with loops, `break` / 
 `using`. Implementations may compile using jumps, CPS, internal exceptions, or other techniques, but MUST be
 observationally equivalent to the model below.
 
-### 8.7.1 Abrupt completion records (meta-level)
+### 8.7.1 Abrupt completion records
 
-For specification purposes, we model execution of a `do`-scope using a family of *completion records* parameterized by
-the in-scope return-target context.
+The control model of this section is realized in KCore by the explicit completion-and-scope kernel of §17.3.1.4.
+
+For exposition, we continue to write the resulting control family as a completion record parameterized by the in-scope
+return-target context.
 
 Let:
 
@@ -6262,7 +6264,7 @@ Completion(RetCtx, A) =
 | Return[Ln] Rn
 ```
 
-This `Completion(RetCtx, A)` datatype is a normative meta-level model of the observable control-flow behavior only.
+This `Completion(RetCtx, A)` datatype is a normative KCore-observable control family.
 Implementations MAY realize it via exceptions, CPS, explicit stacks, or other equivalent machinery, provided the
 resulting behavior is observationally equivalent to the unwinding and target-resolution rules specified in this section.
 
@@ -6275,7 +6277,7 @@ Where:
 This is equivalent to generating one internal control constructor per in-scope return target, rather than globally
 parameterizing the whole completion model by a single return payload type.
 
-In addition to the completion record, execution carries a dynamic stack of active `do`-scopes:
+The `DoScope` and `ScheduleExit` forms of §17.3.1.4 induce a dynamic stack of active `do`-scope frames:
 
 ```text
 ExitAction(m) =
@@ -10420,24 +10422,67 @@ the translated leaves above.
 Projection calls therefore add no new runtime reference type and no new KCore place primitive; they are a reusable
 surface abstraction over ordinary control flow plus the existing stable-place machinery.
 
-#### 17.3.1.4 Completion and do-scope kernel
+#### 17.3.1.4 KCore completion and do-scope kernel
 
-The completion model of §8.7 has a KCore counterpart.
+A conforming implementation MUST behave as if KCore contains an explicit completion-and-scope kernel for the control
+features of Chapter 8.
 
-A conforming implementation MUST behave as if `do` blocks and their control-flow sugar elaborate to a KCore kernel
-containing:
+For a fixed return-target context
 
-* completion constructors corresponding to the completion records of §8.7.1;
-* `DoScope` frames corresponding to the dynamic scope frames of §8.7.1;
-* explicit scheduling of cleanup and release exit actions for `defer`, `using`, and related scope-exit constructs; and
-* ordinary monadic sequencing around those completion and scope forms.
+```text
+RetCtx = [(L1 : R1), (L2 : R2), ..., (Ln : Rn)]
+```
 
-These forms are not a second dynamic semantics. They are the KCore representation of the completion-aware sequencing,
-cross-scope unwinding, and cleanup behavior specified in §8.7.
+KCore contains an ordinary completion family:
 
-An implementation MAY store the forms using different internal names, provided dumps, verification, and diagnostics are
-observationally equivalent to a KCore representation with explicit completions, `DoScope` frames, and exit-action
-scheduling.
+```text
+Completion(RetCtx, A) =
+    Normal A
+  | Break Label
+  | Continue Label
+  | Return[L1] R1
+  | Return[L2] R2
+  | ...
+  | Return[Ln] Rn
+```
+
+KCore also contains an ordinary exit-action family:
+
+```text
+ExitAction(m) =
+    Deferred (m Unit)
+  | Release[A] ((1 resource : A) -> m Unit) (1 resource : A)
+```
+
+KCore additionally behaves as if it contains the following structured control forms:
+
+```text
+DoScope      : DoScopeLabel -> m (Completion(RetCtx, A)) -> m (Completion(RetCtx, A))
+ScheduleExit : DoScopeLabel -> ExitAction(m) -> m (Completion(RetCtx, A)) -> m (Completion(RetCtx, A))
+```
+
+The labels appearing in `DoScope` and `ScheduleExit` are already the resolved scope labels of Chapter 8. KCore contains
+no unresolved label-lookup obligation.
+
+Meaning:
+
+* `DoScope L body` executes `body` with a fresh active scope frame labeled `L`.
+* When `body` returns a completion or propagates a monadic error, the exit actions attached to that frame are executed
+  exactly once in LIFO order according to §8.7.2.
+* After unwinding that frame, `DoScope` propagates the resulting monadic error or completion outward unchanged.
+* `ScheduleExit L act body` attaches `act` to the nearest dynamically enclosing active `DoScope` frame whose label is
+  `L`, then evaluates `body`. The immediate completion behavior of `body` is otherwise unchanged.
+* Surface `defer` and `defer@L` elaborate through `ScheduleExit` with a `Deferred` action.
+* Surface `using` elaborates through `ScheduleExit` with a `Release` action together with the ordinary borrowed binding
+  of the protected value described in §§5.1.6 and 8.7.4.
+* `return`, `break`, and `continue` elaborate to ordinary constructors of `Completion(RetCtx, A)` rather than to
+  distinct KCore statement forms.
+* Named functions, labeled lambdas, and loops consume only the `Return[...]`, `Break`, and `Continue` constructors
+  targeted at themselves and propagate all other completion constructors outward unchanged.
+
+This subsection defines KCore structure only. A conforming implementation MAY realize these forms by CPS, exceptions,
+explicit frame objects, or other equivalent internal machinery, provided the observable behavior is the same as this
+kernel.
 
 #### 17.3.1.5 KCore intrinsic compile-time types
 
