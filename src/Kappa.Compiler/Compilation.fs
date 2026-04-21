@@ -19,7 +19,10 @@ module Compilation =
           Text: string }
 
     type DumpDiagnostic =
-        { Severity: string
+        { Code: string
+          Stage: string option
+          Phase: string option
+          Severity: string
           Message: string
           FilePath: string option
           StartLine: int option
@@ -169,12 +172,18 @@ module Compilation =
         | Some inferred, Some declared when options.PackageMode && inferred <> declared ->
             diagnostics.AddError(
                 $"Module header '{SyntaxFacts.moduleNameToText declared}' does not match the path-derived module name '{SyntaxFacts.moduleNameToText inferred}'.",
-                document.Source.GetLocation(TextSpan.FromBounds(0, 0))
+                document.Source.GetLocation(TextSpan.FromBounds(0, 0)),
+                code = "E_MODULE_PATH_MISMATCH",
+                stage = "KFrontIR",
+                phase = KFrontIRPhase.phaseName CHECKERS
             )
         | None, None ->
             diagnostics.AddError(
                 $"Could not derive a Kappa module name from '{document.Source.FilePath}'. Files must live under the source root and end in .kp.",
-                document.Source.GetLocation(TextSpan.FromBounds(0, 0))
+                document.Source.GetLocation(TextSpan.FromBounds(0, 0)),
+                code = "E_MODULE_NAME_UNRESOLVED",
+                stage = "KFrontIR",
+                phase = KFrontIRPhase.phaseName CHECKERS
             )
         | _ ->
             ()
@@ -2390,7 +2399,10 @@ module Compilation =
                 None)
 
     let private dumpDiagnostic (diagnostic: Diagnostic) =
-        { Severity = severityText diagnostic.Severity
+        { Code = diagnostic.Code
+          Stage = diagnostic.Stage
+          Phase = diagnostic.Phase
+          Severity = severityText diagnostic.Severity
           Message = diagnostic.Message
           FilePath = diagnostic.Location |> Option.map (fun location -> location.FilePath)
           StartLine = diagnostic.Location |> Option.map (fun location -> location.Start.Line)
@@ -2655,6 +2667,9 @@ module Compilation =
                     if emitted.Add(message) then
                         diagnostics.Add(
                             { Severity = Error
+                              Code = "E_IMPORT_CYCLE"
+                              Stage = Some "KFrontIR"
+                              Phase = Some(KFrontIRPhase.phaseName CHECKERS)
                               Message = $"Import cycle detected: {message}"
                               Location = None }
                         )
@@ -2713,6 +2728,9 @@ module Compilation =
 
     let private renderDumpDiagnosticSexpr (diagnostic: DumpDiagnostic) =
         [
+            sexprStringAtom "code" diagnostic.Code
+            sexprOptionalStringAtom "stage" diagnostic.Stage
+            sexprOptionalStringAtom "phase" diagnostic.Phase
             sexprStringAtom "severity" diagnostic.Severity
             sexprStringAtom "message" diagnostic.Message
             sexprOptionalStringAtom "file" diagnostic.FilePath
@@ -3163,6 +3181,9 @@ module Compilation =
             []
         | Result.Error message ->
             [ { Severity = Error
+                Code = "E_TARGET_CHECKPOINT"
+                Stage = Some "target-lowering"
+                Phase = None
                 Message = message
                 Location = None } ]
 

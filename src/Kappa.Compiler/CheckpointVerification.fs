@@ -5,6 +5,9 @@ open System
 module CheckpointVerification =
     let private makeDiagnostic message =
         { Severity = Error
+          Code = "E_CHECKPOINT_VERIFICATION"
+          Stage = Some "checkpoint-verification"
+          Phase = None
           Message = message
           Location = None }
 

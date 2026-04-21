@@ -614,6 +614,45 @@ let ``workspace and stage dumps expose elaboration available intrinsic terms`` (
     Assert.Contains("(elaboration-available-intrinsic-terms)", unsupportedSexpr)
 
 [<Fact>]
+let ``stage dumps expose stable diagnostic codes and frontend phase metadata`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-diagnostic-metadata-root"
+            [
+                "main.kp",
+                [
+                    "module wrong"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let checkerJson =
+        match Compilation.dumpStage workspace "KFrontIR.CHECKERS" StageDumpFormat.Json with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    use checkerDocument = JsonDocument.Parse(checkerJson)
+
+    let diagnostic =
+        checkerDocument.RootElement.GetProperty("diagnostics").EnumerateArray()
+        |> Seq.find (fun item -> item.GetProperty("message").GetString().Contains("Module header"))
+
+    Assert.Equal("E_MODULE_PATH_MISMATCH", diagnostic.GetProperty("code").GetString())
+    Assert.Equal("KFrontIR", diagnostic.GetProperty("stage").GetString())
+    Assert.Equal("CHECKERS", diagnostic.GetProperty("phase").GetString())
+    Assert.Equal("error", diagnostic.GetProperty("severity").GetString())
+
+    let checkerSexpr =
+        match Compilation.dumpStage workspace "KFrontIR.CHECKERS" StageDumpFormat.SExpression with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    Assert.Contains("(code \"E_MODULE_PATH_MISMATCH\")", checkerSexpr)
+    Assert.Contains("(stage \"KFrontIR\")", checkerSexpr)
+    Assert.Contains("(phase \"CHECKERS\")", checkerSexpr)
+
+[<Fact>]
 let ``checkpoint verification is available for frontend core and backend snapshots`` () =
     let workspace =
         compileInMemoryWorkspace
