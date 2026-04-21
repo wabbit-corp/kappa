@@ -2590,6 +2590,12 @@ Syntax:
 sealExpr ::= 'seal' expr 'as' type
 ```
 
+Grammar amendment:
+
+```text
+atom ::= ... | sealExpr
+```
+
 `seal e as S` is an atomic expression for purposes of application and dotted forms.
 
 Examples:
@@ -2767,6 +2773,14 @@ Unpacking:
 ```text
 openExistsExpr ::= 'open' expr 'as' 'exists' '(' ident (',' ident)* ')' '.' pattern 'in' expr
 ```
+
+Grammar amendment:
+
+```text
+expr ::= ... | openExistsExpr
+```
+
+`open ... as exists ... in ...` has the same precedence class as other binding expressions such as `let ... in`.
 
 Examples:
 
