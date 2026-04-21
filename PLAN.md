@@ -4,9 +4,51 @@
 
 Preferred resolution: neither yet; establish the exact alignment map first.
 
-- [ ] Build a section-by-section alignment matrix for the parts of `Spec.md` that the compiler or tests currently exercise.
-- [ ] Classify each reviewed section as one of: aligned, compiler divergence, spec/docs divergence, or not implemented yet.
-- [ ] Keep "not implemented yet" separate from "implemented but contradictory", so we do not blur roadmap gaps with actual conformance bugs.
+- [x] Build a section-by-section alignment matrix for the parts of `Spec.md` that the compiler or tests currently exercise.
+- [x] Classify each reviewed section as one of: aligned, compiler divergence, spec/docs divergence, or not implemented yet.
+- [x] Keep "not implemented yet" separate from "implemented but contradictory", so we do not blur roadmap gaps with actual conformance bugs.
+
+Current audit scope: this is an initial baseline for sections exercised by source modules, fixtures, backend tests, milestone tests, observability tests, and the M3 blueprint as of the start of M3. It is not a claim that unlisted spec sections are conforming.
+
+| Spec area | Exercised by | Classification | Notes |
+| --- | --- | --- | --- |
+| 2.1 Modules and files | `spec_2_1_*` fixtures | aligned | Module headers, path/header mismatch, and invalid path checks are covered. |
+| 2.2 Acyclic imports | `spec_2_2_*` fixtures | aligned | Import and export cycle rejection is covered. |
+| 2.3 Imports | `spec_2_3_*` fixtures and backend import tests | aligned | Local wildcard, selective, alias, multiple import specs, and imported runtime bindings are covered. |
+| 2.3.1 Import item qualifiers | `spec_2_3_1_*` fixtures | not implemented yet | Term/type/constructor namespace boundaries are partially covered; `type T(..)` and more explicit constructor boundary cases still need tests and implementation confirmation. |
+| 2.3.1.1 `unhide` and `clarify` | `spec_2_3_1_1_*` fixtures | aligned | Positive modifier behavior is covered for the current parser/resolver subset. |
+| 2.3.2 URL imports | `spec_2_3_2_*` fixtures | not implemented yet | URL syntax and virtual fixture resolution are exercised; full pinning, reproducibility, and external fetch semantics are not implemented. |
+| 2.4 Exports | `spec_2_4_*` fixtures | aligned | Direct exports and re-export fixtures are covered. |
+| 2.5 Visibility and opacity | `spec_2_5_*` fixtures | compiler divergence | Visibility is exercised, but private access is still surfaced through runtime/interpreter failure in at least one fixture, and opaque definitional transparency is not enforced as a full typechecking boundary. |
+| 2.6 Prelude interface | `implicit_prelude`, `spec_2_6_*`, import tests | aligned | Implicit prelude import behavior and the fixed unqualified constructor subset are covered. |
+| 2.7 Prelude contents | `spec_2_7_*`, `Stdlib/std/prelude.kp` | spec/docs divergence | The repo uses a bootstrap prelude contract that is tested, but the spec still presents the larger normative minimum without an explicit bootstrap profile split. |
+| 3.1-3.5 Lexing, whitespace, operators, and fixity | `spec_3_*` fixtures, backend user-operator tests | aligned | Identifiers, keywords, comments, indentation, user-defined operators, operator sections, and fixity are covered for the current surface. |
+| 4.1-4.5 Literals | `spec_4_*` fixtures | not implemented yet | Numeric, boolean-as-constructors, string escape/interpolation, char, and unit basics are covered; raw strings, multiline fixed dedent, prefixed strings, suffixes, and type-level string parsing remain incomplete. |
+| 5.1.3 Constraints and dictionaries | M2 trait/dictionary tests | not implemented yet | M2 dictionary passing is real for simple constraints, but full constraint solving, coherence, proof irrelevance, and supertrait behavior are not implemented. |
+| 5.1.5-5.1.7 Quantities and borrowing | M3 blueprint/plan | not implemented yet | No current compiler path enforces owned, borrowed, region, or place-based resource rules. This is the main M3 work. |
+| 5.7 Monadic splicing | M2 `!(...)` usage | not implemented yet | The M2 do-block splice form is implemented for the target shape; general monadic contexts and broader typing rules are incomplete. |
+| 6.1-6.2 Declarations and signatures | `spec_6_1_*`, `spec_6_2_*`, backend typed binding tests | aligned | Signature-only and signature-plus-definition basics are covered. |
+| 6.5 `expect` declarations | `spec_6_5_*`, observability intrinsic tests | not implemented yet | Backend-scoped intrinsic satisfaction is implemented; build-cache identity and the full elaboration-available intrinsic boundary remain incomplete. |
+| 7.1 Variables, application, and dotted forms | `spec_7_1_*` fixtures, backend call tests | not implemented yet | Ordinary application and module qualification are covered; full projection, safe navigation, method sugar, and application-boundary subsumption are incomplete. |
+| 7.2 Lambdas and closure capture | `spec_7_2_*` fixtures | not implemented yet | Interpreter closure behavior is covered; quantity-aware capture and backend closure support are incomplete. |
+| 7.4 Conditionals | `spec_7_4_*` fixtures | aligned | Basic pure and runtime conditional behavior is covered. |
+| 7.5-7.6 Match expressions and patterns | `spec_7_5_*` fixtures, M1 backend tests | not implemented yet | Basic ADT matches and non-exhaustive runtime failure are covered; indexed exhaustiveness, `impossible`, or-patterns, active patterns, and QTT pattern interactions are incomplete. |
+| 8.2 Do blocks | `spec_8_2_*`, M1/M2 milestone tests | not implemented yet | Basic sequencing, bind result, `printInt`, and M2 stateful do paths are covered; labels, local declarations, abrupt completion, `defer`, and `using` are incomplete. |
+| 8.5 Loops and mutable variables | M2 tests | not implemented yet | `var`, assignment, `while`, and `Ref` desugaring work for M2; `for`, loop `else`, scoped region escape checks, and full normative loop elaboration are incomplete. |
+| 8.7 Exit actions and `using` | M3 blueprint/plan | not implemented yet | Deterministic cleanup and completion-aware exit actions are not implemented. |
+| 8.8 `inout` and `~` | M3 blueprint/plan | not implemented yet | No parser, elaboration, or backend support exists yet. |
+| 11.1 and 11.3 ADTs and type aliases | `spec_11_*`, M1 backend tests | not implemented yet | Simple ADTs, constructor lowering, and aliases are covered; GADTs, named constructor arguments, and full well-formedness are incomplete. |
+| 12.1-12.3 Traits and instances | `spec_12_*`, M2 tests | not implemented yet | Basic traits, members, instances, dictionary lowering, and direct calls are covered; supertraits, overloaded member ambiguity, full instance resolution, termination, and deriving are incomplete. |
+| 14.2 Dynamic semantics | `spec_14_2_*` fixtures, interpreter tests | aligned | Current interpreter behavior for the exercised subset, including short-circuiting and selected runtime negatives, is covered. |
+| 14.4 Erasure | backend tests and M3 plan | not implemented yet | Current backends erase existing bootstrap-only metadata implicitly; QTT quantity/region erasure is not implemented because the metadata does not exist yet. |
+| 17.1 Observability and verification | `ObservabilityTests.fs` | aligned | Checkpoint names, traces, JSON/S-expression dumps, and verifier entry points are covered for current stages. |
+| 17.2 KFrontIR | `ObservabilityTests.fs`, fixture assertions | not implemented yet | Phase snapshots exist; the full query model, lazy resolution, tooling queries, invalidation, and cancellation model are not implemented. |
+| 17.3 KCore | `ObservabilityTests.fs`, recent KCore path work | not implemented yet | KCore dumps and selected path operations exist; semantic object stores, elaboration-time evaluation, and full application-spine semantics are incomplete. |
+| 17.4 KBackendIR | backend verifier tests, ZigCc and CLR lowering | compiler divergence | The current `KBackendIR` is useful and verified for the current backends, but it is not yet the full runtime-facing representation described by sections 17.4 and 17.4.1. |
+| 17.6 Backend intrinsics and `expect` | intrinsic metadata tests, `Stdlib.fs` | not implemented yet | Backend-profile intrinsic sets are implemented; cache identity and full frontend/backend extension boundaries remain incomplete. |
+| 17.8 Native backend profile (`zig`) | ZigCc backend tests, M1/M2 milestone tests | aligned | The standardized `zig` profile lowers from `KBackendIR` to generated C compiled by `zig cc` for the M1/M2 subset. |
+| 17.10 CLR backend profile (`dotnet`) | dotnet backend tests, M1/M2 milestone tests | aligned | Public `dotnet` emits managed CLR artifacts containing CIL/metadata for the M1/M2 subset; hosted dotnet remains explicit bootstrap support. |
+| Appendix T Standard test harness | Appendix T fixtures and harness code | compiler divergence | The harness supports `.kp` fixtures, `suite.ktest` basics, and extension directives, but many standard directives/assertions, stable diagnostic codes, and incremental suites are missing. |
 
 ## 2. Public `dotnet` backend profile
 
