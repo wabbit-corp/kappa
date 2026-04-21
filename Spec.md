@@ -2689,6 +2689,14 @@ existsBinder ::= ident
                | '(' ident ':' type ')'
 ```
 
+Grammar (amends the type grammar):
+
+```text
+quantifiedType ::= forallType
+                 | existsType
+                 | typeArrow
+```
+
 `exists a. T` is sugar for `exists (a : Type). T`.
 
 Multiple binders associate to the right and may depend on earlier binders, exactly as for `forall`.
