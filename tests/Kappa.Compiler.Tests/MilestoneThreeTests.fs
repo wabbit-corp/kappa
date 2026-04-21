@@ -46,6 +46,39 @@ let private usingReleaseProgram =
     ]
     |> String.concat "\n"
 
+let private usingReleaseThrowingProgram =
+    [
+        "module main"
+        ""
+        "data File : Type ="
+        "    Handle Int"
+        ""
+        "data Crash : Type ="
+        "    Nope"
+        "    Yep Int"
+        ""
+        "trait Releasable m a ="
+        "    release : a -> IO Unit"
+        ""
+        "instance Releasable IO File ="
+        "    let release f = printString \"closed\""
+        ""
+        "openFile : String -> IO File"
+        "let openFile name = pure (Handle 1)"
+        "let readData (& file : File) = pure \"chunk\""
+        "crash : Crash -> IO Unit"
+        "let crash value ="
+        "    match value"
+        "    case Yep payload -> printString \"never\""
+        ""
+        "let main : IO Unit = do"
+        "    using file <- openFile \"data.txt\""
+        "    let chunk = !(readData file)"
+        "    printString chunk"
+        "    crash Nope"
+    ]
+    |> String.concat "\n"
+
 [<Fact>]
 let ``interpreter executes using release after protected body`` () =
     let workspace =
@@ -124,3 +157,29 @@ let ``dotnet backend executes using release after protected body`` () =
     Assert.True(runResult.ExitCode = 0, runResult.StandardError + runResult.StandardOutput)
     Assert.Equal("chunkclosed", runResult.StandardOutput.Trim())
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
+let ``dotnet backend executes using release while unwinding protected body`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-m3-dotnet-using-unwind-root"
+            "dotnet"
+            [
+                "main.kp", usingReleaseThrowingProgram
+            ]
+
+    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+
+    let outputDirectory = createScratchDirectory "dotnet-m3-using-unwind-backend"
+
+    let artifact =
+        match Backend.emitDotNetArtifact workspace "main.main" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    let runResult =
+        runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
+
+    Assert.NotEqual(0, runResult.ExitCode)
+    Assert.Equal("chunkclosed", runResult.StandardOutput.Trim())
+    Assert.Contains("Non-exhaustive match.", runResult.StandardError)

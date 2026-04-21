@@ -2879,11 +2879,15 @@ module IlDotNetBackend =
                 let! bodyType = inferExpressionType currentModule localTypes expectedType body
                 let resultLocal = il.DeclareLocal(resolveClrType state typeParameters bodyType)
 
+                il.BeginExceptionBlock() |> ignore
                 do! emitExpression state currentModule typeParameters localValues (Some bodyType) il body
                 il.Emit(OpCodes.Stloc, resultLocal)
 
+                il.BeginFinallyBlock()
                 do! emitExpression state currentModule typeParameters localValues (Some unitIlType) il cleanupExpression
                 il.Emit(OpCodes.Pop)
+                il.EndExceptionBlock()
+
                 il.Emit(OpCodes.Ldloc, resultLocal)
             }
         | KRuntimeSequence(first, second) ->
