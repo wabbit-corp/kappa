@@ -476,6 +476,47 @@ module ZigCcBackend =
                   ValueExpression = resultValue }
         }
 
+    and private emitProtectedResultLetExpression
+        (context: GenerationContext)
+        (scope: EmitScope)
+        (binding: KBackendParameter)
+        (value: KBackendExpression)
+        (cleanup: KBackendExpression)
+        =
+        result {
+            let! emittedValue = emitExpression context scope value
+            let! emittedCleanup = emitExpression context scope cleanup
+            let localName = freshTemp context binding.Name
+            let frameName = freshTemp context "panic_frame"
+            let normalCleanupValue = freshTemp context "cleanup"
+            let panicCleanupValue = freshTemp context "cleanup"
+
+            return
+                { Statements =
+                    [ $"KValue* {localName} = NULL;"
+                      $"KappaPanicFrame {frameName};"
+                      $"{frameName}.previous = kappa_panic_frame;"
+                      $"kappa_panic_frame = &{frameName};"
+                      $"if (setjmp({frameName}.env) == 0)"
+                      "{" ]
+                    @ indentLines 1 emittedValue.Statements
+                    @ [ $"    {localName} = {emittedValue.ValueExpression};"
+                        $"    kappa_panic_frame = {frameName}.previous;" ]
+                    @ indentLines 1 emittedCleanup.Statements
+                    @ [ $"    KValue* {normalCleanupValue} = {emittedCleanup.ValueExpression};"
+                        $"    (void){normalCleanupValue};"
+                        "}"
+                        "else"
+                        "{" 
+                        $"    kappa_panic_frame = {frameName}.previous;" ]
+                    @ indentLines 1 emittedCleanup.Statements
+                    @ [ $"    KValue* {panicCleanupValue} = {emittedCleanup.ValueExpression};"
+                        $"    (void){panicCleanupValue};"
+                        "    kappa_panic(kappa_current_panic_message != NULL ? kappa_current_panic_message : \"abrupt completion\");"
+                        "}" ]
+                  ValueExpression = localName }
+        }
+
     and private emitLetExpression
         (context: GenerationContext)
         (scope: EmitScope)
@@ -484,21 +525,27 @@ module ZigCcBackend =
         (body: KBackendExpression)
         =
         result {
-            let! emittedValue = emitExpression context scope value
-            let localName = freshTemp context binding.Name
+            match binding.Name, body with
+            // KBackendIR currently lowers scheduled exits to this synthetic result let.
+            // Emit a C panic frame here so ZigCc preserves cleanup during abrupt exits.
+            | "__kappa_scope_result", BackendSequence(cleanup, BackendName(BackendLocalName(resultName, _)), _) when resultName = binding.Name ->
+                return! emitProtectedResultLetExpression context scope binding value cleanup
+            | _ ->
+                let! emittedValue = emitExpression context scope value
+                let localName = freshTemp context binding.Name
 
-            let bodyScope =
-                { scope with
-                    Bindings = scope.Bindings.Add(binding.Name, localName) }
+                let bodyScope =
+                    { scope with
+                        Bindings = scope.Bindings.Add(binding.Name, localName) }
 
-            let! emittedBody = emitExpression context bodyScope body
+                let! emittedBody = emitExpression context bodyScope body
 
-            return
-                { Statements =
-                    emittedValue.Statements
-                    @ [ $"KValue* {localName} = {emittedValue.ValueExpression};" ]
-                    @ emittedBody.Statements
-                  ValueExpression = emittedBody.ValueExpression }
+                return
+                    { Statements =
+                        emittedValue.Statements
+                        @ [ $"KValue* {localName} = {emittedValue.ValueExpression};" ]
+                        @ emittedBody.Statements
+                      ValueExpression = emittedBody.ValueExpression }
         }
 
     and private emitSequenceExpression (context: GenerationContext) (scope: EmitScope) first second =
@@ -1164,6 +1211,7 @@ module ZigCcBackend =
         let runtimeLines =
             [
                 "#include <stdint.h>"
+                "#include <setjmp.h>"
                 "#include <stdio.h>"
                 "#include <stdlib.h>"
                 "#include <string.h>"
@@ -1230,6 +1278,17 @@ module ZigCcBackend =
                 "    } as;"
                 "};"
                 ""
+                "typedef struct KappaPanicFrame KappaPanicFrame;"
+                ""
+                "struct KappaPanicFrame"
+                "{"
+                "    jmp_buf env;"
+                "    KappaPanicFrame* previous;"
+                "};"
+                ""
+                "static KappaPanicFrame* kappa_panic_frame = NULL;"
+                "static const char* kappa_current_panic_message = NULL;"
+                ""
             ]
             @ typeIdLines
             @ [
@@ -1248,6 +1307,12 @@ module ZigCcBackend =
                 ""
                 "static void kappa_panic(const char* message)"
                 "{"
+                "    if (kappa_panic_frame != NULL)"
+                "    {"
+                "        kappa_current_panic_message = message;"
+                "        longjmp(kappa_panic_frame->env, 1);"
+                "    }"
+                ""
                 "    fprintf(stderr, \"runtime error: %s\\n\", message);"
                 "    exit(1);"
                 "}"

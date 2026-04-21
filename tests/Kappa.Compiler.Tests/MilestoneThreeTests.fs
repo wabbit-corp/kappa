@@ -184,3 +184,36 @@ let ``dotnet backend executes using release while unwinding protected body`` () 
     Assert.NotEqual(0, runResult.ExitCode)
     Assert.Equal("chunkclosed", runResult.StandardOutput.Trim())
     Assert.Contains("Non-exhaustive match.", runResult.StandardError)
+
+[<Fact>]
+let ``zig backend executes using release while unwinding protected body`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-m3-zig-using-unwind-root"
+            "zig"
+            [
+                "main.kp", usingReleaseThrowingProgram
+            ]
+
+    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+
+    let outputDirectory = createScratchDirectory "zig-m3-using-unwind-backend"
+
+    let artifact =
+        match Backend.emitZigArtifact workspace "main.main" outputDirectory with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    let compileResult =
+        runProcessWithEnvironment
+            artifact.OutputDirectory
+            (ensureRepoZigExecutablePath ())
+            $"cc -std=c11 -O0 -o \"{artifact.ExecutableFilePath}\" \"{artifact.SourceFilePath}\""
+            []
+
+    Assert.Equal(0, compileResult.ExitCode)
+
+    let runResult = runProcess artifact.OutputDirectory artifact.ExecutableFilePath ""
+    Assert.NotEqual(0, runResult.ExitCode)
+    Assert.Equal("chunkclosed", runResult.StandardOutput.Trim())
+    Assert.Contains("Non-exhaustive match", runResult.StandardError)
