@@ -3715,10 +3715,19 @@ module Compilation =
             else
                 parseBundledPrelude () :: userDocuments
 
-        let diagnostics =
+        let frontendDiagnostics =
             (documents |> List.collect (fun document -> document.Diagnostics))
             @ detectImportCycles documents
             @ validateExpectDeclarations normalizedBackendProfile documents
+
+        let resourceDiagnostics =
+            if frontendDiagnostics |> List.exists (fun diagnostic -> diagnostic.Severity = Error) then
+                []
+            else
+                ResourceChecking.checkDocuments documents
+
+        let diagnostics =
+            frontendDiagnostics @ resourceDiagnostics
 
         let kFrontIR =
             documents

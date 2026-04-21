@@ -1,0 +1,15 @@
+module main
+
+data File : Type =
+    Handle Int
+
+let openFile name = pure (Handle 1)
+let readData (& file : File) = pure "chunk"
+
+let main : IO Unit = do
+    using file <- openFile "data.txt"
+    let reader = \ unit -> file
+    readData (reader ())
+    printInt 0
+
+--! assertNoErrors

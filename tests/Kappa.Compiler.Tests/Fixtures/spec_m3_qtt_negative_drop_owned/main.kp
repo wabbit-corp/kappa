@@ -1,0 +1,11 @@
+module main
+
+data File : Type =
+    Handle Int
+
+let main : IO Unit = do
+    let 1 file = Handle 1
+    printInt 0
+
+--! assertErrorCount 1
+--! assertDiagnosticCodes E_QTT_LINEAR_DROP

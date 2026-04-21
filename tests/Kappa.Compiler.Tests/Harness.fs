@@ -349,6 +349,7 @@ type KpFixtureAssertion =
     | AssertNoWarnings of filePath: string * lineNumber: int
     | AssertErrorCount of expectedCount: int * filePath: string * lineNumber: int
     | AssertWarningCount of expectedCount: int * filePath: string * lineNumber: int
+    | AssertDiagnosticCodes of expectedCodes: string list * filePath: string * lineNumber: int
     | AssertDiagnosticMatch of regexPattern: string * filePath: string * lineNumber: int
     | AssertType of target: string * expectedTypeText: string * filePath: string * lineNumber: int
     | AssertFileDeclarationKinds of relativePath: string * expectedKinds: string list * filePath: string * lineNumber: int
@@ -692,6 +693,13 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
                 invalidOp $"assertDiagnosticMatch expects a regular expression ({filePath}:{lineNumber})."
 
             Some(AssertionDirective(AssertDiagnosticMatch(directiveBody, filePath, lineNumber)))
+        | "assertDiagnosticCodes" ->
+            let expectedCodes = parseFixtureList directiveBody
+
+            if List.isEmpty expectedCodes then
+                invalidOp $"assertDiagnosticCodes expects a comma-separated list of diagnostic codes ({filePath}:{lineNumber})."
+
+            Some(AssertionDirective(AssertDiagnosticCodes(expectedCodes, filePath, lineNumber)))
         | "assertType" ->
             let targetAndType =
                 directiveBody.Split([| ' '; '\t' |], 2, StringSplitOptions.RemoveEmptyEntries)
@@ -1521,6 +1529,7 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
         |> List.exists (function
             | AssertErrorCount(expectedCount, _, _) when expectedCount > 0 -> true
             | AssertWarningCount(expectedCount, _, _) when expectedCount > 0 -> true
+            | AssertDiagnosticCodes _ -> true
             | AssertDiagnosticMatch _ -> true
             | _ -> false)
 
@@ -1546,6 +1555,16 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
             Assert.Equal(expectedCount, countDiagnosticsBySeverity DiagnosticSeverity.Error workspace.Diagnostics)
         | AssertWarningCount(expectedCount, _, _) ->
             Assert.Equal(expectedCount, countDiagnosticsBySeverity DiagnosticSeverity.Warning workspace.Diagnostics)
+        | AssertDiagnosticCodes(expectedCodes, _, _) ->
+            let expected =
+                expectedCodes |> List.map normalizeFixtureText
+
+            let actual =
+                workspace.Diagnostics
+                |> List.map (fun diagnostic -> diagnostic.Code)
+                |> List.map normalizeFixtureText
+
+            Assert.Equal<string list>(expected, actual)
         | AssertDiagnosticMatch(pattern, _, lineNumber) ->
             let regex =
                 try

@@ -1,0 +1,14 @@
+module main
+
+data File : Type =
+    Handle Int
+
+let openFile name = pure (Handle 1)
+
+let leak : IO (Unit -> File) = do
+    using file <- openFile "data.txt"
+    let bad = \ unit -> file
+    pure bad
+
+--! assertErrorCount 1
+--! assertDiagnosticCodes E_QTT_BORROW_ESCAPE

@@ -1,0 +1,13 @@
+module main
+
+data File : Type =
+    Handle Int
+
+let h (1 left : File) (1 right : File) = ()
+
+let main : IO Unit = do
+    let 1 file = Handle 1
+    h file file
+
+--! assertErrorCount 1
+--! assertDiagnosticCodes E_QTT_LINEAR_OVERUSE
