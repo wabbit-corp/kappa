@@ -1460,6 +1460,7 @@ Compile-time values are:
 * inhabitants of the intrinsic compile-time types `Universe`, `Quantity`, `Region`, `Constraint`, `RecRow`, `VarRow`,
   `EffRow`, `Label`, and `EffLabel`;
 * universe terms appearing in `Type u`;
+* inhabitants of the elaboration-time reflection types `CoreCtx`, `Symbol`, and `Core Γ t` of §5.8.5;
 * inhabitants of compile-time function spaces built entirely from such types and from `Type u`.
 
 Compile-time values are ordinary terms for binding, projection, packaging, sealing, opening, and definitional equality,
@@ -1478,7 +1479,8 @@ Runtime erasure is governed as follows:
 #### 5.1.4.1 Compile-time bindings and fields
 
 A binder, record field, or package member is compile-time if its annotation elaborates to one of the intrinsic
-compile-time types of §5.1.3, to `Type u`, or to a compile-time function space built from them.
+compile-time types of §5.1.3, to `Type u`, to one of the elaboration-time reflection types of §5.8.5, or to a
+compile-time function space built from such types.
 
 Compile-time bindings and fields:
 
@@ -3177,7 +3179,8 @@ Outside quoted blocks, `$(s)` is an elaboration-time splice in term and type pos
 
 * In a term position expecting type `t`, `$(s)` requires `s : Syntax t`.
 * In a type position, `$(s)` requires `s : Syntax Type`.
-* `$(s)` consumes `Syntax`, not `Code`. Staged code is executed only via `runCode` on `ClosedCode` (§5.9.4).
+* `$(s)` consumes `Syntax`, not `Core` or `Code`. Staged code is executed only via `runCode` on `ClosedCode` (§5.9.4).
+  Semantic reflection values of §5.8.5 must first be reified back to `Syntax` before they can be spliced.
 * `$(s)` is the only elaboration-time splice form for `Syntax`.
 * `!` remains reserved for the monadic splice form inside `do` blocks (§5.7.1) and is not a synonym for `$(...)`.
 
@@ -3194,6 +3197,11 @@ let x = $(myMacro '{ 10 })
 
 There is no separate macro namespace; macros are ordinary term definitions invoked through elaboration-time splicing.
 
+A macro MAY inspect and transform code either at the surface level through `Syntax` or at the semantic level through the
+reflection API of §5.8.5. Semantic reflection does not introduce a second user-visible source language or a separate
+macro namespace; it is an elaboration-time interface for reasoning about ordinary Kappa terms, types, rows, labels, and
+constraints after elaboration.
+
 #### 5.8.4 Hygiene
 
 Syntax quotes are hygienic.
@@ -3204,7 +3212,120 @@ Syntax quotes are hygienic.
 
 #### 5.8.5 Reflection API
 
-Implementations MUST provide a typed reflection API sufficient to inspect and construct syntax values.
+Implementations MUST provide two reflection tiers:
+
+1. surface reflection over `Syntax t`, preserving user-written structure, quoting, splicing, and hygiene; and
+2. semantic reflection over elaborated core terms in explicit lexical contexts.
+
+The semantic tier is an internal elaboration-time meta-language for reasoning about ordinary Kappa code.
+It is not a second user-visible source language.
+
+Built-in elaboration-time reflection types:
+
+```kappa
+CoreCtx : Type
+Core    : CoreCtx -> Type -> Type
+Symbol  : Type
+```
+
+`Core Γ t` denotes an elaborated, well-scoped core term of object-language type `t` in lexical context `Γ`.
+
+`Core` applies uniformly to reflected terms, reflected types, reflected rows, reflected labels, and reflected
+constraints. For example:
+
+* `Core Γ Int` is a reflected term of type `Int`;
+* `Core Γ Type` is a reflected type expression;
+* `Core Γ RecRow`, `Core Γ VarRow`, and `Core Γ EffRow` are reflected row expressions;
+* `Core Γ Constraint` is a reflected constraint expression.
+
+`CoreCtx`, `Core Γ t`, and `Symbol` are compile-time reflection types. Values of these types are elaboration-time only,
+are erased, and MUST NOT be required at runtime or by `runCode`.
+
+Implementations MUST provide elaboration-time operations equivalent to:
+
+```kappa
+asCore :
+    forall (@0 t : Type).
+    Syntax t -> exists (Γ : CoreCtx). Core Γ t
+
+reifyCore :
+    forall (@0 Γ : CoreCtx) (@0 t : Type).
+    Core Γ t -> Syntax t
+
+inferType :
+    forall (@0 Γ : CoreCtx) (@0 t : Type).
+    Core Γ t -> Core Γ Type
+
+whnf :
+    forall (@0 Γ : CoreCtx) (@0 t : Type).
+    Core Γ t -> Core Γ t
+
+normalize :
+    forall (@0 Γ : CoreCtx) (@0 t : Type).
+    Core Γ t -> Core Γ t
+
+defEq :
+    forall (@0 Γ : CoreCtx) (@0 a : Type) (@0 b : Type).
+    Core Γ a -> Core Γ b -> Bool
+
+headSymbol :
+    forall (@0 Γ : CoreCtx) (@0 t : Type).
+    Core Γ t -> Option Symbol
+
+sameSymbol :
+    Symbol -> Symbol -> Bool
+```
+
+Normative meaning:
+
+* `asCore` elaborates and typechecks its input using the ordinary elaborator and returns the resulting lexical context
+  together with the elaborated core term.
+* `reifyCore` reifies a core term back to hygienic `Syntax`. Consequently `$(reifyCore e)` is the canonical way to
+  splice the result of semantic reflection.
+* `inferType`, `whnf`, `normalize`, and `defEq` use the same elaboration, normalization, and definitional-equality
+  machinery that ordinary Kappa elaboration would use at that source site.
+* `headSymbol` returns `Some s` only when the weak-head-normal form of the given core term has a global declaration
+  head. It returns `None` for variables, binders, locals, literals, and other non-global heads.
+* `sameSymbol` compares resolved declaration identity, not spelling. Module aliases, re-export paths, import style, and
+  local qualification do not affect symbol identity.
+
+Definitional equality for macros:
+
+* `defEq` is the macro-level exact-equality query.
+* It is distinct from propositional equality (`=`), `Equiv`, and any user-defined comparison function.
+* `defEq x y = True` iff the elaborator judges the two reflected core terms definitionally equal under the ordinary
+  reduction rules and the current visibility / opacity environment.
+* `defEq`, `whnf`, and `normalize` MUST obey the current module's ordinary visibility, opacity, `unhide`, and `clarify`
+  rules. In particular, an opaque definition remains opaque unless ordinary elaboration at that source site could unfold
+  it.
+
+Shared-context discipline:
+
+* The context witness returned by `asCore` is the lexical context of the reflected term.
+* Semantic reflection operations MUST preserve scope. No API operation may construct an ill-scoped `Core Γ t`.
+* Operations that inspect or introduce binders MUST make the induced context extension explicit in their types or in the
+  returned existential package.
+* Reification preserves binding structure up to hygiene-preserving alpha-renaming.
+
+Mandatory structural coverage:
+
+Implementations MUST additionally provide a typed constructor / destructor API sufficient to inspect and construct
+reflected core terms that may arise from elaboration of v0.1 surface programs. At minimum this coverage includes:
+
+* variables and local binders;
+* global references;
+* explicit and implicit application;
+* lambda and let;
+* Π-types and Σ-types;
+* records, package members, and projections;
+* data constructors and constructor-field projections;
+* `match`;
+* universes and equality;
+* variant injections and residual rows;
+* record, variant, and effect rows.
+
+This constructor / destructor API MUST be scope-safe and typed. Ill-scoped or ill-typed reflected core terms MUST be
+unrepresentable through the public reflection interface.
 
 The reflection API MUST additionally provide an elaboration-time operation equivalent to:
 
@@ -3236,6 +3357,8 @@ evaluator.
   configuration values consulted by the macro, together with the contents or cryptographic digests of files, network
   resources, and other external data read during elaboration. This transcript is part of the hashing input described in
   §15.
+* Semantic reflection queries over `Core` are pure elaboration-time queries. They MUST use the same name-resolution,
+  implicit-insertion, visibility, opacity, and definitional-equality rules as ordinary elaboration at the call site.
 
 **Termination checking.** Macro definitions are subject to the same termination checking rules as ordinary top-level
 definitions (§6.4), including the unsafe/debug `assertTotal` escape hatch of §16.4. The elaboration-time evaluator uses
