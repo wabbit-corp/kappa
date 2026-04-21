@@ -2131,8 +2131,10 @@ Record types are written:
 Field declaration grammar:
 
 ```text
-recordFieldDecl ::= [ 'opaque' ] [quantity] ident ':' type
+recordFieldDecl ::= [ 'opaque' ] [ '@' ] [quantity] ident ':' type
 ```
+
+When both `@` and an explicit quantity are present, the surface spelling is `@q name : T`, not `q @name : T`.
 
 Opaque members:
 
