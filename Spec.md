@@ -9295,13 +9295,21 @@ Restriction:
 
 #### 15.2.3 Macro and Elaboration-Time Caching
 
-A macro invocation of the form `$(macro '{ args... })` MAY be cached using the tuple:
+A macro invocation of the form `$(macro '{ args... })` MAY be cached only under a key that includes, in addition to:
 
-```text
-(Hard Hash of the macro definition,
- tuple of Hard Hashes of the argument syntax,
- digest of the macro input transcript)
-```
+* the Hard Hash of the macro definition,
+* the tuple of Hard Hashes of the argument syntax, and
+* the digest of the macro input transcript,
+
+a fingerprint of the call-site semantic environment sufficient to determine the result of any semantic reflection
+performed during expansion.
+
+At minimum, this fingerprint includes any dependency-tracked semantic query results, imported interface artifacts,
+visibility / opacity state, and `unhide` / `clarify` effects consulted while elaborating reflected syntax or answering
+semantic reflection queries.
+
+An implementation MAY realize this requirement by keying macro-result caches through the ordinary dependency-tracked
+query system of §17.2 rather than by materializing one standalone cache-key tuple.
 
 When the cache key matches a previous invocation, the compiler MAY reuse the previously elaborated result rather than
 re-executing the macro body.
@@ -10588,6 +10596,7 @@ It is used for:
 * macro execution;
 * `type"..."` parsing;
 * compile-time reflection over `Syntax`;
+* semantic reflection over `Core`;
 * any other elaboration-time computation required by this specification.
 
 Elaboration-time evaluation is backend-independent except insofar as the effective build configuration exposes
