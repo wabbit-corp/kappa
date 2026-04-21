@@ -3036,7 +3036,7 @@ the same termination checker as the rest of the language. A macro accepted only 
 be deterministic with respect to its inputs and the macro input transcript. Non-termination of a macro during
 elaboration is a compiler error (the implementation may hang, time out, or report a diagnostic).
 
-These restrictions are enforced by the elaboration-time evaluator (§17.3.2).
+These restrictions are enforced by the elaboration-time evaluator (§17.3.3).
 A macro or splice that violates them is a compile-time error.
 
 ### 5.9 Staged code values
@@ -3521,11 +3521,15 @@ Implementations may support selecting module "fragments" by target (e.g. `main.k
 
 * Variable usage: `x`, `foo`, `map`, etc.
 
-* Function application is left-associative:
+* Surface application syntax is left-associative for parsing:
 
   ```kappa
   f x y      ==   (f x) y
   ```
+
+This left-associative parse does not determine the semantic application unit used by elaboration.
+After name resolution and ordinary surface desugaring of dotted forms, the compiler elaborates each maximal
+application site as one ordered application spine against the callee's Pi telescope (§7.1.3, §17.3.1).
 
 * Application may involve any expression on the left-hand side:
 
@@ -3545,6 +3549,9 @@ applicationExpr ::= atom applicationArg*
 An application argument of the form `@e` is an explicit implicit-argument application. It may be used only to discharge
 an implicit binder of the callee. If the next binder expected by the callee is explicit rather than implicit, or if the
 callee has no remaining implicit binder at that application site, the application is ill-formed.
+
+A maximal application site is the head expression of an `applicationExpr` together with its ordered `applicationArg*`
+after any enclosing dotted-form resolution has determined the actual callee and any inserted receiver argument.
 
 ### 7.1.1 Dotted forms (`.` / `?.`): qualification, type scope, projection, method sugar
 
@@ -3807,10 +3814,31 @@ a reserved token and cannot be redefined by user fixity declarations.
 Kappa does not support deep subtyping. However, to maintain ecosystem coherence between linear, borrowed, and
 unrestricted contexts, Kappa implements a localized subsumption rule at function application boundaries.
 
-#### 7.1.3.1 Application elaboration pipeline
+#### 7.1.3.1 Application-spine elaboration pipeline
 
-To resolve an application `f e`, let the next explicit parameter expected by `f` be `(q_dem x : T_dem)`, and let `e`
-be the supplied argument expression. The compiler MUST apply the following steps in strict sequence:
+To resolve a maximal application site whose head elaborates to a callee `f`, the compiler MUST elaborate the whole site
+as one ordered application spine.
+
+Conceptually, the compiler repeatedly exposes the next Pi-telescope segment of the current callee and aligns the next
+remaining surface argument against the next binder in that telescope. Accepted arguments are substituted through later
+binder types before elaboration continues.
+
+Processing proceeds left-to-right.
+
+For each next binder of the current callee:
+
+* If the binder is implicit:
+  * if the next remaining surface argument is of the form `@e`, consume it and typecheck `e` against that binder;
+  * otherwise synthesize the argument by the implicit-resolution procedure of §7.3.3;
+  * if neither succeeds, the application is ill-typed.
+
+* If the binder is explicit:
+  * if the next remaining surface argument is of the form `@e`, the application is ill-formed;
+  * if no remaining ordinary surface argument exists, elaboration stops and the result is a partial application over the
+    residual telescope;
+  * otherwise let `e` be the next remaining ordinary surface argument and apply the explicit-argument pipeline below.
+
+Explicit-argument pipeline for binder `(q_dem x : T_dem)` and supplied argument `e`:
 
 1. **Outermost borrow introduction (auto-referencing).**
 
@@ -3819,8 +3847,8 @@ be the supplied argument expression. The compiler MUST apply the following steps
 
    * If so, elaboration first considers the temporary-borrow form of `e` and typechecks that borrowed argument against
      `T_dem`.
-   * If this borrowed check succeeds, the application is well-typed for that argument and no interval-quantity
-     subsumption step is attempted.
+   * If this borrowed check succeeds, the argument is accepted and no interval-quantity subsumption step is attempted
+     for that argument.
    * If `e` is not a borrowable stable expression, or if the temporary-borrow form does not typecheck, elaboration
      continues to Step 2.
 
@@ -3831,10 +3859,10 @@ be the supplied argument expression. The compiler MUST apply the following steps
 
    * If `T_cap` unifies exactly with `T_dem`, the compiler checks the satisfaction relation `q_cap ⊑ q_dem` as defined
      in §5.1.5.
-   * If `q_cap ⊑ q_dem` holds, the application is well-typed.
-   * If `q_cap ⊑ q_dem` remains undecidable because one or both quantities still contain unsolved quantity
-     metavariables after processing surrounding constraints, compilation fails with an unsolved
-     quantity-metavariable error rather than defaulting to any case.
+   * If `q_cap ⊑ q_dem` holds, the argument is accepted.
+   * If `q_cap ⊑ q_dem` remains undecidable because one or both quantities still contain unsolved quantity metavariables
+     after processing surrounding constraints, compilation fails with an unsolved quantity-metavariable error rather
+     than defaulting to any case.
    * If `T_cap` does not unify exactly with `T_dem`, continue to Step 3.
 
 3. **Arrow subsumption (higher-order coercion).**
@@ -3847,20 +3875,25 @@ be the supplied argument expression. The compiler MUST apply the following steps
    * The parameter domain `A` and result type `B` must match up to definitional equality; only the outermost arrow
      quantity mismatch is tolerated by this step.
    * The compiler then checks the contravariant satisfaction condition `q_inner_dem ⊑ q_inner_cap`.
-   * If that condition holds, the application is well-typed and the compiler MUST elaborate `e` by inserting an
-     internal coercion or eta-expansion whose exposed binder quantity matches the demanded type `T_dem`.
+   * If that condition holds, the argument is accepted and the compiler MUST elaborate `e` by inserting an internal
+     coercion or eta-expansion whose exposed binder quantity matches the demanded type `T_dem`.
    * If the condition is undecidable after surrounding constraints are processed, compilation fails with an unsolved
      quantity-metavariable error.
    * If the condition does not hold, the application is a compile-time error.
 
-If none of the three steps succeeds, the application is ill-typed.
+After an explicit or implicit argument is accepted, the compiler substitutes it through later binder types and continues
+with the next binder in the same application spine.
 
-This subsumption applies only to the outermost arrow at the point of application. It does not apply recursively inside
-type constructors. For example, `List ((ω x : A) -> B)` is never implicitly coercible to `List ((1 x : A) -> B)`.
+A temporary borrow introduced while elaborating one argument of a maximal application site remains live until
+elaboration of that same maximal application site finishes. It MUST NOT end merely because the implementation
+internally materializes a unary prefix while processing later arguments of the same source call.
+
+This subsumption applies only to the outermost arrow of the supplied argument at the point where that argument is
+checked. It does not apply recursively inside type constructors. For example, `List ((ω x : A) -> B)` is never
+implicitly coercible to `List ((1 x : A) -> B)`.
 
 Borrow introduction for arguments demanded at quantity `&` is not an interval-quantity case of `⊑`. It is handled by
-Step 1 above, via the borrow-introduction rule of §5.1.5, which may insert a temporary borrow of a borrowable stable
-expression even though no interval capability satisfies `&` in the `⊑` table.
+Step 1 above, via the borrow-introduction rule of §5.1.5.
 
 
 ### 7.2 Lambdas
@@ -6293,8 +6326,8 @@ ordinary function types; those use the elaborated `@1` binder form directly.
 
 Rules:
 
-* `~` is valid only inside a `do` block, and only on arguments of the top-level application that forms a `do`-item
-  rewrite site.
+* `~` is valid only inside a `do` block, and only on arguments of the maximal application site (§7.1.3) that forms a
+  `do`-item rewrite site.
 * `~` may be applied only to a stable place:
   * a variable name, or
   * a record projection path rooted at a variable or `var`-bound place, such as `rec.field` or `rec.inner.field`.
@@ -6323,7 +6356,8 @@ Diagnostic requirement:
 
 #### 8.8.4 Normative desugaring (type-directed)
 
-Applications containing one or more `~` arguments are rewritten before the ordinary `do`-item elaboration of §8.7.4.
+A maximal application site containing one or more `~` arguments is rewritten before the ordinary `do`-item elaboration
+of §8.7.4.
 
 For a surface form:
 
@@ -6333,10 +6367,10 @@ let pat <- func ~x1 ... ~xk args
 
 or the pure analogue `let pat = func ~x1 ... ~xk args`, elaboration proceeds as follows:
 
-1. Resolve the callee's signature and determine the ordered list of `inout`-compatible formal parameter names `p1 ...
-   pk` corresponding to the `~` arguments. This step succeeds only when each marked argument position satisfies the
-   admissibility rule of §8.8.3: quantity `@1`, stable formal name, stable place, and matching quantity-`1`
-   return-record field.
+1. Resolve the callee's signature for the maximal application site and determine the ordered list of
+   `inout`-compatible formal parameter names `p1 ... pk` corresponding to the marked arguments in that resolved
+   application spine. This step succeeds only when each marked argument position satisfies the admissibility rule of
+   §8.8.3: quantity `@1`, stable formal name, stable place, and matching quantity-`1` return-record field.
 2. Remove the `~` markers and pass the underlying place expressions normally. If a marked argument is `~root.path`, the
    argument passed to the callee is the projection `root.path`, whose quantity-`1` use consumes exactly that path under
    §5.5.4.
@@ -8129,6 +8163,17 @@ A term name is eligible for method-call sugar iff:
 
 If there is no explicit receiver-marked binder, or there is more than one, method-call sugar does not apply.
 
+Spine interaction:
+
+If a method-sugar candidate `lhs.name` is immediately followed by one or more application arguments in the same maximal
+application site (§7.1.3), elaboration MUST treat the whole site as a direct application of the resolved term `f`, with
+`lhs` inserted at the unique receiver-marked binder position. It MUST NOT first materialize the standalone section value
+and then re-apply that value, unless the implementation can prove observational equivalence with respect to implicit
+arguments, quantity checking, borrow introduction, and `inout` rewriting.
+
+The standalone section elaboration below therefore applies only to the bare form `lhs.name` when no further application
+arguments belong to that same maximal application site.
+
 Elaboration / desugaring:
 
 Let f be the resolved term for name. Let f have elaborated type:
@@ -8184,6 +8229,9 @@ Correctness note:
 For any arguments supplied to the resulting lambda, beta-reduction yields an application of f in which lhs has been
 placed exactly at the this binder position. Therefore lhs.name is definitionally equal to the corresponding eta-expanded
 form of applying f with lhs as the this argument, subject to the substitutions described above.
+
+When the direct-call form above applies, the resulting call participates in the ordinary
+application-spine elaboration of §7.1.3.
 
 #### 13.1.2 Reified module values
 
@@ -8256,6 +8304,7 @@ Elaboration performs (non-exhaustive):
 * construction and phase resolution of KFrontIR (§17.2),
 * name resolution across namespaces (term/type/constraint/ctor/module),
 * implicit argument insertion (§7.3),
+* construction of maximal application sites and their alignment with resolved Pi telescopes (§7.1.3, §17.3.1),
 * quantity checking and borrow checking under §§5.1.5-5.1.7 using the syntax-directed ownership rules of the core
   language,
 * generation of any predicates required by an enabled modal/coeffect extension of §5.1.5.2, followed by
@@ -9192,8 +9241,10 @@ A module interface artifact MUST record at least:
 * the module identity and dependency identities required by §§2.1-2.3.2;
 * the exported surface by namespace, including importable fixity declarations;
 * visibility and opacity classification of exported ordinary items;
-* the signatures of exported terms, together with any interface-visible classification relevant to use sites, such as
-  pattern-head eligibility under §7.7;
+* the signatures of exported terms, together with ordered binder metadata needed for downstream application-site
+  elaboration, including binder names, explicitness, quantities, receiver markers, and any `inout`-relevant
+  formal-parameter information, plus any interface-visible classification relevant to use sites, such as pattern-head
+  eligibility under §7.7;
 * the signatures of exported types, traits, constructors, associated types, effect interfaces, and effect operations,
   insofar as those entities are available to downstream code;
 * top-level instance heads and any metadata required for instance search and coherence under §§12.3 and 15.2.1;
@@ -9238,8 +9289,9 @@ At minimum, the canonical interface view MUST include:
 * exported names by namespace;
 * importable fixity declarations;
 * visibility and opacity classification;
-* exported signatures of terms, together with any interface-visible classification relevant to use sites, such as
-  pattern-head eligibility under §7.7;
+* exported signatures of terms, together with the corresponding binder metadata needed for downstream application-site
+  elaboration and any interface-visible classification relevant to use sites, such as pattern-head eligibility under
+  §7.7;
 * exported signatures of types, traits, constructors, associated types, effect interfaces, and effect operations,
   insofar as those entities are available to downstream code;
 * exported instance heads and any interface-visible coherence metadata;
@@ -9733,6 +9785,7 @@ KCore retains all compile-time structure needed by the source semantics. In part
 * explicit binder quantities, explicit regions, and explicit implicit binders;
 * proof terms and equality evidence;
 * explicit handler forms, resumption quantities, and completion-carrying control structure;
+* explicit application spines aligned with Pi telescopes;
 * explicit `seal` nodes, manifest static members, opaque static members, and package/member projections;
 * surface `exists` and `open ... as exists ...` do not survive as distinct KCore forms; they elaborate to ordinary
   `seal`, package projections, and local bindings over implementation-internal witness members (§5.5.11);
@@ -9752,7 +9805,44 @@ The ownership rules of `Quantity` are fully decided before KCore is constructed.
 in KCore appears only as separate evidence introduced by `MODAL_SOLVE`; it does not alter the meaning of quantity
 terms, quantity satisfaction, or borrow checking.
 
-#### 17.3.1 KCore provenance and explainability
+#### 17.3.1 Application spines and Pi telescopes
+
+KCore applications are defined against ordered Pi telescopes rather than by appeal to arbitrary unary prefixes.
+
+A conforming implementation MUST behave as if KCore contains an application form:
+
+```text
+AppSpine fn [a1, ..., ak]
+```
+
+An `AppSpine` represents one elaborated source application site. Its meaning is the ordinary left-to-right
+application of `fn` to the ordered argument list, but the spine is a single KCore node for purposes of binder
+alignment, dependent substitution, borrow-lifetime boundaries, and any other application-site elaboration rule
+defined by this specification.
+
+Typechecking of an `AppSpine` proceeds by repeatedly exposing the next Pi-telescope segment of the current callee,
+aligning the next argument against the next binder, substituting accepted arguments through later binder types, and
+continuing until the spine is exhausted or the current term ceases to have function type.
+
+Rules:
+
+* If the spine is exhausted while the current term still has function type, the result is a partial application over the
+  residual telescope.
+* If the current term ceases to have function type while arguments remain in the spine, the application is ill-typed.
+* Implicit-argument insertion required by §7.3 is completed before KCore is formed, so an `AppSpine` contains the
+  already elaborated ordered arguments actually applied to the callee.
+* Borrow introduction, quantity satisfaction, outermost-arrow subsumption, receiver insertion, and `inout`
+  rewrite-site checking are all defined over `AppSpine`, not over implementation-specific unary prefixes.
+* A temporary borrow introduced while elaborating one argument of a source-level maximal application site remains live
+  until elaboration of the corresponding `AppSpine` node finishes. It MUST NOT end merely because the implementation
+  internally materializes a unary prefix while processing later arguments of the same source call.
+* An implementation MAY store applications internally in another representation, but it MUST preserve the observable
+  behavior of `AppSpine` with respect to dependent substitution, implicit-argument discharge, quantity checking, borrow
+  lifetimes, receiver insertion, and `inout` rewriting.
+* KCore normalization of an `AppSpine` is by ordinary left-to-right beta-reduction or an observationally equivalent
+  strategy.
+
+#### 17.3.2 KCore provenance and explainability
 
 Every synthetic KCore node introduced during elaboration MUST carry provenance sufficient to explain why it exists.
 
@@ -9777,7 +9867,7 @@ A KCore dump MUST expose this provenance.
 An implementation SHOULD provide an explain query that, given a source span or KCore node, returns the provenance chain
 from KFrontIR through KCore.
 
-#### 17.3.2 Elaboration-time evaluation
+#### 17.3.3 Elaboration-time evaluation
 
 The elaboration-time evaluator operates on KCore or an observationally equivalent internal representation.
 
@@ -9802,7 +9892,7 @@ then compilation fails.
 The evaluator MAY memoize, partially normalize, or reuse cached results, provided the observable result is the same as
 semantic elaboration-time evaluation under the restrictions of §5.8.6.
 
-#### 17.3.3 Semantic object identities
+#### 17.3.4 Semantic object identities
 
 After `CORE_LOWERING`, each top-level KCore object that may be imported, browsed, documented, cached, or compiled has a
 canonical semantic object identity.
@@ -9836,7 +9926,7 @@ equality is at least as fine as KCore semantic identity.
 Tooling and caches that operate after name resolution SHOULD prefer semantic object identity to source spelling when
 tracking references, rename targets, usages, deduplication, and compiled artifact reuse.
 
-#### 17.3.4 Semantic object stores
+#### 17.3.5 Semantic object stores
 
 A conforming implementation MAY persist semantic objects in a structured semantic object store or codebase.
 
@@ -10141,7 +10231,7 @@ Rules:
 A backend intrinsic MAY additionally be classified as **elaboration-available**.
 
 Only elaboration-available backend intrinsics may be called, unfolded, or otherwise demanded by the elaboration-time
-evaluator of §17.3.2.
+evaluator of §17.3.3.
 
 Whether a backend intrinsic is elaboration-available is part of the backend-intrinsic set and therefore part of the
 effective build configuration and analysis-session identity.
