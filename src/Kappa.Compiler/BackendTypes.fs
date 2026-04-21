@@ -25,7 +25,8 @@ type NativeArtifact =
       EntryPoint: string }
 
 type NativeTranslationUnit =
-    { TranslationUnitName: string
+    { ArtifactKind: string
+      TranslationUnitName: string
       InputCheckpoint: string
       EntrySymbols: string list
       FunctionSymbols: string list

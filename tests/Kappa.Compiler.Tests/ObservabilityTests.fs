@@ -137,6 +137,7 @@ let ``zig target checkpoint dumps a manifest for the generated translation unit`
 
     Assert.Contains("\"checkpoint\": \"zig.c\"", zigJson)
     Assert.Contains("\"inputCheckpoint\": \"KBackendIR\"", zigJson)
+    Assert.Contains("\"artifactKind\": \"c-translation-unit\"", zigJson)
     Assert.Contains("\"translationUnitName\": \"kappa.generated.c\"", zigJson)
     Assert.Contains("\"entrySymbols\": [", zigJson)
     Assert.Contains("kappa_module_main_answer", zigJson)
@@ -148,7 +149,58 @@ let ``zig target checkpoint dumps a manifest for the generated translation unit`
 
     Assert.Contains("(checkpoint \"zig.c\")", zigSexpr)
     Assert.Contains("(input-checkpoint \"KBackendIR\")", zigSexpr)
+    Assert.Contains("(artifact-kind \"c-translation-unit\")", zigSexpr)
     Assert.Contains("(translation-unit-name \"kappa.generated.c\")", zigSexpr)
+
+[<Fact>]
+let ``dotnet backend exposes a post KBackendIR target checkpoint`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-dotnet-checkpoint-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let checkpoints = Compilation.availableCheckpoints workspace
+
+    Assert.Contains("dotnet.clr", checkpoints)
+
+    let trace =
+        Compilation.pipelineTrace workspace
+        |> List.map (fun step ->
+            PipelineTraceEvent.toPortableName step.Event,
+            PipelineTraceSubject.toPortableName step.Subject,
+            step.InputCheckpoint,
+            step.OutputCheckpoint)
+
+    Assert.Contains(("lowerTarget", "targetUnit", "KBackendIR", "dotnet.clr"), trace)
+    Assert.Empty(Compilation.verifyCheckpoint workspace "dotnet.clr")
+
+    let dotnetJson =
+        match Compilation.dumpStage workspace "dotnet.clr" StageDumpFormat.Json with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    Assert.Contains("\"checkpoint\": \"dotnet.clr\"", dotnetJson)
+    Assert.Contains("\"inputCheckpoint\": \"KBackendIR\"", dotnetJson)
+    Assert.Contains("\"artifactKind\": \"clr-assembly\"", dotnetJson)
+    Assert.Contains("\"translationUnitName\": \"Kappa.Generated.dll\"", dotnetJson)
+    Assert.Contains("Kappa.Generated.main.answer", dotnetJson)
+
+    let dotnetSexpr =
+        match Compilation.dumpStage workspace "dotnet.clr" StageDumpFormat.SExpression with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    Assert.Contains("(checkpoint \"dotnet.clr\")", dotnetSexpr)
+    Assert.Contains("(input-checkpoint \"KBackendIR\")", dotnetSexpr)
+    Assert.Contains("(artifact-kind \"clr-assembly\")", dotnetSexpr)
 
 [<Fact>]
 let ``workspace and stage dumps expose backend intrinsic identity`` () =
@@ -166,6 +218,8 @@ let ``workspace and stage dumps expose backend intrinsic identity`` () =
             ]
 
     Assert.Equal("bootstrap-prelude-v1", supportedWorkspace.BackendIntrinsicIdentity)
+    Assert.Contains("backendProfile=interpreter", supportedWorkspace.BuildConfigurationIdentity)
+    Assert.Contains("backendIntrinsicSet=bootstrap-prelude-v1", supportedWorkspace.BuildConfigurationIdentity)
 
     let supportedJson =
         match Compilation.dumpStage supportedWorkspace "KCore" StageDumpFormat.Json with
@@ -174,6 +228,7 @@ let ``workspace and stage dumps expose backend intrinsic identity`` () =
 
     Assert.Contains("\"backendProfile\": \"interpreter\"", supportedJson)
     Assert.Contains("\"backendIntrinsicSet\": \"bootstrap-prelude-v1\"", supportedJson)
+    Assert.Contains("\"identity\": \"packageMode=true;backendProfile=interpreter;backendIntrinsicSet=bootstrap-prelude-v1", supportedJson)
 
     let unsupportedWorkspace =
         compileInMemoryWorkspaceWithBackend
@@ -189,6 +244,8 @@ let ``workspace and stage dumps expose backend intrinsic identity`` () =
             ]
 
     Assert.Equal("none", unsupportedWorkspace.BackendIntrinsicIdentity)
+    Assert.Contains("backendProfile=custom-backend", unsupportedWorkspace.BuildConfigurationIdentity)
+    Assert.Contains("backendIntrinsicSet=none", unsupportedWorkspace.BuildConfigurationIdentity)
 
     let unsupportedSexpr =
         match Compilation.dumpStage unsupportedWorkspace "KCore" StageDumpFormat.SExpression with
@@ -197,6 +254,7 @@ let ``workspace and stage dumps expose backend intrinsic identity`` () =
 
     Assert.Contains("(backend-profile \"custom-backend\")", unsupportedSexpr)
     Assert.Contains("(backend-intrinsic-set \"none\")", unsupportedSexpr)
+    Assert.Contains("(identity \"packageMode=true;backendProfile=custom-backend;backendIntrinsicSet=none", unsupportedSexpr)
 
 [<Fact>]
 let ``workspace and stage dumps expose elaboration available intrinsic terms`` () =

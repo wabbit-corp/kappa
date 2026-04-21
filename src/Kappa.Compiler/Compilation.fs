@@ -2948,6 +2948,13 @@ module Compilation =
         |> String.concat " "
         |> fun body -> $"(module {body})"
 
+    let private buildConfigurationJson workspace =
+        {| identity = workspace.BuildConfigurationIdentity
+           packageMode = workspace.PackageMode
+           backendProfile = workspace.BackendProfile
+           backendIntrinsicSet = workspace.BackendIntrinsicIdentity
+           elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms |}
+
     let private metadataJson workspace checkpoint =
         {| schemaVersion = "1"
            languageVersion = languageVersion
@@ -2957,7 +2964,7 @@ module Compilation =
            backendProfile = workspace.BackendProfile
            backendIntrinsicSet = workspace.BackendIntrinsicIdentity
            elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms
-           buildConfiguration = {| packageMode = workspace.PackageMode |} |}
+           buildConfiguration = buildConfigurationJson workspace |}
 
     let private metadataSexpr workspace checkpoint =
         let compilerAtom =
@@ -2966,8 +2973,14 @@ module Compilation =
             $"(compiler {idAtom} {versionAtom})"
 
         let buildConfigurationAtom =
+            let identityAtom = sexprStringAtom "identity" workspace.BuildConfigurationIdentity
             let packageModeAtom = sexprAtom "package-mode" (if workspace.PackageMode then "true" else "false")
-            $"(build-configuration {packageModeAtom})"
+            let backendProfileAtom = sexprStringAtom "backend-profile" workspace.BackendProfile
+            let backendIntrinsicSetAtom = sexprStringAtom "backend-intrinsic-set" workspace.BackendIntrinsicIdentity
+            let elaborationAvailableAtom =
+                sexprStringList "elaboration-available-intrinsic-terms" workspace.ElaborationAvailableIntrinsicTerms
+
+            $"(build-configuration {identityAtom} {packageModeAtom} {backendProfileAtom} {backendIntrinsicSetAtom} {elaborationAvailableAtom})"
 
         [
             sexprStringAtom "schema-version" "1"
@@ -2985,10 +2998,79 @@ module Compilation =
     let private targetCheckpointNames (workspace: WorkspaceCompilation) =
         Stdlib.targetCheckpointNamesFor workspace.BackendProfile
 
+    let private emitClrTargetManifest (workspace: WorkspaceCompilation) =
+        let verificationDiagnostics = CheckpointVerification.verifyCheckpoint workspace "KBackendIR"
+
+        if not (List.isEmpty verificationDiagnostics) then
+            let diagnosticText =
+                verificationDiagnostics
+                |> List.map (fun diagnostic -> diagnostic.Message)
+                |> String.concat Environment.NewLine
+
+            Result.Error $"Cannot emit CLR target manifest from malformed KBackendIR:{Environment.NewLine}{diagnosticText}"
+        else
+            let sanitizeIdentifier (value: string) =
+                let text =
+                    value
+                    |> Seq.collect (fun ch ->
+                        if Char.IsLetterOrDigit(ch) || ch = '_' then
+                            Seq.singleton(string ch)
+                        else
+                            Seq.singleton($"_u{int ch:x4}"))
+                    |> String.concat ""
+
+                if String.IsNullOrWhiteSpace(text) then
+                    "_"
+                elif Char.IsLetter(text[0]) || text[0] = '_' then
+                    text
+                else
+                    "_" + text
+
+            let emittedModuleTypeName (moduleName: string) =
+                let segments =
+                    moduleName.Split('.', StringSplitOptions.RemoveEmptyEntries ||| StringSplitOptions.TrimEntries)
+                    |> Array.map sanitizeIdentifier
+
+                "Kappa.Generated." + String.concat "." segments
+
+            let clrSymbol moduleName functionName =
+                $"{emittedModuleTypeName moduleName}.{sanitizeIdentifier functionName}"
+
+            let functions =
+                workspace.KBackendIR
+                |> List.collect (fun moduleDump ->
+                    moduleDump.Functions
+                    |> List.filter (fun functionDump -> not functionDump.Intrinsic)
+                    |> List.map (fun functionDump -> moduleDump.Name, functionDump))
+
+            let functionSymbols =
+                functions
+                |> List.map (fun (moduleName, functionDump) -> clrSymbol moduleName functionDump.Name)
+                |> List.sort
+
+            let entrySymbols =
+                functions
+                |> List.choose (fun (moduleName, functionDump) ->
+                    if functionDump.EntryPoint then
+                        Some(clrSymbol moduleName functionDump.Name)
+                    else
+                        None)
+                |> List.sort
+
+            Result.Ok
+                { ArtifactKind = "clr-assembly"
+                  TranslationUnitName = "Kappa.Generated.dll"
+                  InputCheckpoint = "KBackendIR"
+                  EntrySymbols = entrySymbols
+                  FunctionSymbols = functionSymbols
+                  SourceText = "" }
+
     let private tryEmitTargetTranslationUnit (workspace: WorkspaceCompilation) checkpoint =
         match Stdlib.normalizeBackendProfile workspace.BackendProfile, checkpoint with
         | "zig", checkpointName when checkpointName = Stdlib.ZigTargetCheckpointName ->
             ZigCcBackend.emitTranslationUnit workspace
+        | ("dotnet" | "dotnet-il"), checkpointName when checkpointName = Stdlib.ClrTargetCheckpointName ->
+            emitClrTargetManifest workspace
         | _ ->
             Result.Error $"Unknown checkpoint '{checkpoint}'."
 
@@ -3015,7 +3097,8 @@ module Compilation =
                backendProfile = workspace.BackendProfile
                backendIntrinsicSet = workspace.BackendIntrinsicIdentity
                elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms
-               buildConfiguration = {| packageMode = workspace.PackageMode |}
+               buildConfiguration = buildConfigurationJson workspace
+               artifactKind = translationUnit.ArtifactKind
                inputCheckpoint = translationUnit.InputCheckpoint
                translationUnitName = translationUnit.TranslationUnitName
                entrySymbols = translationUnit.EntrySymbols
@@ -3030,6 +3113,7 @@ module Compilation =
         =
         let translationUnitAtom =
             [
+                sexprStringAtom "artifact-kind" translationUnit.ArtifactKind
                 sexprStringAtom "input-checkpoint" translationUnit.InputCheckpoint
                 sexprStringAtom "translation-unit-name" translationUnit.TranslationUnitName
                 sexprStringList "entry-symbols" translationUnit.EntrySymbols
@@ -3230,7 +3314,7 @@ module Compilation =
                    backendProfile = workspace.BackendProfile
                    backendIntrinsicSet = workspace.BackendIntrinsicIdentity
                    elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms
-                   buildConfiguration = {| packageMode = workspace.PackageMode |}
+                   buildConfiguration = buildConfigurationJson workspace
                    documents = documents
                    diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
         | "KCore" ->
@@ -3248,7 +3332,7 @@ module Compilation =
                    backendProfile = workspace.BackendProfile
                    backendIntrinsicSet = workspace.BackendIntrinsicIdentity
                    elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms
-                   buildConfiguration = {| packageMode = workspace.PackageMode |}
+                   buildConfiguration = buildConfigurationJson workspace
                    modules = modules
                    diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
         | "KRuntimeIR" ->
@@ -3266,7 +3350,7 @@ module Compilation =
                    backendProfile = workspace.BackendProfile
                    backendIntrinsicSet = workspace.BackendIntrinsicIdentity
                    elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms
-                   buildConfiguration = {| packageMode = workspace.PackageMode |}
+                   buildConfiguration = buildConfigurationJson workspace
                    modules = modules
                    diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
         | "KBackendIR" ->
@@ -3284,7 +3368,7 @@ module Compilation =
                    backendProfile = workspace.BackendProfile
                    backendIntrinsicSet = workspace.BackendIntrinsicIdentity
                    elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms
-                   buildConfiguration = {| packageMode = workspace.PackageMode |}
+                   buildConfiguration = buildConfigurationJson workspace
                    modules = modules
                    diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
         | _ ->
@@ -3305,7 +3389,7 @@ module Compilation =
                        backendProfile = workspace.BackendProfile
                        backendIntrinsicSet = workspace.BackendIntrinsicIdentity
                        elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms
-                       buildConfiguration = {| packageMode = workspace.PackageMode |}
+                       buildConfiguration = buildConfigurationJson workspace
                        documents = documents
                        diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
             | _ ->
@@ -3425,6 +3509,21 @@ module Compilation =
             | _ ->
                 invalidOp $"Unknown checkpoint '{checkpoint}'."
 
+    let private makeBuildConfigurationIdentity packageMode backendProfile backendIntrinsicIdentity elaborationAvailableIntrinsicTerms =
+        let elaborationTerms =
+            elaborationAvailableIntrinsicTerms |> String.concat ","
+
+        let packageModeText =
+            if packageMode then "true" else "false"
+
+        [
+            $"packageMode={packageModeText}"
+            $"backendProfile={backendProfile}"
+            $"backendIntrinsicSet={backendIntrinsicIdentity}"
+            $"elaborationAvailableIntrinsicTerms=[{elaborationTerms}]"
+        ]
+        |> String.concat ";"
+
     let parse (options: CompilationOptions) inputs =
         let normalizedBackendProfile = Stdlib.normalizeBackendProfile options.BackendProfile
         let backendIntrinsicSet = Stdlib.intrinsicSetForBackendProfile normalizedBackendProfile
@@ -3433,6 +3532,12 @@ module Compilation =
             backendIntrinsicSet.ElaborationAvailableTermNames
             |> Set.toList
             |> List.sort
+        let buildConfigurationIdentity =
+            makeBuildConfigurationIdentity
+                options.PackageMode
+                normalizedBackendProfile
+                backendIntrinsicIdentity
+                elaborationAvailableIntrinsicTerms
 
         let userDocuments =
             collectInputFiles options inputs
@@ -3472,6 +3577,7 @@ module Compilation =
               PackageMode = options.PackageMode
               BackendProfile = normalizedBackendProfile
               BackendIntrinsicIdentity = backendIntrinsicIdentity
+              BuildConfigurationIdentity = buildConfigurationIdentity
               ElaborationAvailableIntrinsicTerms = elaborationAvailableIntrinsicTerms
               Documents = documents
               KFrontIR = kFrontIR

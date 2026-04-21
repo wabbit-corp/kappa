@@ -457,6 +457,7 @@ type WorkspaceCompilation =
       PackageMode: bool
       BackendProfile: string
       BackendIntrinsicIdentity: string
+      BuildConfigurationIdentity: string
       ElaborationAvailableIntrinsicTerms: string list
       Documents: ParsedDocument list
       KFrontIR: KFrontIRModule list

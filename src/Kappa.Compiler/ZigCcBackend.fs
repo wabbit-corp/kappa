@@ -1746,7 +1746,8 @@ module ZigCcBackend =
                 |> String.concat (Environment.NewLine + Environment.NewLine)
 
             return
-                { TranslationUnitName = "kappa.generated.c"
+                { ArtifactKind = "c-translation-unit"
+                  TranslationUnitName = "kappa.generated.c"
                   InputCheckpoint = "KBackendIR"
                   EntrySymbols = entrySymbols
                   FunctionSymbols = functionSymbols

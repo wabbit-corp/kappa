@@ -152,13 +152,14 @@ Preferred resolution: adjust the compiler before adding M3 ownership semantics, 
 - [ ] Decide whether current `KBackendIR` evolves into the true runtime-facing IR from sections 17.4 and 17.4.1, or whether it should be renamed and a new spec-shaped `KBackendIR` inserted.
 - [ ] Make stage dumps expose the information required by 17.1.3-17.1.6 without relying on backend-specific implementation details.
 - [ ] Add or update checkpoint verification so legality witnesses cover KFrontIR, KCore, KRuntimeIR if retained, KBackendIR, and target-lowering checkpoints consistently.
-- [ ] Add a post-`KBackendIR` CLR target checkpoint and dump beside the existing `zig.c` target checkpoint, so target-specific debugging is not ZigCc-only.
-- [ ] Model selected backend profile, deployment mode, intrinsic set, and elaboration-available intrinsic set as part of the effective build configuration/cache identity required by 17.1.2 and 17.6.
+- [x] Add a post-`KBackendIR` CLR target checkpoint and dump beside the existing `zig.c` target checkpoint, so target-specific debugging is not ZigCc-only.
+- [x] Model selected backend profile, intrinsic set, and elaboration-available intrinsic set as part of the effective build configuration/cache identity required by 17.1.2 and 17.6.
+- [ ] Thread deployment mode into artifact-level build configuration identity where target emission has deployment-specific behavior.
 - [ ] Clarify portable runtime obligations from 17.5 in the compiler model: which obligations are guaranteed by KBackendIR, which are backend-specific, and which are still out of scope.
 - [ ] Add regression tests that compare pipeline trace, checkpoint availability, dump shape, verification behavior, and backend identity for interpreter, ZigCc, and CLR dotnet profiles.
 - [ ] Only start M3 QTT implementation after this track has either resolved the discrepancy or documented a deliberate spec adjustment.
 
-Current 17.1-17.6 status note: partially implemented but not stable enough to build QTT erasure and resource-safe target lowering on top without risking avoidable refactors.
+Current 17.1-17.6 status note: partially implemented but not stable enough to build QTT erasure and resource-safe target lowering on top without risking avoidable refactors. Completed cleanup slices: both ZigCc and CLR now expose post-`KBackendIR` target checkpoints with dumpable manifests; stage metadata now carries an effective build configuration identity including backend profile and intrinsic sets.
 
 ## 11. Milestone 3 (`QTT` + borrowing + deterministic resources)
 

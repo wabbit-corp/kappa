@@ -64,6 +64,7 @@ module Stdlib =
         Path.Combine(Path.GetFullPath("__kappa_stdlib__"), "std", "prelude.kp")
 
     let ZigTargetCheckpointName = "zig.c"
+    let ClrTargetCheckpointName = "dotnet.clr"
 
     let loadBundledPreludeText () = bundledPreludeText.Value
 
@@ -176,6 +177,9 @@ module Stdlib =
         match normalizeBackendProfile backendProfile with
         | "zig" ->
             [ ZigTargetCheckpointName ]
+        | "dotnet"
+        | "dotnet-il" ->
+            [ ClrTargetCheckpointName ]
         | _ ->
             []
 
