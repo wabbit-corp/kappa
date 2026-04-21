@@ -10528,19 +10528,27 @@ kernel.
 #### 17.3.1.5 KCore intrinsic compile-time types
 
 A conforming implementation MUST behave as if KCore supports ordinary binding, projection, application, sealing, and
-packaging of inhabitants of the intrinsic compile-time types of §5.1.3.
+packaging of inhabitants of the intrinsic compile-time types of §5.1.3 and of the elaboration-time reflection types of
+§5.8.5.
 
 Rules:
 
 * `Universe`, `Quantity`, `Region`, `Constraint`, `RecRow`, `VarRow`, `EffRow`, `Label`, and `EffLabel` are ordinary
   compile-time types in KCore.
+* `CoreCtx`, `Symbol`, and `Core Γ t` are ordinary elaboration-time-only compile-time types in KCore.
 * `Type u` is a primitive universe family indexed by `u : Universe`; it is not required to be represented as ordinary
   first-order application.
+* `Core Γ t` values are well-scoped and well-typed by construction. Public reflection operations MUST preserve that
+  invariant.
 * Compile-time binders, fields, and package members may carry any quantity annotation otherwise admitted by source or
   KCore.
 * Erasure of compile-time terms is classifier-based under §§5.1.4 and 14.4.
 * Raw terms of type `Constraint` are descriptors only. Coherent evidence for a concrete descriptor `C` is separate and
   is reified explicitly by `Dict C`.
+* The reflection operations of §5.8.5 MAY be realized as KCore intrinsics or as observationally equivalent
+  elaboration-time evaluator primitives.
+* Reflection values MUST NOT survive lowering to KBackendIR except through ordinary reification to `Syntax` followed by
+  ordinary elaboration.
 
 #### 17.3.2 KCore provenance and explainability
 
