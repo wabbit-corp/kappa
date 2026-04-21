@@ -1929,11 +1929,16 @@ Use restrictions:
 * A fully applied projection call may appear in:
   * a borrow-demanding position under §5.1.5;
   * a `~` argument under §8.8; and
-  * an ordinary value-demanding position, provided elaboration can realize that use as a non-consuming read of the
-    selected place.
-* A consuming ordinary value use of a projection call is not supported in v0.1 unless the implementation can prove it is
-  observationally equivalent to consuming one fixed stable place. Otherwise the compiler MUST reject the use and require
-  the programmer to spell the control flow explicitly.
+  * an ordinary value-demanding position.
+* In a non-consuming ordinary value-demanding position, the projection call elaborates branchwise as ordinary control
+  flow whose leaves use `ReadPlace` on the yielded stable place.
+* A fully applied projection call may also appear in a consuming ordinary value-demanding position.
+* In that case, the projection call elaborates branchwise as ordinary control flow whose leaves use `MovePlace` on the
+  yielded stable place.
+* The post-expression path state is the branchwise join of the leaf path states; in v0.1 a conforming implementation MAY
+  conservatively take this join to be the union of consumed footprints per root.
+* Consequently, a path may be considered unavailable after the expression even if it is consumed only on some dynamic
+  branches.
 
 Why this does not require explicit region annotations on arrows:
 
@@ -3457,8 +3462,8 @@ Elaboration of a fully applied projection call:
 * In a borrow-demanding position, the call denotes the dynamically selected yielded stable place for purposes of
   temporary borrow introduction.
 * Under `~`, the call denotes the dynamically selected yielded stable place for purposes of move-and-restore rewriting.
-* In an ordinary value-demanding position, the call elaborates to a read of the dynamically selected yielded stable
-  place, subject to the non-consuming-use restriction of §5.1.7.2.
+* In an ordinary value-demanding position, the call elaborates branchwise through `ReadPlace` or `MovePlace` according
+  to whether the surrounding demand is non-consuming or consuming (§5.1.7.2).
 
 #### 6.1.2 Irrefutable patterns (for `let` bindings)
 
@@ -10269,6 +10274,8 @@ at the use site and elaborated to ordinary KCore control flow whose leaves are s
 scoped place borrows:
 
 * in an ordinary non-consuming value-demanding position, each leaf `yield p` elaborates as `ReadPlace p`;
+* in an ordinary consuming value-demanding position, each leaf `yield p` elaborates as `MovePlace p`, and the
+  post-expression path state is joined as specified in §5.1.7.2;
 * in a borrow-demanding position, each leaf `yield p` elaborates through `WithBorrowPlace p` as defined in §17.3.1.2;
 * under `~`, each leaf `yield p` elaborates through the existing `MovePlace p` / `FillPlace p` rewrite of §8.8.
 
