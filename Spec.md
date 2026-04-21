@@ -2766,7 +2766,7 @@ Let `S` have canonical explicit field order `(f1 : T1, ..., fn : Tn)` together w
 
 * for each field `fi`, the projection `e.fi` is well-typed at the declared field type `Ti` after substituting
   `this.fj := e.fj` for every earlier field `fj` with `j < i`;
-* if `fi` is a transparent quantity-`0` field of `S`, then its defining equation must be available at the seal site;
+* if `fi` is a transparent compile-time field of `S`, then its defining equation must be available at the seal site;
 * if `fi` is opaque in `S`, no defining equation is required to remain available after sealing;
 * any fields of `e` not mentioned by `S` are hidden by the seal.
 
@@ -2779,7 +2779,7 @@ Meaning of the resulting package:
 Operationally and for KCore purposes, a sealed package carries:
 
 * runtime members for the non-erased fields of `S`;
-* manifest compile-time equations for the transparent quantity-`0` fields of `S`; and
+* manifest compile-time equations for the transparent compile-time fields of `S`; and
 * opacity metadata for the opaque fields of `S`, together with any runtime representation required by their declared
   quantities.
 
@@ -2789,7 +2789,7 @@ Projection and use:
   interpreted as `p`.
 * If `f` is opaque, `p.f` is nameable and may appear in later types and in client code, but its defining equation is
   hidden across the seal.
-* If `f` is a transparent quantity-`0` field, `p.f` behaves as a manifest compile-time member and participates in
+* If `f` is a transparent compile-time field, `p.f` behaves as a manifest compile-time member and participates in
   definitional equality according to §14.3.
 * If `f` is a non-erased term field, `p.f` is an ordinary term projection. Its runtime behavior is ordinary field
   selection. Its compile-time transparency across the seal is governed by §14.3.
@@ -2877,6 +2877,8 @@ Erasure and witness quantity:
 * Therefore existential witnesses are quantity-`0` values and are erased at runtime under the ordinary erasure rules of
   §14.4, except where the existing special treatment of constraint evidence in §5.1.3 requires retention.
 * This means `exists` packages anonymous quantity-`0` witnesses together with a payload.
+* The fixed witness quantity used by this surface sugar is a property of `exists` itself. It does not restrict ordinary
+  user-written compile-time members, which may carry any quantity annotation allowed by §5.1.4.1.
 * Transparent dependent records / Σ already remain available for user-written packages that should stay transparently
   projectable rather than sealed.
 
@@ -3720,7 +3722,8 @@ The `.` token is used for:
 
 * module qualification (`std.math.sin`)
 * type scope selection (`Vec.Cons`)
-* record or package member projection (`p.x`, `d.name`, `d.(==)`, `d.Name` in type position for associated members)
+* record or package member projection (`p.x`, `d.name`, `d.(==)`, `d.Name` in any syntactic position compatible with the
+  projected compile-time member)
 * projection sections (`(.field)`, `(.field1.field2)`)
 * method-call sugar (`x.show`)
 * record update (`r.{ field = expr, ... }`)
@@ -4153,8 +4156,8 @@ Implicit binders:
 The default quantity of an implicit binder `(@x : T)` is determined by the classification of `T` alone; it does not
 consult trait or instance search.
 
-If `T` has sort `Constraint`, the default is `0`. If `T` elaborates to `Type u` for some universe term `u`, the default
-is `0`. Otherwise, the default is the unrestricted quantity `ω`.
+If `T` is a concrete constraint descriptor `C : Constraint`, or if `T` is a compile-time type in the sense of §5.1.4.1,
+the default is `0`. Otherwise, the default is the unrestricted quantity `ω`.
 
 Users may override the default by writing the quantity explicitly, e.g. `(@0 x : T)`, `(@& x : T)`, `(@&[s] x : T)`, or
 `(@ω x : T)`.
@@ -7859,7 +7862,7 @@ trait Applicative (m : Type -> Type) => Monad (m : Type -> Type) =
     ...
 ```
 
-Fully applied trait applications have sort `Constraint`, not `Type` (§5.1.3).
+Fully applied trait applications have type `Constraint`, not `Type` (§5.1.3).
 
 `Eq` is reflective decidable equality. An `Eq` instance participates in equality reflection only because `eqSound` and
 `eqComplete` are required members whose proof terms must typecheck. No additional restriction on hand-written instances
@@ -7956,7 +7959,7 @@ Associated static members:
   opaque Name : S
   ```
 
-  where `S` is a compile-time sort or type.
+  where `S` is a compile-time type in the sense of §5.1.4.1.
 
 * Associated static members are projected from an explicit dictionary binder or value using ordinary member selection.
   For example, from:
@@ -7972,8 +7975,10 @@ Associated static members:
   ```kappa
   foo : (@ c : Type) -> (@ It : Iterator c) -> It.Item
   ```
-* At minimum, associated static members are permitted at `Type` and at higher-kinded function spaces built from `Type`,
-  such as `Type -> Type`.
+* Associated static members may have any compile-time type of §5.1.4.1, including `Type`, `Type u`, `Universe`,
+  `Quantity`, `Region`, `RecRow`, `VarRow`, `EffRow`, `Label`, `EffLabel`, and compile-time function spaces built from
+  them.
+
 * There is no separate trait-scoped projection mechanism of the form `Trait.Name args`; ordinary projection from an
   explicit or implicit dictionary remains the core mechanism.
 
@@ -7982,7 +7987,7 @@ Explicit dictionaries:
 For a dictionary `d : Dict (Tr args)`:
 
 * term members are projected as `d.name` or `d.(op)`,
-* associated static members are projected as `d.Name` in type position.
+* associated static members are projected as `d.Name` in any syntactic position compatible with their compile-time type.
 
 ### 12.3 Instances
 
