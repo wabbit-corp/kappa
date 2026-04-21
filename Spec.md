@@ -4652,56 +4652,93 @@ let eqInt : Dict (Eq Int) = summon (Eq Int)
 
 ### 7.4 Conditionals
 
-`if` is an **expression**:
+`if` is an expression.
 
 ```text
-ifExpr ::= 'if' expr 'then' expr ('elif' ... | 'else' expr)
-         | 'if' expr 'is' ctor 'then' expr ('elif' ... | 'else' expr)
+ifExpr     ::= 'if' condList 'then' expr ('elif' condList 'then' expr)* 'else' expr
+condList   ::= condClause (',' condClause)*
+condClause ::= expr
+             | 'let' pattern '=' expr
+             | expr 'is' ctor
 
-ctor   ::= ctorName
-         | typeName '.' ctorName
+ctor       ::= ctorName
+             | typeName '.' ctorName
 ```
 
-In an `if e is C` test, the right-hand side of `is` is a single constructor name only. No sub-patterns, no arguments, no
-binders, no or-alternatives, no view patterns, and no literals other than constructor-like built-ins such as `True`,
-`False`, and `()`. For richer matching, or for access to unnamed constructor payloads, use `match`.
+A condition list is evaluated left-to-right and short-circuits on the first failing clause.
+
+Clause forms:
+
+* A plain expression clause `e` is a boolean condition. It must have type `Bool`.
+* A pattern clause `let pat = e` is a refutable pattern condition. It succeeds iff matching `e` against `pat` succeeds.
+* A tag-test clause `e is C` succeeds iff the top-level constructor of `e` is `C`.
+
+A single-clause conditional is the ordinary special case:
 
 ```kappa
-let sign : String =
-    if x > 0 then
-        "positive"
-    elif x < 0 then
-        "negative"
-    else
-        "zero"
+if cond then t else f
+if let pat = e then t else f
+if e is C then t else f
 ```
 
-Rules:
+Scope and evaluation:
 
+* Clauses are elaborated and evaluated in source order.
+* Later clauses are checked in the environment produced by earlier successful clauses.
+* The `then` branch is checked in the success environment of the full condition list.
+* The `else` branch is checked in the failure environment of the first failing clause, as determined by the recursive
+  elaboration below.
 * Outside `do`, `if` must have a final `else`.
 * `elif` is sugar for `else if`.
 * All branches must have the same type.
-* In the boolean form `if cond then t else f`, `cond` must have type `Bool`.
-* In the tag-test form `if e is C then t else f`:
-  * `e` must have a type whose head is a `data` type, or a built-in type whose elimination is constructor-based (such as
-    `Bool`).
-  * `C` must be a constructor of the scrutinee type. If it is not, the program is ill-formed with the same kind of error
-    as an equivalent `match`.
-  * The test introduces no fresh user-visible term bindings.
-  * The success branch flow-refines the scrutinee expression `e` to the constructor-refined view determined by `C`; the
-    failure branch refines `e` negatively to exclude `C` (formalized in §7.4.1).
 
-Semantics:
+Normative recursive elaboration:
 
-* `if e is C then t else f` evaluates `e` to a value `v`. If the top-level constructor of `v` is `C`, the expression
-  yields `t`; otherwise it yields `f`.
-* `elif e' is C' then ...` chains in the obvious way.
+Let `rest(cs, t, f)` denote the conditional formed by the remaining clause list `cs`, with success branch `t` and
+failure branch `f`, where `rest([], t, f) = t`.
+
+Then:
+
+* `if b, cs then t else f` behaves as if elaborated to:
+
+  ```kappa
+  if b then
+      rest(cs, t, f)
+  else
+      f
+  ```
+
+* `if let pat = e, cs then t else f` behaves as if elaborated to:
+
+  ```kappa
+  match e
+  case pat -> rest(cs, t, f)
+  case _   -> f
+  ```
+
+* `if e is C, cs then t else f` behaves as if elaborated to:
+
+  ```kappa
+  if e is C then
+      rest(cs, t, f)
+  else
+      f
+  ```
+
+Pattern-clause droppability restriction:
+
+* A plain pattern clause `let pat = e` is permitted only when every value discarded by failure of `pat` is droppable,
+  using the same droppability rule as the plain `let? pat = expr` form of §8.2.1.
+* If that proof is unavailable, the condition is ill-formed. Use `match`, or in `do`, use `let? ... else residuePat ->
+  ...`.
 
 Inside a `do` block, an `if` without `else` is allowed as sugar (see §8).
 
-### 7.4.1 Branch assumptions
+### 7.4.1 Clause success and failure evidence
 
-Boolean conditionals introduce boolean assumptions into the implicit context:
+Boolean clauses introduce boolean assumptions into the implicit context.
+
+For a boolean clause:
 
 ```kappa
 if cond then e1 else e2
@@ -4710,30 +4747,23 @@ if cond then e1 else e2
 Typechecking rules:
 
 * `cond` must have type `Bool`.
-* `e1` is typechecked with an additional implicit assumption:
-  * `@p : cond = True`
-* `e2` is typechecked with an additional implicit assumption:
-  * `@p : cond = False`
 
-For chained conditionals:
+* The success continuation is checked under additional erased implicit evidence:
 
-```kappa
-if c1 then e1
-elif c2 then e2
-elif c3 then e3
-else e4
-```
+  ```kappa
+  @p : cond = True
+  ```
 
-* `e1` is checked under `@p : c1 = True`.
-* `e2` is checked under `@p : c1 = False` and `@p : c2 = True`.
-* `e3` is checked under `@p : c1 = False`, `@p : c2 = False`, and `@p : c3 = True`.
-* `e4` is checked under `@p : c1 = False`, `@p : c2 = False`, and `@p : c3 = False`.
+* The failure continuation is checked under additional erased implicit evidence:
 
-These assumptions participate in implicit resolution (§7.3.3). In particular, `witness (c2)` within the `elif c2` branch
-can retrieve a proof of `c2 = True` (via §5.6 coercion).
+  ```kappa
+  @p : cond = False
+  ```
 
-Tag-test conditionals introduce explicit erased refinement evidence rather than implementation-defined hidden
-assumptions:
+For chained condition lists, each later clause and the final `then` branch are checked under the accumulated success
+evidence of all earlier successful clauses.
+
+Tag-test clauses introduce constructor-tag assumptions and branch-local flow refinement:
 
 ```kappa
 if e is C then t else f
@@ -4742,13 +4772,14 @@ if e is C then t else f
 Typechecking and elaboration rules:
 
 * The scrutinee expression `e` is evaluated exactly once and elaborated through a fresh hidden scrutinee term `__scrut`.
-* The success branch `t` is checked under additional erased implicit evidence:
+
+* The success continuation is checked under additional erased implicit evidence:
 
   ```kappa
   @p : HasCtor __scrut ⟨C⟩
   ```
 
-* The failure branch `f` is checked under additional erased implicit evidence:
+* The failure continuation is checked under additional erased implicit evidence:
 
   ```kappa
   @p : LacksCtor __scrut ⟨C⟩
@@ -4756,17 +4787,85 @@ Typechecking and elaboration rules:
 
   where `⟨C⟩ : CtorTag` is the internal constructor-tag constant of §17.3.1.7.
 
-* These assumptions introduce no fresh user-visible term bindings.
-* Within each branch, occurrences of the original tested expression are elaborated against the hidden scrutinee
-  `__scrut`.
-* The success-branch evidence MUST be strong enough that:
+* Within the success continuation, occurrences of the tested expression are elaborated against `__scrut`.
+
+* The success evidence MUST be strong enough that:
   * a subsequent `match __scrut` may treat non-`C` cases as unreachable; and
   * if `C` declares named explicit parameters, dotted projection `__scrut.field` may refer to those named constructor
     parameters via constructor-field projection (§13.1).
-* The failure-branch evidence excludes `C` for subsequent branch-local reachability and matching, but does not by itself
-  expose constructor fields.
 
-These erased assumptions participate in implicit resolution (§7.3.3) exactly like the boolean assumptions above.
+* The failure evidence excludes `C` for subsequent branch-local reachability and matching, but does not by itself expose
+  constructor fields.
+
+Pattern clauses introduce bindings but no negative residual fact:
+
+```kappa
+if let pat = e then t else f
+```
+
+Rules:
+
+* The success continuation is checked under the bindings and refinements introduced by matching `pat` against `e`.
+* The failure continuation receives no additional negative evidence beyond the ordinary control-flow fact that the
+  pattern clause failed.
+* If the implementation needs a concrete representative for `e`, it MAY elaborate through a fresh hidden scrutinee term
+  evaluated once before matching.
+
+All erased clause evidence participates in implicit resolution (§7.3.3).
+
+### 7.4.2 Stable aliases and transport of refinement evidence
+
+Flow typing is defined over stable scrutinee representatives rather than over raw surface spelling.
+
+Definitions:
+
+* A stable scrutinee is:
+  * a stable place under §5.1.7.1,
+  * a fresh hidden scrutinee term introduced by elaboration of a control-flow form, or
+  * a simple local alias of another stable scrutinee as defined below.
+
+* A simple local alias binding has one of the forms:
+
+  ```kappa
+  let x = s
+  let x : T = s
+  ```
+
+  where:
+  * `x` is a simple identifier,
+  * `s` is a stable scrutinee,
+  * the binding is pure,
+  * `x` is not a `var`, and
+  * ordinary quantity checking judges that forming the binding does not consume `s`.
+
+A simple local alias binding introduces erased local equality evidence:
+
+```kappa
+@alias : x = s
+```
+
+and records `x` as a stable alias of the same scrutinee representative for flow-typing purposes.
+
+Consequences:
+
+* Any refinement evidence attached to a stable scrutinee may be transported across in-scope alias equalities introduced
+  by this section.
+* In particular, boolean branch evidence, `HasCtor`, and `LacksCtor` may be used through any current stable alias of the
+  refined scrutinee.
+* Conversely, if an alias is the tested expression, the refinement applies to the underlying representative and
+  therefore to all current aliases of that representative.
+
+Invalidation:
+
+A stable-alias relation introduced by this section ceases to be available after any of the following:
+
+* rebinding or shadowing of the alias name;
+* assignment to a `var` from whose read the alias was derived;
+* a consuming use that makes the aliased value or path unavailable; or
+* any path-state change that invalidates the original stable place under the ownership rules.
+
+This section affects only flow typing and refinement transport. It does not change the place-identity rule of
+§5.1.7.1: an ordinary value binding remains not a place alias for borrowing or `inout`.
 
 
 ### 7.5 `match` expressions
@@ -4874,6 +4973,35 @@ Residual negative evidence:
 
 This evidence is erased and exists only for typechecking, refinement, reachability, and elaboration. It does not affect
 runtime representation.
+
+#### 7.5.5 Guarded cases introduce guard-success evidence
+
+In a guarded case
+
+```kappa
+case pat if guard -> body
+```
+
+the guard is checked after `pat` has matched and under the bindings and refinement evidence introduced by `pat`.
+
+Rules:
+
+* `guard` must have type `Bool`.
+
+* `body` is checked under:
+
+  * the bindings and refinement evidence introduced by the successful match of `pat`; and
+  * additional erased implicit evidence
+
+    ```kappa
+    @p : guard = True
+    ```
+
+* Guard failure does not by itself exclude `pat` from subsequent cases. It excludes only the conjunction of `pat` and
+  `guard`.
+
+* Therefore guarded branches do not contribute negative constructor evidence past the guard boundary unless some
+  separate preceding rule already provides it.
 
 ### 7.6 Patterns (overview)
 
@@ -5952,6 +6080,53 @@ Typing:
   is discarded.
 * A do-item that is the last reached item on a normal path determines the block result on that path.
 * Abrupt-control items need not produce a normal result on paths where they are taken.
+
+### 8.2.2A Post-dominating flow facts
+
+In a sequential `do`-item context, refinement facts may survive past a control-flow split when every alternative that
+would invalidate those facts is terminal.
+
+Definition:
+
+A branch is terminal with respect to following do-items iff it cannot complete with a `Normal` completion that reaches
+those following do-items, according to the completion model of §8.7.
+
+This includes at least:
+
+* `return`,
+* `break`,
+* `continue`,
+* `impossible`, and
+* any branch accepted in the `m Void` form used by §8.2.1.
+
+Rules:
+
+* After a do-level conditional
+
+  ```kappa
+  if condList then thenExpr else elseExpr
+  ```
+
+  followed by later do-items:
+
+* if `elseExpr` is terminal and `thenExpr` can continue, the later do-items are checked under the success environment
+  of `condList`;
+
+* if `thenExpr` is terminal and `elseExpr` can continue, the later do-items are checked under the failure environment of
+  `condList`;
+
+* if both branches can continue, this subsection introduces no additional postcondition facts.
+
+* The success environment of `condList` contains:
+
+  * the success evidence of its boolean and tag-test clauses; and
+  * any bindings introduced by its successful pattern clauses.
+
+* The failure environment of `condList` contains only the failure evidence of the first failing boolean or tag-test
+  clause. It does not contain bindings introduced by successful earlier pattern clauses.
+
+* Rebinding, assignment, consuming use, or path-state invalidation discards any surviving fact whose stable subject is
+  no longer available under §7.4.2.
 
 ### 8.2.3 Labeled `do` blocks and labeled control flow
 
@@ -10789,6 +10964,11 @@ Rules:
 * `HasCtor` evidence may be introduced only by successful elaboration of a constructor test or constructor branch.
 * `LacksCtor` evidence may be introduced only by the failing branch of a constructor test or by a residual branch after
   excluding one or more top-level constructor branches as specified in §7.5.4.
+* Refinement evidence is stable under equality transport. If the local erased context contains `@p : x = y`, then the
+  implementation MUST behave as if `HasCtor x t` and `HasCtor y t` are inter-derivable, and likewise `LacksCtor x t`
+  and `LacksCtor y t`.
+* A stable-alias binding of §7.4.2 MAY therefore be realized purely by erased equality evidence plus ordinary transport;
+  no separate runtime representation is required.
 * These proof terms are compile-time only and are erased before KBackendIR.
 * Constructor-field projection, reachability, and branch-local refinement consume this evidence; they do not depend on
   hidden implementation-defined refinement state.
