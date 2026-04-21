@@ -10382,6 +10382,17 @@ Typing:
 * For record paths, the typing side conditions of `FillPlace` are the same as those of rebuilding the corresponding root
   by nested record updates under §5.5.5.
 
+Admissibility and path-state effects:
+
+* `ReadPlace p` is well-formed only when the current path state grants non-consuming observation of `p`.
+* `MovePlace p` is well-formed only when the current path state grants consuming access to `p`; after elaboration of
+  that node, the addressed path is marked consumed.
+* `FillPlace p v` is well-formed only when `p` is an admissible write-back target under the current path state; after
+  elaboration of that node, the addressed path is restored.
+* `ReadPlace` MUST NOT be used to observe a path in a way that would duplicate a linearly available subvalue.
+  Non-consuming observation of such a path must instead elaborate through `WithBorrowPlace` or an observationally
+  equivalent internal representation.
+
 A `var`-bound `Ref` is not itself a `Place`. Surface constructs that admit `var`-rooted paths elaborate by an explicit
 `readRef` to a fresh hidden root, then ordinary `MovePlace` / `FillPlace` on that root, followed by `writeRef` when
 write-back is required.
@@ -10433,6 +10444,10 @@ scoped place borrows:
   post-expression path state is joined as specified in §5.1.7.2;
 * in a borrow-demanding position, each leaf `yield p` elaborates through `WithBorrowPlace p` as defined in §17.3.1.2;
 * under `~`, each leaf `yield p` elaborates through the existing `MovePlace p` / `FillPlace p` rewrite of §8.8.
+
+The `ReadPlace` lowering for an ordinary non-consuming value-demanding projection use is admissible only when each
+selected leaf place satisfies the `ReadPlace` side conditions of §17.3.1.1; otherwise that use of the projection call is
+ill-typed in that context.
 
 When elaborating selector expressions inside a `projection` body, non-`yield` occurrences of place-rooted terms are
 lowered through `WithBorrowPlace` rather than `ReadPlace`, unless an observationally equivalent internal representation
