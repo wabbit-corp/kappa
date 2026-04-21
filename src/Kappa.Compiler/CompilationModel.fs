@@ -438,6 +438,7 @@ type KCoreModule =
       ModuleAttributes: string list
       Imports: ImportSpec list
       IntrinsicTerms: string list
+      Ownership: OwnershipFactSet option
       Declarations: KCoreDeclaration list }
 
 type KRuntimeExitAction =

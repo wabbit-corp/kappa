@@ -1085,6 +1085,7 @@ module SurfaceElaboration =
           ModuleAttributes = frontendModule.ModuleAttributes
           Imports = frontendModule.Imports
           IntrinsicTerms = intrinsicTerms |> List.distinct |> List.sort
+          Ownership = frontendModule.Ownership
           Declarations = declarations }
 
     let lowerKCoreModules (backendProfile: string) (frontendModules: KFrontIRModule list) =
@@ -1157,4 +1158,5 @@ module SurfaceElaboration =
               ModuleAttributes = frontendModule.ModuleAttributes
               Imports = frontendModule.Imports
               IntrinsicTerms = intrinsicTerms |> List.distinct |> List.sort
+              Ownership = frontendModule.Ownership
               Declarations = declarations })

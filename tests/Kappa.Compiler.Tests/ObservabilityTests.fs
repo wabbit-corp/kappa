@@ -483,6 +483,60 @@ let ``BODY_RESOLVE dump exposes M3 ownership facts`` () =
     )
 
 [<Fact>]
+let ``KCore dump preserves M3 ownership facts before erasure`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m3-kcore-ownership-dump-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    ""
+                    "data File : Type ="
+                    "    Handle Int"
+                    ""
+                    "let readData (& file : File) = pure \"chunk\""
+                    ""
+                    "let main : IO Unit = do"
+                    "    let & file = Handle 1"
+                    "    readData file"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let coreJson =
+        match Compilation.dumpStage workspace "KCore" StageDumpFormat.Json with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    use document = JsonDocument.Parse(coreJson)
+
+    let mainModule =
+        document.RootElement.GetProperty("modules").EnumerateArray()
+        |> Seq.find (fun item -> item.GetProperty("name").GetString() = "main")
+
+    let ownership = mainModule.GetProperty("ownership")
+    let bindings = ownership.GetProperty("bindings").EnumerateArray()
+
+    let fileBinding =
+        bindings
+        |> Seq.find (fun item -> item.GetProperty("name").GetString() = "file")
+
+    Assert.Equal("&", fileBinding.GetProperty("declaredQuantity").GetString())
+    Assert.Equal("&", fileBinding.GetProperty("inferredDemand").GetString())
+    Assert.Equal("borrowed", fileBinding.GetProperty("state").GetString())
+    Assert.StartsWith("rho", fileBinding.GetProperty("borrowRegionId").GetString())
+
+    let borrowRegions = ownership.GetProperty("borrowRegions").EnumerateArray()
+
+    Assert.Contains(
+        borrowRegions,
+        fun item ->
+            item.GetProperty("id").GetString() = fileBinding.GetProperty("borrowRegionId").GetString()
+            && item.GetProperty("ownerScope").GetString().EndsWith(".let", StringComparison.Ordinal)
+    )
+
+[<Fact>]
 let ``KCore preserves using as protected release schedule`` () =
     let workspace =
         compileInMemoryWorkspace

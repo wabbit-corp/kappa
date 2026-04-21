@@ -113,6 +113,7 @@ module Compilation =
         { Name: string
           SourceFile: string
           Imports: string list
+          Ownership: DumpOwnershipFacts option
           Declarations: DumpDeclaration list }
 
     type DumpRuntimeBinding =
@@ -976,6 +977,7 @@ module Compilation =
           ModuleAttributes = frontendModule.ModuleAttributes
           Imports = frontendModule.Imports
           IntrinsicTerms = intrinsicTerms |> List.distinct |> List.sort
+          Ownership = frontendModule.Ownership
           Declarations = declarations }
 
     let rec private lowerKRuntimePattern pattern =
@@ -2742,6 +2744,7 @@ module Compilation =
         { Name = moduleDump.Name
           SourceFile = moduleDump.SourceFile
           Imports = moduleDump.Imports |> List.map importSpecText
+          Ownership = moduleDump.Ownership |> Option.map dumpOwnership
           Declarations = moduleDump.Declarations |> List.map dumpKCoreDeclaration }
 
     let private dumpRuntimeModule (moduleDump: KRuntimeModule) =
@@ -3190,6 +3193,7 @@ module Compilation =
             sexprStringAtom "name" moduleDump.Name
             sexprStringAtom "source-file" moduleDump.SourceFile
             sexprStringList "imports" moduleDump.Imports
+            renderOwnershipSexpr moduleDump.Ownership
             let declarationBody =
                 moduleDump.Declarations
                 |> List.map renderDumpDeclarationSexpr
