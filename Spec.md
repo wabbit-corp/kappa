@@ -1568,12 +1568,15 @@ the supplied expression is a borrowable stable expression of type `T`, the compi
 
 This is a separate elaboration rule. It does not modify the quantity-satisfaction relation `⊑`.
 
-Borrowable stable expressions in v0.1 are at least:
+Borrowable stable expressions are expressions that elaborate to stable places under §5.1.7.1, together with any fresh
+hidden temporaries introduced by elaboration.
 
-* variables,
-* record projections from borrowable roots,
-* constructor-field projections from borrowable roots, and
-* explicit hidden temporaries introduced by elaboration.
+In v0.1 this includes at least:
+
+* variables;
+* record projections from stable places;
+* constructor-field projections from stable places; and
+* fresh hidden temporaries introduced by elaboration.
 
 At function application, this rule behaves as follows:
 
@@ -1793,6 +1796,47 @@ Consequences:
 
 This path-sensitive rule is specified only for record fields in v0.1. Other aggregate structures may be treated
 conservatively as whole-value borrows unless a later section defines finer-grained splitting for them.
+
+#### 5.1.7.1 Stable places and place-preserving bindings
+
+A stable place is the semantic notion of an addressable immutable subvalue used by borrowing, path-sensitive
+consumption, and `inout` rewriting.
+
+A stable place consists of:
+
+* a root binder; and
+* a path of zero or more selections from that root.
+
+The path components admitted in v0.1 are:
+
+* record-field selections; and
+* constructor-field selections made available by the current refinement context.
+
+Source forms that elaborate to stable places in v0.1 are:
+
+* a variable name `x`, yielding the root place `x`;
+* a record projection `e.f` when `e` elaborates to a stable place `p`, yielding the place `p.f`;
+* a constructor-field projection `e.f` when `e` elaborates to a stable place `p` and the current refinement context
+  makes that constructor field available, yielding the place `p.f`; and
+* a fresh hidden temporary introduced by elaboration.
+
+A `var`-bound name does not itself denote a stable place value root for pure elaboration, because under §8.5.1 it
+denotes a `Ref`. A surface construct that admits a `var`-rooted place, such as `~x` or `~x.f`, first elaborates by
+reading the current contents of that `Ref` into a fresh hidden temporary root and then forming the corresponding stable
+place from that temporary.
+
+An ordinary value binding does not preserve place identity. If `e` elaborates to a stable place and the user writes
+`let y = e`, then `y` is bound to the value currently read from that place, not to an alias of the place itself.
+
+Place identity is preserved only by constructs that explicitly say so, including:
+
+* borrowed bindings `let & pat = e`;
+* `using`-introduced borrowed bindings;
+* compiler-generated success binders for `?.`; and
+* `inout` rewrite-site temporaries.
+
+If elaboration introduces a fresh binder as an alias of an existing stable place, that binder carries the same
+underlying root and path. Projecting from the alias extends that same path rather than creating a fresh root.
 
 Why this does not require explicit region annotations on arrows:
 
@@ -2273,6 +2317,15 @@ inferred result type).
 
 The projection yields the field value at the field's declared quantity.
 
+Place preservation:
+
+* If `rec` elaborates to a stable place `p` under §5.1.7.1, then the projection `rec.ℓ` also elaborates to a stable
+  place, namely `p.ℓ`, before ordinary quantity checking.
+* If constructor-tag refinement makes a constructor field available at that source site, the analogous constructor-field
+  place is formed.
+* An ordinary value binding of `rec.ℓ` still binds the projected value, not an alias to the place, unless the
+  surrounding construct explicitly preserves place identity under §5.1.7.1.
+
 Static member selection:
 
 * If the selected field has quantity `0`, the same projection form `rec.ℓ` may appear in any syntactic position
@@ -2356,6 +2409,10 @@ elaborates to a full record literal in that canonical order:
 
 The resulting full record literal is then typechecked against the original record type `R` using the ordinary
 dependent-record rules of §5.5.1.1 and §5.5.3.
+
+A conforming implementation MAY realize the same semantics via one or more `FillPlace` operations of §17.3.1.1, or an
+observationally equivalent internal representation, provided the resulting typing and definitional-equality behavior is
+the same as the full-record reconstruction specified above.
 
 Consequences:
 
@@ -6352,9 +6409,11 @@ Rules:
 
 * `~` is valid only inside a `do` block, and only on arguments of the maximal application site (§7.1.3) that forms a
   `do`-item rewrite site.
-* `~` may be applied only to a stable place:
-  * a variable name, or
+* `~` may be applied only to a stable place as defined in §5.1.7.1. In source syntax this means at least:
+  * a variable name; or
   * a record projection path rooted at a variable or `var`-bound place, such as `rec.field` or `rec.inner.field`.
+* If the source place is rooted at a `var`-bound name, elaboration first reads the current contents of that `Ref` into a
+  fresh hidden temporary root and then forms the corresponding stable place from that temporary.
 * A given stable place may appear in at most one `~` argument within a single application.
 * A `~place` argument is well-formed if and only if the compiler can statically resolve the callee at that application
   site to a Pi-telescope in which the corresponding explicit parameter:
@@ -6395,9 +6454,12 @@ or the pure analogue `let pat = func ~x1 ... ~xk args`, elaboration proceeds as 
    `inout`-compatible formal parameter names `p1 ... pk` corresponding to the marked arguments in that resolved
    application spine. This step succeeds only when each marked argument position satisfies the admissibility rule of
    §8.8.3: quantity `@1`, stable formal name, stable place, and matching quantity-`1` return-record field.
-2. Remove the `~` markers and pass the underlying place expressions normally. If a marked argument is `~root.path`, the
-   argument passed to the callee is the projection `root.path`, whose quantity-`1` use consumes exactly that path under
-   §5.5.4.
+2. Elaborate each marked argument to a stable place `Pᵢ` under §5.1.7.1.
+   * If the source place is rooted at a `var`-bound name `v`, elaboration first introduces a fresh hidden temporary
+     containing the current contents of `v`; `Pᵢ` is then formed from that temporary root.
+   * The argument actually passed to the callee is the value at that place. In KCore this behaves as `MovePlace Pᵢ` or
+     an observationally equivalent internal form (§17.3.1.1).
+   * For a quantity-`1` `inout` parameter, this consumes exactly that path under §5.5.4.
 3. Determine the returned record type `R`:
    * for `let pat <- ...`, the call must have type `m R`;
    * for `let pat = ...`, the call must have type `R`.
@@ -6406,20 +6468,22 @@ or the pure analogue `let pat = func ~x1 ... ~xk args`, elaboration proceeds as 
    removing those `inout` fields.
 5. Elaborate the returned `inout` fields through fresh temporaries `__p1_tmp ... __pk_tmp` so that write-back does not
    interfere with residual pattern matching.
-6. For each marked place, matched with formal parameter `pi`, perform a path-sensitive restoration using `__pi_tmp`:
-   * If the place is an immutable local variable `x`, rebind `x` from `__pi_tmp`, shadowing the previous binding exactly
-     as in ordinary linear state threading.
-   * If the place is a projection path `root.f1 ... fn`, rebuild that path by nested record updates ending in the
-     replacement `__pi_tmp`. The outermost `root` is then:
-     * rebound if `root` is an ordinary immutable local binding, or
-     * assigned if `root` denotes a mutable place introduced by `var`.
-   * Because path-sensitive restoration elaborates to nested record updates, it is subject to the dependent-record
+6. For each marked place `Pᵢ`, matched with formal parameter `pᵢ`, elaborate the returned field `__pᵢ_tmp` back through
+   that place:
+
+   * If `Pᵢ` is the whole place `x`, where `x` is an ordinary immutable local binding, rebind `x` from `__pᵢ_tmp`,
+     shadowing the previous binding exactly as in ordinary linear state threading.
+   * If `Pᵢ` is a proper subplace of an ordinary immutable local binding `x`, rebuild the root by filling `Pᵢ` with
+     `__pᵢ_tmp`, then rebind `x` to the rebuilt root.
+   * If `Pᵢ` originated from a `var`-bound root, rebuild the hidden temporary root by filling `Pᵢ` with `__pᵢ_tmp` and
+     then write the rebuilt root back to the corresponding `Ref`.
+   * In KCore this behaves as `FillPlace Pᵢ __pᵢ_tmp` together with ordinary rebinding or `writeRef`, or as an
+     observationally equivalent internal form (§17.3.1.1).
+   * Because place filling is observationally equivalent to nested record updates, it is subject to the dependent-record
      update rules of §5.5.5. If the typestate transition of the restored `inout` path invalidates the type of any
      omitted sibling field in the rebuilt record, the `inout` application is a compile-time error. The user must unpack
      the record, perform the call, and manually reconstruct the dependent record, explicitly supplying any affected
      sibling fields.
-   * Since the call arguments themselves are still ordinary expressions, a `var`-bound root is passed by reading its
-     current contents per §8.5.1 rather than by passing the underlying `Ref`.
    * When several `~` arguments are present, these restorations occur left-to-right in the order of the marked
      arguments.
 7. Match the user-written pattern `pat` against the residual result:
@@ -9812,6 +9876,7 @@ KCore retains all compile-time structure needed by the source semantics. In part
   bindings or equivalent refined case contexts, not merely frontend-only side facts;
 * explicit handler forms, resumption quantities, and completion-carrying control structure;
 * explicit application spines aligned with Pi telescopes;
+* explicit places and pure path operations over stable subpaths;
 * explicit `seal` nodes, manifest static members, opaque static members, and package/member projections;
 * surface `exists` and `open ... as exists ...` do not survive as distinct KCore forms; they elaborate to ordinary
   `seal`, package projections, and local bindings over implementation-internal witness members (§5.5.11);
@@ -9868,6 +9933,54 @@ Rules:
 * KCore normalization of an `AppSpine` is by ordinary left-to-right beta-reduction or an observationally equivalent
   strategy.
 
+#### 17.3.1.1 KCore places and path operations
+
+A conforming implementation MUST behave as if KCore contains a place category:
+
+```text
+Place ::= PVar ident
+        | PField Place label
+        | PCtorField Place label
+```
+
+`Place` is not an ordinary first-class runtime value. It is a KCore addressing form used by elaboration, ownership
+tracking, and explainability.
+
+KCore additionally behaves as if it contains the following pure structural operations over places:
+
+```text
+ReadPlace : Place -> Term
+MovePlace : Place -> Term
+FillPlace : Place -> Term -> Term
+```
+
+Meaning:
+
+* `ReadPlace p` yields the current value at `p` without by itself consuming the root.
+* `MovePlace p` yields the current value at `p` and, for ownership purposes, consumes exactly the addressed path.
+* `FillPlace p v` yields a rebuilt value of the root type of `p` in which the addressed subplace is replaced by `v`.
+  `FillPlace` is pure structural rebuilding; it does not mutate storage.
+* `FillPlace (PVar x) v` is observationally equivalent to `v`.
+
+Typing:
+
+* If `p` selects a subvalue of type `A` inside a root of type `R`, then `ReadPlace p : A` and `MovePlace p : A`.
+* `FillPlace p v` is well-typed when `v` has the type required for that selected subplace under the ordinary
+  dependent-record / constructor-field rules; its result type is `R`.
+* For record paths, the typing side conditions of `FillPlace` are the same as those of rebuilding the corresponding root
+  by nested record updates under §5.5.5.
+
+A `var`-bound `Ref` is not itself a `Place`. Surface constructs that admit `var`-rooted paths elaborate by an explicit
+`readRef` to a fresh hidden root, then ordinary `MovePlace` / `FillPlace` on that root, followed by `writeRef` when
+write-back is required.
+
+Borrow introduction, path-sensitive field consumption, record update filling, safe-navigation borrowed-alias
+propagation, and `inout` write-back are defined in terms of these place forms or an observationally equivalent internal
+representation.
+
+This subsection does not introduce a distinct KCore borrow term. Borrow introduction remains an elaboration rule that
+produces ordinary explicit borrowed arguments or binders while referring to places.
+
 #### 17.3.2 KCore provenance and explainability
 
 Every synthetic KCore node introduced during elaboration MUST carry provenance sufficient to explain why it exists.
@@ -9885,6 +9998,7 @@ Introduction kinds are implementation-defined, but MUST distinguish at least:
 * inserted coercion or widening;
 * borrow introduction;
 * record reordering;
+* place lowering / path restoration;
 * safe-navigation or section lowering; and
 * local-declaration closure conversion.
 
