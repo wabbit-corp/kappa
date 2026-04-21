@@ -3412,6 +3412,9 @@ projection longer (place x : String) (place y : String) : String =
         yield x
     else
         yield y
+
+projection degrees (place this : Angle) : Float =
+    yield this.radians
 ```
 
 Grammar:
@@ -3419,6 +3422,8 @@ Grammar:
 ```text
 projectionDecl   ::= [public|private] 'projection' ident projectionBinder+ ':' type '=' projectionBody
 projectionBinder ::= '(' 'place' ident ':' type ')'
+                   | '(' 'place' 'this' ':' type ')'
+                   | '(' 'place' 'this' ident ':' type ')'
                    | ordinary function binder except `inout`
 projectionBody   ::= 'yield' expr
                    | 'if' expr 'then' projectionBody 'else' projectionBody
@@ -3431,6 +3436,8 @@ Rules:
 * A projection definition is top-level only.
 * `opaque` does not apply to projection definitions.
 * A projection definition must contain one or more `place` binders.
+* A `place` binder may be receiver-marked using `(place this : T)` or `(place this x : T)`. Such a binder is still a
+  `place` binder, and it participates in dotted receiver-projection sugar under §13.1.1.
 * All other binders are ordinary explicit or implicit function binders except `inout`. They may be erased and may be
   dependent.
 * A projection definition is pure; its declared result type must not be monadic.
@@ -3831,7 +3838,7 @@ The `.` token is used for:
 * record or package member projection (`p.x`, `d.name`, `d.(==)`, `d.Name` in any syntactic position compatible with the
   projected compile-time member)
 * projection sections (`(.field)`, `(.field1.field2)`)
-* method-call sugar (`x.show`)
+* method-call and receiver-projection sugar (`x.show`, `a.degrees`)
 * record update (`r.{ field = expr, ... }`)
 
 The `?.` token is an additional dotted-form operator performing safe-navigation projection over `Option`:
@@ -3842,7 +3849,7 @@ The right-hand side of `?.` is restricted to member-access forms only. In v0.1 t
 
 * record or package member projection,
 * constructor-field projection,
-* method-call sugar.
+* method-call and receiver-projection sugar.
 
 Forms such as module qualification, type scope selection, projection sections, record update, and row extension are
 ordinary dotted forms but are not reachable through `?.`.
@@ -3871,8 +3878,8 @@ d.(<=)
 
 Such forms are permitted where dotted member projection is otherwise valid.
 
-Resolution of dotted forms is defined in §13.1. Method-call sugar is defined in §13.1.1 and supplies `lhs` to the unique
-receiver-marked explicit binder, which may appear in any argument position.
+Resolution of dotted forms is defined in §13.1. Method-call and receiver-projection sugar are defined in §13.1.1 and
+supply `lhs` to the unique receiver-marked binder, which may appear in any argument position.
 
 #### 7.1.1.2 Safe-navigation (`?.`)
 
@@ -3886,8 +3893,8 @@ chainSuffix ::= '.'  member applicationArg*
 
 Here `member` stands for any right-hand side admitted by ordinary dotted forms, `safeMember` stands for a right-hand
 side admitted by safe-navigation member access (record projection, constructor-field projection, explicit dictionary
-member projection, or method-call sugar), and `applicationArg*` stands for any explicit application suffixes that follow
-that member access.
+member projection, method-call sugar, or receiver-projection sugar), and `applicationArg*` stands for any explicit
+application suffixes that follow that member access.
 
 A chain is *plain* if it contains no `?.` suffix, and *safe* if it contains at least one.
 
@@ -4205,7 +4212,8 @@ Rules:
 * Receiver-marked binders are explicit binders. `(this : T)` binds the receiver locally as `this`, while `(this x : T)`
   marks the binder as the receiver and binds it locally as `x`. The quantity-annotated forms `(q this : T)` and `(q this
   x : T)` are the corresponding receiver-marked variants with explicit quantity `q`.
-* Method-call sugar (§13.1.1) consults the receiver marker, not the local binder name chosen inside the function body.
+* Method-call and receiver-projection sugar (§13.1.1) consult the receiver marker, not the local binder name chosen
+  inside the function body.
 * A leading label `L@` labels the lambda body for `return@L` (§8.4.1).
 * Parentheses are required for typed, quantity-annotated, and implicit binders; they are not required for bare
   identifier binders.
@@ -8342,7 +8350,7 @@ The `.` token is used for:
 * **Record or package member projection:** `p.x`, `d.name`, `d.(==)`, `d.Item`, `m.Set`
 * **Constructor-field projection under positive tag refinement:** `e.payload`
 * **Safe-navigation member access:** `e?.member`, desugared per §7.1.1.2
-* **Method-call sugar:** `x.show`
+* **Method-call and receiver-projection sugar:** `x.show`, `a.degrees`
 * **Record update / row extension:** (`r.{ y = 99 }`, `r.{ z := 0 }`)
 
 Effect labels inside effect-row syntax `<[ ... ]>` are not dotted forms. They are resolved directly in the effect-label
@@ -8359,11 +8367,11 @@ Resolution of dotted forms proceeds by attempting the following interpretations:
 3. Effect-label operation selection
 4. Record or package member projection
 5. Constructor-field projection under positive tag refinement
-6. Method-call sugar
+6. Method-call and receiver-projection sugar
 
-Method-call sugar is considered only if the dotted form is not already well-formed as a record or package member
-projection, or as a constructor-field projection, at that use site. Therefore an ordinary member takes precedence over
-method-call sugar of the same name.
+Method-call and receiver-projection sugar are considered only if the dotted form is not already well-formed as a record
+or package member projection, or as a constructor-field projection, at that use site. Therefore an ordinary member takes
+precedence over sugar of the same name.
 
 Record and package member projection:
 
@@ -8430,7 +8438,7 @@ Disambiguation rule:
   (e.g. by explicit qualification/aliasing, explicit import qualifiers, or type ascription that forces a unique
   interpretation).
 
-#### 13.1.1 Method-call sugar
+#### 13.1.1 Method-call and receiver-projection sugar
 
 Method-call sugar allows writing:
 
@@ -8521,6 +8529,41 @@ form of applying f with lhs as the this argument, subject to the substitutions d
 
 When the direct-call form above applies, the resulting call participates in the ordinary
 application-spine elaboration of §7.1.3.
+
+Receiver-projection sugar:
+
+A projection definition of §6.1.1 is eligible for receiver-projection sugar iff:
+
+1. the dotted form has not already resolved as record or package member projection or constructor-field projection under
+   §13.1,
+2. `name` resolves to a projection definition in scope,
+3. the projection definition has exactly one receiver-marked `place` binder, and
+4. all explicit non-receiver binders of the projection are supplied by the surrounding maximal application site, or are
+   implicit binders that can be resolved by §7.3.3.
+
+If there is no receiver-marked `place` binder, or there is more than one, receiver-projection sugar does not apply.
+
+The receiver expression `lhs` must elaborate to a place expression of the receiver-marked `place` binder's declared
+type.
+
+The dotted form `lhs.name` is a fully applied projection call when the projection has no remaining explicit
+non-receiver binders after receiver insertion and implicit-argument resolution. This zero-extra-argument case is legal
+property syntax:
+
+```kappa
+a.degrees
+```
+
+If a receiver projection is immediately followed by application arguments in the same maximal application site,
+elaboration treats the whole site as a direct projection call with `lhs` inserted at the receiver-marked `place` binder
+position and the following application arguments aligned with the remaining explicit binders.
+
+A resolved receiver-projection property counts as a fully applied projection call for §5.1.7.2. In particular:
+
+* in an ordinary value-demanding position, it lowers to a non-consuming read of the selected yielded place;
+* in a borrow-demanding position, it lowers through the projection-borrow rules of §§5.1.7.2 and 17.3.1.2; and
+* under `~`, the parenthesized form `~(lhs.name)` counts as a parenthesized fully applied projection call and uses the
+  branchwise `MovePlace` / `FillPlace` lowering of §§8.8 and 17.3.1.2.
 
 #### 13.1.2 Reified module values
 
@@ -10819,9 +10862,9 @@ infix right 0 (<|)
 * `|>` has low precedence (`1`), below ordinary comparison and arithmetic operators and below any user-defined operator
   with higher precedence. Thus tighter-binding operator expressions on the right of `|>` group there first.
 * `<|` has precedence `0` and is right-associative, so `f <| g <| x ≡ f (g x)`.
-* Pipe operators are ordinary infix operators. They do not alter the parsing or elaboration of dotted forms or
-  method-call sugar (§13.1.1). In particular, `x |> obj.method` parses as `x |> (obj.method)`; the pipe does not
-  retarget method-call sugar onto `x`.
+* Pipe operators are ordinary infix operators. They do not alter the parsing or elaboration of dotted forms, method-call
+  sugar, or receiver-projection sugar (§13.1.1). In particular, `x |> obj.method` parses as `x |> (obj.method)`; the
+  pipe does not retarget method-call or receiver-projection sugar onto `x`.
 
 ### B.3 Optional: typed pipe
 
