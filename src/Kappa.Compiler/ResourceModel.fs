@@ -52,6 +52,14 @@ module ResourceModel =
             | Interval _ -> true
             | _ -> false
 
+        let minimumRequiredUses quantity =
+            match quantity with
+            | Interval(minimum, _) -> minimum
+            | _ -> 0
+
+        let requiresUse quantity =
+            minimumRequiredUses quantity > 0
+
         let private maximumContains capability demand =
             match capability, demand with
             | None, _ -> true

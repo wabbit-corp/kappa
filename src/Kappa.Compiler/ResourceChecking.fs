@@ -797,7 +797,7 @@ module ResourceChecking =
                         |> consumeBinding document sourceBinding.Name)
                     |> Option.defaultValue current
 
-                let checkDrop = declaredQuantity |> Option.exists ResourceQuantity.isExactOne
+                let checkDrop = declaredQuantity |> Option.exists ResourceQuantity.requiresUse
                 let capturedBindingOrigins =
                     capturedBindings
                     |> List.choose (fun binding -> binding.Origin)
@@ -810,7 +810,7 @@ module ResourceChecking =
             | DoBind(binding, expression) :: rest ->
                 let current = checkExpression document signatures current expression
                 let declaredQuantity = binding.Quantity |> Option.map ResourceQuantity.ofSurface
-                let checkDrop = declaredQuantity |> Option.exists ResourceQuantity.isExactOne
+                let checkDrop = declaredQuantity |> Option.exists ResourceQuantity.requiresUse
 
                 let borrowRegion, current =
                     introduceBorrowRegionForQuantity $"{current.ScopeId}.bind" declaredQuantity current

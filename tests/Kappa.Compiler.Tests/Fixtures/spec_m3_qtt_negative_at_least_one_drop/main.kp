@@ -1,0 +1,12 @@
+module main
+
+data File : Type =
+    Handle Int
+
+let main : IO Unit = do
+    let >=1 file = Handle 1
+    ()
+
+--! assertErrorCount 1
+--! assertDiagnosticCodes E_QTT_LINEAR_DROP
+--! assertDiagnosticAt main.kp error E_QTT_LINEAR_DROP 7

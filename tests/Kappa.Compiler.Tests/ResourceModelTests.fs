@@ -14,6 +14,8 @@ let ``resource quantities keep borrow mode distinct from intervals`` () =
     Assert.True(ResourceQuantity.isBorrow borrow)
     Assert.False(ResourceQuantity.isBorrow one)
     Assert.False(ResourceQuantity.isInterval borrow)
+    Assert.True(ResourceQuantity.requiresUse one)
+    Assert.False(ResourceQuantity.requiresUse omega)
     Assert.Equal("1", ResourceQuantity.toSurfaceText one)
     Assert.Equal("&", ResourceQuantity.toSurfaceText borrow)
     Assert.Equal("\u03c9", ResourceQuantity.toSurfaceText omega)
