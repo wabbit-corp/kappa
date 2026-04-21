@@ -1587,6 +1587,13 @@ Addition, multiplication, and control-flow join are defined on interval quantiti
 
 Default quantity when omitted: `ω`.
 
+Quantities on compile-time binders and fields:
+
+* A quantity annotation may appear on a binder or field whose annotation elaborates to a compile-time type in the sense
+  of §5.1.4.1.
+* Such a quantity is not rejected merely because the underlying value is compile-time only.
+* Erasure of the underlying bound value is still governed by §§5.1.4 and 14.4 rather than by the written quantity alone.
+
 Typing discipline:
 
 * Elaboration infers a usage interval for ordinary binders and a borrow obligation for `&`-annotated binders.
@@ -1945,8 +1952,8 @@ regions in source syntax.
   (0 x : A) -> B
   (1 x : A) -> B
   (& x : A) -> B
-  (&[s] x : A) -> B   -- where s is a bound variable of sort Region
-  (q x : A) -> B     -- where q is a bound variable of sort Quantity
+  (&[s] x : A) -> B   -- where s is a bound variable of type Region
+  (q x : A) -> B      -- where q is a bound variable of type Quantity
   (x : A) -> B       -- defaults to ω
   ```
 
@@ -1967,8 +1974,9 @@ forall a. T        ==   (@0 a : Type) -> T
 forall (a : S). T  ==   (@0 a : S) -> T
 ```
 
-This includes quantification over the intrinsic compile-time types `Quantity`, `Region`, and `Universe`, e.g.
-`forall (q : Quantity). T`, `forall (s : Region). T`, and `forall (u : Universe). T`.
+This includes quantification over the intrinsic compile-time types `Quantity`, `Region`, `Universe`, `Constraint`,
+`RecRow`, `VarRow`, `EffRow`, `Label`, and `EffLabel`, e.g. `forall (q : Quantity). T`, `forall (s : Region). T`,
+`forall (u : Universe). T`, and `forall (r : EffRow). T`.
 
 Examples:
 
@@ -1977,25 +1985,27 @@ forall a. a -> Int
 forall (u : Universe) (a : Type u) (b : Type u). (a -> b) -> a -> b
 forall (n : Nat). Vec n Int -> Int
 forall (s : Region). (&[s] buf : Buffer) -> Unit -> Int
+forall (r : EffRow) (l : EffLabel). SplitEff r l E r' => ...
+forall (row : RecRow) (lab : Label). ContainsRec row lab T => ...
 ```
 
 ### 5.3.1 Rows and labels
 
-Kappa has separate row kinds:
+Kappa has three intrinsic compile-time row types:
 
 ```text
-RecRow   -- record rows
-VarRow   -- union/variant rows
-EffRow   -- effect rows
+RecRow   : Type0   -- record rows
+VarRow   : Type0   -- union/variant rows
+EffRow   : Type0   -- effect rows
 ```
 
-Rows of different kinds never unify.
+Rows of different row types never unify.
 
-Record labels are identifiers in the label namespace. Effect labels are identifiers in the effect-label namespace.
+Record labels inhabit the intrinsic compile-time type `Label : Type0`.
+Effect labels inhabit the intrinsic compile-time type `EffLabel : Type0`.
 Effect interfaces are ordinary named constructors in the type namespace.
 
-The implementation provides compile-time label domains `Label` and `EffLabel` classifying those namespaces, together
-with kind-specific row constraints:
+Kappa provides the following row-constraint constructors:
 
 ```kappa
 ContainsRec : RecRow -> Label -> Type -> Constraint
@@ -2014,8 +2024,8 @@ Surface syntax for `EffRow` values is given in §5.3.2.
 In v0.1, `RecRow` and `EffRow` are finite maps with unique labels, while `VarRow` is a finite duplicate-free collection
 of member types. Row equality is modulo permutation after row normalization.
 
-A row variable must have one of the kinds `RecRow`, `VarRow`, or `EffRow`. Row variables of different kinds are never
-interchangeable.
+A row variable must have one of the types `RecRow`, `VarRow`, or `EffRow`. Row variables of different row types are
+never interchangeable.
 
 ### 5.3.2 Effect-row surface syntax
 
