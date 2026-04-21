@@ -581,6 +581,75 @@ let ``verify all checkpoints follows checkpoint contracts for each backend profi
                 failwithf "Expected checkpoint '%s' for backend '%s' to verify, got:\n%s" result.Checkpoint backendProfile diagnosticText
 
 [<Fact>]
+let ``observability metadata is comparable across interpreter zig and dotnet profiles`` () =
+    let source =
+        [
+            "main.kp",
+            [
+                "module main"
+                "let answer = 42"
+            ]
+            |> String.concat "\n"
+        ]
+
+    let profiles =
+        [
+            "interpreter", "default", None
+            "zig", "executable", Some "zig.c"
+            "dotnet", "managed", Some "dotnet.clr"
+        ]
+
+    for backendProfile, expectedDeploymentMode, expectedTargetCheckpoint in profiles do
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                $"memory-observability-profile-{backendProfile}-root"
+                backendProfile
+                source
+
+        Assert.Equal(backendProfile, workspace.BackendProfile)
+        Assert.Equal(expectedDeploymentMode, workspace.DeploymentMode)
+        Assert.Contains($"backendProfile={backendProfile}", workspace.BuildConfigurationIdentity)
+        Assert.Contains($"deploymentMode={expectedDeploymentMode}", workspace.BuildConfigurationIdentity)
+
+        let checkpoints = Compilation.availableCheckpoints workspace
+        Assert.Contains("KBackendIR", checkpoints)
+
+        let targetContracts =
+            Compilation.checkpointContracts workspace
+            |> List.filter (fun contract -> contract.CheckpointKind = TargetLoweringCheckpoint)
+
+        match expectedTargetCheckpoint with
+        | Some targetCheckpoint ->
+            Assert.Contains(targetCheckpoint, checkpoints)
+            Assert.Single(targetContracts) |> ignore
+        | None ->
+            Assert.Empty(targetContracts)
+
+        let trace = Compilation.pipelineTrace workspace
+        Assert.Contains(trace, fun step -> step.OutputCheckpoint = "KBackendIR")
+
+        for result in Compilation.verifyAllCheckpoints workspace do
+            Assert.True(result.Succeeded, $"Checkpoint '{result.Checkpoint}' failed for backend '{backendProfile}'.")
+
+        let dumpCheckpoint =
+            expectedTargetCheckpoint |> Option.defaultValue "KBackendIR"
+
+        let dumpJson =
+            match Compilation.dumpStage workspace dumpCheckpoint StageDumpFormat.Json with
+            | Result.Ok dump -> dump
+            | Result.Error message -> failwith message
+
+        use dumpDocument = JsonDocument.Parse(dumpJson)
+        let buildConfiguration = dumpDocument.RootElement.GetProperty("buildConfiguration")
+
+        Assert.Equal(backendProfile, buildConfiguration.GetProperty("backendProfile").GetString())
+        Assert.Equal(expectedDeploymentMode, buildConfiguration.GetProperty("deploymentMode").GetString())
+        Assert.Equal(workspace.BackendIntrinsicIdentity, buildConfiguration.GetProperty("backendIntrinsicSet").GetString())
+
+        let checkpointContract = dumpDocument.RootElement.GetProperty("checkpointContract")
+        Assert.Equal(dumpCheckpoint, checkpointContract.GetProperty("name").GetString())
+
+[<Fact>]
 let ``verify all checkpoints reports target failures after malformed KBackendIR`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend
