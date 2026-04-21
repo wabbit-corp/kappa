@@ -82,7 +82,7 @@ Preferred resolution: sequence the work so public behavior becomes honest first,
 - [ ] Then decide whether section 2.7 stays normative for the current milestone or whether the spec needs a bootstrap prelude/profile split.
 - [ ] Finally, bring the test harness up to Appendix T and convert more of the existing suites to the standard directive set.
 
-Current M2 readiness note: the immediate pre-M2 honesty work is done. The compiler now normalizes the effective backend profile, verifies `KBackendIR` before native emission, lowers the standardized `zig` profile directly from `KBackendIR`, and exposes a post-`KBackendIR` `zig.c` checkpoint with verification and stage dumps. The remaining unchecked items are broader conformance work rather than blockers to starting M2.
+Current milestone status note: M2 is complete enough to start M3. The compiler now normalizes the effective backend profile, verifies `KBackendIR` before native emission, lowers the standardized `zig` profile directly from `KBackendIR`, exposes a post-`KBackendIR` `zig.c` checkpoint with verification and stage dumps, and runs the M2 target shape on the interpreter, `zig`, and public CLR-backed `dotnet` profiles. The remaining unchecked items are broader conformance work rather than blockers to starting M3.
 
 ## 9. Milestone 2 (`Traits` + `Ref` + `while`)
 
@@ -94,7 +94,35 @@ Preferred resolution: adjust the compiler.
 - [x] Lower `while ... do ...` through an internal recursive helper form that works on both real backends without depending on the hosted interpreter path.
 - [x] Extend the intrinsic/builtin surface with the M2 runtime contract (`MonadRef IO`, `newRef`, `readRef`, `writeRef`, `primitiveIntToString`, `printString`, and the concrete `Ref`/dictionary runtime support needed by the backends).
 - [x] Make the standardized `zig` profile compile and run the M2 target end-to-end.
-- [ ] Make the public CLR-backed `dotnet` profile compile and run the M2 target end-to-end.
-- [ ] Add direct compiler/backend tests that execute the M2 program shape on both `zig` and `dotnet`, then keep them green while refactoring.
+- [x] Make the public CLR-backed `dotnet` profile compile and run the M2 target end-to-end.
+- [x] Add direct compiler/backend tests that execute the M2 program shape on both `zig` and `dotnet`, then keep them green while refactoring.
 
-Current M2 status note: the interpreter and standardized `zig` backend both compile and run the M2 milestone program shape end-to-end. The remaining blocker is the public CLR-backed `dotnet` backend, whose `IlDotNetBackend` still rejects `KRuntimeExecute` / `KRuntimeLet` / `KRuntimeSequence` / `KRuntimeWhile` and `KRuntimeDictionaryValue` / `KRuntimeTraitCall`.
+Current M2 status note: the interpreter, standardized `zig` backend, and public CLR-backed `dotnet` backend all compile and run the M2 milestone program shape end-to-end.
+
+## 10. Milestone 3 (`QTT` + borrowing + deterministic resources)
+
+Preferred resolution: adjust the compiler, keeping QTT information explicit through elaboration and erased before backend-specific lowering.
+
+- [ ] Start with data-driven M3 tests before implementation: one positive `using`/linear-file program and at least three negative programs for dropped owned resources, duplicated owned resources, and borrowed-region escape through a returned closure.
+- [ ] Audit `Spec.md` sections 5.1.5-5.1.7, 7.1.3, 8.7.4, 8.8, 14.4, and the relevant KCore sections before changing the typechecker, then record any spec/compiler mismatch discovered during implementation.
+- [ ] Extend the lexer/parser for quantity binders (`0`, `1`, `&`, and `omega`/`ω`), borrowed binders (`(& x : T)` and `(&[s] x : T)`), `using pat <- expr`, `inout`, and `~` call-site syntax.
+- [ ] Add syntax and checkpoint tests that prove quantity annotations round-trip into the pre-elaboration observable forms without changing runtime semantics.
+- [ ] Introduce a typed quantity/region/place model rather than representing quantities as ad hoc strings on binders.
+- [ ] Replace the simple name-to-type typing environment in the affected checker paths with a resource context that tracks type, quantity obligation, stable place, region, and use state.
+- [ ] Implement syntax-directed context splitting and consumption for applications, `let`, `do`, `match`, closures, and control-flow joins.
+- [ ] Implement the quantity satisfaction relation from `Spec.md`, including the strict separation between owned (`1`) and borrowed (`&`) obligations.
+- [ ] Implement stable-place analysis and borrow introduction for variables, parameters, hidden temporaries, and the initial field/path subset required by M3.
+- [ ] Implement skolem borrow regions for `using` and borrowed binders, including closure-capture tainting and non-escape diagnostics.
+- [ ] Implement deterministic release scheduling for `using pat <- expr`: keep the hidden owned resource, expose only borrowed bindings in the protected body, and schedule exactly-once release on all exits.
+- [ ] Add `Releasable IO a` dictionary/evidence handling for the `using` lowering path, reusing the existing M2 trait machinery where possible.
+- [ ] Implement the M3 intrinsic/runtime contract initially as backend-profile intrinsics: `openFile`, `readData`, `primitiveCloseFile`, and any minimal file-handle test shim needed by the positive target.
+- [ ] Implement `inout` / `~` as a type-directed elaboration rewrite after the resource context exists, not as parser-only sugar.
+- [ ] Preserve QTT metadata through KCore observability so tests can assert ownership and borrow decisions before erasure.
+- [ ] Erase quantities, regions, and borrow-only metadata before `KBackendIR`, while preserving ordinary runtime values and retained backend generics/dictionaries.
+- [ ] Strengthen checkpoint verification so post-erasure IR rejects leaked quantity, borrow, region, or place-only constructs.
+- [ ] Lower `using` exit actions in the CLR backend to `try` / `finally`, calling the selected `Releasable` dictionary's release implementation exactly once.
+- [ ] Lower `using` exit actions in the ZigCc backend with equivalent cleanup behavior, even if the first implementation uses a small generated-C runtime shim.
+- [ ] Add regression tests that execute the M3 positive program on the interpreter, standardized `zig`/ZigCc backend, and public `dotnet` profile, then keep all three green while refactoring.
+- [ ] Stop for a cleanup pass after the first green M3 slice: separate resource-context logic, borrow-region logic, and backend cleanup lowering so M4 effect-handler work does not inherit a monolith.
+
+Current M3 status note: not started. The first slice should be test-first and should reject the three negative ownership cases before expanding syntax coverage beyond the target program shape.
