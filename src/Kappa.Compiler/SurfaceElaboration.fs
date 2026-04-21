@@ -403,6 +403,33 @@ module SurfaceElaboration =
         (body: CoreExpression)
         =
         let freshCounter = ref 0
+        let doScopeCounter = ref 0
+        let usingCounter = ref 0
+
+        let sanitizeInternalName (value: string) =
+            if String.IsNullOrWhiteSpace value then
+                "resource"
+            else
+                let characters =
+                    value
+                    |> Seq.map (fun character ->
+                        if Char.IsLetterOrDigit character || character = '_' then
+                            character
+                        else
+                            '_')
+                    |> Seq.toArray
+
+                String(characters)
+
+        let freshDoScopeLabel () =
+            let label = $"S{doScopeCounter.Value}"
+            doScopeCounter.Value <- doScopeCounter.Value + 1
+            label
+
+        let freshUsingOwnedName bindingName =
+            let index = usingCounter.Value
+            usingCounter.Value <- usingCounter.Value + 1
+            $"__kappa_using_{sanitizeInternalName bindingName}_{index}"
 
         let rec inferExpressionType localTypes expression =
             match expression with
@@ -542,7 +569,7 @@ module SurfaceElaboration =
             | DoWhile _ :: rest ->
                 inferDoResultType localTypes rest
 
-        and lowerDoStatements localTypes statements =
+        and lowerDoStatements scopeLabel localTypes statements =
             let bindPatternName (binding: BindPattern) =
                 match binding.Pattern with
                 | NamePattern name -> name
@@ -554,7 +581,7 @@ module SurfaceElaboration =
             | [ DoExpression expression ] ->
                 KCoreExecute(lowerExpression localTypes expression)
             | DoExpression expression :: rest ->
-                KCoreSequence(KCoreExecute(lowerExpression localTypes expression), lowerDoStatements localTypes rest)
+                KCoreSequence(KCoreExecute(lowerExpression localTypes expression), lowerDoStatements scopeLabel localTypes rest)
             | DoLet(binding, expression) :: rest ->
                 let bindingName = bindPatternName binding
                 let loweredValue = lowerExpression localTypes expression
@@ -564,7 +591,7 @@ module SurfaceElaboration =
                     | Some valueType -> Map.add bindingName valueType localTypes
                     | None -> localTypes
 
-                KCoreLet(bindingName, loweredValue, lowerDoStatements nextLocals rest)
+                KCoreLet(bindingName, loweredValue, lowerDoStatements scopeLabel nextLocals rest)
             | DoBind(binding, expression) :: rest ->
                 let bindingName = bindPatternName binding
                 let loweredValue = KCoreExecute(lowerExpression localTypes expression)
@@ -574,13 +601,14 @@ module SurfaceElaboration =
                     | Some valueType -> Map.add bindingName (unwrapIoType valueType) localTypes
                     | None -> localTypes
 
-                KCoreLet(bindingName, loweredValue, lowerDoStatements nextLocals rest)
+                KCoreLet(bindingName, loweredValue, lowerDoStatements scopeLabel nextLocals rest)
             | DoUsing(pattern, expression) :: rest ->
                 let bindingName =
                     match pattern with
                     | NamePattern name -> name
                     | _ -> "__using"
 
+                let hiddenOwnedName = freshUsingOwnedName bindingName
                 let loweredValue = KCoreExecute(lowerExpression localTypes expression)
 
                 let nextLocals =
@@ -588,7 +616,15 @@ module SurfaceElaboration =
                     | Some valueType -> Map.add bindingName (unwrapIoType valueType) localTypes
                     | None -> localTypes
 
-                KCoreLet(bindingName, loweredValue, lowerDoStatements nextLocals rest)
+                KCoreLet(
+                    hiddenOwnedName,
+                    loweredValue,
+                    KCoreScheduleExit(
+                        scopeLabel,
+                        KCoreRelease(None, KCoreName [ "release" ], KCoreName [ hiddenOwnedName ]),
+                        KCoreLet(bindingName, KCoreName [ hiddenOwnedName ], lowerDoStatements scopeLabel nextLocals rest)
+                    )
+                )
             | DoVar(bindingName, expression) :: rest ->
                 let loweredValue =
                     KCoreExecute(KCoreApply(KCoreName [ "newRef" ], [ lowerExpression localTypes expression ]))
@@ -598,16 +634,16 @@ module SurfaceElaboration =
                     | Some valueType -> Map.add bindingName (refType valueType) localTypes
                     | None -> localTypes
 
-                KCoreLet(bindingName, loweredValue, lowerDoStatements nextLocals rest)
+                KCoreLet(bindingName, loweredValue, lowerDoStatements scopeLabel nextLocals rest)
             | DoAssign(bindingName, expression) :: rest ->
                 KCoreSequence(
                     KCoreExecute(KCoreApply(KCoreName [ "writeRef" ], [ KCoreName [ bindingName ]; lowerExpression localTypes expression ])),
-                    lowerDoStatements localTypes rest
+                    lowerDoStatements scopeLabel localTypes rest
                 )
             | DoWhile(condition, body) :: rest ->
                 KCoreSequence(
-                    KCoreWhile(lowerExpression localTypes condition, lowerDoStatements localTypes body),
-                    lowerDoStatements localTypes rest
+                    KCoreWhile(lowerExpression localTypes condition, lowerDoStatements scopeLabel localTypes body),
+                    lowerDoStatements scopeLabel localTypes rest
                 )
 
         and lowerExpression localTypes expression =
@@ -648,7 +684,8 @@ module SurfaceElaboration =
                           Body = lowerExpression localTypes caseClause.Body })
                 )
             | Do statements ->
-                lowerDoStatements localTypes statements
+                let scopeLabel = freshDoScopeLabel ()
+                KCoreDoScope(scopeLabel, lowerDoStatements scopeLabel localTypes statements)
             | MonadicSplice inner ->
                 KCoreExecute(lowerExpression localTypes inner)
             | InoutArgument inner ->

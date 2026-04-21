@@ -838,7 +838,15 @@ module Compilation =
                 let argumentText = arguments |> List.map kcorePatternText |> String.concat " "
                 $"({nameText} {argumentText})"
 
-    let rec private kcoreExpressionText expression =
+    let rec private kcoreExitActionText action =
+        match action with
+        | KCoreDeferred expression ->
+            $"(deferred {kcoreExpressionText expression})"
+        | KCoreRelease(resourceTypeText, release, resource) ->
+            let typeText = resourceTypeText |> Option.defaultValue "unknown"
+            $"(release (type {typeText}) (handler {kcoreExpressionText release}) (resource {kcoreExpressionText resource}))"
+
+    and private kcoreExpressionText expression =
         match expression with
         | KCoreLiteral(LiteralValue.Integer value) -> string value
         | KCoreLiteral(LiteralValue.Float value) -> string value
@@ -862,6 +870,10 @@ module Compilation =
             $"(execute {kcoreExpressionText expression})"
         | KCoreLet(bindingName, value, body) ->
             $"(let {bindingName} {kcoreExpressionText value} {kcoreExpressionText body})"
+        | KCoreDoScope(scopeLabel, body) ->
+            $"(do-scope {scopeLabel} {kcoreExpressionText body})"
+        | KCoreScheduleExit(scopeLabel, action, body) ->
+            $"(schedule-exit {scopeLabel} {kcoreExitActionText action} {kcoreExpressionText body})"
         | KCoreSequence(first, second) ->
             $"(seq {kcoreExpressionText first} {kcoreExpressionText second})"
         | KCoreWhile(condition, body) ->
@@ -1003,6 +1015,10 @@ module Compilation =
             KRuntimeExecute(lowerKRuntimeExpression inner)
         | KCoreLet(bindingName, value, body) ->
             KRuntimeLet(bindingName, lowerKRuntimeExpression value, lowerKRuntimeExpression body)
+        | KCoreDoScope(_, body) ->
+            lowerKRuntimeExpression body
+        | KCoreScheduleExit(_, _, body) ->
+            lowerKRuntimeExpression body
         | KCoreSequence(first, second) ->
             KRuntimeSequence(lowerKRuntimeExpression first, lowerKRuntimeExpression second)
         | KCoreWhile(condition, body) ->
@@ -1540,6 +1556,10 @@ module Compilation =
         | KCoreExecute inner ->
             inferKCoreExpressionRepresentation inner
         | KCoreLet(_, _, body) ->
+            inferKCoreExpressionRepresentation body
+        | KCoreDoScope(_, body) ->
+            inferKCoreExpressionRepresentation body
+        | KCoreScheduleExit(_, _, body) ->
             inferKCoreExpressionRepresentation body
         | KCoreSequence(_, second) ->
             inferKCoreExpressionRepresentation second
@@ -2603,15 +2623,22 @@ module Compilation =
                 else
                     $"{bindingName} {parameterText}"
 
-            let bodyText = binding.BodyText |> Option.defaultValue "<missing>"
+            let bodyText =
+                match binding.BodyText with
+                | Some text when not (String.IsNullOrWhiteSpace text) ->
+                    Some text
+                | _ ->
+                    binding.Body |> Option.map kcoreExpressionText
+
+            let summaryBodyText = bodyText |> Option.defaultValue "<missing>"
 
             { Kind = declarationKindText declaration.Source
               Name = binding.Name
               Visibility = visibility
               IsOpaque = binding.IsOpaque
-              Summary = $"{visibilityPrefix} {opaquePrefix}let {signatureText} = {bodyText}".Trim()
+              Summary = $"{visibilityPrefix} {opaquePrefix}let {signatureText} = {summaryBodyText}".Trim()
               TypeText = binding.ReturnTypeText
-              BodyText = binding.BodyText
+              BodyText = bodyText
               Constructors = []
               Members = [] }
         | _ ->

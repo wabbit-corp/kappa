@@ -380,7 +380,11 @@ type KCoreParameter =
     { Name: string
       TypeText: string option }
 
-type KCoreExpression =
+type KCoreExitAction =
+    | KCoreDeferred of KCoreExpression
+    | KCoreRelease of resourceTypeText: string option * release: KCoreExpression * resource: KCoreExpression
+
+and KCoreExpression =
     | KCoreLiteral of LiteralValue
     | KCoreName of string list
     | KCoreLambda of KCoreParameter list * KCoreExpression
@@ -388,6 +392,8 @@ type KCoreExpression =
     | KCoreMatch of KCoreExpression * KCoreMatchCase list
     | KCoreExecute of KCoreExpression
     | KCoreLet of bindingName: string * value: KCoreExpression * body: KCoreExpression
+    | KCoreDoScope of scopeLabel: string * body: KCoreExpression
+    | KCoreScheduleExit of scopeLabel: string * action: KCoreExitAction * body: KCoreExpression
     | KCoreSequence of KCoreExpression * KCoreExpression
     | KCoreWhile of condition: KCoreExpression * body: KCoreExpression
     | KCoreApply of KCoreExpression * KCoreExpression list

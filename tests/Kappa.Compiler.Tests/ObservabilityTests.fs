@@ -483,6 +483,72 @@ let ``BODY_RESOLVE dump exposes M3 ownership facts`` () =
     )
 
 [<Fact>]
+let ``KCore preserves using as protected release schedule`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m3-kcore-using-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    ""
+                    "data File : Type ="
+                    "    Handle Int"
+                    ""
+                    "let openFile name = pure (Handle 1)"
+                    "let readData (& file : File) = pure \"chunk\""
+                    ""
+                    "let main : IO Unit = do"
+                    "    using file <- openFile \"data.txt\""
+                    "    readData file"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let coreModule =
+        workspace.KCore
+        |> List.find (fun moduleDump -> moduleDump.Name = "main")
+
+    let mainBinding =
+        coreModule.Declarations
+        |> List.pick (fun declaration ->
+            match declaration.Binding with
+            | Some binding when binding.Name = Some "main" -> Some binding
+            | _ -> None)
+
+    match mainBinding.Body with
+    | Some(
+        KCoreDoScope(
+            scopeLabel,
+            KCoreLet(
+                hiddenOwnedName,
+                KCoreExecute(KCoreApply(KCoreName [ "openFile" ], [ KCoreLiteral(LiteralValue.String "data.txt") ])),
+                KCoreScheduleExit(
+                    scheduledScopeLabel,
+                    KCoreRelease(None, KCoreName [ "release" ], KCoreName [ releasedName ]),
+                    KCoreLet("file", KCoreName [ borrowedRoot ], KCoreExecute(KCoreApply(KCoreName [ "readData" ], [ KCoreName [ "file" ] ])))
+                )
+            )
+        )
+      ) ->
+        Assert.Equal(scopeLabel, scheduledScopeLabel)
+        Assert.StartsWith("__kappa_using_file_", hiddenOwnedName)
+        Assert.Equal(hiddenOwnedName, releasedName)
+        Assert.Equal(hiddenOwnedName, borrowedRoot)
+    | other ->
+        failwithf "Expected using to lower through KCore DoScope/ScheduleExit/Release, got %A" other
+
+    let coreSexpr =
+        match Compilation.dumpStage workspace "KCore" StageDumpFormat.SExpression with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    Assert.Contains("do-scope", coreSexpr)
+    Assert.Contains("schedule-exit", coreSexpr)
+    Assert.Contains("release", coreSexpr)
+    Assert.Contains("__kappa_using_file_", coreSexpr)
+
+[<Fact>]
 let ``M3 overuse diagnostics expose primary and related origins`` () =
     let workspace =
         compileInMemoryWorkspace
