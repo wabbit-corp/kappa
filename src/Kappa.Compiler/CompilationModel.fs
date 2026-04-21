@@ -305,6 +305,58 @@ type StageDumpFormat =
     | Json
     | SExpression
 
+type OwnershipBindingFact =
+    { BindingId: string
+      BindingName: string
+      BindingKind: string
+      BindingDeclaredQuantity: string option
+      BindingInferredDemand: string
+      BindingState: string
+      BindingPlaceRoot: string
+      BindingPlacePath: string list
+      BindingBorrowRegionId: string option
+      BindingOrigin: SourceLocation option }
+
+type OwnershipUseFact =
+    { UseId: string
+      UseKindName: string
+      UseTargetBindingId: string option
+      UseTargetName: string
+      UsePlaceRoot: string
+      UsePlacePath: string list
+      UseOrigin: SourceLocation option }
+
+type OwnershipBorrowRegionFact =
+    { BorrowRegionId: string
+      BorrowRegionExplicitName: string option
+      BorrowRegionIntroductionOrigin: SourceLocation option
+      BorrowRegionOwnerScope: string }
+
+type OwnershipUsingScopeFact =
+    { UsingScopeId: string
+      UsingScopeSurfaceOrigin: SourceLocation option
+      UsingScopeHiddenOwnedBinding: string
+      UsingScopeSharedRegionId: string
+      UsingScopeHiddenReleaseObligation: string }
+
+type OwnershipClosureFact =
+    { ClosureId: string
+      ClosureName: string option
+      ClosureCaptureBindingIds: string list
+      ClosureCaptureNames: string list
+      ClosureRegionEnvironment: string list
+      ClosureEscapeStatus: string
+      ClosureOrigin: SourceLocation option }
+
+type OwnershipFactSet =
+    { OwnershipBindings: OwnershipBindingFact list
+      OwnershipUses: OwnershipUseFact list
+      OwnershipBorrowRegions: OwnershipBorrowRegionFact list
+      OwnershipUsingScopes: OwnershipUsingScopeFact list
+      OwnershipClosures: OwnershipClosureFact list
+      OwnershipDeferred: string list
+      OwnershipDiagnostics: string list }
+
 type KFrontIRModule =
     { FilePath: string
       ModuleHeader: string list option
@@ -315,6 +367,7 @@ type KFrontIRModule =
       Tokens: Token list
       Declarations: TopLevelDeclaration list
       Diagnostics: Diagnostic list
+      Ownership: OwnershipFactSet option
       ResolvedPhases: Set<KFrontIRPhase> }
 
 type KCoreOrigin =

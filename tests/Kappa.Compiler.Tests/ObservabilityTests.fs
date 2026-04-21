@@ -402,6 +402,87 @@ let ``stage dumps serialize checkpoints in json and sexpr`` () =
     Assert.Contains("(function (name \"answer\")", backendSexpr)
 
 [<Fact>]
+let ``BODY_RESOLVE dump exposes M3 ownership facts`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m3-ownership-dump-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    ""
+                    "data File : Type ="
+                    "    Handle Int"
+                    ""
+                    "let consume (1 f : File) = ()"
+                    "let openFile name = pure (Handle 1)"
+                    "let readData (& file : File) = pure \"chunk\""
+                    ""
+                    "let main : IO Unit = do"
+                    "    let 1 owned = Handle 1"
+                    "    consume owned"
+                    "    using file <- openFile \"data.txt\""
+                    "    let reader = \\ unit -> file"
+                    "    readData (reader ())"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let bodyResolveJson =
+        match Compilation.dumpStage workspace "KFrontIR.BODY_RESOLVE" StageDumpFormat.Json with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    use document = JsonDocument.Parse(bodyResolveJson)
+
+    let mainDocument =
+        document.RootElement.GetProperty("documents").EnumerateArray()
+        |> Seq.find (fun item -> item.GetProperty("moduleIdentity").GetString() = "main")
+
+    let ownership = mainDocument.GetProperty("ownership")
+
+    let bindings = ownership.GetProperty("bindings").EnumerateArray()
+    let ownedBinding =
+        bindings
+        |> Seq.find (fun item -> item.GetProperty("name").GetString() = "owned")
+
+    Assert.Equal("1", ownedBinding.GetProperty("declaredQuantity").GetString())
+    Assert.Equal("[1,1]", ownedBinding.GetProperty("inferredDemand").GetString())
+    Assert.Equal("consumed", ownedBinding.GetProperty("state").GetString())
+
+    let uses = ownership.GetProperty("uses").EnumerateArray()
+    Assert.Contains(
+        uses,
+        fun item ->
+            item.GetProperty("useKind").GetString() = "consume"
+            && item.GetProperty("targetName").GetString() = "owned"
+    )
+
+    let borrowRegions = ownership.GetProperty("borrowRegions").EnumerateArray()
+    Assert.Contains(
+        borrowRegions,
+        fun item ->
+            item.GetProperty("ownerScope").GetString() = "using"
+            && item.GetProperty("explicitName").ValueKind = JsonValueKind.Null
+    )
+
+    let usingScopes = ownership.GetProperty("usingScopes").EnumerateArray()
+    Assert.Contains(
+        usingScopes,
+        fun item ->
+            item.GetProperty("sharedRegionId").GetString().StartsWith("rho", StringComparison.Ordinal)
+            && item.GetProperty("hiddenReleaseObligation").GetString() = "deferred"
+    )
+
+    let closures = ownership.GetProperty("closures").EnumerateArray()
+    Assert.Contains(
+        closures,
+        fun item ->
+            item.GetProperty("name").GetString() = "reader"
+            && item.GetProperty("escapeStatus").GetString() = "contained"
+    )
+
+[<Fact>]
 let ``stage dumps expose checkpoint contract metadata`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend

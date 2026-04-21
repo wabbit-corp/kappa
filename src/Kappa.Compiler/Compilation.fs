@@ -30,6 +30,53 @@ module Compilation =
           EndLine: int option
           EndColumn: int option }
 
+    type DumpOwnershipBinding =
+        { Id: string
+          Name: string
+          Kind: string
+          DeclaredQuantity: string option
+          InferredDemand: string
+          State: string
+          PlaceRoot: string
+          PlacePath: string list
+          BorrowRegionId: string option }
+
+    type DumpOwnershipUse =
+        { Id: string
+          UseKind: string
+          TargetBindingId: string option
+          TargetName: string
+          PlaceRoot: string
+          PlacePath: string list }
+
+    type DumpOwnershipBorrowRegion =
+        { Id: string
+          ExplicitName: string option
+          OwnerScope: string }
+
+    type DumpOwnershipUsingScope =
+        { Id: string
+          HiddenOwnedBinding: string
+          SharedRegionId: string
+          HiddenReleaseObligation: string }
+
+    type DumpOwnershipClosure =
+        { Id: string
+          Name: string option
+          CaptureBindingIds: string list
+          CaptureNames: string list
+          RegionEnvironment: string list
+          EscapeStatus: string }
+
+    type DumpOwnershipFacts =
+        { Bindings: DumpOwnershipBinding list
+          Uses: DumpOwnershipUse list
+          BorrowRegions: DumpOwnershipBorrowRegion list
+          UsingScopes: DumpOwnershipUsingScope list
+          Closures: DumpOwnershipClosure list
+          Deferred: string list
+          Diagnostics: string list }
+
     type DumpDeclaration =
         { Kind: string
           Name: string option
@@ -50,7 +97,8 @@ module Compilation =
           Imports: string list
           Tokens: DumpToken list
           Declarations: DumpDeclaration list
-          Diagnostics: DumpDiagnostic list }
+          Diagnostics: DumpDiagnostic list
+          Ownership: DumpOwnershipFacts option }
 
     type DumpCoreModule =
         { Name: string
@@ -859,7 +907,7 @@ module Compilation =
                 if List.isEmpty definition.BodyTokens then None else Some(tokensText definition.BodyTokens))
           Provenance = provenance }
 
-    let private buildKFrontIRModule (document: ParsedDocument) =
+    let private buildKFrontIRModule ownershipFactsByFile (document: ParsedDocument) =
         { FilePath = document.Source.FilePath
           ModuleHeader = document.Syntax.ModuleHeader
           InferredModuleName = document.InferredModuleName
@@ -869,6 +917,7 @@ module Compilation =
           Tokens = document.Syntax.Tokens
           Declarations = document.Syntax.Declarations
           Diagnostics = document.Diagnostics
+          Ownership = Map.tryFind document.Source.FilePath ownershipFactsByFile
           ResolvedPhases = Set.ofList KFrontIRPhase.all }
 
     let private lowerKCoreModule (backendProfile: string) (frontendModule: KFrontIRModule) =
@@ -2458,6 +2507,53 @@ module Compilation =
           Text = document.Source.Content
           LineCount = document.Source.LineCount }
 
+    let private dumpOwnership (facts: OwnershipFactSet) =
+        { Bindings =
+            facts.OwnershipBindings
+            |> List.map (fun binding ->
+                { Id = binding.BindingId
+                  Name = binding.BindingName
+                  Kind = binding.BindingKind
+                  DeclaredQuantity = binding.BindingDeclaredQuantity
+                  InferredDemand = binding.BindingInferredDemand
+                  State = binding.BindingState
+                  PlaceRoot = binding.BindingPlaceRoot
+                  PlacePath = binding.BindingPlacePath
+                  BorrowRegionId = binding.BindingBorrowRegionId })
+          Uses =
+            facts.OwnershipUses
+            |> List.map (fun useFact ->
+                { Id = useFact.UseId
+                  UseKind = useFact.UseKindName
+                  TargetBindingId = useFact.UseTargetBindingId
+                  TargetName = useFact.UseTargetName
+                  PlaceRoot = useFact.UsePlaceRoot
+                  PlacePath = useFact.UsePlacePath })
+          BorrowRegions =
+            facts.OwnershipBorrowRegions
+            |> List.map (fun region ->
+                { Id = region.BorrowRegionId
+                  ExplicitName = region.BorrowRegionExplicitName
+                  OwnerScope = region.BorrowRegionOwnerScope })
+          UsingScopes =
+            facts.OwnershipUsingScopes
+            |> List.map (fun usingScope ->
+                { Id = usingScope.UsingScopeId
+                  HiddenOwnedBinding = usingScope.UsingScopeHiddenOwnedBinding
+                  SharedRegionId = usingScope.UsingScopeSharedRegionId
+                  HiddenReleaseObligation = usingScope.UsingScopeHiddenReleaseObligation })
+          Closures =
+            facts.OwnershipClosures
+            |> List.map (fun closure ->
+                { Id = closure.ClosureId
+                  Name = closure.ClosureName
+                  CaptureBindingIds = closure.ClosureCaptureBindingIds
+                  CaptureNames = closure.ClosureCaptureNames
+                  RegionEnvironment = closure.ClosureRegionEnvironment
+                  EscapeStatus = closure.ClosureEscapeStatus })
+          Deferred = facts.OwnershipDeferred
+          Diagnostics = facts.OwnershipDiagnostics }
+
     let private dumpFrontendDocument (document: KFrontIRModule) =
         { FilePath = document.FilePath
           ModuleHeader = document.ModuleHeader |> Option.map SyntaxFacts.moduleNameToText
@@ -2467,7 +2563,8 @@ module Compilation =
           Imports = document.Imports |> List.map importSpecText
           Tokens = document.Tokens |> List.map dumpToken
           Declarations = document.Declarations |> List.map dumpDeclaration
-          Diagnostics = document.Diagnostics |> List.map dumpDiagnostic }
+          Diagnostics = document.Diagnostics |> List.map dumpDiagnostic
+          Ownership = document.Ownership |> Option.map dumpOwnership }
 
     let private dumpKCoreDeclaration (declaration: KCoreDeclaration) =
         match declaration.Binding, declaration.Source with
@@ -2789,6 +2886,106 @@ module Compilation =
         let textAtom = sexprStringAtom "text" token.Text
         $"(token {kindAtom} {textAtom})"
 
+    let private renderOwnershipBindingSexpr (binding: DumpOwnershipBinding) =
+        [
+            sexprStringAtom "id" binding.Id
+            sexprStringAtom "name" binding.Name
+            sexprStringAtom "kind" binding.Kind
+            sexprOptionalStringAtom "declared-quantity" binding.DeclaredQuantity
+            sexprStringAtom "inferred-demand" binding.InferredDemand
+            sexprStringAtom "state" binding.State
+            sexprStringAtom "place-root" binding.PlaceRoot
+            sexprStringList "place-path" binding.PlacePath
+            sexprOptionalStringAtom "borrow-region-id" binding.BorrowRegionId
+        ]
+        |> String.concat " "
+        |> fun body -> $"(binding {body})"
+
+    let private renderOwnershipUseSexpr (useFact: DumpOwnershipUse) =
+        [
+            sexprStringAtom "id" useFact.Id
+            sexprStringAtom "use-kind" useFact.UseKind
+            sexprOptionalStringAtom "target-binding-id" useFact.TargetBindingId
+            sexprStringAtom "target-name" useFact.TargetName
+            sexprStringAtom "place-root" useFact.PlaceRoot
+            sexprStringList "place-path" useFact.PlacePath
+        ]
+        |> String.concat " "
+        |> fun body -> $"(use {body})"
+
+    let private renderOwnershipBorrowRegionSexpr (region: DumpOwnershipBorrowRegion) =
+        [
+            sexprStringAtom "id" region.Id
+            sexprOptionalStringAtom "explicit-name" region.ExplicitName
+            sexprStringAtom "owner-scope" region.OwnerScope
+        ]
+        |> String.concat " "
+        |> fun body -> $"(borrow-region {body})"
+
+    let private renderOwnershipUsingScopeSexpr (usingScope: DumpOwnershipUsingScope) =
+        [
+            sexprStringAtom "id" usingScope.Id
+            sexprStringAtom "hidden-owned-binding" usingScope.HiddenOwnedBinding
+            sexprStringAtom "shared-region-id" usingScope.SharedRegionId
+            sexprStringAtom "hidden-release-obligation" usingScope.HiddenReleaseObligation
+        ]
+        |> String.concat " "
+        |> fun body -> $"(using-scope {body})"
+
+    let private renderOwnershipClosureSexpr (closure: DumpOwnershipClosure) =
+        [
+            sexprStringAtom "id" closure.Id
+            sexprOptionalStringAtom "name" closure.Name
+            sexprStringList "capture-binding-ids" closure.CaptureBindingIds
+            sexprStringList "capture-names" closure.CaptureNames
+            sexprStringList "region-environment" closure.RegionEnvironment
+            sexprStringAtom "escape-status" closure.EscapeStatus
+        ]
+        |> String.concat " "
+        |> fun body -> $"(closure {body})"
+
+    let private renderOwnershipSexpr (ownership: DumpOwnershipFacts option) =
+        match ownership with
+        | None ->
+            "(ownership (status \"unknown\"))"
+        | Some facts ->
+            let bindings =
+                facts.Bindings
+                |> List.map renderOwnershipBindingSexpr
+                |> String.concat " "
+
+            let uses =
+                facts.Uses
+                |> List.map renderOwnershipUseSexpr
+                |> String.concat " "
+
+            let borrowRegions =
+                facts.BorrowRegions
+                |> List.map renderOwnershipBorrowRegionSexpr
+                |> String.concat " "
+
+            let usingScopes =
+                facts.UsingScopes
+                |> List.map renderOwnershipUsingScopeSexpr
+                |> String.concat " "
+
+            let closures =
+                facts.Closures
+                |> List.map renderOwnershipClosureSexpr
+                |> String.concat " "
+
+            [
+                if String.IsNullOrWhiteSpace(bindings) then "(bindings)" else $"(bindings {bindings})"
+                if String.IsNullOrWhiteSpace(uses) then "(uses)" else $"(uses {uses})"
+                if String.IsNullOrWhiteSpace(borrowRegions) then "(borrow-regions)" else $"(borrow-regions {borrowRegions})"
+                if String.IsNullOrWhiteSpace(usingScopes) then "(using-scopes)" else $"(using-scopes {usingScopes})"
+                if String.IsNullOrWhiteSpace(closures) then "(closures)" else $"(closures {closures})"
+                sexprStringList "deferred" facts.Deferred
+                sexprStringList "diagnostics" facts.Diagnostics
+            ]
+            |> String.concat " "
+            |> fun body -> $"(ownership {body})"
+
     let private renderDumpDocumentSexpr (document: DumpDocument) =
         [
             sexprStringAtom "file" document.FilePath
@@ -2815,6 +3012,7 @@ module Compilation =
                 |> String.concat " "
 
             if String.IsNullOrWhiteSpace(diagnosticsBody) then "(diagnostics)" else $"(diagnostics {diagnosticsBody})"
+            renderOwnershipSexpr document.Ownership
         ]
         |> String.concat " "
         |> fun body -> $"(document {body})"
@@ -3720,18 +3918,19 @@ module Compilation =
             @ detectImportCycles documents
             @ validateExpectDeclarations normalizedBackendProfile documents
 
-        let resourceDiagnostics =
+        let resourceCheckResult: ResourceChecking.CheckResult =
             if frontendDiagnostics |> List.exists (fun diagnostic -> diagnostic.Severity = Error) then
-                []
+                { Diagnostics = []
+                  OwnershipFactsByFile = Map.empty }
             else
-                ResourceChecking.checkDocuments documents
+                ResourceChecking.checkDocumentsWithFacts documents
 
         let diagnostics =
-            frontendDiagnostics @ resourceDiagnostics
+            frontendDiagnostics @ resourceCheckResult.Diagnostics
 
         let kFrontIR =
             documents
-            |> List.map buildKFrontIRModule
+            |> List.map (buildKFrontIRModule resourceCheckResult.OwnershipFactsByFile)
             |> List.sortBy (fun document -> document.FilePath)
 
         let kCore =
