@@ -118,13 +118,14 @@ Preferred resolution: adjust the compiler and harness, and narrow any claims unt
 Preferred resolution: sequence the work so public behavior becomes honest first, then broaden conformance.
 
 - [x] Fix the public-profile mismatches first: `dotnet` backend routing, implicit prelude import semantics, and backend-scoped `expect` handling.
+- [ ] Before starting M3 implementation work, align the 17.1-17.6 pipeline contracts: named checkpoints, trace/dump semantics, KFrontIR/KCore/KBackendIR shape, portable runtime obligations, and backend-intrinsic build identity.
 - [ ] Then align the internal architecture: true `KBackendIR`, stronger verifier rules, and post-`KBackendIR` target-lowering checkpoints.
 - [x] In parallel with that architectural cleanup, stand up the first real native path under the standardized `zig` profile by lowering `KBackendIR` to generated C and compiling it with `zig cc`.
 - [ ] Use the first `zig` slice to pressure-test what still belongs in `KBackendIR` versus what is really target-specific lowering state before expanding the CLR backend further.
 - [ ] Then decide whether section 2.7 stays normative for the current milestone or whether the spec needs a bootstrap prelude/profile split.
 - [ ] Finally, bring the test harness up to Appendix T and convert more of the existing suites to the standard directive set.
 
-Current milestone status note: M2 is complete enough to start M3. The compiler now normalizes the effective backend profile, verifies `KBackendIR` before native emission, lowers the standardized `zig` profile directly from `KBackendIR`, exposes a post-`KBackendIR` `zig.c` checkpoint with verification and stage dumps, and runs the M2 target shape on the interpreter, `zig`, and public CLR-backed `dotnet` profiles. The remaining unchecked items are broader conformance work rather than blockers to starting M3.
+Current milestone status note: M2 execution is complete, but 17.1-17.6 discrepancies should be treated as the next blocking cleanup before M3 implementation. The compiler now normalizes the effective backend profile, verifies `KBackendIR` before native emission, lowers the standardized `zig` profile directly from `KBackendIR`, exposes a post-`KBackendIR` `zig.c` checkpoint with verification and stage dumps, and runs the M2 target shape on the interpreter, `zig`, and public CLR-backed `dotnet` profiles.
 
 ## 9. Milestone 2 (`Traits` + `Ref` + `while`)
 
@@ -132,7 +133,7 @@ Preferred resolution: adjust the compiler.
 
 - [x] Extend the surface syntax and parser for `instance` declarations, `var`, assignment forms, `while ... do ...`, and monadic splice `!(...)` inside `do`.
 - [x] Introduce an explicit M2 elaboration layer that rewrites constrained functions to explicit dictionary parameters, synthesizes dictionary artifacts for trait declarations and instances, and resolves instance evidence at call sites.
-- [x] Desugar mutable-variable forms through `newRef` / `readRef` / `writeRef` with the uniform reference semantics required by `Spec.md` §8.5.1.
+- [x] Desugar mutable-variable forms through `newRef` / `readRef` / `writeRef` with the uniform reference semantics required by `Spec.md` section 8.5.1.
 - [x] Lower `while ... do ...` through an internal recursive helper form that works on both real backends without depending on the hosted interpreter path.
 - [x] Extend the intrinsic/builtin surface with the M2 runtime contract (`MonadRef IO`, `newRef`, `readRef`, `writeRef`, `primitiveIntToString`, `printString`, and the concrete `Ref`/dictionary runtime support needed by the backends).
 - [x] Make the standardized `zig` profile compile and run the M2 target end-to-end.
@@ -141,13 +142,31 @@ Preferred resolution: adjust the compiler.
 
 Current M2 status note: the interpreter, standardized `zig` backend, and public CLR-backed `dotnet` backend all compile and run the M2 milestone program shape end-to-end.
 
-## 10. Milestone 3 (`QTT` + borrowing + deterministic resources)
+## 10. Pre-M3 priority: pipeline contracts (`Spec.md` 17.1-17.6)
+
+Preferred resolution: adjust the compiler before adding M3 ownership semantics, because QTT erasure and resource-safe lowering depend on stable checkpoint and IR contracts.
+
+- [ ] Audit sections 17.1-17.6 against the current implementation and tests, with explicit notes for `KRuntimeIR` as an implementation-defined intermediate versus spec-named checkpoints.
+- [ ] Define the canonical pipeline graph and checkpoint contract for `surface-source`, `KFrontIR.*`, `KCore`, `KRuntimeIR`, `KBackendIR`, and post-`KBackendIR` target units.
+- [ ] Decide whether current `KRuntimeIR` remains an implementation-defined post-KCore form or should be folded into a spec-shaped `KBackendIR` lowering sequence.
+- [ ] Decide whether current `KBackendIR` evolves into the true runtime-facing IR from sections 17.4 and 17.4.1, or whether it should be renamed and a new spec-shaped `KBackendIR` inserted.
+- [ ] Make stage dumps expose the information required by 17.1.3-17.1.6 without relying on backend-specific implementation details.
+- [ ] Add or update checkpoint verification so legality witnesses cover KFrontIR, KCore, KRuntimeIR if retained, KBackendIR, and target-lowering checkpoints consistently.
+- [ ] Add a post-`KBackendIR` CLR target checkpoint and dump beside the existing `zig.c` target checkpoint, so target-specific debugging is not ZigCc-only.
+- [ ] Model selected backend profile, deployment mode, intrinsic set, and elaboration-available intrinsic set as part of the effective build configuration/cache identity required by 17.1.2 and 17.6.
+- [ ] Clarify portable runtime obligations from 17.5 in the compiler model: which obligations are guaranteed by KBackendIR, which are backend-specific, and which are still out of scope.
+- [ ] Add regression tests that compare pipeline trace, checkpoint availability, dump shape, verification behavior, and backend identity for interpreter, ZigCc, and CLR dotnet profiles.
+- [ ] Only start M3 QTT implementation after this track has either resolved the discrepancy or documented a deliberate spec adjustment.
+
+Current 17.1-17.6 status note: partially implemented but not stable enough to build QTT erasure and resource-safe target lowering on top without risking avoidable refactors.
+
+## 11. Milestone 3 (`QTT` + borrowing + deterministic resources)
 
 Preferred resolution: adjust the compiler, keeping QTT information explicit through elaboration and erased before backend-specific lowering.
 
 - [ ] Start with data-driven M3 tests before implementation: one positive `using`/linear-file program and at least three negative programs for dropped owned resources, duplicated owned resources, and borrowed-region escape through a returned closure.
 - [ ] Audit `Spec.md` sections 5.1.5-5.1.7, 7.1.3, 8.7.4, 8.8, 14.4, and the relevant KCore sections before changing the typechecker, then record any spec/compiler mismatch discovered during implementation.
-- [ ] Extend the lexer/parser for quantity binders (`0`, `1`, `&`, and `omega`/`ω`), borrowed binders (`(& x : T)` and `(&[s] x : T)`), `using pat <- expr`, `inout`, and `~` call-site syntax.
+- [ ] Extend the lexer/parser for quantity binders (`0`, `1`, `&`, and `omega`), borrowed binders (`(& x : T)` and `(&[s] x : T)`), `using pat <- expr`, `inout`, and `~` call-site syntax.
 - [ ] Add syntax and checkpoint tests that prove quantity annotations round-trip into the pre-elaboration observable forms without changing runtime semantics.
 - [ ] Introduce a typed quantity/region/place model rather than representing quantities as ad hoc strings on binders.
 - [ ] Replace the simple name-to-type typing environment in the affected checker paths with a resource context that tracks type, quantity obligation, stable place, region, and use state.
@@ -167,4 +186,4 @@ Preferred resolution: adjust the compiler, keeping QTT information explicit thro
 - [ ] Add regression tests that execute the M3 positive program on the interpreter, standardized `zig`/ZigCc backend, and public `dotnet` profile, then keep all three green while refactoring.
 - [ ] Stop for a cleanup pass after the first green M3 slice: separate resource-context logic, borrow-region logic, and backend cleanup lowering so M4 effect-handler work does not inherit a monolith.
 
-Current M3 status note: not started. The first slice should be test-first and should reject the three negative ownership cases before expanding syntax coverage beyond the target program shape.
+Current M3 status note: not started. Treat the 17.1-17.6 pipeline-contract track as the immediate prerequisite. Once that foundation is stable, the first M3 slice should be test-first and should reject the three negative ownership cases before expanding syntax coverage beyond the target program shape.
