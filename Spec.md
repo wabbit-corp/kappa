@@ -8778,7 +8778,8 @@ Elaboration performs (non-exhaustive):
 * desugaring of:
     * pure `block` expressions and indented pure block suites to sequential local scope with closure-converted local
       declarations (§6.3.1, §14.1.1),
-    * `do` blocks and control-flow sugar to monadic core (§8.2, §8.7),
+    * `do` blocks and control-flow sugar to the completion-and-scope KCore kernel of §17.3.1.4, expressed inside the
+      enclosing monad (§8.2, §8.7, §17.3.1.4),
     * comprehensions to combinator pipelines (§10.10),
     * existential-package sugar and unpacking (`exists`, `open ... as exists ...`) to anonymous sealed packages and
       ordinary local bindings (§5.5.11),
@@ -10258,7 +10259,8 @@ KCore retains all compile-time structure needed by the source semantics. In part
 * proof terms and equality evidence;
 * branch assumptions and refinements introduced by §§7.4.1, 7.5.3, and 10.4.1 as explicit local proof/evidence
   bindings or equivalent refined case contexts, not merely frontend-only side facts;
-* explicit handler forms, resumption quantities, and completion-carrying control structure;
+* explicit handler forms, resumption quantities, completion constructors, `DoScope` frames, and exit-action scheduling
+  for cleanup;
 * explicit application spines aligned with Pi telescopes;
 * explicit stable places, scoped place borrows, and pure read / move / fill operations over stable subpaths;
 * surface `projection` calls do not survive as distinct KCore forms; they elaborate to ordinary control flow whose
@@ -10418,7 +10420,26 @@ the translated leaves above.
 Projection calls therefore add no new runtime reference type and no new KCore place primitive; they are a reusable
 surface abstraction over ordinary control flow plus the existing stable-place machinery.
 
-#### 17.3.1.4 KCore intrinsic compile-time types
+#### 17.3.1.4 Completion and do-scope kernel
+
+The completion model of §8.7 has a KCore counterpart.
+
+A conforming implementation MUST behave as if `do` blocks and their control-flow sugar elaborate to a KCore kernel
+containing:
+
+* completion constructors corresponding to the completion records of §8.7.1;
+* `DoScope` frames corresponding to the dynamic scope frames of §8.7.1;
+* explicit scheduling of cleanup and release exit actions for `defer`, `using`, and related scope-exit constructs; and
+* ordinary monadic sequencing around those completion and scope forms.
+
+These forms are not a second dynamic semantics. They are the KCore representation of the completion-aware sequencing,
+cross-scope unwinding, and cleanup behavior specified in §8.7.
+
+An implementation MAY store the forms using different internal names, provided dumps, verification, and diagnostics are
+observationally equivalent to a KCore representation with explicit completions, `DoScope` frames, and exit-action
+scheduling.
+
+#### 17.3.1.5 KCore intrinsic compile-time types
 
 A conforming implementation MUST behave as if KCore supports ordinary binding, projection, application, sealing, and
 packaging of inhabitants of the intrinsic compile-time types of §5.1.3.
