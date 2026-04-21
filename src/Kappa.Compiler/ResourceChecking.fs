@@ -197,6 +197,26 @@ module ResourceChecking =
         { state with
             BorrowRegions = state.BorrowRegions @ [ fact ] }
 
+    let private introduceBorrowRegion ownerScope explicitRegion (state: CheckState) =
+        let region: BorrowRegion =
+            { Id = defaultArg explicitRegion $"rho{state.NextRegionId}"
+              ExplicitName = explicitRegion
+              OwnerScope = ownerScope }
+
+        let nextState =
+            match explicitRegion with
+            | Some _ -> state
+            | None -> { state with NextRegionId = state.NextRegionId + 1 }
+
+        region, addBorrowRegionFact region nextState
+
+    let private introduceBorrowRegionForQuantity ownerScope quantity state =
+        match quantity with
+        | Some(QuantityBorrow explicitRegion) ->
+            let region, state = introduceBorrowRegion ownerScope explicitRegion state
+            Some region, state
+        | _ -> None, state
+
     let private addUsingScopeFact usingScopeId hiddenOwnedBinding (region: BorrowRegion) state =
         let fact: OwnershipUsingScopeFact =
             { UsingScopeId = usingScopeId
@@ -361,13 +381,13 @@ module ResourceChecking =
             Bindings = Map.add name binding state.Bindings
             NextBindingId = state.NextBindingId + 1 }
 
-    let private addPatternBindings (document: ParsedDocument) (binding: BindPattern) quantity capturedRegions capturedBindingOrigins checkDrop closureFactId state =
+    let private addPatternBindings (document: ParsedDocument) (binding: BindPattern) quantity borrowRegion capturedRegions capturedBindingOrigins checkDrop closureFactId state =
         collectPatternNames binding.Pattern
         |> List.fold (fun current name ->
             addBinding
                 name
                 quantity
-                None
+                borrowRegion
                 capturedRegions
                 capturedBindingOrigins
                 checkDrop
@@ -638,29 +658,32 @@ module ResourceChecking =
                     capturedBindings
                     |> List.choose (fun binding -> binding.Origin)
 
-                let current = addPatternBindings document binding binding.Quantity captured capturedBindingOrigins checkDrop closureFactId current
+                let borrowRegion, current =
+                    introduceBorrowRegionForQuantity $"{current.ScopeId}.let" binding.Quantity current
+
+                let current = addPatternBindings document binding binding.Quantity borrowRegion captured capturedBindingOrigins checkDrop closureFactId current
                 loop current rest
             | DoBind(binding, expression) :: rest ->
                 let current = checkExpression document signatures current expression
                 let checkDrop = binding.Quantity = Some QuantityOne
-                let current = addPatternBindings document binding binding.Quantity Set.empty [] checkDrop None current
+
+                let borrowRegion, current =
+                    introduceBorrowRegionForQuantity $"{current.ScopeId}.bind" binding.Quantity current
+
+                let current = addPatternBindings document binding binding.Quantity borrowRegion Set.empty [] checkDrop None current
                 loop current rest
             | DoUsing(pattern, expression) :: rest ->
                 let current = checkExpression document signatures current expression
 
-                let region: BorrowRegion =
-                    { Id = $"rho{current.NextRegionId}"
-                      ExplicitName = None
-                      OwnerScope = "using" }
+                let region, current =
+                    introduceBorrowRegion "using" None current
 
                 let usingScopeId = $"{current.ScopeId}.using{current.NextUsingScopeId}"
                 let hiddenOwnedBinding = $"{usingScopeId}.owned"
 
                 let current =
                     { current with
-                        NextRegionId = current.NextRegionId + 1
                         NextUsingScopeId = current.NextUsingScopeId + 1 }
-                    |> addBorrowRegionFact region
                     |> addUsingScopeFact usingScopeId hiddenOwnedBinding region
 
                 let current =
