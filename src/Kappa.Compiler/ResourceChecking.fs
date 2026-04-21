@@ -173,6 +173,14 @@ module ResourceChecking =
         | None when binding.CheckLinearDrop -> "unconsumed"
         | None -> "available"
 
+    let private wouldOveruseBinding binding =
+        let capability =
+            binding.DeclaredQuantity
+            |> Option.defaultValue ResourceQuantity.omega
+
+        let nextDemand = ResourceQuantity.exact (binding.UseMaximum + 1)
+        not (ResourceQuantity.satisfies capability nextDemand)
+
     let private bindingFact binding =
         { BindingId = binding.Id
           BindingName = binding.Name
@@ -458,7 +466,7 @@ module ResourceChecking =
                         relatedLocations
                         document
                         state
-                elif binding.UseMaximum >= 1 then
+                elif wouldOveruseBinding binding then
                     let relatedLocations =
                         [
                             match binding.FirstConsumeOrigin with

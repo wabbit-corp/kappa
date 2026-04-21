@@ -12,6 +12,7 @@ module ResourceModel =
         let omega = Interval(0, None)
         let atMostOne = Interval(0, Some 1)
         let atLeastOne = Interval(1, None)
+        let exact count = Interval(count, Some count)
 
         let ofSurface quantity =
             match quantity with

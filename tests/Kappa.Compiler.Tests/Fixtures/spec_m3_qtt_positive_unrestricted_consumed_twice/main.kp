@@ -1,0 +1,13 @@
+module main
+
+data File : Type =
+    Handle Int
+
+let consume (1 file : File) = ()
+
+let main : IO Unit = do
+    let ω file = Handle 1
+    consume file
+    consume file
+
+--! assertErrorCount 0

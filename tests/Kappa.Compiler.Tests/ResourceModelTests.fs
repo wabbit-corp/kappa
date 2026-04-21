@@ -26,8 +26,10 @@ let ``resource quantity satisfaction follows interval and borrow rules`` () =
     let borrow = ResourceQuantity.ofSurface (QuantityBorrow None)
 
     Assert.True(ResourceQuantity.satisfies omega one)
+    Assert.True(ResourceQuantity.satisfies omega (ResourceQuantity.exact 2))
     Assert.True(ResourceQuantity.satisfies borrow borrow)
     Assert.True(ResourceQuantity.satisfies borrow omega)
     Assert.False(ResourceQuantity.satisfies one borrow)
+    Assert.False(ResourceQuantity.satisfies one (ResourceQuantity.exact 2))
     Assert.False(ResourceQuantity.satisfies borrow one)
     Assert.False(ResourceQuantity.satisfies zero one)
