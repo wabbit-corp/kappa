@@ -3034,6 +3034,7 @@ module Compilation =
         {| identity = workspace.BuildConfigurationIdentity
            packageMode = workspace.PackageMode
            backendProfile = workspace.BackendProfile
+           deploymentMode = workspace.DeploymentMode
            backendIntrinsicSet = workspace.BackendIntrinsicIdentity
            elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms |}
 
@@ -3059,11 +3060,12 @@ module Compilation =
             let identityAtom = sexprStringAtom "identity" workspace.BuildConfigurationIdentity
             let packageModeAtom = sexprAtom "package-mode" (if workspace.PackageMode then "true" else "false")
             let backendProfileAtom = sexprStringAtom "backend-profile" workspace.BackendProfile
+            let deploymentModeAtom = sexprStringAtom "deployment-mode" workspace.DeploymentMode
             let backendIntrinsicSetAtom = sexprStringAtom "backend-intrinsic-set" workspace.BackendIntrinsicIdentity
             let elaborationAvailableAtom =
                 sexprStringList "elaboration-available-intrinsic-terms" workspace.ElaborationAvailableIntrinsicTerms
 
-            $"(build-configuration {identityAtom} {packageModeAtom} {backendProfileAtom} {backendIntrinsicSetAtom} {elaborationAvailableAtom})"
+            $"(build-configuration {identityAtom} {packageModeAtom} {backendProfileAtom} {deploymentModeAtom} {backendIntrinsicSetAtom} {elaborationAvailableAtom})"
 
         [
             sexprStringAtom "schema-version" "1"
@@ -3596,7 +3598,30 @@ module Compilation =
             | _ ->
                 invalidOp $"Unknown checkpoint '{checkpoint}'."
 
-    let private makeBuildConfigurationIdentity packageMode backendProfile backendIntrinsicIdentity elaborationAvailableIntrinsicTerms =
+    let private defaultDeploymentModeForBackendProfile backendProfile =
+        match Stdlib.normalizeBackendProfile backendProfile with
+        | "dotnet"
+        | "dotnet-il"
+        | "hosted-dotnet" -> "managed"
+        | "zig" -> "executable"
+        | _ -> "default"
+
+    let private normalizeDeploymentMode backendProfile deploymentMode =
+        if
+            String.IsNullOrWhiteSpace(deploymentMode)
+            || String.Equals(deploymentMode.Trim(), "default", StringComparison.OrdinalIgnoreCase)
+        then
+            defaultDeploymentModeForBackendProfile backendProfile
+        else
+            deploymentMode.Trim().ToLowerInvariant()
+
+    let private makeBuildConfigurationIdentity
+        packageMode
+        backendProfile
+        deploymentMode
+        backendIntrinsicIdentity
+        elaborationAvailableIntrinsicTerms
+        =
         let elaborationTerms =
             elaborationAvailableIntrinsicTerms |> String.concat ","
 
@@ -3607,12 +3632,14 @@ module Compilation =
             $"packageMode={packageModeText}"
             $"backendProfile={backendProfile}"
             $"backendIntrinsicSet={backendIntrinsicIdentity}"
+            $"deploymentMode={deploymentMode}"
             $"elaborationAvailableIntrinsicTerms=[{elaborationTerms}]"
         ]
         |> String.concat ";"
 
     let parse (options: CompilationOptions) inputs =
         let normalizedBackendProfile = Stdlib.normalizeBackendProfile options.BackendProfile
+        let deploymentMode = normalizeDeploymentMode normalizedBackendProfile options.DeploymentMode
         let backendIntrinsicSet = Stdlib.intrinsicSetForBackendProfile normalizedBackendProfile
         let backendIntrinsicIdentity = backendIntrinsicSet.Identity
         let elaborationAvailableIntrinsicTerms =
@@ -3623,6 +3650,7 @@ module Compilation =
             makeBuildConfigurationIdentity
                 options.PackageMode
                 normalizedBackendProfile
+                deploymentMode
                 backendIntrinsicIdentity
                 elaborationAvailableIntrinsicTerms
 
@@ -3663,6 +3691,7 @@ module Compilation =
             { SourceRoot = options.SourceRoot
               PackageMode = options.PackageMode
               BackendProfile = normalizedBackendProfile
+              DeploymentMode = deploymentMode
               BackendIntrinsicIdentity = backendIntrinsicIdentity
               BuildConfigurationIdentity = buildConfigurationIdentity
               ElaborationAvailableIntrinsicTerms = elaborationAvailableIntrinsicTerms

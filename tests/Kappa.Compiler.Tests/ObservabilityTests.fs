@@ -1,6 +1,7 @@
 module ObservabilityTests
 
 open System
+open System.IO
 open System.Text.Json
 open Kappa.Compiler
 open Harness
@@ -428,6 +429,48 @@ let ``workspace and stage dumps expose backend intrinsic identity`` () =
     Assert.Contains("(backend-profile \"custom-backend\")", unsupportedSexpr)
     Assert.Contains("(backend-intrinsic-set \"none\")", unsupportedSexpr)
     Assert.Contains("(identity \"packageMode=true;backendProfile=custom-backend;backendIntrinsicSet=none", unsupportedSexpr)
+
+[<Fact>]
+let ``workspace and stage dumps expose deployment mode in build identity`` () =
+    let root = Path.GetFullPath("memory-deployment-identity-root")
+
+    let fileSystem =
+        InMemoryFileSystem(
+            [
+                Path.Combine(root, "main.kp"),
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+        )
+
+    let options =
+        { CompilationOptions.createWithFileSystem fileSystem root with
+            BackendProfile = "dotnet"
+            DeploymentMode = "native-aot" }
+
+    let workspace = Compilation.parse options [ root ]
+
+    Assert.Equal("native-aot", workspace.DeploymentMode)
+    Assert.Contains("deploymentMode=native-aot", workspace.BuildConfigurationIdentity)
+
+    let backendJson =
+        match Compilation.dumpStage workspace "KBackendIR" StageDumpFormat.Json with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    Assert.Contains("\"deploymentMode\": \"native-aot\"", backendJson)
+    Assert.Contains("deploymentMode=native-aot", backendJson)
+
+    let backendSexpr =
+        match Compilation.dumpStage workspace "KBackendIR" StageDumpFormat.SExpression with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    Assert.Contains("(deployment-mode \"native-aot\")", backendSexpr)
+    Assert.Contains("deploymentMode=native-aot", backendSexpr)
 
 [<Fact>]
 let ``workspace and stage dumps expose elaboration available intrinsic terms`` () =

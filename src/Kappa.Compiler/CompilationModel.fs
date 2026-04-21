@@ -26,6 +26,7 @@ type CompilationOptions =
     { SourceRoot: string
       PackageMode: bool
       BackendProfile: string
+      DeploymentMode: string
       FileSystem: IFileSystem }
 
 module CompilationOptions =
@@ -33,6 +34,7 @@ module CompilationOptions =
         { SourceRoot = fileSystem.GetFullPath(sourceRoot)
           PackageMode = true
           BackendProfile = "interpreter"
+          DeploymentMode = "default"
           FileSystem = fileSystem }
 
     let create sourceRoot =
@@ -486,6 +488,7 @@ type WorkspaceCompilation =
     { SourceRoot: string
       PackageMode: bool
       BackendProfile: string
+      DeploymentMode: string
       BackendIntrinsicIdentity: string
       BuildConfigurationIdentity: string
       ElaborationAvailableIntrinsicTerms: string list
