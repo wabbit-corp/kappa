@@ -753,6 +753,47 @@ let ``M3 overuse diagnostics expose primary and related origins`` () =
     Assert.Equal(2, dumpedDiagnostic.GetProperty("relatedOrigins").GetArrayLength())
 
 [<Fact>]
+let ``M3 overuse diagnostic origins ignore names inside string literals`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m3-diagnostic-origin-string-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    ""
+                    "data File : Type ="
+                    "    Handle Int"
+                    ""
+                    "let consume (1 f : File) = ()"
+                    ""
+                    "let main : IO Unit = do"
+                    "    let 1 file = Handle 1"
+                    "    printString \"file\""
+                    "    consume file"
+                    "    consume file"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let diagnostic =
+        workspace.Diagnostics
+        |> List.find (fun diagnostic -> diagnostic.Code = "E_QTT_LINEAR_OVERUSE")
+
+    match diagnostic.Location with
+    | Some location ->
+        Assert.Equal(12, location.Start.Line)
+    | None ->
+        failwith "Expected overuse diagnostic to have a primary origin."
+
+    Assert.Contains(
+        diagnostic.RelatedLocations,
+        fun related ->
+            related.Message.Contains("First consume", StringComparison.Ordinal)
+            && related.Location.Start.Line = 11
+    )
+
+[<Fact>]
 let ``BODY_RESOLVE dump exposes deferred ownership facts for unsupported control flow`` () =
     let workspace =
         compileInMemoryWorkspace

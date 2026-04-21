@@ -72,92 +72,90 @@ module ResourceChecking =
     let private diagnosticLocation (document: ParsedDocument) =
         document.Source.GetLocation(TextSpan.FromBounds(0, 0))
 
-    let private isIdentifierBoundary (line: string) index =
-        index < 0
-        || index >= line.Length
-        || not (SyntaxFacts.isIdentifierPart line[index])
+    let private tokenName (token: Token) =
+        match token.Kind with
+        | Identifier
+        | Keyword _ ->
+            Some(SyntaxFacts.trimIdentifierQuotes token.Text)
+        | Operator ->
+            Some token.Text
+        | _ ->
+            None
 
-    let private identifierColumns name (line: string) =
-        let rec loop start columns =
-            let index = line.IndexOf(name, start, StringComparison.Ordinal)
+    let private tokenMatchesName name (token: Token) =
+        tokenName token
+        |> Option.exists (fun tokenName -> String.Equals(tokenName, name, StringComparison.Ordinal))
 
-            if index < 0 then
-                List.rev columns
-            else
-                let before = index - 1
-                let after = index + name.Length
+    let private tokenLocation (document: ParsedDocument) (token: Token) =
+        document.Source.GetLocation(token.Span)
 
-                let columns =
-                    if isIdentifierBoundary line before && isIdentifierBoundary line after then
-                        (index + 1) :: columns
-                    else
-                        columns
+    let private tokenLine (document: ParsedDocument) (token: Token) =
+        (tokenLocation document token).Start.Line
 
-                loop (index + max 1 name.Length) columns
+    let private tokensByLine (document: ParsedDocument) =
+        document.Syntax.Tokens
+        |> List.filter (fun token ->
+            match token.Kind with
+            | Newline
+            | Indent
+            | Dedent
+            | EndOfFile -> false
+            | _ -> true)
+        |> List.groupBy (tokenLine document)
+        |> Map.ofList
 
-        if String.IsNullOrWhiteSpace(name) then [] else loop 0 []
+    let private isAssignmentBoundary (token: Token) =
+        token.Kind = Equals || (token.Kind = Operator && token.Text = "<-")
 
-    let private lineContainsIdentifier name line =
-        identifierColumns name line |> List.isEmpty |> not
+    let private binderPrefixTokens lineTokens =
+        let rec takeUntilBoundary tokens collected =
+            match tokens with
+            | [] ->
+                List.rev collected
+            | token :: _ when isAssignmentBoundary token ->
+                List.rev collected
+            | token :: rest ->
+                takeUntilBoundary rest (token :: collected)
 
-    let private trySplitBindingLine (line: string) =
-        let equalsIndex = line.IndexOf("=", StringComparison.Ordinal)
-        let bindIndex = line.IndexOf("<-", StringComparison.Ordinal)
+        match lineTokens with
+        | first :: _ when Token.isKeyword Keyword.Let first ->
+            takeUntilBoundary lineTokens []
+        | first :: _ when Token.isKeyword Keyword.Using first ->
+            takeUntilBoundary lineTokens []
+        | first :: _ when Token.isKeyword Keyword.Var first ->
+            takeUntilBoundary lineTokens []
+        | _ ->
+            []
 
-        match equalsIndex, bindIndex with
-        | -1, -1 -> None
-        | -1, index -> Some(line.Substring(0, index))
-        | index, -1 -> Some(line.Substring(0, index))
-        | equalsIndex, bindIndex -> Some(line.Substring(0, min equalsIndex bindIndex))
+    let private isBinderToken lineMap (document: ParsedDocument) token =
+        let lineTokens =
+            lineMap
+            |> Map.tryFind (tokenLine document token)
+            |> Option.defaultValue []
 
-    let private isBinderLineFor (name: string) (line: string) =
-        let trimmed = line.TrimStart()
+        binderPrefixTokens lineTokens
+        |> List.exists (fun candidate -> candidate.Span = token.Span)
 
-        if trimmed.StartsWith("--", StringComparison.Ordinal) then
-            false
-        elif trimmed.StartsWith("let ", StringComparison.Ordinal) then
-            trySplitBindingLine line
-            |> Option.exists (lineContainsIdentifier name)
-        elif trimmed.StartsWith("using ", StringComparison.Ordinal) then
-            match line.IndexOf("<-", StringComparison.Ordinal) with
-            | index when index >= 0 -> line.Substring(0, index) |> lineContainsIdentifier name
-            | _ -> false
-        else
-            false
+    let private findBinderLocation (document: ParsedDocument) name =
+        let lineMap = tokensByLine document
 
-    let private findIdentifierLocationWhere (document: ParsedDocument) name predicate =
-        [ 0 .. document.Source.LineCount - 1 ]
-        |> List.tryPick (fun lineIndex ->
-            let line = document.Source.GetLineText(lineIndex)
-
-            if predicate line then
-                identifierColumns name line
-                |> List.tryHead
-                |> Option.map (fun column ->
-                    let start = document.Source.LineStarts[lineIndex] + column - 1
-                    document.Source.GetLocation(TextSpan.FromBounds(start, start + name.Length)))
+        document.Syntax.Tokens
+        |> List.tryPick (fun token ->
+            if tokenMatchesName name token && isBinderToken lineMap document token then
+                Some(tokenLocation document token)
             else
                 None)
 
-    let private findBinderLocation (document: ParsedDocument) name =
-        findIdentifierLocationWhere document name (isBinderLineFor name)
-
     let private findUseLocation (document: ParsedDocument) name ordinal =
-        let locations =
-            [ 0 .. document.Source.LineCount - 1 ]
-            |> List.collect (fun lineIndex ->
-                let line = document.Source.GetLineText(lineIndex)
-                let trimmed = line.TrimStart()
+        let lineMap = tokensByLine document
 
-                if trimmed.StartsWith("--", StringComparison.Ordinal) || isBinderLineFor name line then
-                    []
-                else
-                    identifierColumns name line
-                    |> List.map (fun column ->
-                        let start = document.Source.LineStarts[lineIndex] + column - 1
-                        document.Source.GetLocation(TextSpan.FromBounds(start, start + name.Length))))
-
-        locations |> List.tryItem (max 0 (ordinal - 1))
+        document.Syntax.Tokens
+        |> List.choose (fun token ->
+            if tokenMatchesName name token && not (isBinderToken lineMap document token) then
+                Some(tokenLocation document token)
+            else
+                None)
+        |> List.tryItem (max 0 (ordinal - 1))
 
     let private addDiagnostic code message location relatedLocations (document: ParsedDocument) (state: CheckState) =
         let diagnostic: Diagnostic =
