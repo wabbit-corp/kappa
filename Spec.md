@@ -1379,33 +1379,34 @@ constraint solving. Occurrences of `Type u` therefore share exactly the same use
 introducing fresh metavariables. If the constraints are unsatisfiable, compilation fails. Unconstrained universe
 metavariables may be generalized at top-level (implementation-defined).
 
-### 5.1.3 Constraints and dictionaries
+### 5.1.3 Constraints, static classes, and dictionaries
 
-In addition to the universe hierarchy `Type0`, `Type1`, ... and the sort `Constraint`, Kappa includes the built-in sorts
-`Universe`, `Quantity`, and `Region`.
+In addition to the universe hierarchy `Type0`, `Type1`, ... Kappa has the built-in static classes `Universe`,
+`Quantity`, `Region`, and `Constraint`.
+
+The row and label classes `RecRow`, `VarRow`, `EffRow`, `Label`, and `EffLabel` are introduced in §5.3.1.
+
+Together with `Type` / `Type u` and quantity-`0` function spaces over those classifiers, these participate in the
+static object layer of §5.1.4.1.
 
 * `Universe` classifies universe levels that may appear in explicit forms such as `Type u`.
-* `Universe` is a valid target for universal quantification.
-* In v0.1, the intended surface use of a `Universe` variable is as the argument of `Type`; ordinary computation on
-  universe levels is not otherwise specified.
+* `Universe` is a valid target for universal quantification and for ordinary explicit binders, subject to the static
+  object rules of §5.1.4.1.
+* In v0.1, the intended surface use of a `Universe` value remains as the argument of `Type`; ordinary arithmetic or
+  generic computation on universe levels is not otherwise specified.
 
-* `Quantity` classifies exact usage intervals and the borrow mode `&`. It is reserved for ownership and usage
-  accounting only and is not a generic modal or coeffect grade sort; see §5.1.5.1.
-* `Quantity` is a valid target for universal quantification.
+* `Quantity` classifies exact usage intervals and the borrow mode `&`.
+* `Quantity` is a valid target for universal quantification and for ordinary explicit binders, subject to the static
+  object rules of §5.1.4.1.
+* `Quantity` is reserved for ownership and usage accounting only; see §5.1.5.1.
+
 * `Region` classifies explicit borrow lifetimes that may be named in surface types when a borrow relationship must cross
   an interface boundary.
-* `Region` is a valid target for universal quantification.
+* `Region` is a valid target for universal quantification and for ordinary explicit binders, subject to the static
+  object rules of §5.1.4.1.
 
-Kappa also has a separate sort `Constraint`.
-
-* A trait declaration `trait Tr ... = ...` introduces a trait constructor `Tr` whose fully applied applications have
-  sort `Constraint`.
-* A constraint is not a `Type`.
-* Constraints may appear:
-  * in implicit binders `(@x : C)`,
-  * in constraint arrows `C => T`,
-  * in instance heads, and
-  * as arguments to built-ins that abstract over constraints.
+* `Constraint` classifies constraint descriptors such as `Eq Int`, `Monad IO`, or `ContainsRec r l T`.
+* A term of type `Constraint` is a compile-time descriptor, not coherent evidence for that constraint.
 
 Built-in reification:
 
@@ -1413,12 +1414,14 @@ Built-in reification:
 Dict : Constraint -> Type
 ```
 
-`Dict C` is the explicit dictionary type corresponding to the constraint `C`.
+`Dict C` is the explicit dictionary type corresponding to the concrete constraint `C`.
 
 Usage rules:
 
 * A value of a concrete constraint `C` may only be bound implicitly.
-* An explicit parameter, field, or result may not have type `C`; use `Dict C`.
+* An explicit parameter, field, or result may not have concrete type `C`; use `Dict C`.
+* This does not forbid explicit values of type `Constraint` itself, which are ordinary erased static objects under
+  §5.1.4.1.
 * There is an implicit coercion from coherent evidence `ev : C` to `Dict C`.
 * There is no coercion from `Dict C` to `C`.
 * `Dict C` never participates in implicit resolution.
@@ -1427,8 +1430,8 @@ Usage rules:
 * Explicit `Dict C` values are ordinary runtime values unless eliminated by specialization, inlining, or dead-code
   erasure.
 * Implicit evidence may be erased when the implementation proves that it is unused after elaboration.
-* A binder may range over constraints themselves, e.g. `(c : Constraint) -> ...`; this quantifies over constraints and
-  does not introduce an explicit value of type `c`.
+* A binder may range over constraints themselves, e.g. `(c : Constraint) -> ...`; this quantifies over constraint
+  descriptors and does not introduce coherent evidence for `c`.
 
 ### 5.1.4 Erasure and elaboration time
 
@@ -1439,6 +1442,26 @@ Usage rules:
   retaining evidence to realize trait-member selection.
 * Implementations may provide library mechanisms to reify type information explicitly when needed (e.g. `Dict C`, quoted
   representations), but there is no implicit runtime reflection.
+
+#### 5.1.4.1 Static object layer
+
+The static object layer contains values used by typechecking, elaboration, normalization, and static selection rather
+than by ordinary runtime computation.
+
+Static object classifiers include:
+
+* `Type` and `Type u`;
+* `Universe`, `Quantity`, `Region`, and `Constraint`;
+* the row and label classes of §5.3.1; and
+* quantity-`0` function spaces over those classifiers.
+
+Rules:
+
+* Static objects may be named by explicit binders and universal quantification where their classifier admits it.
+* A quantity-`0` binder over a static object is elaboration-time information and is erased after elaboration unless
+  explicitly reified or retained under the constraint-evidence rules of §5.1.3.
+* Binding a value of type `Constraint` binds a constraint descriptor. It does not introduce coherent evidence for the
+  described constraint.
 
 ### 5.1.5 Quantities
 
