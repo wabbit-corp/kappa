@@ -736,6 +736,7 @@ data, type, trait, module,
 import, export, as, except,
 do, block, return, open,
 forall, exists,
+captures,
 assertTotal, expect, instance, derive, effect, handle, deep, pattern,
 projection, place,
 infix, postfix, prefix, left, right,
@@ -748,6 +749,8 @@ public, private, opaque, seal, unhide, clarify,
 Effect-row surface syntax (§5.3.2) introduces no additional keywords; it uses reserved punctuation tokens instead.
 
 Keywords are **soft** (contextual) keywords:
+
+`captures` is a soft keyword used only in type positions for the capture-annotation form of §5.1.6.1.
 
 * The lexer recognizes the keyword tokens, but implementations must permit their use as ordinary identifiers in contexts
   where a keyword is not syntactically expected.
@@ -1805,6 +1808,56 @@ surrounding `do`-scope whose unwinding would have to outlive that borrow. This i
 explicit lifetime syntax. If `bracket` is provided, it is sound only when implemented with equivalent protected-scope
 machinery rather than a naive `defer (release res)` source-level expansion.
 
+#### 5.1.6.1 Capture-annotated types
+
+Kappa provides an optional postfix capture annotation on value types:
+
+```text
+typeCapture ::= typeExpr 'captures' '(' regionRef (',' regionRef)* ')'
+regionRef   ::= ident
+```
+
+This grammar is schematic. `captures (...)` is a postfix type former.
+
+`T captures (s1, ..., sn)` is well-formed only if each `si` resolves to an explicit binder `si : Region` already in
+scope.
+
+Meaning:
+
+* A value of type `T captures (s1, ..., sn)` has ordinary value type `T`.
+* In addition, its hidden region environment must be contained in the finite set `{s1, ..., sn}`.
+* `captures (...)` is compile-time only and is erased under §§14.4 and 17.4.
+* The listed regions form a set:
+  * duplicates are a compile-time error;
+  * order is not semantically significant; and
+  * canonical rendering orders them by first binding occurrence in the surrounding explicit `Region` telescope.
+* The annotation may be written on any value type, not only on function types. This is necessary because a non-function
+  value may hide closures or other region-carrying values inside records, packages, or abstract data.
+* A user-written capture annotation is an upper bound. Elaboration accepts a value at type `T captures (s̄)` only if the
+  inferred hidden region environment of that value is contained in `{s̄}`.
+* When `captures (...)` is omitted in source, elaboration may infer the minimal capture set required for the value.
+* Anonymous rigid regions introduced locally are never written in a capture annotation. If a value would require an
+  anonymous rigid region to appear in such an annotation, the skolem-escape rule rejects that value instead.
+
+Precedence:
+
+* `captures (...)` binds looser than type application and tighter than `->`.
+* Therefore `Boxed a captures (s)` means `(Boxed a) captures (s)`.
+* To annotate a function value itself rather than only its codomain, parentheses are required:
+  `((A -> B) captures (s))`.
+
+Examples:
+
+```kappa
+makeGetter :
+    forall (s : Region) (a : Type).
+    (&[s] x : Box a) -> ((Unit -> a) captures (s))
+
+packGetter :
+    forall (s : Region) (a : Type).
+    (&[s] x : Box a) -> ((get : (Unit -> a) captures (s)))
+```
+
 ### 5.1.7 Disjoint path borrowing for records
 
 Borrow tracking for records is path-sensitive. A borrow of a record field does not automatically lock the entire record.
@@ -1942,47 +1995,40 @@ Use restrictions:
 * Consequently, a path may be considered unavailable after the expression even if it is consumed only on some dynamic
   branches.
 
-Why this does not require explicit region annotations on arrows:
+Why ordinary source code need not write capture annotations everywhere:
 
-The region environment is an elaboration-time property, like the quantity constraints of §5.1.5 and the implicit
-evidence of `Constraint` sorts. It is erased after typechecking and does not affect runtime representation. For
-region-closed definitions, the user-written surface type `Unit -> IO Int` therefore remains unchanged; the extra
-information lives only in the compiler's internal representation of the term during elaboration. If elaboration would
-leave a rigid region variable free in the interface type or hidden closure environment of a value that escapes its
-introducing scope, the program is rejected rather than exported with an incomplete type.
+The hidden region environment is inferred during elaboration. For local code it may remain implicit.
+The `captures (...)` form exists so that values whose hidden region environment matters across an explicit type boundary
+can state that fact.
+If the inferred capture set is empty, no capture annotation is written in the elaborated type.
 
 This is analogous to how `runST` in §8.5.3 uses rank-2 polymorphism to prevent `STRef s` escape without requiring the
 user to write region variables on every arrow.
 
 Module interfaces and separate compilation:
 
-* A top-level definition is well-formed for export only if every region mentioned by its elaborated interface or hidden
-  closure environment is either:
-  * a fresh anonymous region that is fully discharged before export, or
-  * an explicit region variable bound in the exported type, typically by `forall (s : Region)`.
-* Therefore a definition may return or export a closure capturing a borrowed value only when that closure's hidden
-  region environment mentions explicit region variables already bound in the exported type. Any remaining anonymous
-  `rho` still causes a skolem-escape error in the defining module.
-* Module interfaces record the ordinary exported type together with the hidden region-environment summary parameterized
-  by any explicit `Region` binders. Downstream modules use that summary during escape checking even though surface arrow
-  syntax remains unchanged.
+* A top-level definition is well-formed for export only if every escaping hidden region is either:
+  * discharged before export, or
+  * expressible using explicit `Region` binders already present in the exported type.
+* The exported type recorded in the module interface is the fully elaborated type, including any inferred non-empty
+  `captures (...)` annotations required by §5.1.6.1.
+* There is no separate hidden region-environment summary outside the exported type.
+* Downstream modules perform escape checking against those capture-annotated exported types.
 * Ordinary module interfaces never expose anonymous rigid region variables. Consequently, cross-module higher-order APIs
-  may abstract over borrowed captures only through explicit `Region` binders rather than by laundering hidden local
-  regions across the module boundary.
+  may abstract over borrowed captures only through explicit `Region` binders together with `captures (...)`, rather than
+  by laundering hidden local regions across the module boundary.
 
 Example:
 
 ```kappa
 makeGetter :
     forall (s : Region) (a : Type).
-    (&[s] x : Box a) -> Unit -> a
+    (&[s] x : Box a) -> ((Unit -> a) captures (s))
 ```
 
-The returned closure has surface type `Unit -> a`, but its hidden region environment mentions `s`. A caller may use or
-store that closure only within the same region `s`; attempting to let it escape farther is a standard skolem-escape
-error. At a call site, an explicit region variable such as `s` may be instantiated by a caller-local rigid region `rho`.
-This is the mechanism by which exported region-polymorphic APIs accept ordinary local borrows without exposing anonymous
-regions in source syntax.
+The returned closure has ordinary function shape `Unit -> a`, but its value type additionally records that its hidden
+region environment may mention `s`. A caller may use or store that closure only where `s` is still live. At a call site,
+an explicit region variable such as `s` may be instantiated by a caller-local rigid region `rho`.
 
 ### 5.2 Function types
 
@@ -2010,6 +2056,16 @@ regions in source syntax.
   ```kappa
   A -> B    ==    (_ : A) -> B
   ```
+
+A function value type may be capture-annotated under §5.1.6.1. For example:
+
+```kappa
+((A -> B) captures (s))
+(((q x : A) -> B) captures (s1, s2))
+```
+
+Such an annotation describes the hidden region environment of the function value itself; it does not change the binder
+types of that arrow.
 
 ### 5.3 Universal quantification
 
@@ -4378,11 +4434,13 @@ Special cases:
 * Linear contamination: if the lambda captures one or more variables bound with quantity `1`, the resulting closure
   value must itself be treated as a quantity-`1` resource in the surrounding context. It cannot be used in a context
   that would permit unrestricted (`ω`) reuse.
-* Borrowed capture: if the lambda captures one or more variables bound with quantity `&`, the resulting closure value is
-  tied to the same borrow lifetime. A closure whose hidden region environment mentions only explicit region variables
-  already in scope may be returned or exported under those same explicit binders; a closure mentioning any anonymous
-  local borrow region must not escape the scope that introduced it (§5.1.6). If a lambda captures an `&` variable and
-  its inferred type would allow an anonymous borrow region to escape, elaboration fails with "borrowed capture escapes".
+* Borrowed capture: if the lambda captures one or more variables bound with quantity `&`, elaboration infers the hidden
+  region environment of the resulting closure value.
+* A closure may be checked against a type `T captures (s̄)` only if that inferred environment is contained in `{s̄}`.
+* A closure whose inferred environment mentions only explicit region variables already in scope may escape under those
+  same explicit binders and capture annotations.
+* A closure whose inferred environment would require any anonymous local borrow region to escape is rejected by the
+  skolem-escape rule of §5.1.6.
 * Erased safety: if the lambda captures variables bound with quantity `0`, those variables MUST NOT appear in
   computationally relevant (`1`, `&`, `<=1`, `>=1`, or `ω`) positions inside `body`. Capturing quantity-`0` variables
   imposes no restriction on the multiplicity of the closure itself.
@@ -4650,7 +4708,7 @@ Typechecking and elaboration rules:
   @p : LacksCtor __scrut ⟨C⟩
   ```
 
-  where `⟨C⟩ : CtorTag` is the internal constructor-tag constant of §17.3.1.6.
+  where `⟨C⟩ : CtorTag` is the internal constructor-tag constant of §17.3.1.7.
 
 * These assumptions introduce no fresh user-visible term bindings.
 * Within each branch, occurrences of the original tested expression are elaborated against the hidden scrutinee
@@ -4749,7 +4807,7 @@ typechecked under additional erased implicit evidence:
 @p : HasCtor s ⟨C⟩
 ```
 
-where `⟨C⟩ : CtorTag` is the internal constructor-tag constant of §17.3.1.6.
+where `⟨C⟩ : CtorTag` is the internal constructor-tag constant of §17.3.1.7.
 
 Residual negative evidence:
 
@@ -8824,7 +8882,7 @@ Elaboration performs (non-exhaustive):
     * `do` blocks and control-flow sugar to the completion-and-scope KCore kernel of §17.3.1.4, expressed inside the
       enclosing monad (§8.2, §8.7, §17.3.1.4),
     * lowering of boolean and constructor-refinement control flow to explicit erased branch evidence (§7.4.1, §7.5.4,
-      §17.3.1.6),
+      §17.3.1.7),
     * comprehensions to combinator pipelines (§10.10),
     * existential-package sugar and unpacking (`exists`, `open ... as exists ...`) to anonymous sealed packages and
       ordinary local bindings (§5.5.11),
@@ -8940,6 +8998,11 @@ Definitional equality is the smallest congruence containing the following reduct
     * Records: a record is definitionally equal to a record reconstructed from its projections (field-wise η), up to
       lawful reorderings.
     * The zero-field closed record is definitionally equal to `Unit`.
+* capture annotations: `T captures (s̄1)` and `U captures (s̄2)` are definitionally equal iff `T ≡ U` and the canonical
+  capture sets are equal.
+
+Capture-set canonicalization removes duplicates and orders region variables by first binding occurrence in the
+surrounding explicit `Region` telescope.
 
 Quantities in definitional equality:
 
@@ -8986,14 +9049,15 @@ numeric literals appearing as type indices are normalized before comparison.
 
 ### 14.4 Erasure
 
-Intrinsic compile-time values, including universes, `Type u` terms, quantities, regions, constraint descriptors, rows,
-labels, proof terms used only for compile-time reasoning, and erased indices, do not require implicit runtime
-representation.
+Intrinsic compile-time values, captured-region annotations, universes, `Type u` terms, quantities, regions, constraint
+descriptors, rows, labels, proof terms used only for compile-time reasoning, and erased indices do not require implicit
+runtime representation.
 
 The runtime representation of a term is obtained by deleting:
 
 * all computational binders and fields whose quantity is `0`, together with the corresponding erased arguments at
-  applications, except for retained coherent constraint evidence and explicit `Dict` values governed by §5.1.3; and
+  applications, except for retained coherent constraint evidence and explicit `Dict` values governed by §5.1.3;
+* all capture-annotation structure introduced by `captures (...)`; and
 * all binders, fields, arguments, and package members whose values are compile-time values in the sense of §5.1.4.1,
   regardless of their written quantity annotation, unless preserved by an explicit reified runtime carrier.
 
@@ -9779,10 +9843,14 @@ A module interface artifact MUST record at least:
 * the module identity and dependency identities required by §§2.1-2.3.2;
 * the exported surface by namespace, including importable fixity declarations;
 * visibility and opacity classification of exported ordinary items;
-* the signatures of exported terms, together with ordered binder metadata needed for downstream application-site
-  elaboration, including binder names, explicitness, quantities, receiver markers, and any `inout`-relevant
-  formal-parameter information, plus any interface-visible classification relevant to use sites, such as pattern-head
-  eligibility under §7.7;
+* the fully elaborated signatures of exported terms, including:
+  * any user-written or inferred `captures (...)` annotations of §5.1.6.1,
+  * ordered binder metadata needed for downstream application-site elaboration, including binder names, explicitness,
+    quantities, receiver markers, and any `inout`-relevant formal-parameter information, and
+  * any interface-visible classification relevant to use sites, such as pattern-head eligibility under §7.7;
+  Capture annotations recorded in a module interface artifact are part of the exported type itself. A conforming
+  implementation MUST NOT instead require a second hidden region-summary channel outside the exported signature to make
+  ordinary downstream escape checking sound.
 * for each exported projection definition, enough metadata to perform downstream projection-call elaboration and
   admissibility checking, including:
   * projection-vs-ordinary-term classification,
@@ -9846,9 +9914,11 @@ At minimum, the canonical interface view MUST include:
 * exported names by namespace;
 * importable fixity declarations;
 * visibility and opacity classification;
-* exported signatures of terms, together with the corresponding binder metadata needed for downstream application-site
-  elaboration and any interface-visible classification relevant to use sites, such as pattern-head eligibility under
-  §7.7;
+* exported signatures of terms, rendered after elaboration of any inferred non-empty `captures (...)` annotations,
+  together with the corresponding binder metadata needed for downstream application-site elaboration and any
+  interface-visible classification relevant to use sites, such as pattern-head eligibility under §7.7;
+  The canonical interface view MUST render any non-empty inferred `captures (...)` annotation explicitly, even if it was
+  omitted in the original source.
 * exported signatures of types, traits, constructors, associated static members, effect interfaces, and effect
   operations, insofar as those entities are available to downstream code;
 * exported instance heads and any interface-visible coherence metadata;
@@ -10344,6 +10414,7 @@ KCore retains all compile-time structure needed by the source semantics. In part
 * intrinsic compile-time types and their inhabitants, including `Universe`, `Quantity`, `Region`, `Constraint`, row
   types, label types, universe terms, and `Type u`;
 * explicit binder quantities, explicit regions, and explicit implicit binders;
+* explicit capture-annotated value types over explicit `Region` binders;
 * proof terms and equality evidence;
 * branch assumptions and refinements introduced by §§7.4.1, 7.5.3, and 10.4.1 as explicit local proof/evidence
   bindings or equivalent refined case contexts, not merely frontend-only side facts;
@@ -10614,7 +10685,39 @@ Rules:
 * Reflection values MUST NOT survive lowering to KBackendIR except through ordinary reification to `Syntax` followed by
   ordinary elaboration.
 
-#### 17.3.1.6 KCore branch and refinement evidence
+#### 17.3.1.6 KCore capture-annotated types
+
+A conforming implementation MUST behave as if KCore contains an explicit capture-annotation former:
+
+```text
+Captures(s1, ..., sn, T)
+```
+
+written in this specification as:
+
+```text
+T captures (s1, ..., sn)
+```
+
+where each `si : Region` is already in scope.
+
+Meaning:
+
+* `T captures (s̄)` classifies values of ordinary value type `T` whose hidden region environment is contained in the set
+  `{s̄}`.
+* The annotation is compile-time only and is erased before KBackendIR.
+* The empty capture set is represented explicitly in KCore, though surface syntax may omit it by inference.
+* Capture annotations are part of elaborated exported types and replace any separate hidden region-environment summary
+  in interface artifacts.
+* KCore closure conversion, package construction, and interface emission propagate these annotations structurally by
+  taking unions of hidden region environments and checking containment where an explicit annotation is written.
+* Anonymous rigid regions never appear in `Captures(...)`; any attempt to form such an annotation is rejected earlier by
+  skolem-escape checking.
+
+A conforming implementation MAY realize this with another internal representation, provided ordinary downstream
+typechecking, interface emission, definitional equality, and erasure are observationally equivalent to the rules above.
+
+#### 17.3.1.7 KCore branch and refinement evidence
 
 A conforming implementation MUST behave as if KCore contains explicit erased evidence for branch-local boolean and
 constructor refinements.
@@ -10845,6 +10948,7 @@ intrinsic:
 
 * intrinsic compile-time types and their inhabitants, including universes, `Type u`, row terms, label terms, raw
   `Constraint` descriptors, and anonymous or explicit region variables;
+* capture-annotation structure introduced by `captures (...)`;
 * quantity-`0` computational binders or fields;
 * proof terms whose only purpose is compile-time reasoning;
 * erased indices of dependent data.
