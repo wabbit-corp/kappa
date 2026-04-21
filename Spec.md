@@ -737,6 +737,7 @@ import, export, as, except,
 do, block, return, open,
 forall, exists,
 assertTotal, expect, instance, derive, effect, handle, deep, pattern,
+projection, place,
 infix, postfix, prefix, left, right,
 var, while, break, continue, using, inout,
 yield, for, for?, group, by, distinct, order, skip, take, top, join, left, asc, desc,
@@ -1622,7 +1623,8 @@ top-level export.
 Borrow introduction at borrow-demanding positions:
 
 If a context demands borrowed quantity (`(& x : T)` for an explicit binder, or `(@& x : T)` for an implicit binder), and
-the supplied expression is a borrowable stable expression of type `T`, the compiler may insert a temporary borrow.
+the supplied expression is a borrowable place expression (§5.1.7.2) of type `T`, the compiler may insert a temporary
+borrow.
 
 This is a separate elaboration rule. It does not modify the quantity-satisfaction relation `⊑`.
 
@@ -1651,6 +1653,9 @@ For projections:
   projected path rather than automatically to the entire root record `r`, subject to the disjoint-path rules of §5.1.7.
 * If the borrowed argument is a constructor-field projection from a borrowable root, the temporary borrow applies to
   that projected field path.
+* If the borrowed argument is a fully applied projection call under §6.1.1, the temporary borrow applies to the
+  dynamically selected yielded stable place. Static overlap and admissibility use the static footprint summary of
+  §5.1.7.2.
 * If the compiler cannot identify a stable borrowable root and projection path for the argument expression, it MAY
   conservatively reject borrow introduction for that expression.
 
@@ -1724,9 +1729,9 @@ Anonymous and explicit regions:
 
 Hidden-root introduction for borrowed local bindings:
 
-If a borrowed local binding has the form `let & pat = expr` and `expr` is not already a borrowable stable expression,
-elaboration first introduces a fresh hidden temporary `__tmp` scoped exactly to the body of that local binding (or, in a
-`do` block, to the remaining do-items). That hidden temporary becomes the borrow root for `pat`.
+If a borrowed local binding has the form `let & pat = expr` and `expr` is not already a borrowable place expression
+(§5.1.7.2), elaboration first introduces a fresh hidden temporary `__tmp` scoped exactly to the body of that local
+binding (or, in a `do` block, to the remaining do-items). That hidden temporary becomes the borrow root for `pat`.
 
 Conceptually:
 
@@ -1895,6 +1900,39 @@ Place identity is preserved only by constructs that explicitly say so, including
 
 If elaboration introduces a fresh binder as an alias of an existing stable place, that binder carries the same
 underlying root and path. Projecting from the alias extends that same path rather than creating a fresh root.
+
+#### 5.1.7.2 Computed place expressions
+
+A place expression is either:
+
+* a stable place under §5.1.7.1; or
+* a fully applied call to a `projection` definition (§6.1.1).
+
+A fully applied projection call is not a first-class runtime reference. It denotes a computed selection of one stable
+place rooted in the unique `place` parameter of the called projection definition.
+
+After substituting actual arguments for formal parameters, each reachable `yield` in the projection body determines one
+yielded stable-place alternative. Every yielded alternative of a projection definition must be rooted in that same
+unique `place` parameter.
+
+Static footprint summary:
+
+* The static footprint of a stable place is its ordinary footprint under §5.1.7.
+* The static footprint of a fully applied projection call is the union of the ordinary footprints of all its yielded
+  stable-place alternatives, after applying the dependency-closure rule of §5.1.7 to each alternative.
+* Borrow-overlap checks, disjointness checks, and `~` admissibility checks use this static footprint summary.
+* Runtime read / move / fill uses only the single yielded stable place selected by evaluation of the projection body.
+
+Use restrictions:
+
+* A fully applied projection call may appear in:
+  * a borrow-demanding position under §5.1.5;
+  * a `~` argument under §8.8; and
+  * an ordinary value-demanding position, provided elaboration can realize that use as a non-consuming read of the
+    selected place.
+* A consuming ordinary value use of a projection call is not supported in v0.1 unless the implementation can prove it is
+  observationally equivalent to consuming one fixed stable place. Otherwise the compiler MUST reject the use and require
+  the programmer to spell the control flow explicitly.
 
 Why this does not require explicit region annotations on arrows:
 
@@ -3270,7 +3308,7 @@ Implementations MUST prevent scope extrusion for `Code`.
 
 ### 6.1 Term declarations vs definitions
 
-There are three distinct forms:
+There are four distinct forms:
 
 Modifier rules:
 
@@ -3334,7 +3372,15 @@ Modifier rules:
     * In a named `let` definition, the body after `=` may be written as an indented pure block suite, which elaborates
       to `block ...` as specified in §6.3.1.
 
-3. **Pattern definition (active pattern):**
+3. **Projection definition:**
+
+   ```kappa
+   [public|private] projection name binders... : Type = projectionBody
+   ```
+
+   A `projection` definition introduces a computed place selector. Its detailed rules are given in §6.1.1.
+
+4. **Pattern definition (active pattern):**
 
    ```kappa
    [public|private] pattern name binders... (scrutinee : A) : R = expr
@@ -3347,7 +3393,59 @@ Modifier rules:
    * Active patterns live in the term namespace and are imported/exported as ordinary terms.
    * Active patterns are pure functions; `R` must not be a monadic type.
 
-#### 6.1.1 Irrefutable patterns (for `let` bindings)
+#### 6.1.1 Projection definitions
+
+A projection definition names a pure computed place selector rooted in exactly one place parameter.
+
+Example:
+
+```kappa
+projection focusedBuffer (place ed : Editor) : Buffer =
+    if ed.focused == LeftPane then
+        yield ed.left
+    else
+        yield ed.right
+```
+
+Grammar:
+
+```text
+projectionDecl   ::= [public|private] 'projection' ident projectionBinder+ ':' type '=' projectionBody
+projectionBinder ::= '(' 'place' ident ':' type ')'
+                   | ordinary function binder except `inout`
+projectionBody   ::= 'yield' expr
+                   | 'if' expr 'then' projectionBody 'else' projectionBody
+                   | 'match' expr NEWLINE INDENT projectionCase+ DEDENT
+projectionCase   ::= 'case' pattern ['if' expr] '->' projectionBody
+```
+
+Rules:
+
+* A projection definition is top-level only.
+* `opaque` does not apply to projection definitions.
+* A projection definition must contain exactly one `place` binder.
+* All other binders are ordinary explicit or implicit function binders except `inout`. They may be erased and may be
+  dependent.
+* A projection definition is pure; its declared result type must not be monadic.
+* Each reachable path of the body must end in exactly one `yield`.
+* The operand of each `yield` must elaborate to either:
+  * a stable place rooted in the declaration's unique `place` binder; or
+  * a fully applied call to another projection definition whose unique `place` argument is itself rooted in that same
+    binder.
+* A `place` binder may be inspected by ordinary pure expressions in the body, but may be yielded only as a place
+  expression, not stored or returned as a first-class value.
+* A projection definition must be fully applied at every use site. Partial application of a projection definition is
+  ill-formed.
+
+Elaboration of a fully applied projection call:
+
+* In a borrow-demanding position, the call denotes the dynamically selected yielded stable place for purposes of
+  temporary borrow introduction.
+* Under `~`, the call denotes the dynamically selected yielded stable place for purposes of move-and-restore rewriting.
+* In an ordinary value-demanding position, the call elaborates to a read of the dynamically selected yielded stable
+  place, subject to the non-consuming-use restriction of §5.1.7.2.
+
+#### 6.1.2 Irrefutable patterns (for `let` bindings)
 
 A pattern `pat` is **irrefutable** for a scrutinee type `T` iff matching `pat` against any value of type `T` cannot
 fail.
@@ -3481,8 +3579,8 @@ Typing:
 * In `bindPat`, a quantity annotation applies uniformly to every variable bound by the underlying pattern.
 * `let & pat = expr` is legal and binds every variable introduced by `pat` at borrowed quantity `&`. It introduces
   borrowed views of the underlying value, is used by the normative desugaring of `using` (§8.7.4), and is subject to the
-  borrow-escape rules of §5.1.6. If `expr` is not already a borrowable stable expression, elaboration first introduces a
-  fresh hidden temporary root scoped to the body:
+  borrow-escape rules of §5.1.6. If `expr` is not already a borrowable place expression (§5.1.7.2), elaboration first
+  introduces a fresh hidden temporary root scoped to the body:
 
   ```kappa
   let 1 __tmp = expr
@@ -3491,7 +3589,7 @@ Typing:
   ```
 
   where `__tmp` is fresh, inaccessible to user code, and serves as the borrow root for the duration of `body`.
-* Each binding `bindPat [ : Type ] = expr` must use an irrefutable underlying pattern (§6.1.1).
+* Each binding `bindPat [ : Type ] = expr` must use an irrefutable underlying pattern (§6.1.2).
 * Names bound by `bindPat` are in scope in subsequent bindings and in the `in` body.
 * If a type annotation is provided (`bindPat : T = expr`), `expr` is checked against `T` before destructuring.
 * A later binding may introduce a name already in scope; the new binding shadows the old one in subsequent bindings and
@@ -3522,9 +3620,9 @@ conservatively reject the plain form.
 Elaboration (schematic):
 
 * If `bindPat` carries quantity `&`, the binding is elaborated as a borrowed binding of the underlying pattern `pat0`
-  against a borrowable stable root expression, with each variable introduced by `pat0` bound at borrowed quantity `&`.
-  If `e` is not already a borrowable stable expression, elaboration first introduces the fresh hidden root described
-  above and then performs that borrowed binding against the hidden root.
+  against a borrowable place expression (§5.1.7.2), with each variable introduced by `pat0` bound at borrowed quantity
+  `&`. If `e` is not already a borrowable place expression (§5.1.7.2), elaboration first introduces the fresh hidden
+  root described above and then performs that borrowed binding against the hidden root.
 * If `bindPat` does not carry quantity `&`, then `let bindPat = e in body` elaborates as `match e; case pat0 -> body`,
   where `pat0` is the underlying pattern of `bindPat`. This is only permitted because that underlying pattern is
   required to be irrefutable.
@@ -4007,13 +4105,13 @@ Explicit-argument pipeline for binder `(q_dem x : T_dem)` and supplied argument 
 1. **Outermost borrow introduction (auto-referencing).**
 
    If `q_dem` is exactly a borrowed quantity binder (`&` or an explicitly scoped borrowed binder such as `&[s]`), the
-   compiler first checks whether `e` is a borrowable stable expression under §5.1.5.
+   compiler first checks whether `e` is a borrowable place expression under §5.1.7.2.
 
    * If so, elaboration first considers the temporary-borrow form of `e` and typechecks that borrowed argument against
      `T_dem`.
    * If this borrowed check succeeds, the argument is accepted and no interval-quantity subsumption step is attempted
      for that argument.
-   * If `e` is not a borrowable stable expression, or if the temporary-borrow form does not typecheck, elaboration
+   * If `e` is not a borrowable place expression, or if the temporary-borrow form does not typecheck, elaboration
      continues to Step 2.
 
 2. **Exact unification and ordinary quantity satisfaction.**
@@ -5274,7 +5372,7 @@ Valid do-items inside `do`:
 
   Typing and well-formedness:
   * `expr` is expected to have type `m A` where `m` is the enclosing `do`-block's monad.
-  * The underlying pattern of `bindPat` MUST be irrefutable for type `A` (§6.1.1). If it is refutable, it is a
+  * The underlying pattern of `bindPat` MUST be irrefutable for type `A` (§6.1.2). If it is refutable, it is a
     compile-time error.
   * Any quantity annotation on `bindPat` applies uniformly to every variable introduced by that pattern (§6.3).
 
@@ -5387,11 +5485,12 @@ Valid do-items inside `do`:
   ```
 
   Rules:
-    * The underlying pattern of `bindPat` must be irrefutable (§6.1.1). Refutable patterns are not permitted in do-local
+    * The underlying pattern of `bindPat` must be irrefutable (§6.1.2). Refutable patterns are not permitted in do-local
       bindings.
     * Any quantity annotation on `bindPat` applies uniformly to every variable introduced by that pattern (§6.3).
-    * If `bindPat` carries quantity `&` and `expr` is not already a borrowable stable expression, elaboration introduces
-      a fresh hidden temporary root scoped to the remaining do-items, exactly as specified in §6.3 and §5.1.6.
+    * If `bindPat` carries quantity `&` and `expr` is not already a borrowable place expression (§5.1.7.2), elaboration
+      introduces a fresh hidden temporary root scoped to the remaining do-items, exactly as specified in §6.3 and
+      §5.1.6.
     * Names bound by `bindPat` are in scope in subsequent do-items in the `do` block.
 
   The alternative form `let (@q x : T) = expr` is permitted in a `do` block with the same meaning and typing as in §6.3.
@@ -6225,8 +6324,8 @@ The cases below define `⟦...⟧` for arbitrary `A`.
 * Pure local binding `let bindPat = expr`:
 
   If `bindPat` carries quantity `&`, elaboration performs a borrowed binding of the underlying pattern `pat0` against a
-  borrowable stable root and continues with `rest`. If `expr` is not already a borrowable stable expression, elaboration
-  first introduces a fresh hidden temporary root:
+  borrowable place expression (§5.1.7.2) and continues with `rest`. If `expr` is not already a borrowable place
+  expression (§5.1.7.2), elaboration first introduces a fresh hidden temporary root:
 
   ```kappa
   let 1 __tmp = expr
@@ -6492,12 +6591,15 @@ Rules:
 
 * `~` is valid only inside a `do` block, and only on arguments of the maximal application site (§7.1.3) that forms a
   `do`-item rewrite site.
-* `~` may be applied only to a stable place as defined in §5.1.7.1. In source syntax this means at least:
-  * a variable name; or
-  * a record projection path rooted at a variable or `var`-bound place, such as `rec.field` or `rec.inner.field`.
+* `~` may be applied only to:
+  * a stable place as defined in §5.1.7.1; or
+  * a parenthesized, fully applied projection call under §6.1.1.
+* Parentheses are required around a projection call under `~`, for example `~(focusedBuffer editor)`.
 * If the source place is rooted at a `var`-bound name, elaboration first reads the current contents of that `Ref` into a
-  fresh hidden temporary root and then forms the corresponding stable place from that temporary.
-* A given stable place may appear in at most one `~` argument within a single application.
+  fresh hidden temporary root and then proceeds on that temporary root.
+* A given stable place, or a given projection call occurrence, may appear in at most one `~` argument within a single
+  application.
+* For a projection call, static disjointness checking uses the static footprint summary of §5.1.7.2.
 * A `~place` argument is well-formed if and only if the compiler can statically resolve the callee at that application
   site to a Pi-telescope in which the corresponding explicit parameter:
   * has quantity `@1`,
@@ -6536,13 +6638,16 @@ or the pure analogue `let pat = func ~x1 ... ~xk args`, elaboration proceeds as 
 1. Resolve the callee's signature for the maximal application site and determine the ordered list of
    `inout`-compatible formal parameter names `p1 ... pk` corresponding to the marked arguments in that resolved
    application spine. This step succeeds only when each marked argument position satisfies the admissibility rule of
-   §8.8.3: quantity `@1`, stable formal name, stable place, and matching quantity-`1` return-record field.
-2. Elaborate each marked argument to a stable place `Pᵢ` under §5.1.7.1.
-   * If the source place is rooted at a `var`-bound name `v`, elaboration first introduces a fresh hidden temporary
-     containing the current contents of `v`; `Pᵢ` is then formed from that temporary root.
-   * The argument actually passed to the callee is the value at that place. In KCore this behaves as `MovePlace Pᵢ` or
-     an observationally equivalent internal form (§17.3.1.1).
-   * For a quantity-`1` `inout` parameter, this consumes exactly that path under §5.5.4.
+   §8.8.3: quantity `@1`, stable formal name, place expression, and matching quantity-`1` return-record field.
+2. Elaborate each marked argument as follows:
+
+   * If the marked argument is a stable place, proceed exactly as in the stable-place case of this section.
+   * If the marked argument is a parenthesized fully applied projection call, first inline the projection body once at
+     that site by substituting the actual arguments for the formal parameters. Then elaborate the resulting ordinary
+     control flow branchwise. Each `yield` leaf must denote a stable place rooted in the unique `place` argument of the
+     projection.
+   * In each leaf branch, the argument actually passed to the callee is the value at that yielded stable place. In KCore
+     this behaves as `MovePlace` on that stable place, or an observationally equivalent internal form (§17.3.1.1).
 3. Determine the returned record type `R`:
    * for `let pat <- ...`, the call must have type `m R`;
    * for `let pat = ...`, the call must have type `R`.
@@ -6569,6 +6674,9 @@ or the pure analogue `let pat = func ~x1 ... ~xk args`, elaboration proceeds as 
      sibling fields.
    * When several `~` arguments are present, these restorations occur left-to-right in the order of the marked
      arguments.
+   * If the marked argument originated from a projection call, write-back is performed branchwise using the same inlined
+     control-flow structure. In each leaf branch, the returned `inout` successor is restored through the yielded stable
+     place using the existing `FillPlace` rule for that stable place.
 7. Match the user-written pattern `pat` against the residual result:
    * The residual result is always treated as a record. There is no implicit coercion from a one-field residual record
      `(label : T)` to the payload type `T`.
@@ -7102,12 +7210,12 @@ Examples:
 * `for pat in collection` binds elements of a collection.
 
     * `pat` is a pattern (§7.6).
-    * In `for pat in collection`, `pat` must be **irrefutable** for the element type of `collection` (§6.1.1). If it is
+    * In `for pat in collection`, `pat` must be **irrefutable** for the element type of `collection` (§6.1.2). If it is
       refutable, it is a compile-time error; use `for? pat in collection` (§10.4.1) instead.
 
 * `let pat = expr` creates derived values within the comprehension.
 
-    * `pat` must be irrefutable (§6.1.1).
+    * `pat` must be irrefutable (§6.1.2).
     * For refutable matching, use `let? pat = expr` (§10.4.1).
 
 * `if condition` filters out rows where the condition is `False`. Within the remainder of the comprehension after an `if
@@ -9966,7 +10074,9 @@ KCore retains all compile-time structure needed by the source semantics. In part
   bindings or equivalent refined case contexts, not merely frontend-only side facts;
 * explicit handler forms, resumption quantities, and completion-carrying control structure;
 * explicit application spines aligned with Pi telescopes;
-* explicit places and pure path operations over stable subpaths;
+* explicit stable places and pure read / move / fill operations over stable subpaths;
+* surface `projection` calls do not survive as distinct KCore forms; they elaborate to ordinary control flow whose
+  leaves use the existing stable-place machinery;
 * explicit `seal` nodes, manifest compile-time members, opaque compile-time members, and package/member projections;
 * surface `exists` and `open ... as exists ...` do not survive as distinct KCore forms; they elaborate to ordinary
   `seal`, package projections, and local bindings over implementation-internal witness members (§5.5.11);
@@ -10071,7 +10181,28 @@ representation.
 This subsection does not introduce a distinct KCore borrow term. Borrow introduction remains an elaboration rule that
 produces ordinary explicit borrowed arguments or binders while referring to places.
 
-#### 17.3.1.2 KCore intrinsic compile-time types
+#### 17.3.1.2 Projection lowering
+
+A conforming implementation MUST behave as if a fully applied call to a `projection` definition (§6.1.1) does not
+survive as a distinct KCore form.
+
+Instead, after ordinary dependent substitution of actual arguments for formal parameters, the projection body is inlined
+at the use site and elaborated to ordinary KCore control flow whose leaves are stable-place operations or equivalent
+stable-place borrow introductions:
+
+* in an ordinary non-consuming value-demanding position, each leaf `yield p` elaborates as `ReadPlace p`;
+* in a borrow-demanding position, each leaf `yield p` elaborates as the ordinary borrowed argument or borrowed binding
+  that would have been produced for the stable place `p` at that site;
+* under `~`, each leaf `yield p` elaborates through the existing `MovePlace p` / `FillPlace p` rewrite of §8.8.
+
+The selector expression of a projection call is evaluated exactly once per projection call occurrence. If the source
+projection body contains `if` or `match`, the elaborated KCore contains corresponding ordinary branching structure with
+the translated leaves above.
+
+Projection calls therefore add no new runtime reference type and no new KCore place primitive; they are a reusable
+surface abstraction over ordinary control flow plus the existing stable-place machinery.
+
+#### 17.3.1.3 KCore intrinsic compile-time types
 
 A conforming implementation MUST behave as if KCore supports ordinary binding, projection, application, sealing, and
 packaging of inhabitants of the intrinsic compile-time types of §5.1.3.
@@ -10106,6 +10237,7 @@ Introduction kinds are implementation-defined, but MUST distinguish at least:
 * borrow introduction;
 * record reordering;
 * place lowering / path restoration;
+* projection lowering;
 * safe-navigation or section lowering; and
 * local-declaration closure conversion.
 
