@@ -530,7 +530,10 @@ Types (type namespace):
 ```
 Unit, Void, Bool, Char, String, Int, Nat, Integer, Float, Double, Real, Bytes, Ordering, SyntaxFragment,
 Option a, Result e a, List a, Array a, Set a, Map k v,
-Res a r, Match a r, Dec p, IO a, Eff r a, Regex, (=)
+Res a r, Match a r, Dec p,
+IO e a, UIO a, Fiber e a, Exit e a, Cause e, InterruptCause, DefectInfo,
+STM a, TVar a,
+Regex, (=)
 ```
 
 `Integer`, `Double`, and `Real` are ordinary user-facing numeric types exported by `std.prelude`.
@@ -550,6 +553,8 @@ List.Nil, List.(::),
 Res.(:&),
 Match.Hit, Match.Miss,
 Dec.Yes, Dec.No,
+Exit.Success, Exit.Failure,
+Cause.Fail, Cause.Interrupt, Cause.Defect, Cause.Both, Cause.Then,
 (=).refl,
 SyntaxFragment.Lit, SyntaxFragment.Interp,
 Unit.Unit
@@ -575,7 +580,11 @@ absurd,
 subst, sym, trans, cong,
 floatEq,
 runPure,
-f, re, b,              -- conventional prefixed-string handlers
+sandbox, unsandbox,
+fork, forkDaemon, await, join, interrupt, interruptFork,
+poll, uninterruptible, mask, ensuring, acquireRelease,
+atomically, newTVar, readTVar, writeTVar, check,
+f, re, b,
 println, print
 ```
 
@@ -630,6 +639,28 @@ data Dec (p : Type) : Type =
     Yes p
     No (p -> Void)
 
+expect data IO (e : Type) (a : Type) : Type
+type UIO (a : Type) = IO Void a
+
+expect data Fiber (e : Type) (a : Type) : Type
+
+expect data STM (a : Type) : Type
+expect data TVar (a : Type) : Type
+
+expect data InterruptCause : Type
+expect data DefectInfo : Type
+
+data Exit (e : Type) (a : Type) : Type =
+    Success a
+    Failure (Cause e)
+
+data Cause (e : Type) : Type =
+    Fail e
+    Interrupt InterruptCause
+    Defect DefectInfo
+    Both (Cause e) (Cause e)
+    Then (Cause e) (Cause e)
+
 data (=) (@0 a : Type) (x : a) : a -> Type =
     refl : x = x
 
@@ -653,6 +684,15 @@ trait Iterator (it : Type) =
     next : (1 this : it) -> Option (item : Item, rest : it)
 ```
 
+`IO e a` is the standard runtime computation type.
+
+* The parameter `e` classifies expected, recoverable failures.
+* Interruption and defects are not represented by `e`; they are tracked by `Cause e` and `Exit e a`.
+* `UIO a` is the conventional alias for computations that do not fail with an expected typed error.
+* `STM a` is the standard software-transactional-memory computation type.
+* `TVar a` is the standard transactional variable type.
+* `Fiber e a` is the standard lightweight runtime thread handle.
+
 `Void`, `absurd`, and `Dec` are the standard proof-oriented prelude basics:
 
 * `Void` is the empty type.
@@ -666,8 +706,9 @@ The standard prelude definition of `Applicative`, and the fact that `Monad` refi
 specified in §12.1 (with Appendix G providing the `ApplicativeDo` amendment that relies on that relationship).
 
 Instances: All canonical instances of the above traits for the above types (e.g. coherent evidence for `Equiv Int`, `Eq
-Int`, `Ord Int`, `Show String`, `Monad IO`, `MonadRef IO`, `Functor (Eff r)`, `Applicative (Eff r)`, `Monad (Eff r)`,
-...).
+Int`, `Ord Int`, `Show String`, `Monad (IO e)`, `MonadError (IO e)`, `MonadFinally (IO e)`, `MonadResource (IO e)`,
+`MonadRef (IO e)`, `Functor STM`, `Applicative STM`, `Monad STM`, `Alternative STM`, `Functor (Eff r)`, `Applicative
+(Eff r)`, `Monad (Eff r)`, ...).
 
 `Eq Float` and `Eq Double` use raw IEEE-754 bit equality. Use `floatEq` for numeric equality.
 
