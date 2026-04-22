@@ -6080,9 +6080,12 @@ Rules:
 * A row entry `<[l : E | r]>` associates the effect label `l` with the effect interface `E`.
 * Each operation signature in the body is an operation declaration of the effect interface.
 * An operation declaration may be prefixed with a quantity `q`. If omitted, the resumption quantity defaults to `1`.
-  This quantity governs the permitted usage of the resumption continuation value supplied to handlers of that operation.
-  For interval quantities, it controls how many times the handler may use the continuation; for `&`, it grants borrowed
-  non-consuming use subject to the ordinary borrow rules.
+* A resumption quantity MUST be an interval quantity of §5.1.5.
+  The borrowed quantity `&` is not permitted on effect operations.
+* This quantity governs how many times the handler may use the resumption continuation value supplied to handlers of
+  that operation.
+* Because a resumption is captured control state rather than a borrowable place, there is no borrowed-resumption mode in
+  v0.1.
 * Operation names declared inside an `effect` declaration are not brought into the global term namespace. They are
   selected via `label.op` (§13.1), and are additionally available within a handler for that label when handlers are
   specified.
@@ -6099,6 +6102,8 @@ Rules:
   witnesses.
 
 #### 8.1.8 Effect application and linear soundness
+
+In this section, the declared resumption quantity `q` of an operation always ranges over interval quantities only.
 
 Because Kappa enforces quantitative resource tracking, the capability of an effect handler to duplicate execution via a
 multi-shot continuation is restricted by the linear environment at the operation site.
