@@ -99,7 +99,7 @@ module SurfaceElaboration =
         { Name = name
           TypeText = typeText }
 
-    let rec private lowerKCorePattern (pattern: CorePattern) =
+    let rec private lowerKCorePattern (pattern: SurfacePattern) =
         match pattern with
         | WildcardPattern ->
             KCoreWildcardPattern
@@ -454,7 +454,7 @@ module SurfaceElaboration =
         (environment: BindingLoweringEnvironment)
         (scheme: TypeScheme option)
         (parameters: Parameter list)
-        (body: CoreExpression)
+        (body: SurfaceExpression)
         =
         let freshCounter = ref 0
         let doScopeCounter = ref 0
@@ -578,7 +578,7 @@ module SurfaceElaboration =
                 Some stringType
 
         and inferDoResultType localTypes statements =
-            let bindPatternName (binding: BindPattern) =
+            let bindPatternName (binding: SurfaceBindPattern) =
                 match binding.Pattern with
                 | NamePattern name -> Some name
                 | _ -> None
@@ -653,7 +653,7 @@ module SurfaceElaboration =
                 defaultRelease
 
         and lowerDoStatements scopeLabel localTypes statements =
-            let bindPatternName (binding: BindPattern) =
+            let bindPatternName (binding: SurfaceBindPattern) =
                 match binding.Pattern with
                 | NamePattern name -> name
                 | _ -> "__pattern"
@@ -1018,75 +1018,6 @@ module SurfaceElaboration =
                 provenance
 
         memberBindings @ [ dictionaryBinding ]
-
-    let private lowerModule (surfaceIndex: Map<string, ModuleSurfaceInfo>) (frontendModule: KFrontIRModule) =
-        let moduleName = moduleNameText frontendModule.ModuleIdentity
-        let moduleInfo = surfaceIndex[moduleName]
-
-        let environment =
-            { CurrentModuleName = moduleName
-              VisibleBindings = mergeVisibleBindings surfaceIndex moduleName
-              VisibleTraits = mergeVisibleTraits surfaceIndex moduleName
-              VisibleInstances = visibleInstances surfaceIndex moduleName
-              ConstrainedMembers = Map.empty }
-
-        let declarations =
-            frontendModule.Declarations
-            |> List.collect (fun declaration ->
-                let provenance = declarationOrigin frontendModule.FilePath moduleName declaration
-
-                let originalDeclaration =
-                    match declaration with
-                    | LetDeclaration definition when definition.Name.IsSome ->
-                        let scheme =
-                            environment.VisibleBindings
-                            |> Map.tryFind definition.Name.Value
-                            |> Option.map (fun bindingInfo -> bindingInfo.Scheme)
-
-                        [ lowerUserBinding environment frontendModule.FilePath moduleName definition scheme ]
-                    | _ ->
-                        [ { Source = declaration
-                            Binding = None
-                            Provenance = provenance } ]
-
-                match declaration with
-                | TraitDeclarationNode declaration ->
-                    let traitInfo = moduleInfo.Traits[declaration.Name]
-                    originalDeclaration @ synthesizeTraitDispatchBindings frontendModule.FilePath moduleName traitInfo
-                | InstanceDeclarationNode declaration ->
-                    let instanceKey = TraitRuntime.instanceKeyFromTokens declaration.HeaderTokens
-                    let instanceInfo =
-                        moduleInfo.Instances
-                        |> List.find (fun info ->
-                            String.Equals(info.TraitName, declaration.TraitName, StringComparison.Ordinal)
-                            && String.Equals(info.InstanceKey, instanceKey, StringComparison.Ordinal))
-
-                    originalDeclaration @ synthesizeInstanceBindings surfaceIndex frontendModule.FilePath moduleName instanceInfo
-                | _ ->
-                    originalDeclaration)
-
-        let intrinsicTerms =
-            match frontendModule.ModuleIdentity with
-            | Some moduleNameSegments ->
-                frontendModule.Declarations
-                |> List.choose (function
-                    | ExpectDeclarationNode declaration
-                        when Stdlib.intrinsicallySatisfiesExpect "interpreter" moduleNameSegments declaration ->
-                        match declaration with
-                        | ExpectTermDeclaration termDeclaration -> Some termDeclaration.Name
-                        | _ -> None
-                    | _ ->
-                        None)
-            | None ->
-                []
-
-        { Name = moduleName
-          SourceFile = frontendModule.FilePath
-          ModuleAttributes = frontendModule.ModuleAttributes
-          Imports = frontendModule.Imports
-          IntrinsicTerms = intrinsicTerms |> List.distinct |> List.sort
-          Ownership = frontendModule.Ownership
-          Declarations = declarations }
 
     let lowerKCoreModules (backendProfile: string) (frontendModules: KFrontIRModule list) =
         let surfaceIndex = buildSurfaceIndex frontendModules

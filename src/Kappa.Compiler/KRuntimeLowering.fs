@@ -1,0 +1,172 @@
+namespace Kappa.Compiler
+
+open System
+
+module internal KRuntimeLowering =
+    let rec private lowerKRuntimePattern pattern =
+        match pattern with
+        | KCoreWildcardPattern ->
+            KRuntimeWildcardPattern
+        | KCoreNamePattern name ->
+            KRuntimeNamePattern name
+        | KCoreLiteralPattern literal ->
+            KRuntimeLiteralPattern literal
+        | KCoreConstructorPattern(name, arguments) ->
+            KRuntimeConstructorPattern(name, arguments |> List.map lowerKRuntimePattern)
+
+    let rec private lowerKRuntimeExitAction action =
+        match action with
+        | KCoreDeferred expression ->
+            KRuntimeDeferred(lowerKRuntimeExpression expression)
+        | KCoreRelease(resourceTypeText, release, resource) ->
+            KRuntimeRelease(resourceTypeText, lowerKRuntimeExpression release, lowerKRuntimeExpression resource)
+
+    and private lowerKRuntimeExpression expression =
+        match expression with
+        | KCoreLiteral literal ->
+            KRuntimeLiteral literal
+        | KCoreName segments ->
+            KRuntimeName segments
+        | KCoreLambda(parameters, body) ->
+            KRuntimeClosure(parameters |> List.map (fun parameter -> parameter.Name), lowerKRuntimeExpression body)
+        | KCoreIfThenElse(condition, whenTrue, whenFalse) ->
+            KRuntimeIfThenElse(
+                lowerKRuntimeExpression condition,
+                lowerKRuntimeExpression whenTrue,
+                lowerKRuntimeExpression whenFalse
+            )
+        | KCoreMatch(scrutinee, cases) ->
+            KRuntimeMatch(
+                lowerKRuntimeExpression scrutinee,
+                cases
+                |> List.map (fun caseClause ->
+                    { Pattern = lowerKRuntimePattern caseClause.Pattern
+                      Body = lowerKRuntimeExpression caseClause.Body })
+            )
+        | KCoreExecute inner ->
+            KRuntimeExecute(lowerKRuntimeExpression inner)
+        | KCoreLet(bindingName, value, body) ->
+            KRuntimeLet(bindingName, lowerKRuntimeExpression value, lowerKRuntimeExpression body)
+        | KCoreDoScope(scopeLabel, body) ->
+            KRuntimeDoScope(scopeLabel, lowerKRuntimeExpression body)
+        | KCoreScheduleExit(scopeLabel, action, body) ->
+            KRuntimeScheduleExit(scopeLabel, lowerKRuntimeExitAction action, lowerKRuntimeExpression body)
+        | KCoreSequence(first, second) ->
+            KRuntimeSequence(lowerKRuntimeExpression first, lowerKRuntimeExpression second)
+        | KCoreWhile(condition, body) ->
+            KRuntimeWhile(lowerKRuntimeExpression condition, lowerKRuntimeExpression body)
+        | KCoreApply(callee, arguments) ->
+            KRuntimeApply(lowerKRuntimeExpression callee, arguments |> List.map lowerKRuntimeExpression)
+        | KCoreDictionaryValue(moduleName, traitName, instanceKey) ->
+            KRuntimeDictionaryValue(moduleName, traitName, instanceKey)
+        | KCoreTraitCall(traitName, memberName, dictionary, arguments) ->
+            KRuntimeTraitCall(
+                traitName,
+                memberName,
+                lowerKRuntimeExpression dictionary,
+                arguments |> List.map lowerKRuntimeExpression
+            )
+        | KCoreUnary(operatorName, operand) ->
+            KRuntimeUnary(operatorName, lowerKRuntimeExpression operand)
+        | KCoreBinary(left, operatorName, right) ->
+            KRuntimeBinary(lowerKRuntimeExpression left, operatorName, lowerKRuntimeExpression right)
+        | KCorePrefixedString(prefix, parts) ->
+            KRuntimePrefixedString(
+                prefix,
+                parts
+                |> List.map (function
+                    | KCoreStringText text -> KRuntimeStringText text
+                    | KCoreStringInterpolation inner -> KRuntimeStringInterpolation(lowerKRuntimeExpression inner))
+            )
+
+    let private isPrivateByDefaultAttributes attributes =
+        attributes
+        |> List.exists (fun attributeName -> String.Equals(attributeName, "PrivateByDefault", StringComparison.Ordinal))
+
+    let private isExportedVisibility moduleAttributes visibility =
+        match visibility with
+        | Some Visibility.Public -> true
+        | Some Visibility.Private -> false
+        | None -> not (isPrivateByDefaultAttributes moduleAttributes)
+
+    let private isExportedKCoreBinding (moduleDump: KCoreModule) (binding: KCoreBinding) =
+        isExportedVisibility moduleDump.ModuleAttributes binding.Visibility
+
+    let private isExportedDataDeclaration (moduleDump: KCoreModule) (declaration: DataDeclaration) =
+        not declaration.IsOpaque
+        && isExportedVisibility moduleDump.ModuleAttributes declaration.Visibility
+
+    let lowerKRuntimeModule (coreModule: KCoreModule) =
+        let termBindings =
+            coreModule.Declarations
+            |> List.choose (fun declaration ->
+                match declaration.Binding with
+                | Some binding when binding.Name.IsSome ->
+                    Some
+                        { Name = binding.Name.Value
+                          Parameters = binding.Parameters |> List.map (fun parameter -> parameter.Name)
+                          Body = binding.Body |> Option.map lowerKRuntimeExpression
+                          Intrinsic = false
+                          Provenance = binding.Provenance }
+                | _ ->
+                    None)
+
+        let intrinsicBindings =
+            coreModule.IntrinsicTerms
+            |> List.map (fun name ->
+                { Name = name
+                  Parameters = []
+                  Body = None
+                  Intrinsic = true
+                  Provenance =
+                    { FilePath = coreModule.SourceFile
+                      ModuleName = coreModule.Name
+                      DeclarationName = Some name
+                      IntroductionKind = "intrinsic" } })
+
+        let constructors =
+            coreModule.Declarations
+            |> List.collect (fun declaration ->
+                match declaration.Source with
+                | DataDeclarationNode dataDeclaration when isExportedDataDeclaration coreModule dataDeclaration ->
+                    dataDeclaration.Constructors
+                    |> List.map (fun constructor ->
+                        { Name = constructor.Name
+                          Arity = constructor.Arity
+                          TypeName = dataDeclaration.Name
+                          Provenance =
+                            { declaration.Provenance with
+                                DeclarationName = Some constructor.Name
+                                IntroductionKind = "constructor" } })
+                | _ ->
+                    [])
+
+        let exports =
+            coreModule.Declarations
+            |> List.collect (fun declaration ->
+                let bindingExports =
+                    match declaration.Binding with
+                    | Some binding when binding.Name.IsSome && isExportedKCoreBinding coreModule binding ->
+                        [ binding.Name.Value ]
+                    | _ ->
+                        []
+
+                let constructorExports =
+                    match declaration.Source with
+                    | DataDeclarationNode dataDeclaration when isExportedDataDeclaration coreModule dataDeclaration ->
+                        dataDeclaration.Constructors |> List.map (fun constructor -> constructor.Name)
+                    | _ ->
+                        []
+
+                bindingExports @ constructorExports)
+            |> List.append coreModule.IntrinsicTerms
+            |> List.distinct
+            |> List.sort
+
+        { Name = coreModule.Name
+          SourceFile = coreModule.SourceFile
+          Imports = coreModule.Imports
+          Exports = exports
+          IntrinsicTerms = coreModule.IntrinsicTerms
+          Constructors = constructors
+          Bindings = termBindings @ intrinsicBindings }

@@ -259,46 +259,46 @@ type FixityDeclaration =
       Precedence: int
       OperatorName: string }
 
-type CoreExpression =
+type SurfaceExpression =
     | Literal of LiteralValue
     | Name of string list
-    | Lambda of Parameter list * CoreExpression
-    | IfThenElse of CoreExpression * CoreExpression * CoreExpression
-    | Match of CoreExpression * MatchCase list
-    | Do of DoStatement list
-    | MonadicSplice of CoreExpression
-    | Apply of CoreExpression * CoreExpression list
-    | InoutArgument of CoreExpression
-    | Unary of operatorName: string * CoreExpression
-    | Binary of CoreExpression * operatorName: string * CoreExpression
-    | PrefixedString of prefix: string * parts: InterpolatedStringPart list
+    | Lambda of Parameter list * SurfaceExpression
+    | IfThenElse of SurfaceExpression * SurfaceExpression * SurfaceExpression
+    | Match of SurfaceExpression * SurfaceMatchCase list
+    | Do of SurfaceDoStatement list
+    | MonadicSplice of SurfaceExpression
+    | Apply of SurfaceExpression * SurfaceExpression list
+    | InoutArgument of SurfaceExpression
+    | Unary of operatorName: string * SurfaceExpression
+    | Binary of SurfaceExpression * operatorName: string * SurfaceExpression
+    | PrefixedString of prefix: string * parts: SurfaceInterpolatedStringPart list
 
-and InterpolatedStringPart =
+and SurfaceInterpolatedStringPart =
     | StringText of string
-    | StringInterpolation of CoreExpression
+    | StringInterpolation of SurfaceExpression
 
-and CorePattern =
+and SurfacePattern =
     | WildcardPattern
     | NamePattern of string
     | LiteralPattern of LiteralValue
-    | ConstructorPattern of string list * CorePattern list
+    | ConstructorPattern of string list * SurfacePattern list
 
-and MatchCase =
-    { Pattern: CorePattern
-      Body: CoreExpression }
+and SurfaceMatchCase =
+    { Pattern: SurfacePattern
+      Body: SurfaceExpression }
 
-and BindPattern =
-    { Pattern: CorePattern
+and SurfaceBindPattern =
+    { Pattern: SurfacePattern
       Quantity: Quantity option }
 
-and DoStatement =
-    | DoLet of BindPattern * CoreExpression
-    | DoBind of BindPattern * CoreExpression
-    | DoVar of string * CoreExpression
-    | DoAssign of string * CoreExpression
-    | DoUsing of CorePattern * CoreExpression
-    | DoWhile of condition: CoreExpression * body: DoStatement list
-    | DoExpression of CoreExpression
+and SurfaceDoStatement =
+    | DoLet of SurfaceBindPattern * SurfaceExpression
+    | DoBind of SurfaceBindPattern * SurfaceExpression
+    | DoVar of string * SurfaceExpression
+    | DoAssign of string * SurfaceExpression
+    | DoUsing of SurfacePattern * SurfaceExpression
+    | DoWhile of condition: SurfaceExpression * body: SurfaceDoStatement list
+    | DoExpression of SurfaceExpression
 
 type BindingSignature =
     { Visibility: Visibility option
@@ -334,7 +334,7 @@ type LetDefinition =
       HeaderTokens: Token list
       ReturnTypeTokens: Token list option
       BodyTokens: Token list
-      Body: CoreExpression option }
+      Body: SurfaceExpression option }
 
 type DataConstructor =
     { Name: string

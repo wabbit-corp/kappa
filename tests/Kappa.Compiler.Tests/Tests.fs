@@ -2,9 +2,22 @@ module SmokeTests
 
 open System
 open System.IO
+open System.Runtime.InteropServices
 open Kappa.Compiler
 open Harness
 open Xunit
+
+[<Fact>]
+let ``repo zig bootstrap command uses the native shell for this platform`` () =
+    let shellProgram, shellArguments = repoZigBootstrapCommand ()
+
+    if RuntimeInformation.IsOSPlatform(OSPlatform.Windows) then
+        Assert.Equal("powershell", shellProgram)
+        Assert.Contains("ensure-zig.ps1", shellArguments)
+    else
+        Assert.Equal("sh", shellProgram)
+        Assert.Contains("ensure-zig.sh", shellArguments)
+        Assert.DoesNotContain("pwsh", shellProgram.ToLowerInvariant())
 
 [<Fact>]
 let ``source text reports 1-based line and column positions`` () =

@@ -299,7 +299,7 @@ module ResourceChecking =
 
         { state with Closures = closures }
 
-    let private collectPatternNames (pattern: CorePattern) =
+    let private collectPatternNames (pattern: SurfacePattern) =
         let rec loop current =
             seq {
                 match current with
@@ -313,7 +313,7 @@ module ResourceChecking =
 
         loop pattern |> Seq.toList
 
-    let rec private expressionNames (expression: CoreExpression) =
+    let rec private expressionNames (expression: SurfaceExpression) =
         seq {
             match expression with
             | Literal _ -> ()
@@ -359,7 +359,7 @@ module ResourceChecking =
                     | StringInterpolation inner -> yield! expressionNames inner
         }
 
-    and private doStatementNames (statement: DoStatement) =
+    and private doStatementNames (statement: SurfaceDoStatement) =
         seq {
             match statement with
             | DoLet(_, expression)
@@ -418,7 +418,7 @@ module ResourceChecking =
             Bindings = Map.add name binding state.Bindings
             NextBindingId = state.NextBindingId + 1 }
 
-    let private addPatternBindings (document: ParsedDocument) (binding: BindPattern) quantity borrowRegion capturedRegions capturedBindingOrigins checkDrop closureFactId state =
+    let private addPatternBindings (document: ParsedDocument) (binding: SurfaceBindPattern) quantity borrowRegion capturedRegions capturedBindingOrigins checkDrop closureFactId state =
         collectPatternNames binding.Pattern
         |> List.fold (fun current name ->
             addBinding
@@ -626,7 +626,7 @@ module ResourceChecking =
         | _ ->
             state
 
-    let private tryCalleeName (expression: CoreExpression) =
+    let private tryCalleeName (expression: SurfaceExpression) =
         match expression with
         | Name [ name ] -> Some name
         | _ -> None

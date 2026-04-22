@@ -95,7 +95,7 @@ module private SurfaceBinderParsing =
         | _ ->
             parseBody false false None tokens
 
-    let parseBindPatternFromTokens (parsePattern: Token list -> CorePattern) (tokens: Token list) =
+    let parseBindPatternFromTokens (parsePattern: Token list -> SurfacePattern) (tokens: Token list) =
         match tryParseQuantityPrefix tokens with
         | Some(quantity, rest) ->
             { Pattern = parsePattern rest
@@ -291,7 +291,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
 
     member private this.ParseApplicationPattern() =
         let head = this.ParseAtomicPattern()
-        let arguments = ResizeArray<CorePattern>()
+        let arguments = ResizeArray<SurfacePattern>()
 
         while this.IsAtomicPatternStart(this.Current) do
             arguments.Add(this.ParseAtomicPattern())
@@ -697,7 +697,7 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
         if this.Current.Kind = Newline then
             this.Advance() |> ignore
 
-        let cases = ResizeArray<MatchCase>()
+        let cases = ResizeArray<SurfaceMatchCase>()
 
         while Token.isKeyword Keyword.Case this.Current do
             this.Advance() |> ignore
@@ -972,7 +972,7 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
     member private this.ParseInterpolatedString() =
         let startToken = this.Advance()
         let prefix = SyntaxFacts.trimIdentifierQuotes startToken.Text
-        let parts = ResizeArray<InterpolatedStringPart>()
+        let parts = ResizeArray<SurfaceInterpolatedStringPart>()
         let mutable closed = false
 
         while not closed && this.Current.Kind <> EndOfFile do
@@ -1105,7 +1105,7 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
 
     member private this.ParseApplicationExpression() =
         let head = this.ParsePrefixExpression()
-        let arguments = ResizeArray<CoreExpression>()
+        let arguments = ResizeArray<SurfaceExpression>()
         let mutable keepReading = true
 
         while keepReading do
