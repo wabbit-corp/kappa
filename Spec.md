@@ -838,7 +838,7 @@ import, export, as, except,
 do, block, return, open,
 forall, exists,
 captures,
-assertTotal, decreases, expect, instance, derive, effect, handle, deep, pattern,
+assertTotal, decreases, structural, expect, instance, derive, effect, handle, deep, pattern,
 projection, place,
 infix, postfix, prefix, left, right,
 var, while, break, continue, using, inout,
@@ -3901,6 +3901,7 @@ Modifier rules:
    [public|private] [opaque] let name (x : A) (y : B) : R = body
    [public|private] [opaque] let name (inout x : A) (y : B) : R = body
    [public|private] [opaque] let name (x : A) (y : B) : R decreases measure = body
+   [public|private] [opaque] let name (x : A) (y : B) : R decreases structural x = body
    [public|private] [opaque] let name (x : A, y : B) : R = body
    [public|private] [opaque] let name (x : A, y : B) : R decreases measure = body
    ```
@@ -3909,9 +3910,16 @@ Modifier rules:
 
    Decreases clause:
 
-   * In a named `let` definition, an optional `decreases measure` clause may appear (see the definition forms above).
-   * `decreases` supplies an explicit termination measure for recursive definitions; its semantics are defined in
-     §6.4.2.
+   Any named function definition may optionally include a `decreases` clause immediately before `=`:
+
+   ```kappa
+   let name binders... : R decreases measure = body
+   let name binders... : R decreases structural x = body
+   ```
+
+   * `decreases` supplies the user-visible leading component(s) of the termination argument; its semantics are defined
+     in §6.4.4.
+   * If `decreases` is omitted, termination inference is attempted under §6.4.2.
    * If a `decreases` clause is present on a non-recursive definition, it has no effect.
 
    Pattern bindings:
@@ -4309,110 +4317,118 @@ Kappa is total by default.
 
 Normative rule:
 
-* Any definition that the typechecker might unfold during definitional equality (§14.3) MUST be terminating.
+* A transparent definition may participate in definitional equality only if it is **termination-certified**.
 
-This rule exists for a boring but important reason: definitional equality is part of typechecking, and the typechecker
-must not be allowed to diverge just because a definition body is available.
+#### 6.4.1 Termination-certified definitions
 
-#### 6.4.1 Unfoldability and termination certificates
+A definition is **termination-certified** iff one of the following holds:
 
-A definition is **unfoldable** at a use site iff all of the following hold:
+1. the termination checker accepts it directly under §§6.4.2, 6.4.3, and 6.4.4; or
+2. it was admitted via `assertTotal`, and the implementation later separately verifies its termination and records it as
+   termination-certified.
 
-1. the definition is not marked `opaque` at that use site (§2.5.2),
-2. its body is available in the compilation artifact (implementations may omit bodies under separate compilation), and
-3. the compiler has a *termination certificate* for the definition, indicating it is safe to unfold during typechecking.
+A definition accepted solely via `assertTotal` is **not** termination-certified by default.
 
-A definition accepted solely via `assertTotal` has **no termination certificate** by default, and is therefore not
-unfoldable for definitional equality unless the compiler separately verifies it and records it as safe to unfold
-(§16.4).
+#### 6.4.2 Inference-first termination checking
 
-Note: "termination certificate" is a logical status, not a required user-visible proof term. The representation of the
-certificate is implementation-defined, but the observable consequence is fixed: certified definitions may unfold;
-uncertified definitions must not.
+Termination checking is inference-first.
 
-#### 6.4.2 Termination checking requirements
+Implementations MUST attempt to establish termination of every recursive strongly-connected component (SCC) before
+requiring any user-written `decreases` clause.
 
-Termination checking is conservative: it may reject terminating programs. However, a conforming implementation MUST
-accept (at minimum) the following classes of terminating recursive definitions *without requiring `assertTotal`*:
+For each recursive SCC, the implementation MUST attempt, in order:
 
-1. **Structural recursion on an inductive argument.**
+1. **Inferred structural recursion** over one or more parameters.
+2. **Semantic structural descent** after normalization of recursive arguments, including:
+   * transparent local alias expansion,
+   * transparent projection reduction,
+   * constructor exposure from pattern matching / refinement,
+   * and descent under a fixed constructor spine.
+3. **Inferred well-founded measures** of type `Nat` or lexicographic tuples of `Nat`.
+4. **Inferred hidden phase components** for mutually recursive SCCs.
+5. **Size-change termination** over the SCC call graph.
 
-   The checker MUST accept direct recursion where every recursive call is on a structurally smaller value obtained by
-   pattern matching / destructuring an inductive argument.
+Implementations SHOULD additionally attempt inference of **linear-lexicographic combinations** of primitive measures.
 
-   Informally: the recursive argument must be a syntactic subterm produced by a constructor pattern match (or an
-   irrefutable destructuring that is definitionally equivalent to such a match).
+Primitive measure candidates include:
 
-2. **Well-founded recursion via an explicit `decreases` clause.**
+* `Nat`-valued parameters,
+* `Nat`-valued projections and earlier-bound local aliases thereof,
+* structural size of inductive parameters,
+* and simple normalized arithmetic expressions built from such candidates using literals, `+`, and `-`.
 
-   A named `let` definition MAY include a `decreases` clause (syntax in §6.1) supplying an explicit termination measure:
+At minimum, a conforming implementation MUST accept **without explicit `decreases`**:
 
-   ```kappa
-   div : Nat -> Nat -> Nat
-   let div n d decreases n =
-       if n < d then 0 else 1 + div (n - d) d
+* direct recursion on pattern-bound subterms of an inductive parameter;
+* `Nat` countdowns written either by matching or by branch-guarded predecessor / subtraction, e.g. recursive calls on
+  `n - 1` in branches where the checker can prove `0 < n`;
+* simple mutually recursive definitions where a shared inferred measure plus a hidden phase component suffices.
 
-   gcd : Nat -> Nat -> Nat
-   let gcd a b decreases b =
-       if b == 0 then a else gcd b (a % b)
+If any strategy above succeeds, the SCC is accepted and no user-written `decreases` clause is required.
 
-   -- Lexicographic measure (tuple of Nat):
-   ack : Nat -> Nat -> Nat
-   let ack m n decreases (m, n) =
-       match (m, n)
-       case (0, n)     -> n + 1
-       case (m, 0)     -> ack (m - 1) 1
-       case (m, n + 1) -> ack (m - 1) (ack m n)
-   ```
+#### 6.4.3 Hidden phase components
 
-   Rules:
+For a mutually recursive SCC, the implementation may synthesize a hidden finite phase ordinal used only as a
+lexicographic tie-breaker in the termination argument.
 
-   * The `decreases` expression MUST have type `Nat` or a tuple of `Nat` (e.g. `(Nat, Nat)`,
-     `(Nat, Nat, Nat)`).
-   * Decrease is **strict**:
-     * for `Nat`, the measure must decrease under `<`;
-     * for tuples of `Nat`, the measure must decrease under the usual **lexicographic** order.
-   * The checker MUST verify that **every** recursive call in the (mutually) recursive strongly-connected component
-     decreases the measure.
+This hidden phase component:
 
-   `decreases` does not change runtime behavior. It is only a termination-checking hint and, when verified, enables
-   unfolding during typechecking.
+* is not written in source code,
+* does not affect runtime behavior,
+* does not appear in the user-visible type of the definition,
+* and may be used both for fully inferred termination arguments and to complete user-written `decreases` measures.
 
-3. **Mutual recursion with a shared well-founded measure.**
+This rule exists specifically so that ordinary mutually recursive definitions need not force users to write auxiliary
+`0` / `1` tie-breakers or ghost phase parameters merely to satisfy the termination checker.
 
-   A mutually recursive SCC is accepted if the checker can establish a single well-founded descending measure for every
-   call edge in the SCC.
+#### 6.4.4 Explicit `decreases`
 
-   If any definition in a mutually recursive SCC uses a `decreases` clause, then **every** definition in that SCC MUST
-   provide a `decreases` clause, and all measures MUST have definitionally equal types (all `Nat` or all the same `Nat`
-   tuple type). This mirrors the usual "one well-founded order for the whole SCC" discipline.
+Any named function definition may optionally include a `decreases` clause immediately before `=`.
 
-Implementations SHOULD additionally support a call-graph based *size-change termination* (SCT) analysis to prove
-termination in cases that are not syntactically structural but are decreasing across calls. SCT is especially useful for
-mutually recursive definitions and for functions where the decreasing argument is not syntactically obvious.
+Examples:
 
-If SCT is implemented, it must still be sound: accepting a non-terminating definition as unfoldable breaks typechecking.
+```kappa
+let gcd (a : Nat) (b : Nat) : Nat decreases b =
+    ...
 
-#### 6.4.3 Internal recursion introduced by elaboration
+let ack (m : Nat) (n : Nat) : Nat decreases (m, n) =
+    ...
 
-Elaboration may introduce internal recursive helpers required by normative desugarings (e.g. comprehensions and loops).
-Such helpers must not compromise typechecking termination:
+let map (xs : List a) : List b decreases structural xs =
+    ...
+```
 
-* If an introduced helper is potentially unfolded by definitional equality, it MUST satisfy the same
-  termination-checking requirements as user-written definitions.
-* Otherwise, the implementation MUST lower the construct to an internal primitive (or otherwise mark it non-unfoldable)
-  such that it is not subject to δ-reduction during typechecking.
+Rules:
 
-In other words: desugaring is not a loophole for smuggling general recursion into definitional equality.
+* If `decreases` is omitted, inference is attempted as specified in §6.4.2.
+* `decreases e` supplies the user-visible leading component(s) of the well-founded measure.
+* The implementation may still augment that measure with hidden phase components or other equivalent lexicographic
+  tie-breakers needed for a mutually recursive SCC.
+* `decreases structural x` requires the definition to elaborate using structural recursion on parameter `x`. If this is
+  not possible, compilation fails rather than silently falling back to a different termination strategy.
+* `decreases` does not change runtime behavior. It constrains only the termination argument used by elaboration.
 
-#### 6.4.4 Relationship to `assertTotal`
+#### 6.4.5 Internal recursion introduced by elaboration
 
-`assertTotal` is an explicit escape hatch for admitting definitions that the compiler cannot prove terminating.
+Elaboration may introduce internal recursive helpers required by normative desugarings.
 
-* It does not change runtime semantics.
-* It does not, by itself, establish a termination certificate.
-* Definitions accepted solely via `assertTotal` are treated as not unfoldable for definitional equality unless
-  separately verified and recorded safe to unfold (§16.4).
+Such helpers are admissible only if either:
+
+* the helper itself is termination-certified under the same rules as user-written definitions; or
+* the helper is lowered to an internal primitive or fixpoint representation that is not unfolded by definitional
+  equality.
+
+Desugaring is not a loophole for smuggling uncertified recursion into conversion.
+
+#### 6.4.6 Relationship to `assertTotal`
+
+`assertTotal` suppresses termination checking for acceptance only.
+
+It does not, by itself:
+
+* establish termination certification,
+* make a definition unfoldable for definitional equality,
+* or discharge any obligation created by §§6.4.2, 6.4.3, 6.4.4, and 6.4.5.
 
 Recursion policy:
 
@@ -10061,11 +10077,11 @@ Definitional equality (also called conversion) is the equality relation used by 
 Definitional equality is the smallest congruence containing the following reductions (subject to opacity rules):
 
 * β-reduction: `(\(x : A) -> e) v  ↦  e[x := v]`
-* δ-reduction: unfolding of transparent terminating definitions and transparent type aliases whose bodies are available
-  and not marked opaque at the use site. Definitions accepted solely via `assertTotal` (§16.4) do not unfold for
-  definitional equality unless the implementation has separately verified them as terminating. Outside the defining
-  module, opaque definitions and opaque type aliases do not unfold unless the importing module has explicitly clarified
-  them (§2.5.2).
+* δ-reduction: unfolding of transparent **termination-certified** definitions and transparent type aliases whose bodies
+  are available and not marked opaque at the use site. Definitions accepted solely via `assertTotal` (§16.4) do not
+  unfold for definitional equality unless the implementation has separately verified them and recorded them as
+  termination-certified. Outside the defining module, opaque definitions and opaque type aliases do not unfold unless
+  the importing module has explicitly clarified them (§2.5.2).
 * ι-reduction: reducing `match` on known constructors/literals.
 * η-equality (definitional):
     * Functions: `f ≡ (\(x : A) -> f x)` when `x` is not free in `f`.
@@ -10430,8 +10446,8 @@ It is computed by full normalization of the definition, including:
 
 * all Easy-Hash normalization steps,
 * complete δ-unfolding of transparent definitions reachable from the definition being normalized,
-* unfolding of `assertTotal` definitions only when the implementation has separately verified termination and recorded
-  them as safe to unfold (§16.4),
+* unfolding of `assertTotal` definitions only when the implementation has separately verified them and recorded them as
+  termination-certified (§16.4),
 * respect for `opaque` and `private opaque` as defined from the perspective of the defining module: inside the defining
   module, local definitions are available normally (§2.5.2); when normalization reaches a definition imported from
   another module, it uses the transparency recorded in that imported definition's canonical artifact. A downstream
@@ -10688,19 +10704,22 @@ Meaning:
 
 Unfolding / definitional equality:
 
-* A definition accepted **solely** via `assertTotal` is treated as **not unfoldable** for definitional equality (§6.4.1,
-  §14.3) unless the implementation separately verifies its termination and records it as safe to unfold.
+* A definition accepted **solely** via `assertTotal` is **not** termination-certified by default and therefore does not
+  unfold for definitional equality (§6.4.1, §14.3) unless the implementation separately verifies its termination and
+  records it as termination-certified.
 
   "Records it" is normative: under separate compilation, the module/interface artifact must carry (at minimum) a stable
   bit indicating whether each transparent definition is termination-certified and therefore eligible for δ-reduction. If
-  that bit is absent, the definition must be treated as not unfoldable, even if a body is present.
+  that bit is absent, the definition must be treated as not termination-certified for unfolding purposes, even if a body
+  is present.
 
 Interaction with `decreases`:
 
-* A `decreases` clause (§6.4.2) is the preferred way to make a non-structural recursive definition acceptable.
+* An explicit `decreases` clause (§6.4.4) is the preferred fallback when inference under §6.4.2 is insufficient for a
+  recursive definition.
 * If `assertTotal` is used anyway, the implementation MAY still attempt to verify termination (including using the
-  provided `decreases` measure). If verification succeeds, the definition may be recorded as safe to unfold; otherwise
-  it remains non-unfoldable.
+  provided `decreases` measure). If verification succeeds, the definition may be recorded as termination-certified;
+  otherwise it remains ineligible for unfolding in definitional equality.
 
 Gating:
 
@@ -11128,6 +11147,11 @@ A module interface artifact MUST record at least:
 * the hashes or equivalent identity data required by §15 for exported definitions, instances, and escaped local nominal
   families recorded by the interface artifact;
 * enough definitional content for exported transparent items to support downstream definitional equality;
+* for each exported transparent recursive definition, whether it is termination-certified and, if so, the termination
+  kind (`structural`, `well-founded`, `size-change`, or `verified-assertTotal`), together with either:
+  * the canonical visible `decreases` measure, or
+  * an equivalent stable termination-certificate payload sufficient for downstream unfolding decisions, hashing, and
+    reproducible separate compilation;
 * enough metadata to reconstruct the reified-module view of §13.1.2, including the namespace-tagged exported-member
   surface and the opaque-vs-transparent classification needed for local qualified access and module-value projection.
 
@@ -11394,6 +11418,9 @@ space, and it MUST NOT consist solely of digits.
 Implementations SHOULD use readable identifier forms such as `E_IMPORT_CYCLE`, `E_TYPE_MISMATCH`, or
 `W_UNUSED_BINDING` rather than bare numeric codes.
 
+When termination checking fails, the diagnostic MUST identify the recursive SCC, the recursive call edge or edges that
+failed, and at least one candidate explicit `decreases` clause when the implementation can synthesize one.
+
 Tooling queries over syntactically incomplete files are valid. Where possible, they MUST return partial results rather
 than failing wholesale merely because the surrounding file is incomplete.
 
@@ -11409,6 +11436,9 @@ Such queries SHOULD support at least:
 * expression type and type-reference resolution at a source position;
 * expected type, expected quantity, and expected effect row where those are well-defined at a source position;
 * diagnostics for a file or declaration, even when the file is syntactically incomplete;
+* for a recursive definition, the recursive SCC, the inferred termination strategy, the canonical visible measure (if
+  any), any hidden phase components, and the recursive call edges together with the proved decrease relation on each
+  edge;
 * completion candidate enumeration at a source position;
 * find-usages and rename keyed by declaration-symbol identity;
 * type-directed search across the current project, imported interfaces, and any available semantic object store;
