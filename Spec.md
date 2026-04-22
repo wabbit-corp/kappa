@@ -838,7 +838,7 @@ import, export, as, except,
 do, block, return, open,
 forall, exists,
 captures,
-assertTotal, expect, instance, derive, effect, handle, deep, pattern,
+assertTotal, decreases, expect, instance, derive, effect, handle, deep, pattern,
 projection, place,
 infix, postfix, prefix, left, right,
 var, while, break, continue, using, inout,
@@ -3713,7 +3713,8 @@ evaluator.
 definitions (§6.4), including the unsafe/debug `assertTotal` escape hatch of §16.4. The elaboration-time evaluator uses
 the same termination checker as the rest of the language. A macro accepted only via `assertTotal` is still required to
 be deterministic with respect to its inputs and the macro input transcript. Non-termination of a macro during
-elaboration is a compiler error (the implementation may hang, time out, or report a diagnostic).
+elaboration is a compiler error. Implementations MUST detect and abort (e.g. via a deterministic step limit or
+equivalent) rather than hanging indefinitely.
 
 These restrictions are enforced by the elaboration-time evaluator (§17.3.3).
 A macro or splice that violates them is a compile-time error.
@@ -3899,11 +3900,20 @@ Modifier rules:
    [public|private] [opaque] let pat = expr
    [public|private] [opaque] let name (x : A) (y : B) : R = body
    [public|private] [opaque] let name (inout x : A) (y : B) : R = body
+   [public|private] [opaque] let name (x : A) (y : B) : R decreases measure = body
    [public|private] [opaque] let name (x : A, y : B) : R = body
+   [public|private] [opaque] let name (x : A, y : B) : R decreases measure = body
    ```
 
    Any term definition must begin with `let`, except inside `let ... in` (see below).
-   
+
+   Decreases clause:
+
+   * In a named `let` definition, an optional `decreases measure` clause may appear (see the definition forms above).
+   * `decreases` supplies an explicit termination measure for recursive definitions; its semantics are defined in
+     §6.4.2.
+   * If a `decreases` clause is present on a non-recursive definition, it has no effect.
+
    Pattern bindings:
 
    In `let pat = expr`, `pat` is a pattern (§7.6).
@@ -4299,17 +4309,110 @@ Kappa is total by default.
 
 Normative rule:
 
-* All definitions that may participate in typechecking via definitional equality must be terminating.
+* Any definition that the typechecker might unfold during definitional equality (§14.3) MUST be terminating.
 
-Termination checking:
+This rule exists for a boring but important reason: definitional equality is part of typechecking, and the typechecker
+must not be allowed to diverge just because a definition body is available.
 
-* Recursive definitions are permitted only when the termination checker accepts them (e.g. structural recursion), or via
-  the unsafe/debug escape hatch `assertTotal` as specified in §16.4 and gated by §16.2.
-* Elaboration may also introduce internal recursive helpers required by normative desugarings. Such helpers are not user
-  definitions and do not require surface `assertTotal`. They are admissible only when the relevant desugaring section
-  provides a semantic argument that the recursion is structurally decreasing, or when the implementation lowers the
-  construct directly to an internal primitive with observationally equivalent behavior.
-* The surface declaration form `assertTotal let ...` and its detailed unsafe/debug semantics are specified in §16.4.
+#### 6.4.1 Unfoldability and termination certificates
+
+A definition is **unfoldable** at a use site iff all of the following hold:
+
+1. the definition is not marked `opaque` at that use site (§2.5.2),
+2. its body is available in the compilation artifact (implementations may omit bodies under separate compilation), and
+3. the compiler has a *termination certificate* for the definition, indicating it is safe to unfold during typechecking.
+
+A definition accepted solely via `assertTotal` has **no termination certificate** by default, and is therefore not
+unfoldable for definitional equality unless the compiler separately verifies it and records it as safe to unfold
+(§16.4).
+
+Note: "termination certificate" is a logical status, not a required user-visible proof term. The representation of the
+certificate is implementation-defined, but the observable consequence is fixed: certified definitions may unfold;
+uncertified definitions must not.
+
+#### 6.4.2 Termination checking requirements
+
+Termination checking is conservative: it may reject terminating programs. However, a conforming implementation MUST
+accept (at minimum) the following classes of terminating recursive definitions *without requiring `assertTotal`*:
+
+1. **Structural recursion on an inductive argument.**
+
+   The checker MUST accept direct recursion where every recursive call is on a structurally smaller value obtained by
+   pattern matching / destructuring an inductive argument.
+
+   Informally: the recursive argument must be a syntactic subterm produced by a constructor pattern match (or an
+   irrefutable destructuring that is definitionally equivalent to such a match).
+
+2. **Well-founded recursion via an explicit `decreases` clause.**
+
+   A named `let` definition MAY include a `decreases` clause (syntax in §6.1) supplying an explicit termination measure:
+
+   ```kappa
+   div : Nat -> Nat -> Nat
+   let div n d decreases n =
+       if n < d then 0 else 1 + div (n - d) d
+
+   gcd : Nat -> Nat -> Nat
+   let gcd a b decreases b =
+       if b == 0 then a else gcd b (a % b)
+
+   -- Lexicographic measure (tuple of Nat):
+   ack : Nat -> Nat -> Nat
+   let ack m n decreases (m, n) =
+       match (m, n)
+       case (0, n)     -> n + 1
+       case (m, 0)     -> ack (m - 1) 1
+       case (m, n + 1) -> ack (m - 1) (ack m n)
+   ```
+
+   Rules:
+
+   * The `decreases` expression MUST have type `Nat` or a tuple of `Nat` (e.g. `(Nat, Nat)`,
+     `(Nat, Nat, Nat)`).
+   * Decrease is **strict**:
+     * for `Nat`, the measure must decrease under `<`;
+     * for tuples of `Nat`, the measure must decrease under the usual **lexicographic** order.
+   * The checker MUST verify that **every** recursive call in the (mutually) recursive strongly-connected component
+     decreases the measure.
+
+   `decreases` does not change runtime behavior. It is only a termination-checking hint and, when verified, enables
+   unfolding during typechecking.
+
+3. **Mutual recursion with a shared well-founded measure.**
+
+   A mutually recursive SCC is accepted if the checker can establish a single well-founded descending measure for every
+   call edge in the SCC.
+
+   If any definition in a mutually recursive SCC uses a `decreases` clause, then **every** definition in that SCC MUST
+   provide a `decreases` clause, and all measures MUST have definitionally equal types (all `Nat` or all the same `Nat`
+   tuple type). This mirrors the usual "one well-founded order for the whole SCC" discipline.
+
+Implementations SHOULD additionally support a call-graph based *size-change termination* (SCT) analysis to prove
+termination in cases that are not syntactically structural but are decreasing across calls. SCT is especially useful for
+mutually recursive definitions and for functions where the decreasing argument is not syntactically obvious.
+
+If SCT is implemented, it must still be sound: accepting a non-terminating definition as unfoldable breaks typechecking.
+
+#### 6.4.3 Internal recursion introduced by elaboration
+
+Elaboration may introduce internal recursive helpers required by normative desugarings (e.g. comprehensions and loops).
+Such helpers must not compromise typechecking termination:
+
+* If an introduced helper is potentially unfolded by definitional equality, it MUST satisfy the same
+  termination-checking requirements as user-written definitions.
+* Otherwise, the implementation MUST lower the construct to an internal primitive (or otherwise mark it non-unfoldable)
+  such that it is not subject to δ-reduction during typechecking.
+
+In other words: desugaring is not a loophole for smuggling general recursion into definitional equality.
+
+#### 6.4.4 Relationship to `assertTotal`
+
+`assertTotal` is an explicit escape hatch for admitting definitions that the compiler cannot prove terminating.
+
+* It does not change runtime semantics.
+* It does not, by itself, establish a termination certificate.
+* Definitions accepted solely via `assertTotal` are treated as not unfoldable for definitional equality unless
+  separately verified and recorded safe to unfold (§16.4).
 
 Recursion policy:
 
@@ -10570,22 +10673,40 @@ Semantics:
 
 ### 16.4 `assertTotal`
 
-Surface syntax:
+`assertTotal` indicates that the programmer asserts a definition is total even if the compiler cannot prove it.
+
+Syntax:
 
 ```kappa
 assertTotal let f : T = ...
 ```
 
-`assertTotal` is an explicit trust boundary.
+Meaning:
 
-Semantics:
+* `assertTotal` does not change runtime semantics.
+* `assertTotal` is a trust boundary: it admits code that the compiler cannot justify as terminating.
 
-* `assertTotal` indicates that the programmer asserts a definition is total even if the compiler cannot prove it.
-* `assertTotal` suppresses termination checking for acceptance only.
-* A definition accepted solely via `assertTotal` is treated as opaque to definitional equality unless the implementation
-  separately verifies its termination and records it as safe to unfold.
-* `assertTotal` does not change the runtime semantics of the program.
-* `assertTotal` is unsafe and is usable only when enabled by the `allow_assert_total` setting of §16.2.
+Unfolding / definitional equality:
+
+* A definition accepted **solely** via `assertTotal` is treated as **not unfoldable** for definitional equality (§6.4.1,
+  §14.3) unless the implementation separately verifies its termination and records it as safe to unfold.
+
+  "Records it" is normative: under separate compilation, the module/interface artifact must carry (at minimum) a stable
+  bit indicating whether each transparent definition is termination-certified and therefore eligible for δ-reduction. If
+  that bit is absent, the definition must be treated as not unfoldable, even if a body is present.
+
+Interaction with `decreases`:
+
+* A `decreases` clause (§6.4.2) is the preferred way to make a non-structural recursive definition acceptable.
+* If `assertTotal` is used anyway, the implementation MAY still attempt to verify termination (including using the
+  provided `decreases` measure). If verification succeeds, the definition may be recorded as safe to unfold; otherwise
+  it remains non-unfoldable.
+
+Gating:
+
+Code accepted solely via `assertTotal` is in the unsafe/debug surface:
+
+* It is a compile-time error unless the build enables `allow_assert_total` (§16.2).
 
 ### 16.5 Backend-specific surface escapes
 
