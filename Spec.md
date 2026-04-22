@@ -4619,32 +4619,7 @@ This form is specified directly and does not depend on any library helper name.
 `?:` is right-associative at low precedence (`2`, above `|>` at `1` and below comparison / arithmetic operators). It is
 a reserved token and cannot be redefined by user fixity declarations.
 
-### 7.1.2A Constructor-test expressions (`is`) and short-circuit boolean operators
-
-The contextual form
-
-```kappa
-e is C
-```
-
-is an ordinary boolean expression.
-
-Typing:
-
-* `e is C : Bool`.
-* `e` must have a type whose head is a `data` type or another constructor-based built-in type such as `Bool`.
-* `C` must be a constructor of the scrutinee type.
-
-Evaluation:
-
-* `e` is evaluated exactly once.
-* The result is `True` iff the top-level constructor of the resulting value is `C`; otherwise the result is `False`.
-
-Parsing:
-
-* `is` is a built-in non-associative infix test form.
-* It binds weaker than postfix/member selection and application, and stronger than `&&` and `||`.
-* It is not governed by user fixity declarations.
+### 7.1.2A Short-circuit boolean operators
 
 The operator tokens `&&` and `||` are the canonical short-circuit boolean connectives of the surface language.
 
@@ -5017,97 +4992,118 @@ let p : (x > 0) = witness (x > 0)
 let eqInt : Dict (Eq Int) = summon (Eq Int)
 ```
 
-### 7.4 Conditionals
+### 7.3.4 Constructor-tag test expression (`is`)
 
-`if` is an expression:
+Kappa provides a general constructor-tag test expression:
+
+```kappa
+e is C
+e is Type.C
+```
+
+Grammar:
 
 ```text
-ifExpr ::= 'if' expr 'then' expr ('elif' expr 'then' expr)* 'else' expr
+tagTestExpr ::= expr 'is' ctor
+ctor        ::= ctorName | typeName '.' ctorName
 ```
 
 Rules:
 
+* `is` is a reserved, non-associative infix form.
+* Its fixed precedence is the same as the comparison operators of `std.prelude` (the same precedence as `(==)` and
+  friends).
+* Chaining without parentheses is a parse error. Thus `a is C is D` is ill-formed.
+* The right-hand side of `is` is a single constructor name only. No subpatterns, arguments, binders, or or-alternatives
+  are permitted.
+* `e is C` has type `Bool`.
+* `e` must have a type whose head is a `data` type or another constructor-based built-in type such as `Bool`.
+* `C` must be a constructor of the scrutinee type. If it is not, the program is ill-formed with the same kind of error
+  as an equivalent `match`.
+
+Dynamic semantics:
+
+* Evaluate `e` exactly once to a value `v`.
+* The result is `True` iff the top-level constructor of `v` is `C`; otherwise the result is `False`.
+
+### 7.4 Conditionals
+
+`if` is an expression.
+
+```text
+ifExpr     ::= 'if' condList 'then' expr ('elif' condList 'then' expr)* 'else' expr
+condList   ::= condClause (',' condClause)*
+condClause ::= expr
+             | 'let' pattern '=' expr
+```
+
+Clause forms:
+
+* A plain expression clause `e` is a boolean condition. It must have type `Bool`.
+  This includes constructor-tag test expressions `e is C` from §7.3.4.
+* A pattern clause `let pat = e` is a refutable pattern condition. It succeeds iff matching `e` against `pat` succeeds.
+
+Scope and evaluation:
+
 * Outside `do`, `if` must have a final `else`.
 * `elif` is sugar for `else if`.
 * All branches must have the same type.
-* The condition expression must have type `Bool`.
-* Because `is` is an ordinary boolean expression (§7.1.2A), forms such as
-
-  ```kappa
-  if e is C then ...
-  if e is C && p then ...
-  if x > 0 || y is Done then ...
-  ```
-
-  are ordinary conditionals rather than special `if` grammar.
+* Clauses are elaborated and evaluated in source order.
+* Later clauses are checked in the environment produced by earlier successful clauses.
+* The `then` branch is checked in the success environment of the full condition list.
+* The `else` branch is checked in the failure environment of the first failing clause.
 
 Inside a `do` block, an `if` without `else` is allowed as sugar (see §8).
 
 ### 7.4.1 Flow-sensitive branch evidence for atomic conditions
 
-Branch-local refinement for conditionals is assigned after recursively applying the short-circuit lowering rules of
-§7.4.2.
-
-Plain boolean case:
+Boolean clauses introduce boolean assumptions into the implicit context.
 
 ```kappa
-if cond then t else f
+if cond then e1 else e2
 ```
 
-If the outermost condition form is not the constructor-test form below, then:
+For a plain boolean clause, the success continuation is checked under additional erased implicit evidence:
 
-* `t` is checked under additional erased implicit evidence:
+```kappa
+@p : cond = True
+```
 
-  ```kappa
-  @p : cond = True
-  ```
+and the failure continuation is checked under additional erased implicit evidence:
 
-* `f` is checked under additional erased implicit evidence:
+```kappa
+@p : cond = False
+```
 
-  ```kappa
-  @p : cond = False
-  ```
+When such a plain boolean clause is syntactically a constructor-tag test `e is C`, the same branch additionally carries
+constructor-refinement evidence:
 
-Constructor-test case:
-
-If the outermost condition form is `e is C`, then:
-
-* the scrutinee expression `e` is evaluated exactly once and elaborated through a fresh hidden scrutinee term
-  `__scrut`;
-
-* the success branch is checked under additional erased implicit evidence:
+* success continuation:
 
   ```kappa
-  @p : HasCtor __scrut ⟨C⟩
+  @p : HasCtor e ⟨C⟩
   ```
 
-* the failure branch is checked under additional erased implicit evidence:
+* failure continuation:
 
   ```kappa
-  @p : LacksCtor __scrut ⟨C⟩
+  @p : LacksCtor e ⟨C⟩
   ```
 
-  where `⟨C⟩ : CtorTag` is the internal constructor-tag constant of §17.3.1.8.
+where `⟨C⟩ : CtorTag` is the internal constructor-tag constant of §17.3.1.8.
 
-* within each branch, occurrences of the original tested expression are elaborated against `__scrut`;
+The success-side constructor evidence MUST be strong enough that:
 
-* constructor discrimination is observational only and does not by itself discharge any quantity obligation of the
-  scrutinee;
+* a subsequent `match e` may treat non-`C` cases as unreachable; and
+* if `C` declares named explicit parameters, dotted projection `e.field` may refer to those named constructor parameters
+  via constructor-field projection (§13.1).
 
-* if the scrutinee is itself a borrowed view or a borrowed alias of a stable place, the refinement applies to that same
-  underlying root/path and remains valid only for the same borrow lifetime;
+The success evidence additionally includes any index equalities forced by constructor `C`, exactly as in the
+corresponding constructor branch of `match` (§7.5.1A).
 
-* the success evidence MUST be strong enough that:
-
-  * a subsequent `match __scrut` may treat non-`C` cases as unreachable; and
-  * if `C` declares named explicit parameters, dotted projection `__scrut.field` may refer to those named constructor
-    parameters via constructor-field projection (§13.1);
-
-* if the constructor declaration forces index equalities, the success evidence additionally includes those equalities,
-  exactly as in the corresponding constructor branch of `match`;
-
-* the failure evidence excludes `C` for subsequent branch-local reachability and matching, but does not by itself expose
-  constructor fields.
+Pattern clauses introduce bindings but no negative residual fact. The success continuation is checked under the
+bindings and refinements introduced by matching `pat` against `e`; the failure continuation receives no additional
+negative evidence beyond the ordinary control-flow fact that the pattern clause failed.
 
 These erased assumptions participate in implicit resolution (§7.3.3).
 
@@ -5115,17 +5111,17 @@ These erased assumptions participate in implicit resolution (§7.3.3).
 
 ### 7.4.2 Flow typing through `&&`, `||`, and `not`
 
-Flow typing is defined over ordinary boolean syntax rather than a separate condition-list grammar.
+Flow typing for plain boolean clauses is defined over ordinary boolean syntax.
 
 A flow-sensitive condition position is:
 
-* the condition of `if`;
+* a plain boolean clause in an `if` condition list;
 * the guard of `case pat if guard`;
 * the condition of `while` when that condition is a pure `Bool` expression; and
 * any later construct explicitly defined in terms of the success or failure environment of a boolean condition.
 
-In such a position, the implementation MUST behave as if the following equations were applied recursively before the
-branch-evidence rules of §7.4.1:
+In such a position, when the boolean expression contains `&&`, `||`, or `not`, the implementation MUST behave as if the
+following equations were applied recursively before the branch-evidence rules of §7.4.1:
 
 ```kappa
 if a && b then t else f
@@ -5156,7 +5152,6 @@ Rules:
   `||` or nested combinations.
 * A conforming implementation MAY share those bodies or lower them differently internally, provided branch-local
   refinement and runtime evaluation count are observationally equivalent to the equations above.
-* No additional surface condition syntax is introduced.
 
 ### 7.4.3 Stable aliases and transport of refinement evidence
 
@@ -8375,13 +8370,11 @@ Examples:
     * `pat` must be irrefutable (§6.1.2).
     * For refutable matching, use `let? pat = expr` (§10.4.1).
 
-* `if condition` filters out rows where the condition is `False`. Within the remainder of the comprehension after an `if
-  condition` clause, typechecking proceeds under an implicit assumption `@p : condition = True` for the current row
-  (analogous to §7.4.1).
-* `if expr is C` filters out rows whose value of `expr` does not have top-level constructor `C`. It introduces no
-  bindings. Within subsequent clauses, typechecking proceeds under the same success-side constructor-tag assumption and
-  flow refinement as §7.4.1 for the current row. If `C` has named explicit parameters, later clauses may use
-  constructor-field projection on `expr`; unnamed payloads still require `let?` or `match`.
+* `if condition` filters out rows where `condition` is `False`.
+  Within the remainder of the comprehension after an `if condition` clause, typechecking proceeds under an implicit
+  assumption `@p : condition = True` for the current row (analogous to §7.4.1).
+  If `condition` is syntactically a constructor-tag test `expr is C`, the same success-side constructor-refinement
+  evidence as §7.4.1 is also in scope for later clauses.
 
 
 Map iteration:
@@ -8415,22 +8408,6 @@ the available row constraints prove that every case admitted by the residual row
 such proof, the compiler MUST conservatively reject the clause.
 
 Desugaring per §10.10: via `filterMap` when `FilterMap f` is available; otherwise via `bind` + `empty`.
-
-Tag-test filter:
-
-```kappa
-if expr is C
-if expr is Type.C
-```
-
-This filters the current row stream by testing whether the top-level constructor of `expr` is `C`.
-
-Rules:
-
-* The right-hand side of `is` is a single constructor name only, with the same restriction as §7.4.
-* The clause introduces no bindings.
-* If the tag test succeeds, the current row is kept; otherwise the current row is dropped.
-* Users who need bindings from a refutable match should write `let? pat = expr` directly.
 
 ### 10.5 Map comprehensions and `:` vs type ascription
 
@@ -8807,10 +8784,13 @@ Desugaring rules (list/set forms shown; map form analogous):
    Otherwise, refutation desugars using `bind` plus a match that produces `empty` when refutation fails, requiring
    `Monad f` and `Alternative f`.
 
-6. Tag-test filter (`if e is C`):
+6. Constructor-tag tests:
 
-   This is an ordinary filter clause, not a refutable binding form. It evaluates `e` at most once per incoming row,
-   keeps rows whose top-level constructor is `C`, drops the others, and introduces no bindings.
+   Because `e is C` is an ordinary `Bool` expression (§7.3.4), it is a special case of an `if cond` filter.
+   It evaluates `e` at most once per incoming row, keeps rows whose top-level constructor is `C`, drops the others, and
+   introduces no user-visible bindings.
+   When later clauses are typechecked on the success path, the same success-side constructor-refinement evidence as
+   §7.4.1 is available.
 
 The above is normative: implementations may produce equivalent code, but must preserve these semantics and constraint
 minimality. The lambdas shown in these desugaring rules are schematic meta-notation. Compiler-generated closures
