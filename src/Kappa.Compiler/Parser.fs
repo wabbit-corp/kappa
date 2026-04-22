@@ -11,10 +11,10 @@ type private ModifierState =
     { Visibility: Visibility option
       IsOpaque: bool }
 
-type private TokenParser(tokens: Token list, source: SourceText) =
+type private TokenParser(tokens: Token list, source: SourceText, initialFixities: FixityTable) =
     let tokenArray = List.toArray tokens
     let diagnostics = DiagnosticBag()
-    let mutable fixities = FixityTable.defaultPrelude
+    let mutable fixities = initialFixities
     let mutable position = 0
 
     member private _.Current =
@@ -822,9 +822,57 @@ type private TokenParser(tokens: Token list, source: SourceText) =
         diagnostics.Items
 
 module Parser =
-    let parse source tokens =
-        let parser = TokenParser(tokens, source)
+    let parseWithInitialFixities initialFixities source tokens =
+        let parser = TokenParser(tokens, source, initialFixities)
         let syntax, diagnostics = parser.ParseCompilationUnit()
 
         { Syntax = syntax
           Diagnostics = diagnostics }
+
+    let private bundledPreludeBootstrapFixities =
+        let splitLeadingFixities declarations =
+            let rec loop collected remaining =
+                match remaining with
+                | FixityDeclarationNode declaration :: rest ->
+                    loop (declaration :: collected) rest
+                | _ ->
+                    List.rev collected, remaining
+
+            loop [] declarations
+
+        lazy
+            (let source = SourceText.From(BundledPrelude.virtualPath, BundledPrelude.loadText ())
+             let lexed = Lexer.tokenize source
+
+             if not (List.isEmpty lexed.Diagnostics) then
+                 let diagnostics =
+                     lexed.Diagnostics
+                     |> List.map (fun diagnostic -> diagnostic.Message)
+                     |> String.concat Environment.NewLine
+
+                 invalidOp $"Bundled prelude failed to lex for bootstrap fixity extraction:{Environment.NewLine}{diagnostics}"
+
+             let parsed = parseWithInitialFixities FixityTable.empty source lexed.Tokens
+
+             if not (List.isEmpty parsed.Diagnostics) then
+                 let diagnostics =
+                     parsed.Diagnostics
+                     |> List.map (fun diagnostic -> diagnostic.Message)
+                     |> String.concat Environment.NewLine
+
+                 invalidOp $"Bundled prelude failed to parse for bootstrap fixity extraction:{Environment.NewLine}{diagnostics}"
+
+             let leadingFixities, remainingDeclarations =
+                 splitLeadingFixities parsed.Syntax.Declarations
+
+             if List.isEmpty leadingFixities then
+                 invalidOp "Bundled prelude must begin with bootstrap fixity declarations."
+
+             if remainingDeclarations |> List.exists (function | FixityDeclarationNode _ -> true | _ -> false) then
+                 invalidOp "Bundled prelude bootstrap fixity declarations must appear before all other declarations."
+
+             leadingFixities
+             |> List.fold (fun table declaration -> FixityTable.add declaration table) FixityTable.empty)
+
+    let parse source tokens =
+        parseWithInitialFixities bundledPreludeBootstrapFixities.Value source tokens

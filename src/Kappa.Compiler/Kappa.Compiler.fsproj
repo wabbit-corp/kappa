@@ -19,6 +19,7 @@
     <Compile Include="ClrAssemblyIR.fs" />
     <Compile Include="WorkspaceCompilation.fs" />
     <Compile Include="Lexer.fs" />
+    <Compile Include="BundledPrelude.fs" />
     <Compile Include="Parser.fs" />
     <Compile Include="Stdlib.fs" />
     <Compile Include="TypeSignatures.fs" />

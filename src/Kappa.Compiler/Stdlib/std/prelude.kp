@@ -1,5 +1,20 @@
 module std.prelude
 
+infix 50 (==)
+infix 50 (!=)
+infix 50 (<)
+infix 50 (<=)
+infix 50 (>)
+infix 50 (>=)
+infix right 40 (::)
+prefix 80 (-)
+infix left 60 (+)
+infix left 60 (-)
+infix left 70 (*)
+infix left 70 (/)
+infix left 40 (&&)
+infix left 30 (||)
+
 data Bool : Type =
     True
     False
@@ -59,18 +74,3 @@ expect term primitiveIntToString : Int -> String
 expect term newRef : a -> IO (Ref a)
 expect term readRef : Ref a -> IO a
 expect term writeRef : Ref a -> a -> IO Unit
-
-infix 50 (==)
-infix 50 (!=)
-infix 50 (<)
-infix 50 (<=)
-infix 50 (>)
-infix 50 (>=)
-infix right 40 (::)
-prefix 80 (-)
-infix left 60 (+)
-infix left 60 (-)
-infix left 70 (*)
-infix left 70 (/)
-infix left 40 (&&)
-infix left 30 (||)

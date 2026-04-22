@@ -369,6 +369,58 @@ let ``bundled bootstrap prelude exposes the current compiler contract`` () =
     )
 
 [<Fact>]
+let ``bundled prelude bootstrap fixities are derived from leading prelude declarations`` () =
+    let preludeSource =
+        createSource Stdlib.BundledPreludeVirtualPath (Stdlib.loadBundledPreludeText ())
+
+    let preludeLexed = Lexer.tokenize preludeSource
+    let preludeParsed = Parser.parseWithInitialFixities FixityTable.empty preludeSource preludeLexed.Tokens
+
+    Assert.Empty(preludeLexed.Diagnostics)
+    Assert.Empty(preludeParsed.Diagnostics)
+
+    let rec splitLeadingFixities collected declarations =
+        match declarations with
+        | FixityDeclarationNode declaration :: rest ->
+            splitLeadingFixities (declaration :: collected) rest
+        | _ ->
+            List.rev collected, declarations
+
+    let bootstrapDeclarations, remainingDeclarations =
+        splitLeadingFixities [] preludeParsed.Syntax.Declarations
+
+    Assert.NotEmpty(bootstrapDeclarations)
+    Assert.DoesNotContain(remainingDeclarations, function | FixityDeclarationNode _ -> true | _ -> false)
+
+    let bootstrapFixities =
+        bootstrapDeclarations
+        |> List.fold (fun table declaration -> FixityTable.add declaration table) FixityTable.empty
+
+    let userSourceText =
+        [
+            "module main"
+            "let result = 1 + 2 * 3"
+        ]
+        |> String.concat "\n"
+
+    let userSource =
+        createSource "memory-bootstrap-fixity-root/main.kp" userSourceText
+
+    let userLexed = Lexer.tokenize userSource
+    let userParsed = Parser.parseWithInitialFixities bootstrapFixities userSource userLexed.Tokens
+
+    Assert.Empty(userLexed.Diagnostics)
+    Assert.Empty(userParsed.Diagnostics)
+
+    match userParsed.Syntax.Declarations with
+    | [ LetDeclaration declaration ] ->
+        match declaration.Body with
+        | Some(Binary(Literal(LiteralValue.Integer 1L), "+", Binary(Literal(LiteralValue.Integer 2L), "*", Literal(LiteralValue.Integer 3L)))) -> ()
+        | other -> failwithf "Unexpected bootstrap fixity parse shape: %A" other
+    | other ->
+        failwithf "Unexpected declarations when parsing with bootstrap prelude fixities: %A" other
+
+[<Fact>]
 let ``implicit prelude import models the wildcard and constructor subset separately`` () =
     let imports = Stdlib.implicitImportsFor (Some [ "main" ])
 

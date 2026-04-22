@@ -1,9 +1,6 @@
 namespace Kappa.Compiler
 
 open System
-open System.IO
-open System.Reflection
-
 module Stdlib =
     type BackendIntrinsicSet =
         { Identity: string
@@ -47,26 +44,13 @@ module Stdlib =
                       Name = name })
             ) }
 
-    let private bundledPreludeResourceName = "Kappa.Compiler.Stdlib.std.prelude.kp"
-
-    let private bundledPreludeText =
-        lazy
-            (let assembly = Assembly.GetExecutingAssembly()
-             use stream = assembly.GetManifestResourceStream(bundledPreludeResourceName)
-
-             if isNull stream then
-                 invalidOp $"Could not load bundled prelude resource '{bundledPreludeResourceName}'."
-
-             use reader = new StreamReader(stream)
-             reader.ReadToEnd().Replace("\r\n", "\n"))
-
     let BundledPreludeVirtualPath =
-        Path.Combine(Path.GetFullPath("__kappa_stdlib__"), "std", "prelude.kp")
+        BundledPrelude.virtualPath
 
     let ZigTargetCheckpointName = "zig.c"
     let ClrTargetCheckpointName = "dotnet.clr"
 
-    let loadBundledPreludeText () = bundledPreludeText.Value
+    let loadBundledPreludeText () = BundledPrelude.loadText ()
 
     let shouldImplicitlyImportPrelude moduleName =
         moduleName <> Some PreludeModuleName
