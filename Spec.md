@@ -7887,6 +7887,16 @@ propagated error. Implementations MAY attach such secondary errors to the primar
 information, or MAY discard them, but this behavior is implementation-defined and is not part of portable pattern
 matching over `Error`.
 
+For the standard runtime carrier `IO e`, the associated `Error` type of `MonadError (IO e)` is exactly `e`.
+
+For `IO e`:
+
+* `throwError` and `catchError` operate only on the `Fail e` branch of `Cause e`;
+* interruption and defects are not part of `MonadError.Error (IO e)`;
+* interruption and defects are therefore not caught by `catchError`;
+* code that must observe or recover from interruption or defects MUST use `sandbox`, `await`, `Exit`, or `Cause`
+  inspection explicitly.
+
 ### 9.2 `try` / `except` / `finally`
 
 `try` handles errors for monadic computations.
@@ -9936,14 +9946,87 @@ returned or passed to a function that retains it, the implementation SHOULD NOT 
 This is an as-if optimization: the observable behavior of the program MUST remain the same as if the `Ref` had been
 represented explicitly.
 
-### 14.8 Runtime model for handlers and resumptions
+### 14.8 Runtime model for `IO`, fibers, interruption, STM, handlers, and resumptions
 
-This section constrains backend implementations of the KCore effect-operation and handler kernel of §17.3.1.5 and
-therefore of surface `handle` and `deep handle`.
+This section constrains backend implementations of `IO`, `handle`, and `deep handle`. The concrete representation is
+implementation-defined, but the observable behavior below is mandatory.
 
-The concrete runtime representation is implementation-defined, but the observable behavior below is mandatory.
+#### 14.8.1 `IO` is Kappa-owned runtime semantics
 
-#### 14.8.1 Captured continuation boundary
+`IO` semantics are defined by Kappa source semantics and this chapter.
+
+A backend MAY realize `IO` using host threads, virtual threads, tasks, promises, coroutines, event loops, exceptions,
+or other host mechanisms, but those mechanisms are implementation techniques only.
+
+In particular, the following are defined by Kappa rather than by the host:
+
+* typed failure vs interruption vs defect classification;
+* fiber lifetime and `fork` / `forkDaemon` behavior;
+* interruption delivery and masking;
+* finalizer execution and unwinding order; and
+* STM serializability and retry behavior.
+
+#### 14.8.2 Fibers and supervision scopes
+
+Every `IO` computation executes in a fiber.
+
+A fiber is a lightweight implementation-managed runtime thread. A conforming implementation MAY multiplex many fibers
+over fewer host execution resources.
+
+Every fiber has a root supervision scope.
+
+For structured concurrency, the implementation MUST behave as if evaluation of an `IO` `do` block introduces a nested
+supervision scope. Under this model:
+
+* `fork` attaches the created child fiber to the innermost current supervision scope;
+* `forkDaemon` does not attach the created child fiber to that scope;
+* exiting a supervision scope interrupts every still-live attached child fiber and waits until each such child has
+  terminated before the enclosing scope's own deferred actions and release actions run.
+
+This ordering is mandatory: child-fiber termination, including child finalizers, completes before parent-scope release
+of resources owned by that scope.
+
+If mandatory scope shutdown of one or more child fibers produces non-success runtime causes, those causes participate in
+the enclosing scope's sequential cause composition.
+
+#### 14.8.3 Interruption delivery and masks
+
+Interruption is modeled as an asynchronous request.
+
+An implementation MUST deliver interruption only at interruption points.
+
+At minimum, the following are interruption points outside masked regions:
+
+* runtime suspension points;
+* waiting operations such as `await` and `join`;
+* parking during `STM.retry`;
+* any explicit `poll`.
+
+Masked execution suppresses interruption delivery but records the pending request. When masked execution leaves the
+masked region, the pending request becomes observable at the next interruption point.
+
+Finalizers and release actions run in masked state.
+
+Portable source semantics expose only interruption. Arbitrary cross-fiber asynchronous exception injection is not part
+of the portable subset.
+
+#### 14.8.4 STM runtime obligations
+
+A conforming implementation MUST realize `atomically` with serializable semantics relative to all `atomically`
+executions in the same TVar domain.
+
+At minimum:
+
+* each transaction attempt observes a consistent snapshot for the TVars it reads;
+* writes become visible only on successful commit;
+* `retry` parks the fiber until one or more TVars read by the current attempt have changed;
+* transactional choice (`orElse`) runs its right operand only when the left operand retries;
+* once commit has begun, commit is uninterruptible.
+
+A backend that lacks shared-memory parallel execution MAY still satisfy this section for a single runtime agent,
+provided it preserves the same observable semantics for fibers in that agent.
+
+#### 14.8.5 Captured continuation boundary
 
 When evaluation of `handle label in expr` or `deep handle label in expr` intercepts an operation at the handled label,
 the captured continuation is the dynamic computation suffix from the operation site to the nearest enclosing matching
@@ -9959,9 +10042,9 @@ The captured continuation includes:
 It does not include:
 
 * frames outside the matching handler boundary;
-* compile-time-only entities erased under Section 14.4.
+* compile-time-only entities erased under §14.4.
 
-#### 14.8.2 One-shot and multi-shot realization
+#### 14.8.6 One-shot and multi-shot realization
 
 Let an operation declaration carry resumption quantity `q` under §8.1.7.
 
@@ -9974,7 +10057,7 @@ Let an operation declaration carry resumption quantity `q` under §8.1.7.
 
 The representation chosen is not observable except through the semantics fixed by this chapter.
 
-#### 14.8.3 Store interaction
+#### 14.8.7 Store interaction
 
 Continuation reuse does not imply global store rollback.
 
@@ -9986,9 +10069,9 @@ Continuation reuse does not imply global store rollback.
 
 This rule applies equally to shallow and deep handlers.
 
-#### 14.8.4 Exit actions under resumption reuse
+#### 14.8.8 Exit actions under resumption reuse
 
-Because active `do`-scope frames are part of the captured continuation boundary under Section 14.8.1, their exit-action
+Because active `do`-scope frames are part of the captured continuation boundary under §14.8.5, their exit-action
 stacks are logically copied with the continuation state.
 
 Therefore:
@@ -10002,7 +10085,7 @@ Therefore:
 If such copying would duplicate live linear or borrowed resources unsoundly, the call-site capture rule of §8.1.8
 rejects the program.
 
-#### 14.8.5 Deep handler reinstallation
+#### 14.8.9 Deep handler reinstallation
 
 A deep handler behaves as if it were lowered to a shallow handler plus an internal recursive driver as specified in
 §8.1.10.
