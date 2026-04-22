@@ -23,6 +23,9 @@
     <Compile Include="TypeSignatures.fs" />
     <Compile Include="TraitRuntime.fs" />
     <Compile Include="ResourceModel.fs" />
+    <Compile Include="ResourceCheckingDiagnostics.fs" />
+    <Compile Include="ResourceCheckingSurface.fs" />
+    <Compile Include="ResourceCheckingSignatures.fs" />
     <Compile Include="ResourceChecking.fs" />
     <Compile Include="BackendTypes.fs" />
     <Compile Include="CheckpointVerification.fs" />

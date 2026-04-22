@@ -380,3 +380,37 @@ let ``il backend requires explicit ctor imports for unqualified imported constru
             || message.Contains("resolve callee 'Box'", StringComparison.OrdinalIgnoreCase),
             sprintf "Expected unresolved-constructor failure, got: %s" message
         )
+
+[<Fact>]
+let ``il backend emission does not depend on frontend documents`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-il-no-documents-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "sumList : List Int -> Int"
+                    "let sumList xs ="
+                    "    match xs"
+                    "    case Nil -> 0"
+                    "    case head :: tail -> head + sumList tail"
+                    "let result = sumList (10 :: 20 :: 42 :: Nil)"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "il-no-documents"
+
+    let artifact =
+        match Backend.emitIlAssemblyArtifact { workspace with Documents = [] } outputDirectory with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    use loaded = loadManagedAssembly artifact.AssemblyFilePath
+
+    let moduleType = loaded.Assembly.GetType("Kappa.Generated.main", throwOnError = true, ignoreCase = false)
+    let resultMethod = moduleType.GetMethod("result", BindingFlags.Public ||| BindingFlags.Static)
+
+    Assert.NotNull(resultMethod)
+    Assert.Equal(72L, resultMethod.Invoke(null, [||]) |> unbox<int64>)

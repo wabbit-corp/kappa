@@ -3,6 +3,71 @@ namespace Kappa.Compiler
 open System
 
 module internal KRuntimeLowering =
+    let private tokensText (tokens: Token list) =
+        tokens
+        |> List.map (fun token -> token.Text)
+        |> String.concat " "
+
+    let private normalizeTypeTokens (tokens: Token list) =
+        tokens
+        |> TypeSignatures.parseType
+        |> Option.map TypeSignatures.toText
+        |> Option.defaultValue (tokensText tokens)
+
+    let private significantTokens (tokens: Token list) =
+        tokens
+        |> List.filter (fun token ->
+            match token.Kind with
+            | Newline
+            | Indent
+            | Dedent
+            | EndOfFile -> false
+            | _ -> true)
+
+    let private splitLeadingTypeArgumentTokens argumentCount tokens =
+        let tokens = significantTokens tokens
+
+        let takeAtom remaining =
+            match remaining with
+            | [] ->
+                [], []
+            | first :: _ when first.Kind = LeftParen ->
+                let tokenArray = remaining |> List.toArray
+                let mutable depth = 0
+                let mutable index = 0
+                let mutable keepReading = true
+
+                while keepReading && index < tokenArray.Length do
+                    match tokenArray[index].Kind with
+                    | LeftParen ->
+                        depth <- depth + 1
+                    | RightParen ->
+                        depth <- depth - 1
+
+                        if depth = 0 then
+                            keepReading <- false
+                    | _ ->
+                        ()
+
+                    index <- index + 1
+
+                List.ofArray tokenArray[0 .. index - 1], List.ofArray tokenArray[index ..]
+            | first :: rest ->
+                [ first ], rest
+
+        let rec loop remaining count groups =
+            if count <= 1 then
+                List.rev (remaining :: groups)
+            else
+                let group, rest = takeAtom remaining
+                loop rest (count - 1) (group :: groups)
+
+        loop tokens (max 1 argumentCount) []
+
+    let private lowerRuntimeParameter (parameter: KCoreParameter) =
+        { Name = parameter.Name
+          TypeText = parameter.TypeText }
+
     let rec private lowerKRuntimePattern pattern =
         match pattern with
         | KCoreWildcardPattern ->
@@ -97,6 +162,20 @@ module internal KRuntimeLowering =
         && isExportedVisibility moduleDump.ModuleAttributes declaration.Visibility
 
     let lowerKRuntimeModule (coreModule: KCoreModule) =
+        let moduleTraitArities =
+            coreModule.Declarations
+            |> List.choose (fun declaration ->
+                match declaration.Source with
+                | TraitDeclarationNode traitDeclaration ->
+                    Some(
+                        traitDeclaration.Name,
+                        TypeSignatures.collectLeadingTypeParameters traitDeclaration.HeaderTokens
+                        |> List.length
+                    )
+                | _ ->
+                    None)
+            |> Map.ofList
+
         let termBindings =
             coreModule.Declarations
             |> List.choose (fun declaration ->
@@ -104,7 +183,8 @@ module internal KRuntimeLowering =
                 | Some binding when binding.Name.IsSome ->
                     Some
                         { Name = binding.Name.Value
-                          Parameters = binding.Parameters |> List.map (fun parameter -> parameter.Name)
+                          Parameters = binding.Parameters |> List.map lowerRuntimeParameter
+                          ReturnTypeText = binding.ReturnTypeText
                           Body = binding.Body |> Option.map lowerKRuntimeExpression
                           Intrinsic = false
                           Provenance = binding.Provenance }
@@ -116,6 +196,7 @@ module internal KRuntimeLowering =
             |> List.map (fun name ->
                 { Name = name
                   Parameters = []
+                  ReturnTypeText = None
                   Body = None
                   Intrinsic = true
                   Provenance =
@@ -124,22 +205,93 @@ module internal KRuntimeLowering =
                       DeclarationName = Some name
                       IntroductionKind = "intrinsic" } })
 
-        let constructors =
+        let dataTypes =
             coreModule.Declarations
-            |> List.collect (fun declaration ->
+            |> List.choose (fun declaration ->
                 match declaration.Source with
-                | DataDeclarationNode dataDeclaration when isExportedDataDeclaration coreModule dataDeclaration ->
-                    dataDeclaration.Constructors
-                    |> List.map (fun constructor ->
-                        { Name = constructor.Name
-                          Arity = constructor.Arity
-                          TypeName = dataDeclaration.Name
-                          Provenance =
-                            { declaration.Provenance with
-                                DeclarationName = Some constructor.Name
-                                IntroductionKind = "constructor" } })
+                | DataDeclarationNode dataDeclaration ->
+                    let constructors =
+                        dataDeclaration.Constructors
+                        |> List.map (fun constructor ->
+                            { Name = constructor.Name
+                              Arity = constructor.Arity
+                              TypeName = dataDeclaration.Name
+                              FieldTypeTexts =
+                                constructor
+                                |> TypeSignatures.constructorFieldTokenGroups
+                                |> List.map normalizeTypeTokens
+                              Provenance =
+                                { declaration.Provenance with
+                                    DeclarationName = Some constructor.Name
+                                    IntroductionKind = "constructor" } })
+
+                    Some
+                        { Name = dataDeclaration.Name
+                          TypeParameters = TypeSignatures.collectLeadingTypeParameters dataDeclaration.HeaderTokens
+                          Constructors = constructors }
                 | _ ->
-                    [])
+                    None)
+
+        let traits =
+            coreModule.Declarations
+            |> List.choose (fun declaration ->
+                match declaration.Source with
+                | TraitDeclarationNode traitDeclaration ->
+                    Some
+                        { Name = traitDeclaration.Name
+                          TypeParameterCount =
+                            TypeSignatures.collectLeadingTypeParameters traitDeclaration.HeaderTokens
+                            |> List.length }
+                | _ ->
+                    None)
+
+        let traitInstances =
+            coreModule.Declarations
+            |> List.choose (fun declaration ->
+                match declaration.Source with
+                | InstanceDeclarationNode instanceDeclaration ->
+                    let instanceKey = TraitRuntime.instanceKeyFromTokens instanceDeclaration.HeaderTokens
+                    let argumentCount =
+                        moduleTraitArities
+                        |> Map.tryFind instanceDeclaration.TraitName
+                        |> Option.defaultValue 1
+
+                    let headTypeTexts =
+                        instanceDeclaration.HeaderTokens
+                        |> splitLeadingTypeArgumentTokens argumentCount
+                        |> List.map normalizeTypeTokens
+
+                    let memberBindings =
+                        instanceDeclaration.Members
+                        |> List.choose (fun memberDeclaration ->
+                            memberDeclaration.Name
+                            |> Option.map (fun memberName ->
+                                memberName,
+                                TraitRuntime.instanceMemberBindingName
+                                    instanceDeclaration.TraitName
+                                    instanceKey
+                                    memberName))
+
+                    Some
+                        { TraitName = instanceDeclaration.TraitName
+                          InstanceKey = instanceKey
+                          HeadTypeTexts = headTypeTexts
+                          MemberBindings = memberBindings }
+                | _ ->
+                    None)
+
+        let constructors =
+            dataTypes
+            |> List.filter (fun dataType ->
+                coreModule.Declarations
+                |> List.exists (fun declaration ->
+                    match declaration.Source with
+                    | DataDeclarationNode dataDeclaration ->
+                        dataDeclaration.Name = dataType.Name
+                        && isExportedDataDeclaration coreModule dataDeclaration
+                    | _ ->
+                        false))
+            |> List.collect (fun dataType -> dataType.Constructors)
 
         let exports =
             coreModule.Declarations
@@ -168,5 +320,8 @@ module internal KRuntimeLowering =
           Imports = coreModule.Imports
           Exports = exports
           IntrinsicTerms = coreModule.IntrinsicTerms
+          DataTypes = dataTypes
+          Traits = traits
+          TraitInstances = traitInstances
           Constructors = constructors
           Bindings = termBindings @ intrinsicBindings }

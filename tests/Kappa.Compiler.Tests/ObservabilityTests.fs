@@ -1509,9 +1509,10 @@ let ``backend verification rejects unsupported backend intrinsics`` () =
                 |> String.concat "\n"
             ]
 
-    let malformedPreludeBinding =
+    let malformedPreludeBinding: KRuntimeBinding =
         { Name = "mysteryIntrinsic"
           Parameters = []
+          ReturnTypeText = None
           Body = None
           Intrinsic = true
           Provenance =

@@ -377,18 +377,20 @@ module TypeSignatures =
             | [] ->
                 []
 
-        let groups = ResizeArray<Token list>()
-        let mutable position = 0
-
-        while position < argumentTokens.Length do
-            if argumentTokens[position].Kind = LeftParen then
+        let takeAtom remaining =
+            match remaining with
+            | [] ->
+                [], []
+            | first :: _ when first.Kind = LeftParen ->
+                let tokenArray = remaining |> List.toArray
                 let current = ResizeArray<Token>()
                 let mutable depth = 0
+                let mutable index = 0
                 let mutable keepReading = true
 
-                while keepReading && position < argumentTokens.Length do
-                    let token = argumentTokens[position]
-                    position <- position + 1
+                while keepReading && index < tokenArray.Length do
+                    let token = tokenArray[index]
+                    index <- index + 1
 
                     match token.Kind with
                     | LeftParen ->
@@ -406,10 +408,21 @@ module TypeSignatures =
                     | _ ->
                         current.Add(token)
 
-                if current.Count > 0 then
-                    groups.Add(List.ofSeq current)
-            else
-                position <- position + 1
+                List.ofSeq current, List.ofArray tokenArray[index ..]
+            | first :: rest ->
+                [ first ], rest
+
+        let groups = ResizeArray<Token list>()
+        let mutable position = 0
+        let tokenArray = argumentTokens |> List.toArray
+
+        while position < tokenArray.Length do
+            let groupTokens, remaining = takeAtom (List.ofArray tokenArray[position ..])
+
+            if not (List.isEmpty groupTokens) then
+                groups.Add(groupTokens)
+
+            position <- tokenArray.Length - remaining.Length
 
         groups
         |> Seq.toList
@@ -425,6 +438,9 @@ module TypeSignatures =
     let constructorFieldTypes (constructor: DataConstructor) =
         constructorFieldTokens constructor.Tokens
         |> List.choose parseType
+
+    let constructorFieldTokenGroups (constructor: DataConstructor) =
+        constructorFieldTokens constructor.Tokens
 
     let rec applySubstitution substitution typeExpr =
         match typeExpr with

@@ -22,7 +22,7 @@ module IlDotNetBackend =
 
     type private RawConstructorInfo =
         { Name: string
-          FieldTypeTokens: Token list list
+          FieldTypeTexts: string list
           Arity: int }
 
     type private RawDataTypeInfo =
@@ -223,16 +223,6 @@ module IlDotNetBackend =
             | EndOfFile -> false
             | _ -> true)
 
-    let private parseTypeParameters (headerTokens: Token list) =
-        headerTokens
-        |> significantTokens
-        |> List.takeWhile (fun token -> token.Kind <> Colon)
-        |> List.choose (fun token ->
-            if Token.isName token then
-                Some(SyntaxFacts.trimIdentifierQuotes token.Text)
-            else
-                None)
-
     let private splitTopLevelArrows (tokens: Token list) =
         let rec loop depth current remaining segments =
             match remaining with
@@ -268,49 +258,6 @@ module IlDotNetBackend =
             loop 1 [] tail
         | _ ->
             Result.Error "Expected '(' to start a parenthesized type."
-
-    let private constructorFieldTypeTokens (tokens: Token list) =
-        let significant = significantTokens tokens
-
-        let argumentTokens =
-            match significant with
-            | leftToken :: operatorToken :: rightToken :: rest
-                when leftToken.Kind = LeftParen && operatorToken.Kind = Operator && rightToken.Kind = RightParen ->
-                rest
-            | _ :: rest ->
-                rest
-            | [] ->
-                []
-
-        let rec splitArguments current remaining groups =
-            match remaining with
-            | [] ->
-                List.rev groups
-            | token :: tail when token.Kind = LeftParen ->
-                match collectParenthesizedTokens (token :: tail) with
-                | Result.Ok(groupTokens, rest) ->
-                    splitArguments current rest (groupTokens :: groups)
-                | Result.Error _ ->
-                    List.rev groups
-            | token :: tail ->
-                splitArguments current tail ([ token ] :: groups)
-
-        let extractFieldTokens groupTokens =
-            let rec findColon depth remaining =
-                match remaining with
-                | [] -> None
-                | token :: tail when token.Kind = LeftParen -> findColon (depth + 1) tail
-                | token :: tail when token.Kind = RightParen -> findColon (max 0 (depth - 1)) tail
-                | token :: tail when token.Kind = Colon && depth = 0 -> Some tail
-                | _ :: tail -> findColon depth tail
-
-            match findColon 0 groupTokens with
-            | Some tail -> significantTokens tail
-            | None -> significantTokens groupTokens
-
-        splitArguments [] argumentTokens []
-        |> List.map extractFieldTokens
-        |> List.filter (List.isEmpty >> not)
 
     let private typeTextTokens (text: string) =
         let rec loop index tokens =
@@ -430,38 +377,30 @@ module IlDotNetBackend =
             false
 
     let private buildRawDataTypes (workspace: WorkspaceCompilation) =
-        workspace.Documents
-        |> List.choose (fun document ->
-            document.ModuleName
-            |> Option.map (fun moduleName ->
-                SyntaxFacts.moduleNameToText moduleName, document.Syntax.Declarations))
-        |> List.fold
-            (fun modules (moduleName, declarations) ->
-                let dataTypes =
-                    declarations
-                    |> List.choose (function
-                        | DataDeclarationNode declaration ->
-                            let constructors =
-                                declaration.Constructors
-                                |> List.map (fun constructor ->
-                                    { Name = constructor.Name
-                                      FieldTypeTokens = constructorFieldTypeTokens constructor.Tokens
-                                      Arity = constructor.Arity })
+        workspace.KRuntimeIR
+        |> List.map (fun moduleDump ->
+            let dataTypes =
+                moduleDump.DataTypes
+                |> List.map (fun dataType ->
+                    let constructors =
+                        dataType.Constructors
+                        |> List.map (fun constructor ->
+                            { Name = constructor.Name
+                              FieldTypeTexts = constructor.FieldTypeTexts
+                              Arity = constructor.Arity })
 
-                            let rawDataType: RawDataTypeInfo =
-                                { ModuleName = moduleName
-                                  Name = declaration.Name
-                                  TypeParameters = parseTypeParameters declaration.HeaderTokens
-                                  Constructors = constructors
-                                  EmittedTypeName = emittedDataTypeName moduleName declaration.Name }
+                    let rawDataType: RawDataTypeInfo =
+                        { ModuleName = moduleDump.Name
+                          Name = dataType.Name
+                          TypeParameters = dataType.TypeParameters
+                          Constructors = constructors
+                          EmittedTypeName = emittedDataTypeName moduleDump.Name dataType.Name }
 
-                            Some(declaration.Name, rawDataType)
-                        | _ ->
-                            None)
-                    |> Map.ofList
+                    dataType.Name, rawDataType)
+                |> Map.ofList
 
-                modules |> Map.add moduleName dataTypes)
-            Map.empty
+            moduleDump.Name, dataTypes)
+        |> Map.ofList
 
     let private buildRawModuleSkeletons (workspace: WorkspaceCompilation) =
         let rawDataTypes = buildRawDataTypes workspace
@@ -633,59 +572,6 @@ module IlDotNetBackend =
         | Result.Ok parsedType ->
             Result.Ok parsedType
 
-    let private splitLeadingTypeArgumentTokens argumentCount tokens =
-        let tokens = significantTokens tokens
-
-        let takeAtom remaining =
-            match remaining with
-            | [] ->
-                [], []
-            | first :: _ when first.Kind = LeftParen ->
-                let tokenArray = remaining |> List.toArray
-                let mutable depth = 0
-                let mutable index = 0
-                let mutable keepReading = true
-
-                while keepReading && index < tokenArray.Length do
-                    match tokenArray[index].Kind with
-                    | LeftParen ->
-                        depth <- depth + 1
-                    | RightParen ->
-                        depth <- depth - 1
-
-                        if depth = 0 then
-                            keepReading <- false
-                    | _ ->
-                        ()
-
-                    index <- index + 1
-
-                List.ofArray tokenArray[0 .. index - 1], List.ofArray tokenArray[index ..]
-            | first :: rest ->
-                [ first ], rest
-
-        let rec loop remaining count groups =
-            if count <= 1 then
-                List.rev (remaining :: groups)
-            else
-                let group, rest = takeAtom remaining
-                loop rest (count - 1) (group :: groups)
-
-        loop tokens (max 1 argumentCount) []
-
-    let private parseInstanceHeadTypes rawModules currentModule argumentCount tokens =
-        tokens
-        |> splitLeadingTypeArgumentTokens argumentCount
-        |> List.fold
-            (fun stateResult group ->
-                result {
-                    let! collected = stateResult
-                    let! parsed = parseType rawModules currentModule Set.empty group
-                    return parsed :: collected
-                })
-            (Result.Ok [])
-        |> Result.map List.rev
-
     let private parseTypeText (rawModules: Map<string, RawModuleInfo>) currentModule (text: string) =
         parseType rawModules currentModule Set.empty (typeTextTokens text)
 
@@ -734,12 +620,12 @@ module IlDotNetBackend =
                                                     let! constructorsSoFar = constructorsResult
 
                                                     let! fieldTypes =
-                                                        rawConstructor.FieldTypeTokens
+                                                        rawConstructor.FieldTypeTexts
                                                         |> List.fold
-                                                            (fun fieldResult fieldTokens ->
+                                                            (fun fieldResult fieldTypeText ->
                                                                 result {
                                                                     let! fields = fieldResult
-                                                                    let! fieldType = parseType rawModules moduleName typeParameterScope fieldTokens
+                                                                    let! fieldType = parseTypeText rawModules moduleName fieldTypeText
                                                                     return fieldType :: fields
                                                                 })
                                                             (Result.Ok [])
@@ -852,97 +738,48 @@ module IlDotNetBackend =
         )
 
     let private buildDeclaredBindingLookup (workspace: WorkspaceCompilation) =
-        workspace.KCore
+        workspace.KRuntimeIR
         |> List.collect (fun moduleDump ->
-            moduleDump.Declarations
-            |> List.choose (fun declaration ->
-                match declaration.Binding with
-                | Some binding when binding.Name.IsSome ->
-                    Some(
-                        (moduleDump.Name, binding.Name.Value),
-                        ({ ParameterTypes =
-                            binding.Parameters
-                            |> List.map (fun parameter -> parameter.TypeText)
-                           ReturnType = binding.ReturnTypeText }: DeclaredBindingTexts)
-                    )
-                | _ ->
-                    None))
-        |> Map.ofList
-
-    let private buildTraitArities (workspace: WorkspaceCompilation) =
-        workspace.Documents
-        |> List.choose (fun document ->
-            document.ModuleName
-            |> Option.map (fun moduleName ->
-                SyntaxFacts.moduleNameToText moduleName, document.Syntax.Declarations))
-        |> List.collect (fun (moduleName, declarations) ->
-            declarations
-            |> List.choose (function
-                | TraitDeclarationNode declaration ->
-                    Some((moduleName, declaration.Name), parseTypeParameters declaration.HeaderTokens |> List.length)
-                | _ ->
-                    None))
+            moduleDump.Bindings
+            |> List.map (fun binding ->
+                (moduleDump.Name, binding.Name),
+                ({ ParameterTypes = binding.Parameters |> List.map (fun parameter -> parameter.TypeText)
+                   ReturnType = binding.ReturnTypeText }: DeclaredBindingTexts)))
         |> Map.ofList
 
     let private buildTraitInstances (rawModules: Map<string, RawModuleInfo>) (workspace: WorkspaceCompilation) =
-        let traitArities = buildTraitArities workspace
-
-        workspace.Documents
-        |> List.choose (fun document ->
-            document.ModuleName
-            |> Option.map (fun moduleName ->
-                SyntaxFacts.moduleNameToText moduleName, document.Syntax.Declarations))
+        workspace.KRuntimeIR
         |> List.fold
-            (fun stateResult (moduleName, declarations) ->
+            (fun stateResult moduleDump ->
                 result {
                     let! instances = stateResult
 
                     let! discoveredInstances =
-                        declarations
+                        moduleDump.TraitInstances
                         |> List.fold
-                            (fun instancesResult declaration ->
+                            (fun instancesResult instanceDeclaration ->
                                 result {
                                     let! collected = instancesResult
 
-                                    match declaration with
-                                    | InstanceDeclarationNode instanceDeclaration ->
-                                        let instanceKey =
-                                            TraitRuntime.instanceKeyFromTokens instanceDeclaration.HeaderTokens
+                                    let! headTypes =
+                                        instanceDeclaration.HeadTypeTexts
+                                        |> List.fold
+                                            (fun headTypesResult headTypeText ->
+                                                result {
+                                                    let! parsedHeadTypes = headTypesResult
+                                                    let! headType = parseTypeText rawModules moduleDump.Name headTypeText
+                                                    return headType :: parsedHeadTypes
+                                                })
+                                            (Result.Ok [])
 
-                                        let argumentCount =
-                                            traitArities
-                                            |> Map.tryFind (moduleName, instanceDeclaration.TraitName)
-                                            |> Option.defaultValue 1
+                                    let instanceInfo =
+                                        { ModuleName = moduleDump.Name
+                                          TraitName = instanceDeclaration.TraitName
+                                          InstanceKey = instanceDeclaration.InstanceKey
+                                          HeadTypes = List.rev headTypes
+                                          MemberBindings = instanceDeclaration.MemberBindings |> Map.ofList }
 
-                                        let! headTypes =
-                                            parseInstanceHeadTypes
-                                                rawModules
-                                                moduleName
-                                                argumentCount
-                                                instanceDeclaration.HeaderTokens
-
-                                        let memberBindings =
-                                            instanceDeclaration.Members
-                                            |> List.choose (fun memberDeclaration ->
-                                                memberDeclaration.Name
-                                                |> Option.map (fun memberName ->
-                                                    memberName,
-                                                    TraitRuntime.instanceMemberBindingName
-                                                        instanceDeclaration.TraitName
-                                                        instanceKey
-                                                        memberName))
-                                            |> Map.ofList
-
-                                        let instanceInfo =
-                                            { ModuleName = moduleName
-                                              TraitName = instanceDeclaration.TraitName
-                                              InstanceKey = instanceKey
-                                              HeadTypes = headTypes
-                                              MemberBindings = memberBindings }
-
-                                        return instanceInfo :: collected
-                                    | _ ->
-                                        return collected
+                                    return instanceInfo :: collected
                                 })
                             (Result.Ok [])
 
@@ -1271,15 +1108,18 @@ module IlDotNetBackend =
                                                 Result.Error
                                                     $"IL backend expected declaration for '{currentModule}.{bindingName}' to declare {List.length parameters} parameter type(s), but found {List.length parameterTypes}."
 
+                                        let parameterNames =
+                                            parameters |> List.map (fun parameter -> parameter.Name)
+
                                         let localTypes =
-                                            List.zip parameters parameterTypes |> Map.ofList
+                                            List.zip parameterNames parameterTypes |> Map.ofList
 
                                         let provisionalReturnType =
                                             declaredReturnType |> Option.defaultValue unitIlType
 
                                         let info =
                                             { Binding = binding
-                                              ParameterTypes = List.zip parameters parameterTypes
+                                              ParameterTypes = List.zip parameterNames parameterTypes
                                               ReturnType = provisionalReturnType
                                               TypeParameters = bindingTypeParameters parameterTypes provisionalReturnType
                                               EmittedMethodName = emittedMethodName bindingName }

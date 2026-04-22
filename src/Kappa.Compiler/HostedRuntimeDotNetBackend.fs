@@ -1693,7 +1693,7 @@ internal static class KappaRunner
     let private appendBinding (builder: StringBuilder) (binding: KRuntimeBinding) =
         builder.Append("new BindingSpec(") |> ignore
         builder.Append(csharpString binding.Name).Append(", ") |> ignore
-        binding.Parameters |> List.map csharpString |> appendArray builder "string"
+        binding.Parameters |> List.map (fun parameter -> parameter.Name) |> List.map csharpString |> appendArray builder "string"
         builder.Append(", ") |> ignore
 
         match binding.Body with

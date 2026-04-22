@@ -22,7 +22,6 @@ module internal KBackendLowering =
 
     type private BackendLoweringContext =
         { RuntimeModules: Map<string, KRuntimeModule>
-          CoreModules: Map<string, KCoreModule>
           BindingInfos: Map<string * string, BackendLoweringBindingInfo>
           ConstructorInfos: Map<string * string, BackendLoweringConstructorInfo> }
 
@@ -166,76 +165,76 @@ module internal KBackendLowering =
         | _ ->
             intrinsicResultRepresentation name
 
-    let rec private inferKCoreExpressionRepresentation expression =
+    let rec private inferKRuntimeExpressionRepresentation expression =
         match expression with
-        | KCoreLiteral literal ->
+        | KRuntimeLiteral literal ->
             backendLiteralRepresentation literal
-        | KCoreName [ "True" ]
-        | KCoreName [ "False" ] ->
+        | KRuntimeName [ "True" ]
+        | KRuntimeName [ "False" ] ->
             BackendRepBoolean
-        | KCoreName _ ->
+        | KRuntimeName _ ->
             backendOpaqueRepresentation None
-        | KCoreLambda _ ->
+        | KRuntimeClosure _ ->
             backendOpaqueRepresentation (Some "Function")
-        | KCoreIfThenElse(_, whenTrue, whenFalse) ->
+        | KRuntimeIfThenElse(_, whenTrue, whenFalse) ->
             mergeBackendRepresentations
-                (inferKCoreExpressionRepresentation whenTrue)
-                (inferKCoreExpressionRepresentation whenFalse)
-        | KCoreMatch(_, cases) ->
+                (inferKRuntimeExpressionRepresentation whenTrue)
+                (inferKRuntimeExpressionRepresentation whenFalse)
+        | KRuntimeMatch(_, cases) ->
             match cases with
             | [] -> backendOpaqueRepresentation None
             | firstCase :: rest ->
                 rest
                 |> List.fold
                     (fun state caseClause ->
-                        mergeBackendRepresentations state (inferKCoreExpressionRepresentation caseClause.Body))
-                    (inferKCoreExpressionRepresentation firstCase.Body)
-        | KCoreExecute(KCoreApply(KCoreName [ intrinsicName ], _)) ->
+                        mergeBackendRepresentations state (inferKRuntimeExpressionRepresentation caseClause.Body))
+                    (inferKRuntimeExpressionRepresentation firstCase.Body)
+        | KRuntimeExecute(KRuntimeApply(KRuntimeName [ intrinsicName ], _)) ->
             executedIntrinsicResultRepresentation intrinsicName
             |> Option.defaultValue (backendOpaqueRepresentation None)
-        | KCoreExecute inner ->
-            inferKCoreExpressionRepresentation inner
-        | KCoreLet(_, _, body) ->
-            inferKCoreExpressionRepresentation body
-        | KCoreDoScope(_, body) ->
-            inferKCoreExpressionRepresentation body
-        | KCoreScheduleExit(_, _, body) ->
-            inferKCoreExpressionRepresentation body
-        | KCoreSequence(_, second) ->
-            inferKCoreExpressionRepresentation second
-        | KCoreWhile _ ->
+        | KRuntimeExecute inner ->
+            inferKRuntimeExpressionRepresentation inner
+        | KRuntimeLet(_, _, body) ->
+            inferKRuntimeExpressionRepresentation body
+        | KRuntimeDoScope(_, body) ->
+            inferKRuntimeExpressionRepresentation body
+        | KRuntimeScheduleExit(_, _, body) ->
+            inferKRuntimeExpressionRepresentation body
+        | KRuntimeSequence(_, second) ->
+            inferKRuntimeExpressionRepresentation second
+        | KRuntimeWhile _ ->
             BackendRepUnit
-        | KCoreApply(KCoreName [ "pure" ], _)
-        | KCoreApply(KCoreName [ ">>=" ], _)
-        | KCoreApply(KCoreName [ ">>" ], _)
-        | KCoreApply(KCoreName [ "print" ], _)
-        | KCoreApply(KCoreName [ "println" ], _)
-        | KCoreApply(KCoreName [ "printInt" ], _)
-        | KCoreApply(KCoreName [ "printString" ], _)
-        | KCoreApply(KCoreName [ "openFile" ], _)
-        | KCoreApply(KCoreName [ "primitiveReadData" ], _)
-        | KCoreApply(KCoreName [ "readData" ], _)
-        | KCoreApply(KCoreName [ "primitiveCloseFile" ], _)
-        | KCoreApply(KCoreName [ "newRef" ], _)
-        | KCoreApply(KCoreName [ "readRef" ], _)
-        | KCoreApply(KCoreName [ "writeRef" ], _) ->
+        | KRuntimeApply(KRuntimeName [ "pure" ], _)
+        | KRuntimeApply(KRuntimeName [ ">>=" ], _)
+        | KRuntimeApply(KRuntimeName [ ">>" ], _)
+        | KRuntimeApply(KRuntimeName [ "print" ], _)
+        | KRuntimeApply(KRuntimeName [ "println" ], _)
+        | KRuntimeApply(KRuntimeName [ "printInt" ], _)
+        | KRuntimeApply(KRuntimeName [ "printString" ], _)
+        | KRuntimeApply(KRuntimeName [ "openFile" ], _)
+        | KRuntimeApply(KRuntimeName [ "primitiveReadData" ], _)
+        | KRuntimeApply(KRuntimeName [ "readData" ], _)
+        | KRuntimeApply(KRuntimeName [ "primitiveCloseFile" ], _)
+        | KRuntimeApply(KRuntimeName [ "newRef" ], _)
+        | KRuntimeApply(KRuntimeName [ "readRef" ], _)
+        | KRuntimeApply(KRuntimeName [ "writeRef" ], _) ->
             BackendRepIOAction
-        | KCoreDictionaryValue(_, traitName, _) ->
+        | KRuntimeDictionaryValue(_, traitName, _) ->
             BackendRepDictionary traitName
-        | KCoreTraitCall _ ->
+        | KRuntimeTraitCall _ ->
             backendOpaqueRepresentation None
-        | KCoreApply _ ->
+        | KRuntimeApply _ ->
             backendOpaqueRepresentation None
-        | KCoreUnary("not", _) ->
+        | KRuntimeUnary("not", _) ->
             BackendRepBoolean
-        | KCoreUnary("negate", operand) ->
-            inferKCoreExpressionRepresentation operand
-        | KCoreUnary _ ->
+        | KRuntimeUnary("negate", operand) ->
+            inferKRuntimeExpressionRepresentation operand
+        | KRuntimeUnary _ ->
             backendOpaqueRepresentation None
-        | KCoreBinary(_, ("&&" | "||" | "==" | "!=" | "<" | ">" | "<=" | ">="), _) ->
+        | KRuntimeBinary(_, ("&&" | "||" | "==" | "!=" | "<" | ">" | "<=" | ">="), _) ->
             BackendRepBoolean
-        | KCoreBinary(left, ("+" | "-" | "*" | "/"), right) ->
-            match inferKCoreExpressionRepresentation left, inferKCoreExpressionRepresentation right with
+        | KRuntimeBinary(left, ("+" | "-" | "*" | "/"), right) ->
+            match inferKRuntimeExpressionRepresentation left, inferKRuntimeExpressionRepresentation right with
             | BackendRepFloat64, _
             | _, BackendRepFloat64 ->
                 BackendRepFloat64
@@ -243,9 +242,9 @@ module internal KBackendLowering =
                 BackendRepInt64
             | _ ->
                 backendOpaqueRepresentation None
-        | KCoreBinary _ ->
+        | KRuntimeBinary _ ->
             backendOpaqueRepresentation None
-        | KCorePrefixedString _ ->
+        | KRuntimePrefixedString _ ->
             BackendRepString
 
     let private selectionImportsRuntimeTermName selection name =
@@ -275,42 +274,24 @@ module internal KBackendLowering =
         | AllExcept _ ->
             false
 
-    let private buildBackendLoweringContext (kCore: KCoreModule list) (kRuntimeIR: KRuntimeModule list) =
+    let private buildBackendLoweringContext (kRuntimeIR: KRuntimeModule list) =
         let runtimeModules =
             kRuntimeIR
-            |> List.map (fun moduleDump -> moduleDump.Name, moduleDump)
-            |> Map.ofList
-
-        let coreModules =
-            kCore
             |> List.map (fun moduleDump -> moduleDump.Name, moduleDump)
             |> Map.ofList
 
         let bindingInfos =
             kRuntimeIR
             |> List.collect (fun runtimeModule ->
-                let coreModule = coreModules[runtimeModule.Name]
-
                 runtimeModule.Bindings
                 |> List.map (fun binding ->
-                    let coreBinding =
-                        coreModule.Declarations
-                        |> List.tryPick (fun declaration ->
-                            match declaration.Binding with
-                            | Some coreBinding when coreBinding.Name = Some binding.Name ->
-                                Some coreBinding
-                            | _ ->
-                                None)
-
                     let returnRepresentation =
                         if binding.Intrinsic then
                             intrinsicResultRepresentation binding.Name
                         else
-                            coreBinding
-                            |> Option.bind (fun coreBinding ->
-                                tryBackendRepresentationFromTypeText coreBinding.ReturnTypeText
-                                |> Option.orElseWith (fun () ->
-                                    coreBinding.Body |> Option.map inferKCoreExpressionRepresentation))
+                            tryBackendRepresentationFromTypeText binding.ReturnTypeText
+                            |> Option.orElseWith (fun () ->
+                                binding.Body |> Option.map inferKRuntimeExpressionRepresentation)
 
                     let arity =
                         if binding.Intrinsic then
@@ -346,12 +327,11 @@ module internal KBackendLowering =
             |> Map.ofList
 
         { RuntimeModules = runtimeModules
-          CoreModules = coreModules
           BindingInfos = bindingInfos
           ConstructorInfos = constructorInfos }
 
-    let lowerKBackendModules (backendProfile: string) (kCore: KCoreModule list) (kRuntimeIR: KRuntimeModule list) =
-        let context = buildBackendLoweringContext kCore kRuntimeIR
+    let lowerKBackendModules (backendProfile: string) (kRuntimeIR: KRuntimeModule list) =
+        let context = buildBackendLoweringContext kRuntimeIR
         let availableRuntimeIntrinsics = Stdlib.runtimeIntrinsicTermNamesFor backendProfile Stdlib.PreludeModuleName
 
         let resolveQualifiedRuntimeModule (currentModule: KRuntimeModule) qualifierSegments =
@@ -1090,23 +1070,12 @@ module internal KBackendLowering =
                             { Name = "_"
                               Representation = backendOpaqueRepresentation None })
                     else
-                        match context.CoreModules[runtimeModule.Name].Declarations
-                              |> List.tryPick (fun declaration ->
-                                  match declaration.Binding with
-                                  | Some coreBinding when coreBinding.Name = Some binding.Name -> Some coreBinding
-                                  | _ -> None) with
-                        | Some coreBinding ->
-                            coreBinding.Parameters
-                            |> List.map (fun parameter ->
-                                { Name = parameter.Name
-                                  Representation =
-                                    tryBackendRepresentationFromTypeText parameter.TypeText
-                                    |> Option.defaultValue (backendOpaqueRepresentation None) })
-                        | None ->
-                            binding.Parameters
-                            |> List.map (fun name ->
-                                { Name = name
-                                  Representation = backendOpaqueRepresentation None })
+                        binding.Parameters
+                        |> List.map (fun parameter ->
+                            { Name = parameter.Name
+                              Representation =
+                                tryBackendRepresentationFromTypeText parameter.TypeText
+                                |> Option.defaultValue (backendOpaqueRepresentation None) })
 
                 let convention =
                     { RuntimeArity = bindingInfo.Arity

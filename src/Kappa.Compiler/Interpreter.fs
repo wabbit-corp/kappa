@@ -999,7 +999,7 @@ module Interpreter =
                 else
                     ok
                         (FunctionValue
-                            { Parameters = definition.Parameters
+                            { Parameters = definition.Parameters |> List.map (fun parameter -> parameter.Name)
                               Body = body
                               Scope = baseScope })
 

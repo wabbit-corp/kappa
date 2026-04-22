@@ -37,15 +37,36 @@ and KRuntimeMatchCase =
     { Pattern: KRuntimePattern
       Body: KRuntimeExpression }
 
+type KRuntimeParameter =
+    { Name: string
+      TypeText: string option }
+
 type KRuntimeConstructor =
     { Name: string
       Arity: int
       TypeName: string
+      FieldTypeTexts: string list
       Provenance: KCoreOrigin }
+
+type KRuntimeDataType =
+    { Name: string
+      TypeParameters: string list
+      Constructors: KRuntimeConstructor list }
+
+type KRuntimeTrait =
+    { Name: string
+      TypeParameterCount: int }
+
+type KRuntimeTraitInstance =
+    { TraitName: string
+      InstanceKey: string
+      HeadTypeTexts: string list
+      MemberBindings: (string * string) list }
 
 type KRuntimeBinding =
     { Name: string
-      Parameters: string list
+      Parameters: KRuntimeParameter list
+      ReturnTypeText: string option
       Body: KRuntimeExpression option
       Intrinsic: bool
       Provenance: KCoreOrigin }
@@ -56,5 +77,8 @@ type KRuntimeModule =
       Imports: ImportSpec list
       Exports: string list
       IntrinsicTerms: string list
+      DataTypes: KRuntimeDataType list
+      Traits: KRuntimeTrait list
+      TraitInstances: KRuntimeTraitInstance list
       Constructors: KRuntimeConstructor list
       Bindings: KRuntimeBinding list }

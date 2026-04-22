@@ -49,6 +49,35 @@ let ``dotnet backend emits a managed project that runs`` () =
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
+let ``dotnet backend artifact emission does not depend on frontend documents`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-dotnet-no-documents-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "sumList : List Int -> Int"
+                    "let sumList xs ="
+                    "    match xs"
+                    "    case Nil -> 0"
+                    "    case head :: tail -> head + sumList tail"
+                    "let result = sumList (10 :: 20 :: 42 :: Nil)"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "dotnet-no-documents-backend"
+
+    let artifact =
+        match Backend.emitDotNetArtifact { workspace with Documents = [] } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    Assert.True(File.Exists(artifact.GeneratedFilePath), $"Expected generated CLR artifact at '{artifact.GeneratedFilePath}'.")
+    Assert.True(artifact.GeneratedFilePath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+
+[<Fact>]
 let ``hosted dotnet backend remains available`` () =
     let workspace =
         compileInMemoryWorkspace

@@ -95,7 +95,7 @@ module SurfaceElaboration =
               BodyTokens = []
               Body = None }
 
-    let private lowerKCoreParameter (name: string) (typeText: string option) =
+    let private lowerKCoreParameter (name: string) (typeText: string option) : KCoreParameter =
         { Name = name
           TypeText = typeText }
 
@@ -937,12 +937,12 @@ module SurfaceElaboration =
 
             makeSyntheticBindingDeclaration
                 (TraitRuntime.dispatchBindingName traitInfo.Name memberName)
-                ({ Name = dictionaryParameterName
-                   TypeText = Some(TypeSignatures.toText (dictionaryType traitInfo.Name dictionaryArgumentTypes)) }
+                (lowerKCoreParameter
+                    dictionaryParameterName
+                    (Some(TypeSignatures.toText (dictionaryType traitInfo.Name dictionaryArgumentTypes)))
                  :: (List.zip valueParameterNames parameterTypes
                      |> List.map (fun (parameterName, parameterType) ->
-                         { Name = parameterName
-                           TypeText = Some(TypeSignatures.toText parameterType) })))
+                         lowerKCoreParameter parameterName (Some(TypeSignatures.toText parameterType)))))
                 (Some(TypeSignatures.toText resultType))
                 body
                 provenance)

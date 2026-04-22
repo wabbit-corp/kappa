@@ -870,7 +870,7 @@ module Compilation =
             moduleDump.Bindings
             |> List.map (fun binding ->
                 { Name = binding.Name
-                  Parameters = binding.Parameters
+                  Parameters = binding.Parameters |> List.map (fun parameter -> parameter.Name)
                   Body =
                     binding.Body
                     |> Option.map IrText.runtimeExpressionText
@@ -2226,7 +2226,7 @@ module Compilation =
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
         let kBackendIR =
-            KBackendLowering.lowerKBackendModules normalizedBackendProfile kCore kRuntimeIR
+            KBackendLowering.lowerKBackendModules normalizedBackendProfile kRuntimeIR
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
         let workspace =

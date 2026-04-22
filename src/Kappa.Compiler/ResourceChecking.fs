@@ -2,15 +2,11 @@ namespace Kappa.Compiler
 
 open System
 open Kappa.Compiler.ResourceModel
+open Kappa.Compiler.ResourceCheckingDiagnostics
+open Kappa.Compiler.ResourceCheckingSignatures
+open Kappa.Compiler.ResourceCheckingSurface
 
 module ResourceChecking =
-    let private linearDropCode = "E_QTT_LINEAR_DROP"
-    let private linearOveruseCode = "E_QTT_LINEAR_OVERUSE"
-    let private borrowConsumeCode = "E_QTT_BORROW_CONSUME"
-    let private borrowEscapeCode = "E_QTT_BORROW_ESCAPE"
-    let private inoutMarkerRequiredCode = "E_QTT_INOUT_MARKER_REQUIRED"
-    let private inoutMarkerUnexpectedCode = "E_QTT_INOUT_MARKER_UNEXPECTED"
-
     type CheckResult =
         { Diagnostics: Diagnostic list
           OwnershipFactsByFile: Map<string, OwnershipFactSet> }
@@ -19,134 +15,6 @@ module ResourceChecking =
 
     let private emptyState scopeId =
         ResourceModel.ResourceContext.empty scopeId
-
-    let private diagnosticLocation (document: ParsedDocument) =
-        document.Source.GetLocation(TextSpan.FromBounds(0, 0))
-
-    let private tokenName (token: Token) =
-        match token.Kind with
-        | Identifier
-        | Keyword _ ->
-            Some(SyntaxFacts.trimIdentifierQuotes token.Text)
-        | Operator ->
-            Some token.Text
-        | _ ->
-            None
-
-    let private tokenMatchesName name (token: Token) =
-        tokenName token
-        |> Option.exists (fun tokenName -> String.Equals(tokenName, name, StringComparison.Ordinal))
-
-    let private tokenLocation (document: ParsedDocument) (token: Token) =
-        document.Source.GetLocation(token.Span)
-
-    let private tokenLine (document: ParsedDocument) (token: Token) =
-        (tokenLocation document token).Start.Line
-
-    let private tokensByLine (document: ParsedDocument) =
-        document.Syntax.Tokens
-        |> List.filter (fun token ->
-            match token.Kind with
-            | Newline
-            | Indent
-            | Dedent
-            | EndOfFile -> false
-            | _ -> true)
-        |> List.groupBy (tokenLine document)
-        |> Map.ofList
-
-    let private isAssignmentBoundary (token: Token) =
-        token.Kind = Equals || (token.Kind = Operator && token.Text = "<-")
-
-    let private binderPrefixTokens lineTokens =
-        let rec takeUntilBoundary tokens collected =
-            match tokens with
-            | [] ->
-                List.rev collected
-            | token :: _ when isAssignmentBoundary token ->
-                List.rev collected
-            | token :: rest ->
-                takeUntilBoundary rest (token :: collected)
-
-        match lineTokens with
-        | first :: _ when Token.isKeyword Keyword.Let first ->
-            takeUntilBoundary lineTokens []
-        | first :: _ when Token.isKeyword Keyword.Using first ->
-            takeUntilBoundary lineTokens []
-        | first :: _ when Token.isKeyword Keyword.Var first ->
-            takeUntilBoundary lineTokens []
-        | _ ->
-            []
-
-    let private isBinderToken lineMap (document: ParsedDocument) token =
-        let lineTokens =
-            lineMap
-            |> Map.tryFind (tokenLine document token)
-            |> Option.defaultValue []
-
-        binderPrefixTokens lineTokens
-        |> List.exists (fun candidate -> candidate.Span = token.Span)
-
-    let private findBinderLocation (document: ParsedDocument) name =
-        let lineMap = tokensByLine document
-
-        document.Syntax.Tokens
-        |> List.tryPick (fun token ->
-            if tokenMatchesName name token && isBinderToken lineMap document token then
-                Some(tokenLocation document token)
-            else
-                None)
-
-    let private useLocations (document: ParsedDocument) name =
-        let lineMap = tokensByLine document
-
-        document.Syntax.Tokens
-        |> List.choose (fun token ->
-            if tokenMatchesName name token && not (isBinderToken lineMap document token) then
-                Some(tokenLocation document token)
-            else
-                None)
-
-    let private findUseLocation (document: ParsedDocument) name ordinal =
-        useLocations document name
-        |> List.tryItem (max 0 (ordinal - 1))
-
-    let private findLastUseLocation (document: ParsedDocument) name =
-        useLocations document name
-        |> List.tryLast
-
-    let private findUseLocationAfter (document: ParsedDocument) name (origin: SourceLocation) ordinal =
-        useLocations document name
-        |> List.filter (fun location -> location.Span.Start >= origin.Span.End)
-        |> List.tryItem (max 0 (ordinal - 1))
-
-    let private addDiagnostic code message location relatedLocations (document: ParsedDocument) (state: CheckState) =
-        let diagnostic: Diagnostic =
-            { Severity = Error
-              Code = code
-              Stage = Some "KFrontIR"
-              Phase = Some(KFrontIRPhase.phaseName BODY_RESOLVE)
-              Message = message
-              Location = location |> Option.orElseWith (fun () -> Some(diagnosticLocation document))
-              RelatedLocations = relatedLocations }
-
-        { state with
-            Diagnostics = state.Diagnostics @ [ diagnostic ] }
-
-    let private findBindingUseLocation (document: ParsedDocument) (binding: ResourceBinding) ordinal =
-        match binding.Origin with
-        | Some origin ->
-            findUseLocationAfter document binding.Name origin ordinal
-            |> Option.orElseWith (fun () -> findUseLocation document binding.Name ordinal)
-        | None ->
-            findUseLocation document binding.Name ordinal
-
-    let private argumentLocation (document: ParsedDocument) argument =
-        match argument with
-        | Name [ name ]
-        | InoutArgument(Name [ name ]) ->
-            findLastUseLocation document name
-        | _ -> None
 
     let private quantityConsumes quantity =
         match quantity with
@@ -626,11 +494,6 @@ module ResourceChecking =
         | _ ->
             state
 
-    let private tryCalleeName (expression: SurfaceExpression) =
-        match expression with
-        | Name [ name ] -> Some name
-        | _ -> None
-
     let rec private checkExpression (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state expression =
         match expression with
         | Literal _
@@ -879,100 +742,6 @@ module ResourceChecking =
                     current
             else
                 current) checkedState
-
-    let private signatureName (moduleName: string list option) bindingName =
-        let simple = bindingName
-
-        match moduleName with
-        | Some segments -> [ simple; $"{SyntaxFacts.moduleNameToText segments}.{simple}" ]
-        | None -> [ simple ]
-
-    let private splitTopLevelArrows (tokens: Token list) =
-        let rec loop depth current remaining segments =
-            match remaining with
-            | [] ->
-                List.rev ((List.rev current) :: segments)
-            | token :: tail when token.Kind = LeftParen ->
-                loop (depth + 1) (token :: current) tail segments
-            | token :: tail when token.Kind = RightParen ->
-                loop (max 0 (depth - 1)) (token :: current) tail segments
-            | token :: tail when token.Kind = Arrow && depth = 0 ->
-                loop depth [] tail ((List.rev current) :: segments)
-            | token :: tail ->
-                loop depth (token :: current) tail segments
-
-        loop 0 [] tokens []
-
-    let private quantityFromSignatureSegment (tokens: Token list) =
-        let significant =
-            tokens
-            |> List.filter (fun token ->
-                match token.Kind with
-                | Newline
-                | Indent
-                | Dedent
-                | EndOfFile -> false
-                | _ -> true)
-
-        if significant |> List.exists (fun token -> token.Text = "&") then
-            Some(ResourceQuantity.Borrow None)
-        else
-            match significant with
-            | token :: _ when token.Text = "1" -> Some ResourceQuantity.one
-            | token :: _ when token.Text = "0" -> Some ResourceQuantity.zero
-            | token :: _ when token.Text = "omega" -> Some ResourceQuantity.omega
-            | _ -> None
-
-    let private signatureParameterQuantities tokens =
-        let segments =
-            splitTopLevelArrows tokens
-            |> List.filter (List.isEmpty >> not)
-
-        if List.length segments <= 1 then
-            []
-        else
-            segments
-            |> List.take (segments.Length - 1)
-            |> List.map quantityFromSignatureSegment
-
-    let private signatureEntries (document: ParsedDocument) name quantities parameterInout =
-        signatureName document.ModuleName name
-        |> List.map (fun signatureName ->
-            signatureName,
-            { Name = signatureName
-              ParameterQuantities = quantities
-              ParameterInout = parameterInout })
-
-    let private collectSignatures (documents: ParsedDocument list) =
-        documents
-        |> List.collect (fun document ->
-            document.Syntax.Declarations
-            |> List.choose (function
-                | SignatureDeclaration declaration ->
-                    let quantities = signatureParameterQuantities declaration.TypeTokens
-                    Some(signatureEntries document declaration.Name quantities (quantities |> List.map (fun _ -> false)))
-                | ExpectDeclarationNode (ExpectTermDeclaration declaration) ->
-                    let quantities = signatureParameterQuantities declaration.TypeTokens
-                    Some(signatureEntries document declaration.Name quantities (quantities |> List.map (fun _ -> false)))
-                | LetDeclaration definition ->
-                    definition.Name
-                    |> Option.map (fun name ->
-                        let quantities =
-                            definition.Parameters
-                            |> List.map (fun (parameter: Parameter) ->
-                                if parameter.IsInout then
-                                    Some ResourceQuantity.one
-                                else
-                                    parameter.Quantity |> Option.map ResourceQuantity.ofSurface)
-
-                        signatureEntries
-                            document
-                            name
-                            quantities
-                            (definition.Parameters |> List.map (fun parameter -> parameter.IsInout)))
-                | _ -> None)
-            |> List.concat)
-        |> Map.ofList
 
     let private addParameterBinding (document: ParsedDocument) (parameter: Parameter) state =
         let quantity =
