@@ -2297,7 +2297,7 @@ type U = (| Int | String | Error |)
 type OptionalInt = (| Unit | Int |)
 ```
 
-#### 5.4.1 Formation
+#### 5.4.1 Union formation
 
 ```text
 unionType ::= '(|' type ('|' type)* '|)'
@@ -2378,7 +2378,7 @@ Exhaustiveness:
   pattern `case (| ..rest |) -> ...`.
 * In a residual-row branch for scrutinee type `(| ... | r |)`, the binder introduced by `..rest` has type `Variant r`.
 
-#### 5.4.5 Row polymorphism
+#### 5.4.5 Variant row polymorphism
 
 A function can be polymorphic over the residual row:
 
@@ -2460,7 +2460,7 @@ declaration applies only at term positions; it has no effect in type positions.
 
 Records are the single "struct-like" construct in Kappa.
 
-#### 5.5.1 Syntax
+#### 5.5.1 Record syntax
 
 Record types are written:
 
@@ -2568,7 +2568,7 @@ More precisely:
 
 Implementations may insert dependency-respecting reordering coercions implicitly where needed.
 
-#### 5.5.2 Formation
+#### 5.5.2 Record formation
 
 Closed record types have exactly the listed fields and may be dependent telescopes.
 
@@ -2828,7 +2828,7 @@ Result type:
 
 * The result has type `(fields, ℓ : typeof e | r)`, normalized by the ordinary record canonicalization rules.
 
-#### 5.5.7 Row polymorphism
+#### 5.5.7 Record row polymorphism
 
 A function `(name : String | r) -> String` is polymorphic in the residual row `r : RecRow` with the implicit constraint
 `LacksRec r name`.
@@ -7684,7 +7684,7 @@ Let `S_current` be the resolved label of the current dynamic `do`-scope.
 Any `return`, `break`, or `continue` inside `rest` therefore becomes an ordinary `Completion(...)` payload that
 `DoScope` ferries outward after executing the scheduled exit action exactly once.
 
-#### `return`
+#### Elaboration of `return`
 
 * `return` elaborates as:
 
@@ -7851,7 +7851,7 @@ Because an `inout` parameter consumes a value linearly and returns its threaded 
 implementations SHOULD optimize this pattern to zero-copy in-place mutation when that is safe. The observable semantics
 remain pure linear state threading.
 
-#### 8.8.2 Syntax
+#### 8.8.2 `inout` syntax
 
 Declaration syntax:
 
@@ -11097,7 +11097,7 @@ consulting the defining module's source text.
 
 A module interface artifact MUST record at least:
 
-* the module identity and dependency identities required by §§2.1-2.3.2;
+* the module identity and dependency identities required by §§2.1, 2.2, 2.3, and 2.3.2;
 * the exported surface by namespace, including importable fixity declarations;
 * visibility and opacity classification of exported ordinary items;
 * the fully elaborated signatures of exported terms, including:
