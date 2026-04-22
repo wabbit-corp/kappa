@@ -3294,14 +3294,72 @@ Example:
 
 ```kappa
 let main : UIO Unit = do
-let x = !readInt
-let y = !readInt
-println (x + y)
+    let x = !readInt
+    let y = !readInt
+    println (x + y)
 ```
 
-Desugaring sketch:
+`!` is valid only inside an expression that is being elaborated as part of the nearest enclosing `do` block.
+It does not cross lambda, local-function, quote, or type boundaries.
+If `!` appears inside a nested lambda or local function, that nested body must itself contain an enclosing `do`;
+otherwise the occurrence is ill-formed.
 
-* Each `!e` introduces an implicit bind to a fresh temporary and uses that temporary at the `!e` site.
+Normative elaboration order:
+
+* Before translating `!`, the compiler first lowers ordinary surface expression sugar inside the containing do-item to
+  the core expression fragment used for expression elaboration.
+  In particular, guarded cases, short-circuit boolean lowering, and similar constructs are lowered first.
+* Fix a `do` block whose monad is `m`.
+  Define a translation `Splice_m[e]` that turns an expression `e` containing zero or more occurrences of `!` into a
+  monadic computation of type `m A`, where `A` is the ordinary value type of `e` after removing the `!` markers.
+
+The translation is defined recursively and preserves Kappa's ordinary left-to-right evaluation order:
+
+* Pure atom `a` with no evaluated subexpressions:
+  `Splice_m[a] = pure a`
+
+* Splice:
+  `Splice_m[!e] = e`
+
+* Application spine `e0 e1 ... en`:
+  translate `e0, e1, ..., en` left-to-right, bind their results to fresh temporaries `t0, t1, ..., tn`, and return:
+  `pure (t0 t1 ... tn)`
+
+* Tuple, record, list, set, and map literals:
+  translate element or field expressions in the language's ordinary left-to-right evaluation order, bind fresh
+  temporaries in that same order, and return the corresponding pure literal built from those temporaries.
+
+* Pure projection or other non-short-circuiting expression form:
+  translate subexpressions in ordinary left-to-right order and rebuild the pure form from the resulting temporaries.
+
+* Conditional:
+  `Splice_m[if c then t else f] = Splice_m[c] >>= \c' -> if c' then Splice_m[t] else Splice_m[f]`
+
+* Match:
+  `Splice_m[match s case p1 -> e1 ... case pn -> en] =
+     Splice_m[s] >>= \s' ->
+       match s'
+       case p1 -> Splice_m[e1]
+       ...
+       case pn -> Splice_m[en]`
+
+This translation is normative.
+Implementations may realize it by an equivalent extraction algorithm, but they MUST preserve all of the following:
+
+* left-to-right evaluation order of translated subexpressions;
+* exactly-once evaluation of each splice operand;
+* branch-local sequencing for `if` and `match`, so that splices in untaken branches are not executed.
+
+Use in do-items:
+
+* If a do-item expression contains one or more occurrences of `!`, that expression is first translated by `Splice_m[-]`.
+* The resulting monadic computation is then elaborated by the ordinary do-item rule for that position.
+* Consequently:
+  * a final do-item expression containing `!` contributes the translated computation as the block result;
+  * `let pat = expr` inside `do` may contain `!`, in which case the translated computation is sequenced first and `pat`
+    is then bound to its value;
+  * any other do-item form that syntactically contains an expression subterm uses the same translation on that subterm
+    before applying its ordinary elaboration rule.
 
 ### 5.8 Hygienic syntax values and macros
 
@@ -7367,6 +7425,9 @@ Sequencing is `thenC x y = bindC x (\_ -> y)`.
 A `do` block is elaborated in a context that records the resolved labels and result types of the enclosing named
 function or method, inherited-name lambdas (§6.1), and any enclosing labeled lambdas that may be targeted by `return`.
 This finite mapping is the current `RetCtx`.
+
+Whenever a do-item expression contains one or more occurrences of `!`, the compiler MUST first translate that expression
+by §5.7.1 and then apply the corresponding do-item rule to the resulting monadic computation.
 
 For a do-scope body consisting of a non-empty sequence of do-items, elaboration yields:
 
