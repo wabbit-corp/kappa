@@ -1925,11 +1925,13 @@ machinery rather than a naive `defer (release res)` source-level expansion.
 Kappa provides an optional postfix capture annotation on value types:
 
 ```text
-typeCapture ::= typeExpr 'captures' '(' regionRef (',' regionRef)* ')'
+typeCapture ::= typeApp [ 'captures' '(' regionRef (',' regionRef)* ')' ]
+typeArrow   ::= typeCapture ('->' typeArrow)?
 regionRef   ::= ident
 ```
 
-This grammar is schematic. `captures (...)` is a postfix type former.
+This grammar amends the type grammar at the layer between type application and arrows. `captures (...)` is a postfix
+type former.
 
 `T captures (s1, ..., sn)` is well-formed only if each `si` resolves to an explicit binder `si : Region` already in
 scope.
@@ -1957,6 +1959,31 @@ Precedence:
 * Therefore `Boxed a captures (s)` means `(Boxed a) captures (s)`.
 * To annotate a function value itself rather than only its codomain, parentheses are required:
   `((A -> B) captures (s))`.
+
+Structural capture inference:
+
+The inferred hidden region environment of an elaborated value is defined structurally.
+
+* A variable, package-member projection, or other neutral value inherits the capture annotation already present in its
+  elaborated type.
+* A lambda or local function value has the capture set inferred from its hidden region environment under §7.2.1.
+* A runtime composite value, including a tuple, record, constructor application, variant injection, or sealed package,
+  has the union of the capture sets of its runtime-relevant constituents.
+* The result of `if`, `match`, or other branching expression forms has the union of the capture sets of all reachable
+  normal-result branches.
+* This union is canonicalized by duplicate removal and the ordering rule of §5.1.6.1.
+
+Compile-time-only constituents do not contribute to runtime capture annotations.
+
+Capture-set subsumption:
+
+Let `S` and `S'` be canonical capture sets over explicit region variables.
+If a value elaborates at type `T captures S` and `S ⊆ S'`, then it may be checked against demanded type
+`T captures S'`.
+
+This is a typing / elaboration rule only.
+It is not part of definitional equality.
+Definitional equality of capture annotations remains exact as specified in §14.3.
 
 Examples:
 
@@ -2409,7 +2436,8 @@ Grammar (amends the type grammar):
 typeAtom     ::= ... existing atoms ...
 typePostfix  ::= typeAtom ('?')*
 typeApp      ::= typePostfix typePostfix*
-typeArrow    ::= typeApp ('->' typeArrow)?
+typeCapture  ::= typeApp [ 'captures' '(' regionRef (',' regionRef)* ')' ]
+typeArrow    ::= typeCapture ('->' typeArrow)?
 ```
 
 Postfix `?` binds tighter than type application. Therefore:
@@ -10963,7 +10991,7 @@ A module interface artifact MUST record at least:
   admissibility checking, including:
   * projection-vs-ordinary-term classification,
   * place-binder positions and any receiver marker,
-  * the normalized selector tree or observationally equivalent lowering summary needed for §17.3.1.2,
+  * the normalized selector tree or observationally equivalent lowering summary needed for §17.3.1.3,
   * and the static footprint summary required by §§5.1.7.2 and 8.8;
 * the signatures of exported types, traits, constructors, associated static members, effect interfaces, and effect
   operations, insofar as those entities are available to downstream code;
