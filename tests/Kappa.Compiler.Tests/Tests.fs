@@ -369,6 +369,54 @@ let ``bundled bootstrap prelude exposes the current compiler contract`` () =
     )
 
 [<Fact>]
+let ``backend intrinsic bootstrap contract is derived from bundled prelude expectations with explicit module local supplement`` () =
+    let preludeSource =
+        createSource Stdlib.BundledPreludeVirtualPath (Stdlib.loadBundledPreludeText ())
+
+    let preludeLexed = Lexer.tokenize preludeSource
+    let preludeParsed = Parser.parse preludeSource preludeLexed.Tokens
+
+    Assert.Empty(preludeLexed.Diagnostics)
+    Assert.Empty(preludeParsed.Diagnostics)
+
+    let expectTypes =
+        preludeParsed.Syntax.Declarations
+        |> List.choose (function
+            | ExpectDeclarationNode (ExpectTypeDeclaration declaration) -> Some declaration.Name
+            | _ -> None)
+        |> Set.ofList
+
+    let expectTraits =
+        preludeParsed.Syntax.Declarations
+        |> List.choose (function
+            | ExpectDeclarationNode (ExpectTraitDeclaration declaration) -> Some declaration.Name
+            | _ -> None)
+        |> Set.ofList
+
+    let expectTerms =
+        preludeParsed.Syntax.Declarations
+        |> List.choose (function
+            | ExpectDeclarationNode (ExpectTermDeclaration declaration) -> Some declaration.Name
+            | _ -> None)
+        |> Set.ofList
+
+    let intrinsicSet = Stdlib.intrinsicSetForBackendProfile "interpreter"
+
+    Assert.Equal<string>(expectTypes |> Set.toList, intrinsicSet.TypeNames |> Set.toList)
+    Assert.Equal<string>(expectTraits |> Set.toList, intrinsicSet.TraitNames |> Set.toList)
+    Assert.Equal<string>(expectTerms |> Set.toList, intrinsicSet.PreludeTermNames |> Set.toList)
+    Assert.DoesNotContain("openFile", intrinsicSet.PreludeTermNames)
+
+    let expectedModuleLocalTerms =
+        Set.ofList [ "openFile"; "primitiveReadData"; "readData"; "primitiveCloseFile" ]
+
+    Assert.Equal<string>(expectedModuleLocalTerms |> Set.toList, intrinsicSet.ModuleLocalTermNames |> Set.toList)
+    Assert.Equal<string>(
+        expectedModuleLocalTerms |> Set.toList,
+        Stdlib.intrinsicTermNamesAvailableInModule "interpreter" [ "main" ] |> Set.toList
+    )
+
+[<Fact>]
 let ``bundled prelude bootstrap fixities are derived from leading prelude declarations`` () =
     let preludeSource =
         createSource Stdlib.BundledPreludeVirtualPath (Stdlib.loadBundledPreludeText ())

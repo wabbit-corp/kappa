@@ -8,12 +8,6 @@ module internal ClrAssemblyLowering =
         |> Array.toList
         |> fun segments -> segments @ [ memberName ]
 
-    let private unaryIntrinsicNames =
-        Set.ofList [ "not"; "negate" ]
-
-    let private binaryOperatorNames =
-        Set.ofList [ "+"; "-"; "*"; "/"; "=="; "!="; "<"; "<="; ">"; ">="; "&&"; "||" ]
-
     let rec private lowerExpression (expression: KBackendExpression) =
         match expression with
         | BackendLiteral(literal, _) ->
@@ -44,10 +38,10 @@ module internal ClrAssemblyLowering =
         | BackendWhile(condition, body) ->
             KRuntimeWhile(lowerExpression condition, lowerExpression body)
         | BackendCall(BackendName(BackendIntrinsicName(_, operatorName, _)), [ operand ], _, _)
-            when unaryIntrinsicNames.Contains operatorName ->
+            when IntrinsicCatalog.isBuiltinUnaryIntrinsic operatorName ->
             KRuntimeUnary(operatorName, lowerExpression operand)
         | BackendCall(BackendName(BackendIntrinsicName(_, operatorName, _)), [ left; right ], _, _)
-            when binaryOperatorNames.Contains operatorName ->
+            when IntrinsicCatalog.isBuiltinBinaryOperator operatorName ->
             KRuntimeBinary(lowerExpression left, operatorName, lowerExpression right)
         | BackendCall(BackendName(BackendConstructorName(moduleName, _, constructorName, _, _, _)), arguments, _, _) ->
             let loweredArguments = arguments |> List.map lowerExpression

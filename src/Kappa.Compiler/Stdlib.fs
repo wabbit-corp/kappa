@@ -6,7 +6,8 @@ module Stdlib =
         { Identity: string
           TypeNames: Set<string>
           TraitNames: Set<string>
-          TermNames: Set<string>
+          PreludeTermNames: Set<string>
+          ModuleLocalTermNames: Set<string>
           RuntimeTermNames: Set<string>
           ElaborationAvailableTermNames: Set<string> }
 
@@ -61,75 +62,23 @@ module Stdlib =
         else
             []
 
-    let private intrinsicTypeNames =
-        Set.ofList [ "Unit"; "Char"; "String"; "Int"; "Nat"; "Float"; "Bytes"; "Array"; "Ref"; "IO"; "Regex" ]
-
-    let private intrinsicTraitNames =
-        Set.ofList
-            [
-                "Eq"
-                "Ord"
-                "Show"
-                "Functor"
-                "Applicative"
-                "Monad"
-                "MonadRef"
-                "Foldable"
-                "Traversable"
-                "FromInteger"
-                "FromFloat"
-                "FromString"
-                "MonadError"
-            ]
-
-    let private intrinsicTermNames =
-        Set.ofList
-            [
-                "pure"
-                ">>="
-                ">>"
-                "True"
-                "False"
-                "not"
-                "and"
-                "or"
-                "negate"
-                "println"
-                "print"
-                "printInt"
-                "printString"
-                "primitiveIntToString"
-                "openFile"
-                "primitiveReadData"
-                "readData"
-                "primitiveCloseFile"
-                "newRef"
-                "readRef"
-                "writeRef"
-            ]
-
-    let private runtimeOnlyIntrinsicTermNames =
-        Set.ofList [ "+"; "-"; "*"; "/"; "&&"; "||"; "=="; "!="; "<"; "<="; ">"; ">=" ]
-
-    let private elaborationAvailableIntrinsicTermNames =
-        Set.ofList [ "True"; "False"; "not"; "and"; "or"; "negate"; "+"; "-"; "*"; "/"; "&&"; "||"; "=="; "!="; "<"; "<="; ">"; ">=" ]
-
-    let private moduleLocalIntrinsicTermNames =
-        Set.ofList [ "openFile"; "primitiveReadData"; "readData"; "primitiveCloseFile" ]
-
     let private preludeIntrinsicSet =
-        { Identity = "bootstrap-prelude-v2"
-          TypeNames = intrinsicTypeNames
-          TraitNames = intrinsicTraitNames
-          TermNames = intrinsicTermNames
-          RuntimeTermNames = Set.union intrinsicTermNames runtimeOnlyIntrinsicTermNames
-          ElaborationAvailableTermNames = elaborationAvailableIntrinsicTermNames }
+        let contract = IntrinsicCatalog.bundledPreludeExpectContract ()
+
+        { Identity = IntrinsicCatalog.bootstrapIntrinsicIdentity
+          TypeNames = contract.TypeNames
+          TraitNames = contract.TraitNames
+          PreludeTermNames = contract.TermNames
+          ModuleLocalTermNames = IntrinsicCatalog.moduleLocalIntrinsicTermNames
+          RuntimeTermNames = IntrinsicCatalog.runtimePreludeIntrinsicTermNames ()
+          ElaborationAvailableTermNames = IntrinsicCatalog.elaborationAvailableIntrinsicTermNames () }
 
     let private emptyIntrinsicSet =
         { Identity = "none"
           TypeNames = Set.empty
           TraitNames = Set.empty
-          TermNames = Set.empty
+          PreludeTermNames = Set.empty
+          ModuleLocalTermNames = Set.empty
           RuntimeTermNames = Set.empty
           ElaborationAvailableTermNames = Set.empty }
 
@@ -154,7 +103,7 @@ module Stdlib =
 
     let intrinsicTermNamesFor backendProfile moduleName =
         if moduleName = PreludeModuleName then
-            (intrinsicSetForBackendProfile backendProfile).TermNames
+            (intrinsicSetForBackendProfile backendProfile).PreludeTermNames
         else
             Set.empty
 
@@ -181,17 +130,17 @@ module Stdlib =
         let intrinsicSet = intrinsicSetForBackendProfile backendProfile
 
         if isPreludeExpectation moduleName then
-            intrinsicSet.TermNames
+            intrinsicSet.PreludeTermNames
         else
-            Set.intersect intrinsicSet.TermNames moduleLocalIntrinsicTermNames
+            intrinsicSet.ModuleLocalTermNames
 
     let intrinsicTermNamesAvailableInModuleText backendProfile moduleName =
         let intrinsicSet = intrinsicSetForBackendProfile backendProfile
 
         if moduleName = PreludeModuleText then
-            intrinsicSet.TermNames
+            intrinsicSet.PreludeTermNames
         else
-            Set.intersect intrinsicSet.TermNames moduleLocalIntrinsicTermNames
+            intrinsicSet.ModuleLocalTermNames
 
     let intrinsicallySatisfiesExpect backendProfile moduleName declaration =
         let intrinsicSet = intrinsicSetForBackendProfile backendProfile

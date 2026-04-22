@@ -1405,7 +1405,7 @@ let ``portable runtime obligations classify backend neutral backend specific and
     Assert.Equal(KBackendIRGuaranteed, (obligation "tagged-data-layout").Owner)
     Assert.Equal(KBackendIRGuaranteed, (obligation "runtime-calling-convention").Owner)
     Assert.Equal(BackendSpecificRuntime, (obligation "memory-management").Owner)
-    Assert.Equal(DeferredRuntimeObligation, (obligation "deterministic-cleanup").Owner)
+    Assert.Equal(KBackendIRGuaranteed, (obligation "deterministic-cleanup").Owner)
     Assert.Equal(DeferredRuntimeObligation, (obligation "effect-handlers").Owner)
 
     Assert.All(

@@ -139,11 +139,8 @@ module Interpreter =
 
         let context = { Modules = moduleRuntimes }
 
-        let builtinBinaryNames =
-            Set.ofList [ "+"; "-"; "*"; "/"; "=="; "!="; "<"; "<="; ">"; ">="; "&&"; "||" ]
-
         let tryCreateBuiltinFunction name =
-            if builtinBinaryNames.Contains(name) then
+            if IntrinsicCatalog.isBuiltinBinaryOperator name then
                 Some(BuiltinFunctionValue { Name = name; Arguments = [] })
             else
                 None
@@ -788,12 +785,12 @@ module Interpreter =
                 error $"Intrinsic 'writeRef' expects a Ref as the first argument, but got {RuntimeValue.format referenceValue}."
             | "writeRef", _ ->
                 error "Intrinsic 'writeRef' received too many arguments."
-            | name, [ left; right ] when builtinBinaryNames.Contains(name) ->
+            | name, [ left; right ] when IntrinsicCatalog.isBuiltinBinaryOperator name ->
                 applyBuiltinBinary name left right
                 |> Result.map Some
-            | name, arguments when builtinBinaryNames.Contains(name) && List.length arguments < 2 ->
+            | name, arguments when IntrinsicCatalog.isBuiltinBinaryOperator name && List.length arguments < 2 ->
                 ok None
-            | name, _ when builtinBinaryNames.Contains(name) ->
+            | name, _ when IntrinsicCatalog.isBuiltinBinaryOperator name ->
                 error $"Operator '{name}' received too many arguments."
             | _ ->
                 error $"Unknown builtin '{builtin.Name}'."

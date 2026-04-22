@@ -36,84 +36,6 @@ module internal KBackendLowering =
     let private backendOpaqueRepresentation name =
         BackendRepOpaque name
 
-    let private intrinsicRuntimeArity name =
-        match name with
-        | "True"
-        | "False" ->
-            0
-        | "not"
-        | "negate"
-        | "pure"
-        | "print"
-        | "println"
-        | "printInt"
-        | "printString"
-        | "primitiveIntToString"
-        | "openFile"
-        | "primitiveReadData"
-        | "readData"
-        | "primitiveCloseFile"
-        | "newRef"
-        | "readRef" ->
-            1
-        | "and"
-        | "or"
-        | "writeRef"
-        | ">>="
-        | ">>"
-        | "+"
-        | "-"
-        | "*"
-        | "/"
-        | "&&"
-        | "||"
-        | "=="
-        | "!="
-        | "<"
-        | ">"
-        | "<="
-        | ">=" ->
-            2
-        | _ ->
-            0
-
-    let private intrinsicResultRepresentation name =
-        match name with
-        | "True"
-        | "False"
-        | "not"
-        | "and"
-        | "or"
-        | "&&"
-        | "||"
-        | "=="
-        | "!="
-        | "<"
-        | ">"
-        | "<="
-        | ">=" ->
-            Some BackendRepBoolean
-        | "primitiveIntToString" ->
-            Some BackendRepString
-        | "openFile"
-        | "primitiveReadData"
-        | "readData"
-        | "primitiveCloseFile" ->
-            Some BackendRepIOAction
-        | "print"
-        | "println"
-        | "printInt"
-        | "printString"
-        | "newRef"
-        | "readRef"
-        | "writeRef"
-        | "pure"
-        | ">>="
-        | ">>" ->
-            Some BackendRepIOAction
-        | _ ->
-            None
-
     let private tryBackendRepresentationFromTypeText (typeText: string option) =
         let tryTypeHead (text: string) =
             text.Replace("(", " ")
@@ -141,30 +63,6 @@ module internal KBackendLowering =
         else
             backendOpaqueRepresentation None
 
-    let private executedIntrinsicResultRepresentation name =
-        match name with
-        | "print"
-        | "println"
-        | "printInt"
-        | "printString"
-        | "writeRef" ->
-            Some BackendRepUnit
-        | "primitiveIntToString" ->
-            Some BackendRepString
-        | "openFile" ->
-            Some(backendOpaqueRepresentation (Some "File"))
-        | "primitiveReadData"
-        | "readData" ->
-            Some BackendRepString
-        | "primitiveCloseFile" ->
-            Some BackendRepUnit
-        | "newRef" ->
-            Some(backendOpaqueRepresentation (Some "Ref"))
-        | "readRef" ->
-            Some(backendOpaqueRepresentation None)
-        | _ ->
-            intrinsicResultRepresentation name
-
     let rec private inferKRuntimeExpressionRepresentation expression =
         match expression with
         | KRuntimeLiteral literal ->
@@ -190,7 +88,7 @@ module internal KBackendLowering =
                         mergeBackendRepresentations state (inferKRuntimeExpressionRepresentation caseClause.Body))
                     (inferKRuntimeExpressionRepresentation firstCase.Body)
         | KRuntimeExecute(KRuntimeApply(KRuntimeName [ intrinsicName ], _)) ->
-            executedIntrinsicResultRepresentation intrinsicName
+            IntrinsicCatalog.executedIntrinsicResultRepresentation intrinsicName
             |> Option.defaultValue (backendOpaqueRepresentation None)
         | KRuntimeExecute inner ->
             inferKRuntimeExpressionRepresentation inner
@@ -287,7 +185,7 @@ module internal KBackendLowering =
                 |> List.map (fun binding ->
                     let returnRepresentation =
                         if binding.Intrinsic then
-                            intrinsicResultRepresentation binding.Name
+                            IntrinsicCatalog.intrinsicResultRepresentation binding.Name
                         else
                             tryBackendRepresentationFromTypeText binding.ReturnTypeText
                             |> Option.orElseWith (fun () ->
@@ -295,7 +193,7 @@ module internal KBackendLowering =
 
                     let arity =
                         if binding.Intrinsic then
-                            intrinsicRuntimeArity binding.Name
+                            IntrinsicCatalog.intrinsicRuntimeArity binding.Name
                         else
                             List.length binding.Parameters
 
@@ -603,12 +501,12 @@ module internal KBackendLowering =
                             )
                         | None when availableRuntimeIntrinsics.Contains bindingName && moduleName = Stdlib.PreludeModuleText ->
                             let resultRepresentation =
-                                intrinsicResultRepresentation bindingName
+                                IntrinsicCatalog.intrinsicResultRepresentation bindingName
                                 |> Option.defaultValue fallbackResultRepresentation
 
                             Result.Ok(
                                 makeCallingConvention
-                                    (intrinsicRuntimeArity bindingName)
+                                    (IntrinsicCatalog.intrinsicRuntimeArity bindingName)
                                     argumentRepresentations
                                     (Some resultRepresentation),
                                 resultRepresentation

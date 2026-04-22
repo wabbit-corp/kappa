@@ -840,24 +840,7 @@ module IlDotNetBackend =
                     None))
 
     let private knownIntrinsicNames =
-        Set.ofList
-            [ "print"
-              "println"
-              "printString"
-              "printInt"
-              "primitiveIntToString"
-              "pure"
-              "openFile"
-              "primitiveReadData"
-              "readData"
-              "primitiveCloseFile"
-              "newRef"
-              "readRef"
-              "writeRef"
-              "not"
-              "negate"
-              "and"
-              "or" ]
+        IntrinsicCatalog.namedIntrinsicTermNames ()
 
     let private intrinsicParameterTypes name argumentTypes =
         match name, argumentTypes with
@@ -1378,10 +1361,7 @@ module IlDotNetBackend =
                     | KRuntimeUnary(operatorName, _) ->
                         Result.Error $"IL backend does not support unary operator '{operatorName}' yet."
                     | KRuntimeBinary(left, operatorName, right) ->
-                        let builtinOperators =
-                            Set.ofList [ "+"; "-"; "*"; "/"; "=="; "!="; "<"; "<="; ">"; ">="; "&&"; "||" ]
-
-                        if builtinOperators.Contains(operatorName) then
+                        if IntrinsicCatalog.isBuiltinBinaryOperator operatorName then
                             let builtinResult =
                                 result {
                                     let! leftType = inferExpressionType currentModule localTypes active None left
@@ -1469,11 +1449,8 @@ module IlDotNetBackend =
                         }
                     | KRuntimeApply(KRuntimeName segments, arguments) ->
                         let nameText = String.concat "." segments
-                        let builtinOperators =
-                            Set.ofList [ "+"; "-"; "*"; "/"; "=="; "!="; "<"; "<="; ">"; ">="; "&&"; "||" ]
-
                         match segments, arguments with
-                        | [ operatorName ], [ left; right ] when builtinOperators.Contains(operatorName) ->
+                        | [ operatorName ], [ left; right ] when IntrinsicCatalog.isBuiltinBinaryOperator operatorName ->
                             inferExpressionType currentModule localTypes active expectedType (KRuntimeBinary(left, operatorName, right))
                         | _ ->
                             match tryResolveBinding rawModules currentModule segments with
@@ -1974,10 +1951,7 @@ module IlDotNetBackend =
                 | KRuntimeUnary(operatorName, _) ->
                     Result.Error $"IL backend does not support unary operator '{operatorName}' yet."
                 | KRuntimeBinary(left, operatorName, right) ->
-                    let builtinOperators =
-                        Set.ofList [ "+"; "-"; "*"; "/"; "=="; "!="; "<"; "<="; ">"; ">="; "&&"; "||" ]
-
-                    if builtinOperators.Contains(operatorName) then
+                    if IntrinsicCatalog.isBuiltinBinaryOperator operatorName then
                         let builtinResult =
                             result {
                                 let! leftType = infer left None
@@ -2064,11 +2038,8 @@ module IlDotNetBackend =
                     }
                 | KRuntimeApply(KRuntimeName segments, arguments) ->
                     let nameText = String.concat "." segments
-                    let builtinOperators =
-                        Set.ofList [ "+"; "-"; "*"; "/"; "=="; "!="; "<"; "<="; ">"; ">="; "&&"; "||" ]
-
                     match segments, arguments with
-                    | [ operatorName ], [ left; right ] when builtinOperators.Contains(operatorName) ->
+                    | [ operatorName ], [ left; right ] when IntrinsicCatalog.isBuiltinBinaryOperator operatorName ->
                         infer (KRuntimeBinary(left, operatorName, right)) expectedType
                     | _ ->
                         match tryResolveBinding modules currentModule segments with
@@ -2695,10 +2666,7 @@ module IlDotNetBackend =
                 il.MarkLabel(endLabel)
             }
         | KRuntimeBinary(left, operatorName, right) ->
-            let supportedBuiltinOperators =
-                Set.ofList [ "+"; "-"; "*"; "/"; "=="; "!="; "<"; "<="; ">"; ">=" ]
-
-            if supportedBuiltinOperators.Contains(operatorName) then
+            if IntrinsicCatalog.isEagerBuiltinBinaryOperator operatorName then
                 emitBuiltinBinary operatorName left right
             else
                 emitExpression
@@ -2727,11 +2695,8 @@ module IlDotNetBackend =
             emitMatch scrutinee cases
         | KRuntimeApply(KRuntimeName segments, arguments) ->
             let nameText = String.concat "." segments
-            let builtinOperators =
-                Set.ofList [ "+"; "-"; "*"; "/"; "=="; "!="; "<"; "<="; ">"; ">="; "&&"; "||" ]
-
             match segments, arguments with
-            | [ operatorName ], [ left; right ] when builtinOperators.Contains(operatorName) ->
+            | [ operatorName ], [ left; right ] when IntrinsicCatalog.isBuiltinBinaryOperator operatorName ->
                 emitExpression state currentModule typeParameters localValues expectedType il (KRuntimeBinary(left, operatorName, right))
             | _ ->
                 match tryResolveBinding state.Environment.Modules currentModule segments with
