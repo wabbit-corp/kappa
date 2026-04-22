@@ -6821,8 +6821,8 @@ Valid do-items inside `do`:
 
 Control-flow statements:
   * `break` and `continue` are statements, not expressions. They are valid only inside loop bodies (§8.5).
-  * `return e` and `return@L e` are statements, not expressions. They are valid only inside the body of a named
-    function, method, or lambda (§8.4).
+  * `return e` and `return@L e` are statements, not expressions. They may appear only as do-items inside `do` blocks,
+    and only when those `do` blocks lie within the body of a named function, method, or lambda (§8.4).
   * `break` and `continue` may not cross user-written lambda or local-function boundaries. They target only loops within
     the same user-written function or lambda body in which they syntactically occur. Compiler-generated closures
     introduced solely by desugaring of loops, comprehensions, or protected-resource elaboration of `using` are
@@ -7106,7 +7106,8 @@ result.
 
 Validity:
 * `return` is a statement, not an expression.
-* `return` is valid only inside the body of a named function, method, or lambda.
+* `return` may appear only as a do-item inside a `do` block.
+* `return` is valid only when that `do` block lies inside the body of a named function, method, or lambda.
 
 For purposes of bare `return`, a direct lambda definition of the form `let name = \binders -> body` or `let name : T =
 \binders -> body` counts as a named function named `name` (§6.1).
@@ -7136,8 +7137,9 @@ Target resolution:
   transparent to `return` and propagate the `Return` completion outward (§8.7.4).
 
 Typing:
-* Let the target have result type `m R` (or `R` for a pure, non-monadic target). Then `e` must have type `R`. `return e`
-  produces `pure e` in the target's monad and exits that target.
+* A `return` statement may appear only as a do-item inside a `do` block.
+* Let the target have result type `m R`, where `m` is the monad of the enclosing `do`-scope containing the `return`.
+  Then `e` must have type `R`. `return e` exits that target with result `pure e`.
 * A labeled `return@L e` is typed against the type of the construct labeled `L`, not of any surrounding construct.
 
 Restrictions (carried over from prior §8.4):
