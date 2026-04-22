@@ -153,10 +153,10 @@ importSpec  ::= moduleRef
               | moduleRef '.(' importItem (',' importItem)* ')'
               | moduleRef '.*'
               | moduleRef '.*' 'except' '(' exceptItem (',' exceptItem)* ')'
-importItem  ::= { 'unhide' | 'clarify' }* [namespace] nameRef [ctorAll]
-namespace   ::= 'term' | 'type' | 'trait' | 'ctor'
+importItem  ::= { 'unhide' | 'clarify' }* [kindSelector] nameRef [ctorAll]
+kindSelector ::= 'term' | 'type' | 'trait' | 'ctor'
 ctorAll     ::= '(..)'
-exceptItem  ::= [namespace] nameRef
+exceptItem  ::= [kindSelector] nameRef
 ```
 
 Surface singleton sugar:
@@ -185,19 +185,19 @@ Constraints:
 
 * A dotted module path is `modSeg ("." modSeg)*`, where `modSeg` is defined in §3.1.
 * URL imports use a **string literal** and are treated as modules by the implementation.
-* In `... except (x, y)` each item may be unqualified or namespace-qualified as `term x`, `type y`, `trait C`, or `ctor
+* In `... except (x, y)` each item may be unqualified or kind-qualified as `term x`, `type y`, `trait C`, or `ctor
   K`.
 * An unqualified `except` item excludes every imported binding of that name that the wildcard form would otherwise
   introduce.
-* A qualified `except` item excludes only that namespace entry.
+* A qualified `except` item excludes only that kind.
 
 Imports are **not re-exported** by default (see `export` below).
 
 Module aliases and qualification:
 
-* `import M` brings the module name `M` into scope for qualified access (e.g. `M.x`) and, under §13.1.2, as a reified
+* `import M` brings the module name `M` into scope for qualified access (e.g. `M.x`) and, under §13.5, as a reified
   module value.
-* `import M as A` brings only the alias `A` into scope for qualified access (e.g. `A.x`) and, under §13.1.2, as a
+* `import M as A` brings only the alias `A` into scope for qualified access (e.g. `A.x`) and, under §13.5, as a
   reified module value. The name `M` is not brought into scope by this form.
 * Selective imports (`import M.(...)`, `import M.*`, and `import M.* except (...)`) do not bring `M` into scope for
   qualified access or as a reified module value. To enable either, use a separate `import M` (or `import M as M`).
@@ -205,44 +205,63 @@ Module aliases and qualification:
   string literal itself never becomes a qualifier.
 
 
-#### 2.3.1 Import item qualifiers (namespaces)
+#### 2.3.1 Import item kind selectors
 
-Kappa has multiple namespaces (§13). Import items may optionally specify which namespace (or subset) the item is
-imported into:
+Kappa resolves names through lexical binding groups (§13), not through
+separate shadowing namespaces. The selectors `term`, `type`, `trait`,
+and `ctor` on import and export items are therefore kind selectors.
+
 ```kappa
 import std.list.(type List)
 import std.list.(type List(..))
 import std.eq.(trait Eq)
 import std.base.(term println)
+import std.person.(ctor Person)
 ```
 
-Valid qualifiers are:
+Grammar:
 
-* `term`  (term namespace)
-* `type`  (type namespace)
-* `trait` (constraint namespace; restricted to traits)
-* `ctor`  (constructor namespace)
+```text
+importItem   ::= { 'unhide' | 'clarify' }* [kindSelector] nameRef [ctorAll]
+kindSelector ::= 'term' | 'type' | 'trait' | 'ctor'
+ctorAll      ::= '(..)'
+exceptItem   ::= [kindSelector] nameRef
+```
 
-The bulk-constructor suffix `(..)` may appear only on an item explicitly qualified with `type`. Thus `type T(..)` is
-valid, while `T(..)` and `ctor T(..)` are ill-formed.
+Rules:
 
-If no qualifier is given (`import M.(x)` or its singleton sugar `import M.x`), the `nameRef` `x` is imported into every
-namespace in which `M` exports that name **except the constructor namespace**. If this results in ambiguity at a use
-site, that use is an error unless disambiguated (by qualification, expected kind/type, or explicit import qualifier).
+* `term` selects an ordinary term declaration, including active patterns.
+* `type` selects a type constructor or type alias.
+* `trait` selects a trait constructor.
+* `ctor` selects a data constructor.
+* `type T(..)` imports the type `T` together with all constructors declared by `T`.
 
-Constructors:
-* To import constructors unqualified, the import item must be explicitly qualified with `ctor`.
-* The only built-in exception is the implicit prelude import of §2.6, which additionally brings a fixed prelude
-  constructor subset into scope unqualified.
-* Otherwise constructors are not imported as unqualified names by default and must be accessed through type scope
-  (§13.2) or an explicit `ctor` import.
-* As a concise bulk form, `type T(..)` imports `T` into the type namespace and all constructors of `T` into the
-  constructor namespace as unqualified names. This form is valid only when `T` resolves to a constructor-bearing data
-  type whose constructors are available to the importing module.
+Unqualified import of a spelling:
 
-If `ctor x` is imported, the `nameRef` `x` becomes available as an unqualified constructor name in patterns and
-expressions (subject to ambiguity rules). If `type T(..)` is imported, each constructor of `T` becomes available as an
-unqualified constructor name in patterns and expressions (subject to ambiguity rules).
+* `import M.(x)` imports every exported declaration of spelling `x` except
+  distinct-spelling constructors.
+* A same-spelling data family is imported as one binding group containing
+  its type facet and its same-spelling constructor facet (§13.2).
+* Distinct-spelling constructors are not imported unqualified by default.
+  Use `ctor K` or `type T(..)`.
+
+Wildcard imports:
+
+* `import M.*` imports all exported binding groups except
+  distinct-spelling constructors.
+* `import M.* except (...)` removes declarations after wildcard expansion.
+  An unqualified item `x` removes every imported declaration of spelling `x`.
+  A qualified item such as `type x`, `trait C`, or `ctor K` removes only
+  that kind.
+
+Shadowing and lookup:
+
+* Imported declarations participate in ordinary lexical lookup and dotted
+  receiver lookup exactly like local declarations (§13).
+* A closer admissible declaration may shadow an imported declaration at a
+  use site.
+
+The same grammar and rules apply to `export` items in §2.4.
 
 #### 2.3.1.1 `unhide` and `clarify` import items
 
@@ -263,8 +282,8 @@ import std.rope.(unhide clarify term normalizeWorker)
 An import item has the shape:
 
 ```
-importItem ::= { 'unhide' | 'clarify' }* [namespace] nameRef
-namespace ::= 'term' | 'type' | 'trait' | 'ctor'
+importItem ::= { 'unhide' | 'clarify' }* [kindSelector] nameRef
+kindSelector ::= 'term' | 'type' | 'trait' | 'ctor'
 ```
 
 Rules:
@@ -495,7 +514,7 @@ Rules:
 
 * The type constructor Rope is exported (unless also private).
 * The constructors of Rope are not exported. Outside the defining module, Rope's constructors are not name-resolvable,
-  including through type scope selection (e.g. Rope.Node is not available).
+  including through dotted static-member selection on the type (e.g. Rope.Node is not available).
 * Pattern matching on Rope constructors outside the defining module is therefore not possible unless the importing
   module explicitly clarifies Rope.
 
@@ -4142,7 +4161,7 @@ Rules:
 * `opaque` does not apply to projection definitions.
 * A projection definition must contain one or more `place` binders.
 * A `place` binder may be receiver-marked using `(place this : T)` or `(place this x : T)`. Such a binder is still a
-  `place` binder, and it participates in dotted receiver-projection sugar under §13.1.1.
+  `place` binder, and it participates in dotted receiver-projection sugar under §13.4.
 * All other binders are ordinary explicit or implicit function binders except `inout`. They may be erased and may be
   dependent.
 * A projection definition is pure; its declared result type must not be monadic.
@@ -4646,12 +4665,12 @@ callee has no remaining implicit binder at that application site, the applicatio
 A maximal application site is the head expression of an `applicationExpr` together with its ordered `applicationArg*`
 after any enclosing dotted-form resolution has determined the actual callee and any inserted receiver argument.
 
-### 7.1.1 Dotted forms (`.` / `?.`): qualification, type scope, projection, method sugar
+### 7.1.1 Dotted forms (`.` / `?.`): qualification, static members, projection, method sugar
 
 The `.` token is used for:
 
 * module qualification (`std.math.sin`)
-* type scope selection (`Vec.Cons`)
+* static member selection on a type (`Vec.Cons`)
 * record or package member projection (`p.x`, `d.name`, `d.(==)`, `d.Name` in any syntactic position compatible with the
   projected compile-time member)
 * projection sections (`(.field)`, `(.field1.field2)`)
@@ -4668,7 +4687,7 @@ The right-hand side of `?.` is restricted to member-access forms only. In v0.1 t
 * constructor-field projection,
 * method-call and receiver-projection sugar.
 
-Forms such as module qualification, type scope selection, projection sections, record update, and row extension are
+Forms such as module qualification, static member selection on a type, projection sections, record update, and row extension are
 ordinary dotted forms but are not reachable through `?.`.
 
 #### 7.1.1.1 Projection sections
@@ -4695,7 +4714,7 @@ d.(<=)
 
 Such forms are permitted where dotted member projection is otherwise valid.
 
-Resolution of dotted forms is defined in §13.1. Method-call and receiver-projection sugar are defined in §13.1.1 and
+Resolution of dotted forms is defined in §13.3. Method-call and receiver-projection sugar are defined in §13.4 and
 supply `lhs` to the unique receiver-marked binder, which may appear in any argument position.
 
 #### 7.1.1.2 Safe-navigation (`?.`)
@@ -4799,7 +4818,7 @@ Typing:
 
 * `P` must have type `Option T` for some `T`.
 * The residual body is typechecked under a fresh binder `__x : T` using the ordinary rules for dotted forms (§7.1.1,
-  §13.1).
+  §13.3).
 * If `P` is itself a borrowed view, then the success-branch binder `__x` is treated as a borrowed alias of the payload
   rather than as a fresh owned value. It inherits the same rigid borrow region and the same underlying borrow root as
   `P`, and further projections from `__x` are interpreted pathwise through that same source path under the disjoint-path
@@ -5050,7 +5069,7 @@ Rules:
 * Receiver-marked binders are explicit binders. `(this : T)` binds the receiver locally as `this`, while `(this x : T)`
   marks the binder as the receiver and binds it locally as `x`. The quantity-annotated forms `(q this : T)` and `(q this
   x : T)` are the corresponding receiver-marked variants with explicit quantity `q`.
-* Method-call and receiver-projection sugar (§13.1.1) consult the receiver marker, not the local binder name chosen
+* Method-call and receiver-projection sugar (§13.4) consult the receiver marker, not the local binder name chosen
   inside the function body.
 * A leading label `L@` labels the lambda body for `return@L` (§8.4.1).
 * Parentheses are required for typed, quantity-annotated, and implicit binders; they are not required for bare
@@ -5380,7 +5399,7 @@ The success-side constructor evidence MUST be strong enough that:
 
 * a subsequent `match e` may treat non-`C` cases as unreachable; and
 * if `C` declares named explicit parameters, dotted projection `e.field` may refer to those named constructor parameters
-  via constructor-field projection (§13.1).
+  via constructor-field projection (§13.3).
 
 The success evidence additionally includes any index equalities forced by constructor `C`, exactly as in the
 corresponding constructor branch of `match` (§7.5.1A).
@@ -6371,7 +6390,7 @@ Rules:
 * Because a resumption is captured control state rather than a borrowable place, there is no borrowed-resumption mode in
   v0.1.
 * Operation names declared inside an `effect` declaration are not brought into the global term namespace. They are
-  selected via `label.op` (§13.1), and are additionally available within a handler for that label when handlers are
+  selected via `label.op` (§13.3), and are additionally available within a handler for that label when handlers are
   specified.
 * Operation signatures may be arbitrary dependently typed function types after elaborating any outer `forall`s. This
   includes multiple explicit or implicit parameters, quantity annotations on binders (defaulting to `ω`), and dependent
@@ -9306,8 +9325,8 @@ Rules:
 * The compiler SHOULD emit a soft diagnostic (warning or hint) when a constructor is declared without parameter names,
   encouraging the named form for improved ergonomics.
 
-* Constructors live in the **constructor namespace**.
-* Parameters live in the **type namespace** (with sugar `a` ≡ `(a : Type)`) unless specified otherwise.
+* Constructors are declarations of kind `ctor`.
+* Parameters contribute `type` declarations by default (with sugar `a` ≡ `(a : Type)`) unless specified otherwise.
 * If `opaque` is present on a data declaration, constructors are not exported (§2.5.3).
 
 ### 11.1.1 Constructor application with named arguments (`C { ... }`)
@@ -9828,349 +9847,210 @@ For `Eq` specifically:
 
 ---
 
-## 13. Namespaces
+## 13. Names, binding groups, and dotted lookup
 
-Kappa uses multiple namespaces:
+Kappa uses one lexical lookup system organized by spelling. A lexical
+scope maps each spelling to a binding group. A binding group may carry
+several declaration kinds. Declaration kinds control contextual
+admissibility; they are not independent shadowing namespaces.
 
-1. **Type namespace**:
+Declaration kinds:
 
-    * Type constructors (`Maybe`, `Vec`, `Person`).
-    * Type aliases (`type Id a = a`).
-    * Effect-interface constructors (`State`, `Reader`, `Console`).
+* `term`
+* `type`
+* `trait`
+* `ctor`
+* `module`
+* `effect-label`
 
-2. **Constraint namespace**:
+Record field labels are structural labels, not ordinary unqualified
+lexical bindings.
 
-    * Trait constructors (`Eq`, `Functor`, `Monad`).
+### 13.1 Ordinary lexical lookup
 
-3. **Term namespace**:
+Unqualified lookup of spelling `x` proceeds by contextual admissibility:
 
-    * Value bindings (`let x = ...`).
-    * Functions (`let foo = ...`).
+1. Determine the declaration kinds admissible at the use site.
+2. Search lexical scopes from innermost to outermost.
+3. At each scope, inspect the binding group for spelling `x`, if any.
+4. Filter that binding group to declarations whose kinds are admissible
+   at the use site.
+5. If the filtered set is empty, continue outward.
+6. If the filtered set contains exactly one declaration, choose it.
+7. If the filtered set contains more than one declaration, apply §13.2
+   when the ambiguity is solely the same-spelling data-family pairing;
+   otherwise the use is ambiguous.
 
-4. **Constructor namespace**:
- * Data constructors (`Just`, `Nothing`, `VCons`).
+Consequences:
 
-5. **Label namespace**:
- * Record labels.
+* A nearer binding group containing no admissible declaration does not
+  block an outer admissible declaration of the same spelling.
+* A nearer admissible declaration shadows outer admissible declarations
+  of the same spelling.
 
-6. **Effect-label namespace**:
- * Effect labels introduced by effect-row syntax and used in `EffRow`-kinded rows and effect-operation selection.
+Binding-group formation:
 
-7. **Module namespace**:
- * Module qualifiers introduced by `import M` / `import M as A`.
- * Imported module references may also be reified as pure module values under §13.1.2.
+* Within one lexical scope, a spelling may contribute at most one
+  ordinary declaration of a given kind.
+* Distinct kinds with the same spelling may coexist in one binding group.
+* A `data` declaration may additionally contribute the same-spelling
+  constructor facet described in §13.2.
+
+Contextual admissibility:
+
+* term-expression position admits `term`, `ctor`, and `module`;
+* type position admits `type`;
+* constraint position admits `trait`;
+* pattern-head position admits `ctor` and terms declared with `pattern`;
+* effect-label position admits `effect-label`.
+
+Receiver positions for dotted forms use §13.3 instead of this ordinary
+rule.
+
+### 13.2 Same-spelling data families and static members
+
+A `data` declaration may introduce a type facet and a constructor facet
+with the same spelling.
+
+Example:
+
+```kappa
+data Person : Type =
+    Person (name : String) (age : Int)
+```
 
 Rules:
 
-* Names may be reused across namespaces:
+* The type facet and same-spelling constructor facet form one
+  same-spelling data-family binding group.
+* At an unqualified use site:
+  * type positions select the type facet;
+  * term-expression positions select the constructor facet;
+  * pattern-head positions select the constructor facet.
+* Import and export preserve this pairing.
+* Distinct-spelling constructors are ordinary `ctor` declarations in
+  their enclosing binding groups.
+* Constructors are also static members of their enclosing data type for
+  dotted selection. Thus `Option.Some`, `Vec.Cons`, and `Person.Person`
+  are ordinary static-member selections under §13.3.
 
-  ```kappa
-  data Person : Type =
-      Person (name : String) (age : Int)
+### 13.3 Dotted name resolution (`.`)
 
-  -- Person (type) and Person (constructor) do not clash.
-  ```
+The tokens `.` and `?.` form left-associative member chains.
 
-* Within a single namespace at the same scope, duplicate definitions are a compile-time error.
-* Imports may bring names into the term, type, constraint, and constructor namespaces, and may bring module qualifiers
-  into the module namespace. The label namespace is populated by record field syntax; the effect-label namespace is
-  populated by effect-row syntax (§5.3.2). Effect declarations populate the type namespace with effect-interface
-  constructors.
-* Effect operation names are not added to the global term namespace. They are selected through effect labels using
-  `label.op` (§13.1).
-* Constructor names are not imported as unqualified names unless explicitly imported with the `ctor` qualifier (§2.3.1).
-  Constructors remain accessible via type scope selection (§13.2).
+The form `lhs.{ ... }` is parsed as record update (§5.5.5) when its
+fields use `=`, or as row extension (§5.5.6) when its fields use `:=`.
+Mixed forms are ill-formed. These forms do not participate in dotted
+name resolution.
 
-### 13.1 Dotted name resolution (`.`)
+Safe-navigation `lhs?.rhs` desugars before ordinary dotted resolution
+runs on the corresponding chain body (§7.1.1.2).
 
-The `.` token is used for:
+Ordinary dotted resolution is receiver-driven and uses nearest-successful
+receiver lookup.
 
-* **Module qualification:** `std.math.sin`
-* **Type scope selection:** `Vec.Cons`
-* **Effect-label operation selection:** `state.get`
-* **Record or package member projection:** `p.x`, `d.name`, `d.(==)`, `d.Item`, `m.Set`
-* **Constructor-field projection under positive tag refinement:** `e.payload`
-* **Safe-navigation member access:** `e?.member`, desugared per §7.1.1.2
-* **Method-call and receiver-projection sugar:** `x.show`, `a.degrees`
-* **Record update / row extension:** (`r.{ y = 99 }`, `r.{ z := 0 }`)
+For a dotted chain `base.s1.s2 ... sn`:
 
-Effect labels inside effect-row syntax `<[ ... ]>` are not dotted forms. They are resolved directly in the effect-label
-namespace described in §§5.3.1-5.3.2.
+1. Search lexical scopes from innermost to outermost for binding groups
+   spelled `base`.
+2. In each such binding group, consider receiver candidates of kinds:
+   * `module`,
+   * `type` (including the type facet of a same-spelling data family),
+   * `effect-label`,
+   * `term`,
+   * `ctor`.
+3. For each candidate in that binding group, attempt to resolve the full
+   remaining chain `.s1.s2 ... sn`.
+4. If no candidate in the current binding group yields a well-formed
+   full chain, continue outward.
+5. If exactly one candidate in the nearest successful binding group
+   yields a well-formed full chain, choose it.
+6. If more than one candidate in the nearest successful binding group
+   yields a well-formed full chain, the dotted form is ambiguous.
+7. If no binding group yields a well-formed full chain, the dotted form
+   is ill-formed.
 
-The form `lhs.{ ... }` is parsed as record update (§5.5.5) when its fields use `=`, or as row extension (§5.5.6) when
-its fields use `:=`. Mixed forms are ill-formed. These forms do not participate in dotted name resolution.
-Safe-navigation `lhs?.rhs` desugars before ordinary dotted-form disambiguation runs on the corresponding lambda body.
+After the receiver candidate is fixed, each member step is resolved as
+exactly one of:
 
-Resolution of dotted forms proceeds by attempting the following interpretations:
+* module member selection;
+* static member selection on a type;
+* effect-label operation selection;
+* record, package, or dictionary member projection;
+* constructor-field projection under positive tag refinement;
+* method-call or receiver-projection sugar.
 
-1. Module qualification
-2. Type scope selection
-3. Effect-label operation selection
-4. Record or package member projection
-5. Constructor-field projection under positive tag refinement
-6. Method-call and receiver-projection sugar
+Method-call and receiver-projection sugar are attempted only if no
+ordinary member-selection form succeeds for that member step.
 
-Method-call and receiver-projection sugar are considered only if the dotted form is not already well-formed as a record
-or package member projection, or as a constructor-field projection, at that use site. Therefore an ordinary member takes
-precedence over sugar of the same name.
+Receiver forms:
 
-Record and package member projection:
+* If the receiver denotes a module declaration or reified module value,
+  `recv.name` selects the exported member `name` of that module.
+* If the receiver denotes a type or the type facet of a same-spelling
+  data family, `recv.name` selects a static member of that type. For
+  data types, constructors are static members.
+* If the receiver denotes an effect label, `recv.name` selects an
+  operation declared by the effect interface carried at that label in
+  the current effect row.
+* If the receiver denotes a record, package, or explicit dictionary
+  value, `recv.name` selects an ordinary member of that value.
+* If the local refinement context proves that the receiver has
+  constructor `C` and `C` declares a named field `name`, `recv.name` is
+  constructor-field projection.
+* Otherwise, fallback sugar of §13.4 may apply.
 
-* A dotted form `lhs.name` denotes member projection when `lhs` has a record type or signature type containing a field
-  `name`.
-* If that field has quantity `0`, the projection may appear in any syntactic position compatible with the field's sort
-  or type. This generalizes explicit dictionary associated-member projection.
-* If that field is a non-erased term field, the projection is an ordinary term expression.
-* Dictionaries are records/packages for purposes of this rule. Existing forms such as `d.name`, `d.(==)`, and `d.Item`
-  are instances of ordinary member projection.
-* If `lhs` has a signature type, member projection additionally obeys the opaqueness rules of §5.5.10.
+### 13.4 Method-call and receiver-projection sugar
 
-Effect-label operation selection:
-
-* A dotted form `l.op` denotes effect-label operation selection when `ContainsEff r l E` is solvable and the effect
-  interface `E` declares an operation `op : Π (x₁ : A₁) ... . B`.
-* In that case, `l.op` elaborates to a term of type `Π (x₁ : A₁) ... . Eff r B`, preserving the implicit/explicit,
-  quantity, and dependency structure of the original operation signature.
-* The effect row `r` is determined from the surrounding computation type and other available type information. If it
-  remains unsolved after ordinary propagation, elaboration fails with an unsolved-metavariable error.
-* Operation names are not brought into the global term namespace. They are available only via `label.op` and, when
-  handlers are specified, within a handler for that label.
-
-Effect-label example:
-
-```kappa
-tick : Eff <[state : State Nat | r]> Unit
-let tick = do
-    let n <- state.get ()
-    state.put (n + 1)
-```
-
-Constructor-field projection under refinement is justified only by explicit positive constructor evidence.
-
-Suppose the local implicit context contains erased evidence
-
-```kappa
-@p : HasCtor lhs ⟨C⟩
-```
-
-and constructor `C` declares a named explicit parameter `field : T`. Then `lhs.field` is a valid constructor-field
-projection, with result type obtained from `C`'s declaration after instantiating the constructor parameters at `lhs`.
-
-The positive evidence required here is introduced by forms such as `if lhs is C then ...` (§7.4.1) and constructor
-branches of `match` (§7.5.4). No implementation-defined hidden refinement state is required.
-
-Constructor-field example:
-
-```kappa
-data Reply : Type =
-    Ok  { value : Int }
-    Err { message : String }
-
-let render (r : Reply) : String =
-    if r is Reply.Err then
-        r.message
-    else
-        "ok"
-```
-
-Disambiguation rule:
-
-* The compiler attempts interpretations that are well-formed at the use site.
-* If exactly one interpretation is well-formed, it is chosen.
-* If more than one interpretation is well-formed, the use is ambiguous and is a compile-time error unless disambiguated
-  (e.g. by explicit qualification/aliasing, explicit import qualifiers, or type ascription that forces a unique
-  interpretation).
-
-#### 13.1.1 Method-call and receiver-projection sugar
-
-Method-call sugar allows writing:
-
-```
-lhs.name
-```
-
-as a section (a function value) that supplies lhs as the receiver argument of name, even when the receiver argument is
-not the first explicit parameter.
+Method-call and receiver-projection sugar are fallback forms. A member
+step `recv.name` becomes fallback sugar only after ordinary member
+selection for that member step has failed.
 
 Eligibility:
 
-A term name is eligible for method-call sugar iff:
+* Resolve spelling `name` by the ordinary lexical rule of §13.1 in
+  term-expression position.
+* Let `G` be the nearest binding group containing at least one
+  admissible term named `name`.
+* From `G`, keep only:
+  * ordinary callable terms whose elaborated type has exactly one
+    explicit receiver-marked binder; and
+  * projection definitions whose declaration has exactly one
+    receiver-marked `place` binder.
+* If exactly one eligible callable remains, use it.
+* If more than one eligible callable remains, the member step is
+  ambiguous.
+* If none remain, the dotted form is ill-formed.
 
-1. the dotted form has not already resolved as record or package member projection or constructor-field projection under
-   §13.1,
-2. name resolves to a term f in scope, and
-3. the elaborated type of f is a Pi-telescope with exactly one explicit receiver-marked binder as defined in §7.2.
+Elaboration:
 
-If there is no explicit receiver-marked binder, or there is more than one, method-call sugar does not apply.
+* If the chosen callable is an ordinary term `f`, `recv.name` elaborates
+  by inserting `recv` at `f`'s unique receiver-marked explicit binder.
+* If additional application arguments follow in the same maximal
+  application site, the whole site is elaborated as one direct call to
+  `f` with `recv` inserted at that binder position.
+* If the chosen callable is a projection definition, the same rule
+  applies using its unique receiver-marked `place` binder, and the
+  result is then treated as an ordinary fully applied projection call
+  for §§5.1.7.2 and 8.8.
+* The inserted receiver must typecheck against the chosen receiver
+  binder after solving any preceding implicit or explicit binders by
+  ordinary application-site elaboration.
 
-Spine interaction:
+### 13.5 Module declarations and reified module values
 
-If a method-sugar candidate `lhs.name` is immediately followed by one or more application arguments in the same maximal
-application site (§7.1.3), elaboration MUST treat the whole site as a direct application of the resolved term `f`, with
-`lhs` inserted at the unique receiver-marked binder position. It MUST NOT first materialize the standalone section value
-and then re-apply that value, unless the implementation can prove observational equivalence with respect to implicit
-arguments, quantity checking, borrow introduction, and `inout` rewriting.
-
-The standalone section elaboration below therefore applies only to the bare form `lhs.name` when no further application
-arguments belong to that same maximal application site.
-
-Elaboration / desugaring:
-
-Let f be the resolved term for name. Let f have elaborated type:
-
-```
-f : Π p1. Π p2. ... Π pn. R
-```
-
-where `pk` is the unique explicit receiver-marked binder, binding the local receiver variable `rk` at type `Tk`.
-
-Tk may depend on earlier binders p1..p(k-1).
-
-To elaborate lhs.name:
-
-1. Elaborate lhs to a term e with type E.
-
-2. Instantiate binders before this: Introduce fresh metavariables (placeholders) for the binders p1..p(k-1), respecting
-   their kinds/types. Let Tk' be Tk with p1..p(k-1) replaced by these metavariables.
-
-3. Receiver unification: Require that E is definitionally equal to Tk' (via unification / definitional equality). This
-   step may solve some or all metavariables for p1..p(k-1).
-
-   If unification fails, lhs.name is not well-formed as method-call sugar.
-
-   If unification succeeds but leaves any metavariable unsolved that affects the required type of the receiver position,
-   lhs.name is a compile-time error (the receiver e has a fixed type and cannot typecheck for multiple incompatible
-   choices).
-
-4. Build the method section: Construct a lambda over the remaining binders p_i for i ≠ k that are not fixed by
-   unification, preserving:
-
-    * their relative order (the order induced by p1..pn with pk removed),
-    * their binder names,
-    * their implicitness (implicit binders remain implicit),
-    * their quantities,
-    * and their dependent types after substituting the solved metavariables and substituting `rk := e` in later binder
-      types.
-
-   The body of the lambda is an application of f with arguments supplied in the original order, inserting e at the
-   receiver position.
-
-   Intuitively, lhs.name elaborates to:
-
-   ```
-   \ (p1') (p2') ... (p(k-1)') (p(k+1)') ... (pn') ->
-       f p1' p2' ... p(k-1)' e p(k+1)' ... pn'
-   ```
-
-   where any binder fixed by unification is not abstracted and is instead substituted directly.
-
-Correctness note:
-
-For any arguments supplied to the resulting lambda, beta-reduction yields an application of f in which lhs has been
-placed exactly at the this binder position. Therefore lhs.name is definitionally equal to the corresponding eta-expanded
-form of applying f with lhs as the this argument, subject to the substitutions described above.
-
-When the direct-call form above applies, the resulting call participates in the ordinary
-application-spine elaboration of §7.1.3.
-
-Receiver-projection sugar:
-
-A projection definition of §6.1.1 is eligible for receiver-projection sugar iff:
-
-1. the dotted form has not already resolved as record or package member projection or constructor-field projection under
-   §13.1,
-2. `name` resolves to a projection definition in scope,
-3. the projection definition has exactly one receiver-marked `place` binder, and
-4. all explicit non-receiver binders of the projection are supplied by the surrounding maximal application site, or are
-   implicit binders that can be resolved by §7.3.3.
-
-If there is no receiver-marked `place` binder, or there is more than one, receiver-projection sugar does not apply.
-
-The receiver expression `lhs` must elaborate to a place expression of the receiver-marked `place` binder's declared
-type.
-
-The dotted form `lhs.name` is a fully applied projection call when the projection has no remaining explicit
-non-receiver binders after receiver insertion and implicit-argument resolution. This zero-extra-argument case is legal
-property syntax:
-
-```kappa
-a.degrees
-```
-
-If a receiver projection is immediately followed by application arguments in the same maximal application site,
-elaboration treats the whole site as a direct projection call with `lhs` inserted at the receiver-marked `place` binder
-position and the following application arguments aligned with the remaining explicit binders.
-
-A resolved receiver-projection property counts as a fully applied projection call for §5.1.7.2. In particular:
-
-* in an ordinary value-demanding position, it lowers to a non-consuming read of the selected yielded place;
-* in a borrow-demanding position, it lowers through the projection-borrow rules of §§5.1.7.2, 17.3.1.2, and 17.3.1.3;
-  and
-* under `~`, the parenthesized form `~(lhs.name)` counts as a parenthesized fully applied projection call and uses the
-  branchwise `MovePlace` / `FillPlace` lowering of §§8.8 and 17.3.1.3.
-
-#### 13.1.2 Reified module values
-
-An imported module reference denotes both:
-
-* a module qualifier in the module namespace; and
-* an ordinary first-class value in term position.
-
-Examples:
-
-```kappa
-import std.set as SetMod
-
-let m = SetMod
-let one : m.Set Int = m.singleton 1
-```
+An `import M` or `import M as A` introduces a lexical declaration of kind
+`module` with spelling `M` or `A`.
 
 Rules:
 
-* A module reference brought into scope by `import M` or `import M as A` may appear wherever an ordinary pure term may
-  appear.
-* It may therefore be bound, passed, returned, stored in records or packages, and projected from like any other value.
-* In a bare identifier position, ordinary term resolution takes precedence.
-  Reified-module resolution is used only when no ordinary term binding is selected.
-* Semantically, a reified module value is a sealed package built from the imported module interface.
-* Non-erased exported members of that interface are runtime members of the module value.
-* Compile-time exported members of that interface are compile-time members of the same package and are erased according
-  to §14.4 unless explicitly reified.
-* The locally visible reified module value uses the same visibility and transparency as ordinary qualified access
-  through that module reference in the current importing module.
-* In particular, local `clarify` or `unhide` affects the reified module value if and only if it affects ordinary
-  qualified access to the same member in that importing module.
-* If exported spellings collide across namespaces, the conceptual package uses distinct internal namespace-tagged member
-  labels; source dotted selection on a reified module continues to use the ordinary namespace-resolution rules and is
-  observationally equivalent to selection of the corresponding tagged member.
-* Ordinary qualified module access and projection from the reified module value are required to agree.
-  Thus `M.x` and, after `let m = M`, `m.x` denote the same semantic object whenever both are well-formed.
-* The reified module value is pure and non-generative.
-  Aliasing a module value does not freshen its opaque members.
-* Selective imports do not by themselves bring a reified module value into scope; use a separate `import M` or `import
-  M as A`.
-* Instances are not module-value members.
-
-A conforming implementation MAY realize qualified module access and reified-module projection by the same internal
-mechanism, provided the observable behavior matches the rules above.
-
-### 13.2 Constructors via type scope
-
-Constructors are accessible through their type constructor:
-
-```kappa
-Option.None
-Option.Some 1
-Vec.Cons head tail
-```
-
-Except for the fixed implicit prelude constructor subset of §2.6, unqualified constructor names are not imported by
-default. If a module imports a type constructor, its constructors are available via that type's scope.
-
-As a concise unqualified bulk form, `import M.(type T(..))` imports the type constructor `T` and all of its constructors
-unqualified. Likewise `export M.(type T(..))` re-exports the type and all of its constructors.
-
-The qualifying type expression may itself be a selected static member, for example `M.Option.Some` or `m.Option.Some`.
+* A module declaration participates in ordinary lexical lookup and in
+  the dotted receiver lookup of §13.3.
+* A module declaration may also be used as a pure module value where a
+  term expression is expected.
+* Ordinary qualified access and projection from a reified module value
+  must agree: `M.x` and, after `let m = M`, `m.x` denote the same member
+  whenever both are well-formed.
 
 ## 14. Core Semantics
 
@@ -10186,7 +10066,7 @@ Elaboration performs (non-exhaustive):
 
 * layout processing (`INDENT`/`DEDENT`) and parsing using fixities in scope,
 * construction and phase resolution of KFrontIR (§17.2),
-* name resolution across namespaces (term/type/constraint/ctor/module),
+* name resolution through binding groups and declaration kinds (§13),
 * implicit argument insertion (§7.3),
 * construction of maximal application sites and their alignment with resolved Pi telescopes (§7.1.3, §17.3.1),
 * quantity checking and borrow checking under §§5.1.5-5.1.7 using the syntax-directed ownership rules of the core
@@ -10197,7 +10077,7 @@ Elaboration performs (non-exhaustive):
     * expected-type-directed variant injections and widenings (§5.4.3),
     * lawful record reorderings (§5.5.1.1),
 * signature matching, manifest recording, and opaqueness checking for `seal ... as ...`, and construction of reified
-  module values (§5.5.10, §13.1.2),
+  module values (§5.5.10, §13.5),
 * desugaring of:
     * pure `block` expressions and indented pure block suites to sequential local scope with closure-converted local
       declarations (§6.3.1, §14.1.1),
@@ -10211,7 +10091,7 @@ Elaboration performs (non-exhaustive):
     * existential-package sugar and unpacking (`exists`, `open ... as exists ...`) to anonymous sealed packages and
       ordinary local bindings (§5.5.11),
     * `try match` and `try` to error-handling combinators (§9),
-    * method-call sugar (§13.1),
+    * method-call sugar (§13.4),
 * termination checking (§6.4),
 * optional erasure planning (§14.4).
 
@@ -10998,7 +10878,7 @@ No new surface syntax or keyword is introduced for this facility. The intended u
 import std.debug as debug
 ```
 
-The alias `debug` may then be used for ordinary qualified access and, under §13.1.2, as a reified module value.
+The alias `debug` may then be used for ordinary qualified access and, under §13.5, as a reified module value.
 
 If `allow_debug_introspection` is false, importing `std.debug` is a compile-time error.
 
@@ -11400,8 +11280,8 @@ A module interface artifact MUST record at least:
   * the canonical visible `decreases` measure, or
   * an equivalent stable termination-certificate payload sufficient for downstream unfolding decisions, hashing, and
     reproducible separate compilation;
-* enough metadata to reconstruct the reified-module view of §13.1.2, including the namespace-tagged exported-member
-  surface and the opaque-vs-transparent classification needed for local qualified access and module-value projection.
+* enough metadata to reconstruct the reified-module view of §13.5, including the kind-tagged exported-member surface
+  and the opaque-vs-transparent classification needed for local qualified access and module-value projection.
 
 If an exported signature, exported compile-time member, or transparent definitional equation would mention a local
 nominal family that cannot be represented using the preceding interface-artifact data, the module is ill-formed for
@@ -13137,7 +13017,7 @@ infix right 0 (<|)
   with higher precedence. Thus tighter-binding operator expressions on the right of `|>` group there first.
 * `<|` has precedence `0` and is right-associative, so `f <| g <| x ≡ f (g x)`.
 * Pipe operators are ordinary infix operators. They do not alter the parsing or elaboration of dotted forms, method-call
-  sugar, or receiver-projection sugar (§13.1.1). In particular, `x |> obj.method` parses as `x |> (obj.method)`; the
+  sugar, or receiver-projection sugar (§13.4). In particular, `x |> obj.method` parses as `x |> (obj.method)`; the
   pipe does not retarget method-call or receiver-projection sugar onto `x`.
 
 ### B.3 Optional: typed pipe
