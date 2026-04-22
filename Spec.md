@@ -9708,7 +9708,10 @@ A resolved receiver-projection property counts as a fully applied projection cal
 
 #### 13.1.2 Reified module values
 
-An imported module reference may also be used as a pure module value.
+An imported module reference denotes both:
+
+* a module qualifier in the module namespace; and
+* an ordinary first-class value in term position.
 
 Examples:
 
@@ -9721,21 +9724,26 @@ let one : m.Set Int = m.singleton 1
 
 Rules:
 
-* A module reference brought into scope by `import M` or `import M as A` may appear where a pure term or compile-time
-  expression is expected.
-* In a bare identifier position, ordinary term resolution takes precedence. Reified-module resolution is used only when
-  no ordinary term binding is selected.
+* A module reference brought into scope by `import M` or `import M as A` may appear wherever an ordinary pure term may
+  appear.
+* It may therefore be bound, passed, returned, stored in records or packages, and projected from like any other value.
+* In a bare identifier position, ordinary term resolution takes precedence.
+  Reified-module resolution is used only when no ordinary term binding is selected.
+* Semantically, a reified module value is a sealed package built from the imported module interface.
+* Non-erased exported members of that interface are runtime members of the module value.
+* Compile-time exported members of that interface are compile-time members of the same package and are erased according
+  to §14.4 unless explicitly reified.
 * The locally visible reified module value uses the same visibility and transparency as ordinary qualified access
   through that module reference in the current importing module.
 * In particular, local `clarify` or `unhide` affects the reified module value if and only if it affects ordinary
   qualified access to the same member in that importing module.
-* Conceptually, a reified module value is a sealed package built from the module interface. If exported spellings
-  collide across namespaces, the conceptual package uses distinct internal namespace-tagged member labels; source dotted
-  selection on a reified module continues to use the ordinary namespace-resolution rules and is observationally
-  equivalent to selection of the corresponding tagged member.
-* Ordinary qualified module access and projection from the reified module value are required to agree. Thus `M.x` and,
-  after `let m = M`, `m.x` denote the same semantic object whenever both are well-formed.
-* The reified module value is pure and non-generative. Aliasing a module value does not freshen its opaque members.
+* If exported spellings collide across namespaces, the conceptual package uses distinct internal namespace-tagged member
+  labels; source dotted selection on a reified module continues to use the ordinary namespace-resolution rules and is
+  observationally equivalent to selection of the corresponding tagged member.
+* Ordinary qualified module access and projection from the reified module value are required to agree.
+  Thus `M.x` and, after `let m = M`, `m.x` denote the same semantic object whenever both are well-formed.
+* The reified module value is pure and non-generative.
+  Aliasing a module value does not freshen its opaque members.
 * Selective imports do not by themselves bring a reified module value into scope; use a separate `import M` or `import
   M as A`.
 * Instances are not module-value members.
