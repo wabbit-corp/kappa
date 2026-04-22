@@ -72,9 +72,10 @@ APPENDIX_SUBHEADING_RE = re.compile(
 )
 HEADING_RE = re.compile(r"^(?P<hashes>#{1,6})\s+(?P<title>\S.*\S|\S)\s*$")
 
+SECTION_SEPARATOR = rf"(?:-|{EN_DASH}|{EM_DASH}|,(?:\s*(?:and|or))?|and|or)"
 SECTION_GROUP_RE = re.compile(
     rf"{SECTION_SIGN}{{1,2}}{SECTION_TOKEN}"
-    rf"(?:\s*(?:-|{EN_DASH}|{EM_DASH}|,|and|or)\s*(?:{SECTION_SIGN}{{1,2}})?{SECTION_TOKEN})*"
+    rf"(?:\s*{SECTION_SEPARATOR}\s*(?:{SECTION_SIGN}{{1,2}})?{SECTION_TOKEN})*"
 )
 SECTION_REFERENCE_RE = re.compile(rf"(?:{SECTION_SIGN}{{1,2}})?(?P<section>{SECTION_TOKEN})")
 INLINE_CODE_RE = re.compile(r"(`+)(.*?)\1")

@@ -359,6 +359,30 @@ def test_parse_markdown_expands_numeric_section_ranges(tmp_path: Path) -> None:
     assert document.problems == []
 
 
+def test_parse_markdown_collects_section_lists_with_oxford_comma(tmp_path: Path) -> None:
+    path = write_text(
+        tmp_path / "doc.md",
+        """
+        ## 1. Intro
+        See \u00A7\u00A72.1, 2.2, 2.3, and 2.3.2.
+        """,
+    )
+
+    document = validate.parse_markdown(
+        path,
+        path.read_text(encoding="utf-8"),
+        max_line_length=0,
+    )
+
+    assert [reference.section for reference in document.references] == [
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.3.2",
+    ]
+    assert document.problems == []
+
+
 def test_parse_markdown_warns_on_appendix_ranges(tmp_path: Path) -> None:
     path = write_text(
         tmp_path / "doc.md",
