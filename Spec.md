@@ -35,15 +35,28 @@ Normative mapping:
 * `P` must be under `R` and must end in the extension ".kp", otherwise it is not a source file.
 * Let `S` be the relative path from `R` to `P`, with the ".kp" suffix removed.
 * Path separators are normalized such that '\' is treated as '/'.
-* Let `S = seg1/seg2/.../segn`.
-* Each `segi` must match the identifier regex `[A-Za-z_][A-Za-z0-9_]*`, otherwise it is a compile-time error.
-* Module name segments are case-sensitive. Implementations MUST reject a compilation unit that contains two source files
-  whose path-derived module names are equal after case-folding but differ in case. For the comparison in this rule,
-  implementations MUST compare module names after converting each segment to lowercase ASCII. Because path-derived
-  segments are restricted to ASCII letters, digits, and `_`, no Unicode normalization is required. The canonical
-  spelling is the spelling that appears in the first source file encountered during compilation. The original spelling
-  is preserved for diagnostics and for the module header check below.
-* The module name is `seg1.seg2. ... .segn` (join the segments with a single `.`).
+* Write `S = dir1/dir2/.../dirm/base[.frag1[.frag2 ... [ .fragn ]...]]`, where `m >= 0`.
+* Each directory segment `diri`, the basename segment `base`, and each optional fragment segment `fragj` must match the
+  identifier regex `[A-Za-z_][A-Za-z0-9_]*`, otherwise it is a compile-time error.
+* The path-derived module name is `dir1.dir2....dirm.base`.
+* Optional fragment segments are not part of the module name. Thus:
+  * `std/base.kp`             → module `std.base`
+  * `main.kp`                 → module `main`
+  * `main.win32.kp`           → module `main`
+  * `std/base.posix.debug.kp` → module `std.base`
+* Source files whose path-derived module names are equal are fragments of the same module.
+* How a build selects, combines, or conditions such fragments is implementation-defined, except where this specification
+  explicitly relies on that mechanism (for example §6.5).
+* Module name segments are case-sensitive.
+* Implementations MUST reject a compilation unit that contains two source files whose path-derived module names are
+  equal after case-folding but differ in case.
+* For the comparison in this rule, implementations MUST compare module names after converting each module-name segment
+  to lowercase ASCII. Because path-derived module-name segments are restricted to ASCII letters, digits, and `_`, no
+  Unicode normalization is required.
+* The diagnostic for a case-fold collision MUST identify all colliding files.
+* If an implementation needs a deterministic representative spelling for diagnostics or internal bookkeeping, it MUST
+  choose the file whose normalized relative path from its source root is lexicographically smallest by Unicode
+  scalar-value order.
 
 Modules may have an explicit top-level module header:
 
@@ -66,8 +79,9 @@ Rules:
 * If a module header is present:
   * It must appear before any non-comment, non-whitespace token other than the leading module attributes.
   * In package mode, it MUST match the path-derived module name (compile-time error otherwise).
-  * In script mode, it MAY differ; if it differs, the header name becomes the module name of the file. The compiler MUST
-    reject the program if another source file in the same compilation unit declares the same header name.
+  * In script mode, it MAY differ; if it differs, the header name becomes the module name of the file.
+    Effective module names are then subject to the same fragment, duplicate, and case-folding rules as path-derived
+    module names.
 * If no module header is present, the module name is always the path-derived module name.
 
 Standard module attributes:
@@ -4200,8 +4214,11 @@ Errors:
 * If multiple satisfying definitions exist for a single expect, it is a compile-time error.
 * The satisfying definition must match the expected signature (up to definitional equality).
 
-Implementations may support selecting module "fragments" by target (e.g. `main.kp` + `main.win32.kp`). In such systems,
-`expect` declarations in common fragments are satisfied by definitions in the selected target fragments.
+Implementations may support selecting module fragments by target or other build conditions.
+For module-identity purposes, fragment suffixes are ignored exactly as specified in §2.1.
+Thus files such as `main.kp` and `main.win32.kp` are fragments of the same module `main`.
+In such systems, `expect` declarations in common fragments are satisfied by definitions in the selected companion
+fragments.
 
 ---
 
