@@ -845,8 +845,8 @@ The standard prelude provisions for `|>`, `<|`, and the optional `|>=` operator 
   let `λ` = 42
   ```
 
-Backtick identifiers may be used in any source-level namespace position that otherwise admits an identifier, including
-the term, type, constraint, constructor, label, and effect-label namespaces.
+Backtick identifiers are ordinary identifiers and participate in the
+lexical lookup rules of §13.
 
 Grammar amendment:
 
@@ -962,7 +962,7 @@ Trailing commas:
 
 ### 3.5 Operator identifiers and fixity
 
-Kappa supports symbolic operator identifiers (e.g. `+`, `*`, `==`, `..`), which live in the term namespace.
+Kappa supports symbolic operator identifiers (e.g. `+`, `*`, `==`, `..`), which are ordinary `term` declarations.
 
 #### 3.5.1 Operator tokens
 
@@ -2357,7 +2357,7 @@ Rows of different row types never unify.
 
 Record labels inhabit the intrinsic compile-time type `Label : Type0`.
 Effect labels inhabit the intrinsic compile-time type `EffLabel : Type0`.
-Effect interfaces are ordinary named constructors in the type namespace.
+Effect interfaces are ordinary named constructors of declaration kind `type`.
 
 Kappa provides the following row-constraint constructors:
 
@@ -3578,12 +3578,12 @@ let myMacro e = '{ ${e} + 1 }
 let x = $(myMacro '{ 10 })
 ```
 
-There is no separate macro namespace; macros are ordinary term definitions invoked through elaboration-time splicing.
+There is no separate macro declaration kind or shadowing regime; macros are ordinary term definitions invoked through elaboration-time splicing.
 
 A macro MAY inspect and transform code either at the surface level through `Syntax` or at the semantic level through the
 reflection API of §5.8.5. Semantic reflection does not introduce a second user-visible source language or a separate
-macro namespace; it is an elaboration-time interface for reasoning about ordinary Kappa terms, types, rows, labels, and
-constraints after elaboration.
+macro lookup space; it is an elaboration-time interface for reasoning about ordinary Kappa terms, types, rows, labels,
+and constraints after elaboration.
 
 #### 5.8.4 Hygiene
 
@@ -4115,7 +4115,7 @@ Modifier rules:
      §7.7.
    * The final explicit binder is the scrutinee consumed when the pattern is matched; preceding explicit binders are
      pattern arguments.
-   * Active patterns live in the term namespace and are imported/exported as ordinary terms.
+   * Active patterns are ordinary `term` declarations and are imported/exported as ordinary terms.
    * Active patterns are pure functions; `R` must not be a monadic type.
 
 #### 6.1.1 Projection definitions
@@ -6375,7 +6375,7 @@ Rules:
 * `effect` declarations are top-level only.
 * `public` and `private` apply in the same way as for other ordinary top-level declarations.
 * `opaque` does not apply to `effect` declarations.
-* An `effect` declaration introduces an effect-interface constructor in the type namespace.
+* An `effect` declaration introduces an effect-interface constructor of declaration kind `type`.
 * Effect labels are separate identifiers in the effect-label namespace and are introduced by effect-row syntax.
 * A binder or package member of compile-time type `EffLabel` introduces an effect-label identifier that is admissible in
   effect-row syntax, in `handle label in expr`, and in effect-operation selection `label.op`, subject to the ordinary
@@ -6389,7 +6389,7 @@ Rules:
   that operation.
 * Because a resumption is captured control state rather than a borrowable place, there is no borrowed-resumption mode in
   v0.1.
-* Operation names declared inside an `effect` declaration are not brought into the global term namespace. They are
+* Operation names declared inside an `effect` declaration do not contribute ordinary unqualified `term` declarations. They are
   selected via `label.op` (§13.3), and are additionally available within a handler for that label when handlers are
   specified.
 * Operation signatures may be arbitrary dependently typed function types after elaborating any outer `forall`s. This
@@ -9325,7 +9325,8 @@ Rules:
 * The compiler SHOULD emit a soft diagnostic (warning or hint) when a constructor is declared without parameter names,
   encouraging the named form for improved ergonomics.
 
-* Constructors are declarations of kind `ctor`.
+* Constructors contribute `ctor` declarations to their binding groups and
+  are also static members of their enclosing data type under §13.2-§13.3.
 * Parameters contribute `type` declarations by default (with sugar `a` ≡ `(a : Type)`) unless specified otherwise.
 * If `opaque` is present on a data declaration, constructors are not exported (§2.5.3).
 
@@ -9400,10 +9401,10 @@ private type Internal = ...
 
 Unified declaration principle:
 
-* The `type` keyword is namespace-directed surface sugar over the ordinary named declaration / definition forms.
+* The `type` keyword is declaration-kind-directed surface sugar over the ordinary named declaration / definition forms.
 * In particular, `type T` is sugar for the abstract declaration `T : Type0`.
 * Likewise, `type T = RHS` is sugar for a definition of `T` at a universe type, with `RHS` parsed in type position.
-* This does not introduce a second declaration mechanism; it is only specialized surface syntax for the type namespace.
+* This does not introduce a second declaration mechanism; it is only specialized surface syntax for `type` declarations.
 
 * Parameters may be annotated; sugar: `type Id a = a` ≡ `type Id (a : Type) = a`.
 * `type Name ...` with no `= ...` defines an abstract type whose implementation may be provided elsewhere
@@ -10066,7 +10067,8 @@ Elaboration performs (non-exhaustive):
 
 * layout processing (`INDENT`/`DEDENT`) and parsing using fixities in scope,
 * construction and phase resolution of KFrontIR (§17.2),
-* name resolution through binding groups and declaration kinds (§13),
+* name resolution across lexical binding groups, declaration kinds,
+  same-spelling data families, and nearest-successful receiver lookup,
 * implicit argument insertion (§7.3),
 * construction of maximal application sites and their alignment with resolved Pi telescopes (§7.1.3, §17.3.1),
 * quantity checking and borrow checking under §§5.1.5-5.1.7 using the syntax-directed ownership rules of the core
@@ -11023,7 +11025,7 @@ At minimum, the implementation MUST behave as if the following fingerprints exis
 
 * `InterfaceFingerprint`:
   determined by the externally visible interface of a module or declaration, including:
-  * exported names by namespace,
+  * exported binding groups by spelling and declaration kind,
   * importable fixity declarations,
   * visibility and opacity classification,
   * exported signatures,
@@ -11048,10 +11050,10 @@ Rules:
 * A change that alters only `BodyFingerprint` MAY preserve previously computed header-, interface-, and
   downstream-import results.
 
-InterfaceFingerprint intentionally tracks exported name bindings as well as semantic object identities.
+InterfaceFingerprint intentionally tracks exported binding-group exposure as well as semantic object identities.
 
 Therefore a rename, move, or re-export change that preserves the semantic object identity of the affected definition may
-still change `InterfaceFingerprint` if the exported namespace bindings change.
+still change `InterfaceFingerprint` if the exported binding groups or declaration-kind exposure change.
 
 Such a change need not by itself invalidate cached semantic objects keyed only by semantic object identity, but it does
 invalidate any result that depends on the affected interface surface.
@@ -11245,7 +11247,7 @@ consulting the defining module's source text.
 A module interface artifact MUST record at least:
 
 * the module identity and dependency identities required by §§2.1, 2.2, 2.3, and 2.3.2;
-* the exported surface by namespace, including importable fixity declarations;
+* the exported binding groups by spelling and declaration kind, including importable fixity declarations;
 * visibility and opacity classification of exported ordinary items;
 * the fully elaborated signatures of exported terms, including:
   * any user-written or inferred `captures (...)` annotations of §5.1.6.1,
@@ -11288,7 +11290,7 @@ nominal family that cannot be represented using the preceding interface-artifact
 export and compilation fails in the defining module.
 
 A module interface artifact MUST distinguish the semantic object identity of an exported object from the current
-namespace bindings that expose it.
+binding-group entries that expose it.
 
 A conforming implementation MUST permit browsing and querying module interface artifacts, or semantic-object-store
 entries derived from them, without reparsing original source text.
@@ -11320,7 +11322,7 @@ resolution, hashing, or separate-compilation semantics.
 At minimum, the canonical interface view MUST include:
 
 * the module identity;
-* exported names by namespace;
+* exported binding groups by spelling and declaration kind;
 * importable fixity declarations;
 * visibility and opacity classification;
 * exported signatures of terms, rendered after elaboration of any inferred non-empty `captures (...)` annotations,
@@ -11462,7 +11464,7 @@ A conforming implementation MUST behave as if the following phases exist:
 * `RAW`: parser translation, source anchors, no semantic resolution.
 * `IMPORTS`: module header handling, implicit prelude insertion, import/export parsing, semantic dotted-form
   disambiguation, and fixity-environment setup.
-* `DECLARATION_SHAPES`: namespace population, declaration-symbol creation, raw declaration headers, binder lists, local
+* `DECLARATION_SHAPES`: binding-group population, declaration-symbol creation, raw declaration headers, binder lists, local
   nominal identities, and raw block-scope declaration structure.
 * `HEADER_TYPES`: explicit declaration-header types, supertypes, associated static members, effect-operation headers,
   record field quantities, record dependency graphs, and other header-level type information.
@@ -12316,7 +12318,7 @@ Semantic objects include at least:
 A semantic object identity is distinct from:
 
 * user-visible names,
-* namespace bindings,
+* binding-group entries,
 * source file paths, and
 * source locations.
 
