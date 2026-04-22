@@ -604,7 +604,7 @@ Dec.Yes, Dec.No,
 Exit.Success, Exit.Failure,
 Cause.Fail, Cause.Interrupt, Cause.Defect, Cause.Both, Cause.Then,
 (=).refl,
-SyntaxFragment.Lit, SyntaxFragment.Interp,
+SyntaxFragment.Lit, SyntaxFragment.Interp, SyntaxFragment.InterpFmt,
 Unit.Unit
 ```
 
@@ -729,6 +729,22 @@ trait Alternative (f : Type -> Type) =
 trait Iterator (it : Type) =
     Item : Type
     next : (1 this : it) -> Option (item : Item, rest : it)
+
+Query : Type -> Type
+RawComprehension : Type -> Type
+ComprehensionPlan : Type -> Type
+
+trait IntoQuery (src : Type) =
+    Item : Type
+    toQuery : src -> Query Item
+
+trait FromComprehensionPlan (c : Type) =
+    Item : Type
+    fromComprehensionPlan : ComprehensionPlan Item -> c
+
+trait FromComprehensionRaw (c : Type) =
+    Item : Type
+    fromComprehensionRaw : RawComprehension Item -> c
 ```
 
 `IO e a` is the standard runtime computation type.
@@ -1275,7 +1291,6 @@ This makes the closing-delimiter line the single source of truth for dedent.
 
 #### 4.3.4 Prefixed strings
 
-
 A **prefixed string literal** has the form:
 
 ```kappa
@@ -1285,104 +1300,176 @@ prefix#"..."#
 prefix#"""..."""#
 ```
 
-Where `prefix` is an identifier (including backtick identifiers). It is resolved by ordinary term name resolution at the
-use site; it has no special parser status beyond introducing this literal form.
+Where `prefix` is an identifier (including backtick identifiers, and including soft keywords used as ordinary
+identifiers per §3.2) immediately followed by the opening delimiter, with no intervening whitespace.
+It is resolved by ordinary term name resolution at the use site; it has no special parser status beyond introducing
+this literal form.
 
-The raw prefixed forms permit any positive number of `#` characters, with the same matching rule as §4.3.2. For example:
+Let the **hash count** of the literal be the number of `#` characters in its delimiter.
+
+* An ordinary prefixed string has hash count `0`.
+* A raw prefixed string has hash count `n > 0` and uses the same delimiter-matching and multiline-dedent rules as
+  §§4.3.2-4.3.3.
+
+Prefixed strings elaborate through one uniform fragment pipeline. There are no built-in special cases for formatting,
+SQL, regex, bytes, or any other DSL.
+
+##### Interpolation syntax
+
+Ordinary prefixed strings (hash count `0`) support:
+
+* `$name`, which is sugar for `${name}`
+* `${expr}`
+* `${expr : fmt}`
+
+A literal `$` in an ordinary prefixed string may be written as `\$`.
+
+Raw prefixed strings (hash count `n > 0`) support interpolation using an opener with the **same hash count**:
+
+* when `n = 1`, interpolation uses `#{expr}` and `#{expr : fmt}`
+* when `n = 2`, interpolation uses `##{expr}` and `##{expr : fmt}`
+* in general, interpolation uses `#...#{expr}` and `#...#{expr : fmt}` with exactly `n` `#` characters before `{`
+
+Rules:
+
+* `$name` sugar is recognized only in ordinary prefixed strings.
+* In a raw prefixed string, `$` has no special meaning.
+* In a raw prefixed string with hash count `n`, a `#`-sequence begins interpolation only when it is exactly `n`
+  `#` characters immediately followed by `{`.
+* Any shorter or longer `#`-sequence is ordinary literal text.
+* To include the interpolation opener literally in raw text, choose a larger hash count for the surrounding literal.
+
+Examples:
 
 ```kappa
-re#"\d+\s+\w+"#
-sql##"select "#col" from t"##
+f"hello $name"
+sql#"select * from users where id = #{userId:param}"#
+re##"\b##{word}\b"##
+type#"Vec #{n} Int"#
 ```
 
-Ordinary prefixed strings support interpolation:
- * `$name` inserts a variable name and is sugar for `${name}`.
- * `${expr}` inserts an arbitrary expression.
- * `${expr : fmt}` inserts expr using format string fmt (format mini-language is implementation-defined).
+##### Interpolation parsing
 
-A literal `$` may be written as `\$`.
+The expression part of an interpolation is parsed using ordinary Kappa expression parsing.
 
-Raw prefixed strings do not support interpolation. In a raw prefixed string, `$`, `${`, and `\` are ordinary characters
-in the literal payload.
+Nested parentheses, brackets, braces, strings, character literals, comments, and syntax quotes inside the interpolation
+expression are handled exactly as in ordinary source code.
 
-Resolution and typing:
+A top-level `:` inside an interpolation begins a format specifier.
+
+Here "top-level" means not nested inside parentheses, brackets, braces, strings, character literals, comments, or
+syntax quotes inside that interpolation.
+
+Consequently:
+
+* `${expr : fmt}` and `#{expr : fmt}` attach the format specifier `fmt` to `expr`.
+* If the interpolation expression itself requires a top-level `:`, that expression MUST be parenthesized.
+
+The format specifier is the exact source text between that top-level `:` and the closing interpolation delimiter, after:
+
+* multiline dedent of §4.3.3, and
+* removing one optional ASCII space immediately after `:` and one optional ASCII space immediately before the closing
+  interpolation delimiter.
+
+The compiler does not interpret the contents of the format specifier.
+
+##### Resolution and typing
 
 * Let `prefix` resolve to a term `p` in scope at the use site.
 * Any prefixed string literal requires `p` to resolve to a term of type `Dict (InterpolatedMacro t)` for some result
   type `t`.
 * If resolution fails, or if the resolved term does not have a compatible type, compilation fails with a compile-time
   error.
-* The resolved prefix term `p` and the subsequent call `p.buildInterpolated ...` are evaluated at elaboration time by
-  the same evaluator used for ordinary `$(...)` splices.
-* There is no separate syntactic class of "compile-time prefix constants".
-  Any Kappa term may serve as the prefix term, provided ordinary elaboration-time evaluation of that term succeeds in
-  the current environment under the rules and restrictions of §5.8.6.
-* If elaboration-time evaluation of the prefix term or of `buildInterpolated` diverges, fails, or attempts a disallowed
-  elaboration-time effect, compilation fails.
 
 The prelude provides:
 
 ```kappa
 data SyntaxFragment : Type =
-    Lit    (s : String)
-    Interp (@t : Type) (e : Syntax t)
+    Lit       (s : String)
+    Interp    (@t : Type) (e : Syntax t)
+    InterpFmt (@t : Type) (e : Syntax t) (fmt : String)
 
 trait InterpolatedMacro (t : Type) =
     buildInterpolated : List SyntaxFragment -> Syntax t
-
-Query : Type -> Type
-RawComprehension : Type -> Type
-ComprehensionPlan : Type -> Type
-
-trait IntoQuery (src : Type) =
-    Item : Type
-    toQuery : src -> Query Item
-
-trait FromComprehensionPlan (c : Type) =
-    Item : Type
-    fromComprehensionPlan : ComprehensionPlan Item -> c
-
-trait FromComprehensionRaw (c : Type) =
-    Item : Type
-    fromComprehensionRaw : RawComprehension Item -> c
 ```
 
-`Query a` is the first-class normalized query-pipeline type used by comprehension elaboration.
+##### Fragment construction rules
 
-`RawComprehension a` is a stable source-preserving compile-time reflection type for comprehensions.
+* Literal segments are formed after applying the multiline dedent rule of §4.3.3.
+* In ordinary prefixed strings, literal segments are then decoded using the ordinary string escape rules of §4.3.1.
+* In raw prefixed strings, literal segments are taken verbatim after dedent, with no escape decoding.
+* Interpolation expressions are elaborated and quoted hygienically as `Syntax` values in the lexical environment of the
+  literal occurrence.
+* The fragment list passed to `buildInterpolated` MUST preserve source order.
+* Adjacent `Lit` fragments MUST be merged.
+* Empty `Lit` fragments MUST be omitted, except that a completely empty prefixed string is represented as `[Lit ""]`.
 
-`ComprehensionPlan a` is a stable normalized compile-time reflection type consisting of:
+##### Semantics
 
-* a normalized query pipeline of item type `a`, and
-* terminal collection metadata (delimiter/result kind and any map-conflict policy).
+A non-interpolated prefixed string:
 
-Semantics:
+```kappa
+p"raw"
+```
 
-* A non-interpolated prefixed string `p"raw"` elaborates to:
+elaborates to:
 
-  ```kappa
-  $(p.buildInterpolated [Lit "raw"])
-  ```
+```kappa
+$(p.buildInterpolated [Lit "raw"])
+```
 
-* An interpolated prefixed string `p"pre${x}post"` elaborates to:
+An interpolated prefixed string:
 
-  ```kappa
-  $(p.buildInterpolated [Lit "pre", Interp @Tx '{ x }, Lit "post"])
-  ```
+```kappa
+p"pre${x}post"
+```
 
-  where `p : Dict (InterpolatedMacro t)` and `Tx` is the inferred type of `x`.
-* A formatted interpolation `${expr : fmt}` is first rewritten to an implementation-defined ordinary expression and then
-  contributes an `Interp` fragment for that rewritten expression.
-* A raw prefixed string such as `p#"..."#` elaborates to:
+elaborates to:
 
-  ```kappa
-  $(p.buildInterpolated [Lit "..."])
-  ```
+```kappa
+$(p.buildInterpolated [Lit "pre", Interp @Tx '{ x }, Lit "post"])
+```
 
-  where the `Lit` payload is the exact raw contents after applying the multiline dedent rule of §4.3.3 when the raw form
-  is triple-quoted.
-* Prefixed DSL strings therefore elaborate uniformly through `Syntax`, allowing macro implementations to inspect the
-  `Syntax` payloads and produce typed outputs such as parameterized SQL or typed HTML.
+where `Tx` is the inferred type of `x`.
+
+A formatted interpolation:
+
+```kappa
+p"pre${x : %04d}post"
+```
+
+elaborates to:
+
+```kappa
+$(p.buildInterpolated [Lit "pre", InterpFmt @Tx '{ x } "%04d", Lit "post"])
+```
+
+A raw interpolated prefixed string:
+
+```kappa
+p#"pre#{x}post"#
+```
+
+elaborates to:
+
+```kappa
+$(p.buildInterpolated [Lit "pre", Interp @Tx '{ x }, Lit "post"])
+```
+
+A raw formatted interpolation:
+
+```kappa
+p#"pre#{x : ident}post"#
+```
+
+elaborates to:
+
+```kappa
+$(p.buildInterpolated [Lit "pre", InterpFmt @Tx '{ x } "ident", Lit "post"])
+```
+
+There is no implementation-defined rewrite of formatted interpolation.
+Any meaning of the format specifier is determined entirely by `p.buildInterpolated`.
 
 The standard `f`, `re`, and `b` prefixes supplied by `std.prelude` are ordinary terms participating in this mechanism.
 They receive no special parser treatment.
