@@ -43,6 +43,9 @@
     <Compile Include="CompilationCommon.fs" />
     <Compile Include="CompilationFrontend.fs" />
     <Compile Include="CompilationMetadata.fs" />
+    <Compile Include="CompilationCheckpoints.fs" />
+    <Compile Include="CompilationDump.fs" />
+    <Compile Include="CompilationTrace.fs" />
     <Compile Include="Compilation.fs" />
     <Compile Include="Backend.fs" />
     <Compile Include="Interpreter.fs" />
