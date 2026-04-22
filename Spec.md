@@ -5650,9 +5650,246 @@ pure  : forall a. a -> m a
 
 (Names may live in traits; here it's a conceptual interface.)
 
-#### 8.1.1 `Eff` and effect rows
+#### 8.1.1 `IO` and runtime computations
 
-Kappa provides a standard effect-row-indexed computation type:
+Kappa provides a standard runtime computation type:
+
+```kappa
+IO : Type -> Type -> Type
+type UIO (a : Type) = IO Void a
+```
+
+`IO e a` classifies a runtime computation that may:
+
+* terminate normally with a value of type `a`;
+* fail with an expected typed error of type `e`;
+* be interrupted; or
+* terminate with an unchecked defect.
+
+Only expected failures are represented by `e`. Interruption and defects are tracked separately and are not part of the
+typed error parameter.
+
+For every error type `e : Type`, the type constructor `IO e` participates in the standard prelude interfaces:
+
+```kappa
+Functor (IO e)
+Applicative (IO e)
+Monad (IO e)
+MonadError (IO e)
+MonadFinally (IO e)
+MonadResource (IO e)
+MonadRef (IO e)
+```
+
+The observable semantics of `IO` are defined by Kappa rather than by any host runtime. A backend MAY realize `IO` using
+host threads, virtual threads, tasks, promises, coroutines, event loops, or other mechanisms, but MUST NOT let host
+behavior redefine Kappa interruption, finalization, fiber lifetime, or failure classification.
+
+#### 8.1.2 Exits, causes, typed failure, interruption, and defects
+
+The runtime outcome of an `IO` computation is described by:
+
+```kappa
+data Exit (e : Type) (a : Type) : Type =
+    Success a
+    Failure (Cause e)
+
+data Cause (e : Type) : Type =
+    Fail e
+    Interrupt InterruptCause
+    Defect DefectInfo
+    Both (Cause e) (Cause e)
+    Then (Cause e) (Cause e)
+```
+
+Meaning:
+
+* `Fail e` represents an expected, typed failure.
+* `Interrupt ...` represents runtime interruption / cancellation.
+* `Defect ...` represents an unchecked runtime failure.
+* `Both` represents parallel cause composition.
+* `Then` represents sequential cause composition, including unwinding and finalization sequencing.
+
+The standard runtime observation functions are:
+
+```kappa
+sandbox   :
+    forall (e : Type) (a : Type).
+    IO e a -> IO (Cause e) a
+
+unsandbox :
+    forall (e : Type) (a : Type).
+    IO (Cause e) a -> IO e a
+```
+
+For the standard runtime carrier `IO e`:
+
+* `throwError` and `catchError` operate only on the `Fail e` branch.
+* Interruption and defects are not caught by `catchError`.
+* `sandbox` exposes the full `Cause e` in the typed error channel.
+* `unsandbox` reverses that exposure.
+
+#### 8.1.3 Fibers and structured concurrency
+
+A fiber is a lightweight implementation-managed Kappa thread. Fibers are semantic runtime entities of Kappa. They are
+not identified with host threads, host tasks, or host promises.
+
+The standard fiber operations are:
+
+```kappa
+fork          :
+    forall (e : Type) (a : Type).
+    IO e a -> UIO (Fiber e a)
+
+forkDaemon    :
+    forall (e : Type) (a : Type).
+    IO e a -> UIO (Fiber e a)
+
+await         :
+    forall (e : Type) (a : Type).
+    Fiber e a -> UIO (Exit e a)
+
+join          :
+    forall (e : Type) (a : Type).
+    Fiber e a -> IO e a
+
+interrupt     :
+    forall (e : Type) (a : Type).
+    Fiber e a -> UIO Unit
+
+interruptFork :
+    forall (e : Type) (a : Type).
+    Fiber e a -> UIO Unit
+```
+
+Semantics:
+
+* `fork` creates a child fiber attached to the current structured runtime scope.
+* `forkDaemon` creates a child fiber not attached to the current structured runtime scope.
+* `await` waits until the target fiber terminates and returns its terminal `Exit`.
+* `join` waits until the target fiber terminates and then:
+  * returns the value on `Success a`,
+  * fails with `e` on `Failure (Fail e)`,
+  * otherwise terminates the caller with the same non-typed runtime cause.
+* `interrupt` requests interruption of the target fiber and completes only after the target fiber has terminated and all
+  of its finalizers have run.
+* `interruptFork` requests interruption of the target fiber but does not wait for termination.
+
+`fork` is structured by default. Portable source semantics do not provide arbitrary cross-fiber asynchronous exception
+injection. Portable cross-fiber asynchronous failure is limited to interruption.
+
+#### 8.1.4 Interruption and masking
+
+Interruption is modeled as an asynchronous request rather than immediate forced termination.
+
+The standard masking operations are:
+
+```kappa
+poll :
+    UIO Unit
+
+uninterruptible :
+    forall (e : Type) (a : Type).
+    IO e a -> IO e a
+
+mask :
+    forall (e : Type) (a : Type).
+    ((restore : forall (x : Type). IO e x -> IO e x) -> IO e a) -> IO e a
+
+ensuring :
+    forall (e : Type) (a : Type).
+    IO e a -> IO e Unit -> IO e a
+
+acquireRelease :
+    forall (e : Type) (r : Type) (a : Type).
+    IO e r ->
+    ((1 resource : r) -> IO e Unit) ->
+    ((& resource : r) -> IO e a) ->
+    IO e a
+```
+
+Semantics:
+
+* An interruption request becomes observable only at an interruption point.
+* Outside masked regions, every runtime suspension point and every explicit `poll` is an interruption point.
+* `uninterruptible body` suppresses interruption delivery while `body` executes. A pending interruption request is
+  re-checked when `body` leaves the uninterruptible region.
+* `mask f` suppresses interruption while `f` executes. The `restore` function re-enables interruption for a selected
+  subcomputation.
+* Finalizers installed by `ensuring`, `acquireRelease`, `defer`, `using`, scope unwinding, and runtime cleanup run in
+  masked state.
+* `acquireRelease acquire release use` provides a protected resource scope: the resource remains owned by the scope
+  itself, while `use` receives only a borrowed view.
+
+A backend MAY use host async exceptions or equivalent host mechanisms internally to realize interruption, but no such
+mechanism is part of portable source semantics.
+
+#### 8.1.5 STM
+
+Kappa provides software transactional memory:
+
+```kappa
+STM  : Type -> Type
+TVar : Type -> Type
+```
+
+with the standard operations:
+
+```kappa
+newTVar :
+    forall (a : Type).
+    a -> STM (TVar a)
+
+readTVar :
+    forall (a : Type).
+    TVar a -> STM a
+
+writeTVar :
+    forall (a : Type).
+    TVar a -> a -> STM Unit
+
+retry :
+    forall (a : Type).
+    STM a
+
+check :
+    Bool -> STM Unit
+
+atomically :
+    forall (a : Type).
+    STM a -> UIO a
+```
+
+`STM` participates in the standard prelude interfaces:
+
+```kappa
+Functor STM
+Applicative STM
+Monad STM
+Alternative STM
+```
+
+For `STM`, the `Alternative` operations denote transactional choice:
+
+* `empty` is `retry`;
+* `<|>` / `orElse` runs the right branch only when the left branch retries.
+
+Semantics:
+
+* An `STM` computation is isolated and optimistic.
+* `atomically` executes a transaction with serializable semantics relative to other `atomically` executions in the same
+  TVar domain.
+* `retry` aborts the current transaction attempt and suspends the current fiber until one of the TVars read by that
+  attempt is changed.
+* `check b` is equivalent to `if b then pure () else retry`.
+* Aborted transactions expose no partial writes.
+* If interruption is requested before a transaction commits, the current attempt is abandoned and the interruption is
+  taken at the next interruption point outside the commit.
+* Once transaction commit has begun, commit is uninterruptible.
+
+#### 8.1.6 `Eff` and effect rows
+
+Kappa provides a standard algebraic-effect computation type:
 
 ```kappa
 Eff : EffRow -> Type -> Type
@@ -5671,6 +5908,13 @@ Monad (Eff r)
 An `Eff r a` computation may perform only the effects described by `r` and, when it terminates normally, produces a
 value of type `a`.
 
+`Eff` is distinct from `IO`.
+
+* `Eff` models handleable algebraic effects only.
+* `IO` models runtime execution, typed failure, interruption, defects, fibers, and STM.
+* Runtime facilities of `IO` are not themselves tracked by `EffRow` unless user code reifies them as ordinary algebraic
+  effects explicitly.
+
 Row weakening:
 
 * If `r1 ⊆ r2`, then `Eff r1 a` is implicitly coercible to `Eff r2 a`.
@@ -5685,12 +5929,15 @@ runPure : Eff <[ ]> a -> a
 `runPure` eliminates an `Eff` computation only when its effect row is empty. A computation may be passed to `runPure`
 only after all effects have been handled or otherwise eliminated.
 
+In particular, `runPure` may eliminate `Eff <[ ]> (IO e a)` to `IO e a`; no additional eliminator is required for that
+case.
+
 Effect rows are orthogonal to the reserved modal/coeffect extension lane of §5.1.5.2. `EffRow` classifies which
 effects may occur. A future effect-grade extension, if any, would classify some separate quantitative or policy
 property of computations and MUST be layered beside `EffRow` rather than by changing row membership, row equality, or
 `SplitEff`.
 
-#### 8.1.2 `effect` declarations
+#### 8.1.7 `effect` declarations
 
 An `effect` declaration introduces a named effect interface constructor. Operations within the effect may be annotated
 with a resumption quantity, which dictates how the corresponding handler continuation may be used.
@@ -5737,7 +5984,7 @@ Rules:
   labels, abstract effect-row variables, or explicitly quantified / existentially packaged `EffLabel` and `EffRow`
   witnesses.
 
-#### 8.1.3 Effect application and linear soundness
+#### 8.1.8 Effect application and linear soundness
 
 Because Kappa enforces quantitative resource tracking, the capability of an effect handler to duplicate execution via a
 multi-shot continuation is restricted by the linear environment at the operation site.
@@ -5759,7 +6006,7 @@ Call-site capture rule:
 
 This rule guarantees that multi-shot continuations cannot clone linear resources or extend borrow lifetimes unsoundly.
 
-#### 8.1.3.1 Repeated resumption is fresh control re-entry
+#### 8.1.8.1 Repeated resumption is fresh control re-entry
 
 When a resumption value `k` is used more than once under a resumption quantity that permits multiple uses, each
 application of `k` denotes a fresh dynamic re-entry of the suspended computation suffix captured at the operation site.
@@ -5781,9 +6028,9 @@ Normative consequences:
 Accordingly, multi-shot resumption duplicates captured control state, not the entire ambient store.
 
 If a pending exit action or captured local binding would carry live quantity-`1` or borrowed state in a way that makes
-such duplication unsound, the program is already rejected by the call-site capture rule of Section 8.1.3.
+such duplication unsound, the program is already rejected by the call-site capture rule of §8.1.8.
 
-#### 8.1.4 Shallow handlers
+#### 8.1.9 Shallow handlers
 
 Kappa provides shallow handlers. A shallow handler intercepts operations for one effect label at a time and yields
 resumptions that continue in the original unhandled computation type.
@@ -5844,7 +6091,7 @@ Semantics:
 * Applying `k` resumes the suspended computation from the operation site.
 * `k` must be used according to its declared resumption quantity `q`. If `q = 1`, invoking it more than once is a
   compile-time quantity error inside the handler. If `q` permits more than one use, such as `ω` or `>=1`, multiple
-  invocations are permitted, subject to the call-site capture rule of §8.1.3.
+  invocations are permitted, subject to the call-site capture rule of §8.1.8.
 * The current handler is not automatically reinstalled around `k`. To continue handling the same label after resumption,
   the handler body must explicitly handle the resumed computation again.
 * Operations at labels other than `label` propagate outward unchanged.
@@ -5882,7 +6129,7 @@ case release name r k ->
     ...; k ()
 ```
 
-#### 8.1.4.1 KCore realization and interaction with abrupt completion
+#### 8.1.9.1 KCore realization and interaction with abrupt completion
 
 The control model of shallow handlers is realized in KCore by the effect-operation and handler kernel of §17.3.1.5.
 
@@ -5924,7 +6171,7 @@ In this completion-carrying case:
 This does not introduce a second control system. It is ordinary composition of the handler kernel with the
 completion-and-scope kernel.
 
-#### 8.1.5 Deep handlers (`deep handle`)
+#### 8.1.10 Deep handlers (`deep handle`)
 
 Deep handlers automatically reinstall themselves around their resumptions. They are surface sugar over shallow handlers
 plus explicit recursion.
@@ -5979,7 +6226,7 @@ in
     __go expr
 ```
 
-The shallow `handle` used in this desugaring is the surface form whose KCore realization is specified by §§8.1.4.1 and
+The shallow `handle` used in this desugaring is the surface form whose KCore realization is specified by §§8.1.9.1 and
 17.3.1.5.
 
 where `q` and `B` are the declared resumption quantity and instantiated result type of `op1`, and where `__go` and
@@ -6010,7 +6257,7 @@ Semantics:
 * Operations at labels other than `label` propagate outward unchanged.
 * If the deep resumption `k` is used more than once under its declared resumption quantity, each use behaves as a fresh
   application of the corresponding shallow resumption followed by fresh reinstallation of the same deep handler. The
-  independence and shared-store rules are exactly those of Section 8.1.3.1.
+  independence and shared-store rules are exactly those of §8.1.8.1.
 
 Stateful deep-handler example:
 
@@ -6028,7 +6275,7 @@ let runState (init : s) comp =
 Because `inout` is purely linear record-threading sugar (§8.8), the same state-runner pattern can also be exposed
 through an `inout` parameter on a named function, with no change to the underlying handler semantics.
 
-#### 8.1.6 `MonadFinally`
+#### 8.1.11 `MonadFinally`
 
 Kappa provides a trait for monads that support reliable finalization:
 
@@ -6046,7 +6293,7 @@ the same `m`, either explicitly or via a default implementation compatible with 
 
 `MonadResource m` refines `MonadFinally m`.
 
-##### 8.1.6.1 Laws
+##### 8.1.11.1 Laws
 
 All instances of `MonadFinally` MUST satisfy the following laws, where `≡` denotes observational equivalence in the
 monad `m`.
@@ -9475,8 +9722,8 @@ Elaboration performs (non-exhaustive):
       declarations (§6.3.1, §14.1.1),
     * `do` blocks, abrupt control, and exit-action scheduling to the structured completion-and-scope kernel (§8.2,
       §8.7, §17.3.1.4),
-    * shallow handlers to the structured effect-operation and handler kernel (§8.1.4, §14.8, §17.3.1.5),
-    * deep handlers to recursive drivers over the shallow-handler kernel (§8.1.5, §14.8, §17.3.1.5),
+    * shallow handlers to the structured effect-operation and handler kernel (§8.1.9, §14.8, §17.3.1.5),
+    * deep handlers to recursive drivers over the shallow-handler kernel (§8.1.10, §14.8, §17.3.1.5),
     * lowering of boolean and constructor-refinement control flow to explicit erased branch evidence (§7.4.1, §7.5.4,
       §17.3.1.8),
     * comprehensions to combinator pipelines (§10.10),
@@ -9777,7 +10024,7 @@ It does not include:
 
 #### 14.8.2 One-shot and multi-shot realization
 
-Let an operation declaration carry resumption quantity `q` under Section 8.1.2.
+Let an operation declaration carry resumption quantity `q` under §8.1.7.
 
 * If `q` permits at most one use of the resumption value, an implementation MAY represent the captured continuation
   destructively.
@@ -9813,13 +10060,13 @@ Therefore:
   execution;
 * each resumed execution unwinds and consumes only its own copy of those exit actions.
 
-If such copying would duplicate live linear or borrowed resources unsoundly, the call-site capture rule of Section 8.1.3
+If such copying would duplicate live linear or borrowed resources unsoundly, the call-site capture rule of §8.1.8
 rejects the program.
 
 #### 14.8.5 Deep handler reinstallation
 
 A deep handler behaves as if it were lowered to a shallow handler plus an internal recursive driver as specified in
-Section 8.1.5.
+§8.1.10.
 
 Each use of a deep resumption first resumes the captured shallow continuation and then reinstalls the same deep handler
 around the resumed computation.
@@ -11407,15 +11654,15 @@ Meaning:
 * `HandleShallow` handles only the selected label. Operations at all other labels propagate outward unchanged.
 * A `HandleShallow` return clause is applied only when the handled computation completes normally.
 * If the handled computation is itself completion-carrying, for example of type `Eff r_all (Completion(RetCtx, A))`,
-  then propagation of `Break`, `Continue`, and `Return[...]` is determined by the surface elaboration rule of §8.1.4.1
+  then propagation of `Break`, `Continue`, and `Return[...]` is determined by the surface elaboration rule of §8.1.9.1
   rather than by any extra KCore control primitive.
 * The captured continuation boundary includes any active `DoScope` frames inside that dynamic segment, so exit actions
-  are cloned or consumed exactly as specified by §§8.1.3.1, 8.7.2, and 14.8.
+  are cloned or consumed exactly as specified by §§8.1.8.1, 8.7.2, and 14.8.
 
 Surface `handle label in expr` elaborates through `HandleShallow`.
 
 Surface `deep handle label in expr` does not require a distinct KCore primitive. It elaborates to an internal recursive
-driver over `HandleShallow` as specified in §8.1.5.
+driver over `HandleShallow` as specified in §8.1.10.
 
 This subsection defines KCore structure only. A conforming implementation MAY realize these forms by CPS, exceptions,
 heap-allocated frames, stack copying, segmented stacks, defunctionalized state machines, or other equivalent internal
@@ -11885,7 +12132,7 @@ Rules:
   every discarded arm is unreachable or every unwind obligation associated with it has already been discharged.
 * A lowered call that both forwards one or more still-live arms and installs new local arm handlers is a semi-tail
   transfer.
-* If a lowered protocol is used inside a multi-shot resumption, each reuse MUST still satisfy §§8.1.3.1 and 14.8:
+* If a lowered protocol is used inside a multi-shot resumption, each reuse MUST still satisfy §§8.1.8.1 and 14.8:
   control state inside the captured segment is logically cloned per resumption application, while general heap state
   remains shared unless the program copies it explicitly.
 
@@ -11957,7 +12204,7 @@ In particular, a backend MUST preserve:
 * the record-canonicalization and path-sensitive consumption rules of §§5.5 and 14.6;
 * the evaluation-count guarantees of §10.10.1;
 * the cleanup, `defer`, `using`, error, and abrupt-control rules of §§8.6-8.7 and §9;
-* the shallow/deep-handler and resumption rules of §§8.1.3-8.1.5.
+* the shallow/deep-handler and resumption rules of §§8.1.8-8.1.10.
 
 Host-runtime features such as garbage collection, exceptions, stack unwinding, coroutines, JIT compilation, AOT
 compilation, or dynamic linking are implementation techniques only. They do not redefine Kappa semantics.
