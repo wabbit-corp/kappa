@@ -801,7 +801,20 @@ The standard prelude provisions for `|>`, `<|`, and the optional `|>=` operator 
   let `λ` = 42
   ```
 
-  Backtick identifiers are part of the term namespace.
+Backtick identifiers may be used in any source-level namespace position that otherwise admits an identifier, including
+the term, type, constraint, constructor, label, and effect-label namespaces.
+
+Grammar amendment:
+
+```text
+modSeg  ::= ident | backtick_ident
+modPath ::= modSeg ('.' modSeg)*
+```
+
+In a source-written module path, a backticked segment contributes its unquoted text as the module-name segment.
+
+Path-derived module names remain constrained by §2.1. In particular, a package-mode module header must still match the
+path-derived module name exactly, so a path-derived segment never requires backticks.
 
 ### 3.2 Keywords
 
