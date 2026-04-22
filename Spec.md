@@ -12434,7 +12434,100 @@ Floating-point restriction:
 * Such values MUST instead be adapted through an implementation-documented lossless representation, such as integer bit
   patterns or byte buffers, or else the interface MUST be marked backend-specific.
 
-### 17.12 Backend conformance
+### 17.12 ECMAScript backend profile (`js`)
+
+A conforming implementation MAY provide the `js` backend profile.
+
+Artifact kinds:
+
+* ES modules;
+* CommonJS bundles;
+* implementation-defined package outputs derived from JavaScript artifacts.
+
+Rules:
+
+* the backend MUST lower KBackendIR to ECMAScript-compatible artifacts;
+* the backend MAY realize closures, dictionaries, handlers, fibers, and resumptions via functions, promises,
+  microtasks, generators, async functions, worker APIs, or equivalent JavaScript mechanisms;
+* the backend MUST preserve Kappa source semantics for interruption, finalization, structured concurrency, and STM;
+* the backend MUST NOT silently weaken runtime semantics merely because the selected JavaScript host is single-agent,
+  worker-based, or event-loop based.
+
+If the selected JavaScript deployment target lacks one or more required runtime capabilities of §17.13, compilation is a
+hard error for programs that require those capabilities.
+
+### 17.13 Runtime capability profiles
+
+Every backend profile MUST declare a runtime capability set.
+
+The standard runtime capability names are:
+
+* `rt-core`
+* `rt-parallel`
+* `rt-shared-stm`
+* `rt-blocking`
+
+Meaning:
+
+* `rt-core`:
+  * `IO e a`,
+  * typed failures, causes, exits,
+  * fibers,
+  * structured interruption,
+  * masking,
+  * finalizers,
+  * and single-agent STM semantics.
+
+* `rt-parallel`:
+  * execution of runnable fibers on more than one host execution resource at a time.
+
+* `rt-shared-stm`:
+  * TVars whose observable semantics remain valid across parallel workers or host execution agents.
+
+* `rt-blocking`:
+  * backend-supported blocking bridges for foreign calls together with interruption classification.
+
+Capability rules:
+
+* A backend that lacks a required capability MUST reject the affected program or deployment mode rather than silently
+  weakening semantics.
+* Absence of `rt-parallel` does not make `fork` invalid. It means only that concurrency need not execute on more than
+  one host execution resource simultaneously.
+* Absence of `rt-shared-stm` does not remove `STM` from the language. It restricts `STM` to a single runtime agent.
+* Absence of `rt-blocking` makes blocking foreign-call bridges unavailable in the portable subset.
+
+Recommended backend declarations:
+
+* `zig`, `jvm`, and managed `dotnet` SHOULD advertise:
+  * `rt-core`,
+  * `rt-parallel`,
+  * `rt-shared-stm`,
+  * `rt-blocking`.
+
+* `wasm-core`, `wasm-component`, and `js` MUST advertise `rt-core`.
+  They MAY additionally advertise `rt-parallel`, `rt-shared-stm`, or `rt-blocking` only when the selected embedder or
+  deployment configuration actually provides them.
+
+Foreign-call interruption classification:
+
+A foreign call that may suspend a host execution resource is classified as one of:
+
+* `nonblocking`
+* `blocking`
+* `blocking-cancellable`
+
+Rules:
+
+* If a fiber is interrupted while executing a `nonblocking` call, ordinary interruption rules apply at the next
+  interruption point.
+* If a fiber is interrupted while executing a `blocking` call, interruption becomes pending and is taken when the call
+  returns.
+* If a fiber is interrupted while executing a `blocking-cancellable` call, the runtime MUST attempt backend-specific
+  cancellation and then obey ordinary interruption semantics.
+* A backend that cannot realize the required classification MUST reject that foreign declaration or deployment rather
+  than silently pretending to support it.
+
+### 17.14 Backend conformance
 
 A backend profile is conforming iff every accepted program, when compiled under that profile, behaves observationally as
 required by this specification.
