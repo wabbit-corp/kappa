@@ -896,6 +896,8 @@ Token recognition uses longest-match-first.
 
 * `?.`, `?:`, `let?`, and `for?` are recognized as single tokens in preference to their single-character / bare-keyword
   decompositions, regardless of user fixity declarations for `?`.
+* After `?.` and `?:` are considered, a `?` immediately followed by an identifier start is recognized as a named-hole
+  token.
 * `~=` is recognized as an ordinary operator token in preference to standalone `~`, so the `Equiv` operator remains
   available even though `~` itself is reserved for `inout` call sites (§8.8).
 * `<[` and `]>` are recognized as single reserved tokens in preference to `<` plus `[` and `]` plus `>`.
@@ -1464,6 +1466,8 @@ Compile-time values are:
   `EffRow`, `Label`, and `EffLabel`;
 * universe terms appearing in `Type u`;
 * inhabitants of the elaboration-time reflection types `CoreCtx`, `Symbol`, `Core Γ t`, and `CoreEq x y` of §5.8.5;
+* inhabitants of the elaboration-time action type `Elab a` and of the elaboration-time goal record `ElabGoal` of
+  §5.8.7;
 * inhabitants of compile-time function spaces built entirely from such types and from `Type u`.
 
 Compile-time values are ordinary terms for binding, projection, packaging, sealing, opening, and definitional equality,
@@ -1482,8 +1486,8 @@ Runtime erasure is governed as follows:
 #### 5.1.4.1 Compile-time bindings and fields
 
 A binder, record field, or package member is compile-time if its annotation elaborates to one of the intrinsic
-compile-time types of §5.1.3, to `Type u`, to one of the elaboration-time reflection types of §5.8.5, or to a
-compile-time function space built from such types.
+compile-time types of §5.1.3, to `Type u`, to one of the elaboration-time reflection types of §5.8.5, to `Elab a` or
+`ElabGoal` of §5.8.7, or to a compile-time function space built from such types.
 
 Compile-time bindings and fields:
 
@@ -3233,10 +3237,13 @@ occur in disjoint lexical contexts (strings vs. quotes).
 
 Outside quoted blocks, `$(s)` is an elaboration-time splice in term and type positions.
 
-* In a term position expecting type `t`, `$(s)` requires `s : Syntax t`.
-* In a type position, `$(s)` requires `s : Syntax Type`.
-* `$(s)` consumes `Syntax`, not `Core` or `Code`. Staged code is executed only via `runCode` on `ClosedCode` (§5.9.4).
-  Semantic reflection values of §5.8.5 must first be reified back to `Syntax` before they can be spliced.
+* In a term position expecting type `t`, `$(s)` requires either `s : Syntax t` or `s : Elab (Syntax t)`.
+* In a type position, `$(s)` requires either `s : Syntax Type` or `s : Elab (Syntax Type)`.
+* `$(s)` consumes `Syntax`, or an `Elab` action producing `Syntax`, not `Core` or `Code`. Staged code is executed only
+  via `runCode` on `ClosedCode` (§5.9.6). Semantic reflection values of §5.8.5 must first be reified back to `Syntax`
+  before they can be spliced.
+* If `s : Elab (Syntax t)`, the `Elab` action is executed at the splice site and its resulting `Syntax t` is spliced as
+  if that syntax had been supplied directly.
 * `$(...)` and `reifyCore` are the only normative re-entry points from elaboration-time reflection to object-language
   code. Implementations MUST NOT provide a generic splice or coercion from arbitrary compile-time values, rows, labels,
   constraints, lexical contexts, or exact-equality witnesses directly into ordinary runtime terms or types.
@@ -3245,7 +3252,7 @@ Outside quoted blocks, `$(s)` is an elaboration-time splice in term and type pos
 
 #### 5.8.3 Macros as ordinary functions
 
-A macro is an ordinary elaboration-time function whose result type is `Syntax t`:
+A macro is an ordinary elaboration-time function whose result type is `Syntax t` or `Elab (Syntax t)`:
 
 ```kappa
 myMacro : Syntax Int -> Syntax Int
@@ -3471,6 +3478,40 @@ elaboration is a compiler error (the implementation may hang, time out, or repor
 These restrictions are enforced by the elaboration-time evaluator (§17.3.3).
 A macro or splice that violates them is a compile-time error.
 
+#### 5.8.7 Typed elaboration actions (`Elab`)
+
+Kappa provides a built-in elaboration-time effect for context-sensitive macros and DSL elaborators:
+
+```kappa
+Elab : Type -> Type
+
+type ElabGoal : Type =
+    (ctx : CoreCtx,
+     expected : Option (Core this.ctx Type))
+
+currentGoal :
+    Elab ElabGoal
+
+failElab :
+    forall (@0 a : Type).
+    String -> Elab a
+```
+
+Implementations MUST provide coherent evidence for `Functor Elab`, `Applicative Elab`, and `Monad Elab`.
+
+Rules:
+
+* `Elab` actions run only during elaboration.
+* `currentGoal.ctx` is the lexical context that ordinary elaboration would use at the splice site.
+* `currentGoal.expected` is the expected type at the splice site when one is available; otherwise it is `None`.
+* `Elab` actions MAY use the reflection operations of §5.8.5, including `asCoreIn`, `inferType`, `whnf`, `normalize`,
+  `proveDefEq`, `defEq`, and `reifyCore`.
+* `Elab` is subject to the same determinism, transcript, visibility, opacity, implicit-resolution, package-mode effect,
+  and termination restrictions as other elaboration-time execution in §5.8.6.
+* `Elab` does not provide a second re-entry path into object code. It re-enters object-language code only by producing
+  `Syntax` for `$(...)`.
+* `Elab` values are compile-time only, are erased, and MUST NOT be required at runtime or by `runCode`.
+
 ### 5.9 Staged code values
 
 #### 5.9.1 `Code` and `ClosedCode`
@@ -3515,7 +3556,53 @@ trait Lift (a : Type) =
 A present-stage value may occur inside `.< ... >.` only if it is inserted by `liftCode`, either explicitly or via
 elaboration of a simple variable occurrence.
 
-#### 5.9.4 Running staged code
+#### 5.9.4 Closing staged code
+
+Implementations MUST provide:
+
+```kappa
+closeCode :
+    forall (@0 t : Type).
+    Code t -> Option (ClosedCode t)
+```
+
+`closeCode c` returns `Some cc` iff `c` is closed under the same scope-safety discipline required by `runCode`.
+Otherwise it returns `None`.
+
+If a quotation `.< expr >.` is statically known to be closed, implementations MAY elaborate it directly as
+`ClosedCode t` when that type is expected.
+
+#### 5.9.5 Let insertion and sharing
+
+Implementations MUST provide:
+
+```kappa
+genlet :
+    forall (@0 t : Type).
+    Code t -> Code t
+```
+
+Normative meaning:
+
+* `genlet e` requests that the generated term represented by `e` be bound exactly once by a fresh generated `let` in
+  the nearest enclosing generated code context that contains all of its uses.
+* Repeated splices of the same `genlet` result within that enclosing generated code context MUST reuse the same
+  generated binder.
+* `genlet` preserves typing and observational semantics, modulo administrative let-binding.
+* `genlet` MUST preserve scope safety and MUST fail with a stage error if no valid insertion point exists.
+
+Example:
+
+```kappa
+let shared = genlet .< expensive n >.
+let c = .< .~shared + .~shared >.
+
+-- behaves like code for:
+-- let __x = expensive n
+-- __x + __x
+```
+
+#### 5.9.6 Running staged code
 
 Staged code may be executed only when closed:
 
@@ -3525,12 +3612,14 @@ runCode : ClosedCode t -> IO t
 
 Implementations MUST reject, or fail before execution on, any attempt to run non-closed code.
 
-#### 5.9.5 Scope safety
+#### 5.9.7 Scope safety
 
 Implementations MUST prevent scope extrusion for `Code`.
 
 * A splice that would produce ill-scoped code is a stage error.
 * Implementations MAY detect this statically or with a generation-time scope-extrusion check.
+* `closeCode` MUST succeed only for code values that satisfy this discipline, and `genlet` MUST NOT be usable to bypass
+  it.
 
 
 ---
@@ -4615,14 +4704,40 @@ Multiple constraints associate to the right: `C1 => C2 => T` is equivalent to `(
 `=>` is reserved for actual constraints, except for the boolean-proposition special case above. For ordinary proofs or
 other implicit values of type `P : Type`, write the implicit binder explicitly.
 
-### 7.3.2 Expression holes (`_`)
+### 7.3.2 Expression holes (`_` and named holes)
 
-In expression position, `_` denotes a **typed hole**.
+In expression position, `_` denotes a fresh anonymous typed hole.
 
-* The compiler attempts to infer a term that fills the hole.
-* If the hole cannot be inferred, compilation fails with an error that reports the expected type and available context.
+A named typed hole has the surface form:
 
-Kappa does not provide placeholder-abstraction sugar based on `_` in v0.1. Users should write an ordinary lambda
+```text
+?ident
+```
+
+Semantics:
+
+* A hole introduces an elaboration metavariable rather than immediately requiring synthesis to succeed.
+* `_` always introduces a fresh hole.
+* Repeated occurrences of the same named hole within one enclosing declaration or local right-hand side refer to the
+  same metavariable.
+* Repeated occurrences of the same named hole MUST elaborate at definitionally equal expected types; otherwise
+  compilation fails.
+* Named holes do not escape their enclosing declaration or local right-hand side.
+
+Completion rule:
+
+* If a hole is solved during ordinary elaboration, the solved term is used.
+* If any hole remains unsolved at the end of elaboration of the enclosing declaration, compilation fails.
+
+Diagnostics for each unsolved hole MUST report at least:
+
+* the hole name, or an implementation-generated identifier for `_`;
+* the expected type;
+* the local explicit context;
+* relevant local implicit assumptions and constraint goals; and
+* the source span of each occurrence.
+
+Kappa does not provide placeholder-abstraction sugar based on holes in v0.1. Users should write an ordinary lambda
 explicitly when abstraction is intended, or use existing section forms such as operator sections (§3.5.1.1) and
 projection sections (§7.1.1).
 
