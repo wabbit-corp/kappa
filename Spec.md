@@ -549,6 +549,15 @@ Normative rule:
   This has the effect of an implicit prelude constructor import for that exact subset only. It is the only exception to
   the rule that `*` does not import constructors unqualified.
 
+* `std.prelude` is an ordinary module for language-semantics purposes.
+  In particular:
+  * its exported names participate in name resolution exactly like those of any other imported module;
+  * its transparent definitions and transparent type aliases participate in elaboration, normalization, definitional
+    equality, hashing, and separate compilation exactly like those of any other imported module;
+  * its opaque and private items obey the ordinary visibility and transparency rules; and
+  * an implementation MAY realize some prelude names as intrinsics or primitives, but this does not change their
+    ordinary module semantics at the source-language level.
+
 The exact contents of std.prelude are implementation-defined, but it must include:
 * any declarations required by surface syntax (e.g. Bool and the meanings of True/False),
 * the conventional prefixed-string handlers `f`, `re`, and `b` if prefixed strings are supported,
