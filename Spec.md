@@ -576,6 +576,7 @@ declarations referenced by §§5.3.1-5.3.2 (`Label`, `EffLabel`, `ContainsRec`, 
 Types (type namespace):
 ```
 Unit, Void, Bool, Char, String, Int, Nat, Integer, Float, Double, Real, Bytes, Ordering, SyntaxFragment,
+Query a, RawComprehension a, ComprehensionPlan a,
 Option a, Result e a, List a, Array a, Set a, Map k v,
 Res a r, Match a r, Dec p,
 IO e a, UIO a, Fiber e a, Exit e a, Cause e, InterruptCause, DefectInfo,
@@ -646,8 +647,7 @@ Traits (constraint namespace, restricted to trait):
 Equiv, Eq, Ord, Show,
 Functor, Applicative, Monad, Alternative,
 Foldable, Traversable, Filterable, FilterMap, Monoid, Iterator, InterpolatedMacro,
-FromComprehensionRaw,
-FromComprehension,
+IntoQuery, FromComprehensionPlan, FromComprehensionRaw,
 FromInteger, FromFloat, FromString, FromStringType,
 MonadError, MonadFinally, MonadResource, MonadRef, Releasable
 ```
@@ -1330,18 +1330,31 @@ data SyntaxFragment : Type =
 trait InterpolatedMacro (t : Type) =
     buildInterpolated : List SyntaxFragment -> Syntax t
 
-trait FromComprehensionRaw (f : Type -> Type) =
-    fromComprehensionRaw : forall a. Syntax (f a) -> f a
+Query : Type -> Type
+RawComprehension : Type -> Type
+ComprehensionPlan : Type -> Type
 
-trait FromComprehension (f : Type -> Type) =
-    fromComprehension : forall a. Syntax (f a) -> f a
+trait IntoQuery (src : Type) =
+    Item : Type
+    toQuery : src -> Query Item
+
+trait FromComprehensionPlan (c : Type) =
+    Item : Type
+    fromComprehensionPlan : ComprehensionPlan Item -> c
+
+trait FromComprehensionRaw (c : Type) =
+    Item : Type
+    fromComprehensionRaw : RawComprehension Item -> c
 ```
 
-`FromComprehensionRaw` receives the original user-written comprehension syntax.
+`Query a` is the first-class normalized query-pipeline type used by comprehension elaboration.
 
-`FromComprehension` receives the result of applying the normative desugaring rules from §10.10.
+`RawComprehension a` is a stable source-preserving compile-time reflection type for comprehensions.
 
-Custom carriers may implement either trait. Carrier selection is defined in §10.9.
+`ComprehensionPlan a` is a stable normalized compile-time reflection type consisting of:
+
+* a normalized query pipeline of item type `a`, and
+* terminal collection metadata (delimiter/result kind and any map-conflict policy).
 
 Semantics:
 
@@ -3634,13 +3647,37 @@ The reflection API MUST additionally provide an elaboration-time operation equiv
 
 ```kappa
 lowerComprehension :
-    forall (f : Type -> Type) (a : Type).
-    Syntax (f a) -> Syntax (f a)
+    forall (a : Type).
+    RawComprehension a -> ComprehensionPlan a
 ```
 
-When its argument is a comprehension syntax value produced for `FromComprehensionRaw`, `lowerComprehension` returns the
-result of applying the normative desugaring rules of §10.10 to that comprehension. If the argument is not such a
-comprehension syntax value, compilation fails with an elaboration-time error.
+`RawComprehension a` is a stable compile-time reflection type for user-written comprehensions.
+It is not an alias for the implementation's internal `Syntax`, `KSyntax`, or KFrontIR node types.
+
+A conforming implementation MUST provide a stable public inspection API for `RawComprehension`
+sufficient to observe, at minimum:
+
+* the optional carrier prefix, if any,
+* the delimiter kind (`[ ... ]`, `{| ... |}`, or `{ ... }`),
+* the clause sequence in source order,
+* clause kinds (`for`, `for?`, `let`, `let?`, `if`, `join`, `left join`, `group by`, `order by`, `skip`, `take`,
+  `distinct`, `distinct by`),
+* binder patterns and guards,
+* the yield form (element yield vs key/value yield),
+* and any map-conflict clause.
+
+`ComprehensionPlan a` is a stable normalized compile-time reflection type.
+A conforming implementation MUST provide a stable public inspection API for `ComprehensionPlan`
+sufficient to observe, at minimum:
+
+* the normalized query pipeline,
+* the terminal collection kind:
+  * list-like element collection,
+  * set-like element collection,
+  * or key/value collection,
+* and any map-conflict policy.
+
+`lowerComprehension` performs the normative lowering of §10.10.
 
 The reflection API MUST additionally provide elaboration-time convenience operations equivalent to:
 
@@ -8568,7 +8605,8 @@ For an open variant element or scrutinee type `(| ... | r |)`, a refutable compr
 the available row constraints prove that every case admitted by the residual row `r` is droppable. In the absence of
 such proof, the compiler MUST conservatively reject the clause.
 
-Desugaring per §10.10: via `filterMap` when `FilterMap f` is available; otherwise via `bind` + `empty`.
+Normative lowering per §10.10 uses query-level refutable filtering / filter-map over the current row environment. The
+carrier-specific trait factoring is not part of the surface semantics.
 
 ### 10.5 Map comprehensions and `:` vs type ascription
 
@@ -8858,122 +8896,235 @@ Desugaring (normative; the compiler is free to optimize):
   for tmp in xs, let? pat = tmp, if cond, yield tmp ]` The bindings introduced by `pat` are not in scope after the `left
   join`; only `name` is.
 
-### 10.9 Custom carriers
+### 10.9 Carrier prefixes, first-class queries, and custom sinks
 
-Any comprehension form can be prefixed with a custom carrier type constructor:
+A comprehension form may optionally be prefixed by a carrier type expression:
 
 ```kappa
-MyCustomList [ clauses..., yield valueExpr ]
-MyCustomSet  {| clauses..., yield valueExpr |}
-MyCustomMap  { clauses..., yield keyExpr : valueExpr }
+Array [ clauses..., yield valueExpr ]
+Query [ clauses..., yield valueExpr ]
+Tensor (n, m) { clauses..., yield keyExpr : valueExpr }
 ```
 
-This feature is supported by the `FromComprehensionRaw` and `FromComprehension` traits.
+Carrier-prefix rule:
 
-Carrier-selection rule:
+* The optional prefix is parsed as a type expression.
+* Its free variables, if any, must already be in scope.
+* After ordinary type inference, the comprehension has some fully applied result type `c : Type`.
 
-* If `FromComprehensionRaw f` is available, the compiler constructs a `Syntax` value for the original user-written
-  comprehension and invokes `fromComprehensionRaw`.
-* Otherwise, if `FromComprehension f` is available, the compiler desugars the comprehension using the rules in §10.10
-  and invokes `fromComprehension` on the resulting `Syntax` value.
-* If both traits are available, `FromComprehensionRaw` is preferred.
+Built-in defaults when the prefix is omitted:
 
-A raw carrier implementation MAY inspect the surface comprehension directly, or it MAY call `lowerComprehension`
-(§5.8.5) to obtain the normative desugared pipeline of §10.10. This permits query-oriented, relational, or fixed-point
-carriers to extend the comprehension machinery without a separate parsing pipeline.
+* `[ ... ]` defaults to the built-in list collector.
+* `{| ... |}` defaults to the built-in set collector.
+* `{ ... }` defaults to the built-in map collector.
 
-The reflection API MUST preserve, at minimum, the custom-carrier prefix, delimiter kind (list/set/map), clause order,
-clause kinds, binder patterns, guards, join forms, grouping clauses, ordering clauses, paging clauses, and yield form
-of the original comprehension.
+Carrier selection:
 
-Carriers are not required to implement every possible clause combination — they only need to accept the form they are
-invoked with.
+1. If an instance `FromComprehensionRaw c` is available, the compiler constructs a `RawComprehension item` for the
+   comprehension and invokes `fromComprehensionRaw`.
+2. Otherwise, if an instance `FromComprehensionPlan c` is available, the compiler constructs the normalized
+   `ComprehensionPlan item` of §10.10 and invokes `fromComprehensionPlan`.
+3. If both are available, `FromComprehensionRaw` is preferred.
+4. If neither is available, the comprehension is ill-formed.
 
-### 10.10 Comprehension desugaring and required traits
+The associated type `Item` of the selected sink instance determines the yielded item type of the normalized plan.
 
-Comprehensions desugar to a pipeline of combinators. The compiler must choose a desugaring that is well-typed and must
-not require stronger trait constraints than necessary for the given comprehension shape.
+Examples:
 
-We refer to a carrier type constructor `f : Type -> Type`.
+* `Array [ ... ]` may use `FromComprehensionPlan (Array a)`.
+* `Query [ ... ]` may use `FromComprehensionPlan (Query a)`.
+* `Map k v { ... }` may use `FromComprehensionPlan (Map k v)` with `Item = (key : k, value : v)`.
+* `Tensor (n, m) { ... }` may use `FromComprehensionPlan (Tensor (n, m) a)` with an implementation-defined
+  interpretation of the key/value items.
 
-Required combinators (conceptual traits):
+Raw custom sinks are intended for query providers, relational backends, and other advanced carriers that need access to
+the original clause structure. Normalized sinks are intended for ordinary collection builders and backends that are
+satisfied by the normalized plan.
 
-* `Functor f` provides `map : (a -> b) -> f a -> f b`
-* `Applicative f` provides `pure : a -> f a` and `liftA2 : (a -> b -> c) -> f a -> f b -> f c` (with `<*>` derivable
-  from `liftA2`)
-* `Monad f` provides `bind : f a -> (a -> f b) -> f b`
-* `Filterable f` provides `filter : (a -> Bool) -> f a -> f a`
-* `Alternative f` provides `empty : f a` and `(<|>) : f a -> f a -> f a` (with `orElse` as an alias)
-* `FilterMap f` provides `filterMap : (a -> Option b) -> f a -> f b` (dropping elements that map to `None`).
+### 10.10 Normative lowering: sources, query core, and collection
 
+Normative lowering proceeds in two stages:
 
-(Exact names and trait factoring are not mandated, but the semantics correspond to these operations.)
+1. clause lowering to a normalized query pipeline `Query row`,
+2. terminal projection and collection via `ComprehensionPlan`.
 
-Desugaring rules (list/set forms shown; map form analogous):
+#### 10.10.1 Sources
 
-1. Yield-only:
+A generator source is any expression whose type `src` has an implicit instance `IntoQuery src`.
 
-   `[ yield e ]` desugars to `pure e` and requires `Applicative f`.
+If `IntoQuery src` provides associated item type `a`, then:
 
-2. Single generator without refutation:
+```kappa
+toQuery : src -> Query a
+```
 
-   `[ for x in xs, yield e ]` desugars to `map (\x -> e) xs` and requires `Functor f`.
+is the semantic source of rows for `for ... in ...` clauses.
 
-3. Filters without refutation:
+Built-in collection and range sources SHOULD provide standard `IntoQuery` instances.
 
-   If the comprehension contains `if cond` clauses but no refutable generators/bindings, it prefers `filter` when
-   available:
+#### 10.10.2 Row environment
 
-   `[ for x in xs, if cond, yield e ]` desugars to `map (\x -> e) (filter (\x -> cond) xs)` and requires `Filterable f`
-   and `Functor f`.
+Before `yield`, a comprehension is elaborated as a pipeline over a current row environment.
 
-   If `Filterable f` is not available, it may desugar using `bind` and `empty` (requiring `Monad f` and `Alternative
-   f`).
+At any clause site, let `Γ` be the set of currently bound names in scope from preceding clauses.
+The corresponding row type `Row(Γ)` is the canonical record type whose fields are those names and whose field order is
+the canonical dependency-respecting record order of §14.6.
 
-4. Multiple generators and/or dependency between generators:
+All clause semantics before `yield` are defined in terms of transformations on `Query (Row(Γ))`.
 
-   `[ for x in xs, for y in ys(x), yield e ]` desugars using `bind` and requires `Monad f`. (A later generator `ys(x)`
-   that depends on earlier bound variables forces `bind`.)
+Consequences:
 
-5. Refutable generator (`for?`) and refutable let (`let?`):
+* `distinct` operates on the full current row environment at its clause site.
+* `distinct by keyExpr` operates on keys computed from the current row environment.
+* `order by`, `group by`, `join`, and filters likewise operate on the current row environment.
 
-   These forms are permitted only when the values discarded on refutation are droppable under §10.4.1.
+#### 10.10.3 Clause lowering
 
-   If `FilterMap f` is available, refutation desugars via `filterMap` and requires only `FilterMap f` (plus whatever is
-   needed by surrounding clauses).
+The compiler MUST lower the clause sequence to behavior observationally equivalent to the following normalized query
+algebra:
 
-   Otherwise, refutation desugars using `bind` plus a match that produces `empty` when refutation fails, requiring
-   `Monad f` and `Alternative f`.
+* source introduction from `IntoQuery.toQuery`,
+* row extension,
+* row-local mapping,
+* flat-mapping,
+* filtering,
+* refutable filtering / filter-map,
+* ordering,
+* paging,
+* distinct-by-key,
+* join,
+* left join,
+* grouping.
 
-6. Constructor-tag tests:
+The exact concrete representation of `Query` is implementation-defined, but a conforming implementation MUST provide a
+stable public interface or data representation sufficient to realize these semantics and to support
+`FromComprehensionPlan`.
 
-   Because `e is C` is an ordinary `Bool` expression (§7.3.4), it is a special case of an `if cond` filter.
-   It evaluates `e` at most once per incoming row, keeps rows whose top-level constructor is `C`, drops the others, and
-   introduces no user-visible bindings.
-   When later clauses are typechecked on the success path, the same success-side constructor-refinement evidence as
-   §7.4.1 is available.
+Required clause behavior:
 
-The above is normative: implementations may produce equivalent code, but must preserve these semantics and constraint
-minimality. The lambdas shown in these desugaring rules are schematic meta-notation. Compiler-generated closures
-introduced solely to realize the comprehension pipeline are transparent to the abrupt-control boundary rules of §8.4 and
-§8.5. Custom carriers that rely on `FromComprehension` receive the fully desugared pipeline as `Syntax`. Custom
-carriers that rely on `FromComprehensionRaw` receive the original comprehension syntax and may call
-`lowerComprehension` to obtain the same desugared pipeline. The compiler MUST preserve the original clause
-representation until that handoff occurs.
+1. `for pat in src`
 
-### 10.10.1 Evaluation-count guarantees
+   * obtain `toQuery src`,
+   * require `pat` to be irrefutable for the source item type,
+   * extend the current row stream by binding `pat`.
 
-Within a comprehension, implementations must preserve the following evaluation-count guarantees (as-if rules):
+2. `for? pat in src`
+
+   * obtain `toQuery src`,
+   * match each source item against `pat`,
+   * keep only matching items,
+   * reject the clause when dropping a non-matching item would violate the droppability rule of §10.4.1.
+
+3. `let pat = expr`
+
+   * evaluate `expr` once per incoming row,
+   * require `pat` to be irrefutable,
+   * extend the current row with the bound names.
+
+4. `let? pat = expr`
+
+   * evaluate `expr` once per incoming row,
+   * keep only rows for which `pat` matches,
+   * reject the clause when dropping the failure residue would violate the droppability rule of §10.4.1.
+
+5. `if cond`
+
+   * filter rows by `cond`,
+   * evaluate `cond` at most once per incoming row,
+   * typecheck subsequent clauses under the success assumption `cond = True`.
+
+6. `if expr is C`
+
+   * filter rows by the top-level constructor test,
+   * evaluate `expr` at most once per incoming row,
+   * typecheck subsequent clauses under the same positive constructor refinement as §7.4.1.
+
+7. `join ...` and `left join ...`
+
+   * lower to normalized join operators, or to observationally equivalent combinations of `toQuery`, refutable
+     matching, and filtering,
+   * preserving the semantics of §10.8.
+
+8. `group by ...`
+
+   * lower to a normalized grouping operator, or to an observationally equivalent implementation,
+   * preserving the semantics of §10.7.
+
+9. `distinct`
+
+   * deduplicate on the current row record `Row(Γ)`,
+   * preserving the first encountered representative.
+
+10. `distinct by keyExpr`
+
+    * evaluate `keyExpr` exactly once per row,
+    * deduplicate by that key,
+    * preserving the first encountered representative.
+
+11. `order by`, `skip`, and `take`
+
+    * preserve the ordered/unordered rules of §10.3.2 and §10.6.
+
+#### 10.10.4 Yield and terminal plan
+
+After all non-yield clauses are lowered, the comprehension performs a final projection.
+
+For list-like and set-like comprehensions:
+
+* `yield valueExpr` produces a normalized item stream `Query a`.
+
+For map-like comprehensions:
+
+* `yield keyExpr : valueExpr` produces a normalized item stream
+  `Query (key : k, value : v)`.
+
+The final result of `lowerComprehension` is a `ComprehensionPlan item` carrying:
+
+* the normalized item query, and
+* terminal collection metadata:
+  * list-like element collection,
+  * set-like element collection,
+  * or key/value collection together with any `on conflict` policy.
+
+Map-conflict policy is terminal collection metadata, not part of the general `Query` algebra.
+
+#### 10.10.5 Collection and first-class queries
+
+Collection is performed only after clause lowering.
+
+* Built-in list, set, and map comprehensions use the corresponding built-in collectors.
+* A prefixed carrier uses the selection rule of §10.9.
+* `Query [ ... ]` is the standard first-class query form.
+  Its collector returns the normalized `Query item` and may ignore terminal collection metadata not representable in
+  `Query` itself.
+
+#### 10.10.6 Performance and as-if rule
+
+The normative semantics are defined as if the compiler constructs `RawComprehension`, lowers it to
+`ComprehensionPlan`, and then invokes the selected collector.
+
+A conforming implementation need not materialize any of these intermediate values when doing so is unnecessary.
+
+In particular, an implementation MAY:
+
+* fuse source conversion, clause lowering, optimization, and collection,
+* avoid materializing intermediate row records,
+* avoid materializing an intermediate `Query` value when the normalized plan does not escape,
+* lower directly to loops, iterators, relational algebra, SQL, or target-specific kernels,
+
+provided the observable behavior is the same as the normative semantics above.
+
+A first-class `Query` value need be materialized only when it escapes as a user-visible value.
+
+Within a comprehension, implementations MUST preserve the following evaluation-count guarantees (as-if rules):
 
 * `let` clause right-hand sides are evaluated at most once per incoming row.
 * `if` filter conditions are evaluated at most once per incoming row.
 * In `order by`, each ordering key expression is evaluated exactly once per row.
 * In `distinct by`, the key expression is evaluated exactly once per row.
 * In `group by`:
-    * `keyExpr` is evaluated exactly once per incoming row.
-    * each aggregate `valueExpr` is evaluated exactly once per incoming row per aggregate field.
-
-Implementations may cache computed keys and intermediate aggregate wrappers to satisfy these guarantees.
+  * `keyExpr` is evaluated exactly once per incoming row.
+  * each aggregate `valueExpr` is evaluated exactly once per incoming row per aggregate field.
 
 ## 11. Algebraic Data Types and Type Aliases
 
@@ -11303,8 +11454,8 @@ MUST be retained for diagnostics and navigation.
 
 For comprehensions, KFrontIR MUST preserve the original clause structure, clause order, delimiter kind, and any
 custom-carrier prefix until `CORE_LOWERING`. Desugared pipeline nodes MAY be added, but the original comprehension node,
-or an observationally equivalent source-linked representation, MUST remain available for tooling and for the raw
-custom-carrier hook of §§4.3.4, 5.8.5, and 10.9.
+or an observationally equivalent source-linked representation, MUST remain available for tooling and for construction
+of `RawComprehension` and `ComprehensionPlan`.
 
 KFrontIR distinguishes source references from resolved semantic objects:
 
@@ -12550,7 +12701,7 @@ In particular, a backend MUST preserve:
 * the distinction between `String` and `Bytes`;
 * the stable member-type tag identity requirements of §14.5;
 * the record-canonicalization and path-sensitive consumption rules of §§5.5 and 14.6;
-* the evaluation-count guarantees of §10.10.1;
+* the evaluation-count guarantees of §10.10;
 * the cleanup, `defer`, `using`, error, and abrupt-control rules of §§8.6-8.7 and §9;
 * the shallow/deep-handler and resumption rules of §§8.1.8-8.1.10.
 
