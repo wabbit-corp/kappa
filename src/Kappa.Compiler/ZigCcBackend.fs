@@ -86,11 +86,7 @@ module ZigCcBackend =
     let private joinLines (lines: string list) =
         String.concat Environment.NewLine lines
 
-    let private executablePath (directory: string) (baseName: string) =
-        if OperatingSystem.IsWindows() then
-            Path.Combine(directory, $"{baseName}.exe")
-        else
-            Path.Combine(directory, baseName)
+    let private executablePath = HostSupport.executablePath
 
     let private functionName moduleName bindingName =
         $"kappa_module_{sanitizeIdentifier moduleName}_{sanitizeIdentifier bindingName}"

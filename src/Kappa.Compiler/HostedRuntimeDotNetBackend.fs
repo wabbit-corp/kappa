@@ -1815,7 +1815,7 @@ internal static class KappaRunner
         if workspace.HasErrors then
             Result.Error $"Cannot emit a runnable backend artifact for a workspace with diagnostics:{Environment.NewLine}{aggregateDiagnostics workspace.Diagnostics}"
         else
-            let verificationDiagnostics = Compilation.verifyCheckpoint workspace "KRuntimeIR"
+            let verificationDiagnostics = CheckpointVerification.verifyCheckpoint workspace "KRuntimeIR"
 
             if not (List.isEmpty verificationDiagnostics) then
                 Result.Error $"Cannot emit malformed KRuntimeIR:{Environment.NewLine}{aggregateDiagnostics verificationDiagnostics}"

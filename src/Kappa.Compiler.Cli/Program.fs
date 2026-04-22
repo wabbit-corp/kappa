@@ -1,8 +1,6 @@
 open System
-open System.Diagnostics
 open System.IO
 open System.Reflection
-open System.Runtime.InteropServices
 open System.Runtime.Loader
 open Kappa.Compiler
 
@@ -252,58 +250,11 @@ let private printVerification checkpoint diagnostics =
     else
         diagnostics |> List.iter printDiagnostic
 
-type private ProcessResult =
-    { ExitCode: int
-      StandardOutput: string
-      StandardError: string }
+let private runProcess = HostSupport.runProcess
+let private currentRid = HostSupport.currentRid
+let private executablePath = HostSupport.executablePath
 
-let private runProcess (workingDirectory: string) (fileName: string) (arguments: string) =
-    let startInfo = ProcessStartInfo()
-    startInfo.WorkingDirectory <- workingDirectory
-    startInfo.FileName <- fileName
-    startInfo.Arguments <- arguments
-    startInfo.UseShellExecute <- false
-    startInfo.RedirectStandardOutput <- true
-    startInfo.RedirectStandardError <- true
-
-    use child = new Process()
-    child.StartInfo <- startInfo
-
-    if not (child.Start()) then
-        invalidOp $"Failed to start process '{fileName}'."
-
-    let standardOutput = child.StandardOutput.ReadToEnd()
-    let standardError = child.StandardError.ReadToEnd()
-    child.WaitForExit()
-
-    { ExitCode = child.ExitCode
-      StandardOutput = standardOutput.Replace("\r\n", "\n")
-      StandardError = standardError.Replace("\r\n", "\n") }
-
-let private currentRid () =
-    let suffix =
-        match RuntimeInformation.ProcessArchitecture with
-        | Architecture.X64 -> "x64"
-        | Architecture.Arm64 -> "arm64"
-        | Architecture.X86 -> "x86"
-        | architecture -> invalidOp $"Unsupported architecture '{architecture}'."
-
-    if RuntimeInformation.IsOSPlatform(OSPlatform.Windows) then
-        $"win-{suffix}"
-    elif RuntimeInformation.IsOSPlatform(OSPlatform.Linux) then
-        $"linux-{suffix}"
-    elif RuntimeInformation.IsOSPlatform(OSPlatform.OSX) then
-        $"osx-{suffix}"
-    else
-        invalidOp "Unsupported operating system."
-
-let private executablePath (directory: string) (baseName: string) =
-    if RuntimeInformation.IsOSPlatform(OSPlatform.Windows) then
-        Path.Combine(directory, $"{baseName}.exe")
-    else
-        Path.Combine(directory, baseName)
-
-let private printProcessFailure (heading: string) (result: ProcessResult) =
+let private printProcessFailure (heading: string) (result: HostSupport.ProcessResult) =
     if not (String.IsNullOrWhiteSpace(result.StandardOutput)) then
         Console.Error.WriteLine(result.StandardOutput.TrimEnd())
 

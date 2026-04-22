@@ -964,32 +964,8 @@ module Compilation =
 
             Result.Error $"Cannot emit CLR target manifest from malformed KBackendIR:{Environment.NewLine}{diagnosticText}"
         else
-            let sanitizeIdentifier (value: string) =
-                let text =
-                    value
-                    |> Seq.collect (fun ch ->
-                        if Char.IsLetterOrDigit(ch) || ch = '_' then
-                            Seq.singleton(string ch)
-                        else
-                            Seq.singleton($"_u{int ch:x4}"))
-                    |> String.concat ""
-
-                if String.IsNullOrWhiteSpace(text) then
-                    "_"
-                elif Char.IsLetter(text[0]) || text[0] = '_' then
-                    text
-                else
-                    "_" + text
-
-            let emittedModuleTypeName (moduleName: string) =
-                let segments =
-                    moduleName.Split('.', StringSplitOptions.RemoveEmptyEntries ||| StringSplitOptions.TrimEntries)
-                    |> Array.map sanitizeIdentifier
-
-                "Kappa.Generated." + String.concat "." segments
-
             let clrSymbol moduleName functionName =
-                $"{emittedModuleTypeName moduleName}.{sanitizeIdentifier functionName}"
+                $"{IlDotNetBackend.emittedModuleTypeName moduleName}.{IlDotNetBackend.emittedMethodName functionName}"
 
             let functions =
                 workspace.KBackendIR

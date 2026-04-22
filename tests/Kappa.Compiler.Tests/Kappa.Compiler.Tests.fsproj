@@ -13,6 +13,7 @@
     <Compile Include="HarnessFixtures.fs" />
     <Compile Include="HarnessFixtureDiscovery.fs" />
     <Compile Include="HarnessFixturesFacade.fs" />
+    <Compile Include="HarnessExecution.fs" />
     <Compile Include="Harness.fs" />
     <Compile Include="ResourceModelTests.fs" />
     <Compile Include="FixtureTests.fs" />

@@ -3039,7 +3039,7 @@ module IlDotNetBackend =
         if workspace.HasErrors then
             Result.Error $"Cannot emit a CLR assembly for a workspace with diagnostics:{Environment.NewLine}{aggregateDiagnostics workspace.Diagnostics}"
         else
-            let verificationDiagnostics = Compilation.verifyCheckpoint workspace "KRuntimeIR"
+            let verificationDiagnostics = CheckpointVerification.verifyCheckpoint workspace "KRuntimeIR"
 
             if not (List.isEmpty verificationDiagnostics) then
                 Result.Error $"Cannot emit malformed KRuntimeIR:{Environment.NewLine}{aggregateDiagnostics verificationDiagnostics}"

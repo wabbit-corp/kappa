@@ -223,7 +223,7 @@ module internal ClrDotNetBackend =
         if workspace.HasErrors then
             Result.Error $"Cannot emit a CLR assembly for a workspace with diagnostics:{Environment.NewLine}{String.concat Environment.NewLine (workspace.Diagnostics |> List.map (fun diagnostic -> diagnostic.Message))}"
         else
-            let verificationDiagnostics = Compilation.verifyCheckpoint workspace "KBackendIR"
+            let verificationDiagnostics = CheckpointVerification.verifyCheckpoint workspace "KBackendIR"
 
             if not (List.isEmpty verificationDiagnostics) then
                 Result.Error $"Cannot emit malformed KBackendIR:{Environment.NewLine}{String.concat Environment.NewLine (verificationDiagnostics |> List.map (fun diagnostic -> diagnostic.Message))}"

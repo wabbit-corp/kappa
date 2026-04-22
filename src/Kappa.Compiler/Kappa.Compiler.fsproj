@@ -29,18 +29,19 @@
     <Compile Include="ResourceChecking.fs" />
     <Compile Include="BackendTypes.fs" />
     <Compile Include="CheckpointVerification.fs" />
-    <Compile Include="ZigCcBackend.fs" />
+    <Compile Include="HostSupport.fs" />
     <Compile Include="SurfaceElaboration.fs" />
     <Compile Include="IrText.fs" />
     <Compile Include="KRuntimeLowering.fs" />
     <Compile Include="KBackendLowering.fs" />
+    <Compile Include="HostedRuntimeDotNetBackend.fs" />
+    <Compile Include="IlDotNetBackend.fs" />
+    <Compile Include="ClrDotNetBackend.fs" />
+    <Compile Include="ZigCcBackend.fs" />
     <Compile Include="CompilationCommon.fs" />
     <Compile Include="CompilationFrontend.fs" />
     <Compile Include="CompilationMetadata.fs" />
     <Compile Include="Compilation.fs" />
-    <Compile Include="HostedRuntimeDotNetBackend.fs" />
-    <Compile Include="IlDotNetBackend.fs" />
-    <Compile Include="ClrDotNetBackend.fs" />
     <Compile Include="Backend.fs" />
     <Compile Include="Interpreter.fs" />
   </ItemGroup>
