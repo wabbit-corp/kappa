@@ -5463,6 +5463,29 @@ Rules:
   chain is terminated by an unconditionally irrefutable final case, such as `_` or another total pattern, that consumes
   the final `Miss` residue.
 
+#### 7.7.3A `Match` as a finite local control protocol
+
+`Match a r` is the source-level semantic representation of a two-arm finite local control protocol.
+
+Interpretation:
+
+* `Hit a` is the success arm.
+* `Miss r` is the residue / fallthrough arm.
+
+Rules:
+
+* The explicit `Match` data type and the threading rules of §7.7.3 remain the normative source semantics.
+* An implementation MAY lower a computation of type `Match a r`, together with its immediately surrounding case
+  analysis or threaded active-pattern chain, to an internal two-arm multi-return protocol, join-point graph, or other
+  observationally equivalent backend form.
+* Such a lowering is permitted only when it preserves:
+  * single evaluation of the scrutinee and of any explicit active-pattern arguments;
+  * left-to-right case order;
+  * exact residue threading on failure; and
+  * the ownership behavior of the explicit `Hit` and `Miss` constructors.
+* This lowering is internal only. It does not introduce first-class return points, does not change source typing, and is
+  not part of Kappa's portable ABI.
+
 #### 7.7.4 Total active patterns (ADTs and variants)
 
 If an active pattern returns a `data` type or a variant type, it is a total active pattern. Its subpattern is matched
@@ -6868,6 +6891,31 @@ ScopeStack(m) = [ScopeFrame(m)]     -- innermost frame first
 Each active `do`-scope contributes one frame. A labeled `do` block contributes a frame whose `scopeLabel` is the
 resolved surface label. An unlabeled `do` block contributes a fresh implicit scope label that is not nameable by surface
 syntax but still distinguishes that frame for the unwinding model.
+
+#### 8.7.1A `Completion` as a finite local control protocol
+
+`Completion(RetCtx, A)` is the source-level semantic representation of the finite abrupt-control alternatives in scope
+at the current elaboration point.
+
+Interpretation:
+
+* `Normal A` is the ordinary fallthrough arm.
+* `Break L` and `Continue L` are loop-target arms.
+* Each `Return[Lk] Rk` is a distinct return-target arm.
+
+Rules:
+
+* The explicit `Completion` family and the propagation / consumption rules of this section remain the normative source
+  semantics.
+* An implementation MAY lower a completion-carrying region to an internal multi-return protocol or equivalent join-point
+  graph whose arms are in fixed bijection with these constructors.
+* Such a lowering is permitted only when it preserves:
+  * the target-resolution rules of §§8.4-8.5;
+  * the unwinding and exit-action rules of §8.7.2;
+  * single evaluation of the completed computation; and
+  * the requirement that non-matching `Break`, `Continue`, and `Return[...]` alternatives propagate outward unchanged.
+* This lowering is internal only. It does not introduce source-visible return-point syntax, does not make continuations
+  first-class, and does not alter the type-theoretic role of `Completion`.
 
 ### 8.7.2 Dynamic `do`-scope exit and exit actions
 
@@ -11074,6 +11122,9 @@ the translated leaves above.
 Projection calls therefore add no new runtime reference type and no new KCore place primitive; they are a reusable
 surface abstraction over ordinary control flow plus the existing stable-place machinery.
 
+An implementation MAY further lower this ordinary branching structure to an internal multi-return or join-point form as
+specified in §17.4.7A.
+
 #### 17.3.1.4 KCore completion and do-scope kernel
 
 A conforming implementation MUST behave as if KCore contains an explicit completion-and-scope kernel for the control
@@ -11313,6 +11364,7 @@ Introduction kinds are implementation-defined, but MUST distinguish at least:
 * projection lowering;
 * branch-refinement lowering;
 * completion-kernel lowering;
+* multi-return / join-point lowering;
 * effect-operation lowering;
 * handler-kernel lowering;
 * deep-handler driver insertion;
@@ -11536,6 +11588,7 @@ At or before publication of KBackendIR, the implementation MUST validate that:
 * every call, closure, and entrypoint has a fixed runtime arity and runtime calling convention;
 * handler, resumption, cleanup, and error-propagation structures satisfy the runtime obligations of Chapters 8, 9, and
   14;
+* any internal multi-return or join-point lowering of `Completion`, `Match`, or projection control satisfies §17.4.7A;
 * data, variant, and record layout choices are fixed consistently with §§14.5-14.6;
 * retained dictionaries and backend intrinsics have concrete runtime representations, or else compilation is rejected
   before target lowering;
@@ -11553,6 +11606,8 @@ At minimum it MUST represent:
 * functions and entrypoints;
 * basic blocks, control regions, or an observationally equivalent control graph;
 * control-flow edges or equivalent successor structure;
+* if internal multi-return or join-point lowering is used, the corresponding arm graph together with its mapping to
+  source-level `Completion` / `Match` alternatives;
 * values and def-use or binding-use relationships;
 * handler frames, resumption objects, cleanup scopes, and error-propagation structure;
 * selected runtime representation classes and calling-convention facts relevant to debugging; and
@@ -11620,8 +11675,44 @@ At KBackendIR boundaries:
 * owned, borrowed, and unrestricted source binders do not induce distinct runtime calling conventions by themselves once
   the program has passed the quantity and region checks, unless a backend explicitly exposes a backend-specific ABI for
   them.
+* internal multi-return / join-point arms, when used, are backend-local control channels only and are not part of the
+  portable cross-module or foreign calling convention;
 
 This section does not change source typing. It specifies only the backend-neutral runtime view after elaboration.
+
+### 17.4.7A Internal multi-return control-protocol lowering
+
+A conforming implementation MAY lower a finite local control protocol to an internal multi-return calling convention or
+to an observationally equivalent join-point representation.
+
+Eligible protocols include at least:
+
+* completion-carrying control over `Completion(RetCtx, A)`;
+* residue-threading control over `Match a r`;
+* projection-lowering control whose leaves terminate in `ReadPlace`, `MovePlace`, `FillPlace`, or `WithBorrowPlace`;
+* implementation-generated boolean or constructor-refinement join points.
+
+Rules:
+
+* Each arm of the lowered protocol is internal and has a fixed correspondence to one source-level alternative.
+* The payload carried by an arm, if any, is exactly the payload of its corresponding source-level alternative.
+* The lowering MUST preserve the typing, evaluation order, and ownership behavior of the source-level form from which it
+  was derived.
+* The lowering MUST NOT expose first-class return points, first-class join continuations, or backend-local arm
+  identities at source level.
+* The lowering MUST NOT change the observability of `defer`, `using`, handler unwinding, resumption reuse, or error
+  propagation.
+* If a lowered call forwards all still-live arms unchanged, the implementation MAY realize it as a tail transfer.
+* A lowered call that forwards only a strict subset of still-live arms unchanged is a super-tail transfer. An
+  implementation MAY realize such a transfer by dropping discarded dynamic control state before transfer, but only when
+  every discarded arm is unreachable or every unwind obligation associated with it has already been discharged.
+* A lowered call that both forwards one or more still-live arms and installs new local arm handlers is a semi-tail
+  transfer.
+* If a lowered protocol is used inside a multi-shot resumption, each reuse MUST still satisfy §§8.1.3.1 and 14.8:
+  control state inside the captured segment is logically cloned per resumption application, while general heap state
+  remains shared unless the program copies it explicitly.
+
+These terms name implementation strategies only. They do not add new surface syntax or new source typing rules.
 
 ### 17.4.8 Incremental reuse across lowering stages
 
