@@ -94,10 +94,11 @@ module Compilation =
         let diagnostics =
             frontendDiagnostics @ resourceCheckResult.Diagnostics
 
+        let frontendSnapshots =
+            CompilationSnapshots.buildFrontendSnapshots resourceCheckResult.OwnershipFactsByFile diagnostics documents
+
         let kFrontIR =
-            documents
-            |> List.map (buildKFrontIRModule resourceCheckResult.OwnershipFactsByFile)
-            |> List.sortBy (fun document -> document.FilePath)
+            frontendSnapshots[CORE_LOWERING].Modules
 
         let kCore =
             SurfaceElaboration.lowerKCoreModules normalizedBackendProfile kFrontIR
@@ -116,7 +117,7 @@ module Compilation =
             ClrAssemblyLowering.lowerModules kRuntimeIR kBackendIR
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
-        let workspace =
+        let workspaceWithoutTrace =
             { SourceRoot = options.SourceRoot
               PackageMode = options.PackageMode
               BackendProfile = normalizedBackendProfile
@@ -126,6 +127,7 @@ module Compilation =
               AnalysisSessionIdentity = analysisSessionIdentity
               ElaborationAvailableIntrinsicTerms = elaborationAvailableIntrinsicTerms
               Documents = documents
+              FrontendSnapshots = frontendSnapshots
               KFrontIR = kFrontIR
               KCore = kCore
               KRuntimeIR = kRuntimeIR
@@ -134,8 +136,32 @@ module Compilation =
               Diagnostics = diagnostics
               PipelineTrace = [] }
 
-        { workspace with
-            PipelineTrace = CompilationTrace.buildPipelineTrace workspace }
+        let checkerSnapshot = frontendSnapshots[CHECKERS]
+
+        let frontendVerificationWorkspace =
+            { workspaceWithoutTrace with
+                KFrontIR = checkerSnapshot.Modules
+                Diagnostics = checkerSnapshot.Diagnostics }
+
+        let verification: CompilationTrace.VerificationSummary =
+            { Frontend =
+                CheckpointVerification.verifyCheckpoint frontendVerificationWorkspace (KFrontIRPhase.checkpointName CHECKERS)
+                |> List.isEmpty
+              KCore = CheckpointVerification.verifyCheckpoint workspaceWithoutTrace "KCore" |> List.isEmpty
+              KRuntimeIR = CheckpointVerification.verifyCheckpoint workspaceWithoutTrace "KRuntimeIR" |> List.isEmpty
+              KBackendIR = CheckpointVerification.verifyCheckpoint workspaceWithoutTrace "KBackendIR" |> List.isEmpty
+              Targets =
+                CompilationCheckpoints.targetCheckpointNames workspaceWithoutTrace
+                |> List.map (fun checkpoint ->
+                    checkpoint, (CompilationCheckpoints.verifyTargetCheckpoint workspaceWithoutTrace checkpoint |> List.isEmpty))
+                |> Map.ofList }
+
+        { workspaceWithoutTrace with
+            PipelineTrace =
+                CompilationTrace.buildPipelineTrace
+                    kFrontIR
+                    (CompilationCheckpoints.targetCheckpointNames workspaceWithoutTrace)
+                    verification }
 
     let checkpointContracts (workspace: WorkspaceCompilation) =
         CompilationCheckpoints.contractsForWorkspace workspace

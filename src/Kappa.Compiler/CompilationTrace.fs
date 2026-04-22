@@ -1,6 +1,13 @@
 namespace Kappa.Compiler
 
 module internal CompilationTrace =
+    type VerificationSummary =
+        { Frontend: bool
+          KCore: bool
+          KRuntimeIR: bool
+          KBackendIR: bool
+          Targets: Map<string, bool> }
+
     let private traceStep eventName subject stepName inputCheckpoint outputCheckpoint changedRepresentation verificationAttempted verificationSucceeded =
         { Event = eventName
           Subject = subject
@@ -11,16 +18,12 @@ module internal CompilationTrace =
           VerificationAttempted = verificationAttempted
           VerificationSucceeded = verificationSucceeded }
 
-    let buildPipelineTrace (workspace: WorkspaceCompilation) =
-        let documents =
-            workspace.KFrontIR
-            |> List.sortBy (fun document -> document.FilePath)
-
+    let buildPipelineTrace
+        (documents: KFrontIRModule list)
+        (targetCheckpoints: string list)
+        (verification: VerificationSummary)
+        =
         let frontendCheckpoint = KFrontIRPhase.checkpointName CHECKERS
-        let frontendVerified = CheckpointVerification.verifyCheckpoint workspace frontendCheckpoint |> List.isEmpty
-        let coreVerified = CheckpointVerification.verifyCheckpoint workspace "KCore" |> List.isEmpty
-        let runtimeVerified = CheckpointVerification.verifyCheckpoint workspace "KRuntimeIR" |> List.isEmpty
-        let backendVerified = CheckpointVerification.verifyCheckpoint workspace "KBackendIR" |> List.isEmpty
 
         let phaseTransitions =
             KFrontIRPhase.all
@@ -28,6 +31,7 @@ module internal CompilationTrace =
 
         let documentSteps =
             documents
+            |> List.sortBy (fun document -> document.FilePath)
             |> List.collect (fun document ->
                 let label =
                     document.ModuleIdentity
@@ -69,7 +73,7 @@ module internal CompilationTrace =
                             false
                             None)
 
-                let verifySteps =
+                let verifyAndLowerSteps =
                     [
                         traceStep
                             PipelineTraceEvent.Verify
@@ -79,7 +83,7 @@ module internal CompilationTrace =
                             frontendCheckpoint
                             false
                             true
-                            (Some frontendVerified)
+                            (Some verification.Frontend)
                         traceStep
                             PipelineTraceEvent.LowerKCore
                             PipelineTraceSubject.Module
@@ -97,7 +101,7 @@ module internal CompilationTrace =
                             "KCore"
                             false
                             true
-                            (Some coreVerified)
+                            (Some verification.KCore)
                         traceStep
                             PipelineTraceEvent.LowerKRuntimeIR
                             PipelineTraceSubject.KCoreUnit
@@ -115,7 +119,7 @@ module internal CompilationTrace =
                             "KRuntimeIR"
                             false
                             true
-                            (Some runtimeVerified)
+                            (Some verification.KRuntimeIR)
                         traceStep
                             PipelineTraceEvent.LowerKBackendIR
                             PipelineTraceSubject.KRuntimeIRUnit
@@ -133,17 +137,18 @@ module internal CompilationTrace =
                             "KBackendIR"
                             false
                             true
-                            (Some backendVerified)
+                            (Some verification.KBackendIR)
                     ]
 
-                parseSteps @ phaseSteps @ verifySteps)
+                parseSteps @ phaseSteps @ verifyAndLowerSteps)
 
         let targetSteps =
-            CompilationCheckpoints.targetCheckpointNames workspace
+            targetCheckpoints
             |> List.collect (fun checkpoint ->
-                let targetVerified =
-                    CompilationCheckpoints.verifyTargetCheckpoint workspace checkpoint
-                    |> List.isEmpty
+                let verified =
+                    verification.Targets
+                    |> Map.tryFind checkpoint
+                    |> Option.defaultValue false
 
                 [
                     traceStep
@@ -163,7 +168,7 @@ module internal CompilationTrace =
                         checkpoint
                         false
                         true
-                        (Some targetVerified)
+                        (Some verified)
                 ])
 
         documentSteps @ targetSteps

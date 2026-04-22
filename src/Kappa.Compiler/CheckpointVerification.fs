@@ -44,7 +44,19 @@ module CheckpointVerification =
                     yield makeDiagnostic $"Checkpoint 'surface-source' requires non-empty line tables for '{document.Source.FilePath}'."
         ]
 
-    let private verifyFrontendCheckpoint (workspace: WorkspaceCompilation) checkpoint =
+    let private frontendWorkspaceForPhase (workspace: WorkspaceCompilation) phase =
+        match workspace.FrontendSnapshots |> Map.tryFind phase with
+        | Some snapshot ->
+            { workspace with
+                KFrontIR = snapshot.Modules
+                Diagnostics = snapshot.Diagnostics }
+        | None ->
+            workspace
+
+    let private verifyFrontendCheckpoint (workspace: WorkspaceCompilation) checkpoint phase =
+        let expectedResolvedPhases =
+            KFrontIRPhase.phasesThrough phase |> Set.ofList
+
         [
             let duplicatePaths =
                 workspace.KFrontIR
@@ -59,6 +71,31 @@ module CheckpointVerification =
                 | Some token when token.Kind = EndOfFile -> ()
                 | _ ->
                     yield makeDiagnostic $"Checkpoint '{checkpoint}' requires an EOF token for '{document.FilePath}'."
+
+                if document.ResolvedPhases <> expectedResolvedPhases then
+                    let actual =
+                        document.ResolvedPhases
+                        |> Set.toList
+                        |> List.map KFrontIRPhase.phaseName
+                        |> String.concat ", "
+
+                    let expected =
+                        expectedResolvedPhases
+                        |> Set.toList
+                        |> List.map KFrontIRPhase.phaseName
+                        |> String.concat ", "
+
+                    yield
+                        makeDiagnostic
+                            $"Checkpoint '{checkpoint}' requires '{document.FilePath}' to expose resolved phases [{expected}], but found [{actual}]."
+
+                if
+                    KFrontIRPhase.ordinal phase < KFrontIRPhase.ordinal BODY_RESOLVE
+                    && document.Ownership.IsSome
+                then
+                    yield
+                        makeDiagnostic
+                            $"Checkpoint '{checkpoint}' must not expose BODY_RESOLVE ownership facts for '{document.FilePath}' before BODY_RESOLVE."
         ]
 
     let private verifyKCoreCheckpoint (workspace: WorkspaceCompilation) =
@@ -69,7 +106,8 @@ module CheckpointVerification =
             |> List.filter (fun (_, count) -> count > 1)
 
         [
-            yield! verifyFrontendCheckpoint workspace "KCore"
+            let frontendWorkspace = frontendWorkspaceForPhase workspace CORE_LOWERING
+            yield! verifyFrontendCheckpoint frontendWorkspace "KCore" CORE_LOWERING
 
             for moduleName, _ in duplicateModules do
                 yield makeDiagnostic $"Checkpoint 'KCore' requires unique module identities, but '{moduleName}' appeared more than once."
@@ -566,8 +604,9 @@ module CheckpointVerification =
             verifyKBackendIRCheckpoint workspace
         | _ ->
             match tryParseCheckpoint checkpoint with
-            | Some(Some _) ->
-                verifyFrontendCheckpoint workspace checkpoint
+            | Some(Some phase) ->
+                let snapshotWorkspace = frontendWorkspaceForPhase workspace phase
+                verifyFrontendCheckpoint snapshotWorkspace checkpoint phase
             | Some None ->
                 verifySurfaceSource workspace
             | None ->

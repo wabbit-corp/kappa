@@ -402,6 +402,108 @@ let ``stage dumps serialize checkpoints in json and sexpr`` () =
     Assert.Contains("(function (name \"answer\")", backendSexpr)
 
 [<Fact>]
+let ``frontend checkpoints dump phase specific snapshots`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-frontend-snapshot-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 40 + 2"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let rawJson =
+        match Compilation.dumpStage workspace "KFrontIR.RAW" StageDumpFormat.Json with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    use rawDocument = JsonDocument.Parse(rawJson)
+
+    let rawMainDocument =
+        rawDocument.RootElement.GetProperty("documents").EnumerateArray()
+        |> Seq.find (fun item -> item.GetProperty("moduleIdentity").GetString() = "main")
+
+    let rawResolvedPhases =
+        rawMainDocument.GetProperty("resolvedPhases").EnumerateArray()
+        |> Seq.map (fun item -> item.GetString())
+        |> Seq.filter (isNull >> not)
+        |> Seq.toList
+
+    Assert.Equal<string list>([ "RAW" ], rawResolvedPhases)
+    Assert.Equal(0, rawMainDocument.GetProperty("imports").GetArrayLength())
+    Assert.Equal(JsonValueKind.Null, rawMainDocument.GetProperty("ownership").ValueKind)
+
+    let bodyResolveJson =
+        match Compilation.dumpStage workspace "KFrontIR.BODY_RESOLVE" StageDumpFormat.Json with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    use bodyResolveDocument = JsonDocument.Parse(bodyResolveJson)
+
+    let bodyResolveMainDocument =
+        bodyResolveDocument.RootElement.GetProperty("documents").EnumerateArray()
+        |> Seq.find (fun item -> item.GetProperty("moduleIdentity").GetString() = "main")
+
+    let bodyResolvePhases =
+        bodyResolveMainDocument.GetProperty("resolvedPhases").EnumerateArray()
+        |> Seq.map (fun item -> item.GetString())
+        |> Seq.filter (isNull >> not)
+        |> Seq.toList
+
+    Assert.Contains("BODY_RESOLVE", bodyResolvePhases)
+    Assert.DoesNotContain("CHECKERS", bodyResolvePhases)
+    Assert.Contains(
+        bodyResolveMainDocument.GetProperty("imports").EnumerateArray(),
+        fun item -> item.GetString() = "std.prelude.*"
+    )
+    Assert.NotEqual(JsonValueKind.Null, bodyResolveMainDocument.GetProperty("ownership").ValueKind)
+
+[<Fact>]
+let ``KBackendIR dumps expose graph ids provenance and dump format metadata`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-backend-graph-dump-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 20 + 22"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let backendJson =
+        match Compilation.dumpStage workspace "KBackendIR" StageDumpFormat.Json with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    use backendDocument = JsonDocument.Parse(backendJson)
+
+    Assert.Equal("json", backendDocument.RootElement.GetProperty("dumpFormat").GetString())
+
+    let backendModule =
+        backendDocument.RootElement.GetProperty("modules").EnumerateArray()
+        |> Seq.find (fun item -> item.GetProperty("name").GetString() = "main")
+
+    let answerFunction =
+        backendModule.GetProperty("functions").EnumerateArray()
+        |> Seq.find (fun item -> item.GetProperty("name").GetString() = "answer")
+
+    Assert.False(String.IsNullOrWhiteSpace(answerFunction.GetProperty("id").GetString()))
+
+    let provenance = answerFunction.GetProperty("provenance")
+    Assert.Equal("main", provenance.GetProperty("moduleName").GetString())
+    Assert.Equal("answer", provenance.GetProperty("declarationName").GetString())
+
+    let bodyGraph = answerFunction.GetProperty("bodyGraph")
+    Assert.False(String.IsNullOrWhiteSpace(bodyGraph.GetProperty("rootNodeId").GetString()))
+    Assert.True(bodyGraph.GetProperty("nodes").GetArrayLength() >= 3)
+    Assert.True(bodyGraph.GetProperty("edges").GetArrayLength() >= 2)
+
+[<Fact>]
 let ``BODY_RESOLVE dump exposes M3 ownership facts`` () =
     let workspace =
         compileInMemoryWorkspace

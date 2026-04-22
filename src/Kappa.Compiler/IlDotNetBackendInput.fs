@@ -1,0 +1,809 @@
+namespace Kappa.Compiler
+
+open System
+open System.Collections.Generic
+open System.IO
+open System.Reflection
+open System.Reflection.Emit
+open System.Runtime.CompilerServices
+
+module internal IlDotNetBackendInput =
+    open IlDotNetBackendModel
+
+    let internal significantTokens (tokens: Token list) =
+        tokens
+        |> List.filter (fun token ->
+            match token.Kind with
+            | Newline
+            | Indent
+            | Dedent
+            | EndOfFile -> false
+            | _ -> true)
+
+    let internal splitTopLevelArrows (tokens: Token list) =
+        let rec loop depth current remaining segments =
+            match remaining with
+            | [] ->
+                List.rev ((List.rev current) :: segments)
+            | token :: tail when token.Kind = LeftParen ->
+                loop (depth + 1) (token :: current) tail segments
+            | token :: tail when token.Kind = RightParen ->
+                loop (max 0 (depth - 1)) (token :: current) tail segments
+            | token :: tail when token.Kind = Arrow && depth = 0 ->
+                loop depth [] tail ((List.rev current) :: segments)
+            | token :: tail ->
+                loop depth (token :: current) tail segments
+
+        loop 0 [] tokens []
+
+    let internal collectParenthesizedTokens (tokens: Token list) =
+        let rec loop depth current remaining =
+            match remaining with
+            | [] ->
+                Result.Error "Expected ')' to close the type."
+            | token :: tail when token.Kind = LeftParen ->
+                loop (depth + 1) (token :: current) tail
+            | token :: tail when token.Kind = RightParen && depth = 1 ->
+                Result.Ok(List.rev current, tail)
+            | token :: tail when token.Kind = RightParen ->
+                loop (depth - 1) (token :: current) tail
+            | token :: tail ->
+                loop depth (token :: current) tail
+
+        match tokens with
+        | head :: tail when head.Kind = LeftParen ->
+            loop 1 [] tail
+        | _ ->
+            Result.Error "Expected '(' to start a parenthesized type."
+
+    let internal typeTextTokens (text: string) =
+        let rec loop index tokens =
+            if index >= text.Length then
+                List.rev tokens
+            else
+                match text[index] with
+                | ch when Char.IsWhiteSpace(ch) ->
+                    loop (index + 1) tokens
+                | '(' ->
+                    let token =
+                        { Kind = LeftParen
+                          Text = "("
+                          Span = TextSpan.FromBounds(index, index + 1) }
+
+                    loop (index + 1) (token :: tokens)
+                | ')' ->
+                    let token =
+                        { Kind = RightParen
+                          Text = ")"
+                          Span = TextSpan.FromBounds(index, index + 1) }
+
+                    loop (index + 1) (token :: tokens)
+                | '.' ->
+                    let token =
+                        { Kind = Dot
+                          Text = "."
+                          Span = TextSpan.FromBounds(index, index + 1) }
+
+                    loop (index + 1) (token :: tokens)
+                | '-' when index + 1 < text.Length && text[index + 1] = '>' ->
+                    let token =
+                        { Kind = Arrow
+                          Text = "->"
+                          Span = TextSpan.FromBounds(index, index + 2) }
+
+                    loop (index + 2) (token :: tokens)
+                | ch when SyntaxFacts.isIdentifierStart ch ->
+                    let mutable endIndex = index + 1
+
+                    while endIndex < text.Length && SyntaxFacts.isIdentifierPart text[endIndex] do
+                        endIndex <- endIndex + 1
+
+                    let token =
+                        { Kind = Identifier
+                          Text = text.Substring(index, endIndex - index)
+                          Span = TextSpan.FromBounds(index, endIndex) }
+
+                    loop endIndex (token :: tokens)
+                | ch ->
+                    let token =
+                        { Kind = BadToken
+                          Text = string ch
+                          Span = TextSpan.FromBounds(index, index + 1) }
+
+                    loop (index + 1) (token :: tokens)
+
+        loop 0 []
+
+    let internal tryParsePrimitiveTypeName typeName =
+        match typeName with
+        | "Int" -> Some(IlPrimitive IlInt64)
+        | "Float" -> Some(IlPrimitive IlFloat64)
+        | "Bool" -> Some(IlPrimitive IlBool)
+        | "String" -> Some(IlPrimitive IlString)
+        | "Char" -> Some(IlPrimitive IlChar)
+        | _ -> None
+
+    let internal itemImportsTypeName (item: ImportItem) =
+        item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Type
+
+    let internal itemImportsTermName (item: ImportItem) =
+        item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Term
+
+    let internal itemImportsConstructorName (item: ImportItem) =
+        item.Namespace = Some ImportNamespace.Constructor
+
+    let internal selectionImportsTypeName selection name =
+        match selection with
+        | QualifiedOnly ->
+            false
+        | Items items ->
+            items
+            |> List.exists (fun item ->
+                String.Equals(item.Name, name, StringComparison.Ordinal)
+                && itemImportsTypeName item)
+        | All ->
+            true
+        | AllExcept excludedNames ->
+            not (List.contains name excludedNames)
+
+    let internal selectionImportsTermName selection name =
+        match selection with
+        | QualifiedOnly ->
+            false
+        | Items items ->
+            items
+            |> List.exists (fun item ->
+                String.Equals(item.Name, name, StringComparison.Ordinal)
+                && itemImportsTermName item)
+        | All ->
+            true
+        | AllExcept excludedNames ->
+            not (List.contains name excludedNames)
+
+    let internal selectionImportsConstructorName selection name =
+        match selection with
+        | QualifiedOnly ->
+            false
+        | Items items ->
+            items
+            |> List.exists (fun item ->
+                String.Equals(item.Name, name, StringComparison.Ordinal)
+                && itemImportsConstructorName item)
+        | All
+        | AllExcept _ ->
+            false
+
+    let internal buildRawDataTypes (modules: ClrAssemblyModule list) =
+        modules
+        |> List.map (fun moduleDump ->
+            let dataTypes =
+                moduleDump.DataTypes
+                |> List.map (fun dataType ->
+                    let constructors =
+                        dataType.Constructors
+                        |> List.map (fun constructor ->
+                            { Name = constructor.Name
+                              FieldTypeTexts = constructor.FieldTypeTexts
+                              Arity = constructor.Arity })
+
+                    let rawDataType: RawDataTypeInfo =
+                        { ModuleName = moduleDump.Name
+                          Name = dataType.Name
+                          TypeParameters = dataType.TypeParameters
+                          Constructors = constructors
+                          EmittedTypeName = emittedDataTypeName moduleDump.Name dataType.Name }
+
+                    dataType.Name, rawDataType)
+                |> Map.ofList
+
+            moduleDump.Name, dataTypes)
+        |> Map.ofList
+
+    let internal buildRawModuleSkeletons (modules: ClrAssemblyModule list) =
+        let rawDataTypes = buildRawDataTypes modules
+
+        modules
+        |> List.map (fun moduleDump ->
+            let bindings =
+                moduleDump.Bindings
+                |> List.filter (fun binding -> not binding.Intrinsic)
+                |> List.map (fun binding -> binding.Name, binding)
+                |> Map.ofList
+
+            let moduleDataTypes =
+                rawDataTypes |> Map.tryFind moduleDump.Name |> Option.defaultValue Map.empty
+
+            moduleDump.Name,
+            { Name = moduleDump.Name
+              Imports = moduleDump.Imports
+              Exports = moduleDump.Exports |> Set.ofList
+              TypeExports = moduleDataTypes |> Map.keys |> Set.ofSeq
+              DataTypes = Map.empty
+              Constructors = Map.empty
+              Bindings = bindings
+              EmittedTypeName = Some(emittedModuleTypeName moduleDump.Name) })
+        |> Map.ofList,
+        rawDataTypes
+
+    let internal tryResolveQualifiedTypeName (rawModules: Map<string, RawModuleInfo>) segments =
+        if List.length segments < 2 then
+            None
+        else
+            let moduleName =
+                segments |> List.take (segments.Length - 1) |> String.concat "."
+
+            let typeName = List.last segments
+
+            rawModules
+            |> Map.tryFind moduleName
+            |> Option.bind (fun moduleInfo ->
+                if moduleInfo.TypeExports.Contains(typeName) then
+                    Some(moduleName, typeName)
+                else
+                    None)
+
+    let internal tryResolveImportedTypeName (rawModules: Map<string, RawModuleInfo>) currentModule name =
+        let currentModuleInfo = rawModules[currentModule]
+
+        currentModuleInfo.Imports
+        |> List.choose (fun spec ->
+            match spec.Source with
+            | Url _ ->
+                None
+            | Dotted moduleSegments ->
+                let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
+
+                match rawModules |> Map.tryFind importedModuleName with
+                | Some importedModule
+                    when selectionImportsTypeName spec.Selection name
+                         && importedModule.TypeExports.Contains(name) ->
+                    Some(importedModuleName, name)
+                | _ ->
+                    None)
+        |> List.distinct
+        |> function
+            | [ resolved ] -> Some resolved
+            | _ -> None
+
+    let internal tryResolveTypeName (rawModules: Map<string, RawModuleInfo>) currentModule typeParameters segments =
+        match segments with
+        | [] ->
+            Result.Error "Expected a type name."
+        | [ name ] ->
+            match tryParsePrimitiveTypeName name with
+            | Some primitiveType ->
+                Result.Ok primitiveType
+            | None when String.Equals(name, "Unit", StringComparison.Ordinal) ->
+                Result.Ok unitIlType
+            | None when String.Equals(name, "Ref", StringComparison.Ordinal) ->
+                Result.Ok(IlNamed("std.prelude", "Ref", []))
+            | None when String.Equals(name, "IO", StringComparison.Ordinal) ->
+                Result.Ok(IlNamed("std.prelude", "IO", []))
+            | None when isDictionaryTypeName name ->
+                Result.Ok(IlNamed("std.prelude", name, []))
+            | None when Set.contains name typeParameters ->
+                Result.Ok(IlTypeParameter name)
+            | None when name.Length > 0 && Char.IsLower(name[0]) ->
+                Result.Ok(IlTypeParameter name)
+            | None ->
+                let currentModuleInfo = rawModules[currentModule]
+
+                match currentModuleInfo.TypeExports.Contains(name), tryResolveImportedTypeName rawModules currentModule name with
+                | true, _ ->
+                    Result.Ok(IlNamed(currentModule, name, []))
+                | false, Some(moduleName, typeName) ->
+                    Result.Ok(IlNamed(moduleName, typeName, []))
+                | false, None ->
+                    Result.Error $"IL backend could not resolve type '{name}'."
+        | _ ->
+            match tryResolveQualifiedTypeName rawModules segments with
+            | Some(moduleName, typeName) ->
+                Result.Ok(IlNamed(moduleName, typeName, []))
+            | None ->
+                let typeName = String.concat "." segments
+                Result.Error $"IL backend could not resolve type '{typeName}'."
+
+    let internal parseType (rawModules: Map<string, RawModuleInfo>) currentModule typeParameters (tokens: Token list) =
+        let significant = significantTokens tokens
+
+        let rec parseQualifiedName remaining segments =
+            match remaining with
+            | dotToken :: nextToken :: tail when dotToken.Kind = Dot && Token.isName nextToken ->
+                parseQualifiedName tail (SyntaxFacts.trimIdentifierQuotes nextToken.Text :: segments)
+            | _ ->
+                List.rev segments, remaining
+
+        let rec parseAtom remaining =
+            match remaining with
+            | [] ->
+                Result.Error "Expected a type.", []
+            | token :: tail when token.Kind = LeftParen ->
+                match collectParenthesizedTokens (token :: tail) with
+                | Result.Ok(innerTokens, rest) ->
+                    match parseApplication innerTokens with
+                    | Result.Ok innerType -> Result.Ok innerType, rest
+                    | Result.Error message -> Result.Error message, rest
+                | Result.Error message ->
+                    Result.Error message, []
+            | token :: tail when Token.isName token ->
+                let segments, rest = parseQualifiedName tail [ SyntaxFacts.trimIdentifierQuotes token.Text ]
+
+                match tryResolveTypeName rawModules currentModule typeParameters segments with
+                | Result.Ok resolvedType -> Result.Ok resolvedType, rest
+                | Result.Error message -> Result.Error message, rest
+            | token :: tail ->
+                Result.Error $"Unexpected token '{token.Text}' in a type.", tail
+
+        and parseApplication tokens =
+            let rec gather remaining parsed =
+                match remaining with
+                | [] ->
+                    Result.Ok(List.rev parsed)
+                | token :: _ when token.Kind = RightParen ->
+                    Result.Ok(List.rev parsed)
+                | token :: _ when token.Kind = Arrow ->
+                    Result.Ok(List.rev parsed)
+                | _ ->
+                    let parsedAtom, rest = parseAtom remaining
+
+                    match parsedAtom with
+                    | Result.Error message ->
+                        Result.Error message
+                    | Result.Ok atom ->
+                        gather rest (atom :: parsed)
+
+            gather tokens []
+            |> Result.bind (function
+                | [] ->
+                    Result.Error "Expected a type."
+                | head :: [] ->
+                    Result.Ok head
+                | IlNamed(moduleName, typeName, existingArguments) :: arguments when List.isEmpty existingArguments ->
+                    Result.Ok(IlNamed(moduleName, typeName, arguments))
+                | head :: _ ->
+                    Result.Error $"Type '{formatIlType head}' cannot take arguments.")
+
+        match parseApplication significant with
+        | Result.Error message ->
+            Result.Error message
+        | Result.Ok parsedType ->
+            Result.Ok parsedType
+
+    let internal parseTypeText (rawModules: Map<string, RawModuleInfo>) currentModule (text: string) =
+        parseType rawModules currentModule Set.empty (typeTextTokens text)
+
+    let internal parseFunctionSignature (rawModules: Map<string, RawModuleInfo>) currentModule (tokens: Token list) =
+        splitTopLevelArrows (significantTokens tokens)
+        |> List.filter (List.isEmpty >> not)
+        |> List.fold
+            (fun stateResult segment ->
+                result {
+                    let! collected = stateResult
+                    let! parsedSegment = parseType rawModules currentModule Set.empty segment
+                    return parsedSegment :: collected
+                })
+            (Result.Ok [])
+        |> Result.bind (fun reversedSegments ->
+            match List.rev reversedSegments with
+            | [] ->
+                Result.Error "Expected at least one type in the signature."
+            | parsedSegments ->
+                let parameterTypes = parsedSegments |> List.take (parsedSegments.Length - 1)
+                let returnType = List.last parsedSegments
+                Result.Ok(parameterTypes, returnType))
+
+    let internal resolveDataTypes (rawModules: Map<string, RawModuleInfo>) (rawDataTypes: Map<string, Map<string, RawDataTypeInfo>>) =
+        rawDataTypes
+        |> Map.toList
+        |> List.fold
+            (fun stateResult (moduleName, moduleDataTypes) ->
+                result {
+                    let! state = stateResult
+
+                    let! resolvedEntries =
+                        moduleDataTypes
+                        |> Map.toList
+                        |> List.fold
+                            (fun entriesResult (_, rawDataType) ->
+                                result {
+                                    let! entries = entriesResult
+                                    let typeParameterScope = rawDataType.TypeParameters |> Set.ofList
+
+                                    let! constructors =
+                                        rawDataType.Constructors
+                                        |> List.fold
+                                            (fun constructorsResult rawConstructor ->
+                                                result {
+                                                    let! constructorsSoFar = constructorsResult
+
+                                                    let! fieldTypes =
+                                                        rawConstructor.FieldTypeTexts
+                                                        |> List.fold
+                                                            (fun fieldResult fieldTypeText ->
+                                                                result {
+                                                                    let! fields = fieldResult
+                                                                    let! fieldType = parseTypeText rawModules moduleName fieldTypeText
+                                                                    return fieldType :: fields
+                                                                })
+                                                            (Result.Ok [])
+
+                                                    let resolvedConstructor =
+                                                        { ModuleName = moduleName
+                                                          Name = rawConstructor.Name
+                                                          TypeName = rawDataType.Name
+                                                          TypeParameters = rawDataType.TypeParameters
+                                                          FieldTypes = List.rev fieldTypes
+                                                          EmittedTypeName = emittedConstructorTypeName moduleName rawConstructor.Name }
+
+                                                    return (rawConstructor.Name, resolvedConstructor) :: constructorsSoFar
+                                                })
+                                            (Result.Ok [])
+
+                                    let resolvedDataType =
+                                        { ModuleName = moduleName
+                                          Name = rawDataType.Name
+                                          TypeParameters = rawDataType.TypeParameters
+                                          Constructors = constructors |> Map.ofList
+                                          EmittedTypeName = rawDataType.EmittedTypeName }: DataTypeInfo
+
+                                    return (rawDataType.Name, resolvedDataType) :: entries
+                                })
+                            (Result.Ok [])
+
+                    return state |> Map.add moduleName (resolvedEntries |> Map.ofList)
+                })
+            (Result.Ok Map.empty)
+
+    let internal attachResolvedDataTypes (rawModules: Map<string, RawModuleInfo>) (resolvedDataTypes: Map<string, Map<string, DataTypeInfo>>) =
+        rawModules
+        |> Map.map (fun moduleName moduleInfo ->
+            let dataTypes = resolvedDataTypes |> Map.tryFind moduleName |> Option.defaultValue Map.empty
+
+            let constructors =
+                dataTypes
+                |> Map.toList
+                |> List.collect (fun (_, dataType) -> dataType.Constructors |> Map.toList)
+                |> Map.ofList
+
+            { moduleInfo with
+                DataTypes = dataTypes
+                Constructors = constructors })
+
+    let rec internal substituteType substitution ilType =
+        match ilType with
+        | IlPrimitive _ ->
+            ilType
+        | IlNamed(moduleName, typeName, arguments) ->
+            IlNamed(moduleName, typeName, arguments |> List.map (substituteType substitution))
+        | IlTypeParameter name ->
+            substitution |> Map.tryFind name |> Option.defaultValue ilType
+
+    let rec internal containsTypeParameters ilType =
+        match ilType with
+        | IlPrimitive _ ->
+            false
+        | IlTypeParameter _ ->
+            true
+        | IlNamed(_, _, arguments) ->
+            arguments |> List.exists containsTypeParameters
+
+    let rec internal collectTypeParameters ilType =
+        match ilType with
+        | IlPrimitive _ ->
+            Set.empty
+        | IlTypeParameter name ->
+            Set.singleton name
+        | IlNamed(_, _, arguments) ->
+            arguments
+            |> List.fold (fun state argumentType -> Set.union state (collectTypeParameters argumentType)) Set.empty
+
+    let internal bindingTypeParameters parameterTypes returnType =
+        (returnType :: parameterTypes)
+        |> List.fold (fun state ilType -> Set.union state (collectTypeParameters ilType)) Set.empty
+        |> Set.toList
+        |> List.sort
+
+    let rec internal unifyTypes substitution template actual =
+        match template, actual with
+        | IlPrimitive left, IlPrimitive right when left = right ->
+            Result.Ok substitution
+        | IlTypeParameter name, _ ->
+            match substitution |> Map.tryFind name with
+            | Some existing when existing = actual ->
+                Result.Ok substitution
+            | Some existing ->
+                Result.Error $"IL backend could not unify {formatIlType existing} with {formatIlType actual}."
+            | None ->
+                Result.Ok(substitution |> Map.add name actual)
+        | IlNamed(leftModule, leftTypeName, leftArguments), IlNamed(rightModule, rightTypeName, rightArguments)
+            when String.Equals(leftModule, rightModule, StringComparison.Ordinal)
+                 && String.Equals(leftTypeName, rightTypeName, StringComparison.Ordinal)
+                 && List.length leftArguments = List.length rightArguments ->
+            List.zip leftArguments rightArguments
+            |> List.fold
+                (fun stateResult (leftArgument, rightArgument) ->
+                    stateResult |> Result.bind (fun state -> unifyTypes state leftArgument rightArgument))
+                (Result.Ok substitution)
+        | _ ->
+            Result.Error $"IL backend could not unify {formatIlType template} with {formatIlType actual}."
+
+    let internal constructorResultType (constructorInfo: ConstructorInfo) =
+        IlNamed(
+            constructorInfo.ModuleName,
+            constructorInfo.TypeName,
+            constructorInfo.TypeParameters |> List.map IlTypeParameter
+        )
+
+    let internal buildDeclaredBindingLookup (modules: ClrAssemblyModule list) =
+        modules
+        |> List.collect (fun moduleDump ->
+            moduleDump.Bindings
+            |> List.map (fun binding ->
+                (moduleDump.Name, binding.Name),
+                ({ ParameterTypes = binding.Parameters |> List.map (fun parameter -> parameter.TypeText)
+                   ReturnType = binding.ReturnTypeText }: DeclaredBindingTexts)))
+        |> Map.ofList
+
+    let internal buildTraitInstances (rawModules: Map<string, RawModuleInfo>) (modules: ClrAssemblyModule list) =
+        modules
+        |> List.fold
+            (fun stateResult moduleDump ->
+                result {
+                    let! instances = stateResult
+
+                    let! discoveredInstances =
+                        moduleDump.TraitInstances
+                        |> List.fold
+                            (fun instancesResult instanceDeclaration ->
+                                result {
+                                    let! collected = instancesResult
+
+                                    let! headTypes =
+                                        instanceDeclaration.HeadTypeTexts
+                                        |> List.fold
+                                            (fun headTypesResult headTypeText ->
+                                                result {
+                                                    let! parsedHeadTypes = headTypesResult
+                                                    let! headType = parseTypeText rawModules moduleDump.Name headTypeText
+                                                    return headType :: parsedHeadTypes
+                                                })
+                                            (Result.Ok [])
+
+                                    let instanceInfo =
+                                        { ModuleName = moduleDump.Name
+                                          TraitName = instanceDeclaration.TraitName
+                                          InstanceKey = instanceDeclaration.InstanceKey
+                                          HeadTypes = List.rev headTypes
+                                          MemberBindings = instanceDeclaration.MemberBindings |> Map.ofList }
+
+                                    return instanceInfo :: collected
+                                })
+                            (Result.Ok [])
+
+                    return List.rev discoveredInstances @ instances
+                })
+            (Result.Ok [])
+
+    let internal resolveDeclaredBindingTypes
+        (rawModules: Map<string, RawModuleInfo>)
+        currentModule
+        (declaredTexts: DeclaredBindingTexts)
+        : Result<DeclaredBindingTypes, string> =
+        result {
+            let! parameterTypes =
+                if declaredTexts.ParameterTypes |> List.exists Option.isNone then
+                    Result.Ok None
+                else
+                    declaredTexts.ParameterTypes
+                    |> List.choose id
+                    |> List.fold
+                        (fun stateResult parameterTypeText ->
+                            result {
+                                let! collected = stateResult
+                                let! parameterType = parseTypeText rawModules currentModule parameterTypeText
+                                return parameterType :: collected
+                            })
+                        (Result.Ok [])
+                    |> Result.map (List.rev >> Some)
+
+            let! returnType =
+                match declaredTexts.ReturnType with
+                | Some returnTypeText ->
+                    parseTypeText rawModules currentModule returnTypeText |> Result.map Some
+                | None ->
+                    Result.Ok None
+
+            return
+                ({ ParameterTypes = parameterTypes
+                   ReturnType = returnType }: DeclaredBindingTypes)
+        }
+
+    let internal tryFindTraitInstance (environment: EmissionEnvironment) moduleName traitName instanceKey =
+        environment.TraitInstances
+        |> List.tryFind (fun instanceInfo ->
+            String.Equals(instanceInfo.ModuleName, moduleName, StringComparison.Ordinal)
+            && String.Equals(instanceInfo.TraitName, traitName, StringComparison.Ordinal)
+            && String.Equals(instanceInfo.InstanceKey, instanceKey, StringComparison.Ordinal))
+
+    let internal traitMemberRoutes (environment: EmissionEnvironment) traitName memberName =
+        environment.TraitInstances
+        |> List.choose (fun instanceInfo ->
+            instanceInfo.MemberBindings
+            |> Map.tryFind memberName
+            |> Option.bind (fun bindingName ->
+                if String.Equals(instanceInfo.TraitName, traitName, StringComparison.Ordinal) then
+                    Some(instanceInfo, bindingName)
+                else
+                    None))
+
+    let internal knownIntrinsicNames =
+        IntrinsicCatalog.namedIntrinsicTermNames ()
+
+    let internal intrinsicParameterTypes name argumentTypes =
+        match name, argumentTypes with
+        | ("print" | "println" | "printString"), [ IlPrimitive IlString ] ->
+            Some([ IlPrimitive IlString ], unitIlType)
+        | "printInt", [ IlPrimitive IlInt64 ] ->
+            Some([ IlPrimitive IlInt64 ], unitIlType)
+        | "primitiveIntToString", [ IlPrimitive IlInt64 ] ->
+            Some([ IlPrimitive IlInt64 ], IlPrimitive IlString)
+        | "pure", [ valueType ] ->
+            Some([ valueType ], valueType)
+        | ("primitiveReadData" | "readData"), [ fileType ] ->
+            Some([ fileType ], IlPrimitive IlString)
+        | "primitiveCloseFile", [ fileType ] ->
+            Some([ fileType ], unitIlType)
+        | "newRef", [ valueType ] ->
+            Some([ valueType ], refIlType valueType)
+        | "readRef", [ IlNamed("std.prelude", "Ref", [ valueType ]) ] ->
+            Some([ refIlType valueType ], valueType)
+        | "writeRef", [ IlNamed("std.prelude", "Ref", [ valueType ]); actualValueType ] when valueType = actualValueType ->
+            Some([ refIlType valueType; valueType ], unitIlType)
+        | "not", [ IlPrimitive IlBool ] ->
+            Some([ IlPrimitive IlBool ], IlPrimitive IlBool)
+        | "negate", [ IlPrimitive IlInt64 ] ->
+            Some([ IlPrimitive IlInt64 ], IlPrimitive IlInt64)
+        | "negate", [ IlPrimitive IlFloat64 ] ->
+            Some([ IlPrimitive IlFloat64 ], IlPrimitive IlFloat64)
+        | "and", [ IlPrimitive IlBool; IlPrimitive IlBool ]
+        | "or", [ IlPrimitive IlBool; IlPrimitive IlBool ] ->
+            Some([ IlPrimitive IlBool; IlPrimitive IlBool ], IlPrimitive IlBool)
+        | _ ->
+            None
+
+    let internal tryResolveImportedBinding (modules: Map<string, ModuleSurface<'binding>>) currentModule name =
+        let currentModuleInfo = modules[currentModule]
+
+        currentModuleInfo.Imports
+        |> List.choose (fun spec ->
+            match spec.Source with
+            | Url _ ->
+                None
+            | Dotted moduleSegments ->
+                let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
+
+                match modules |> Map.tryFind importedModuleName with
+                | Some importedModule
+                    when selectionImportsTermName spec.Selection name
+                         && importedModule.Exports.Contains(name) ->
+                    importedModule.Bindings |> Map.tryFind name |> Option.map (fun binding -> importedModule.Name, binding)
+                | _ ->
+                    None)
+        |> List.distinctBy fst
+        |> function
+            | [ resolved ] -> Some resolved
+            | _ -> None
+
+    let internal tryResolveBinding (modules: Map<string, ModuleSurface<'binding>>) currentModule segments =
+        match segments with
+        | [] ->
+            None
+        | [ bindingName ] ->
+            let currentModuleInfo = modules[currentModule]
+
+            currentModuleInfo.Bindings
+            |> Map.tryFind bindingName
+            |> Option.map (fun binding -> currentModule, binding)
+            |> Option.orElseWith (fun () -> tryResolveImportedBinding modules currentModule bindingName)
+        | _ ->
+            let moduleName = segments |> List.take (segments.Length - 1) |> String.concat "."
+            let bindingName = List.last segments
+
+            modules
+            |> Map.tryFind moduleName
+            |> Option.bind (fun moduleInfo -> moduleInfo.Bindings |> Map.tryFind bindingName)
+            |> Option.map (fun binding -> moduleName, binding)
+
+    let internal tryDefaultFileType (modules: Map<string, ModuleSurface<'binding>>) currentModule =
+        modules
+        |> Map.tryFind currentModule
+        |> Option.bind (fun moduleInfo ->
+            if moduleInfo.DataTypes.ContainsKey("File") then
+                Some(IlNamed(moduleInfo.Name, "File", []))
+            else
+                None)
+
+    let internal tryResolveImportedConstructor (modules: Map<string, ModuleSurface<'binding>>) currentModule name =
+        let currentModuleInfo = modules[currentModule]
+
+        currentModuleInfo.Imports
+        |> List.choose (fun spec ->
+            match spec.Source with
+            | Url _ ->
+                None
+            | Dotted moduleSegments ->
+                let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
+
+                match modules |> Map.tryFind importedModuleName with
+                | Some importedModule
+                    when selectionImportsConstructorName spec.Selection name
+                         && importedModule.Exports.Contains(name) ->
+                    importedModule.Constructors
+                    |> Map.tryFind name
+                    |> Option.map (fun constructorInfo -> importedModule.Name, constructorInfo)
+                | _ ->
+                    None)
+        |> List.distinctBy fst
+        |> function
+            | [ resolved ] -> Some resolved
+            | _ -> None
+
+    let internal tryResolveConstructor (modules: Map<string, ModuleSurface<'binding>>) currentModule segments =
+        match segments with
+        | [] ->
+            None
+        | [ constructorName ] ->
+            let currentModuleInfo = modules[currentModule]
+
+            currentModuleInfo.Constructors
+            |> Map.tryFind constructorName
+            |> Option.map (fun constructorInfo -> currentModule, constructorInfo)
+            |> Option.orElseWith (fun () -> tryResolveImportedConstructor modules currentModule constructorName)
+        | _ ->
+            let moduleName = segments |> List.take (segments.Length - 1) |> String.concat "."
+            let constructorName = List.last segments
+
+            modules
+            |> Map.tryFind moduleName
+            |> Option.bind (fun moduleInfo -> moduleInfo.Constructors |> Map.tryFind constructorName)
+            |> Option.map (fun constructorInfo -> moduleName, constructorInfo)
+
+    let internal inferConstructorTypeFromArguments inferExpressionType currentModule localTypes active expectedType expressionArguments constructorInfo =
+        let initialSubstitutionResult =
+            match expectedType with
+            | Some expected ->
+                unifyTypes Map.empty (constructorResultType constructorInfo) expected
+            | None ->
+                Result.Ok Map.empty
+
+        let argumentTemplates = constructorInfo.FieldTypes
+
+        if List.length argumentTemplates <> List.length expressionArguments then
+            Result.Error
+                $"IL backend expected constructor '{constructorInfo.Name}' to receive {List.length argumentTemplates} argument(s), but received {List.length expressionArguments}."
+        else
+            List.zip expressionArguments argumentTemplates
+            |> List.fold
+                (fun stateResult (argumentExpression, argumentTemplate) ->
+                    stateResult
+                    |> Result.bind (fun substitution ->
+                        let expectedArgumentType =
+                            let specialized = substituteType substitution argumentTemplate
+
+                            if containsTypeParameters specialized then
+                                None
+                            else
+                                Some specialized
+
+                        inferExpressionType currentModule localTypes active expectedArgumentType argumentExpression
+                        |> Result.bind (fun argumentType -> unifyTypes substitution argumentTemplate argumentType)))
+                initialSubstitutionResult
+            |> Result.bind (fun substitution ->
+                let resultType = substituteType substitution (constructorResultType constructorInfo)
+
+                if containsTypeParameters resultType then
+                    Result.Error
+                        $"IL backend could not infer concrete type arguments for constructor '{constructorInfo.Name}'."
+                else
+                    Result.Ok resultType)
+

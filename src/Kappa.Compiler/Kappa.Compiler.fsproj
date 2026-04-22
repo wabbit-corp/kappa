@@ -38,12 +38,17 @@
     <Compile Include="CheckpointVerification.fs" />
     <Compile Include="HostSupport.fs" />
     <Compile Include="HostedRuntimeDotNetBackend.fs" />
+    <Compile Include="IlDotNetBackendModel.fs" />
+    <Compile Include="IlDotNetBackendInput.fs" />
+    <Compile Include="IlDotNetBackendTyping.fs" />
+    <Compile Include="IlDotNetBackendEmit.fs" />
     <Compile Include="IlDotNetBackend.fs" />
     <Compile Include="ClrDotNetBackend.fs" />
     <Compile Include="ZigCcBackend.fs" />
     <Compile Include="IrText.fs" />
     <Compile Include="CompilationCommon.fs" />
     <Compile Include="CompilationFrontend.fs" />
+    <Compile Include="CompilationSnapshots.fs" />
     <Compile Include="CompilationMetadata.fs" />
     <Compile Include="CompilationCheckpoints.fs" />
     <Compile Include="CompilationDump.fs" />

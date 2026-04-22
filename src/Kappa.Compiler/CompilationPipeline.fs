@@ -95,6 +95,18 @@ module KFrontIRPhase =
         checkpointName phase
         |> fun checkpoint -> checkpoint.Substring("KFrontIR.".Length)
 
+    let ordinal phase =
+        all
+        |> List.findIndex ((=) phase)
+
+    let phasesThrough phase =
+        all
+        |> List.take (ordinal phase + 1)
+
+    let tryParsePhaseName (phaseNameText: string) =
+        all
+        |> List.tryFind (fun phase -> String.Equals(phaseName phase, phaseNameText, StringComparison.Ordinal))
+
 type CheckpointKind =
     | SurfaceSourceCheckpoint
     | KFrontIRCheckpoint

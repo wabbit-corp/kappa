@@ -101,6 +101,7 @@ module CompilationDump =
           ModuleHeader: string option
           InferredModuleName: string option
           ModuleIdentity: string option
+          ResolvedPhases: string list
           ModuleAttributes: string list
           Imports: string list
           Tokens: DumpToken list
@@ -142,8 +143,33 @@ module CompilationDump =
         { Name: string
           Representation: string }
 
+    type DumpProvenance =
+        { FilePath: string
+          ModuleName: string
+          DeclarationName: string option
+          IntroductionKind: string }
+
+    type DumpBackendNode =
+        { Id: string
+          Kind: string
+          Summary: string
+          Representation: string option
+          Provenance: DumpProvenance option }
+
+    type DumpBackendEdge =
+        { Id: string
+          SourceId: string
+          TargetId: string
+          Role: string }
+
+    type DumpBackendGraph =
+        { RootNodeId: string option
+          Nodes: DumpBackendNode list
+          Edges: DumpBackendEdge list }
+
     type DumpBackendFunction =
-        { Name: string
+        { Id: string
+          Name: string
           Parameters: DumpBackendParameter list
           CallingConvention: string
           ReturnRepresentation: string option
@@ -152,29 +178,38 @@ module CompilationDump =
           Exported: bool
           EntryPoint: bool
           ControlForm: string
-          Body: string }
+          Body: string
+          BodyGraph: DumpBackendGraph option
+          Provenance: DumpProvenance }
 
     type DumpBackendConstructorLayout =
-        { Name: string
+        { Id: string
+          Name: string
           Tag: int
-          FieldRepresentations: string list }
+          FieldRepresentations: string list
+          Provenance: DumpProvenance }
 
     type DumpBackendDataLayout =
-        { TypeName: string
+        { Id: string
+          TypeName: string
           RepresentationClass: string
           TagEncoding: string
-          Constructors: DumpBackendConstructorLayout list }
+          Constructors: DumpBackendConstructorLayout list
+          Provenance: DumpProvenance }
 
     type DumpBackendEnvironmentLayout =
-        { Name: string
+        { Id: string
+          Name: string
           Slots: DumpBackendCapture list }
 
     type DumpBackendModule =
-        { Name: string
+        { Id: string
+          Name: string
           SourceFile: string
           Imports: string list
           Exports: string list
           EntryPoints: string list
+          EntryPointIds: string list
           IntrinsicTerms: string list
           DataLayouts: DumpBackendDataLayout list
           EnvironmentLayouts: DumpBackendEnvironmentLayout list
@@ -215,6 +250,12 @@ module CompilationDump =
     let private dumpToken (token: Token) =
         { Kind = tokenKindText token.Kind
           Text = token.Text }
+
+    let private dumpProvenance (provenance: KCoreOrigin) =
+        { FilePath = provenance.FilePath
+          ModuleName = provenance.ModuleName
+          DeclarationName = provenance.DeclarationName
+          IntroductionKind = provenance.IntroductionKind }
 
     let private dumpSourceDocument (document: ParsedDocument) =
         { FilePath = document.Source.FilePath
@@ -274,6 +315,7 @@ module CompilationDump =
           ModuleHeader = document.ModuleHeader |> Option.map SyntaxFacts.moduleNameToText
           InferredModuleName = document.InferredModuleName |> Option.map SyntaxFacts.moduleNameToText
           ModuleIdentity = document.ModuleIdentity |> Option.map SyntaxFacts.moduleNameToText
+          ResolvedPhases = document.ResolvedPhases |> Set.toList |> List.map KFrontIRPhase.phaseName
           ModuleAttributes = document.ModuleAttributes
           Imports = document.Imports |> List.map importSpecText
           Tokens = document.Tokens |> List.map dumpToken
@@ -354,11 +396,247 @@ module CompilationDump =
           Constructors = constructors
           Bindings = bindings }
 
+    let private backendModuleId (moduleDump: KBackendModule) =
+        $"backend-module:{moduleDump.Name}"
+
+    let private backendFunctionId (moduleDump: KBackendModule) (binding: KBackendFunction) =
+        $"{backendModuleId moduleDump}/function:{binding.Name}"
+
+    let private backendEnvironmentLayoutId (moduleDump: KBackendModule) (layout: KBackendEnvironmentLayout) =
+        $"{backendModuleId moduleDump}/environment:{layout.Name}"
+
+    let private backendDataLayoutId (moduleDump: KBackendModule) (layout: KBackendDataLayout) =
+        $"{backendModuleId moduleDump}/data:{layout.TypeName}"
+
+    let private backendConstructorLayoutId
+        (moduleDump: KBackendModule)
+        (layout: KBackendDataLayout)
+        (constructor: KBackendConstructorLayout)
+        =
+        $"{backendDataLayoutId moduleDump layout}/constructor:{constructor.Name}"
+
+    let private backendResolvedNameRepresentation =
+        function
+        | BackendLocalName(_, representation)
+        | BackendGlobalBindingName(_, _, representation)
+        | BackendIntrinsicName(_, _, representation) ->
+            representation |> Option.map IrText.backendRepresentationText
+        | BackendConstructorName(_, _, _, _, _, representation) ->
+            Some(IrText.backendRepresentationText representation)
+
+    let private buildBackendBodyGraph (functionId: string) (provenance: DumpProvenance) (body: KBackendExpression option) =
+        match body with
+        | None ->
+            None
+        | Some rootExpression ->
+            let nodes = ResizeArray<DumpBackendNode>()
+            let edges = ResizeArray<DumpBackendEdge>()
+            let mutable nextNodeId = 0
+            let mutable nextEdgeId = 0
+
+            let addNode kind summary representation =
+                let nodeId = $"{functionId}/node:{nextNodeId}"
+                nextNodeId <- nextNodeId + 1
+
+                nodes.Add(
+                    { Id = nodeId
+                      Kind = kind
+                      Summary = summary
+                      Representation = representation
+                      Provenance = Some provenance }
+                )
+
+                nodeId
+
+            let addEdge sourceId targetId role =
+                let edgeId = $"{functionId}/edge:{nextEdgeId}"
+                nextEdgeId <- nextEdgeId + 1
+
+                edges.Add(
+                    { Id = edgeId
+                      SourceId = sourceId
+                      TargetId = targetId
+                      Role = role }
+                )
+
+            let rec buildExpression expression =
+                match expression with
+                | BackendLiteral(_, representation) ->
+                    addNode "literal" (IrText.backendExpressionText expression) (Some(IrText.backendRepresentationText representation))
+                | BackendName resolvedName ->
+                    addNode "name" (IrText.backendExpressionText expression) (backendResolvedNameRepresentation resolvedName)
+                | BackendClosure(parameters, captures, environmentLayout, body, convention, representation) ->
+                    let summary =
+                        let parameterNames = parameters |> List.map (fun parameter -> parameter.Name) |> String.concat ", "
+                        let captureNames = captures |> List.map (fun capture -> capture.Name) |> String.concat ", "
+                        $"closure params=[{parameterNames}] captures=[{captureNames}] env={environmentLayout} {IrText.backendCallingConventionText convention}"
+
+                    let nodeId =
+                        addNode "closure" summary (Some(IrText.backendRepresentationText representation))
+
+                    let bodyId = buildExpression body
+                    addEdge nodeId bodyId "body"
+                    nodeId
+                | BackendIfThenElse(condition, whenTrue, whenFalse, resultRepresentation) ->
+                    let nodeId =
+                        addNode
+                            "if"
+                            (IrText.backendExpressionText expression)
+                            (Some(IrText.backendRepresentationText resultRepresentation))
+
+                    let conditionId = buildExpression condition
+                    let whenTrueId = buildExpression whenTrue
+                    let whenFalseId = buildExpression whenFalse
+                    addEdge nodeId conditionId "condition"
+                    addEdge nodeId whenTrueId "then"
+                    addEdge nodeId whenFalseId "else"
+                    nodeId
+                | BackendMatch(scrutinee, cases, resultRepresentation) ->
+                    let nodeId =
+                        addNode
+                            "match"
+                            (IrText.backendExpressionText expression)
+                            (Some(IrText.backendRepresentationText resultRepresentation))
+
+                    let scrutineeId = buildExpression scrutinee
+                    addEdge nodeId scrutineeId "scrutinee"
+
+                    for index, caseClause in cases |> List.indexed do
+                        let caseId =
+                            addNode "match-case" (IrText.backendPatternText caseClause.Pattern) None
+
+                        let bodyId = buildExpression caseClause.Body
+                        addEdge nodeId caseId $"case:{index}"
+                        addEdge caseId bodyId "body"
+
+                    nodeId
+                | BackendExecute(inner, resultRepresentation) ->
+                    let nodeId =
+                        addNode
+                            "execute"
+                            (IrText.backendExpressionText expression)
+                            (Some(IrText.backendRepresentationText resultRepresentation))
+
+                    let innerId = buildExpression inner
+                    addEdge nodeId innerId "expression"
+                    nodeId
+                | BackendLet(binding, value, innerBody, resultRepresentation) ->
+                    let summary =
+                        $"let {binding.Name}:{IrText.backendRepresentationText binding.Representation}"
+
+                    let nodeId =
+                        addNode
+                            "let"
+                            summary
+                            (Some(IrText.backendRepresentationText resultRepresentation))
+
+                    let valueId = buildExpression value
+                    let bodyId = buildExpression innerBody
+                    addEdge nodeId valueId "value"
+                    addEdge nodeId bodyId "body"
+                    nodeId
+                | BackendSequence(first, second, resultRepresentation) ->
+                    let nodeId =
+                        addNode
+                            "sequence"
+                            (IrText.backendExpressionText expression)
+                            (Some(IrText.backendRepresentationText resultRepresentation))
+
+                    let firstId = buildExpression first
+                    let secondId = buildExpression second
+                    addEdge nodeId firstId "first"
+                    addEdge nodeId secondId "second"
+                    nodeId
+                | BackendWhile(condition, innerBody) ->
+                    let nodeId = addNode "while" (IrText.backendExpressionText expression) None
+                    let conditionId = buildExpression condition
+                    let bodyId = buildExpression innerBody
+                    addEdge nodeId conditionId "condition"
+                    addEdge nodeId bodyId "body"
+                    nodeId
+                | BackendCall(callee, arguments, convention, resultRepresentation) ->
+                    let nodeId =
+                        addNode
+                            "call"
+                            (IrText.backendCallingConventionText convention)
+                            (Some(IrText.backendRepresentationText resultRepresentation))
+
+                    let calleeId = buildExpression callee
+                    addEdge nodeId calleeId "callee"
+
+                    for index, argument in arguments |> List.indexed do
+                        let argumentId = buildExpression argument
+                        addEdge nodeId argumentId $"argument:{index}"
+
+                    nodeId
+                | BackendDictionaryValue(moduleName, traitName, instanceKey, representation) ->
+                    addNode
+                        "dictionary"
+                        $"dictionary {moduleName}.{traitName}.{instanceKey}"
+                        (Some(IrText.backendRepresentationText representation))
+                | BackendTraitCall(traitName, memberName, dictionary, arguments, resultRepresentation) ->
+                    let nodeId =
+                        addNode
+                            "trait-call"
+                            $"{traitName}.{memberName}"
+                            (Some(IrText.backendRepresentationText resultRepresentation))
+
+                    let dictionaryId = buildExpression dictionary
+                    addEdge nodeId dictionaryId "dictionary"
+
+                    for index, argument in arguments |> List.indexed do
+                        let argumentId = buildExpression argument
+                        addEdge nodeId argumentId $"argument:{index}"
+
+                    nodeId
+                | BackendConstructData(moduleName, typeName, constructorName, tag, fields, representation) ->
+                    let nodeId =
+                        addNode
+                            "construct-data"
+                            $"{moduleName}.{typeName}.{constructorName}@{tag}"
+                            (Some(IrText.backendRepresentationText representation))
+
+                    for index, field in fields |> List.indexed do
+                        let fieldId = buildExpression field
+                        addEdge nodeId fieldId $"field:{index}"
+
+                    nodeId
+                | BackendPrefixedString(prefix, parts, resultRepresentation) ->
+                    let nodeId =
+                        addNode
+                            "prefixed-string"
+                            $"{prefix}:{IrText.backendExpressionText expression}"
+                            (Some(IrText.backendRepresentationText resultRepresentation))
+
+                    for index, part in parts |> List.indexed do
+                        match part with
+                        | BackendStringText text ->
+                            let partId = addNode "string-text" text (Some(IrText.backendRepresentationText resultRepresentation))
+                            addEdge nodeId partId $"part:{index}"
+                        | BackendStringInterpolation inner ->
+                            let partId = addNode "string-interpolation" (IrText.backendExpressionText inner) None
+                            let innerId = buildExpression inner
+                            addEdge nodeId partId $"part:{index}"
+                            addEdge partId innerId "expression"
+
+                    nodeId
+
+            let rootNodeId = buildExpression rootExpression
+
+            Some
+                { RootNodeId = Some rootNodeId
+                  Nodes = List.ofSeq nodes
+                  Edges = List.ofSeq edges }
+
     let private dumpBackendModule (moduleDump: KBackendModule) =
         let functions =
             moduleDump.Functions
             |> List.map (fun binding ->
-                { Name = binding.Name
+                let functionId = backendFunctionId moduleDump binding
+                let provenance = dumpProvenance binding.Provenance
+
+                { Id = functionId
+                  Name = binding.Name
                   Parameters =
                     binding.Parameters
                     |> List.map (fun parameter ->
@@ -378,38 +656,54 @@ module CompilationDump =
                   Body =
                     binding.Body
                     |> Option.map IrText.backendExpressionText
-                    |> Option.defaultValue "<intrinsic>" })
+                    |> Option.defaultValue "<intrinsic>"
+                  BodyGraph = buildBackendBodyGraph functionId provenance binding.Body
+                  Provenance = provenance })
 
         let dataLayouts =
             moduleDump.DataLayouts
             |> List.map (fun layout ->
-                { TypeName = layout.TypeName
+                { Id = backendDataLayoutId moduleDump layout
+                  TypeName = layout.TypeName
                   RepresentationClass = layout.RepresentationClass
                   TagEncoding = layout.TagEncoding
                   Constructors =
                     layout.Constructors
                     |> List.map (fun constructor ->
-                        { Name = constructor.Name
+                        { Id = backendConstructorLayoutId moduleDump layout constructor
+                          Name = constructor.Name
                           Tag = constructor.Tag
                           FieldRepresentations =
                             constructor.FieldRepresentations
-                            |> List.map IrText.backendRepresentationText }) })
+                            |> List.map IrText.backendRepresentationText
+                          Provenance = dumpProvenance constructor.Provenance })
+                  Provenance = dumpProvenance layout.Provenance })
 
         let environmentLayouts =
             moduleDump.EnvironmentLayouts
             |> List.map (fun layout ->
-                { Name = layout.Name
+                { Id = backendEnvironmentLayoutId moduleDump layout
+                  Name = layout.Name
                   Slots =
                     layout.Slots
                     |> List.map (fun slot ->
                         { Name = slot.Name
                           Representation = IrText.backendRepresentationText slot.Representation }) })
 
-        { Name = moduleDump.Name
+        let functionIdByName =
+            functions
+            |> List.map (fun binding -> binding.Name, binding.Id)
+            |> Map.ofList
+
+        { Id = backendModuleId moduleDump
+          Name = moduleDump.Name
           SourceFile = moduleDump.SourceFile
           Imports = moduleDump.Imports |> List.map importSpecText
           Exports = moduleDump.Exports
           EntryPoints = moduleDump.EntryPoints
+          EntryPointIds =
+            moduleDump.EntryPoints
+            |> List.choose (fun entryPoint -> functionIdByName |> Map.tryFind entryPoint)
           IntrinsicTerms = moduleDump.IntrinsicTerms
           DataLayouts = dataLayouts
           EnvironmentLayouts = environmentLayouts
@@ -614,6 +908,7 @@ module CompilationDump =
             sexprOptionalStringAtom "module-header" document.ModuleHeader
             sexprOptionalStringAtom "inferred-module-name" document.InferredModuleName
             sexprOptionalStringAtom "module-identity" document.ModuleIdentity
+            sexprStringList "resolved-phases" document.ResolvedPhases
             sexprStringList "module-attributes" document.ModuleAttributes
             sexprStringList "imports" document.Imports
             let tokenBody =
@@ -722,9 +1017,70 @@ module CompilationDump =
         |> String.concat " "
         |> fun body -> $"(capture {body})"
 
+    let private renderDumpProvenanceSexpr (provenance: DumpProvenance) =
+        [
+            sexprStringAtom "file" provenance.FilePath
+            sexprStringAtom "module-name" provenance.ModuleName
+            sexprOptionalStringAtom "declaration-name" provenance.DeclarationName
+            sexprStringAtom "introduction-kind" provenance.IntroductionKind
+        ]
+        |> String.concat " "
+        |> fun body -> $"(provenance {body})"
+
+    let private renderDumpBackendNodeSexpr (node: DumpBackendNode) =
+        [
+            sexprStringAtom "id" node.Id
+            sexprStringAtom "kind" node.Kind
+            sexprStringAtom "summary" node.Summary
+            node.Representation
+            |> Option.map (sexprStringAtom "representation")
+            |> Option.defaultValue (sexprAtom "representation" "nil")
+            node.Provenance
+            |> Option.map renderDumpProvenanceSexpr
+            |> Option.defaultValue "(provenance nil)"
+        ]
+        |> String.concat " "
+        |> fun body -> $"(node {body})"
+
+    let private renderDumpBackendEdgeSexpr (edge: DumpBackendEdge) =
+        [
+            sexprStringAtom "id" edge.Id
+            sexprStringAtom "source-id" edge.SourceId
+            sexprStringAtom "target-id" edge.TargetId
+            sexprStringAtom "role" edge.Role
+        ]
+        |> String.concat " "
+        |> fun body -> $"(edge {body})"
+
+    let private renderDumpBackendGraphSexpr (graph: DumpBackendGraph option) =
+        match graph with
+        | None ->
+            "(body-graph (root-node-id nil) (nodes) (edges))"
+        | Some graph ->
+            let nodeBody =
+                graph.Nodes
+                |> List.map renderDumpBackendNodeSexpr
+                |> String.concat " "
+
+            let edgeBody =
+                graph.Edges
+                |> List.map renderDumpBackendEdgeSexpr
+                |> String.concat " "
+
+            [
+                graph.RootNodeId
+                |> Option.map (sexprStringAtom "root-node-id")
+                |> Option.defaultValue (sexprAtom "root-node-id" "nil")
+                if String.IsNullOrWhiteSpace(nodeBody) then "(nodes)" else $"(nodes {nodeBody})"
+                if String.IsNullOrWhiteSpace(edgeBody) then "(edges)" else $"(edges {edgeBody})"
+            ]
+            |> String.concat " "
+            |> fun body -> $"(body-graph {body})"
+
     let private renderDumpBackendFunctionSexpr (binding: DumpBackendFunction) =
         [
             sexprStringAtom "name" binding.Name
+            sexprStringAtom "id" binding.Id
             let parameterBody =
                 binding.Parameters
                 |> List.map renderDumpBackendParameterSexpr
@@ -743,21 +1099,26 @@ module CompilationDump =
             sexprAtom "entry-point" (if binding.EntryPoint then "true" else "false")
             sexprStringAtom "control-form" binding.ControlForm
             sexprStringAtom "body" binding.Body
+            renderDumpBackendGraphSexpr binding.BodyGraph
+            renderDumpProvenanceSexpr binding.Provenance
         ]
         |> String.concat " "
         |> fun body -> $"(function {body})"
 
     let private renderDumpBackendConstructorLayoutSexpr (constructor: DumpBackendConstructorLayout) =
         [
+            sexprStringAtom "id" constructor.Id
             sexprStringAtom "name" constructor.Name
             sexprAtom "tag" (string constructor.Tag)
             sexprStringList "field-representations" constructor.FieldRepresentations
+            renderDumpProvenanceSexpr constructor.Provenance
         ]
         |> String.concat " "
         |> fun body -> $"(constructor {body})"
 
     let private renderDumpBackendDataLayoutSexpr (layout: DumpBackendDataLayout) =
         [
+            sexprStringAtom "id" layout.Id
             sexprStringAtom "type-name" layout.TypeName
             sexprStringAtom "representation-class" layout.RepresentationClass
             sexprStringAtom "tag-encoding" layout.TagEncoding
@@ -767,12 +1128,14 @@ module CompilationDump =
                 |> String.concat " "
 
             if String.IsNullOrWhiteSpace(constructorBody) then "(constructors)" else $"(constructors {constructorBody})"
+            renderDumpProvenanceSexpr layout.Provenance
         ]
         |> String.concat " "
         |> fun body -> $"(data-layout {body})"
 
     let private renderDumpBackendEnvironmentLayoutSexpr (layout: DumpBackendEnvironmentLayout) =
         [
+            sexprStringAtom "id" layout.Id
             sexprStringAtom "name" layout.Name
             let slotBody =
                 layout.Slots
@@ -787,10 +1150,12 @@ module CompilationDump =
     let private renderDumpBackendModuleSexpr (moduleDump: DumpBackendModule) =
         [
             sexprStringAtom "name" moduleDump.Name
+            sexprStringAtom "id" moduleDump.Id
             sexprStringAtom "source-file" moduleDump.SourceFile
             sexprStringList "imports" moduleDump.Imports
             sexprStringList "exports" moduleDump.Exports
             sexprStringList "entry-points" moduleDump.EntryPoints
+            sexprStringList "entry-point-ids" moduleDump.EntryPointIds
             sexprStringList "intrinsic-terms" moduleDump.IntrinsicTerms
             let dataLayoutBody =
                 moduleDump.DataLayouts
@@ -822,6 +1187,18 @@ module CompilationDump =
            backendIntrinsicSet = workspace.BackendIntrinsicIdentity
            elaborationAvailableIntrinsicTerms = workspace.ElaborationAvailableIntrinsicTerms |}
 
+    let private dumpFormatText =
+        function
+        | StageDumpFormat.Json -> "json"
+        | StageDumpFormat.SExpression -> "sexpr"
+
+    let private frontendSnapshot workspace phase =
+        workspace.FrontendSnapshots
+        |> Map.tryFind phase
+        |> Option.defaultValue
+            { Modules = workspace.KFrontIR
+              Diagnostics = workspace.Diagnostics }
+
     let private renderCheckpointContractSexpr workspace checkpoint =
         let contract =
             CompilationCheckpoints.checkpointContractFor workspace checkpoint
@@ -847,8 +1224,9 @@ module CompilationDump =
         |> String.concat " "
         |> fun body -> $"(checkpoint-contract {body})"
 
-    let private metadataJson workspace checkpoint =
+    let private metadataJson workspace checkpoint format =
         {| schemaVersion = "1"
+           dumpFormat = dumpFormatText format
            languageVersion = languageVersion
            compiler = {| id = compilerImplementationId; version = compilerImplementationVersion |}
            checkpoint = checkpoint
@@ -859,7 +1237,7 @@ module CompilationDump =
            buildConfiguration = buildConfigurationJson workspace
            checkpointContract = CompilationCheckpoints.checkpointContractJson workspace checkpoint |}
 
-    let private metadataSexpr workspace checkpoint =
+    let private metadataSexpr workspace checkpoint format =
         let compilerAtom =
             let idAtom = sexprStringAtom "id" compilerImplementationId
             let versionAtom = sexprStringAtom "version" compilerImplementationVersion
@@ -878,6 +1256,7 @@ module CompilationDump =
 
         [
             sexprStringAtom "schema-version" "1"
+            sexprStringAtom "dump-format" (dumpFormatText format)
             sexprStringAtom "language-version" languageVersion
             compilerAtom
             sexprStringAtom "checkpoint" checkpoint
@@ -897,6 +1276,7 @@ module CompilationDump =
         =
         serializeJson
             {| schemaVersion = "1"
+               dumpFormat = dumpFormatText StageDumpFormat.Json
                languageVersion = languageVersion
                compiler = {| id = compilerImplementationId; version = compilerImplementationVersion |}
                checkpoint = checkpoint
@@ -938,7 +1318,7 @@ module CompilationDump =
             |> String.concat " "
             |> fun body -> if String.IsNullOrWhiteSpace(body) then "(diagnostics)" else $"(diagnostics {body})"
 
-        $"(stage-dump {metadataSexpr workspace checkpoint} {translationUnitAtom} {diagnosticsAtom})"
+        $"(stage-dump {metadataSexpr workspace checkpoint StageDumpFormat.SExpression} {translationUnitAtom} {diagnosticsAtom})"
 
     let dumpStageJson (workspace: WorkspaceCompilation) checkpoint =
         match checkpoint with
@@ -950,6 +1330,7 @@ module CompilationDump =
 
             serializeJson
                 {| schemaVersion = "1"
+                   dumpFormat = dumpFormatText StageDumpFormat.Json
                    languageVersion = languageVersion
                    compiler = {| id = compilerImplementationId; version = compilerImplementationVersion |}
                    checkpoint = checkpoint
@@ -969,6 +1350,7 @@ module CompilationDump =
 
             serializeJson
                 {| schemaVersion = "1"
+                   dumpFormat = dumpFormatText StageDumpFormat.Json
                    languageVersion = languageVersion
                    compiler = {| id = compilerImplementationId; version = compilerImplementationVersion |}
                    checkpoint = checkpoint
@@ -988,6 +1370,7 @@ module CompilationDump =
 
             serializeJson
                 {| schemaVersion = "1"
+                   dumpFormat = dumpFormatText StageDumpFormat.Json
                    languageVersion = languageVersion
                    compiler = {| id = compilerImplementationId; version = compilerImplementationVersion |}
                    checkpoint = checkpoint
@@ -1007,6 +1390,7 @@ module CompilationDump =
 
             serializeJson
                 {| schemaVersion = "1"
+                   dumpFormat = dumpFormatText StageDumpFormat.Json
                    languageVersion = languageVersion
                    compiler = {| id = compilerImplementationId; version = compilerImplementationVersion |}
                    checkpoint = checkpoint
@@ -1021,13 +1405,16 @@ module CompilationDump =
         | _ ->
             match CheckpointVerification.tryParseCheckpoint checkpoint with
             | Some(Some phase) ->
+                let snapshot = frontendSnapshot workspace phase
+
                 let documents =
-                    workspace.KFrontIR
+                    snapshot.Modules
                     |> List.sortBy (fun document -> document.FilePath)
                     |> List.map dumpFrontendDocument
 
                 serializeJson
                     {| schemaVersion = "1"
+                       dumpFormat = dumpFormatText StageDumpFormat.Json
                        languageVersion = languageVersion
                        compiler = {| id = compilerImplementationId; version = compilerImplementationVersion |}
                        checkpoint = checkpoint
@@ -1039,7 +1426,7 @@ module CompilationDump =
                        buildConfiguration = buildConfigurationJson workspace
                        checkpointContract = CompilationCheckpoints.checkpointContractJson workspace checkpoint
                        documents = documents
-                       diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
+                       diagnostics = snapshot.Diagnostics |> List.map dumpDiagnostic |}
             | _ ->
                 invalidOp $"Unknown checkpoint '{checkpoint}'."
 
@@ -1065,7 +1452,7 @@ module CompilationDump =
             let diagnosticsAtom =
                 if String.IsNullOrWhiteSpace(diagnostics) then "(diagnostics)" else $"(diagnostics {diagnostics})"
 
-            $"(stage-dump {metadataSexpr workspace checkpoint} {documentsAtom} {diagnosticsAtom})"
+            $"(stage-dump {metadataSexpr workspace checkpoint StageDumpFormat.SExpression} {documentsAtom} {diagnosticsAtom})"
         | "KCore" ->
             let modules =
                 workspace.KCore
@@ -1086,7 +1473,7 @@ module CompilationDump =
             let diagnosticsAtom =
                 if String.IsNullOrWhiteSpace(diagnostics) then "(diagnostics)" else $"(diagnostics {diagnostics})"
 
-            $"(stage-dump {metadataSexpr workspace checkpoint} {modulesAtom} {diagnosticsAtom})"
+            $"(stage-dump {metadataSexpr workspace checkpoint StageDumpFormat.SExpression} {modulesAtom} {diagnosticsAtom})"
         | "KRuntimeIR" ->
             let modules =
                 workspace.KRuntimeIR
@@ -1107,7 +1494,7 @@ module CompilationDump =
             let diagnosticsAtom =
                 if String.IsNullOrWhiteSpace(diagnostics) then "(diagnostics)" else $"(diagnostics {diagnostics})"
 
-            $"(stage-dump {metadataSexpr workspace checkpoint} {modulesAtom} {diagnosticsAtom})"
+            $"(stage-dump {metadataSexpr workspace checkpoint StageDumpFormat.SExpression} {modulesAtom} {diagnosticsAtom})"
         | "KBackendIR" ->
             let modules =
                 workspace.KBackendIR
@@ -1128,19 +1515,21 @@ module CompilationDump =
             let diagnosticsAtom =
                 if String.IsNullOrWhiteSpace(diagnostics) then "(diagnostics)" else $"(diagnostics {diagnostics})"
 
-            $"(stage-dump {metadataSexpr workspace checkpoint} {modulesAtom} {diagnosticsAtom})"
+            $"(stage-dump {metadataSexpr workspace checkpoint StageDumpFormat.SExpression} {modulesAtom} {diagnosticsAtom})"
         | _ ->
             match CheckpointVerification.tryParseCheckpoint checkpoint with
             | Some(Some phase) ->
+                let snapshot = frontendSnapshot workspace phase
+
                 let documents =
-                    workspace.KFrontIR
+                    snapshot.Modules
                     |> List.sortBy (fun document -> document.FilePath)
                     |> List.map dumpFrontendDocument
                     |> List.map renderDumpDocumentSexpr
                     |> String.concat " "
 
                 let diagnostics =
-                    workspace.Diagnostics
+                    snapshot.Diagnostics
                     |> List.map dumpDiagnostic
                     |> List.map renderDumpDiagnosticSexpr
                     |> String.concat " "
@@ -1153,6 +1542,6 @@ module CompilationDump =
                 let diagnosticsAtom =
                     if String.IsNullOrWhiteSpace(diagnostics) then "(diagnostics)" else $"(diagnostics {diagnostics})"
 
-                $"(stage-dump {metadataSexpr workspace checkpoint} {phaseAtom} {documentsAtom} {diagnosticsAtom})"
+                $"(stage-dump {metadataSexpr workspace checkpoint StageDumpFormat.SExpression} {phaseAtom} {documentsAtom} {diagnosticsAtom})"
             | _ ->
                 invalidOp $"Unknown checkpoint '{checkpoint}'."

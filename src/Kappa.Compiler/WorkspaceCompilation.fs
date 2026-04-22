@@ -1,5 +1,9 @@
 namespace Kappa.Compiler
 
+type FrontendSnapshot =
+    { Modules: KFrontIRModule list
+      Diagnostics: Diagnostic list }
+
 type WorkspaceCompilation =
     { SourceRoot: string
       PackageMode: bool
@@ -10,6 +14,7 @@ type WorkspaceCompilation =
       AnalysisSessionIdentity: string
       ElaborationAvailableIntrinsicTerms: string list
       Documents: ParsedDocument list
+      FrontendSnapshots: Map<KFrontIRPhase, FrontendSnapshot>
       KFrontIR: KFrontIRModule list
       KCore: KCoreModule list
       KRuntimeIR: KRuntimeModule list
