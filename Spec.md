@@ -1460,14 +1460,14 @@ Intended use:
   accounting only; see §5.1.5.1.
 * `Region` classifies explicit borrow lifetimes that may be named in surface types when a borrow relationship must cross
   an interface boundary.
-* `Constraint` classifies constraint descriptors such as `Eq Int`, `Monad IO`, or `ContainsRec r l T`.
+* `Constraint` classifies constraint descriptors such as `Eq Int`, `Monad (IO e)`, or `ContainsRec r l T`.
 
 Constraint descriptors and coherent evidence are distinct:
 
 * A trait declaration `trait Tr ... = ...` introduces a trait constructor `Tr` whose fully applied applications are
   terms of type `Constraint`.
-* A concrete constraint descriptor such as `Eq Int`, `Monad IO`, or `ContainsRec r l T` is not coherent evidence by
-  itself.
+* A concrete constraint descriptor such as `Eq Int`, `Monad (IO e)`, or `ContainsRec r l T` is not coherent evidence
+  by itself.
 * Concrete constraint descriptors may appear:
   * in implicit binders `(@x : C)`,
   * in constraint arrows `C => T`,
@@ -2791,7 +2791,7 @@ Syntax and formation:
     * a compile-time type in the sense of §5.1.4.1, or
     * a boolean proposition accepted by the coercion rule of §5.6.2 (so a bare boolean field type `@p : b` elaborates to
       `@p : b = True`).
-  * Ordinary computational data types such as `String`, `Bytes`, or `IO a` cannot be marked as implicit record fields.
+  * Ordinary computational data types such as `String`, `Bytes`, or `IO e a` cannot be marked as implicit record fields.
 * Implicit record fields are the record-field analogue of implicit binders. Accordingly, §5.1.3's prohibition on
   explicit fields of constraint type does not apply to fields marked with `@`.
 * Quantity:
@@ -3235,7 +3235,7 @@ Within a `do` block (§8), `!e` runs the monadic computation `e` and yields its 
 Example:
 
 ```kappa
-let main : IO Unit = do
+let main : UIO Unit = do
 let x = !readInt
 let y = !readInt
 println (x + y)
@@ -3694,7 +3694,7 @@ let c = .< .~shared + .~shared >.
 Staged code may be executed only when closed:
 
 ```kappa
-runCode : ClosedCode t -> IO t
+runCode : ClosedCode t -> UIO t
 ```
 
 Implementations MUST reject, or fail before execution on, any attempt to run non-closed code.
@@ -4185,7 +4185,7 @@ expect type Float
 
 expect trait Eq a
 expect term toFloat : (this : Int) -> Float
-expect term print   : (this : String) -> IO Unit
+expect term print   : (this : String) -> UIO Unit
 ```
 
 Rules:
@@ -4745,13 +4745,13 @@ candidates of the same type; there is no dynamic rebinding mechanism.
 Example:
 
 ```kappa
-type Io = (print : String -> IO Unit)
+type Io = (print : String -> UIO Unit)
 
-log : (@ω io : Io) -> String -> IO Unit
-let log (@ω io : Io) (msg : String) : IO Unit =
+log : (@ω io : Io) -> String -> UIO Unit
+let log (@ω io : Io) (msg : String) : UIO Unit =
     io.print msg
 
-main : IO Unit
+main : UIO Unit
 let main =
     do
         let (@ω io : Io) = stdIo
@@ -6231,6 +6231,8 @@ the same `m`, either explicitly or via a default implementation compatible with 
 §8.7.2.
 
 `MonadResource m` refines `MonadFinally m`.
+
+For `IO e`, finalizers and releases additionally obey the masking and interruption rules of §§8.1.4 and 14.8.
 
 ##### 8.1.11.1 Laws
 
@@ -10516,7 +10518,7 @@ Example:
 ```kappa
 import std.debug as debug
 
-let main : IO Unit = do
+let main : UIO Unit = do
     println (debug.render value)
     println (show (debug.compare x y))
 ```
@@ -11966,6 +11968,10 @@ KBackendIR is after:
   * records,
   * dictionaries,
   * refs,
+  * fibers,
+  * supervision scopes,
+  * TVars,
+  * STM journals,
   * handlers,
   * resumptions,
   * strings,
@@ -11984,7 +11990,8 @@ KBackendIR contains only runtime-relevant constructs. In particular, it contains
 * heap allocation and field access;
 * explicit tagged-data and tagged-variant construction / elimination;
 * explicit mutable-cell operations;
-* explicit handler frames, resumption objects, cleanup-scope operations, and error-propagation operations.
+* explicit fiber handles, supervision scopes, TVars, STM journals, handler frames, resumption objects,
+  cleanup-scope operations, and error-propagation operations.
 
 The following do not appear in KBackendIR except insofar as they are explicitly reified by a library or backend
 intrinsic:
@@ -12014,7 +12021,8 @@ stages:
 
 * `REPRESENTATION_SELECTION`:
   choose runtime representation classes, layouts, and tag encodings for data, variants, records, dictionaries,
-  numerics, strings, bytes, collections, refs, handlers, and resumption objects.
+  numerics, strings, bytes, collections, refs, fibers, supervision scopes, TVars, STM journals, handlers, and resumption
+  objects.
 
 * `CALL_LOWERING`:
   fix runtime calling conventions, retained-dictionary passing, entrypoint signatures, and ABI-neutral parameter/result
@@ -12057,7 +12065,8 @@ At minimum it MUST represent:
 * if internal multi-return or join-point lowering is used, the corresponding arm graph together with its mapping to
   source-level `Completion` / `Match` alternatives;
 * values and def-use or binding-use relationships;
-* handler frames, resumption objects, cleanup scopes, and error-propagation structure;
+* fiber handles, supervision scopes, TVars, STM journals, handler frames, resumption objects, cleanup scopes, and
+  error-propagation structure;
 * selected runtime representation classes and calling-convention facts relevant to debugging; and
 * provenance links back to KCore.
 
@@ -12309,6 +12318,7 @@ Portable ABI rules:
   erased and are not ABI-visible;
 * resumption values, handler frames, cleanup frames, local nominal declarations, and anonymous borrow regions are not
   portable ABI values;
+* fiber handles and TVars are not portable ABI values;
 * direct borrowed parameters and direct borrowed results are not part of the portable subset;
 * borrow-like or resource-like foreign interfaces in the portable subset MUST be represented using owned values or
   opaque resource handles.
