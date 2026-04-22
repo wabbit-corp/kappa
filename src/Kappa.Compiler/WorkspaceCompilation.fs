@@ -14,6 +14,7 @@ type WorkspaceCompilation =
       KCore: KCoreModule list
       KRuntimeIR: KRuntimeModule list
       KBackendIR: KBackendModule list
+      ClrAssemblyIR: ClrAssemblyModule list
       Diagnostics: Diagnostic list
       PipelineTrace: PipelineTraceStep list }
 

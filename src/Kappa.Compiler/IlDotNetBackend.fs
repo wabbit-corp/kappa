@@ -58,7 +58,7 @@ module IlDotNetBackend =
           EmittedTypeName: string option }
 
     type private BindingInfo =
-        { Binding: KRuntimeBinding
+        { Binding: ClrAssemblyBinding
           ParameterTypes: (string * IlType) list
           ReturnType: IlType
           TypeParameters: string list
@@ -79,7 +79,7 @@ module IlDotNetBackend =
           HeadTypes: IlType list
           MemberBindings: Map<string, string> }
 
-    type private RawModuleInfo = ModuleSurface<KRuntimeBinding>
+    type private RawModuleInfo = ModuleSurface<ClrAssemblyBinding>
     type private ModuleInfo = ModuleSurface<BindingInfo>
 
     type private EmissionEnvironment =
@@ -376,8 +376,8 @@ module IlDotNetBackend =
         | AllExcept _ ->
             false
 
-    let private buildRawDataTypes (workspace: WorkspaceCompilation) =
-        workspace.KRuntimeIR
+    let private buildRawDataTypes (modules: ClrAssemblyModule list) =
+        modules
         |> List.map (fun moduleDump ->
             let dataTypes =
                 moduleDump.DataTypes
@@ -402,10 +402,10 @@ module IlDotNetBackend =
             moduleDump.Name, dataTypes)
         |> Map.ofList
 
-    let private buildRawModuleSkeletons (workspace: WorkspaceCompilation) =
-        let rawDataTypes = buildRawDataTypes workspace
+    let private buildRawModuleSkeletons (modules: ClrAssemblyModule list) =
+        let rawDataTypes = buildRawDataTypes modules
 
-        workspace.KRuntimeIR
+        modules
         |> List.map (fun moduleDump ->
             let bindings =
                 moduleDump.Bindings
@@ -737,8 +737,8 @@ module IlDotNetBackend =
             constructorInfo.TypeParameters |> List.map IlTypeParameter
         )
 
-    let private buildDeclaredBindingLookup (workspace: WorkspaceCompilation) =
-        workspace.KRuntimeIR
+    let private buildDeclaredBindingLookup (modules: ClrAssemblyModule list) =
+        modules
         |> List.collect (fun moduleDump ->
             moduleDump.Bindings
             |> List.map (fun binding ->
@@ -747,8 +747,8 @@ module IlDotNetBackend =
                    ReturnType = binding.ReturnTypeText }: DeclaredBindingTexts)))
         |> Map.ofList
 
-    let private buildTraitInstances (rawModules: Map<string, RawModuleInfo>) (workspace: WorkspaceCompilation) =
-        workspace.KRuntimeIR
+    let private buildTraitInstances (rawModules: Map<string, RawModuleInfo>) (modules: ClrAssemblyModule list) =
+        modules
         |> List.fold
             (fun stateResult moduleDump ->
                 result {
@@ -1027,14 +1027,14 @@ module IlDotNetBackend =
                 else
                     Result.Ok resultType)
 
-    let private buildEnvironment (workspace: WorkspaceCompilation) =
-        let rawSkeletons, rawDataTypes = buildRawModuleSkeletons workspace
+    let private buildEnvironment (modules: ClrAssemblyModule list) =
+        let rawSkeletons, rawDataTypes = buildRawModuleSkeletons modules
 
         resolveDataTypes rawSkeletons rawDataTypes
         |> Result.bind (fun resolvedDataTypes ->
             let rawModules = attachResolvedDataTypes rawSkeletons resolvedDataTypes
-            let declaredBindingLookup = buildDeclaredBindingLookup workspace
-            buildTraitInstances rawModules workspace
+            let declaredBindingLookup = buildDeclaredBindingLookup modules
+            buildTraitInstances rawModules modules
             |> Result.bind (fun traitInstances ->
                 let cache = Dictionary<string * string, BindingInfo>()
 
@@ -3035,6 +3035,131 @@ module IlDotNetBackend =
 
             { dataEmission with Constructors = constructors })
 
+    let emitClrAssemblyArtifact (modules: ClrAssemblyModule list) (outputDirectory: string) =
+        match buildEnvironment modules with
+        | Result.Error message ->
+            Result.Error message
+        | Result.Ok environment ->
+            try
+                let resolvedOutputDirectory = Path.GetFullPath(outputDirectory)
+                Directory.CreateDirectory(resolvedOutputDirectory) |> ignore
+
+                let assemblyName =
+                    "Kappa.Generated."
+                    + sanitizeIdentifier(Path.GetFileName(resolvedOutputDirectory))
+
+                let assemblyPath = Path.Combine(resolvedOutputDirectory, $"{assemblyName}.dll")
+                let assemblyBuilder = PersistedAssemblyBuilder(AssemblyName(assemblyName), typeof<obj>.Assembly)
+                let moduleBuilder = assemblyBuilder.DefineDynamicModule(assemblyName)
+
+                let moduleBuilders =
+                    environment.Modules
+                    |> Map.toList
+                    |> List.map (fun (moduleName, moduleInfo) ->
+                        let moduleTypeBuilder =
+                            moduleBuilder.DefineType(
+                                moduleInfo.EmittedTypeName.Value,
+                                TypeAttributes.Public ||| TypeAttributes.Abstract ||| TypeAttributes.Sealed ||| TypeAttributes.Class
+                            )
+
+                        moduleName, moduleTypeBuilder)
+                    |> Map.ofList
+
+                let dataTypeBuilders = defineDataTypes moduleBuilder environment
+
+                let methodBuilders =
+                    environment.Modules
+                    |> Map.toList
+                    |> List.map (fun (moduleName, moduleInfo) ->
+                        let methods =
+                            moduleInfo.Bindings
+                            |> Map.toList
+                            |> List.map (fun (bindingName, bindingInfo) ->
+                                let methodBuilder =
+                                    moduleBuilders[moduleName].DefineMethod(
+                                        bindingInfo.EmittedMethodName,
+                                        MethodAttributes.Public ||| MethodAttributes.Static ||| MethodAttributes.HideBySig
+                                    )
+
+                                let genericParameterMap =
+                                    match bindingInfo.TypeParameters with
+                                    | [] ->
+                                        Map.empty
+                                    | typeParameterNames ->
+                                        methodBuilder.DefineGenericParameters(typeParameterNames |> List.toArray)
+                                        |> Array.toList
+                                        |> List.zip typeParameterNames
+                                        |> List.map (fun (name, parameter) -> name, (parameter :> Type))
+                                        |> Map.ofList
+
+                                let partialState =
+                                    { Environment = environment
+                                      ModuleBuilders = moduleBuilders
+                                      MethodBuilders = Map.empty
+                                      DataTypeBuilders = dataTypeBuilders }
+
+                                let parameterTypes =
+                                    bindingInfo.ParameterTypes
+                                    |> List.map (snd >> resolveClrType partialState genericParameterMap)
+                                    |> List.toArray
+
+                                methodBuilder.SetReturnType(resolveClrType partialState genericParameterMap bindingInfo.ReturnType)
+                                methodBuilder.SetParameters(parameterTypes)
+
+                                bindingInfo.ParameterTypes
+                                |> List.iteri (fun index (parameterName, _) ->
+                                    methodBuilder.DefineParameter(index + 1, ParameterAttributes.None, parameterName)
+                                    |> ignore)
+
+                                bindingName,
+                                { Builder = methodBuilder
+                                  GenericParameters = genericParameterMap })
+                            |> Map.ofList
+
+                        moduleName, methods)
+                    |> Map.ofList
+
+                let state =
+                    { Environment = environment
+                      ModuleBuilders = moduleBuilders
+                      MethodBuilders = methodBuilders
+                      DataTypeBuilders = dataTypeBuilders }
+
+                let emissionResult =
+                    environment.Modules
+                    |> Map.toList
+                    |> List.map snd
+                    |> List.collect (fun moduleInfo -> moduleInfo.Bindings |> Map.toList |> List.map (fun (_, bindingInfo) -> moduleInfo, bindingInfo))
+                    |> List.fold
+                        (fun stateResult (moduleInfo, bindingInfo) ->
+                            result {
+                                do! stateResult
+                                do! emitMethodBody state moduleInfo bindingInfo
+                            })
+                        (Result.Ok())
+
+                match emissionResult with
+                | Result.Error message ->
+                    Result.Error message
+                | Result.Ok() ->
+                    dataTypeBuilders
+                    |> Map.iter (fun _ dataEmission -> dataEmission.BaseTypeBuilder.CreateType() |> ignore)
+
+                    dataTypeBuilders
+                    |> Map.iter (fun _ dataEmission ->
+                        dataEmission.Constructors
+                        |> Map.iter (fun _ constructorEmission -> constructorEmission.TypeBuilder.CreateType() |> ignore))
+
+                    moduleBuilders |> Map.iter (fun _ moduleTypeBuilder -> moduleTypeBuilder.CreateType() |> ignore)
+                    assemblyBuilder.Save(assemblyPath)
+
+                    Result.Ok
+                        { OutputDirectory = resolvedOutputDirectory
+                          AssemblyName = assemblyName
+                          AssemblyFilePath = assemblyPath }
+            with ex ->
+                Result.Error $"IL backend emission failed: {ex.Message}"
+
     let emitAssemblyArtifact (workspace: WorkspaceCompilation) (outputDirectory: string) =
         if workspace.HasErrors then
             Result.Error $"Cannot emit a CLR assembly for a workspace with diagnostics:{Environment.NewLine}{aggregateDiagnostics workspace.Diagnostics}"
@@ -3044,126 +3169,8 @@ module IlDotNetBackend =
             if not (List.isEmpty verificationDiagnostics) then
                 Result.Error $"Cannot emit malformed KRuntimeIR:{Environment.NewLine}{aggregateDiagnostics verificationDiagnostics}"
             else
-                match buildEnvironment workspace with
-                | Result.Error message ->
-                    Result.Error message
-                | Result.Ok environment ->
-                    try
-                        let resolvedOutputDirectory = Path.GetFullPath(outputDirectory)
-                        Directory.CreateDirectory(resolvedOutputDirectory) |> ignore
+                let modules =
+                    workspace.KRuntimeIR
+                    |> List.map ClrAssemblyIR.ofRuntimeModule
 
-                        let assemblyName =
-                            "Kappa.Generated."
-                            + sanitizeIdentifier(Path.GetFileName(resolvedOutputDirectory))
-
-                        let assemblyPath = Path.Combine(resolvedOutputDirectory, $"{assemblyName}.dll")
-                        let assemblyBuilder = PersistedAssemblyBuilder(AssemblyName(assemblyName), typeof<obj>.Assembly)
-                        let moduleBuilder = assemblyBuilder.DefineDynamicModule(assemblyName)
-
-                        let moduleBuilders =
-                            environment.Modules
-                            |> Map.toList
-                            |> List.map (fun (moduleName, moduleInfo) ->
-                                let moduleTypeBuilder =
-                                    moduleBuilder.DefineType(
-                                        moduleInfo.EmittedTypeName.Value,
-                                        TypeAttributes.Public ||| TypeAttributes.Abstract ||| TypeAttributes.Sealed ||| TypeAttributes.Class
-                                    )
-
-                                moduleName, moduleTypeBuilder)
-                            |> Map.ofList
-
-                        let dataTypeBuilders = defineDataTypes moduleBuilder environment
-
-                        let methodBuilders =
-                            environment.Modules
-                            |> Map.toList
-                            |> List.map (fun (moduleName, moduleInfo) ->
-                                let methods =
-                                    moduleInfo.Bindings
-                                    |> Map.toList
-                                    |> List.map (fun (bindingName, bindingInfo) ->
-                                        let methodBuilder =
-                                            moduleBuilders[moduleName].DefineMethod(
-                                                bindingInfo.EmittedMethodName,
-                                                MethodAttributes.Public ||| MethodAttributes.Static ||| MethodAttributes.HideBySig
-                                            )
-
-                                        let genericParameterMap =
-                                            match bindingInfo.TypeParameters with
-                                            | [] ->
-                                                Map.empty
-                                            | typeParameterNames ->
-                                                methodBuilder.DefineGenericParameters(typeParameterNames |> List.toArray)
-                                                |> Array.toList
-                                                |> List.zip typeParameterNames
-                                                |> List.map (fun (name, parameter) -> name, (parameter :> Type))
-                                                |> Map.ofList
-
-                                        let partialState =
-                                            { Environment = environment
-                                              ModuleBuilders = moduleBuilders
-                                              MethodBuilders = Map.empty
-                                              DataTypeBuilders = dataTypeBuilders }
-
-                                        let parameterTypes =
-                                            bindingInfo.ParameterTypes
-                                            |> List.map (snd >> resolveClrType partialState genericParameterMap)
-                                            |> List.toArray
-
-                                        methodBuilder.SetReturnType(resolveClrType partialState genericParameterMap bindingInfo.ReturnType)
-                                        methodBuilder.SetParameters(parameterTypes)
-
-                                        bindingInfo.ParameterTypes
-                                        |> List.iteri (fun index (parameterName, _) ->
-                                            methodBuilder.DefineParameter(index + 1, ParameterAttributes.None, parameterName)
-                                            |> ignore)
-
-                                        bindingName,
-                                        { Builder = methodBuilder
-                                          GenericParameters = genericParameterMap })
-                                    |> Map.ofList
-
-                                moduleName, methods)
-                            |> Map.ofList
-
-                        let state =
-                            { Environment = environment
-                              ModuleBuilders = moduleBuilders
-                              MethodBuilders = methodBuilders
-                              DataTypeBuilders = dataTypeBuilders }
-
-                        let emissionResult =
-                            environment.Modules
-                            |> Map.toList
-                            |> List.map snd
-                            |> List.collect (fun moduleInfo -> moduleInfo.Bindings |> Map.toList |> List.map (fun (_, bindingInfo) -> moduleInfo, bindingInfo))
-                            |> List.fold
-                                (fun stateResult (moduleInfo, bindingInfo) ->
-                                    result {
-                                        do! stateResult
-                                        do! emitMethodBody state moduleInfo bindingInfo
-                                    })
-                                (Result.Ok())
-
-                        match emissionResult with
-                        | Result.Error message ->
-                            Result.Error message
-                        | Result.Ok() ->
-                            dataTypeBuilders
-                            |> Map.iter (fun _ dataEmission -> dataEmission.BaseTypeBuilder.CreateType() |> ignore)
-
-                            dataTypeBuilders
-                            |> Map.iter (fun _ dataEmission ->
-                                dataEmission.Constructors
-                                |> Map.iter (fun _ constructorEmission -> constructorEmission.TypeBuilder.CreateType() |> ignore))
-
-                            moduleBuilders |> Map.iter (fun _ moduleTypeBuilder -> moduleTypeBuilder.CreateType() |> ignore)
-                            assemblyBuilder.Save(assemblyPath)
-
-                            Result.Ok
-                                { OutputDirectory = resolvedOutputDirectory
-                                  AssemblyName = assemblyName
-                                  AssemblyFilePath = assemblyPath }
-                    with ex ->
-                        Result.Error $"IL backend emission failed: {ex.Message}"
+                emitClrAssemblyArtifact modules outputDirectory

@@ -64,7 +64,7 @@ module internal KRuntimeLowering =
 
         loop tokens (max 1 argumentCount) []
 
-    let private lowerRuntimeParameter (parameter: KCoreParameter) =
+    let private lowerRuntimeParameter (parameter: KCoreParameter) : KRuntimeParameter =
         { Name = parameter.Name
           TypeText = parameter.TypeText }
 
@@ -161,7 +161,7 @@ module internal KRuntimeLowering =
         not declaration.IsOpaque
         && isExportedVisibility moduleDump.ModuleAttributes declaration.Visibility
 
-    let lowerKRuntimeModule (coreModule: KCoreModule) =
+    let lowerKRuntimeModule (coreModule: KCoreModule) : KRuntimeModule =
         let moduleTraitArities =
             coreModule.Declarations
             |> List.choose (fun declaration ->
@@ -176,7 +176,7 @@ module internal KRuntimeLowering =
                     None)
             |> Map.ofList
 
-        let termBindings =
+        let termBindings : KRuntimeBinding list =
             coreModule.Declarations
             |> List.choose (fun declaration ->
                 match declaration.Binding with
@@ -191,7 +191,7 @@ module internal KRuntimeLowering =
                 | _ ->
                     None)
 
-        let intrinsicBindings =
+        let intrinsicBindings : KRuntimeBinding list =
             coreModule.IntrinsicTerms
             |> List.map (fun name ->
                 { Name = name
@@ -205,12 +205,12 @@ module internal KRuntimeLowering =
                       DeclarationName = Some name
                       IntroductionKind = "intrinsic" } })
 
-        let dataTypes =
+        let dataTypes : KRuntimeDataType list =
             coreModule.Declarations
             |> List.choose (fun declaration ->
                 match declaration.Source with
                 | DataDeclarationNode dataDeclaration ->
-                    let constructors =
+                    let constructors : KRuntimeConstructor list =
                         dataDeclaration.Constructors
                         |> List.map (fun constructor ->
                             { Name = constructor.Name
@@ -232,7 +232,7 @@ module internal KRuntimeLowering =
                 | _ ->
                     None)
 
-        let traits =
+        let traits : KRuntimeTrait list =
             coreModule.Declarations
             |> List.choose (fun declaration ->
                 match declaration.Source with
@@ -245,7 +245,7 @@ module internal KRuntimeLowering =
                 | _ ->
                     None)
 
-        let traitInstances =
+        let traitInstances : KRuntimeTraitInstance list =
             coreModule.Declarations
             |> List.choose (fun declaration ->
                 match declaration.Source with
@@ -280,7 +280,7 @@ module internal KRuntimeLowering =
                 | _ ->
                     None)
 
-        let constructors =
+        let constructors : KRuntimeConstructor list =
             dataTypes
             |> List.filter (fun dataType ->
                 coreModule.Declarations
@@ -315,13 +315,13 @@ module internal KRuntimeLowering =
             |> List.distinct
             |> List.sort
 
-        { Name = coreModule.Name
-          SourceFile = coreModule.SourceFile
-          Imports = coreModule.Imports
-          Exports = exports
-          IntrinsicTerms = coreModule.IntrinsicTerms
-          DataTypes = dataTypes
-          Traits = traits
-          TraitInstances = traitInstances
-          Constructors = constructors
-          Bindings = termBindings @ intrinsicBindings }
+        ({ Name = coreModule.Name
+           SourceFile = coreModule.SourceFile
+           Imports = coreModule.Imports
+           Exports = exports
+           IntrinsicTerms = coreModule.IntrinsicTerms
+           DataTypes = dataTypes
+           Traits = traits
+           TraitInstances = traitInstances
+           Constructors = constructors
+           Bindings = termBindings @ intrinsicBindings }: KRuntimeModule)

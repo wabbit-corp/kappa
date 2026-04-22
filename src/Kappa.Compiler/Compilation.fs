@@ -1552,6 +1552,10 @@ module Compilation =
             KBackendLowering.lowerKBackendModules normalizedBackendProfile kRuntimeIR
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
+        let clrAssemblyIR =
+            ClrAssemblyLowering.lowerModules kRuntimeIR kBackendIR
+            |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
+
         let workspace =
             { SourceRoot = options.SourceRoot
               PackageMode = options.PackageMode
@@ -1566,6 +1570,7 @@ module Compilation =
               KCore = kCore
               KRuntimeIR = kRuntimeIR
               KBackendIR = kBackendIR
+              ClrAssemblyIR = clrAssemblyIR
               Diagnostics = diagnostics
               PipelineTrace = [] }
 

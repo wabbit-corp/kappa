@@ -78,7 +78,7 @@ let ``dotnet backend artifact emission does not depend on frontend documents`` (
     Assert.True(artifact.GeneratedFilePath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
 
 [<Fact>]
-let ``dotnet backend execution does not depend on KRuntimeIR`` () =
+let ``dotnet backend execution does not depend on KCore or KRuntimeIR`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend
             "memory-dotnet-no-kruntime-root"
@@ -100,7 +100,7 @@ let ``dotnet backend execution does not depend on KRuntimeIR`` () =
     let outputDirectory = createScratchDirectory "dotnet-no-kruntime-backend"
 
     let artifact =
-        match Backend.emitDotNetArtifact { workspace with KRuntimeIR = [] } "main.result" outputDirectory DotNetDeployment.Managed with
+        match Backend.emitDotNetArtifact { workspace with KCore = []; KRuntimeIR = [] } "main.result" outputDirectory DotNetDeployment.Managed with
         | Result.Ok artifact -> artifact
         | Result.Error message -> failwith message
 
