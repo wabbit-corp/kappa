@@ -6032,8 +6032,8 @@ such duplication unsound, the program is already rejected by the call-site captu
 
 #### 8.1.9 Shallow handlers
 
-Kappa provides shallow handlers. A shallow handler intercepts operations for one effect label at a time and yields
-resumptions that continue in the original unhandled computation type.
+Kappa provides shallow handlers. A shallow handler intercepts operations for one effect label at a time and eliminates
+an `Eff` computation into a single target carrier `m`.
 
 Syntax:
 
@@ -6053,6 +6053,8 @@ Typing:
 Suppose `expr : Eff r_all a` and `SplitEff r_all label E r` is solvable. Equivalently, up to row normalization, `expr`
 has type `Eff <[label : E | r]> a`.
 
+Suppose every clause body in the handler is checked in the same target carrier `m : Type -> Type`.
+
 Suppose the effect interface `E` declares an operation `q op` whose signature (after elaborating any outer `forall`s)
 is:
 
@@ -6060,74 +6062,39 @@ is:
 op : Π (x₁ : A₁) ... (xₙ : Aₙ). B
 ```
 
-(where the Π-telescope may contain implicit binders, quantity annotations, and dependencies between the parameters and
-the result `B`).
-
 Then the handler is well-typed iff:
 
 * there is exactly one return clause of the form `case return x -> e_ret`,
 * there is exactly one operation clause for each operation declared by `E`,
 * there are no extra operation clauses,
-* in the return clause, `x : a` and `e_ret : Eff r b`,
+* in the return clause, `x : a` and `e_ret : m b`,
 * in an operation clause `case op x₁ ... xₙ k -> e`, each `xᵢ` is bound at type `Aᵢ` with previous parameters
   substituted into later parameter types and into `B`,
 * in that clause, the resumption `k` is itself bound at quantity `q`,
 * the resumption `k` has type `(1 _ : B) -> Eff <[label : E | r]> a`, where `B` is instantiated by the clause binders,
-* and the clause body `e` has type `Eff r b`.
-
-The "exactly one operation clause per declared operation" and "no extra operation clauses" requirements remain
-unchanged.
+* and the clause body `e` has type `m b`.
 
 The whole handler has type:
 
 ```kappa
-Eff r b
+m b
 ```
+
+All clauses of one handler MUST elaborate to the same target carrier `m`. `m` may be `Eff r`, `IO e`, or any other
+well-typed computation carrier.
 
 Semantics:
 
 * On pure completion of `expr`, the `return` clause is executed.
 * On an operation at the handled label, the matching operation clause is executed.
-* Applying `k` resumes the suspended computation from the operation site.
-* `k` must be used according to its declared resumption quantity `q`. If `q = 1`, invoking it more than once is a
-  compile-time quantity error inside the handler. If `q` permits more than one use, such as `ω` or `>=1`, multiple
-  invocations are permitted, subject to the call-site capture rule of §8.1.8.
+* Applying `k` resumes the suspended computation from the operation site in the original unhandled carrier
+  `Eff <[label : E | r]> a`.
+* `k` must be used according to its declared resumption quantity `q`.
 * The current handler is not automatically reinstalled around `k`. To continue handling the same label after resumption,
   the handler body must explicitly handle the resumed computation again.
-* Operations at labels other than `label` propagate outward unchanged.
+* Operations at labels other than `label` propagate outward unchanged inside the resumed computation.
 
-Example:
-
-```kappa
-effect State (s : Type) =
-    1 get : Unit -> s
-    1 put : s -> Unit
-
-runState :
-    forall (r : EffRow) (s : Type) (a : Type).
-    (init : s) -> Eff <[state : State s | r]> a -> Eff r (a, s)
-
-let runState init comp =
-    let go (st : s) (m : Eff <[state : State s | r]> a) : Eff r (a, s) =
-        handle state in m
-        case return x -> pure (x, st)
-        case get () k -> go st  (k st)
-        case put st' k -> go st' (k ())
-    in
-        go init comp
-
-effect ResourceManager =
-    1 acquire : (name : String) -> (1 size : Nat) -> Resource name
-    1 release : (name : String) -> (1 r : Resource name) -> Unit
-
-handle rm in comp
-case return x -> ...
-case acquire name size k ->
-    let r = ... in
-    k r   -- k : (1 _ : Resource name) -> Eff <[rm : ResourceManager | rest]> a
-case release name r k ->
-    ...; k ()
-```
+When `m = Eff r`, this rule coincides with the ordinary algebraic-effect elimination behavior.
 
 #### 8.1.9.1 KCore realization and interaction with abrupt completion
 
@@ -6139,10 +6106,10 @@ In an ordinary effect context, a shallow handler consumes a computation of type:
 Eff <[label : E | r]> a
 ```
 
-and produces a computation of type:
+and produces a computation in a single target carrier:
 
 ```text
-Eff r b
+m b
 ```
 
 When a shallow handler appears inside the completion-carrying elaboration of §8.7, the handled computation is instead:
@@ -6154,7 +6121,7 @@ Eff <[label : E | r]> (Completion(RetCtx, a))
 and the handler result is:
 
 ```text
-Eff r (Completion(RetCtx, b))
+m (Completion(RetCtx, b))
 ```
 
 In this completion-carrying case:
@@ -6173,8 +6140,8 @@ completion-and-scope kernel.
 
 #### 8.1.10 Deep handlers (`deep handle`)
 
-Deep handlers automatically reinstall themselves around their resumptions. They are surface sugar over shallow handlers
-plus explicit recursion.
+Deep handlers automatically reinstall themselves around their resumptions. They eliminate an `Eff` computation into a
+single target carrier `m`.
 
 Syntax:
 
@@ -6189,6 +6156,8 @@ case op2 y1 ... ym k -> e2
 Typing:
 
 Suppose `expr : Eff r_all a` and `SplitEff r_all label E r` is solvable.
+
+Suppose every clause body in the handler is checked in the same target carrier `m : Type -> Type`.
 
 Suppose the effect interface `E` declares an operation `q op` whose signature (after elaborating any outer `forall`s)
 is:
@@ -6207,11 +6176,16 @@ is typed as follows:
 
 * each `xᵢ` is bound at type `Aᵢ` with the usual substitution of earlier parameters into later ones and into `B`,
 * the continuation `k` is itself bound at quantity `q`,
-* `k` has type `(1 _ : B) -> Eff r b`,
-* and the clause body `e` has type `Eff r b`.
+* `k` has type `(1 _ : B) -> m b`,
+* and the clause body `e` has type `m b`.
 
-Thus a deep continuation already returns to the target monad of the whole handler rather than to the original unhandled
-computation type.
+The return clause has `x : a` and body `e_ret : m b`.
+
+The whole deep handler has type:
+
+```kappa
+m b
+```
 
 Normative desugaring:
 
@@ -6226,54 +6200,19 @@ in
     __go expr
 ```
 
-The shallow `handle` used in this desugaring is the surface form whose KCore realization is specified by §§8.1.9.1 and
-17.3.1.5.
-
 where `q` and `B` are the declared resumption quantity and instantiated result type of `op1`, and where `__go` and
 `__k_shallow` are fresh identifiers inaccessible to user code.
-
-Totality of the generated recursion:
-
-* The helper `__go` above is an elaborator-internal recursive function, not a user definition.
-* It MUST NOT be rejected merely because a surface-level termination checker cannot see an ordinary structural argument
-  over source syntax.
-* A conforming implementation must justify this recursion by one of the following equivalent strategies:
-  * prove internally that each recursive call processes a proper resumed subtree of the handled computation, or
-  * lower `deep handle` directly to an internal primitive or handler form with the same observable behavior as the
-    schematic recursion above.
-* This mechanism is not a hidden use of user-facing `assertTotal`. It is trusted elaborator infrastructure of the same
-  kind as the internal recursive loop used for `while` (§8.5).
 
 Semantics:
 
 * On normal completion of a handled branch, the `return` clause `e_ret` is evaluated in the lexical context of the
-  handler itself, not in the original call-site context of the computation being handled.
-* Consequently, any linear or borrowed resources captured by the handler and used by `e_ret` are checked and consumed
-  according to the ordinary closure-capture rules. This is sound because each completed branch reaches the `return`
-  clause at most once.
+  handler itself.
 * Applying `k` resumes the suspended computation from the operation site and immediately reinstalls the same deep
   handler around that resumed computation.
 * `k` must still be used according to its declared quantity `q`.
 * Operations at labels other than `label` propagate outward unchanged.
 * If the deep resumption `k` is used more than once under its declared resumption quantity, each use behaves as a fresh
-  application of the corresponding shallow resumption followed by fresh reinstallation of the same deep handler. The
-  independence and shared-store rules are exactly those of §8.1.8.1.
-
-Stateful deep-handler example:
-
-```kappa
-let runState (init : s) comp =
-    let handlerObj =
-        deep handle state in comp
-        case return x -> \st -> pure (x, st)
-        case get () k -> \st -> k st st
-        case put st' k -> \st -> k () st'
-    in
-        handlerObj init
-```
-
-Because `inout` is purely linear record-threading sugar (§8.8), the same state-runner pattern can also be exposed
-through an `inout` parameter on a named function, with no change to the underlying handler semantics.
+  application of the corresponding shallow resumption followed by fresh reinstallation of the same deep handler.
 
 #### 8.1.11 `MonadFinally`
 
@@ -11616,23 +11555,24 @@ kernel.
 A conforming implementation MUST behave as if KCore contains an explicit effect-operation and shallow-handler kernel for
 the effect features of §8.1 and the runtime constraints of §14.8.
 
-For a handled label `label`, effect interface `E`, surrounding effect row `r_all`, and residual effect row `r` such that
-`SplitEff r_all label E r` is solvable, KCore additionally behaves as if it contains:
+For a handled label `label`, effect interface `E`, surrounding effect row `r_all`, residual effect row `r`, and target
+carrier `m : Type -> Type` such that `SplitEff r_all label E r` is solvable, KCore additionally behaves as if it
+contains:
 
 ```text
 OpCall        : EffLabel -> OpSymbol -> ArgSpine -> Eff r_all B
-HandleShallow : EffLabel -> HandlerSpec(label, E, r_all, r, A, B) -> Eff r_all A -> Eff r B
+HandleShallow : EffLabel -> HandlerSpec(label, E, r_all, r, m, A, B) -> Eff r_all A -> m B
 ```
 
 where:
 
 ```text
-HandlerSpec(label, E, r_all, r, A, B) =
-  { onReturn : A -> Eff r B
+HandlerSpec(label, E, r_all, r, m, A, B) =
+  { onReturn : A -> m B
   , onOp[op_i] :
         Π (x1 : A1) ... (xn : An).
           (q_i k : B_i -> Eff r_all A) ->
-          Eff r B
+          m B
       for each declared operation
       q_i op_i : Π (x1 : A1) ... (xn : An). B_i
       of E
@@ -11651,7 +11591,8 @@ Meaning:
 * Applying `k` resumes that captured suffix.
 * The quantity of `k` is the declared resumption quantity `q_i` of the intercepted operation and is checked by the
   ordinary quantity rules.
-* `HandleShallow` handles only the selected label. Operations at all other labels propagate outward unchanged.
+* `HandleShallow` handles only the selected label and eliminates into the single target carrier `m`. Operations at all
+  other labels propagate outward unchanged inside resumed computations.
 * A `HandleShallow` return clause is applied only when the handled computation completes normally.
 * If the handled computation is itself completion-carrying, for example of type `Eff r_all (Completion(RetCtx, A))`,
   then propagation of `Break`, `Continue`, and `Return[...]` is determined by the surface elaboration rule of §8.1.9.1
