@@ -1303,6 +1303,13 @@ Resolution and typing:
   type `t`.
 * If resolution fails, or if the resolved term does not have a compatible type, compilation fails with a compile-time
   error.
+* The resolved prefix term `p` and the subsequent call `p.buildInterpolated ...` are evaluated at elaboration time by
+  the same evaluator used for ordinary `$(...)` splices.
+* There is no separate syntactic class of "compile-time prefix constants".
+  Any Kappa term may serve as the prefix term, provided ordinary elaboration-time evaluation of that term succeeds in
+  the current environment under the rules and restrictions of §5.8.6.
+* If elaboration-time evaluation of the prefix term or of `buildInterpolated` diverges, fails, or attempts a disallowed
+  elaboration-time effect, compilation fails.
 
 The prelude provides:
 
