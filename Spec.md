@@ -3448,6 +3448,52 @@ When its argument is a comprehension syntax value produced for `FromComprehensio
 result of applying the normative desugaring rules of §10.10 to that comprehension. If the argument is not such a
 comprehension syntax value, compilation fails with an elaboration-time error.
 
+The reflection API MUST additionally provide elaboration-time convenience operations equivalent to:
+
+```kappa
+renderSyntax :
+    forall (@0 t : Type).
+    Syntax t -> String
+
+typeOfSyntax :
+    forall (@0 t : Type).
+    Syntax t -> Syntax Type
+
+whnfSyntax :
+    forall (@0 t : Type).
+    Syntax t -> Syntax t
+
+normalizeSyntax :
+    forall (@0 t : Type).
+    Syntax t -> Syntax t
+
+defEqSyntax :
+    forall (@0 a : Type) (@0 b : Type).
+    Syntax a -> Syntax b -> Bool
+
+headSymbolSyntax :
+    forall (@0 t : Type).
+    Syntax t -> Option Symbol
+```
+
+Normative meaning:
+
+* `renderSyntax` returns a deterministic, human-oriented rendering of the given syntax value. The exact pretty-printing
+  style is implementation-defined, but the rendering MUST preserve binding structure and hygiene up to alpha-renaming.
+* `typeOfSyntax s` elaborates `s` at the current call site, infers its type using the ordinary elaborator, and reifies
+  that type back to `Syntax Type`.
+* `whnfSyntax s` elaborates `s` at the current call site, computes weak-head normal form using the ordinary
+  normalization machinery, and reifies the result back to `Syntax`.
+* `normalizeSyntax s` elaborates `s` at the current call site, computes full normalization using the ordinary
+  normalization machinery, and reifies the result back to `Syntax`.
+* `defEqSyntax s1 s2` elaborates both syntax values at the current call site and returns the same Boolean result that
+  `defEq` would return for the resulting reflected cores.
+* `headSymbolSyntax s` elaborates `s` at the current call site and returns the same result that `headSymbol` would
+  return for the resulting reflected core.
+* These convenience operations are pure elaboration-time queries. They MUST obey the same name-resolution,
+  implicit-insertion, visibility, opacity, `unhide`, and `clarify` rules as the underlying reflection operations at the
+  call site.
+
 #### 5.8.6 Restrictions on macro effects
 
 Macros, and any helper functions they invoke during elaboration-time execution, run under the elaboration-time
