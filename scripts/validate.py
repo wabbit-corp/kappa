@@ -57,12 +57,16 @@ ALLOWED_LATIN1_SUPPLEMENT = {
 SECTION_SIGN = "\u00A7"
 EN_DASH = "\u2013"
 EM_DASH = "\u2014"
-SECTION_TOKEN = r"(?:[A-Z](?:\.\d+)*|\d+(?:\.\d+)*)"
+APPENDIX_SECTION_TOKEN = r"[A-Z](?:\.\d+)*"
+NUMERIC_SECTION_TOKEN = r"\d+(?:\.\d+)*(?:[A-Z])?"
+PURE_NUMERIC_SECTION_TOKEN = r"\d+(?:\.\d+)*"
+SECTION_TOKEN = rf"(?:{APPENDIX_SECTION_TOKEN}|{NUMERIC_SECTION_TOKEN})"
 FENCE_RE = re.compile(r"^(?P<marker>`{3,}|~{3,})(?P<rest>.*)$")
 WIKI_REFERENCE_RE = re.compile(rf"\[\[([^\[\]:]+\.md)(?::({SECTION_TOKEN}))?\]\]")
+APPENDIX_REFERENCE_RE = re.compile(rf"\bAppendix (?P<section>{APPENDIX_SECTION_TOKEN})\b")
 
 NUMERIC_HEADING_RE = re.compile(
-    r"^(?P<hashes>#{2,6})\s+(?P<section>\d+(?:\.\d+)*)(?:\.)?\s+(?P<title>\S.*\S|\S)\s*$"
+    rf"^(?P<hashes>#{{2,6}})\s+(?P<section>{NUMERIC_SECTION_TOKEN})(?:\.)?\s+(?P<title>\S.*\S|\S)\s*$"
 )
 APPENDIX_HEADING_RE = re.compile(
     r"^(?P<hashes>##)\s+Appendix\s+(?P<section>[A-Z])\.\s+(?P<title>\S.*\S|\S)\s*$"
@@ -79,6 +83,8 @@ SECTION_GROUP_RE = re.compile(
 )
 SECTION_REFERENCE_RE = re.compile(rf"(?:{SECTION_SIGN}{{1,2}})?(?P<section>{SECTION_TOKEN})")
 INLINE_CODE_RE = re.compile(r"(`+)(.*?)\1")
+NUMERIC_SECTION_PART_RE = re.compile(r"^(?P<number>\d+)(?P<suffix>[A-Z]?)$")
+PURE_NUMERIC_SECTION_RE = re.compile(rf"^{PURE_NUMERIC_SECTION_TOKEN}$")
 RANGE_SEPARATORS = {"-", EN_DASH, EM_DASH}
 
 
@@ -334,31 +340,74 @@ def validate_line_lengths(path: Path, lines: list[str], max_length: int) -> list
     return problems
 
 
+def parse_numeric_section(section: str) -> tuple[tuple[int, ...], tuple[int, str]]:
+    parts = section.split(".")
+    final_part = NUMERIC_SECTION_PART_RE.fullmatch(parts[-1])
+    if final_part is None:
+        raise ValueError(f"invalid numeric section: {section}")
+
+    parent = tuple(int(part) for part in parts[:-1])
+    current = (int(final_part.group("number")), final_part.group("suffix"))
+    return parent, current
+
+
+def format_numeric_child(child: tuple[int, str]) -> str:
+    return f"{child[0]}{child[1]}"
+
+
+def is_valid_next_numeric_child(
+    previous: tuple[int, str] | None,
+    current: tuple[int, str],
+) -> bool:
+    if previous is None:
+        return current == (1, "")
+
+    previous_number, previous_suffix = previous
+    current_number, current_suffix = current
+    if current_number == previous_number:
+        expected_suffix = "A" if not previous_suffix else chr(ord(previous_suffix) + 1)
+        return current_suffix == expected_suffix
+    return current_number == previous_number + 1 and not current_suffix
+
+
+def expected_numeric_child(
+    previous: tuple[int, str] | None,
+    current: tuple[int, str],
+) -> str:
+    if previous is None:
+        return "1"
+    if current[0] == previous[0]:
+        previous_suffix = previous[1]
+        next_suffix = "A" if not previous_suffix else chr(ord(previous_suffix) + 1)
+        return f"{previous[0]}{next_suffix}"
+    return str(previous[0] + 1)
+
+
 def validate_numeric_heading(
     path: Path,
     line_number: int,
     section: str,
-    seen_numeric_children: dict[tuple[int, ...], int],
-    seen_numeric_sections: set[tuple[int, ...]],
+    seen_numeric_children: dict[tuple[int, ...], tuple[int, str]],
+    seen_numeric_sections: set[str],
     sections: set[str],
 ) -> list[Problem]:
     problems: list[Problem] = []
-    parts = tuple(int(part) for part in section.split("."))
-    parent = parts[:-1]
+    parent, current = parse_numeric_section(section)
+    parent_section = ".".join(str(part) for part in parent)
 
-    if parent and parent not in seen_numeric_sections:
+    if parent and parent_section not in seen_numeric_sections:
         problems.append(
             Problem(
                 path,
                 line_number,
-                f"section {section} is missing its numbered parent {'.'.join(str(part) for part in parent)}",
+                f"section {section} is missing its numbered parent {parent_section}",
             )
         )
 
-    current = parts[-1]
-    expected = seen_numeric_children.get(parent, 0) + 1
-    if current != expected:
-        scope = f"within section {'.'.join(str(part) for part in parent)}" if parent else "at the top level"
+    previous = seen_numeric_children.get(parent)
+    if not is_valid_next_numeric_child(previous, current):
+        expected = expected_numeric_child(previous, current)
+        scope = f"within section {parent_section}" if parent else "at the top level"
         problems.append(
             Problem(
                 path,
@@ -367,7 +416,7 @@ def validate_numeric_heading(
             )
         )
     seen_numeric_children[parent] = current
-    seen_numeric_sections.add(parts)
+    seen_numeric_sections.add(section)
     sections.add(section)
     return problems
 
@@ -431,9 +480,9 @@ def format_missing_heading_levels(previous_level: int, current_level: int) -> st
 def validate_markdown_sections(path: Path, lines: list[str]) -> tuple[list[Problem], set[str]]:
     problems: list[Problem] = []
     sections: set[str] = set()
-    seen_numeric_children: dict[tuple[int, ...], int] = {}
+    seen_numeric_children: dict[tuple[int, ...], tuple[int, str]] = {}
     seen_appendix_children: dict[tuple[str, ...], int] = {}
-    seen_numeric_sections: set[tuple[int, ...]] = set()
+    seen_numeric_sections: set[str] = set()
     seen_appendix_sections: set[tuple[str, ...]] = set()
     seen_appendices: set[str] = set()
     seen_titles: set[str] = set()
@@ -525,7 +574,7 @@ def validate_markdown_sections(path: Path, lines: list[str]) -> tuple[list[Probl
 
 
 def expand_numeric_range(start: str, end: str) -> list[str] | None:
-    if not start[:1].isdigit() or not end[:1].isdigit():
+    if not PURE_NUMERIC_SECTION_RE.fullmatch(start) or not PURE_NUMERIC_SECTION_RE.fullmatch(end):
         return None
 
     start_parts = tuple(int(part) for part in start.split("."))
@@ -546,6 +595,11 @@ def classify_range_problem(raw: str, start: str, end: str) -> str:
     if start[:1].isalpha() or end[:1].isalpha():
         return f"appendix ranges are not expanded; enumerate sections explicitly: {raw}"
     return f"section ranges are not expanded; enumerate sections explicitly: {raw}"
+
+
+def is_heading_prefix_match(line: str, match_start: int) -> bool:
+    prefix = line[:match_start].strip()
+    return bool(prefix) and set(prefix) == {"#"}
 
 
 def parse_section_group(path: Path, line_number: int, group: str) -> tuple[list[str], list[Problem]]:
@@ -601,6 +655,19 @@ def collect_markdown_references(path: Path, lines: list[str]) -> tuple[list[Refe
                     line=line_number,
                     target=(path.parent / raw_target).resolve(),
                     section=match.group(2),
+                    raw=match.group(0),
+                )
+            )
+
+        for match in APPENDIX_REFERENCE_RE.finditer(line):
+            if is_heading_prefix_match(line, match.start()):
+                continue
+            references.append(
+                Reference(
+                    path=path,
+                    line=line_number,
+                    target=path,
+                    section=match.group("section"),
                     raw=match.group(0),
                 )
             )

@@ -139,6 +139,25 @@ def test_validate_markdown_sections_reports_nonconsecutive_child_heading(tmp_pat
     ]
 
 
+def test_validate_markdown_sections_accepts_letter_suffixed_numeric_sections(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "Spec.md"
+    lines = [
+        "## 1. Expressions",
+        "### 1.1 Match",
+        "#### 1.1.1 Base",
+        "#### 1.1.1A Inserted A",
+        "#### 1.1.1B Inserted B",
+        "#### 1.1.2 Next",
+    ]
+
+    problems, sections = validate.validate_markdown_sections(path, lines)
+
+    assert problems == []
+    assert sections == {"1", "1.1", "1.1.1", "1.1.1A", "1.1.1B", "1.1.2"}
+
+
 def test_validate_markdown_sections_accepts_appendix_and_first_child(tmp_path: Path) -> None:
     path = tmp_path / "Spec.md"
     lines = [
@@ -380,6 +399,56 @@ def test_parse_markdown_collects_section_lists_with_oxford_comma(tmp_path: Path)
         "2.3",
         "2.3.2",
     ]
+    assert document.problems == []
+
+
+def test_parse_markdown_collects_letter_suffixed_numeric_references(tmp_path: Path) -> None:
+    path = write_text(
+        tmp_path / "doc.md",
+        """
+        ## 1. Expressions
+        ### 1.1 Match
+        #### 1.1.1 Base
+        #### 1.1.1A Inserted A
+        See \u00A71.1.1A and \u00A717.4.7A.
+        """,
+    )
+
+    document = validate.parse_markdown(
+        path,
+        path.read_text(encoding="utf-8"),
+        max_line_length=0,
+    )
+
+    assert document.sections == {"1", "1.1", "1.1.1", "1.1.1A"}
+    assert [reference.section for reference in document.references] == [
+        "1.1.1A",
+        "17.4.7A",
+    ]
+    assert document.problems == []
+
+
+def test_parse_markdown_collects_plain_appendix_references(tmp_path: Path) -> None:
+    path = write_text(
+        tmp_path / "doc.md",
+        """
+        ## Appendix B. Pipe operators
+        ### B.1 Prelude provisions
+        ### B.2 Interaction
+        ### B.3 Optional typed pipe
+        ## Appendix G. ApplicativeDo
+        See Appendix G and Appendix B.3.
+        """,
+    )
+
+    document = validate.parse_markdown(
+        path,
+        path.read_text(encoding="utf-8"),
+        max_line_length=0,
+    )
+
+    assert document.sections == {"B", "B.1", "B.2", "B.3", "G"}
+    assert [reference.section for reference in document.references] == ["G", "B.3"]
     assert document.problems == []
 
 
