@@ -9988,7 +9988,8 @@ The safe portable subset of Kappa excludes:
 
 * `unhide`,
 * `clarify`,
-* `assertTotal`.
+* `assertTotal`,
+* the standard debug-introspection module `std.debug` of §16.6.
 
 Programs that use any of these facilities are outside the safe portable subset.
 
@@ -10008,21 +10009,23 @@ A compilation unit's manifest or build configuration (implementation-defined: pa
 project file) specifies:
 
 ```text
-allow_unhiding     : Bool
-allow_clarify      : Bool
-allow_assert_total : Bool
+allow_unhiding            : Bool
+allow_clarify             : Bool
+allow_assert_total        : Bool
+allow_debug_introspection : Bool
 ```
 
 Defaults:
 
-* In package mode, all three default to `false`.
+* In package mode, all four default to `false`.
 * In script mode, implementations MAY default any or all of them to `true` for experimentation. Implementations SHOULD
   document the actual defaults they choose.
 
 Violations are compile-time errors. Diagnostics for such errors MUST identify both:
 
-* the offending `unhide` / `clarify` import item or `assertTotal` declaration, and
-* the build setting (`allow_unhiding`, `allow_clarify`, or `allow_assert_total`) that disallows it.
+* the offending `unhide` / `clarify` import item, `assertTotal` declaration, or `std.debug` import / use, and
+* the build setting (`allow_unhiding`, `allow_clarify`, `allow_assert_total`, or `allow_debug_introspection`) that
+  disallows it.
 
 ### 16.3 `unhide` and `clarify`
 
@@ -10074,6 +10077,93 @@ If an implementation provides such a facility:
 * it MUST require explicit build-level or command-line enablement in package mode; and
 * the compiler MUST NOT claim portable validation for the embedded backend-specific fragment beyond whatever
   validation is explicitly documented for that facility.
+
+### 16.6 Standard debug-introspection module `std.debug`
+
+When `allow_debug_introspection` is enabled, implementations MUST provide a standard module `std.debug`.
+
+No new surface syntax or keyword is introduced for this facility. The intended use is an ordinary import, for example:
+
+```kappa
+import std.debug as debug
+```
+
+The alias `debug` may then be used for ordinary qualified access and, under §13.1.2, as a reified module value.
+
+If `allow_debug_introspection` is false, importing `std.debug` is a compile-time error.
+
+`std.debug` exports at least:
+
+```kappa
+data DebugReason : Type =
+    Opaque
+    FunctionValue
+    ForeignValue
+    Cyclic
+    DepthLimit
+    SizeLimit
+    Unsupported
+    Unavailable
+
+data DebugEq : Type =
+    Equal
+    Different
+    Unknown DebugReason
+
+data DebugField : Type =
+    DebugField (label : Option String) (value : DebugTree)
+
+data DebugTree : Type =
+    Scalar      (text : String)
+    Node        (tag : String) (fields : List DebugField)
+    OpaqueValue (reason : DebugReason)
+
+inspect :
+    forall (@0 a : Type).
+    (& x : a) -> DebugTree
+
+render :
+    forall (@0 a : Type).
+    (& x : a) -> String
+
+compare :
+    forall (@0 a : Type).
+    (& x : a) -> (& y : a) -> DebugEq
+```
+
+Normative meaning:
+
+* `inspect` returns a structured debug view of `x`.
+* For transparent data, records, sealed packages, and variants whose representation is available at the call site,
+  implementations SHOULD expose constructor and field structure recursively.
+* `render` returns a human-oriented rendering of `x`. It MAY be derived from `inspect`.
+* `compare` is a debug comparison only. It MUST NOT participate in implicit resolution, equality reflection,
+  definitional equality, instance search, or coherence.
+* `std.debug` does not synthesize or bind ordinary trait evidence. In particular, importing or using `std.debug` MUST
+  NOT make a missing implicit goal of type `Show a`, `Eq a`, or any other ordinary trait constraint become solvable.
+* Implementations MAY consult already-available `Show a` or `Eq a` evidence when computing `render` or `compare`, but
+  only if that evidence was already independently resolvable at the call site.
+* If ordinary elaboration at the call site could not inspect a value's representation because of visibility or opacity,
+  `inspect` MUST return `OpaqueValue Opaque` for the hidden portion.
+* In that same situation, `compare` MUST return `Unknown Opaque` unless the implementation can determine the result
+  without exposing hidden representation.
+* For functions, foreign values, backend-specific runtime objects, cyclic structures not fully traversed, or cases
+  stopped by implementation limits, `inspect` MUST use `OpaqueValue reason` and `compare` MUST use `Unknown reason` with
+  the corresponding `DebugReason`.
+* Returning `Equal` or `Different` has no semantic effect beyond this debug facility.
+* The exact text produced by `render` and the exact `tag` strings used in `DebugTree` are implementation-defined unless
+  otherwise documented by the implementation.
+* Use of `std.debug` is outside the safe portable subset of §16.1.
+
+Example:
+
+```kappa
+import std.debug as debug
+
+let main : IO Unit = do
+    println (debug.render value)
+    println (show (debug.compare x y))
+```
 
 ---
 
