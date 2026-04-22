@@ -8,6 +8,11 @@
 
   <ItemGroup>
     <Compile Include="HarnessSupport.fs" />
+    <Compile Include="HarnessWorkspace.fs" />
+    <Compile Include="HarnessFixtureModel.fs" />
+    <Compile Include="HarnessFixtures.fs" />
+    <Compile Include="HarnessFixtureDiscovery.fs" />
+    <Compile Include="HarnessFixturesFacade.fs" />
     <Compile Include="Harness.fs" />
     <Compile Include="ResourceModelTests.fs" />
     <Compile Include="FixtureTests.fs" />

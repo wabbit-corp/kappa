@@ -78,6 +78,40 @@ let ``dotnet backend artifact emission does not depend on frontend documents`` (
     Assert.True(artifact.GeneratedFilePath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
 
 [<Fact>]
+let ``dotnet backend execution does not depend on KRuntimeIR`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-dotnet-no-kruntime-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "sumList : List Int -> Int"
+                    "let sumList xs ="
+                    "    match xs"
+                    "    case Nil -> 0"
+                    "    case head :: tail -> head + sumList tail"
+                    "let result = sumList (10 :: 20 :: 42 :: Nil)"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "dotnet-no-kruntime-backend"
+
+    let artifact =
+        match Backend.emitDotNetArtifact { workspace with KRuntimeIR = [] } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    let runResult =
+        runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
+
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("72", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
 let ``hosted dotnet backend remains available`` () =
     let workspace =
         compileInMemoryWorkspace

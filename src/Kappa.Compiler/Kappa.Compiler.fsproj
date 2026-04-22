@@ -37,6 +37,7 @@
     <Compile Include="Compilation.fs" />
     <Compile Include="HostedRuntimeDotNetBackend.fs" />
     <Compile Include="IlDotNetBackend.fs" />
+    <Compile Include="ClrDotNetBackend.fs" />
     <Compile Include="Backend.fs" />
     <Compile Include="Interpreter.fs" />
   </ItemGroup>

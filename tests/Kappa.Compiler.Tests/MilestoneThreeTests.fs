@@ -186,6 +186,32 @@ let ``dotnet backend executes using release while unwinding protected body`` () 
     Assert.Contains("Non-exhaustive match.", runResult.StandardError)
 
 [<Fact>]
+let ``dotnet backend executes using release while unwinding protected body without KRuntimeIR`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-m3-dotnet-using-unwind-no-kruntime-root"
+            "dotnet"
+            [
+                "main.kp", usingReleaseThrowingProgram
+            ]
+
+    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+
+    let outputDirectory = createScratchDirectory "dotnet-m3-using-unwind-no-kruntime-backend"
+
+    let artifact =
+        match Backend.emitDotNetArtifact { workspace with KRuntimeIR = [] } "main.main" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    let runResult =
+        runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
+
+    Assert.NotEqual(0, runResult.ExitCode)
+    Assert.Equal("chunkclosed", runResult.StandardOutput.Trim())
+    Assert.Contains("Non-exhaustive match.", runResult.StandardError)
+
+[<Fact>]
 let ``zig backend executes using release while unwinding protected body`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend

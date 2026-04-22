@@ -25,10 +25,10 @@ module Backend =
             |> Array.toList
 
         let tryMatchBinding moduleName bindingName =
-            workspace.KRuntimeIR
+            workspace.KBackendIR
             |> List.tryFind (fun moduleDump -> String.Equals(moduleDump.Name, moduleName, StringComparison.Ordinal))
             |> Option.bind (fun moduleDump ->
-                moduleDump.Bindings
+                moduleDump.Functions
                 |> List.tryFind (fun binding ->
                     String.Equals(binding.Name, bindingName, StringComparison.Ordinal)
                     && not binding.Intrinsic
@@ -39,9 +39,9 @@ module Backend =
             Result.Error "Expected a binding name to run."
         | [ bindingName ] ->
             let matches =
-                workspace.KRuntimeIR
+                workspace.KBackendIR
                 |> List.choose (fun moduleDump ->
-                    moduleDump.Bindings
+                    moduleDump.Functions
                     |> List.tryFind (fun binding ->
                         String.Equals(binding.Name, bindingName, StringComparison.Ordinal)
                         && not binding.Intrinsic
@@ -175,7 +175,7 @@ internal static class Program
             let! moduleName, bindingName = resolveClrEntryPoint workspace entryPoint
 
             let! clrAssembly =
-                IlDotNetBackend.emitAssemblyArtifact workspace outputDirectory
+                ClrDotNetBackend.emitAssemblyArtifact workspace outputDirectory
                 |> Result.mapError (fun message -> $"The CLR-backed dotnet profile could not lower '{entryPoint}': {message}")
 
             let projectDirectory = Path.GetFullPath(outputDirectory)
