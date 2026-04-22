@@ -2324,9 +2324,19 @@ Variant : VarRow -> Type
 Conceptually, a union type elaborates to `Variant r` where `r : VarRow` is a row whose entries are member types rather
 than labelled entries.
 
-Row equality for `VarRow` is modulo permutation and duplicate removal. Canonical order is the lexicographic order of the
-string representation of the member types. This canonical order is used for row normalization and definitional equality,
-not for assigning row-local runtime tag ordinals.
+Each variant member type `T` has a canonical member identity `MemberId(T)`.
+
+`MemberId(T)` is computed from the fully elaborated member type using the same canonical defining-module view used for
+Hard Hashes (§15.1.2): it ignores downstream `clarify`, and it is stable across separately compiled modules and
+artifacts.
+
+Row equality for `VarRow`, duplicate removal, `ContainsVar`, `LacksVar`, and residual-row matching are all defined in
+terms of `MemberId`, not in terms of importer-local transparency or importer-local `clarify`.
+
+Row equality for `VarRow` is modulo permutation and duplicate removal by `MemberId`.
+Canonical order is the lexicographic order of the canonical serialized `MemberId` values.
+This canonical order is used for row normalization and definitional equality, not for assigning row-local runtime tag
+ordinals.
 
 #### 5.4.2 Introduction (injection)
 
@@ -10323,8 +10333,8 @@ runtime tag identity `TagId(T)` derived from the canonical elaborated form of `T
 
 Requirements on `TagId`:
 
-* If `T₁` and `T₂` are definitionally equal member types, then `TagId(T₁) = TagId(T₂)`.
-* If `T₁` and `T₂` are not definitionally equal member types, then `TagId(T₁) ≠ TagId(T₂)`.
+* If `MemberId(T₁) = MemberId(T₂)`, then `TagId(T₁) = TagId(T₂)`.
+* If `MemberId(T₁) ≠ MemberId(T₂)`, then `TagId(T₁) ≠ TagId(T₂)`.
 * `TagId(T)` is independent of which particular row `r` currently contains `T`.
 * `TagId(T)` must be stable across separately compiled modules and artifacts. A conforming implementation SHOULD derive
   `TagId(T)` from the same canonical normalization-and-hash procedure used for Hard Hashes (§15.1.2), applied to the
@@ -10335,7 +10345,8 @@ Requirements on `TagId`:
 
 Implementations MAY realize `TagId` using deterministic content-addressed identities, interned canonical-type
 identifiers, or another injective encoding of canonical member types. The observable requirement is stable member-type
-identity, not any particular concrete tag bit-pattern.
+identity, not any particular concrete tag bit-pattern. `TagId` is therefore insensitive to importer-local `clarify` and
+other local transparency changes that do not alter canonical member identity.
 
 Injection:
 
