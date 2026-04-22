@@ -7008,6 +7008,9 @@ Label resolution:
   Compiler-generated closures introduced solely by desugaring of loops, comprehensions, or protected-resource
   elaboration of `using` are transparent to this search.
 * `defer@L` resolves to the nearest enclosing labeled `do`-scope with label `L`.
+  This search is confined to the current user-written function or lambda body; it does not cross user-written lambda or
+  local-function boundaries. Compiler-generated closures introduced solely by desugaring of loops, comprehensions, or
+  protected-resource elaboration of `using` are transparent to this search.
 * If no suitable labeled construct is found, it is a compile-time error.
 * If multiple labeled constructs with the same label occur at the same lexical nesting level, it is a compile-time
   error. (Shadowing by nested labels is permitted.)
