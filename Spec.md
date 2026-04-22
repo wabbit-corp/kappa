@@ -560,7 +560,7 @@ Normative rule:
 
 The exact contents of std.prelude are implementation-defined, but it must include:
 * any declarations required by surface syntax (e.g. Bool and the meanings of True/False),
-* the conventional prefixed-string handlers `f`, `re`, and `b` if prefixed strings are supported,
+* the conventional prefixed-string handlers `f`, `re`, `b`, and `type` if prefixed strings are supported,
 * fixity declarations for any operator tokens that the implementation expects to parse "out of the box"
 (e.g. `+`, `*`, `==`, `and`, `or`, `..`, `..<`), consistent with infix gating (§3.5.3).
 
@@ -632,7 +632,7 @@ sandbox, unsandbox,
 fork, forkDaemon, await, join, interrupt, interruptFork,
 poll, uninterruptible, mask, ensuring, acquireRelease,
 atomically, newTVar, readTVar, writeTVar, check,
-f, re, b,
+f, re, b, type,
 println, print
 ```
 
@@ -648,7 +648,7 @@ Equiv, Eq, Ord, Show,
 Functor, Applicative, Monad, Alternative,
 Foldable, Traversable, Filterable, FilterMap, Monoid, Iterator, InterpolatedMacro,
 IntoQuery, FromComprehensionPlan, FromComprehensionRaw,
-FromInteger, FromFloat, FromString, FromStringType,
+FromInteger, FromFloat, FromString,
 MonadError, MonadFinally, MonadResource, MonadRef, Releasable
 ```
 
@@ -1471,30 +1471,24 @@ $(p.buildInterpolated [Lit "pre", InterpFmt @Tx '{ x } "ident", Lit "post"])
 There is no implementation-defined rewrite of formatted interpolation.
 Any meaning of the format specifier is determined entirely by `p.buildInterpolated`.
 
-The standard `f`, `re`, and `b` prefixes supplied by `std.prelude` are ordinary terms participating in this mechanism.
+The standard `f`, `re`, `b`, and `type` prefixes supplied by `std.prelude` are ordinary terms participating in this mechanism.
 They receive no special parser treatment.
 
-#### 4.3.5 Type-level string parse
+#### 4.3.5 Conventional type-prefix handler
 
-Kappa provides a built-in intrinsic:
-
-```kappa
-type"..."
-```
-
-This form is valid only in a type position. It elaborates at compile time to the type produced by a `FromStringType`
-parser.
+There is no built-in `type"..."`
+intrinsic.
 
 ```kappa
-trait FromStringType =
-    parseType : String -> Type
+type : Dict (InterpolatedMacro Type)
 ```
 
-Typing and elaboration rules:
+Because keywords are soft (§3.2), `type"..."`, `type"""..."""`, and their raw forms are parsed as prefixed-string
+literals whenever a declaration keyword is not syntactically expected.
 
-* `type"..."` requires an implicit `FromStringType` in scope.
-* The elaborated type is obtained by evaluating `FromStringType.parseType` on the literal contents during elaboration.
-* Implementations MUST evaluate `parseType` under the same elaboration-time restrictions as §5.8.6.
+Accordingly, `type"..."` follows §4.3.4 exactly and elaborates through `buildInterpolated` like any other prefix.
+
+Implementations MAY provide additional ordinary type-producing prefixed-string handlers.
 
 ### 4.4 Character literals (`Char`)
 
@@ -11626,7 +11620,7 @@ declaration whose header has not yet been prepared, the implementation behaves a
 `DECLARATION_SHAPES` through `STATUS`, and `HEADER_TYPES` where needed, are run for that declaration and its lexical
 container before the enclosing body continues.
 
-A `$(...)` splice, `type"..."` parse, or other elaboration-time expansion MAY likewise be delayed until a phase first
+A `$(...)` splice, a prefixed-string elaboration such as `type"..."`, or other elaboration-time expansion MAY likewise be delayed until a phase first
 requires the expanded form. The implementation MUST preserve:
 
 * the source anchor of the original user-written construct, and
@@ -12403,7 +12397,7 @@ The elaboration-time evaluator operates on KCore or an observationally equivalen
 It is used for:
 
 * macro execution;
-* `type"..."` parsing;
+* elaboration of prefixed-string handlers such as `type"..."`;
 * compile-time reflection over `Syntax`;
 * semantic reflection over `Core`;
 * any other elaboration-time computation required by this specification.
