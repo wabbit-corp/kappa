@@ -150,7 +150,6 @@ moduleRef   ::= modPath | string_literal
 nameRef     ::= ident | backtick_ident | '(' operator_token ')'
 importSpec  ::= moduleRef
               | moduleRef 'as' ident
-              | moduleRef '.' nameRef
               | moduleRef '.(' importItem (',' importItem)* ')'
               | moduleRef '.*'
               | moduleRef '.*' 'except' '(' exceptItem (',' exceptItem)* ')'
@@ -160,20 +159,31 @@ ctorAll     ::= '(..)'
 exceptItem  ::= [namespace] nameRef
 ```
 
-The singleton form `import M.x` is sugar for `import M.(x)`, where `x` is a single `nameRef`.
+Surface singleton sugar:
 
-Disambiguation rule (normative):
+* `import M.x` is surface sugar for a singleton import item.
+* The parser MUST accept the surface form `moduleRef '.' nameRef` even though it is not part of the core `importSpec`
+  grammar above.
 
-* The parser resolves dotted import forms using **longest-match** for `modPath`.
-* It first attempts to consume the longest valid module path.
-* Only if the remaining tokens after that path form a valid `'.' nameRef`, `'.(' ... ')'`, `'.*'`, or `'.* except
-  (...)'` suffix does it treat the final segment as an import item rather than part of the module path.
-* This rule is applied before any other interpretation of the dotted form.
-* To force singleton-item import, write `import M.(x)`.
+Semantic disambiguation of bare dotted import forms:
+
+* The bare form `import A.B.C` is ambiguous between:
+  * module-only import of module `A.B.C`, and
+  * singleton-item import of item `C` from module `A.B`.
+* Disambiguation is performed after module discovery, not by pure longest-match parsing.
+* If only one interpretation is resolvable, it is chosen.
+* If both interpretations are resolvable, the form is a compile-time error.
+* To force singleton-item import, write `import A.B.(C)`.
+* To force module import, use any module-only form that cannot denote an item import, such as:
+  * `import A.B.C as X`
+  * `import A.B.C.*`
+  * `import A.B.C.* except (...)`
+* URL module references are never extended by dotted module-path continuation after the closing string literal, so:
+  * `import "url".x` is always singleton-item import sugar for `import "url".(x)`.
 
 Constraints:
 
-* `std.math` is a dotted module path (`ident("." ident)*`).
+* A dotted module path is `modSeg ("." modSeg)*`, where `modSeg` is defined in §3.1.
 * URL imports use a **string literal** and are treated as modules by the implementation.
 * In `... except (x, y)` each item may be unqualified or namespace-qualified as `term x`, `type y`, `trait C`, or `ctor
   K`.
@@ -377,10 +387,24 @@ Syntactically, `export` parses as:
 export exportSpec (',' exportSpec)*
 ```
 
-where `exportSpec` is the corresponding `importSpec` form of §2.3 with `import` replaced by `export`. The singleton form
-`export M.x` is sugar for `export M.(x)`, where `x` is a single `nameRef`, and `except` uses the same `exceptItem`
-grammar as §2.3. In particular, `export M.(type T(..))` re-exports the type `T` together with all of its constructors.
-The same longest-match dotted-path disambiguation rule as §2.3 applies to `exportSpec`.
+where `exportSpec` is the corresponding `importSpec` form of §2.3 with `import` replaced by `export`.
+
+Surface singleton sugar:
+
+* `export M.x` is surface sugar for `export M.(x)`.
+
+Semantic disambiguation of bare dotted export forms:
+
+* The same semantic disambiguation rule as §2.3 applies.
+* Thus `export A.B.C` is:
+  * module re-export of `A.B.C` if only that interpretation is resolvable,
+  * singleton-item re-export of `C` from `A.B` if only that interpretation is resolvable,
+  * and a compile-time error if both interpretations are resolvable.
+* To force singleton-item re-export, write `export A.B.(C)`.
+* To force module re-export, use a module-only form such as `export A.B.C as X` or `export A.B.C.*`.
+
+The `except` form uses the same `exceptItem` grammar as §2.3. In particular, `export M.(type T(..))` re-exports the type
+`T` together with all of its constructors.
 
 Rules:
 
@@ -11040,8 +11064,8 @@ KFrontIR phases are monotone. If phase `B` follows phase `A`, any node resolved 
 A conforming implementation MUST behave as if the following phases exist:
 
 * `RAW`: parser translation, source anchors, no semantic resolution.
-* `IMPORTS`: module header handling, implicit prelude insertion, import/export parsing, longest-match dotted splitting,
-  and fixity-environment setup.
+* `IMPORTS`: module header handling, implicit prelude insertion, import/export parsing, semantic dotted-form
+  disambiguation, and fixity-environment setup.
 * `DECLARATION_SHAPES`: namespace population, declaration-symbol creation, raw declaration headers, binder lists, local
   nominal identities, and raw block-scope declaration structure.
 * `HEADER_TYPES`: explicit declaration-header types, supertypes, associated static members, effect-operation headers,
