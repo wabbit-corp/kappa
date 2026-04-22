@@ -8976,6 +8976,13 @@ opaque type Id (a : Type) = a
 private type Internal = ...
 ```
 
+Unified declaration principle:
+
+* The `type` keyword is namespace-directed surface sugar over the ordinary named declaration / definition forms.
+* In particular, `type T` is sugar for the abstract declaration `T : Type0`.
+* Likewise, `type T = RHS` is sugar for a definition of `T` at a universe type, with `RHS` parsed in type position.
+* This does not introduce a second declaration mechanism; it is only specialized surface syntax for the type namespace.
+
 * Parameters may be annotated; sugar: `type Id a = a` ≡ `type Id (a : Type) = a`.
 * `type Name ...` with no `= ...` defines an abstract type whose implementation may be provided elsewhere
   (implementation-defined).
@@ -9199,24 +9206,28 @@ A bare occurrence of `m` elaborates to projection from synthesized implicit evid
 
 An explicit dictionary projection such as `d.m` or `d.(op)` is the unsugared form.
 
-Associated static members do not induce term-level overloaded names.
-
 Associated static members:
 
-* A trait body may declare an associated static member with:
+* Trait bodies use the same unified declaration syntax as the rest of the language.
+* A declaration of the form
 
   ```kappa
-  opaque Name : S
+  [opaque] Name : S
   ```
 
-  where `S` is a compile-time type in the sense of §5.1.4.1.
+  inside a trait body declares:
 
+* a term member when `S` elaborates to an ordinary value type; or
+* an associated static member when `S` elaborates to a compile-time type in the sense of §5.1.4.1.
+* There is no trait-specific declaration form for associated static members.
+  `opaque` has its ordinary meaning here.
+* Associated static members do not induce term-level overloaded names.
 * Associated static members are projected from an explicit dictionary binder or value using ordinary member selection.
   For example, from:
 
   ```kappa
   trait Iterator (it : Type) =
-      opaque Item : Type
+      Item : Type
       next : (1 this : it) -> Option (item : this.Item, rest : it)
   ```
 
@@ -9225,6 +9236,7 @@ Associated static members:
   ```kappa
   foo : (@ c : Type) -> (@ It : Iterator c) -> It.Item
   ```
+
 * Associated static members may have any compile-time type of §5.1.4.1, including `Type`, `Type u`, `Universe`,
   `Quantity`, `Region`, `RecRow`, `VarRow`, `EffRow`, `Label`, `EffLabel`, and compile-time function spaces built from
   them.
