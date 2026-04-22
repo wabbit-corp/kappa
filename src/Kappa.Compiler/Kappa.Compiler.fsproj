@@ -34,6 +34,9 @@
     <Compile Include="IrText.fs" />
     <Compile Include="KRuntimeLowering.fs" />
     <Compile Include="KBackendLowering.fs" />
+    <Compile Include="CompilationCommon.fs" />
+    <Compile Include="CompilationFrontend.fs" />
+    <Compile Include="CompilationMetadata.fs" />
     <Compile Include="Compilation.fs" />
     <Compile Include="HostedRuntimeDotNetBackend.fs" />
     <Compile Include="IlDotNetBackend.fs" />
