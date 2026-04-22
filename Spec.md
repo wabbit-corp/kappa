@@ -11860,6 +11860,11 @@ The ownership rules of `Quantity` are fully decided before KCore is constructed.
 in KCore appears only as separate evidence introduced by `MODAL_SOLVE`; it does not alter the meaning of quantity
 terms, quantity satisfaction, or borrow checking.
 
+Any modality-predicate evidence introduced by an enabled modal/coeffect extension is compile-time only and
+proof-irrelevant for typechecking unless that extension explicitly introduces a user-visible runtime carrier. Such
+evidence is erased before KBackendIR and does not participate in definitional equality of ordinary terms or types,
+except through the extension's own specified type formers.
+
 #### 17.3.1 Application spines and Pi telescopes
 
 KCore applications are defined against ordered Pi telescopes rather than by appeal to arbitrary unary prefixes.
