@@ -2859,6 +2859,81 @@ Rules:
 * An open row of the form `<[l : E | r]>` carries the implicit uniqueness side condition `LacksEff r l`.
 * `SplitEff r l E r'` holds iff `r` normalizes to `<[l : E | r']>`.
 
+<!-- types.quantification.implicit_declaration_universalization -->
+#### 5.3.3 Implicit declaration-level universalization
+
+Kappa supports implicit universalization of free lowercase identifiers at declaration sites.
+
+Header parameters:
+
+* In the parameter list of a `trait`, `data`, `type`, or `effect` declaration, an unannotated standard-identifier
+  parameter introduces a declaration binder.
+* If that parameter's first character is an ASCII lowercase letter, its annotation is inferred from its uses in the
+  declaration.
+* If the annotation is otherwise unconstrained, it defaults to `Type`.
+* An unannotated parameter whose first character is not an ASCII lowercase letter defaults to `Type`.
+
+Free lowercase identifiers in signatures and heads:
+
+* After accounting for explicit binders, declaration parameters, and enclosing lexical bindings, any remaining free
+  standard identifier whose first character is an ASCII lowercase letter is implicitly universally quantified when it
+  appears in:
+  * an ordinary term signature, or in the parameter / result annotations of a named `let` definition;
+  * a trait member declaration or default-member signature;
+  * an effect operation signature;
+  * a GADT-style constructor signature;
+  * an instance premise or instance head.
+* Backtick identifiers and operator tokens are never implicitly universalized by this rule.
+* The introduced binders are ordered by first left-to-right occurrence.
+* Each introduced binder's annotation is inferred from its uses in the corresponding signature or head.
+* If the annotation is otherwise unconstrained, it defaults to `Type`.
+* For signatures, elaboration is as if the declaration were prefixed by an explicit outer `forall`.
+* For instances, elaboration is as if the entire instance declaration were abstracted over those binders before its
+  premises and head are checked.
+* Outside the sites listed above, ordinary unbound-identifier rules apply.
+
+Metavariable discipline:
+
+* An unresolved lowercase identifier at one of the sites above is never treated as a unification metavariable that may
+  escape through interfaces or separate-compilation artifacts.
+* It is either implicitly generalized by this rule or the program is rejected as containing an unresolved identifier.
+
+Examples:
+
+```kappa
+trait Functor f =
+    map : (a -> b) -> f a -> f b
+```
+
+elaborates as if:
+
+```kappa
+trait Functor (f : Type -> Type) =
+    map : forall (a : Type) (b : Type). (a -> b) -> f a -> f b
+```
+
+```kappa
+trait Alternative (f : Type -> Type) =
+    empty : f a
+```
+
+elaborates `empty` as if:
+
+```kappa
+empty : forall (a : Type). f a
+```
+
+```kappa
+instance Eq a => Eq (Option a) =
+    ...
+```
+
+elaborates as if abstracted by:
+
+```kappa
+forall (a : Type).
+```
+
 <!-- types.unions -->
 ### 5.4 Union types
 
@@ -10194,7 +10269,11 @@ Rules:
 
 * Constructors contribute `ctor` declarations to their binding groups and
   are also static members of their enclosing data type under §2.8.2-§2.8.3.
-* Parameters contribute `type` declarations by default (with sugar `a` ≡ `(a : Type)`) unless specified otherwise.
+* Parameters contribute declaration binders.
+* Annotated parameters contribute exactly the written binder.
+* Unannotated parameters are interpreted by §5.3.3.
+  In particular, `data Maybe a : Type = ...` elaborates with `a : Type`, while a declaration may infer a more specific
+  annotation for an unannotated lowercase parameter from use.
 * If `opaque` is present on a data declaration, constructors are not exported (§2.5.3).
 
 <!-- data_types.data_declarations.constructor_application_named_arguments_c -->
@@ -10242,6 +10321,20 @@ C e1 e2 ...
 
 with implicit arguments resolved as usual (§7.3).
 
+<!-- data_types.data_declarations.naming_diagnostics -->
+#### 11.1.1A Naming diagnostics for lowercase data and constructor names
+
+Capitalization is not semantically significant for `data` declarations. However, lowercase-initial identifiers are used
+by convention for variable-like names and by §5.3.3 for implicit declaration-level universalization. Therefore:
+
+* Implementations MUST emit a warning for each user-written `data` type name or constructor name whose spelling, after
+  removing surrounding backticks if any, begins with an ASCII lowercase letter.
+* The warning applies only to non-operator names.
+* The warning applies separately to the declared data type name and to each constructor name.
+* This diagnostic class is warning, not error.
+* The diagnostic SHOULD suggest capitalizing the first character when that transformation produces a valid identifier
+  spelling.
+
 <!-- data_types.gadts -->
 ### 11.2 GADT-style constructors
 
@@ -10256,6 +10349,9 @@ data Vec (n : Nat) (a : Type) : Type =
 They support the full range of constructor features, including the named-argument sugar described in §11.1 (the binders
 in the Pi signature become the named parameters). Exhaustiveness checking and pattern matching treat GADT constructors
 identically to ordinary constructors once indices are unified.
+
+Free lowercase identifiers in a GADT-style constructor signature that are not already bound by the data header or by
+explicit constructor binders are implicitly universalized per §5.3.3.
 
 Note: Indexed data together with quantity-`1` arguments are sufficient to encode typestate and session-style protocols
 as ordinary libraries. A state transition consumes a value at one index and produces a value at a new index;
@@ -10281,7 +10377,9 @@ Unified declaration principle:
 * Likewise, `type T = RHS` is sugar for a definition of `T` at a universe type, with `RHS` parsed in type position.
 * This does not introduce a second declaration mechanism; it is only specialized surface syntax for `type` declarations.
 
-* Parameters may be annotated; sugar: `type Id a = a` ≡ `type Id (a : Type) = a`.
+* Parameters may be annotated.
+* Unannotated parameters are interpreted by §5.3.3.
+  In particular, `type Id a = a` elaborates as `type Id (a : Type) = a`.
 * `type Name ...` with no `= ...` defines an abstract type whose implementation may be provided elsewhere
   (implementation-defined).
 * If `opaque` is present on a type alias, the right-hand side is not unfolded by definitional equality outside the
@@ -10440,7 +10538,8 @@ trait Eq a => Ord a = ...
 trait Marker a b = ...     -- both default to Type
 ```
 
-Trait parameters default to kind `Type` when unannotated, but implementations may infer higher kinds from usage.
+Trait header parameters follow §5.3.3. In particular, an unannotated parameter defaults to `Type` when otherwise
+unconstrained and may be inferred at a more specific annotation from use.
 
 In `std.prelude`, `Ord` is declared with supertrait `Eq`, not `Equiv`, and its equality classes MUST agree with `(==)`.
 
@@ -10497,14 +10596,21 @@ Members in traits share the same two forms as ordinary bindings:
 
 In addition, trait bodies may declare associated static members as specified in §12.2.1.
 
+Free lowercase identifiers in trait member signatures are implicitly universalized per §5.3.3. Thus declarations such
+as `map : (a -> b) -> f a -> f b` and `empty : f a` are well-formed without explicit `forall`.
+
 <!-- traits.members.overloaded_member_names -->
 #### 12.2.1 Overloaded member names
 
-For each term member `m : τ` declared in `trait Tr params`, elaboration introduces an overloaded term name of the shape:
+For each term member `m : τ` declared in `trait Tr params`, let `u1 ... un` be the binders implicitly universalized
+from `τ` by §5.3.3, with inferred annotations `U1 ... Un`. Elaboration introduces an overloaded term name of the
+shape:
 
 ```kappa
-m : forall params. Tr params => τ
+m : forall params. forall (u1 : U1) ... (un : Un). Tr params => τ
 ```
+
+If no such binders are introduced, this reduces to the simpler `forall params. Tr params => τ` shape.
 
 A bare occurrence of `m` elaborates to projection from synthesized implicit evidence for `Tr params`.
 
@@ -10579,6 +10685,9 @@ instance Iterator (List a) =
     let Item = a
     let next this = ...
 ```
+
+Free lowercase identifiers in instance premises and the instance head are implicitly universalized per §5.3.3. Thus
+`instance Eq a => Eq (Option a) = ...` is well-formed without an explicit outer binder for `a`.
 
 `std.prelude` also provides the canonical bridge from reflective equality to non-reflecting equivalence:
 
