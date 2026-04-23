@@ -22,7 +22,7 @@ Kappa is a small, statically typed, dependently typed language. The primary desi
 
 ---
 
-## 2. Modules, Files, and Acyclicity
+## 2. Modules, Imports, Prelude, and Resolution
 
 ### 2.1 Modules and files
 
@@ -195,9 +195,9 @@ Imports are **not re-exported** by default (see `export` below).
 
 Module aliases and qualification:
 
-* `import M` brings the module name `M` into scope for qualified access (e.g. `M.x`) and, under §13.5, as a reified
+* `import M` brings the module name `M` into scope for qualified access (e.g. `M.x`) and, under §2.8.5, as a reified
   module value.
-* `import M as A` brings only the alias `A` into scope for qualified access (e.g. `A.x`) and, under §13.5, as a
+* `import M as A` brings only the alias `A` into scope for qualified access (e.g. `A.x`) and, under §2.8.5, as a
   reified module value. The name `M` is not brought into scope by this form.
 * Selective imports (`import M.(...)`, `import M.*`, and `import M.* except (...)`) do not bring `M` into scope for
   qualified access or as a reified module value. To enable either, use a separate `import M` (or `import M as M`).
@@ -207,7 +207,7 @@ Module aliases and qualification:
 
 #### 2.3.1 Import item kind selectors
 
-Kappa resolves names through lexical binding groups (§13), not through
+Kappa resolves names through lexical binding groups (§2.8), not through
 separate shadowing namespaces. The selectors `term`, `type`, `trait`,
 and `ctor` on import and export items are therefore kind selectors.
 
@@ -241,7 +241,7 @@ Unqualified import of a spelling:
 * `import M.(x)` imports every exported declaration of spelling `x` except
   distinct-spelling constructors.
 * A same-spelling data family is imported as one binding group containing
-  its type facet and its same-spelling constructor facet (§13.2).
+  its type facet and its same-spelling constructor facet (§2.8.2).
 * Distinct-spelling constructors are not imported unqualified by default.
   Use `ctor K` or `type T(..)`.
 
@@ -257,13 +257,13 @@ Wildcard imports:
 Shadowing and lookup:
 
 * Imported declarations participate in ordinary lexical lookup and dotted
-  receiver lookup exactly like local declarations (§13).
+  receiver lookup exactly like local declarations (§2.8).
 * A closer admissible declaration may shadow an imported declaration at a
   use site.
 
 The same grammar and rules apply to `export` items in §2.4.
 
-#### 2.3.1.1 `unhide` and `clarify` import items
+##### 2.3.1.1 `unhide` and `clarify` import items
 
 Import items may be prefixed by the modifiers:
 
@@ -296,7 +296,7 @@ Rules:
   significant.
 * Repeating the same modifier within one import item is a compile-time error.
 
-### 2.3.2 URL imports, pinning, and reproducibility
+#### 2.3.2 URL imports, pinning, and reproducibility
 
 URL imports are intended for scripts and quick one-offs, but Kappa also supports reproducible package-mode builds when
 each imported URL is tied to immutable content.
@@ -370,7 +370,7 @@ Implementations must support (at least) two compilation modes:
 How a toolchain selects "script mode" vs "package mode" is implementation-defined (e.g. a compiler flag, a package
 manifest, a file directive, etc.).
 
-### 2.3.3 Host binding modules
+#### 2.3.3 Host binding modules
 
 Implementations MAY provide backend-specific host binding modules under the reserved module roots:
 
@@ -578,7 +578,9 @@ private opaque let x = ...
 In such cases private controls visibility; opaque controls transparency when the item is accessed via escape hatch
 mechanisms.
 
-### 2.6 Prelude interface (implicit, declarations only)
+### 2.6 Prelude
+
+#### 2.6.1 Implicit import behavior
 
 Although Kappa has explicit imports, implementations provide an implicit **prelude interface** that is in scope by
 default.
@@ -621,7 +623,7 @@ The exact contents of std.prelude are implementation-defined, but it must includ
 * fixity declarations for any operator tokens that the implementation expects to parse "out of the box"
 (e.g. `+`, `*`, `==`, `and`, `or`, `..`, `..<`), consistent with infix gating (§3.5.3).
 
-### 2.7 Prelude contents (normative minimum)
+#### 2.6.2 Normative minimum contents
 
 Implementations MUST provide a prelude module `std.prelude` that is implicitly imported (§2.6) and exports at least the
 following:
@@ -864,7 +866,7 @@ Names not in this list MAY be exported by `std.prelude`, but user code SHOULD NO
 
 The standard prelude provisions for `|>`, `<|`, and the optional `|>=` operator are specified in Appendix B.
 
-### 2.8 Standard FFI support module `std.ffi`
+### 2.7 Standard FFI support module `std.ffi`
 
 Implementations MUST provide a standard module `std.ffi`. It is not implicitly imported.
 
@@ -894,6 +896,220 @@ Rules:
 
 ---
 
+### 2.8 Names, binding groups, and dotted lookup
+
+Kappa uses one lexical lookup system organized by spelling. A lexical
+scope maps each spelling to a binding group. A binding group may carry
+several declaration kinds. Declaration kinds control contextual
+admissibility; they are not independent shadowing namespaces.
+
+Declaration kinds:
+
+* `term`
+* `type`
+* `trait`
+* `ctor`
+* `module`
+* `effect-label`
+
+Record field labels are structural labels, not ordinary unqualified
+lexical bindings.
+
+Effect-label declarations arise from effect-row syntax, from binders or
+package members of compile-time type `EffLabel`, and from the canonical
+self labels of `scoped effect` declarations.
+
+Effect-label identifiers are used in `EffRow`-kinded rows, handlers, and
+effect-operation selection.
+
+#### 2.8.1 Ordinary lexical lookup
+
+Unqualified lookup of spelling `x` proceeds by contextual admissibility:
+
+1. Determine the declaration kinds admissible at the use site.
+2. Search lexical scopes from innermost to outermost.
+3. At each scope, inspect the binding group for spelling `x`, if any.
+4. Filter that binding group to declarations whose kinds are admissible
+   at the use site.
+5. If the filtered set is empty, continue outward.
+6. If the filtered set contains exactly one declaration, choose it.
+7. If the filtered set contains more than one declaration, apply §2.8.2
+   when the ambiguity is solely the same-spelling data-family pairing;
+   otherwise the use is ambiguous.
+
+Consequences:
+
+* A nearer binding group containing no admissible declaration does not
+  block an outer admissible declaration of the same spelling.
+* A nearer admissible declaration shadows outer admissible declarations
+  of the same spelling.
+
+Binding-group formation:
+
+* Within one lexical scope, a spelling may contribute at most one
+  ordinary declaration of a given kind.
+* Distinct kinds with the same spelling may coexist in one binding group.
+* A `data` declaration may additionally contribute the same-spelling
+  constructor facet described in §2.8.2.
+
+Contextual admissibility:
+
+* term-expression position admits `term`, `ctor`, and `module`;
+* type position admits `type`;
+* constraint position admits `trait`;
+* pattern-head position admits `ctor` and terms declared with `pattern`;
+* effect-label position admits `effect-label`.
+
+Receiver positions for dotted forms use §2.8.3 instead of this ordinary
+rule.
+
+#### 2.8.2 Same-spelling data families and static members
+
+A `data` declaration may introduce a type facet and a constructor facet
+with the same spelling.
+
+Example:
+
+```kappa
+data Person : Type =
+    Person (name : String) (age : Int)
+```
+
+Rules:
+
+* The type facet and same-spelling constructor facet form one
+  same-spelling data-family binding group.
+* At an unqualified use site:
+  * type positions select the type facet;
+  * term-expression positions select the constructor facet;
+  * pattern-head positions select the constructor facet.
+* Import and export preserve this pairing.
+* Distinct-spelling constructors are ordinary `ctor` declarations in
+  their enclosing binding groups.
+* Constructors are also static members of their enclosing data type for
+  dotted selection. Thus `Option.Some`, `Vec.Cons`, and `Person.Person`
+  are ordinary static-member selections under §2.8.3.
+
+#### 2.8.3 Dotted name resolution (`.`)
+
+The tokens `.` and `?.` form left-associative member chains.
+
+The form `lhs.{ ... }` is parsed as record update (§5.5.5) when its
+fields use `=`, or as row extension (§5.5.6) when its fields use `:=`.
+Mixed forms are ill-formed. These forms do not participate in dotted
+name resolution.
+
+Safe-navigation `lhs?.rhs` desugars before ordinary dotted resolution
+runs on the corresponding chain body (§7.1.1.2).
+
+Ordinary dotted resolution is receiver-driven and uses nearest-successful
+receiver lookup.
+
+For a dotted chain `base.s1.s2 ... sn`:
+
+1. Search lexical scopes from innermost to outermost for binding groups
+   spelled `base`.
+2. In each such binding group, consider receiver candidates of kinds:
+   * `module`,
+   * `type` (including the type facet of a same-spelling data family),
+   * `effect-label`,
+   * `term`,
+   * `ctor`.
+3. For each candidate in that binding group, attempt to resolve the full
+   remaining chain `.s1.s2 ... sn`.
+4. If no candidate in the current binding group yields a well-formed
+   full chain, continue outward.
+5. If exactly one candidate in the nearest successful binding group
+   yields a well-formed full chain, choose it.
+6. If more than one candidate in the nearest successful binding group
+   yields a well-formed full chain, the dotted form is ambiguous.
+7. If no binding group yields a well-formed full chain, the dotted form
+   is ill-formed.
+
+After the receiver candidate is fixed, each member step is resolved as
+exactly one of:
+
+* module member selection;
+* static member selection on a type;
+* effect-label operation selection;
+* record, package, or dictionary member projection;
+* constructor-field projection under positive tag refinement;
+* method-call or receiver-projection sugar.
+
+Method-call and receiver-projection sugar are attempted only if no
+ordinary member-selection form succeeds for that member step.
+
+Receiver forms:
+
+* If the receiver denotes a module declaration or reified module value,
+  `recv.name` selects the exported member `name` of that module.
+* If the receiver denotes a type or the type facet of a same-spelling
+  data family, `recv.name` selects a static member of that type. For
+  data types, constructors are static members.
+* If the receiver denotes an effect label, `recv.name` selects an
+  operation declared by the effect interface carried at that label in
+  the current effect row.
+* If the receiver denotes a record, package, or explicit dictionary
+  value, `recv.name` selects an ordinary member of that value.
+* If the local refinement context proves that the receiver has
+  constructor `C` and `C` declares a named field `name`, `recv.name` is
+  constructor-field projection.
+* Otherwise, fallback sugar of §2.8.4 may apply.
+
+#### 2.8.4 Method-call and receiver-projection sugar
+
+Method-call and receiver-projection sugar are fallback forms. A member
+step `recv.name` becomes fallback sugar only after ordinary member
+selection for that member step has failed.
+
+Eligibility:
+
+* Resolve spelling `name` by the ordinary lexical rule of §2.8.1 in
+  term-expression position.
+* Let `G` be the nearest binding group containing at least one
+  admissible term named `name`.
+* From `G`, keep only:
+  * ordinary callable terms whose elaborated type has exactly one
+    explicit receiver-marked binder; and
+  * projection definitions whose declaration has exactly one
+    receiver-marked `place` binder.
+* If exactly one eligible callable remains, use it.
+* If more than one eligible callable remains, the member step is
+  ambiguous.
+* If none remain, the dotted form is ill-formed.
+
+Elaboration:
+
+* If the chosen callable is an ordinary term `f`, `recv.name` elaborates
+  by inserting `recv` at `f`'s unique receiver-marked explicit binder.
+* If additional application arguments follow in the same maximal
+  application site, the whole site is elaborated as one direct call to
+  `f` with `recv` inserted at that binder position.
+* If the chosen callable is a projection definition, the same rule
+  applies using its unique receiver-marked `place` binder, and the
+  result is then treated as an ordinary fully applied projection call
+  for §§5.1.7.2 and 8.8.
+* The inserted receiver must typecheck against the chosen receiver
+  binder after solving any preceding implicit or explicit binders by
+  ordinary application-site elaboration.
+
+#### 2.8.5 Module declarations and reified module values
+
+An `import M` or `import M as A` introduces a lexical declaration of kind
+`module` with spelling `M` or `A`.
+
+Rules:
+
+* A module declaration participates in ordinary lexical lookup and in
+  the dotted receiver lookup of §2.8.3.
+* A module declaration may also be used as a pure module value where a
+  term expression is expected.
+* Ordinary qualified access and projection from a reified module value
+  must agree: `M.x` and, after `let m = M`, `m.x` denote the same member
+  whenever both are well-formed.
+
+
+
 ## 3. Lexical Structure
 
 ### 3.1 Identifiers
@@ -912,7 +1128,7 @@ Rules:
   ```
 
 Backtick identifiers are ordinary identifiers and participate in the
-lexical lookup rules of §13.
+lexical lookup rules of §2.8.
 
 Grammar amendment:
 
@@ -1049,7 +1265,7 @@ Special rule for `(-)`:
 * When `(-)` occurs between two expressions, infix fixity applies.
 * A parenthesized `(-)` alone denotes the prefix function.
 
-#### 3.5.1.1 Operator sections
+##### 3.5.1.1 Operator sections
 
 A parenthesized expression containing a single binary operator and a single operand denotes an operator section,
 following the Haskell 2010 convention:
@@ -1221,7 +1437,7 @@ This section applies to numeric literals **without** a suffix. If a numeric lite
 instead.
 
 **Integer literals (without suffix)**: An integer literal `n` has elaborated type `T` where `T` is a type for which an
-instance `FromInteger T` is in scope (§2.7). The literal elaborates to `FromInteger.fromInteger @T n` where `n :
+instance `FromInteger T` is in scope (§2.6.2). The literal elaborates to `FromInteger.fromInteger @T n` where `n :
 Integer` is the integer value denoted by the literal.
 
 The trait is (conceptually):
@@ -1687,7 +1903,7 @@ constraint solving. Occurrences of `Type u` therefore share exactly the same use
 introducing fresh metavariables. If the constraints are unsatisfiable, compilation fails. Unconstrained universe
 metavariables may be generalized at top-level (implementation-defined).
 
-### 5.1.3 Constraints and dictionaries
+#### 5.1.3 Constraints and dictionaries
 
 `Universe`, `Quantity`, `Region`, `Constraint`, `RecRow`, `VarRow`, `EffRow`, `Label`, and `EffLabel` are intrinsic
 compile-time types, not extra meta-level sorts.
@@ -1743,7 +1959,7 @@ Usage rules:
 * A binder may range over `Constraint` itself, e.g. `(c : Constraint) -> ...`; this quantifies over constraint
   descriptors and does not introduce coherent evidence for `c`.
 
-### 5.1.4 Erasure and elaboration time
+#### 5.1.4 Erasure and elaboration time
 
 Kappa distinguishes computational values from compile-time values.
 
@@ -1770,7 +1986,7 @@ Runtime erasure is governed as follows:
 * Implementations may provide library mechanisms to reify type information or other compile-time information explicitly
   when needed, but there is no implicit runtime reflection.
 
-#### 5.1.4.1 Compile-time bindings and fields
+##### 5.1.4.1 Compile-time bindings and fields
 
 A binder, record field, or package member is compile-time if its annotation elaborates to one of the intrinsic
 compile-time types of §5.1.3, to `Type u`, to one of the elaboration-time reflection types of §5.8.5, to `Elab a` or
@@ -1788,7 +2004,7 @@ Writing `let y = x` where `x` is compile-time simply binds `y` to the same compi
 Packaging or rebinding a compile-time value does not discharge region escape. If a compile-time value mentions a fresh
 anonymous rigid region introduced by a local borrow, the ordinary skolem-escape rule of §5.1.6 still applies.
 
-### 5.1.5 Quantities
+#### 5.1.5 Quantities
 
 A quantity denotes either a closed interval of permitted exact uses over `ℕ∞`, where `∞` is allowed as an upper bound,
 or the special borrow quantity `&`.
@@ -1970,7 +2186,7 @@ The temporary borrow created by borrow introduction ends exactly when the demand
 application, this is exactly when the call returns. Consequently a callee may not store such a temporary anonymous
 borrow in its result; only explicitly scoped regions may cross that boundary.
 
-### 5.1.5.1 Quantities are ownership-only
+##### 5.1.5.1 Quantities are ownership-only
 
 The `Quantity` sort is reserved for ownership and usage accounting.
 
@@ -1985,7 +2201,7 @@ Consequences:
 * borrow introduction, borrow lifetimes, and path-sensitive borrowing continue to be governed only by §§5.1.5-5.1.7;
 * quantity-governed erasure continues to be governed by §§5.1.3-5.1.7 and §14.4.
 
-### 5.1.5.2 Reserved modal/coeffect extension lane
+##### 5.1.5.2 Reserved modal/coeffect extension lane
 
 A future version of Kappa may add one or more graded modal or coeffect systems. Any such system MUST be distinct from
 `Quantity` and MUST satisfy all of the following:
@@ -2008,7 +2224,7 @@ budgets, and scheduling budgets.
 A conforming implementation MUST NOT reinterpret `Quantity`, `⊑`, or the borrow rules of this chapter as a
 general-purpose graded logic.
 
-### 5.1.6 Borrow lifetimes and escape prevention
+#### 5.1.6 Borrow lifetimes and escape prevention
 
 A value bound at quantity `&` is tethered to the lexical scope of the underlying stable root from which the borrowed
 view was introduced via a fresh rigid region variable `rho` (a skolem constant). If that root was owned at quantity
@@ -2099,7 +2315,7 @@ surrounding `do`-scope whose unwinding would have to outlive that borrow. This i
 explicit lifetime syntax. If `bracket` is provided, it is sound only when implemented with equivalent protected-scope
 machinery rather than a naive `defer (release res)` source-level expansion.
 
-#### 5.1.6.1 Capture-annotated types
+##### 5.1.6.1 Capture-annotated types
 
 Kappa provides an optional postfix capture annotation on value types:
 
@@ -2176,7 +2392,7 @@ packGetter :
     (&[s] x : Box a) -> ((get : (Unit -> a) captures (s)))
 ```
 
-### 5.1.7 Disjoint path borrowing for records
+#### 5.1.7 Disjoint path borrowing for records
 
 Borrow tracking for records is path-sensitive. A borrow of a record field does not automatically lock the entire record.
 
@@ -2233,7 +2449,7 @@ Consequences:
 This path-sensitive rule is specified only for record fields in v0.1. Other aggregate structures may be treated
 conservatively as whole-value borrows unless a later section defines finer-grained splitting for them.
 
-#### 5.1.7.1 Stable places and place-preserving bindings
+##### 5.1.7.1 Stable places and place-preserving bindings
 
 A stable place is the semantic notion of an addressable immutable subvalue used by borrowing, path-sensitive
 consumption, and `inout` rewriting.
@@ -2274,7 +2490,7 @@ Place identity is preserved only by constructs that explicitly say so, including
 If elaboration introduces a fresh binder as an alias of an existing stable place, that binder carries the same
 underlying root and path. Projecting from the alias extends that same path rather than creating a fresh root.
 
-#### 5.1.7.2 Computed place expressions
+##### 5.1.7.2 Computed place expressions
 
 A place expression is either:
 
@@ -2409,7 +2625,7 @@ forall (r : EffRow) (l : EffLabel). SplitEff r l E r' => ...
 forall (row : RecRow) (lab : Label). ContainsRec row lab T => ...
 ```
 
-### 5.3.1 Rows and labels
+#### 5.3.1 Rows and labels
 
 Kappa has three intrinsic compile-time row types:
 
@@ -2447,7 +2663,7 @@ of member types. Row equality is modulo permutation after row normalization.
 A row variable must have one of the types `RecRow`, `VarRow`, or `EffRow`. Row variables of different row types are
 never interchangeable.
 
-### 5.3.2 Effect-row surface syntax
+#### 5.3.2 Effect-row surface syntax
 
 Effect rows are written:
 
@@ -2614,10 +2830,10 @@ must be written explicitly as `(| ..rest |)`.
 Union types may be indexed. An injection such as `(| v : Vec n a |)` is valid when the expected union type contains `Vec
 n a` among its member types. Exhaustiveness and reachability are determined by index unification exactly as in §7.5.1.
 
-### 5.4.9 Optional-type sugar
+#### 5.4.9 Optional-type sugar
 
 For any type expression `T`, the postfix form `T?` is syntactic sugar for `Option T`, where `Option` is the prelude type
-of §2.7.
+of §2.6.2.
 
 Grammar (amends the type grammar):
 
@@ -2716,7 +2932,7 @@ Opaque members:
   record as a whole is treated as a linear resource for whole-record use until those linear paths have been consumed or
   restored.
 
-#### 5.5.1.1 Record field order and lawful reorderings
+##### 5.5.1.1 Record field order and lawful reorderings
 
 Record types are **order-insensitive up to lawful reorderings**.
 
@@ -4248,7 +4464,7 @@ Rules:
 * `opaque` does not apply to projection definitions.
 * A projection definition must contain one or more `place` binders.
 * A `place` binder may be receiver-marked using `(place this : T)` or `(place this x : T)`. Such a binder is still a
-  `place` binder, and it participates in dotted receiver-projection sugar under §13.4.
+  `place` binder, and it participates in dotted receiver-projection sugar under §2.8.4.
 * All other binders are ordinary explicit or implicit function binders except `inout`. They may be erased and may be
   dependent.
 * A projection definition is pure; its declared result type must not be monadic.
@@ -4461,7 +4677,7 @@ Elaboration (schematic):
   where `pat0` is the underlying pattern of `bindPat`. This is only permitted because that underlying pattern is
   required to be irrefutable.
 
-### 6.3.1 Pure block expressions
+#### 6.3.1 Pure block expressions
 
 A pure block is an expression that introduces sequential local scope without monadic control flow.
 
@@ -4550,7 +4766,7 @@ Local recursion:
 * Within such a local definition body, the declared local name(s) are in scope exactly as in the top-level recursion
   rule of §6.4.
 
-#### 6.3.1.1 Scoped local nominal and effect declarations
+##### 6.3.1.1 Scoped local nominal and effect declarations
 
 Within a block scope (`block` or `do`), the local-only modifier `scoped` may prefix:
 
@@ -4810,7 +5026,7 @@ callee has no remaining implicit binder at that application site, the applicatio
 A maximal application site is the head expression of an `applicationExpr` together with its ordered `applicationArg*`
 after any enclosing dotted-form resolution has determined the actual callee and any inserted receiver argument.
 
-### 7.1.1 Dotted forms (`.` / `?.`): qualification, static members, projection, method sugar
+#### 7.1.1 Dotted forms (`.` / `?.`): qualification, static members, projection, method sugar
 
 The `.` token is used for:
 
@@ -4836,7 +5052,7 @@ The right-hand side of `?.` is restricted to member-access forms only. In v0.1 t
 Forms such as module qualification, static member selection on a type, projection sections and receiver-projection
 sections, record update, and row extension are ordinary dotted forms but are not reachable through `?.`.
 
-#### 7.1.1.1 Projection sections and receiver-projection sections
+##### 7.1.1.1 Projection sections and receiver-projection sections
 
 ```kappa
 (.field)                 -- \__x -> __x.field
@@ -4853,7 +5069,7 @@ Formation rule:
 * Thus:
   * `(.field1.field2)` elaborates to `\__x -> __x.field1.field2`.
   * `(.name args...)` elaborates to `\__x -> __x.name args...`, where `name args...` is resolved using the ordinary
-    dotted-form and receiver-sugar rules of §§13.3-13.4.
+    dotted-form and receiver-sugar rules of §§2.8.3-2.8.4.
 * The binder `__x` is fresh.
 * A section is well-formed only if the corresponding dotted form on `__x` is well-formed.
 * Module qualification, static member selection on a type, record update, and row extension are not admitted inside a
@@ -4870,7 +5086,7 @@ d.(<=)
 
 Such forms are permitted where dotted member projection is otherwise valid.
 
-#### 7.1.1.2 Safe-navigation (`?.`)
+##### 7.1.1.2 Safe-navigation (`?.`)
 
 Let a *chain* be a maximal sequence of dotted-form suffixes attached to an atomic expression. Schematically:
 
@@ -4971,7 +5187,7 @@ Typing:
 
 * `P` must have type `Option T` for some `T`.
 * The residual body is typechecked under a fresh binder `__x : T` using the ordinary rules for dotted forms (§7.1.1,
-  §13.3).
+  §2.8.3).
 * If `P` is itself a borrowed view, then the success-branch binder `__x` is treated as a borrowed alias of the payload
   rather than as a fresh owned value. It inherits the same rigid borrow region and the same underlying borrow root as
   `P`, and further projections from `__x` are interpreted pathwise through that same source path under the disjoint-path
@@ -5060,7 +5276,7 @@ a >>= (.b) >>= (.c)
 a |>= (.b) |>= (.c)
 ```
 
-### 7.1.2 Elvis operator (`?:`)
+#### 7.1.2 Elvis operator (`?:`)
 
 For `e : Option T` and `d : T`, the expression `e ?: d` desugars to:
 
@@ -5075,7 +5291,7 @@ This form is specified directly and does not depend on any library helper name.
 `?:` is right-associative at low precedence (`2`, above `|>` at `1` and below comparison / arithmetic operators). It is
 a reserved token and cannot be redefined by user fixity declarations.
 
-### 7.1.2A Short-circuit boolean operators
+#### 7.1.2A Short-circuit boolean operators
 
 The operator tokens `&&` and `||` are the canonical short-circuit boolean connectives of the surface language.
 
@@ -5096,12 +5312,12 @@ short-circuit evaluation-count behavior even when it lowers them differently int
 The prelude names `and` and `or` remain ordinary terms. They do not by themselves receive short-circuiting or
 flow-sensitive treatment.
 
-### 7.1.3 Application-boundary subsumption
+#### 7.1.3 Application-boundary subsumption
 
 Kappa does not support deep subtyping. However, to maintain ecosystem coherence between linear, borrowed, and
 unrestricted contexts, Kappa implements a localized subsumption rule at function application boundaries.
 
-#### 7.1.3.1 Application-spine elaboration pipeline
+##### 7.1.3.1 Application-spine elaboration pipeline
 
 To resolve a maximal application site whose head elaborates to a callee `f`, the compiler MUST elaborate the whole site
 as one ordered application spine.
@@ -5222,7 +5438,7 @@ Rules:
 * Receiver-marked binders are explicit binders. `(this : T)` binds the receiver locally as `this`, while `(this x : T)`
   marks the binder as the receiver and binds it locally as `x`. The quantity-annotated forms `(q this : T)` and `(q this
   x : T)` are the corresponding receiver-marked variants with explicit quantity `q`.
-* Method-call and receiver-projection sugar (§13.4) consult the receiver marker, not the local binder name chosen
+* Method-call and receiver-projection sugar (§2.8.4) consult the receiver marker, not the local binder name chosen
   inside the function body.
 * A leading label `L@` labels the lambda body for `return@L` (§8.4.1).
 * Parentheses are required for typed, quantity-annotated, and implicit binders; they are not required for bare
@@ -5341,7 +5557,7 @@ Multiple constraints associate to the right: `C1 => C2 => T` is equivalent to `(
 `=>` is reserved for actual constraints, except for the boolean-proposition special case above. For ordinary proofs or
 other implicit values of type `P : Type`, write the implicit binder explicitly.
 
-### 7.3.2 Expression holes (`_` and named holes)
+#### 7.3.2 Expression holes (`_` and named holes)
 
 In expression position, `_` denotes a fresh anonymous typed hole.
 
@@ -5382,7 +5598,7 @@ Kappa does not provide placeholder-abstraction sugar based on holes in v0.1. Use
 explicitly when abstraction is intended, or use existing section forms such as operator sections (§3.5.1.1) and
 projection sections (§7.1.1).
 
-### 7.3.3 Implicit resolution (instance/proof search)
+#### 7.3.3 Implicit resolution (instance/proof search)
 
 When elaborating an application, if the callee expects an implicit argument `(@x : G)` and the call site does not supply
 one, the compiler attempts to synthesize a term of type `G`.
@@ -5430,7 +5646,7 @@ Resolution proceeds in this order:
 
 If all steps fail, compilation fails with an error indicating the unsolved implicit goal `G`.
 
-#### 7.3.3.1 `witness` and `summon` as library helpers (not syntax)
+##### 7.3.3.1 `witness` and `summon` as library helpers (not syntax)
 
 Implicit resolution can be invoked using ordinary functions with implicit parameters. Conventional helpers are:
 
@@ -5452,7 +5668,7 @@ let p : (x > 0) = witness (x > 0)
 let eqInt : Dict (Eq Int) = summon (Eq Int)
 ```
 
-### 7.3.4 Constructor-tag test expression (`is`)
+#### 7.3.4 Constructor-tag test expression (`is`)
 
 Kappa provides a general constructor-tag test expression:
 
@@ -5515,7 +5731,7 @@ Scope and evaluation:
 
 Inside a `do` block, an `if` without `else` is allowed as sugar (see §8).
 
-### 7.4.1 Flow-sensitive branch evidence for atomic conditions
+#### 7.4.1 Flow-sensitive branch evidence for atomic conditions
 
 Boolean clauses introduce boolean assumptions into the implicit context.
 
@@ -5556,7 +5772,7 @@ The success-side constructor evidence MUST be strong enough that:
 
 * a subsequent `match e` may treat non-`C` cases as unreachable; and
 * if `C` declares named explicit parameters, dotted projection `e.field` may refer to those named constructor parameters
-  via constructor-field projection (§13.3).
+  via constructor-field projection (§2.8.3).
 
 The success evidence additionally includes any index equalities forced by constructor `C`, exactly as in the
 corresponding constructor branch of `match` (§7.5.1A).
@@ -5569,7 +5785,7 @@ These erased assumptions participate in implicit resolution (§7.3.3).
 
 `elif` introduces no separate rule beyond its desugaring to nested `else if`.
 
-### 7.4.2 Flow typing through `&&`, `||`, and `not`
+#### 7.4.2 Flow typing through `&&`, `||`, and `not`
 
 Flow typing for plain boolean clauses is defined over ordinary boolean syntax.
 
@@ -5613,7 +5829,7 @@ Rules:
 * A conforming implementation MAY share those bodies or lower them differently internally, provided branch-local
   refinement and runtime evaluation count are observationally equivalent to the equations above.
 
-### 7.4.3 Stable aliases and transport of refinement evidence
+#### 7.4.3 Stable aliases and transport of refinement evidence
 
 Flow typing is defined over stable scrutinee representatives rather than over raw surface spelling.
 
@@ -5762,7 +5978,7 @@ Meaning:
 * If accepted, `impossible` may be given any result type required by the surrounding match.
 * At runtime, an `impossible` branch must never be executed; implementations may compile it to a trap.
 
-### 7.5.3 Boolean matches introduce assumptions
+#### 7.5.3 Boolean matches introduce assumptions
 
 When the scrutinee has type `Bool` and a case pattern is the boolean literal `True` or `False`, the corresponding branch
 is typechecked with an implicit assumption:
@@ -6553,7 +6769,7 @@ Rules:
 * Because a resumption is captured control state rather than a borrowable place, there is no borrowed-resumption mode in
   v0.1.
 * Operation names declared inside an `effect` declaration do not contribute ordinary unqualified `term` declarations. They are
-  selected via `label.op` (§13.3), and are additionally available within a handler for that label when handlers are
+  selected via `label.op` (§2.8.3), and are additionally available within a handler for that label when handlers are
   specified.
 * Operation signatures may be arbitrary dependently typed function types after elaborating any outer `forall`s. This
   includes multiple explicit or implicit parameters, quantity annotations on binders (defaulting to `ω`), and dependent
@@ -6591,7 +6807,7 @@ Call-site capture rule:
 
 This rule guarantees that multi-shot continuations cannot clone linear resources or extend borrow lifetimes unsoundly.
 
-#### 8.1.8.1 Repeated resumption is fresh control re-entry
+##### 8.1.8.1 Repeated resumption is fresh control re-entry
 
 When a resumption value `k` is used more than once under a resumption quantity that permits multiple uses, each
 application of `k` denotes a fresh dynamic re-entry of the suspended computation suffix captured at the operation site.
@@ -6681,7 +6897,7 @@ Semantics:
 
 When `m = Eff r`, this rule coincides with the ordinary algebraic-effect elimination behavior.
 
-#### 8.1.9.1 KCore realization and interaction with abrupt completion
+##### 8.1.9.1 KCore realization and interaction with abrupt completion
 
 The control model of shallow handlers is realized in KCore by the effect-operation and handler kernel of §17.3.1.5.
 
@@ -7093,7 +7309,7 @@ Control-flow statements:
   * `return` target resolution is defined by §8.4. Bare `return` targets the nearest enclosing named function or method;
     `return@L` may target that named function or method by name, or a lambda labeled `L`.
 
-### 8.2.1 Refutable local binding (`let?`)
+#### 8.2.1 Refutable local binding (`let?`)
 
 Within a `do` block, Kappa provides two refutable local binding forms:
 
@@ -7167,7 +7383,7 @@ Schematic elaboration:
     bindC (lift failExpr) (\v -> pure (Normal (absurd v)))
     ```
 
-### 8.2.2 Do-item sequences and block result
+#### 8.2.2 Do-item sequences and block result
 
 A `do` block is a non-empty sequence of **do-items**.
 
@@ -7202,7 +7418,7 @@ Typing:
 * A do-item that is the last reached item on a normal path determines the block result on that path.
 * Abrupt-control items need not produce a normal result on paths where they are taken.
 
-### 8.2.2A Post-dominating flow facts
+#### 8.2.2A Post-dominating flow facts
 
 In a sequential `do`-item context, refinement facts may survive past a control-flow split when every alternative that
 would invalidate those facts is terminal.
@@ -7246,7 +7462,7 @@ Rules:
 * Rebinding, assignment, consuming use, or path-state invalidation discards any surviving fact whose stable subject is
   no longer available under §7.4.3.
 
-### 8.2.3 Labeled `do` blocks and labeled control flow
+#### 8.2.3 Labeled `do` blocks and labeled control flow
 
 Labels:
 * A label has the form `label@` and may prefix any block-introducing construct (e.g. `do`, `try`, `match`, loops).
@@ -7285,7 +7501,7 @@ Semantics follow Kotlin-style labeled control flow:
 * `defer@label e` schedules `e` to run when the labeled `do`-scope exits. If several inner `do`-scopes exit first, `e`
   remains pending and runs only when the targeted labeled scope itself is unwound (§8.7.2.1).
 
-### 8.2.4 Simple desugaring applicability
+#### 8.2.4 Simple desugaring applicability
 
 The schematic monadic desugaring in §8.2 (into `>>=` / `>>` chains) is valid only for `do` blocks that do not use any
 of:
@@ -7303,7 +7519,7 @@ When any of the above features are present, the normative semantics and elaborat
 Implementations MAY still generate code equivalent to the §8.2 sketch, but only if it is observationally equivalent to
 the §8.7 model.
 
-### 8.2.5 Do-local declarations
+#### 8.2.5 Do-local declarations
 
 A `do` block is a block scope. Local declarations that appear as do-items obey the same sequential scoping rules as pure
 block items under §6.3.1.
@@ -7417,7 +7633,7 @@ Interaction with `defer` / `finally`:
 * Executing `return e` exits the target. All enclosing dynamic `do`-scopes within the target are exited first, and their
   deferred actions run per §8.6 and §8.7. Scopes outside the target are not unwound.
 
-### 8.4.1 Lambda labels
+#### 8.4.1 Lambda labels
 
 A lambda may carry an explicit label written before the backslash:
 
@@ -7486,7 +7702,7 @@ These are **syntactic sugar** over monadic operations.
       enclosing loop, it is an error.
     * The precise semantics (including interaction with `defer` and `finally`) are specified in §8.7.
 
-### 8.5.1 Mutable variables (`var`) - normative semantics
+#### 8.5.1 Mutable variables (`var`) - normative semantics
 
 A `var` declaration inside a `do` block of monad `m` requires an implicit instance:
 
@@ -7548,7 +7764,7 @@ do
 
 A `var`-bound identifier may not appear in type positions or elaboration-time macro positions.
 
-### 8.5.2 Loop `else`
+#### 8.5.2 Loop `else`
 
 `for` and `while` may optionally include an `else` block:
 
@@ -7568,7 +7784,7 @@ Semantics:
     * any abrupt control that exits the loop without normal completion (e.g. `break@outer` propagating outward, or
       `return`) then the loop's `else` block is skipped.
 
-### 8.5.3 Scoped Regions and Escape Prevention
+#### 8.5.3 Scoped Regions and Escape Prevention
 
 When mutable state must be guaranteed not to escape a specific scope (e.g. for pure computations that use local mutation
 internally), implementations or libraries MUST enforce this via the type system, rather than relying on `var` syntax.
@@ -7694,13 +7910,13 @@ Restrictions:
 Implementation may desugar this to a bracket/finalizer mechanism; spec only fixes the ordering and guarantee of
 execution on exit.
 
-## 8.7 Normative elaboration model for `do` blocks, loops, and abrupt control
+### 8.7 Normative elaboration model for `do` blocks, loops, and abrupt control
 
 This section defines the normative meaning of `do` blocks with loops, `break` / `continue`, `return`, and `defer` /
 `using`. Implementations may compile using jumps, CPS, internal exceptions, or other techniques, but MUST be
 observationally equivalent to the model below.
 
-### 8.7.1 Abrupt completion records
+#### 8.7.1 Abrupt completion records
 
 The control model of this section is realized in KCore by the explicit completion-and-scope kernel of §17.3.1.4.
 
@@ -7782,7 +7998,7 @@ Rules:
 * This lowering is internal only. It does not introduce source-visible return-point syntax, does not make continuations
   first-class, and does not alter the type-theoretic role of `Completion`.
 
-### 8.7.2 Dynamic `do`-scope exit and exit actions
+#### 8.7.2 Dynamic `do`-scope exit and exit actions
 
 Each dynamic execution of a `do`-scope contributes one frame to the active `ScopeStack(m)`. That frame contains a LIFO
 stack of exit actions. An exit action is either:
@@ -7836,7 +8052,7 @@ The compiler evaluates the exit-action stack exactly as follows:
 Linearity note: because the unwinder executes every exit action before propagating the selected error, all quantity-`1`
 deferred obligations and all hidden owned-resource release obligations are consumed even when the scope exits by error.
 
-#### 8.7.2.1 Cross-scope unwinding and targeted `defer`
+##### 8.7.2.1 Cross-scope unwinding and targeted `defer`
 
 Suppose a completion record or propagated monadic error leaves the innermost active `do`-scope and continues outward
 across the sequence of scope frames `F1, F2, ..., Fk`, listed from innermost crossed frame to outermost crossed frame,
@@ -7868,7 +8084,7 @@ When `MonadError m` is present, primary-error selection across multiple exited s
 application of §8.7.2. Equivalently, the propagated error is the first error encountered in the actual inner-to-outer
 unwinding sequence, while later finalizer errors may be suppressed or discarded but do not replace it.
 
-### 8.7.3 Completion-aware sequencing (schematic helpers over the KCore kernel)
+#### 8.7.3 Completion-aware sequencing (schematic helpers over the KCore kernel)
 
 For an enclosing monad `m`, we write computations of the form `m (Completion(RetCtx, A))`.
 
@@ -7891,7 +8107,7 @@ observationally equivalent internal representation:
 
 Sequencing is `thenC x y = bindC x (\_ -> y)`.
 
-### 8.7.4 Elaboration of `do`-item sequences
+#### 8.7.4 Elaboration of `do`-item sequences
 
 A `do` block is elaborated in a context that records the resolved labels and result types of the enclosing named
 function or method, inherited-name lambdas (§6.1), and any enclosing labeled lambdas that may be targeted by `return`.
@@ -8052,7 +8268,7 @@ Elaboration:
 
 where `L` is the resolved target label.
 
-### 8.7.5 Normative elaboration of loops
+#### 8.7.5 Normative elaboration of loops
 
 Loops are statements within `do` and elaborate to `m (Completion(RetCtx, Unit))`.
 
@@ -8115,7 +8331,7 @@ Completion behavior matches `while` above:
 
 The loop `else` block runs iff iteration is exhausted and no `Break L` occurs.
 
-### 8.7.6 Minimal desugaring requirements for `for` loops
+#### 8.7.6 Minimal desugaring requirements for `for` loops
 
 Implementations MUST NOT require stronger iteration capabilities than necessary:
 
@@ -8727,7 +8943,7 @@ The **clauses** appear before `yield` and may include:
 * `join` / `left join` (joins)
 * (all optional and composable)
 
-### 10.3.1 Parsing: comprehension vs literal
+#### 10.3.1 Parsing: comprehension vs literal
 
 A bracketed form may denote either a literal or a comprehension:
 
@@ -8766,7 +8982,7 @@ Escape hatch:
   ```
 
 
-### 10.3.2 Encounter order and order-sensitive clauses
+#### 10.3.2 Encounter order and order-sensitive clauses
 
 Comprehensions process elements in an encounter order induced by generator enumeration and preceding clauses.
 
@@ -8864,7 +9080,7 @@ Map iteration:
   ```
 
 
-### 10.4.1 Refutable patterns in comprehensions
+#### 10.4.1 Refutable patterns in comprehensions
 
 Comprehensions support refutable generators and refutable bindings:
 
@@ -8923,7 +9139,7 @@ ascription.
   * If a map comprehension produces the same key multiple times, the conflict policy determines the outcome (§10.5.1).
   * If no `on conflict` clause is present, the default policy is `keep last` in the comprehension's encounter order.
 
-### 10.5.1 Map key conflicts (`on conflict`)
+#### 10.5.1 Map key conflicts (`on conflict`)
 
 A map comprehension may specify a key-conflict policy using a final post-`yield` clause:
 
@@ -9489,11 +9705,11 @@ Rules:
   encouraging the named form for improved ergonomics.
 
 * Constructors contribute `ctor` declarations to their binding groups and
-  are also static members of their enclosing data type under §13.2-§13.3.
+  are also static members of their enclosing data type under §2.8.2-§2.8.3.
 * Parameters contribute `type` declarations by default (with sugar `a` ≡ `(a : Type)`) unless specified otherwise.
 * If `opaque` is present on a data declaration, constructors are not exported (§2.5.3).
 
-### 11.1.1 Constructor application with named arguments (`C { ... }`)
+#### 11.1.1 Constructor application with named arguments (`C { ... }`)
 
 Constructors may be applied using a record-like named-argument syntax when their explicit parameters have names
 (declared via either of the forms in §11.1).
@@ -9731,7 +9947,7 @@ In `std.prelude`, `Ord` is declared with supertrait `Eq`, not `Equiv`, and its e
 
 In `std.prelude`, `Monad` is declared with supertrait `Applicative`.
 
-### 12.1.1 Supertraits
+#### 12.1.1 Supertraits
 
 A trait declaration may have a supertrait context:
 
@@ -9921,7 +10137,7 @@ regardless of whether any names from that module are imported.
 This is a global program property, not an import-side effect. Adding a dependency may introduce new instance candidates
 and therefore new ambiguity or coherence failures. This is by design.
 
-### 12.3.1 Instance resolution algorithm
+#### 12.3.1 Instance resolution algorithm
 
 When solving a trait constraint goal `Tr args`, instance resolution proceeds as follows:
 
@@ -9946,7 +10162,7 @@ When solving a trait constraint goal `Tr args`, instance resolution proceeds as 
      * if all surviving instantiated candidate dictionaries have the same canonical Hard Hash, accept and pick any one,
      * otherwise reject the program as incoherent.
 
-### 12.3.2 Instance search termination
+#### 12.3.2 Instance search termination
 
 An instance declaration is accepted only if each of its premises is structurally smaller than its head under a
 well-founded metric on constructor depth and variable occurrence.
@@ -10011,217 +10227,9 @@ For `Eq` specifically:
 
 ---
 
-## 13. Names, binding groups, and dotted lookup
+## 13. Cross-reference: names, binding groups, and dotted lookup
 
-Kappa uses one lexical lookup system organized by spelling. A lexical
-scope maps each spelling to a binding group. A binding group may carry
-several declaration kinds. Declaration kinds control contextual
-admissibility; they are not independent shadowing namespaces.
-
-Declaration kinds:
-
-* `term`
-* `type`
-* `trait`
-* `ctor`
-* `module`
-* `effect-label`
-
-Record field labels are structural labels, not ordinary unqualified
-lexical bindings.
-
-Effect-label declarations arise from effect-row syntax, from binders or
-package members of compile-time type `EffLabel`, and from the canonical
-self labels of `scoped effect` declarations.
-
-Effect-label identifiers are used in `EffRow`-kinded rows, handlers, and
-effect-operation selection.
-
-### 13.1 Ordinary lexical lookup
-
-Unqualified lookup of spelling `x` proceeds by contextual admissibility:
-
-1. Determine the declaration kinds admissible at the use site.
-2. Search lexical scopes from innermost to outermost.
-3. At each scope, inspect the binding group for spelling `x`, if any.
-4. Filter that binding group to declarations whose kinds are admissible
-   at the use site.
-5. If the filtered set is empty, continue outward.
-6. If the filtered set contains exactly one declaration, choose it.
-7. If the filtered set contains more than one declaration, apply §13.2
-   when the ambiguity is solely the same-spelling data-family pairing;
-   otherwise the use is ambiguous.
-
-Consequences:
-
-* A nearer binding group containing no admissible declaration does not
-  block an outer admissible declaration of the same spelling.
-* A nearer admissible declaration shadows outer admissible declarations
-  of the same spelling.
-
-Binding-group formation:
-
-* Within one lexical scope, a spelling may contribute at most one
-  ordinary declaration of a given kind.
-* Distinct kinds with the same spelling may coexist in one binding group.
-* A `data` declaration may additionally contribute the same-spelling
-  constructor facet described in §13.2.
-
-Contextual admissibility:
-
-* term-expression position admits `term`, `ctor`, and `module`;
-* type position admits `type`;
-* constraint position admits `trait`;
-* pattern-head position admits `ctor` and terms declared with `pattern`;
-* effect-label position admits `effect-label`.
-
-Receiver positions for dotted forms use §13.3 instead of this ordinary
-rule.
-
-### 13.2 Same-spelling data families and static members
-
-A `data` declaration may introduce a type facet and a constructor facet
-with the same spelling.
-
-Example:
-
-```kappa
-data Person : Type =
-    Person (name : String) (age : Int)
-```
-
-Rules:
-
-* The type facet and same-spelling constructor facet form one
-  same-spelling data-family binding group.
-* At an unqualified use site:
-  * type positions select the type facet;
-  * term-expression positions select the constructor facet;
-  * pattern-head positions select the constructor facet.
-* Import and export preserve this pairing.
-* Distinct-spelling constructors are ordinary `ctor` declarations in
-  their enclosing binding groups.
-* Constructors are also static members of their enclosing data type for
-  dotted selection. Thus `Option.Some`, `Vec.Cons`, and `Person.Person`
-  are ordinary static-member selections under §13.3.
-
-### 13.3 Dotted name resolution (`.`)
-
-The tokens `.` and `?.` form left-associative member chains.
-
-The form `lhs.{ ... }` is parsed as record update (§5.5.5) when its
-fields use `=`, or as row extension (§5.5.6) when its fields use `:=`.
-Mixed forms are ill-formed. These forms do not participate in dotted
-name resolution.
-
-Safe-navigation `lhs?.rhs` desugars before ordinary dotted resolution
-runs on the corresponding chain body (§7.1.1.2).
-
-Ordinary dotted resolution is receiver-driven and uses nearest-successful
-receiver lookup.
-
-For a dotted chain `base.s1.s2 ... sn`:
-
-1. Search lexical scopes from innermost to outermost for binding groups
-   spelled `base`.
-2. In each such binding group, consider receiver candidates of kinds:
-   * `module`,
-   * `type` (including the type facet of a same-spelling data family),
-   * `effect-label`,
-   * `term`,
-   * `ctor`.
-3. For each candidate in that binding group, attempt to resolve the full
-   remaining chain `.s1.s2 ... sn`.
-4. If no candidate in the current binding group yields a well-formed
-   full chain, continue outward.
-5. If exactly one candidate in the nearest successful binding group
-   yields a well-formed full chain, choose it.
-6. If more than one candidate in the nearest successful binding group
-   yields a well-formed full chain, the dotted form is ambiguous.
-7. If no binding group yields a well-formed full chain, the dotted form
-   is ill-formed.
-
-After the receiver candidate is fixed, each member step is resolved as
-exactly one of:
-
-* module member selection;
-* static member selection on a type;
-* effect-label operation selection;
-* record, package, or dictionary member projection;
-* constructor-field projection under positive tag refinement;
-* method-call or receiver-projection sugar.
-
-Method-call and receiver-projection sugar are attempted only if no
-ordinary member-selection form succeeds for that member step.
-
-Receiver forms:
-
-* If the receiver denotes a module declaration or reified module value,
-  `recv.name` selects the exported member `name` of that module.
-* If the receiver denotes a type or the type facet of a same-spelling
-  data family, `recv.name` selects a static member of that type. For
-  data types, constructors are static members.
-* If the receiver denotes an effect label, `recv.name` selects an
-  operation declared by the effect interface carried at that label in
-  the current effect row.
-* If the receiver denotes a record, package, or explicit dictionary
-  value, `recv.name` selects an ordinary member of that value.
-* If the local refinement context proves that the receiver has
-  constructor `C` and `C` declares a named field `name`, `recv.name` is
-  constructor-field projection.
-* Otherwise, fallback sugar of §13.4 may apply.
-
-### 13.4 Method-call and receiver-projection sugar
-
-Method-call and receiver-projection sugar are fallback forms. A member
-step `recv.name` becomes fallback sugar only after ordinary member
-selection for that member step has failed.
-
-Eligibility:
-
-* Resolve spelling `name` by the ordinary lexical rule of §13.1 in
-  term-expression position.
-* Let `G` be the nearest binding group containing at least one
-  admissible term named `name`.
-* From `G`, keep only:
-  * ordinary callable terms whose elaborated type has exactly one
-    explicit receiver-marked binder; and
-  * projection definitions whose declaration has exactly one
-    receiver-marked `place` binder.
-* If exactly one eligible callable remains, use it.
-* If more than one eligible callable remains, the member step is
-  ambiguous.
-* If none remain, the dotted form is ill-formed.
-
-Elaboration:
-
-* If the chosen callable is an ordinary term `f`, `recv.name` elaborates
-  by inserting `recv` at `f`'s unique receiver-marked explicit binder.
-* If additional application arguments follow in the same maximal
-  application site, the whole site is elaborated as one direct call to
-  `f` with `recv` inserted at that binder position.
-* If the chosen callable is a projection definition, the same rule
-  applies using its unique receiver-marked `place` binder, and the
-  result is then treated as an ordinary fully applied projection call
-  for §§5.1.7.2 and 8.8.
-* The inserted receiver must typecheck against the chosen receiver
-  binder after solving any preceding implicit or explicit binders by
-  ordinary application-site elaboration.
-
-### 13.5 Module declarations and reified module values
-
-An `import M` or `import M as A` introduces a lexical declaration of kind
-`module` with spelling `M` or `A`.
-
-Rules:
-
-* A module declaration participates in ordinary lexical lookup and in
-  the dotted receiver lookup of §13.3.
-* A module declaration may also be used as a pure module value where a
-  term expression is expected.
-* Ordinary qualified access and projection from a reified module value
-  must agree: `M.x` and, after `let m = M`, `m.x` denote the same member
-  whenever both are well-formed.
+The normative rules for names, binding groups, dotted lookup, method-call / receiver-projection sugar, and reified module values are specified in §2.8. This chapter remains only as a continuity pointer for older citations.
 
 ## 14. Core Semantics
 
@@ -10249,7 +10257,7 @@ Elaboration performs (non-exhaustive):
     * expected-type-directed variant injections and widenings (§5.4.3),
     * lawful record reorderings (§5.5.1.1),
 * signature matching, manifest recording, and opaqueness checking for `seal ... as ...`, and construction of reified
-  module values (§5.5.10, §13.5),
+  module values (§5.5.10, §2.8.5),
 * desugaring of:
     * pure `block` expressions and indented pure block suites to sequential local scope with closure-converted local
       declarations (§6.3.1, §14.1.1),
@@ -10263,13 +10271,13 @@ Elaboration performs (non-exhaustive):
     * existential-package sugar and unpacking (`exists`, `open ... as exists ...`) to anonymous sealed packages and
       ordinary local bindings (§5.5.11),
     * `try match` and `try` to error-handling combinators (§9),
-    * method-call sugar (§13.4),
+    * method-call sugar (§2.8.4),
 * termination checking (§6.4),
 * optional erasure planning (§14.4).
 
 Elaboration must be terminating.
 
-### 14.1.1 Elaboration of local declarations
+#### 14.1.1 Elaboration of local declarations
 
 A local declaration inside a block scope (`block` or `do`) elaborates by closure conversion over the free variables it
 captures from the surrounding lexical scope.
@@ -10448,7 +10456,7 @@ Definitional equality also includes canonical normalization of:
 * projection of a non-erased field through a seal is not required to reduce for definitional equality. It remains a
   well-typed neutral elimination form whose runtime behavior is ordinary projection.
 
-### 14.3.1 Literal normalization
+#### 14.3.1 Literal normalization
 
 For any type `T` with a `FromInteger T` instance whose `fromInteger` is a total transparent function, `fromInteger @T n`
 with `n : Integer` reduces by δ to a canonical value of `T` during definitional-equality checking. In particular,
@@ -11070,7 +11078,7 @@ No new surface syntax or keyword is introduced for this facility. The intended u
 import std.debug as debug
 ```
 
-The alias `debug` may then be used for ordinary qualified access and, under §13.5, as a reified module value.
+The alias `debug` may then be used for ordinary qualified access and, under §2.8.5, as a reified module value.
 
 If `allow_debug_introspection` is false, importing `std.debug` is a compile-time error.
 
@@ -11173,7 +11181,7 @@ backend-intrinsic set it activates, is part of the effective build configuration
 A compilation that depends on backend intrinsics or backend-specific `expect` satisfaction is valid only when those
 requirements are met by the chosen backend profile.
 
-### 17.1.1 Incremental units
+#### 17.1.1 Incremental units
 
 A conforming implementation MUST behave as if compilation is decomposed into memoizable incremental units.
 
@@ -11195,7 +11203,7 @@ compilation unit unless the edit in fact changes every required upstream unit.
 Downstream ordinary compilation depends on imported module-interface units, not on imported implementation bodies,
 except where this specification explicitly permits otherwise (for example the unsafe/debug facilities of §16.3).
 
-### 17.1.2 Compiler fingerprints
+#### 17.1.2 Compiler fingerprints
 
 For incremental invalidation, a conforming implementation MUST define deterministic compiler fingerprints distinct from
 the semantic hashes of §15.
@@ -11251,7 +11259,7 @@ invalidate any result that depends on the affected interface surface.
 The semantic hashes of §15 remain normative for semantic identity, coherence, and related uses.
 They MUST NOT be assumed to be the sole or primary invalidation keys of a conforming implementation.
 
-### 17.1.3 Compiler observability
+#### 17.1.3 Compiler observability
 
 A conforming implementation MUST provide user-visible or API-visible compiler observability facilities.
 
@@ -11269,7 +11277,7 @@ metadata required to understand it.
 A stage dump is not required to be a tree.
 In particular, KBackendIR dumps may be graph-structured.
 
-### 17.1.4 Named checkpoints
+#### 17.1.4 Named checkpoints
 
 A conforming implementation MUST behave as if the following named checkpoints exist:
 
@@ -11286,7 +11294,7 @@ produce a stage dump observationally equivalent to the representation that would
 For representations that are not themselves IR-shaped, such as a final native executable or classfile bundle, the
 implementation MUST provide an artifact-manifest dump rather than pretending that an AST exists there.
 
-### 17.1.5 Machine-readable dump formats
+#### 17.1.5 Machine-readable dump formats
 
 Implementations MUST support at least two machine-readable serializations for every required stage dump:
 
@@ -11346,7 +11354,7 @@ the redacted value.
 Stage dumps, pipeline traces, and reproducer bundles are observability artifacts only.
 They are not inputs to the hashing rules of §15.
 
-### 17.1.6 Pipeline traces and checkpoint verification
+#### 17.1.6 Pipeline traces and checkpoint verification
 
 A conforming implementation MUST expose a pipeline trace for each compilation request.
 
@@ -11374,7 +11382,7 @@ crossed by a compilation request.
 
 An implementation SHOULD support before-and-after dumps for each transformation step that changes the representation.
 
-### 17.1.7 Reproducer bundles
+#### 17.1.7 Reproducer bundles
 
 A conforming implementation MUST provide a mode that emits a reproducer bundle when compilation fails due to an internal
 compiler error or backend-lowering failure.
@@ -11477,7 +11485,7 @@ A module interface artifact MUST record at least:
   * the canonical visible `decreases` measure, or
   * an equivalent stable termination-certificate payload sufficient for downstream unfolding decisions, hashing, and
     reproducible separate compilation;
-* enough metadata to reconstruct the reified-module view of §13.5, including the kind-tagged exported-member surface
+* enough metadata to reconstruct the reified-module view of §2.8.5, including the kind-tagged exported-member surface
   and the opaque-vs-transparent classification needed for local qualified access and module-value projection.
 
 If an exported signature, exported compile-time member, or transparent definitional equation would mention a local
@@ -11506,7 +11514,7 @@ It MAY embed the interface artifact or refer to it by stable identity.
 
 Ordinary downstream compilation MUST NOT require access to a target-specific implementation artifact.
 
-#### 17.1.9.1 Canonical interface view
+##### 17.1.9.1 Canonical interface view
 
 Because ordinary downstream compilation depends on module interface artifacts rather than implementation bodies, a
 conforming implementation MUST provide a canonical human-readable rendering of each module interface artifact.
@@ -12109,7 +12117,7 @@ Rules:
 * KCore normalization of an `AppSpine` is by ordinary left-to-right beta-reduction or an observationally equivalent
   strategy.
 
-#### 17.3.1.1 KCore places and path operations
+##### 17.3.1.1 KCore places and path operations
 
 A conforming implementation MUST behave as if KCore contains a place category:
 
@@ -12164,7 +12172,7 @@ write-back is required.
 Path-sensitive field consumption, record update filling, safe-navigation borrowed-alias propagation, and `inout`
 write-back are defined in terms of these place forms or an observationally equivalent internal representation.
 
-#### 17.3.1.2 Scoped borrowing of places
+##### 17.3.1.2 Scoped borrowing of places
 
 A conforming implementation MUST behave as if KCore contains a scoped borrow eliminator:
 
@@ -12194,7 +12202,7 @@ Typing and escape:
 Surface borrow introduction, borrowed local bindings, borrowed `?.` aliases, and `using`-introduced borrowed bindings
 elaborate through this form or an observationally equivalent internal representation.
 
-#### 17.3.1.3 Projection lowering
+##### 17.3.1.3 Projection lowering
 
 A conforming implementation MUST behave as if a fully applied call to a `projection` definition (§6.1.1) does not
 survive as a distinct KCore form.
@@ -12230,7 +12238,7 @@ surface abstraction over ordinary control flow plus the existing stable-place ma
 An implementation MAY further lower this ordinary branching structure to an internal multi-return or join-point form as
 specified in §17.4.7A.
 
-#### 17.3.1.3A Projection-section update lowering
+##### 17.3.1.3A Projection-section update lowering
 
 A conforming implementation MUST behave as if the surface expression
 
@@ -12260,7 +12268,7 @@ Consequences:
 * No new runtime reference primitive is introduced.
 * Projection-section update is therefore surface sugar over existing place primitives and projection lowering.
 
-#### 17.3.1.4 KCore completion and do-scope kernel
+##### 17.3.1.4 KCore completion and do-scope kernel
 
 A conforming implementation MUST behave as if KCore contains an explicit completion-and-scope kernel for the control
 features of Chapter 8.
@@ -12322,7 +12330,7 @@ This subsection defines KCore structure only. A conforming implementation MAY re
 explicit frame objects, or other equivalent internal machinery, provided the observable behavior is the same as this
 kernel.
 
-#### 17.3.1.5 KCore effect-operation and handler kernel
+##### 17.3.1.5 KCore effect-operation and handler kernel
 
 A conforming implementation MUST behave as if KCore contains an explicit effect-operation and shallow-handler kernel for
 the effect features of §8.1 and the runtime constraints of §14.8.
@@ -12381,7 +12389,7 @@ This subsection defines KCore structure only. A conforming implementation MAY re
 heap-allocated frames, stack copying, segmented stacks, defunctionalized state machines, or other equivalent internal
 machinery, provided the observable behavior is the same as this kernel and the runtime constraints of §14.8.
 
-#### 17.3.1.5A KCore nominal-scope binders
+##### 17.3.1.5A KCore nominal-scope binders
 
 A conforming implementation MUST behave as if KCore contains an internal compile-time type:
 
@@ -12409,7 +12417,7 @@ Rules:
   closure-converted capture telescope.
 * `NomScope` values are compile-time only and are erased before KBackendIR.
 
-#### 17.3.1.6 KCore intrinsic compile-time types
+##### 17.3.1.6 KCore intrinsic compile-time types
 
 A conforming implementation MUST behave as if KCore supports ordinary binding, projection, application, sealing, and
 packaging of inhabitants of the intrinsic compile-time types of §5.1.3 and of the elaboration-time reflection types of
@@ -12434,7 +12442,7 @@ Rules:
 * Reflection values MUST NOT survive lowering to KBackendIR except through ordinary reification to `Syntax` followed by
   ordinary elaboration.
 
-#### 17.3.1.7 KCore capture-annotated types
+##### 17.3.1.7 KCore capture-annotated types
 
 A conforming implementation MUST behave as if KCore contains an explicit capture-annotation former:
 
@@ -12466,7 +12474,7 @@ Meaning:
 A conforming implementation MAY realize this with another internal representation, provided ordinary downstream
 typechecking, interface emission, definitional equality, and erasure are observationally equivalent to the rules above.
 
-#### 17.3.1.8 KCore branch and refinement evidence
+##### 17.3.1.8 KCore branch and refinement evidence
 
 A conforming implementation MUST behave as if KCore contains explicit erased evidence for branch-local boolean and
 constructor refinements.
@@ -12605,7 +12613,7 @@ equality is at least as fine as KCore semantic identity.
 Tooling and caches that operate after name resolution SHOULD prefer semantic object identity to source spelling when
 tracking references, rename targets, usages, deduplication, and compiled artifact reuse.
 
-#### 17.3.4.1 Escaped local nominal family identities
+##### 17.3.4.1 Escaped local nominal family identities
 
 An escaped local nominal family is a local nominal declaration from §14.1.1 whose family identity, or an application of
 that family, appears in a module interface artifact.
@@ -12786,7 +12794,7 @@ intrinsic:
 * proof terms whose only purpose is compile-time reasoning;
 * erased indices of dependent data.
 
-### 17.4.1 Conceptual lowering stages
+#### 17.4.1 Conceptual lowering stages
 
 A conforming implementation MUST behave as if lowering from KCore to KBackendIR performs the following conceptual
 stages:
@@ -12840,7 +12848,7 @@ Permitted uses include:
 These optimizations MUST NOT change any externally specified data layout, calling convention, or FFI surface promised
 by a backend profile.
 
-### 17.4.2 Lowering legality checkpoints
+#### 17.4.2 Lowering legality checkpoints
 
 At or before publication of KBackendIR, the implementation MUST validate that:
 
@@ -12859,7 +12867,7 @@ At or before publication of KBackendIR, the implementation MUST validate that:
 Failure of any of these checks is a compile-time error.
 A conforming implementation MUST NOT silently pass malformed or partially lowered runtime IR to target-profile lowering.
 
-### 17.4.3 KBackendIR graph dumps and legality witnesses
+#### 17.4.3 KBackendIR graph dumps and legality witnesses
 
 A KBackendIR stage dump MUST be graph-capable.
 
@@ -12883,7 +12891,7 @@ The KBackendIR verifier MUST be user-invokable.
 
 A successful verification MAY be recorded in the dump as a verifier stamp or equivalent witness.
 
-### 17.4.4 Post-KBackendIR target-lowering dumps
+#### 17.4.4 Post-KBackendIR target-lowering dumps
 
 If a backend profile exposes post-KBackendIR intermediate forms, each such form MUST participate in the same
 observability model:
@@ -12897,7 +12905,7 @@ observability model:
 If the post-KBackendIR form is not naturally serialized as `json` or `sexpr`, the implementation MUST still provide a
 `json` and `sexpr` manifest describing that form, its identity, and its relation to the surrounding checkpoints.
 
-### 17.4.5 KBackendIR interpretation
+#### 17.4.5 KBackendIR interpretation
 
 An implementation MAY provide a KBackendIR interpreter for script execution, REPL use, tests, or debugging.
 
@@ -12911,7 +12919,7 @@ If it does:
 A KBackendIR interpreter MAY retain extra source metadata for debugging, profiling, or diagnostics, provided that
 metadata does not change program behavior.
 
-### 17.4.6 Representation classes and specialization
+#### 17.4.6 Representation classes and specialization
 
 Implementations MAY monomorphize, dictionary-pass, closure-convert, or use any hybrid strategy consistent with
 KBackendIR semantics.
@@ -12928,7 +12936,7 @@ A change that does not alter the erased calling convention, selected runtime rep
 `BackendFingerprint(profile)` inputs SHOULD preserve previously computed KBackendIR and target-lowering results where
 possible.
 
-### 17.4.7 Runtime calling convention
+#### 17.4.7 Runtime calling convention
 
 At KBackendIR boundaries:
 
@@ -12943,7 +12951,7 @@ At KBackendIR boundaries:
 
 This section does not change source typing. It specifies only the backend-neutral runtime view after elaboration.
 
-### 17.4.7A Internal multi-return control-protocol lowering
+#### 17.4.7A Internal multi-return control-protocol lowering
 
 A conforming implementation MAY lower a finite local control protocol to an internal multi-return calling convention or
 to an observationally equivalent join-point representation.
@@ -12977,7 +12985,7 @@ Rules:
 
 These terms name implementation strategies only. They do not add new surface syntax or new source typing rules.
 
-### 17.4.8 Incremental reuse across lowering stages
+#### 17.4.8 Incremental reuse across lowering stages
 
 A conforming implementation MAY persist and reuse previously verified results of KCore construction, KBackendIR
 construction, and target lowering.
@@ -13011,7 +13019,7 @@ A conforming implementation SHOULD support persistent caches across compiler-pro
 
 provided the reuse conditions above are satisfied.
 
-### 17.4.9 Implementation-defined intermediate forms
+#### 17.4.9 Implementation-defined intermediate forms
 
 An implementation MAY introduce additional named intermediate representations between KCore, KBackendIR, and target
 lowering.
@@ -13048,7 +13056,7 @@ In particular, a backend MUST preserve:
 Host-runtime features such as garbage collection, exceptions, stack unwinding, coroutines, JIT compilation, AOT
 compilation, or dynamic linking are implementation techniques only. They do not redefine Kappa semantics.
 
-### 17.5.1 Memory management
+#### 17.5.1 Memory management
 
 Memory-management strategy is implementation-defined.
 
@@ -13176,7 +13184,7 @@ Rules:
   raw surface MAY expose it as an ordinary Kappa type constructor of the same arity. Otherwise the implementation MUST
   expose an erased raw surface rather than inventing unsupported phantom precision.
 * Instance methods SHOULD be exposed as ordinary terms with exactly one receiver-marked explicit binder so that the
-  dotted-call rules of §13.4 apply.
+  dotted-call rules of §2.8.4 apply.
 * Static members remain ordinary static members of the imported host type module.
 * Constructors SHOULD be exposed as ordinary terms named `new` when unambiguous. When overloading requires
   disambiguation, the implementation MUST assign deterministic additional spellings.
@@ -13543,7 +13551,7 @@ infix right 0 (<|)
   with higher precedence. Thus tighter-binding operator expressions on the right of `|>` group there first.
 * `<|` has precedence `0` and is right-associative, so `f <| g <| x ≡ f (g x)`.
 * Pipe operators are ordinary infix operators. They do not alter the parsing or elaboration of dotted forms, method-call
-  sugar, or receiver-projection sugar (§13.4). In particular, `x |> obj.method` parses as `x |> (obj.method)`; the
+  sugar, or receiver-projection sugar (§2.8.4). In particular, `x |> obj.method` parses as `x |> (obj.method)`; the
   pipe does not retarget method-call or receiver-projection sugar onto `x`.
 
 ### B.3 Optional: typed pipe
