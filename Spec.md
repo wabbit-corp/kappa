@@ -1242,7 +1242,7 @@ import, export, as, except,
 do, block, return, open,
 forall, exists,
 captures, thunk, lazy, force,
-assertTotal, decreases, structural, expect, instance, derive, effect, handle, deep, scoped, pattern,
+assertTotal, decreases, structural, expect, instance, derive, effect, handle, deep, with, scoped, pattern,
 projection, place,
 infix, postfix, prefix, left, right,
 var, while, break, continue, using, inout,
@@ -5247,7 +5247,8 @@ Scoped effects:
 
 * `scoped effect E = ...` introduces a local effect-interface constructor `E` of declaration kind `type`.
 * It additionally introduces a canonical self label `E` of declaration kind `effect-label` for the same lexical scope.
-* The self label is admissible in effect-row syntax, in `handle E in expr`, and in effect-operation selection `E.op`.
+* The self label is admissible in effect-row syntax, in `handle E expr with ...`, and in effect-operation selection
+  `E.op`.
 * Accordingly, the row entry for a scoped effect uses the same spelling in the two declaration kinds, for example
   `<[E : E | r]>`.
 * The local effect-interface constructor, its canonical self label, and all operations declared in the effect body are
@@ -7407,8 +7408,8 @@ Rules:
 * Effect labels are separate identifiers of declaration kind `effect-label`.
 * Effect-row syntax may introduce effect-label identifiers.
 * A binder or package member of compile-time type `EffLabel` introduces an effect-label identifier that is admissible in
-  effect-row syntax, in `handle label in expr`, and in effect-operation selection `label.op`, subject to the ordinary
-  scope rules for that binder.
+  effect-row syntax, in `handle label expr with ...`, and in effect-operation selection `label.op`, subject to the
+  ordinary scope rules for that binder.
 * A `scoped effect` declaration additionally introduces a canonical self label of the same spelling in declaration kind
   `effect-label` for the same lexical scope.
 * A row entry `<[l : E | r]>` associates the effect label `l` with the effect interface `E`.
@@ -7510,14 +7511,15 @@ an `Eff` computation into a single target carrier `m`.
 Syntax:
 
 ```kappa
-handle label in expr
-case return x -> e_ret
-case op1 x1 ... xn k -> e1
-case op2 y1 ... ym k -> e2
+handle label expr with
+  case return x -> e_ret
+  case op1 x1 ... xn k -> e1
+  case op2 y1 ... ym k -> e2
 ...
 ```
 
-Here `label` is an effect label. Inside the handler clauses, operation names of the handled effect are available
+Here `label` is an effect label. The handled computation `expr` may be any expression, including a `do` block written
+immediately after the label. Inside the handler clauses, operation names of the handled effect are available
 unqualified.
 
 Typing:
@@ -7620,12 +7622,14 @@ single target carrier `m`.
 Syntax:
 
 ```kappa
-deep handle label in expr
-case return x -> e_ret
-case op1 x1 ... xn k -> e1
-case op2 y1 ... ym k -> e2
+deep handle label expr with
+  case return x -> e_ret
+  case op1 x1 ... xn k -> e1
+  case op2 y1 ... ym k -> e2
 ...
 ```
+
+The handled computation `expr` may be any expression, including a `do` block written immediately after the label.
 
 Typing:
 
@@ -7665,11 +7669,11 @@ Normative desugaring:
 
 ```kappa
 let __go __comp =
-    handle label in __comp
-    case return x -> e_ret
-    case op1 x1 ... xn __k_shallow ->
-        let q k = \(1 res : B) -> __go (__k_shallow res)
-        e1
+    handle label __comp with
+      case return x -> e_ret
+      case op1 x1 ... xn __k_shallow ->
+          let q k = \(1 res : B) -> __go (__k_shallow res)
+          e1
 in
     __go expr
 ```
@@ -9403,10 +9407,10 @@ Handler-style state threading:
 ```kappa
 let runState (inout st : s) comp : Eff r (result : a, 1 st : s) =
     let handlerObj =
-        deep handle state in comp
-        case return x -> \st0 -> pure (result = x, st = st0)
-        case get () k -> \st0 -> k st0 st0
-        case put st1 k -> \_ -> k () st1
+        deep handle state comp with
+          case return x -> \st0 -> pure (result = x, st = st0)
+          case get () k -> \st0 -> k st0 st0
+          case put st1 k -> \_ -> k () st1
     in
         handlerObj st
 
@@ -11549,9 +11553,9 @@ provided it preserves the same observable semantics for fibers in that agent.
 <!-- core_semantics.runtime_model.captured_continuation_boundary -->
 #### 14.8.5 Captured continuation boundary
 
-When evaluation of `handle label in expr` or `deep handle label in expr` intercepts an operation at the handled label,
-the captured continuation is the dynamic computation suffix from the operation site to the nearest enclosing matching
-handler for that label.
+When evaluation of `handle label expr with ...` or `deep handle label expr with ...` intercepts an operation at the
+handled label, the captured continuation is the dynamic computation suffix from the operation site to the nearest
+enclosing matching handler for that label.
 
 The captured continuation includes:
 
@@ -13398,10 +13402,10 @@ Meaning:
 * The captured continuation boundary includes any active `DoScope` frames inside that dynamic segment, so exit actions
   are cloned or consumed exactly as specified by §§8.1.8.1, 8.7.2, and 14.8.
 
-Surface `handle label in expr` elaborates through `HandleShallow`.
+Surface `handle label expr with ...` elaborates through `HandleShallow`.
 
-Surface `deep handle label in expr` does not require a distinct KCore primitive. It elaborates to an internal recursive
-driver over `HandleShallow` as specified in §8.1.10.
+Surface `deep handle label expr with ...` does not require a distinct KCore primitive. It elaborates to an internal
+recursive driver over `HandleShallow` as specified in §8.1.10.
 
 This subsection defines KCore structure only. A conforming implementation MAY realize these forms by CPS, exceptions,
 heap-allocated frames, stack copying, segmented stacks, defunctionalized state machines, or other equivalent internal

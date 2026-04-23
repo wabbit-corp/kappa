@@ -1,0 +1,41 @@
+module main
+
+-- Source issue: unison#1010
+-- Spec: §7.5, §8.1.9, §8.1.10, §14.8.9
+leftFirst : IO Int
+let leftFirst = do
+    scoped effect Step =
+        left : Unit -> Int
+        right : Unit -> Int
+
+    handle Step do
+      Step.right ()
+    with
+      case return x -> pure x
+      case left () k -> pure 1
+      case right () k -> pure 2
+
+rightFirst : IO Int
+let rightFirst = do
+    scoped effect Step =
+        left : Unit -> Int
+        right : Unit -> Int
+
+    handle Step do
+      Step.right ()
+    with
+      case return x -> pure x
+      case right () k -> pure 2
+      case left () k -> pure 1
+
+main : IO Int
+let main = do
+    a <- leftFirst
+    b <- rightFirst
+    pure (a * 10 + b)
+
+--! assertNoErrors
+--! assertType leftFirst IO Int
+--! assertType rightFirst IO Int
+--! assertType main IO Int
+--! assertExecute main 22

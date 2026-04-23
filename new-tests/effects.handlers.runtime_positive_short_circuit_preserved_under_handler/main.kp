@@ -1,0 +1,20 @@
+module main
+
+-- Source issue: koka#129
+-- Spec: §7.1.2A, §8.1.9.1, §14.8
+main : IO Int
+let main = do
+    scoped effect Boom =
+        boom : Unit -> Int
+
+    value <- handle Boom do
+      if True || (Boom.boom () == 1) then 42 else 0
+    with
+      case return x -> pure x
+      case boom () k -> pure 0
+
+    pure value
+
+--! assertNoErrors
+--! assertType main IO Int
+--! assertExecute main 42

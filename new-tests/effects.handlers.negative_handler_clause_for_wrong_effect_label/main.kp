@@ -1,0 +1,21 @@
+module main
+
+-- Source issue: unison#979
+-- Spec: §8.1.9, §8.1.10
+main : IO Int
+let main = do
+    scoped effect X =
+        x : Unit -> Int
+
+    scoped effect Y =
+        y : Unit -> Int
+
+    handle X do
+      X.x ()
+    with
+      case return n -> pure n
+      case x () k -> pure 1
+      case y () k -> pure 2
+
+--! assertErrorCount 1
+--! assertDiagnosticMatch handler|effect|label|wrong|extra

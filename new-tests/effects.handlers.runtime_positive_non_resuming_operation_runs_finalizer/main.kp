@@ -1,0 +1,22 @@
+module main
+
+-- Source issue: koka#360
+-- Spec: §8.1.11, §8.7.2, §14.8.8
+main : IO Unit
+let main = do
+    scoped effect Abort =
+        abort : Unit -> Int
+
+    value <- handle Abort do
+      defer
+        printInt 1
+      Abort.abort ()
+    with
+      case return x -> pure x
+      case abort () k -> pure 42
+
+    printInt value
+
+--! assertNoErrors
+--! assertType main IO Unit
+--! assertRunStdout main 142
