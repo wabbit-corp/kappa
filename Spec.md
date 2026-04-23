@@ -6367,11 +6367,12 @@ case pattern2           -> expr2
 ```
 
 * `match` is an expression.
-* Each `case` has:
+* Each ordinary `case` has:
 
     * a **pattern**,
     * an optional `if guard` (a boolean expression),
     * a result expression after `->`.
+* A `match` may additionally end with a final `case impossible` as specified in §7.5.2A.
 * All branches must have the same type.
 
 **Exhaustiveness:**
@@ -6393,8 +6394,9 @@ Implementations should:
 * otherwise (if coverage still cannot be established) require an explicit catch-all (`_`) or an explicit user-written
   case structure that proves impossibility.
 
-As a user-facing way to state and check unreachability, a branch may use `-> impossible` (§7.5.2). Such a branch is
-valid only when the compiler can verify the case is unreachable.
+As user-facing ways to state and check unreachability, a branch may use `-> impossible` (§7.5.2) and a `match` may end
+with `case impossible` (§7.5.2A). Such forms are valid only when the compiler can verify the corresponding remainder is
+unreachable.
 
 Optional strengthening rules from §17.3.6 MAY improve diagnostics, but acceptance of a `match` MUST NOT depend on any
 rule outside the required structural fragment of that section.
@@ -6452,6 +6454,32 @@ Typing rule:
 Meaning:
 * If accepted, `impossible` may be given any result type required by the surrounding match.
 * At runtime, an `impossible` branch must never be executed; implementations may compile it to a trap.
+
+<!-- expressions.match.case_impossible_empty_remainder -->
+#### 7.5.2A `case impossible` (empty remainder)
+
+A `match` may end with an explicit empty-remainder case:
+
+```kappa
+match e
+  case impossible
+```
+
+or after one or more ordinary cases:
+
+```kappa
+match e
+  case p1 -> e1
+  case p2 if g2 -> e2
+  case impossible
+```
+
+Grammar addition:
+
+```text
+matchCase ::= 'case' pattern ['if' expr] '->' expr
+            | 'case' 'impossible'
+```
 
 <!-- expressions.match.boolean_matches_introduce_assumptions -->
 #### 7.5.3 Boolean matches introduce assumptions
