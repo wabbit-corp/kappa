@@ -370,6 +370,44 @@ Implementations must support (at least) two compilation modes:
 How a toolchain selects "script mode" vs "package mode" is implementation-defined (e.g. a compiler flag, a package
 manifest, a file directive, etc.).
 
+### 2.3.3 Host binding modules
+
+Implementations MAY provide backend-specific host binding modules under the reserved module roots:
+
+* `host.jvm`
+* `host.dotnet`
+* `host.native`
+
+A source-defined module whose effective module name is exactly one of those roots, or begins with one of those roots
+followed by `.`, is a compile-time error.
+
+A host binding module is an ordinary module for import, export, name resolution, hashing, interface browsing, and
+tooling, but it is supplied from host metadata or ABI descriptions rather than from user-written Kappa source text.
+
+Examples:
+
+```kappa
+import host.jvm.java.util.ArrayList as JArrayList
+import host.dotnet.System.Text.StringBuilder as StringBuilder
+import host.native.sqlite3 as sqlite
+```
+
+Rules:
+
+* `host.jvm.<path>` denotes a JVM host-binding scope derived from classfiles, JARs, the module path, or equivalent JVM
+  metadata.
+* `host.dotnet.<path>` denotes a CLR host-binding scope derived from assembly metadata or equivalent CLR metadata.
+* `host.native.<path>` denotes a native host-binding scope derived from an implementation-documented ABI description,
+  such as headers, symbol lists, shim declarations, or another equivalent binding description.
+* A host binding module MAY denote a package/namespace, a type/class, a library/header set, or another
+  implementation-documented host scope. The chosen scope kind MUST be recorded in the module interface artifact.
+* Host binding modules are backend-specific. A module that directly imports `host.jvm...` is valid only when compiled
+  for a backend profile that provides `host.jvm`, and similarly for `host.dotnet...` and `host.native...`.
+* In package mode, every host binding module used by a build MUST be backed by a pinned host-source identity recorded in
+  a lockfile or equivalent build artifact.
+* A conforming implementation MAY realize a host binding module as a generated source module, a generated module
+  interface artifact, a virtual module, or another observationally equivalent representation.
+
 ### 2.4 Exports (re-exporting imports)
 
 Kappa does not implicitly re-export imports. To re-export an imported module or imported names, use `export`.
@@ -825,6 +863,34 @@ controlled by prelude fixity declarations.
 Names not in this list MAY be exported by `std.prelude`, but user code SHOULD NOT rely on their presence.
 
 The standard prelude provisions for `|>`, `<|`, and the optional `|>=` operator are specified in Appendix B.
+
+### 2.8 Standard FFI support module `std.ffi`
+
+Implementations MUST provide a standard module `std.ffi`. It is not implicitly imported.
+
+Types (type namespace):
+
+```text
+I8, I16, I32, I64, Isize,
+U8, U16, U32, U64, Usize,
+F32, F64,
+RawPtr,
+OpaqueHandle
+```
+
+Rules:
+
+* `I8`..`I64` and `U8`..`U64` are exact-width two's-complement integer types.
+* `Isize` and `Usize` are signed and unsigned machine-word types matching the pointer width of the selected native ABI.
+* `F32` is IEEE-754 binary32.
+* `F64` is IEEE-754 binary64.
+* `F64` MAY be represented identically to `Double`, but remains the exact-ABI scalar name used by `std.ffi`.
+* `RawPtr` denotes an untyped native address. The language core provides no implicit dereference or pointer arithmetic.
+  Such operations, if exposed, are library- or backend-defined.
+* `OpaqueHandle` denotes an opaque foreign resource handle. Its concrete runtime representation is backend-specific.
+* The exact ABI meaning of these types is normative for raw native host bindings under §17.7.
+* `std.ffi` MAY additionally export implementation-defined adapter types and helper terms, provided the types above are
+  available exactly as named.
 
 ---
 
@@ -11246,7 +11312,7 @@ consulting the defining module's source text.
 
 A module interface artifact MUST record at least:
 
-* the module identity and dependency identities required by §§2.1, 2.2, 2.3, and 2.3.2;
+* the module identity and dependency identities required by §§2.1, 2.2, 2.3, 2.3.2, and 2.3.3;
 * the exported binding groups by spelling and declaration kind, including importable fixity declarations;
 * visibility and opacity classification of exported ordinary items;
 * the fully elaborated signatures of exported terms, including:
@@ -11276,6 +11342,11 @@ A module interface artifact MUST record at least:
 * top-level instance heads and any metadata required for instance search and coherence under §§12.3 and 15.2.1;
 * the hashes or equivalent identity data required by §15 for exported definitions, instances, and escaped local nominal
   families recorded by the interface artifact;
+* for a host binding module, the pinned host-source identity, binding-generator identity, host scope kind, and any
+  implementation-documented marshalling profile required by §17.7;
+* for an exported raw foreign binding, the binder metadata required for downstream application-site elaboration,
+  including any receiver marker, overload-disambiguation spelling, nullability classification used to obtain the
+  exported signature, and any interface-visible foreign-call blocking classification;
 * enough definitional content for exported transparent items to support downstream definitional equality;
 * for each exported transparent recursive definition, whether it is termination-certified and, if so, the termination
   kind (`structural`, `well-founded`, `size-change`, or `verified-assertTotal`), together with either:
@@ -11299,6 +11370,7 @@ A module interface artifact MAY omit:
 
 * the bodies of private items;
 * the definitional content of opaque items;
+* implementation-private host metadata beyond the identities and interface-visible classifications required above;
 * target-specific code.
 
 If a requested `unhide` or `clarify` operation would require private or opaque definitional content that is not present
@@ -11322,6 +11394,7 @@ resolution, hashing, or separate-compilation semantics.
 At minimum, the canonical interface view MUST include:
 
 * the module identity;
+* for a host binding module, the pinned host-source identity, binding-generator identity, and declared host scope kind;
 * exported binding groups by spelling and declaration kind;
 * importable fixity declarations;
 * visibility and opacity classification;
@@ -11330,6 +11403,8 @@ At minimum, the canonical interface view MUST include:
   interface-visible classification relevant to use sites, such as pattern-head eligibility under §7.7;
   The canonical interface view MUST render any non-empty inferred `captures (...)` annotation explicitly, even if it was
   omitted in the original source.
+* deterministic overload-disambiguation spellings and interface-visible foreign-call classifications for exported raw
+  foreign bindings, when present;
 * exported signatures of types, traits, constructors, associated static members, effect interfaces, and effect
   operations, insofar as those entities are available to downstream code;
 * exported instance heads and any interface-visible coherence metadata;
@@ -11618,6 +11693,8 @@ At minimum:
 * a change to a declaration header, explicit type, supertype, import/export surface, build flag, backend profile,
   backend intrinsic set, or dependency interface MUST invalidate dependent results from the earliest phase whose inputs
   changed;
+* a change to a pinned host-source identity, binding-generator version, host metadata input, native ABI description, or
+  shim artifact MUST invalidate any generated host-binding surface and all downstream phase results that depended on it;
 * a change to macro-observed external input MUST invalidate any expansion, cached query result, or downstream phase
   result that depended on that input.
 
@@ -11648,6 +11725,8 @@ queries exist:
 * compute declaration body resolution;
 * solve modality predicates for a declaration or module when an enabled modal/coeffect extension emits any;
 * compute module interface;
+* resolve host binding module scope and compute its host-source identity;
+* build or load a raw host binding surface from host metadata or an ABI description;
 * lower declaration or module to KCore;
 * evaluate elaboration-time expansion or normalization request;
 * lower declaration or module to KBackendIR;
@@ -12756,7 +12835,27 @@ Rules:
 * any implementation-defined extension point that crosses this boundary MUST document which checkpoint is its input and
   which invariants it may rely on.
 
-### 17.7 Portable foreign ABI
+#### 17.6.3 Host binding intrinsics
+
+A backend profile that provides `host.jvm`, `host.dotnet`, or `host.native` MAY satisfy exported declarations of those
+modules using backend intrinsics, generated companion fragments, or another observationally equivalent mechanism.
+
+Rules:
+
+* Each raw host binding declaration MUST have a stable implementation identity derived at least from:
+  * the pinned host-source identity,
+  * the selected host member identity,
+  * the binding-generator identity, and
+  * any implementation-documented marshalling, calling-convention, or adapter mode that affects semantics.
+* Unless explicitly classified as elaboration-available under §17.6.1, a raw host binding intrinsic is runtime-only.
+* A backend MUST reject a host binding whose required calling convention, marshalling, blocking classification, or
+  runtime service it cannot realize under the selected backend profile or deployment mode.
+
+### 17.7 Foreign interop and portable foreign ABI
+
+A conforming implementation MAY expose backend-specific host bindings and portable foreign-ABI adapters.
+
+#### 17.7.1 Portable foreign ABI
 
 A conforming implementation MAY expose foreign-ABI adapters. The portable subset of such an ABI is defined after
 elaboration and erasure.
@@ -12775,6 +12874,104 @@ Portable ABI rules:
 
 Opaque resource handles are ordinary runtime values from the perspective of KBackendIR. Their concrete representation is
 backend-specific.
+
+A raw host binding module is not, by itself, part of the portable subset merely because it is expressed using ordinary
+Kappa syntax. Portability requires an exported surface that also obeys the rules of this subsection.
+
+#### 17.7.2 Raw host binding surfaces
+
+A host binding module MAY expose a mechanically generated raw surface derived from host metadata or an
+implementation-documented ABI description.
+
+If an implementation provides a refined surface for host binding module `M`, the mechanically generated raw surface MUST
+remain available as submodule `M.Raw`.
+
+Rules:
+
+* The raw surface is ordinary Kappa surface syntax and ordinary module interface data. It is not a separate declaration
+  language.
+* Imported host reference types, imported host class/interface types, and imported managed object types MUST be exposed
+  as opaque exported types unless a user-written overlay intentionally re-exposes a more specific representation.
+* Imported native pointer-like values in raw native bindings SHOULD use `std.ffi.RawPtr` or an opaque handle type.
+* Imported native scalars whose ABI meaning is exact-width or pointer-width MUST use the corresponding `std.ffi` scalar
+  types.
+* When a host type has generic arity that the implementation can preserve soundly in the selected backend profile, the
+  raw surface MAY expose it as an ordinary Kappa type constructor of the same arity. Otherwise the implementation MUST
+  expose an erased raw surface rather than inventing unsupported phantom precision.
+* Instance methods SHOULD be exposed as ordinary terms with exactly one receiver-marked explicit binder so that the
+  dotted-call rules of §13.4 apply.
+* Static members remain ordinary static members of the imported host type module.
+* Constructors SHOULD be exposed as ordinary terms named `new` when unambiguous. When overloading requires
+  disambiguation, the implementation MUST assign deterministic additional spellings.
+* If multiple host members with the same source spelling are exported into one Kappa module, the implementation MUST
+  assign deterministic exported spellings to those overloads. The unsuffixed base spelling MAY be used only when
+  exactly one exported member of that source spelling remains after filtering and overlay application.
+
+#### 17.7.3 Conservative typing and minimal effect inference
+
+The raw surface of a host binding module MUST be conservative.
+
+Rules:
+
+* A raw foreign declaration MAY be given a pure result type only when the implementation can prove, or a trusted binding
+  summary explicitly states, that the underlying host operation is total, nonblocking, nonthrowing, and observably
+  side-effect free under the selected backend profile.
+* If that condition is not met, the raw declaration MUST be placed in `UIO`.
+* A raw foreign declaration MUST NOT be assigned a non-`Void` typed error channel solely from bytecode, IL, metadata,
+  headers, or symbol information. Raw host failures, host exceptions, status codes, null sentinels, and similar host
+  conventions do not by themselves determine a Kappa error type.
+* A more precise result type `IO e a` requires an explicit refined overlay or a trusted binding summary that names the
+  error type and the translation contract.
+* For managed reference-typed parameters and results, the generated type is:
+  * `T` only when host metadata proves non-nullability;
+  * `Option T` when host metadata proves nullability; and
+  * `Option T` when nullability is unknown.
+* For native raw bindings, out-parameters, status-code returns, sentinel returns, and other ABI-level conventions MAY be
+  exposed directly in the raw surface. Such shapes are backend-specific and are not portable merely because they are
+  expressible in Kappa syntax.
+* Every raw foreign declaration MUST carry foreign-call classification metadata as defined by §17.13:
+  `nonblocking`, `blocking`, or `blocking-cancellable`.
+* A backend that lacks the runtime capability required by that classification, including `rt-blocking` when relevant,
+  MUST reject the declaration or deployment mode rather than silently weakening its behavior.
+
+#### 17.7.4 Precise overlays and shims
+
+A refined foreign surface is an ordinary Kappa module that wraps a raw host binding module or a user-provided shim.
+
+Rules:
+
+* A refined overlay MAY rename raw bindings, hide overload spellings, strengthen nullability, translate status codes,
+  catch and translate host exceptions, and expose more precise result types, including `IO e a`.
+* A refined overlay that exposes `IO e a` MUST make the error translation contract explicit, either:
+  * by implementing the translation in Kappa source, or
+  * by delegating to a shim whose documented contract provides that translation.
+* A shim MAY be provided as Kappa source, as target-host source, as native source, or as another
+  implementation-documented separately compiled artifact that the selected backend can compile and link.
+* Overlays and shims participate in ordinary hashing, interface artifacts, semantic object identity, and tooling exactly
+  like other modules and artifacts.
+* This specification does not require a distinct `foreign import` declaration form. An implementation MAY provide such a
+  form as surface sugar only if it elaborates to the ordinary mechanisms of this section and preserves their semantics.
+
+#### 17.7.5 Backend specificity and portability layering
+
+Rules:
+
+* A module that directly imports `host.jvm...`, `host.dotnet...`, or `host.native...` is backend-specific to the
+  corresponding host root.
+* Portable libraries SHOULD expose backend-neutral surfaces using `expect` declarations, selected module fragments, or
+  other ordinary Kappa modules that delegate to host bindings only in backend-specific fragments.
+* A host binding module itself is not part of the portable subset unless the exported surface also satisfies the
+  portable ABI restrictions of §17.7.1.
+* In particular, direct `std.ffi.RawPtr` use, direct borrowed foreign values, raw out-parameter conventions, runtime-
+  only host object types, and backend-specific blocking bridges are outside the portable subset unless wrapped by a
+  portable facade.
+
+**Design note:** The intended ergonomic layering is:
+1. mechanically generated raw host bindings in `host.<backend>....Raw`,
+2. refined overlay modules with explicit Kappa types and error mapping,
+3. portable facades built with `expect` plus backend-selected fragments.
+
+This keeps backend-specific metadata import ergonomic without making backend-specific surfaces part of the portable ABI.
 
 ### 17.8 Native backend profile (`zig`)
 
@@ -12804,6 +13001,20 @@ Rules:
 The native profile's observable semantics are those of Kappa, not of any intermediate textual form chosen by the
 compiler.
 
+#### 17.8.1 Native host binding modules
+
+The `zig` profile MAY provide `host.native` modules.
+
+Rules:
+
+* The host-source identity of a `host.native` module MUST include the ABI-description inputs used to generate its raw
+  surface, such as header digests, symbol-list digests, shim-source digests, target triple, calling convention, and the
+  identity of any linked native library required by the binding.
+* A raw `host.native` surface SHOULD use `std.ffi` exact-width scalars, `RawPtr`, and opaque handles for ABI-visible
+  native values.
+* If the implementation cannot derive a sound raw surface from native metadata alone, it MAY require a user-provided
+  shim or explicit binding description rather than guessing.
+
 ### 17.9 JVM backend profile
 
 A conforming implementation MAY provide the `jvm` backend profile.
@@ -12827,6 +13038,20 @@ Rules:
 A JVM adapter layer MAY additionally expose Java-friendly wrappers around portable Kappa exports, but those wrappers are
 not part of the portable Kappa ABI.
 
+#### 17.9.1 JVM host binding modules
+
+The `jvm` profile MAY provide `host.jvm` modules.
+
+Rules:
+
+* The host-source identity of a `host.jvm` module MUST include the immutable identities of the classfiles, JARs, or
+  equivalent JVM metadata units from which the binding was derived.
+* A raw `host.jvm` surface MAY use classfile signatures, generic signatures, annotations, and other JVM metadata to
+  build its exported interface.
+* Checked vs unchecked JVM exceptions do not, by themselves, determine Kappa typed error channels for raw bindings.
+* Nullability MAY be inferred from implementation-documented JVM metadata. In the absence of proof of non-nullability,
+  the raw surface MUST use the conservative rules of §17.7.3.
+
 ### 17.10 CLR backend profile (`dotnet`)
 
 A conforming implementation MAY provide the `dotnet` backend profile.
@@ -12849,6 +13074,23 @@ Rules:
 If a program or library depends on runtime features unavailable under the selected CLR deployment mode, such as a
 particular Native AOT mode, the implementation MUST reject that deployment with a compile-time or publish-time
 diagnostic rather than silently weakening semantics.
+
+#### 17.10.1 CLR host binding modules
+
+The `dotnet` profile MAY provide `host.dotnet` modules.
+
+Rules:
+
+* The host-source identity of a `host.dotnet` module MUST include the immutable identities of the assemblies or
+  equivalent CLR metadata units from which the binding was derived.
+* A raw `host.dotnet` surface MAY use ECMA-335 metadata, generic-parameter data, attributes, and nullable-reference
+  metadata to build its exported interface.
+* CLR exceptions do not, by themselves, determine Kappa typed error channels for raw bindings.
+* In the absence of proof of non-nullability from CLR metadata, the raw surface MUST use the conservative rules of
+  §17.7.3.
+* If the selected deployment mode, including any Native AOT mode, cannot realize the required marshalling or runtime
+  services for a given host binding, the implementation MUST reject that binding or deployment mode rather than silently
+  weakening semantics.
 
 ### 17.11 WebAssembly backend profile (`wasm`)
 
