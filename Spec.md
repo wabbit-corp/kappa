@@ -939,7 +939,7 @@ import, export, as, except,
 do, block, return, open,
 forall, exists,
 captures,
-assertTotal, decreases, structural, expect, instance, derive, effect, handle, deep, pattern,
+assertTotal, decreases, structural, expect, instance, derive, effect, handle, deep, scoped, pattern,
 projection, place,
 infix, postfix, prefix, left, right,
 var, while, break, continue, using, inout,
@@ -4487,6 +4487,7 @@ pureBlockItem ::= localLetItem
                 | localDataDecl
                 | localTypeDecl
                 | localTraitDecl
+                | localEffectDecl
                 | localInstanceDecl
                 | localDeriveDecl
                 | localImportDecl
@@ -4496,6 +4497,9 @@ pureBlockItem ::= localLetItem
 Here `localLetItem` is the irrefutable local-binding form of §6.3; `localSignature` and `localNamedDef` are the local
 analogues of the signature and named-`let` forms of §6.1-§6.2; and the remaining items use the same surface syntax as
 their top-level counterparts, minus the top-level-only forms and modifiers listed below.
+
+`localEffectDecl` is the local-only `scoped effect` form of §6.3.1.1. It uses the same surface syntax as an `effect`
+declaration of §8.1.2, except that it MUST be prefixed by `scoped` and MUST NOT carry `public` or `private`.
 
 Typical pure-block items therefore include forms such as:
 
@@ -4521,12 +4525,13 @@ Rules:
 * A pure block may contain:
   * irrefutable local `let` bindings,
   * local signatures and named `let` definitions,
-  * local `data`, `type`, `trait`, `instance`, and `derive` declarations,
+  * local `data`, `type`, `trait`, `scoped effect`, `instance`, and `derive` declarations,
   * local `import` and fixity declarations.
 * `block` and `do` are the two block-scope constructs of the language. They share the local declaration forms above.
   `do` additionally admits the effectful items of §8.2.
-* The following forms remain top-level only: `module`, `export`, `expect`, `effect`, `pattern`, and the modifiers
+* The following forms remain top-level only: `module`, `export`, `expect`, bare `effect`, `pattern`, and the modifiers
   `public`, `private`, and `opaque`.
+* The local-only modifier `scoped` is permitted as specified in §6.3.1.1.
 * Block-scoped declarations are always lexically private and transparent.
 * Monadic or control-flow items such as `<-`, `let?`, `var`, `while`, `for`, `defer`, `using`, `return`, `break`, and
   `continue` are not permitted in a pure block. Use an explicit `do` block for those forms.
@@ -4544,6 +4549,59 @@ Local recursion:
   has a preceding local signature declaration in the same block scope.
 * Within such a local definition body, the declared local name(s) are in scope exactly as in the top-level recursion
   rule of §6.4.
+
+#### 6.3.1.1 Scoped local nominal and effect declarations
+
+Within a block scope (`block` or `do`), the local-only modifier `scoped` may prefix:
+
+* `data`
+* `type`
+* `trait`
+* `effect`
+
+Examples:
+
+```kappa
+block
+    scoped data Token : Type =
+        Token
+
+    scoped trait Keyed a =
+        key : a -> String
+
+    scoped effect Choice =
+        ω choose : Unit -> Bool
+
+    ...
+```
+
+Rules:
+
+* `scoped` is permitted only inside `block` or `do`.
+* `scoped` is not permitted on top-level declarations.
+* Ordinary local `data`, `type`, and `trait` declarations without `scoped` retain the escape-capable behavior of
+  §14.1.1.
+* Bare `effect` remains top-level only. The only local effect form is `scoped effect`.
+* Each `block` and `do` scope behaves as if elaborated under a fresh hidden nominal-scope token. The corresponding
+  KCore form is specified in §17.3.1.5A.
+* A scoped local declaration captures that hidden nominal-scope token in addition to its ordinary closure-converted
+  free variables.
+* Consequently, a scoped local family, or any transparent type, row, effect row, compile-time term, dictionary, or
+  computation that still mentions it after ordinary elaboration, MUST NOT escape the lexical block scope.
+* Such entities MAY cross a boundary only when the exposed interface omits the scoped local family entirely, for
+  example through `seal ... as ...` with a signature that does not mention it.
+* Distinct dynamic evaluations do not create fresh scoped-family identities; scoped locals remain declaration-site
+  semantic families under §14.1.1.
+
+Scoped effects:
+
+* `scoped effect E = ...` introduces a local effect-interface constructor `E` of declaration kind `type`.
+* It additionally introduces a canonical self label `E` of declaration kind `effect-label` for the same lexical scope.
+* The self label is admissible in effect-row syntax, in `handle E in expr`, and in effect-operation selection `E.op`.
+* Accordingly, the row entry for a scoped effect uses the same spelling in the two declaration kinds, for example
+  `<[E : E | r]>`.
+* The local effect-interface constructor, its canonical self label, and all operations declared in the effect body are
+  scoped by the same hidden nominal-scope token.
 
 ### 6.4 Totality and unfolding
 
@@ -6473,14 +6531,18 @@ Example:
 
 Rules:
 
-* `effect` declarations are top-level only.
-* `public` and `private` apply in the same way as for other ordinary top-level declarations.
+* An ordinary `effect` declaration is top-level only.
+* The local form `scoped effect` is permitted only inside `block` or `do` scopes under §6.3.1.1.
+* `public` and `private` apply only to top-level `effect` declarations.
 * `opaque` does not apply to `effect` declarations.
-* An `effect` declaration introduces an effect-interface constructor of declaration kind `type`.
-* Effect labels are separate identifiers in the effect-label namespace and are introduced by effect-row syntax.
+* Every effect declaration introduces an effect-interface constructor of declaration kind `type`.
+* Effect labels are separate identifiers of declaration kind `effect-label`.
+* Effect-row syntax may introduce effect-label identifiers.
 * A binder or package member of compile-time type `EffLabel` introduces an effect-label identifier that is admissible in
   effect-row syntax, in `handle label in expr`, and in effect-operation selection `label.op`, subject to the ordinary
   scope rules for that binder.
+* A `scoped effect` declaration additionally introduces a canonical self label of the same spelling in declaration kind
+  `effect-label` for the same lexical scope.
 * A row entry `<[l : E | r]>` associates the effect label `l` with the effect interface `E`.
 * Each operation signature in the body is an operation declaration of the effect interface.
 * An operation declaration may be prefixed with a quantity `q`. If omitted, the resumption quantity defaults to `1`.
@@ -7017,8 +7079,8 @@ Valid do-items inside `do`:
 
 * **Shared block-scope declarations**: A `do` block is also a block scope in the sense of §6.3.1. From declaration
   onward, it may contain the same local declaration items as `block`: local signatures, named `let` definitions, local
-  `data` / `type` / `trait` / `instance` / `derive` declarations, and local `import` / fixity declarations. Their
-  sequential scoping and elaboration rules are specified in §6.3.1 and §14.1.1.
+  `data` / `type` / `trait` / `scoped effect` / `instance` / `derive` declarations, and local `import` / fixity
+  declarations. Their sequential scoping and elaboration rules are specified in §§6.3.1, 6.3.1.1, and 14.1.1.
 
 Control-flow statements:
   * `break` and `continue` are statements, not expressions. They are valid only inside loop bodies (§8.5).
@@ -7124,7 +7186,7 @@ A do-item may be:
 * loop sugar
 * conditional / other control-flow block sugar
 * shared block-scope declarations / definitions (local signatures, named `let` definitions, `data`, `type`, `trait`,
-  `instance`, `derive`, and scoped fixity/import items)
+  `scoped effect`, `instance`, `derive`, and scoped fixity/import items)
 
 Rules:
 
@@ -9968,6 +10030,13 @@ Declaration kinds:
 Record field labels are structural labels, not ordinary unqualified
 lexical bindings.
 
+Effect-label declarations arise from effect-row syntax, from binders or
+package members of compile-time type `EffLabel`, and from the canonical
+self labels of `scoped effect` declarations.
+
+Effect-label identifiers are used in `EffRow`-kinded rows, handlers, and
+effect-operation selection.
+
 ### 13.1 Ordinary lexical lookup
 
 Unqualified lookup of spelling `x` proceeds by contextual admissibility:
@@ -10211,15 +10280,25 @@ Closure conversion:
 * Elaboration introduces an internal declaration abstracted over `Gamma`.
 * Within the user-written block, a bare occurrence of the local name is shorthand for that internal declaration applied
   to the current values or evidence of `Gamma`.
-* This applies uniformly to local `data`, `type`, `trait`, `instance`, local signatures and named `let` definitions, and
-  instances generated by `derive`.
+* This applies uniformly to local `data`, `type`, `trait`, `scoped effect`, `instance`, local signatures and named
+  `let` definitions, and instances generated by `derive`.
+
+Scoped local declarations:
+
+* Ordinary local `data`, `type`, and `trait` declarations are closure-converted over the ordinary free-variable capture
+  set `Gamma` and retain the escape behavior described below.
+* A local declaration marked `scoped` is closure-converted over `(σ, Gamma)`, where `σ` is the hidden nominal-scope
+  token of the nearest enclosing block scope as specified by §§6.3.1.1 and 17.3.1.5A.
+* A `scoped effect` declaration likewise closure-converts both the local effect-interface constructor and its canonical
+  self label over `(σ, Gamma)`.
 
 Lexical identity:
 
 * A local nominal declaration has one identity per declaration site, not per dynamic evaluation of the enclosing
   function or block.
 * Distinct dynamic evaluations instantiate the same local declaration family at different captured arguments.
-* Implementations MUST NOT treat local `data` or `trait` declarations as runtime-fresh generative names.
+* Implementations MUST NOT treat local `data`, `trait`, or `scoped effect` declarations as runtime-fresh generative
+  names.
 
 Escaped local nominal families:
 
@@ -10260,6 +10339,14 @@ Escaping results:
   sealed packages of §5.5.10, provided:
   * the resulting elaborated interface type is well-typed; and
   * every escaped local nominal family mentioned by that interface is representable under §§17.1.9 and 17.3.4.1.
+
+Scoped escape restriction:
+
+* Because nominal-scope tokens are not interface-representable (§17.3.4.1), a transparent escape of a scoped local
+  family, or of any elaborated type or compile-time term that still mentions it after ordinary transparent expansion, is
+  a compile-time error in the defining block.
+* Opaque escape is permitted only when the exposed interface omits the scoped local family and its captured
+  nominal-scope token.
 
 Local instances:
 
@@ -10379,10 +10466,12 @@ The runtime representation of a term is obtained by deleting:
   applications, except for retained coherent constraint evidence and explicit `Dict` values governed by §5.1.3;
 * all capture-annotation structure introduced by `captures (...)`; and
 * all binders, fields, arguments, and package members whose values are compile-time values in the sense of §5.1.4.1,
-  regardless of their written quantity annotation, unless preserved by an explicit reified runtime carrier.
+  together with the internal nominal-scope tokens introduced by elaboration of §6.3.1.1, regardless of their written
+  quantity annotation, unless preserved by an explicit reified runtime carrier.
 
 For computational binders and fields, quantities other than `0` are runtime-relevant and remain in the runtime term.
-For compile-time binders and fields, runtime relevance is determined by classifier rather than by written quantity.
+For compile-time binders, fields, arguments, and package members, and for internal nominal-scope tokens introduced by
+elaboration of §6.3.1.1, runtime relevance is determined by classifier rather than by written quantity.
 
 This erasure is sound: runtime behavior of the computational fragment is preserved.
 
@@ -12292,6 +12381,34 @@ This subsection defines KCore structure only. A conforming implementation MAY re
 heap-allocated frames, stack copying, segmented stacks, defunctionalized state machines, or other equivalent internal
 machinery, provided the observable behavior is the same as this kernel and the runtime constraints of §14.8.
 
+#### 17.3.1.5A KCore nominal-scope binders
+
+A conforming implementation MUST behave as if KCore contains an internal compile-time type:
+
+```text
+NomScope : Type0
+```
+
+and a compile-time-only binder:
+
+```text
+FreshNomScope σ in e
+```
+
+where `σ : NomScope` is rigid within `e`.
+
+Rules:
+
+* `FreshNomScope` is lexical, not runtime-generative.
+* Distinct `FreshNomScope` binder occurrences introduce distinct rigid nominal-scope tokens.
+* Distinct dynamic evaluations of the same enclosing function, lambda, or block do not create distinct nominal-scope
+  tokens.
+* Each source `block` and each source `do` scope elaborates as if wrapped in a fresh `FreshNomScope` binder.
+  Implementations MAY omit the binder when no `scoped` local declaration in that scope depends on it.
+* A scoped local declaration of §6.3.1.1 captures the nearest enclosing nominal-scope token as part of its
+  closure-converted capture telescope.
+* `NomScope` values are compile-time only and are erased before KBackendIR.
+
 #### 17.3.1.6 KCore intrinsic compile-time types
 
 A conforming implementation MUST behave as if KCore supports ordinary binding, projection, application, sealing, and
@@ -12300,8 +12417,8 @@ packaging of inhabitants of the intrinsic compile-time types of §5.1.3 and of t
 
 Rules:
 
-* `Universe`, `Quantity`, `Region`, `Constraint`, `RecRow`, `VarRow`, `EffRow`, `Label`, and `EffLabel` are ordinary
-  compile-time types in KCore.
+* `Universe`, `Quantity`, `Region`, `Constraint`, `RecRow`, `VarRow`, `EffRow`, `Label`, `EffLabel`, and the internal
+  nominal-scope type `NomScope` are ordinary compile-time types in KCore.
 * `CoreCtx`, `Symbol`, `Core Γ t`, and `CoreEq x y` are ordinary elaboration-time-only compile-time types in KCore.
 * `Type u` is a primitive universe family indexed by `u : Universe`; it is not required to be represented as ordinary
   first-order application.
@@ -12499,8 +12616,8 @@ Each escaped local nominal family has a canonical family identity determined by:
 
 * the semantic object identity of the enclosing top-level semantic object after closure conversion;
 * the stable declaration-site path of the local declaration within that enclosing object; and
-* the nominal kind of the declaration (`data`, `type`, `trait`, constructor family, or other implementation-defined
-  nominal kind).
+* the nominal kind of the declaration (`data`, `type`, `trait`, `effect`, constructor family, or other
+  implementation-defined nominal kind).
 
 Rules:
 
@@ -12519,6 +12636,9 @@ Applications:
 
 Interface representability:
 
+* A value of type `NomScope` is never interface-representable.
+* Accordingly, any would-be exported application of a scoped local family that captures a `NomScope` token is a
+  compile-time error unless the exported interface eliminates or hides that family entirely.
 * A captured argument of an escaped local nominal family is interface-representable iff it can itself be encoded by the
   module interface artifact using the ordinary exported type language, compile-time terms, semantic object identities,
   and transparent definitional content available under §17.1.9.
@@ -12660,6 +12780,7 @@ intrinsic:
 
 * intrinsic compile-time types and their inhabitants, including universes, `Type u`, row terms, label terms, raw
   `Constraint` descriptors, and anonymous or explicit region variables;
+* nominal-scope tokens introduced by `FreshNomScope`;
 * capture-annotation structure introduced by `captures (...)`;
 * quantity-`0` computational binders or fields;
 * proof terms whose only purpose is compile-time reasoning;
