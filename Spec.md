@@ -659,13 +659,14 @@ Types (type namespace):
 Unit, Void, Bool, Char, String, Int, Nat, Integer, Float, Double, Real, Bytes, Ordering, SyntaxFragment,
 Query a, RawComprehension a, ComprehensionPlan a,
 Option a, Result e a, List a, Array a, Set a, Map k v,
-Res a r, Match a r, Dec p,
+Res a r, Match a r, Dec p, Dict c,
 IO e a, UIO a, Fiber e a, Exit e a, Cause e, InterruptCause, DefectInfo,
 STM a, TVar a,
 Regex, (=), Thunk a, Need a
 ```
 
 `Integer`, `Double`, and `Real` are ordinary user-facing numeric types exported by `std.prelude`.
+`Dict c` is the standard explicit dictionary reification type for constraints.
 
 * `Integer` is an arbitrary-precision integer type.
 * `Double` is the IEEE-754 binary64 floating-point type.
@@ -712,7 +713,7 @@ runPure,
 sandbox, unsandbox,
 fork, forkDaemon, await, join, interrupt, interruptFork,
 poll, uninterruptible, mask, ensuring, acquireRelease,
-atomically, newTVar, readTVar, writeTVar, check,
+atomically, newTVar, readTVar, writeTVar, retry, check,
 f, re, b, type,
 println, print
 ```
@@ -766,6 +767,8 @@ data Match (a : Type) (r : Type) : Type =
 data Dec (p : Type) : Type =
     Yes p
     No (p -> Void)
+
+Dict : Constraint -> Type
 
 expect data IO (e : Type) (a : Type) : Type
 type UIO (a : Type) = IO Void a
