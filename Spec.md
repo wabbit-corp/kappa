@@ -2329,26 +2329,79 @@ Consequences:
 <!-- types.universes.quantities.reserved_modal_coeffect_extension_lane -->
 ##### 5.1.5.2 Reserved modal/coeffect extension lane
 
-A future version of Kappa may add one or more graded modal or coeffect systems. Any such system MUST be distinct from
-`Quantity` and MUST satisfy all of the following:
+A future revision of Kappa MAY standardize one or more graded modal or coeffect systems.
+For the purposes of this specification, such a system is called a **modal extension**.
 
-* it introduces its own type formers, binders, or other surface forms rather than extending the set of quantity
-  literals;
-* it defines its own admissibility, ordering, and combination rules for its grades;
-* it emits its own typing predicates or obligations during elaboration;
-* those predicates are solved separately from the core quantity checker;
-* failure of such predicates is reported as an ordinary compile-time error with source origins.
+A modal extension MUST be distinct from `Quantity`.
 
-If such a layer is added, it is orthogonal to ownership checking:
+A conforming modal-extension specification MUST define all of the following:
 
-* quantity checking still determines consumption, borrowing, erasure, and path-sensitive ownership;
-* modal/coeffect checking determines only the modality-specific property being tracked.
+* the source-visible type former(s), computation former(s), binder form(s), or other surface constructs by which the
+  extension is written;
+* the compile-time classifier type(s), if grades of that extension are user-nameable in source;
+* the extension's own admissibility, ordering, combination, and branch-join rules for its grades;
+* the finite predicate vocabulary emitted during elaboration;
+* whether any solved evidence is compile-time only or has a user-visible runtime carrier;
+* the extension-specific interaction, if any, with effect rows, modules, opaqueness, separate compilation, and
+  definitional equality; and
+* the diagnostic requirements for contradictory or unsolved obligations.
+
+A modal extension MUST NOT:
+
+* add new user-written quantity literals;
+* reinterpret `Quantity`, `⊑`, borrow introduction, borrow lifetimes, path-sensitive borrowing, or quantity-governed
+  erasure;
+* require the core quantity checker to invoke a general-purpose solver for programs that do not use that extension's
+  surface forms; or
+* redefine effect-row membership, effect-row equality, row weakening, or `SplitEff`.
+
+Orthogonality:
+
+* quantity checking continues to determine only consumption, borrowing, erasure, and path-sensitive ownership;
+* effect rows continue to determine only which effects may occur; and
+* a modal extension determines only the extension-specific property that it introduces.
 
 Examples of candidate future modalities include information-flow labels, privacy/sensitivity grades, energy or cost
 budgets, and scheduling budgets.
 
-A conforming implementation MUST NOT reinterpret `Quantity`, `⊑`, or the borrow rules of this chapter as a
-general-purpose graded logic.
+v0.1 defines no user-visible modal extension.
+
+User-defined grade algebras:
+
+* A conforming v0.1 implementation MUST NOT expose arbitrary user-defined grade algebras or user-defined solver
+  theories as a portable language feature.
+* An implementation MAY experiment with such facilities under implementation-defined nonportable flags, but those
+  facilities are outside conformance unless and until a later revision standardizes them.
+
+<!-- types.universes.quantities.modal_extension_contract -->
+##### 5.1.5.3 Modal extension contract
+
+For any enabled modal extension, elaboration behaves as if each checking judgment returns both:
+
+* the ordinary ownership result `Q`, decided by §§5.1.5-5.1.7; and
+* a finite set `Φ` of extension-specific modality predicates.
+
+Operational rules:
+
+* `Q` is decided by the syntax-directed ownership rules and MUST NOT depend on modality solving.
+* `Φ` is accumulated during checking and is solved only after body resolution, in `MODAL_SOLVE` (§17.2.2).
+* Sequential composition combines quantity usage by the ordinary quantity rules and combines modality obligations by
+  conjunction.
+* Alternative control-flow paths combine quantity usage by the ordinary join rules. Any modality-specific join or
+  compatibility requirement is emitted separately as additional predicates in `Φ`.
+* If an extension introduces more than one grade domain or predicate class, those domains remain distinct unless that
+  extension explicitly defines a product construction.
+
+Failure conditions:
+
+* contradictory modality obligations are compile-time errors;
+* unsolved modality obligations at the end of `MODAL_SOLVE` are compile-time errors; and
+* such errors MUST identify at least the primary source origin of each contributing obligation and the modal extension
+  responsible for it.
+
+An ordinary source program that uses no surface form of an enabled modal extension MUST typecheck exactly as if that
+extension were absent, except for implementation-defined diagnostics or tooling metadata that report the extension as
+inactive.
 
 <!-- types.universes.borrow_lifetimes_escape_prevention -->
 #### 5.1.6 Borrow lifetimes and escape prevention
@@ -11203,6 +11256,16 @@ The quantity subsumption of §7.1.3 is implemented by elaboration-time insertion
 coercion term). It is not part of definitional equality and does NOT alter the underlying `≡` relation used by the core
 dependent typechecker.
 
+Modal/coeffect evidence and definitional equality:
+
+* Solved evidence introduced by `MODAL_SOLVE` is not part of the definitional equality of ordinary terms or types.
+* Such evidence is compile-time only and proof-irrelevant unless the corresponding modal extension explicitly introduces
+  a user-visible runtime carrier.
+* A modal extension may affect definitional equality only through its own explicit type or computation formers; it MUST
+  NOT change the definitional equality of `Quantity`, ordinary arrows, records, effect rows, or ordinary terms that do
+  not use that extension.
+* Unsolved modality predicates are never reified as neutral terms participating in `≡`.
+
 Normalization used by the typechecker may be fuel-bounded for performance, but must be sound: it must not claim
 definitional equality unless it holds in the mathematical relation above.
 
@@ -12577,6 +12640,13 @@ Implementations SHOULD use readable identifier forms such as `E_IMPORT_CYCLE`, `
 When termination checking fails, the diagnostic MUST identify the recursive SCC, the recursive call edge or edges that
 failed, and at least one candidate explicit `decreases` clause when the implementation can synthesize one.
 
+When a standardized modal/coeffect extension is enabled and modality solving fails, the diagnostic MUST identify:
+
+* the extension name;
+* the contradictory or unsolved predicate class;
+* the primary origin of each contributing obligation; and
+* any related origins used to explain the conflict.
+
 Tooling queries over syntactically incomplete files are valid. Where possible, they MUST return partial results rather
 than failing wholesale merely because the surrounding file is incomplete.
 
@@ -12591,7 +12661,10 @@ Such queries SHOULD support at least:
 * resolution of the declaration or symbol at a source position;
 * navigation from reference to declaration;
 * expression type and type-reference resolution at a source position;
-* expected type, expected quantity, and expected effect row where those are well-defined at a source position;
+* expected type, expected quantity, expected effect row, and any expected modality obligations where those are
+  well-defined at a source position;
+* emitted, solved, or unsolved modality predicates for a declaration or source position when a standardized
+  modal/coeffect extension is enabled;
 * diagnostics for a file or declaration, even when the file is syntactically incomplete;
 * for a recursive definition, the recursive SCC, the inferred termination strategy, the canonical visible measure (if
   any), any hidden phase components, and the recursive call edges together with the proved decrease relation on each
@@ -14586,9 +14659,10 @@ provided that omission is documented together with the rationale and the observa
 <!-- appendices.modal_coeffects -->
 ## Appendix M. Reserved modal/coeffect architecture (non-normative)
 
-This appendix is explanatory and imposes no user-visible surface syntax in v0.1.
+This appendix is explanatory.
+The normative rules are in §§5.1.5.2-5.1.5.3, §14.1, §14.3, §17.2.2, and §17.3.
 
-A future checker may use judgments of the form:
+A future implementation may structure checking around judgments of the form:
 
 ```text
 Γ ⊢ e ⇒ A ▷ Q ; Φ
@@ -14600,18 +14674,7 @@ where:
 * `Q` is the ordinary quantity result of §§5.1.5-5.1.7.
 * `Φ` is a finite set of modality predicates emitted only by enabled modal/coeffect extensions.
 
-Operational intent:
-
-* `Q` is decided by the syntax-directed ownership rules and never requires a general solver.
-* `Φ` is accumulated during checking and may later be discharged by `MODAL_SOLVE`.
-* Sequential composition combines quantity usage by the ordinary quantity rules and combines modality obligations by
-  conjunction.
-* Alternative control-flow paths combine quantity usage by the ordinary join rules and emit any modality-specific join
-  constraints separately.
-* Effect rows remain orthogonal: rows classify which effects may occur; modality predicates classify additional graded
-  or policy properties.
-
-Schematic checker output:
+Reference output shape:
 
 ```text
 TcOut =
@@ -14622,8 +14685,49 @@ TcOut =
   }
 ```
 
-A future extension should therefore be implemented as "existing checker + extra predicates", not by generalizing
-`Quantity`, `⊑`, borrow introduction, or borrow lifetimes.
+Schematic combination rules:
+
+```text
+checkSeq(e1, e2):
+  o1 = check e1
+  o2 = check e2
+  return
+    { type       = o2.type
+    , qtyUse     = o1.qtyUse + o2.qtyUse
+    , modalPreds = o1.modalPreds ++ o2.modalPreds
+    , subst      = o2.subst ∘ o1.subst
+    }
+
+checkIf(c, t, e):
+  oc = check c
+  ot = check t
+  oe = check e
+  return
+    { type       = joinType(ot.type, oe.type)
+    , qtyUse     = oc.qtyUse + (ot.qtyUse ⊔ oe.qtyUse)
+    , modalPreds = oc.modalPreds ++ ot.modalPreds ++ oe.modalPreds ++ branchModalJoin(ot, oe)
+    , subst      = mergeSubst(ot.subst, oe.subst)
+    }
+
+checkApp(f, a):
+  of = synth f
+  oa = check a against next binder
+  return
+    { type       = resultType(of.type, oa.term)
+    , qtyUse     = of.qtyUse + oa.qtyUse
+    , modalPreds = of.modalPreds ++ oa.modalPreds ++ appModalObligations(of, oa)
+    , subst      = oa.subst ∘ of.subst
+    }
+```
+
+Operational intent:
+
+* `Q` is syntax-directed and never requires a general solver.
+* `Φ` is extension-specific and is discharged separately by `MODAL_SOLVE`.
+* Effects remain orthogonal: rows classify which effects may occur; modality predicates classify some additional graded
+  or policy property.
+* A future extension should therefore be implemented as "existing checker + extra predicates", not by generalizing
+  `Quantity`, `⊑`, borrow introduction, or borrow lifetimes.
 
 <!-- appendices.test_harness -->
 ## Appendix T. Standard test harness
