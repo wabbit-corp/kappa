@@ -1,4 +1,4 @@
-module main_term_namespace
+module main_term_selector
 
 import library.math.(term fortyTwo)
 

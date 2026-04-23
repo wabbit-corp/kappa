@@ -15,13 +15,14 @@ Current audit scope: this is an initial baseline for sections exercised by sourc
 | 2.1 Modules and files | `spec_2_1_*` fixtures | aligned | Module headers, path/header mismatch, and invalid path checks are covered. |
 | 2.2 Acyclic imports | `spec_2_2_*` fixtures | aligned | Import and export cycle rejection is covered. |
 | 2.3 Imports | `spec_2_3_*` fixtures and backend import tests | aligned | Local wildcard, selective, alias, multiple import specs, and imported runtime bindings are covered. |
-| 2.3.1 Import item qualifiers | `spec_2_3_1_*` fixtures | not implemented yet | Term/type/constructor namespace boundaries are partially covered; `type T(..)` and more explicit constructor boundary cases still need tests and implementation confirmation. |
+| 2.3.1 Import item kind selectors | `spec_2_3_1_*` fixtures | not implemented yet | Term/type/constructor declaration-kind boundaries are partially covered; `type T(..)` and more explicit constructor boundary cases still need tests and implementation confirmation. |
 | 2.3.1.1 `unhide` and `clarify` | `spec_2_3_1_1_*` fixtures | aligned | Positive modifier behavior is covered for the current parser/resolver subset. |
 | 2.3.2 URL imports | `spec_2_3_2_*` fixtures | not implemented yet | URL syntax and virtual fixture resolution are exercised; full pinning, reproducibility, and external fetch semantics are not implemented. |
 | 2.4 Exports | `spec_2_4_*` fixtures | aligned | Direct exports and re-export fixtures are covered. |
 | 2.5 Visibility and opacity | `spec_2_5_*` fixtures | compiler divergence | Visibility is exercised, but private access is still surfaced through runtime/interpreter failure in at least one fixture, and opaque definitional transparency is not enforced as a full typechecking boundary. |
-| 2.6 Prelude interface | `implicit_prelude`, `spec_2_6_*`, import tests | aligned | Implicit prelude import behavior and the fixed unqualified constructor subset are covered. |
-| 2.7 Prelude contents | `spec_2_7_*`, `Stdlib/std/prelude.kp` | spec/docs divergence | The repo uses a bootstrap prelude contract that is tested, but the spec still presents the larger normative minimum without an explicit bootstrap profile split. |
+| 2.6.1 Prelude implicit import behavior | `implicit_prelude`, `spec_2_6_1_*`, import tests | aligned | Implicit prelude import behavior and the fixed unqualified constructor subset are covered. |
+| 2.6.2 Prelude normative minimum contents | `spec_2_6_2_*`, `Stdlib/std/prelude.kp` | spec/docs divergence | The repo uses a bootstrap prelude contract that is tested, but the spec still presents the larger normative minimum without an explicit bootstrap profile split. |
+| 2.8 Names, binding groups, and dotted lookup | `spec_2_3_*`, `spec_2_8_3_*`, backend import tests | not implemented yet | Module qualification and alias qualification are covered; the full binding-group lookup model, same-spelling data-family pairing, fallback receiver sugar, and reified-module behavior are incomplete. |
 | 3.1-3.5 Lexing, whitespace, operators, and fixity | `spec_3_*` fixtures, backend user-operator tests | aligned | Identifiers, keywords, comments, indentation, user-defined operators, operator sections, and fixity are covered for the current surface. |
 | 4.1-4.5 Literals | `spec_4_*` fixtures | not implemented yet | Numeric, boolean-as-constructors, string escape/interpolation, char, and unit basics are covered; raw strings, multiline fixed dedent, prefixed strings, suffixes, and type-level string parsing remain incomplete. |
 | 5.1.3 Constraints and dictionaries | M2 trait/dictionary tests | not implemented yet | M2 dictionary passing is real for simple constraints, but full constraint solving, coherence, proof irrelevance, and supertrait behavior are not implemented. |
@@ -29,7 +30,7 @@ Current audit scope: this is an initial baseline for sections exercised by sourc
 | 5.7 Monadic splicing | M2 `!(...)` usage | not implemented yet | The M2 do-block splice form is implemented for the target shape; general monadic contexts and broader typing rules are incomplete. |
 | 6.1-6.2 Declarations and signatures | `spec_6_1_*`, `spec_6_2_*`, backend typed binding tests | aligned | Signature-only and signature-plus-definition basics are covered. |
 | 6.5 `expect` declarations | `spec_6_5_*`, observability intrinsic tests | compiler divergence | Backend-scoped intrinsic satisfaction and backend/intrinsic-set build identity are implemented; elaboration-available intrinsic enforcement and stable intrinsic implementation identity in emitted artifacts remain incomplete. |
-| 7.1 Variables, application, and dotted forms | `spec_7_1_*` fixtures, backend call tests | not implemented yet | Ordinary application and module qualification are covered; full projection, safe navigation, method sugar, and application-boundary subsumption are incomplete. |
+| 7.1 Variables, application, and dotted forms | `spec_7_1_*` fixtures, backend call tests | not implemented yet | Ordinary application is covered; full projection, safe navigation, method sugar, and application-boundary subsumption are incomplete. Current module/alias qualification coverage is tracked under section 2.8. |
 | 7.2 Lambdas and closure capture | `spec_7_2_*` fixtures | not implemented yet | Interpreter closure behavior is covered; quantity-aware capture and backend closure support are incomplete. |
 | 7.4 Conditionals | `spec_7_4_*` fixtures | aligned | Basic pure and runtime conditional behavior is covered. |
 | 7.5-7.6 Match expressions and patterns | `spec_7_5_*` fixtures, M1 backend tests | not implemented yet | Basic ADT matches and non-exhaustive runtime failure are covered; indexed exhaustiveness, `impossible`, or-patterns, active patterns, and QTT pattern interactions are incomplete. |
@@ -87,7 +88,7 @@ Preferred resolution: adjust the compiler.
 
 Preferred resolution: adjust the compiler.
 
-- [x] Fix implicit prelude handling so it matches sections 2.6 and 2.3.1 exactly: wildcard import plus only the fixed unqualified constructor subset.
+- [x] Fix implicit prelude handling so it matches sections 2.6.1 and 2.3.1 exactly: wildcard import plus only the fixed unqualified constructor subset.
 - [x] Audit wildcard import resolution so constructors are not imported unqualified except where the spec explicitly permits it.
 - [ ] Add tests covering the boundary between term/type imports and constructor imports, including explicit `ctor` imports and `type T(..)` imports.
 - [ ] Re-check existing prelude fixtures after the import rules are corrected, because some current tests may be passing only because constructor import is too permissive.
@@ -96,8 +97,8 @@ Preferred resolution: adjust the compiler.
 
 Preferred resolution: adjust the spec or split the spec surface into profiles.
 
-- [ ] Compare `src/Kappa.Compiler/Stdlib/std/prelude.kp` against the normative minimum in section 2.7 and produce a missing-items list.
-- [ ] Decide whether M1 really intends the full section 2.7 prelude or a smaller bootstrap prelude.
+- [ ] Compare `src/Kappa.Compiler/Stdlib/std/prelude.kp` against the normative minimum in section 2.6.2 and produce a missing-items list.
+- [ ] Decide whether M1 really intends the full section 2.6.2 prelude or a smaller bootstrap prelude.
 - [ ] If the goal is the full spec surface, expand the compiler prelude and intrinsic/runtime support until the missing mandatory names exist.
 - [ ] If the goal is a smaller bootstrap surface, update `Spec.md` to define that bootstrap prelude explicitly instead of leaving the current reduced prelude as an undocumented deviation.
 - [x] Add tests that assert exactly the chosen prelude contract, so the bootstrap/full distinction is machine-checked.
@@ -123,7 +124,7 @@ Preferred resolution: sequence the work so public behavior becomes honest first,
 - [ ] Then align the internal architecture: true `KBackendIR`, stronger verifier rules, and post-`KBackendIR` target-lowering checkpoints.
 - [x] In parallel with that architectural cleanup, stand up the first real native path under the standardized `zig` profile by lowering `KBackendIR` to generated C and compiling it with `zig cc`.
 - [ ] Use the first `zig` slice to pressure-test what still belongs in `KBackendIR` versus what is really target-specific lowering state before expanding the CLR backend further.
-- [ ] Then decide whether section 2.7 stays normative for the current milestone or whether the spec needs a bootstrap prelude/profile split.
+- [ ] Then decide whether section 2.6.2 stays normative for the current milestone or whether the spec needs a bootstrap prelude/profile split.
 - [ ] Finally, bring the test harness up to Appendix T and convert more of the existing suites to the standard directive set.
 
 Current milestone status note: M2 execution is complete, and the checkpoint/build-identity portion of the 17.1-17.6 cleanup is no longer a blocker for starting M3. The compiler now normalizes the effective backend profile, verifies `KBackendIR` before native emission, lowers the standardized `zig` profile directly from `KBackendIR`, exposes post-`KBackendIR` `zig.c` and `dotnet.clr` checkpoints with verification and stage dumps, and runs the M2 target shape on the interpreter, `zig`, and public CLR-backed `dotnet` profiles. The query substrate is being added before M3 resource-state work so QTT metadata has a stable analysis-session/query contract.
