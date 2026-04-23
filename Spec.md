@@ -7435,6 +7435,22 @@ Rules:
   labels, abstract effect-row variables, or explicitly quantified / existentially packaged `EffLabel` and `EffRow`
   witnesses.
 
+<!-- effects.monadic_core.effect_declarations.resumption_quantity_interpretation -->
+#### 8.1.7A Interpretation of resumption quantities
+
+The declared resumption quantity `q` of an operation quantifies the handler-bound resumption value `k` later introduced
+by §§8.1.9-8.1.10.
+
+Accordingly:
+
+* `q` is the quantity of the binding `k` itself.
+* `q` is not the quantity of the resume payload accepted by `k`.
+* The resume payload binder remains quantity `1`.
+* A multi-shot operation therefore permits multiple uses of the same resumption value `k`, while each individual
+  application of `k` still consumes exactly one payload of the operation result type.
+
+There is no surface or KCore form in v0.1 for a borrowed resumption payload or a borrowed resumption value.
+
 <!-- effects.monadic_core.effect_application_linear_soundness -->
 #### 8.1.8 Effect application and linear soundness
 
@@ -13301,7 +13317,7 @@ HandlerSpec(label, E, r_all, r, m, A, B) =
   { onReturn : A -> m B
   , onOp[op_i] :
         Π (x1 : A1) ... (xn : An).
-          (q_i k : B_i -> Eff r_all A) ->
+          (q_i k : (1 _ : B_i) -> Eff r_all A) ->
           m B
       for each declared operation
       q_i op_i : Π (x1 : A1) ... (xn : An). B_i
@@ -13318,9 +13334,11 @@ Meaning:
 * The nearest dynamically enclosing `HandleShallow` for the same `label` intercepts that `OpCall`.
 * In the matching operation clause, the bound continuation `k` is an ordinary KCore function value representing the
   captured computation suffix from the `OpCall` site to that handler boundary, exactly as constrained by §14.8.
-* Applying `k` resumes that captured suffix.
+* Applying `k` to a resume payload resumes that captured suffix.
 * The quantity of `k` is the declared resumption quantity `q_i` of the intercepted operation and is checked by the
   ordinary quantity rules.
+* The argument binder of `k` is always quantity `1`. Multi-shotness therefore reuses or duplicates the resumption value
+  `k`, not a single resume payload.
 * `HandleShallow` handles only the selected label and eliminates into the single target carrier `m`. Operations at all
   other labels propagate outward unchanged inside resumed computations.
 * A `HandleShallow` return clause is applied only when the handled computation completes normally.
