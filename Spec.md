@@ -3018,17 +3018,17 @@ performed. The widened value reuses the same runtime tag identity for each membe
 
 ```kappa
 match u
-case (| x : Int |)     -> x + 1
-case (| s |)           -> String.length s
-case (| e : Error |)   -> handleError e
+  case (| x : Int |)     -> x + 1
+  case (| s |)           -> String.length s
+  case (| e : Error |)   -> handleError e
 ```
 
 For an open union, the residual row is matched with dedicated syntax:
 
 ```kappa
 match uOpen
-case (| x : Int |)     -> handleInt x
-case (| ..rest |)      -> default rest
+  case (| x : Int |)     -> handleInt x
+  case (| ..rest |)      -> default rest
 ```
 
 All branches must have the same result type.
@@ -4007,7 +4007,7 @@ Pattern matching:
 
   ```kappa
   match p
-  case refl -> body
+    case refl -> body
   ```
 
   the typechecker treats the two sides of the equality as definitionally equal within `body`.
@@ -5579,8 +5579,8 @@ Writing `a?.b.c` gives:
 
 ```kappa
 match a
-case Option.Some __x -> __x.b.c
-case Option.None     -> Option.None
+  case Option.Some __x -> __x.b.c
+  case Option.None     -> Option.None
 ```
 
 when `__x.b.c : Option C`, i.e. the inner `.c` is itself a projection on `Option B` and is ill-typed unless a method
@@ -5624,8 +5624,8 @@ For `e : Option T` and `d : T`, the expression `e ?: d` desugars to:
 
 ```kappa
 match e
-case Option.Some __x -> __x
-case Option.None     -> d
+  case Option.Some __x -> __x
+  case Option.None     -> d
 ```
 
 This form is specified directly and does not depend on any library helper name.
@@ -6361,12 +6361,15 @@ Pattern matching expression:
 
 ```kappa
 match expr
-case pattern1 if guard1 -> expr1
-case pattern2           -> expr2
+  case pattern1 if guard1 -> expr1
+  case pattern2           -> expr2
 ...
 ```
 
 * `match` is an expression.
+* Suggested formatting: examples in this specification indent `case` clauses by two spaces relative to the `match`
+  head. This is a readability convention only. A conforming parser MUST accept both aligned and indented `case`
+  clauses.
 * Each ordinary `case` has:
 
     * a **pattern**,
@@ -6442,7 +6445,7 @@ Form:
 
 ```kappa
 match e
-case pat -> impossible
+  case pat -> impossible
 ```
 
 Typing rule:
@@ -6489,8 +6492,8 @@ is typechecked with an implicit assumption:
 
 ```kappa
 match b
-case True  -> eT   -- eT checked under  @p : b = True
-case False -> eF   -- eF checked under  @p : b = False
+  case True  -> eT   -- eT checked under  @p : b = True
+  case False -> eF   -- eF checked under  @p : b = False
 ```
 
 This applies equally to `try match` success/error branches when the matched value is a `Bool`.
@@ -6772,21 +6775,21 @@ Example:
 
 ```kappa
 match userInput
-case RegexMatch emailRegex (username :: domain :: Nil) ->
-    "Domain is " ++ domain
-case RegexMatch phoneRegex (areaCode :: number :: Nil) ->
-    "Valid phone: " ++ areaCode
+  case RegexMatch emailRegex (username :: domain :: Nil) ->
+      "Domain is " ++ domain
+  case RegexMatch phoneRegex (areaCode :: number :: Nil) ->
+      "Valid phone: " ++ areaCode
 ```
 
 Conceptually, the first case behaves like:
 
 ```kappa
 match (RegexMatch emailRegex userInput)
-case Option.Some groups ->
-    match groups
-    case username :: domain :: Nil -> "Domain is " ++ domain
-case Option.None ->
-    -- case failure; continue to the next outer case
+  case Option.Some groups ->
+      match groups
+        case username :: domain :: Nil -> "Domain is " ++ domain
+  case Option.None ->
+      -- case failure; continue to the next outer case
 ```
 
 Linearity restriction:
@@ -6827,22 +6830,22 @@ Surface form:
 
 ```kappa
 match buffer
-case ConsumeToken Header (data) -> ...
-case ConsumeToken Body (data)   -> ...
-case _ -> ...
+  case ConsumeToken Header (data) -> ...
+  case ConsumeToken Body (data)   -> ...
+  case _ -> ...
 ```
 
 Conceptual elaboration:
 
 ```kappa
 match (ConsumeToken Header buffer)
-case Match.Hit data -> ...
-case Match.Miss __buf_1 ->
-    match (ConsumeToken Body __buf_1)
-    case Match.Hit data -> ...
-    case Match.Miss __buf_2 ->
-        match __buf_2
-        case _ -> ...
+  case Match.Hit data -> ...
+  case Match.Miss __buf_1 ->
+      match (ConsumeToken Body __buf_1)
+        case Match.Hit data -> ...
+        case Match.Miss __buf_2 ->
+            match __buf_2
+              case _ -> ...
 ```
 
 Rules:
@@ -6903,10 +6906,10 @@ Usage:
 
 ```kappa
 match myTree
-case TreeView (Empty) ->
-    "Tree is empty!"
-case TreeView (NonEmpty left k v right) ->
-    "Root is " ++ show k
+  case TreeView (Empty) ->
+      "Tree is empty!"
+  case TreeView (NonEmpty left k v right) ->
+      "Root is " ++ show k
 ```
 
 Semantics:
@@ -9291,14 +9294,17 @@ Syntax:
 
 ```kappa
 try expr
-except pat1 if guard1 -> handler1
-except pat2           -> handler2
-finally               -> finalizer
+  except pat1 if guard1 -> handler1
+  except pat2           -> handler2
+  finally               -> finalizer
 ```
 
 Rules:
 
 * `expr` has type `m a`, where `m` supports error handling (conceptually `MonadError m`).
+* Suggested formatting: examples in this specification indent `except` and `finally` clauses by two spaces relative to
+  the `try` head. This is a readability convention only. A conforming parser MUST accept both aligned and indented
+  clause forms.
 * Each `except` handler must produce type `m a`.
 * `finally` (optional) is a monadic action of type `m Unit` that runs whenever control exits the `try` expression,
   including:
@@ -9323,8 +9329,8 @@ Semantics sketch:
    do
        defer finalizer
        try expr
-       except pat1 if guard1 -> handler1
-       except pat2           -> handler2
+         except pat1 if guard1 -> handler1
+         except pat2           -> handler2
    ```
 
    where the inner `try` is the same construct with no `finally` clause.
@@ -9349,14 +9355,20 @@ Normative desugaring:
 
 ```kappa
 try match expr
-case p1 if g1 -> s1
-case p2       -> s2
+  case p1 if g1 -> s1
+  case p2       -> s2
 ...
-except q1 if h1 -> e1
-except q2       -> e2
+  except q1 if h1 -> e1
+  except q2       -> e2
 ...
-finally         -> fin
+  finally         -> fin
 ```
+
+Suggested formatting:
+
+* Examples in this specification indent success-side `case` clauses, `except` clauses, and `finally` by two spaces
+  relative to the `try match` head.
+* This is a readability convention only. A conforming parser MUST accept both aligned and indented clause forms.
 
 desugars to:
 
@@ -9365,13 +9377,13 @@ try
     do
         let __tmp <- expr
         match __tmp
-        case p1 if g1 -> s1
-        case p2       -> s2
+          case p1 if g1 -> s1
+          case p2       -> s2
         ...
-except q1 if h1 -> e1
-except q2       -> e2
+  except q1 if h1 -> e1
+  except q2       -> e2
 ...
-finally          -> fin
+  finally          -> fin
 ```
 
 (where `__tmp` is a fresh name).
