@@ -1071,10 +1071,15 @@ Rules:
 
 The tokens `.` and `?.` form left-associative member chains.
 
-The form `lhs.{ ... }` is parsed as record update (§5.5.5) when its
-fields use `=`, or as row extension (§5.5.6) when its fields use `:=`.
-Mixed forms are ill-formed. These forms do not participate in dotted
-name resolution.
+The form `lhs.{ ... }` is parsed as a record patch.
+
+Within such a form:
+
+* an item using `=` is an ordinary field update (§5.5.5),
+* an item using `:=` is a row-extension field (§5.5.6).
+
+A single `lhs.{ ... }` form may contain either kind or both. Projection-section updates are the `=`-forms described in
+§5.5.5. Record-patch forms do not participate in dotted name resolution.
 
 Safe-navigation `lhs?.rhs` desugars before ordinary dotted resolution
 runs on the corresponding chain body (§7.1.1.2).
@@ -3379,7 +3384,8 @@ let n = r.len
 <!-- types.records.update -->
 #### 5.5.5 Record update
 
-Records are immutable values. Record update produces a new record with selected fields replaced:
+Records are immutable values. A `lhs.{ ... }` form may update selected existing fields and, when `:=` items are
+present, may also extend an open row in the same surface form.
 
 ```kappa
 let p : (x : Int, y : Int) = (x = 1, y = 2)
@@ -3389,17 +3395,26 @@ let p2 = p.{ y = 99 }          -- (x = 1, y = 99)
 Syntax:
 
 ```text
-recordUpdate ::= expr '.{' updateItem (',' updateItem)* '}'
-updateItem   ::= ordinaryUpdateField | projectionUpdateField
+recordPatch ::= expr '.{' patchItem (',' patchItem)* '}'
+patchItem   ::= ordinaryUpdateField | projectionUpdateField | extensionField
 ordinaryUpdateField ::= [ '@' ] ident '=' expr
 projectionUpdateField ::= projectionSection '=' expr
+extensionField ::= ident ':=' expr
 ```
 
-A record update must contain only `=` update items. A record update containing `:=` is ill-formed.
-If a record field is declared as an implicit field `@label : T`, it may be explicitly updated with surface syntax
-`@label = expr`.
-Unlike record literals and constructor applications, field punning is not permitted in record updates. Every update item
-MUST provide an explicit right-hand side. Writing `r.{ x }` as shorthand for `r.{ x = x }` is a compile-time error.
+Rules:
+
+* A record patch must contain at least one item.
+* A record patch containing only ordinary update fields is a record update.
+* A record patch containing only extension fields is a pure row extension (§5.5.6).
+* A record patch containing at least one ordinary update field and at least one extension field is a mixed
+  update/extension form.
+* If a record field is declared as an implicit field `@label : T`, it may be explicitly updated with surface syntax
+  `@label = expr`.
+* Unlike record literals and constructor applications, field punning is not permitted in record patches. Every patch
+  item MUST provide an explicit right-hand side. Writing `r.{ x }` as shorthand for either `r.{ x = x }` or
+  `r.{ x := x }` is a compile-time error.
+* No label may appear more than once among the ordinary update fields and extension fields of one record patch.
 
 Here `projectionSection` is the section form of §7.1.1.1.
 
@@ -3410,7 +3425,7 @@ Normative elaboration:
 Let the scrutinee have record type `R`, and let `R` have canonical dependency-respecting field order `(g1, g2, ..., gn)`
 as determined by §5.5.1.1.
 
-Then a record update
+Then a pure ordinary update
 
 ```kappa
 r.{ f1 = e1, ..., fk = ek }
@@ -3459,6 +3474,32 @@ Field references inside supplied ordinary update expressions:
 * A bare identifier `label` is shorthand for `this.label` only when that reading is unambiguous; otherwise `this.label`
   is required.
 
+Mixed ordinary update + row extension:
+
+A mixed update/extension form
+
+```kappa
+r.{ f1 = e1, ..., fk = ek, x1 := e'1, ..., xm := e'm }
+```
+
+where the labels `f1 ... fk` and `x1 ... xm` are pairwise distinct, elaborates as:
+
+```kappa
+(r.{ f1 = e1, ..., fk = ek }).{ x1 := e'1, ..., xm := e'm }
+```
+
+Rules:
+
+* The separation into the `=` part and the `:=` part is by item kind, not by source order.
+* Accordingly, the relative surface order between ordinary update fields and extension fields is not semantically
+  significant.
+* The `=` part uses the ordinary update rules of this subsection.
+* The `:=` part uses the ordinary row-extension rules of §5.5.6.
+* A mixed form does not change the meaning of extension-field expressions: they are elaborated exactly as they would be
+  in the corresponding explicit chained form above.
+* A conforming implementation MAY realize the mixed form directly, provided the resulting typing, dependency checking,
+  path reconstitution, and definitional-equality behavior is the same as the chained elaboration above.
+
 Projection-section update:
 
 * A field of the form `(.member args...) = rhs` inside `lhs.{ ... }` is a projection-section update.
@@ -3470,12 +3511,15 @@ Projection-section update:
 * The replacement expression `rhs` is checked against the selected type of that place or projection.
 * The whole update expression has the same type as `lhs`.
 * In v0.1, a projection-section update form may contain at most one `projectionUpdateField`.
-* In v0.1, ordinary field updates and projection-section updates must not be mixed in the same `lhs.{ ... }` form.
+* In v0.1, a `projectionUpdateField` MUST NOT appear in the same `lhs.{ ... }` form as any ordinary update field or any
+  extension field.
 
 Source order:
 
-* The surface order of update fields is not semantically significant. Elaboration uses the canonical
-  dependency-respecting order of the record type.
+* The surface order of record-patch items is not semantically significant.
+* For mixed update/extension forms, normative elaboration first applies all ordinary update fields and then all
+  extension fields, as specified above.
+* For pure ordinary updates, elaboration uses the canonical dependency-respecting order of the record type.
 
 Reconstitution:
 
@@ -3529,23 +3573,32 @@ rec.{ ℓ := e }
 Syntax:
 
 ```text
-rowExtension   ::= expr '.{' extensionField (',' extensionField)* '}'
 extensionField ::= ident ':=' expr
 ```
 
-A row extension must contain at least one `:=` field and must contain only `:=` fields. A row extension containing `=`
-is ill-formed.
+Rules:
 
-Typing:
-
-* If `rec` has a closed record type and already contains field `ℓ`, row extension is a compile-time error; use update
-  syntax `ℓ = ...`.
-* If `rec` has type `(fields | r)`, then row extension is well-typed only if `LacksRec r ℓ` holds and `ℓ` is not among
-  the explicitly listed `fields`.
+* A pure row extension is a `lhs.{ ... }` form containing at least one extension field and no ordinary update fields.
+* A mixed update/extension form is a `lhs.{ ... }` form containing at least one extension field and at least one
+  ordinary update field. Its elaboration is specified in §5.5.5.
+* For each extension field `ℓ := e`:
+  * if the receiver has a closed record type and already contains field `ℓ`, it is a compile-time error; use update
+    syntax `ℓ = ...`;
+  * if the receiver has type `(fields | r)`, then that extension field is well-typed only if `LacksRec r ℓ` holds and
+    `ℓ` is not among the explicitly listed `fields`.
 
 Result type:
 
-* The result has type `(fields, ℓ : typeof e | r)`, normalized by the ordinary record canonicalization rules.
+* A pure row extension
+
+  ```kappa
+  rec.{ ℓ1 := e1, ..., ℓm := em }
+  ```
+
+  has type `(fields, ℓ1 : typeof e1, ..., ℓm : typeof em | r)`, normalized by the ordinary record canonicalization
+  rules.
+* A mixed update/extension form has the type obtained by first applying its ordinary update fields under §5.5.5 and
+  then applying the same row-extension rule to its extension fields.
 
 <!-- types.records.row_polymorphism -->
 #### 5.5.7 Record row polymorphism
@@ -5375,7 +5428,7 @@ The `.` token is used for:
   projected compile-time member)
 * projection sections and receiver-projection sections (`(.field)`, `(.field1.field2)`, `(.degrees)`, `(.at i)`)
 * method-call and receiver-projection sugar (`x.show`, `a.degrees`)
-* record update (`r.{ field = expr, ... }`)
+* record patch (`r.{ field = expr, extra := expr2, ... }`)
 * projection-section update (`r.{ (.member args...) = expr }`)
 
 The `?.` token is an additional dotted-form operator performing safe-navigation projection over `Option`:
@@ -5389,7 +5442,7 @@ The right-hand side of `?.` is restricted to member-access forms only. In v0.1 t
 * method-call and receiver-projection sugar.
 
 Forms such as module qualification, static member selection on a type, projection sections and receiver-projection
-sections, record update, and row extension are ordinary dotted forms but are not reachable through `?.`.
+sections, and record patch forms are ordinary dotted forms but are not reachable through `?.`.
 
 <!-- expressions.application.dotted_forms.projection_sections_receiver_projection_sections -->
 ##### 7.1.1.1 Projection sections and receiver-projection sections
