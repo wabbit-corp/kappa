@@ -6537,6 +6537,22 @@ matchCase ::= 'case' pattern ['if' expr] '->' expr
             | 'case' 'impossible'
 ```
 
+Rules:
+
+* `case impossible` may appear only as the final case of a `match`.
+* `case impossible` introduces no binders and has no guard.
+* It is accepted only if, after accounting for the preceding cases and guards, the remaining uncovered remainder of the
+  scrutinee is unreachable using definitional equality, index unification, and the required structural inhabitance rules
+  of §17.3.6.
+* In particular, if that uncovered remainder has inhabitance summary `Empty`, the clause is accepted.
+* Otherwise it is a compile-time error.
+
+Meaning:
+
+* If accepted, `case impossible` contributes no reachable runtime-success path.
+* A `match` ending in `case impossible` is exhaustive exactly when that remaining uncovered remainder is unreachable.
+* Implementations may compile an accepted `case impossible` to no code or to a trap.
+
 <!-- expressions.match.boolean_matches_introduce_assumptions -->
 #### 7.5.3 Boolean matches introduce assumptions
 
@@ -13575,7 +13591,10 @@ Required structural fragment:
 * At minimum, implementations MUST compute exact summaries for:
   * `Void`, `Unit`, `Bool`, and any closed finite nullary-constructor data type;
   * closed sums and closed variants, by exact addition of already summarized arms;
-  * closed products and records, by exact multiplication of already summarized fields;
+  * closed nondependent products and nondependent records, by exact multiplication of already summarized components;
+  * closed dependent record telescopes are not part of the required exact fragment unless each later field summary is
+    determined structurally from earlier singleton refinements without leaving the required fragment; otherwise the
+    required result is `Unknown`;
   * refined case fibers whose emptiness or singleton-ness already follows from ordinary branch refinement, definitional
     equality, and index unification;
   * runtime-relevant shapes obtained after erasing compile-time-only and quantity-`0` constituents when the query is
@@ -13598,6 +13617,12 @@ Permitted strengthening:
 * Exceeding any implementation-defined bound, encountering exact-cardinality arithmetic overflow, or reaching an
   unsupported proof obligation during such strengthening MUST yield `Unknown`, not a compile-time error, unless some
   other rule of this specification already requires rejection of the program.
+
+Additional restriction:
+
+* An implementation MUST NOT conclude `Contractible` merely because a type is proposition-shaped or is commonly used as
+  proof. Ordinary inhabitants of `P : Type` remain observationally distinct unless uniqueness is established within the
+  supported fragment. Only coherent `Constraint` evidence follows the built-in proof-irrelevance rule of §5.1.3.
 
 Source-acceptance stability:
 
@@ -13713,6 +13738,9 @@ Permitted uses include:
 * omitting storage for contractible record fields, constructor payloads, variant payloads, or residual results, provided
   all source-language observations behave as if the unique value were present;
 * choosing compact layouts for small finite enums or variants;
+* for `Variant` / union layouts, any compact finite representation MUST preserve the stable member-identity rules of the
+  variant typing and runtime-representation sections; in particular, an implementation MUST NOT make row-local tag
+  ordinals observable and MUST NOT require retagging for zero-cost widening;
 * simplifying handler or resumption calling conventions when an argument or residual result is contractible.
 
 `Unknown` carries no semantic information and MUST NOT be treated as `Empty`, `Contractible`, or finite.
