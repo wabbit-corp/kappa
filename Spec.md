@@ -5316,6 +5316,10 @@ Diagnostics for each unsolved hole MUST report at least:
 * relevant local implicit assumptions and constraint goals; and
 * the source span of each occurrence.
 
+If the expected type of an unsolved hole has inhabitance summary `Contractible`, the diagnostic SHOULD include the
+unique inhabitant. If it has summary `Finite n` and `n` does not exceed an implementation-defined completion threshold,
+the diagnostic SHOULD include all inhabitants or the corresponding completion candidates in a deterministic order.
+
 Kappa does not provide placeholder-abstraction sugar based on holes in v0.1. Users should write an ordinary lambda
 explicitly when abstraction is intended, or use existing section forms such as operator sections (§3.5.1.1) and
 projection sections (§7.1.1).
@@ -5637,15 +5641,17 @@ impossible.
 
 Implementations should:
 
-* attempt to use definitional equality / unification of indices to detect unreachable cases,
-* treat unreachable cases as not required for exhaustiveness,
-* when matching on an equality proof and encountering a branch `case refl -> ...`, perform index unification for that
-  branch so the two sides of the equality are treated as definitionally equal within the branch body,
-* otherwise (if coverage cannot be established) require an explicit catch-all (`_`) or an explicit user-written case
-  structure that proves impossibility.
+* attempt to use definitional equality / unification of indices to detect unreachable cases;
+* after ordinary branch refinement, MAY compute the inhabitance summary of the refined case type under §17.3.6;
+* if that summary is `Empty`, treat the case as unreachable and therefore not required for exhaustiveness;
+* otherwise (if coverage still cannot be established) require an explicit catch-all (`_`) or an explicit user-written
+  case structure that proves impossibility.
 
 As a user-facing way to state and check unreachability, a branch may use `-> impossible` (§7.5.2). Such a branch is
 valid only when the compiler can verify the case is unreachable.
+
+Optional strengthening rules from §17.3.6 MAY improve diagnostics, but acceptance of a `match` MUST NOT depend on any
+rule outside the required structural fragment of that section.
 
 #### 7.5.1A Index refinement from constructor knowledge
 
@@ -5689,9 +5695,9 @@ case pat -> impossible
 ```
 
 Typing rule:
-* A branch body `impossible` is accepted only if the compiler can prove that the corresponding case is unreachable,
-using definitional equality and index unification (the same machinery used for detecting unreachable constructor cases
-in Section 7.5.1).
+* A branch body `impossible` is accepted only if the compiler can prove that the corresponding case is unreachable using
+  definitional equality, index unification, and the required structural inhabitance rules of §17.3.6.
+* In particular, if the refined case type has inhabitance summary `Empty`, the branch is unreachable.
 * If the compiler cannot prove the case unreachable, it is a compile-time error.
 
 Meaning:
@@ -11673,6 +11679,9 @@ Such queries SHOULD support at least:
 * for a recursive definition, the recursive SCC, the inferred termination strategy, the canonical visible measure (if
   any), any hidden phase components, and the recursive call edges together with the proved decrease relation on each
   edge;
+* inhabitance summary of the expected type or refined scrutinee type at a source position;
+* enumeration of inhabitants when the summary is `Contractible` or `Finite n` and `n` does not exceed an
+  implementation-defined completion threshold;
 * completion candidate enumeration at a source position;
 * find-usages and rename keyed by declaration-symbol identity;
 * type-directed search across the current project, imported interfaces, and any available semantic object store;
@@ -11754,6 +11763,7 @@ queries exist:
 * compute declaration body resolution;
 * solve modality predicates for a declaration or module when an enabled modal/coeffect extension emits any;
 * compute module interface;
+* compute inhabitance summary for a KCore type, declaration result type, or pattern-refined case type;
 * resolve host binding module scope and compute its host-source identity;
 * build or load a raw host binding surface from host metadata or an ABI description;
 * lower declaration or module to KCore;
@@ -12536,6 +12546,69 @@ Rules:
 A module-interface artifact of §17.1.9 MAY be materialized directly from such a store, embedded within it, or
 reconstructed from it on demand.
 
+#### 17.3.6 Inhabitance summaries
+
+Implementations MUST behave as if KCore exposes a conservative inhabitance-summary query on types and on case-refined
+types.
+
+```text
+InhabitanceSummary ::= Empty
+                     | Contractible
+                     | Finite nat
+                     | Unknown
+```
+
+Canonicalization:
+
+* `Finite 0` is identical to `Empty`.
+* `Finite 1` is identical to `Contractible`.
+* `Finite n` is used only for `n >= 2`.
+
+Meaning:
+
+* `Empty` means the analyzed type has no inhabitants.
+* `Contractible` means the analyzed type is known to have a unique inhabitant within the observational distinctions
+  relevant to the current compilation phase.
+* `Finite n` means the analyzed type has exactly `n` inhabitants.
+* `Unknown` means the implementation does not establish a stronger fact.
+
+Required structural fragment:
+
+* The required fragment is the normalized closed first-order algebraic fragment of KCore.
+* At minimum, implementations MUST compute exact summaries for:
+  * `Void`, `Unit`, `Bool`, and any closed finite nullary-constructor data type;
+  * closed sums and closed variants, by exact addition of already summarized arms;
+  * closed products and records, by exact multiplication of already summarized fields;
+  * refined case fibers whose emptiness or singleton-ness already follows from ordinary branch refinement, definitional
+    equality, and index unification;
+  * runtime-relevant shapes obtained after erasing compile-time-only and quantity-`0` constituents when the query is
+    requested for representation selection.
+* For function types, recursive types, higher-rank polymorphism, open rows, opaque definitions outside the current
+  transparency environment, and any other unsupported shape, the required result is `Unknown`.
+
+Termination and conservatism:
+
+* The required fragment MUST be implemented by a terminating structural procedure over normalized KCore.
+* The implementation MUST NOT return `Empty`, `Contractible`, or `Finite n` unless that result is correct.
+* `Unknown` is always permitted.
+
+Permitted strengthening:
+
+* An implementation MAY apply additional sound rules to return a stronger summary than the required fragment would
+  produce.
+* Such rules MAY use bounded normalization, bounded rewriting, bounded finite-domain instantiation, variance tests,
+  representable/container decompositions, Yoneda-style simplifications, or similar techniques.
+* Exceeding any implementation-defined bound, encountering exact-cardinality arithmetic overflow, or reaching an
+  unsupported proof obligation during such strengthening MUST yield `Unknown`, not a compile-time error, unless some
+  other rule of this specification already requires rejection of the program.
+
+Source-acceptance stability:
+
+* Acceptance of `match` exhaustiveness and `impossible` branches MUST NOT rely on any strengthening rule beyond the
+  required structural fragment.
+* Optional strengthening rules MAY affect diagnostics, completion, optimization, and code generation, but they MUST
+  remain conservative.
+
 ### 17.4 KBackendIR
 
 KBackendIR is the target-neutral runtime IR obtained by erasing KCore and choosing runtime representations.
@@ -12601,6 +12674,11 @@ stages:
   eliminate or discharge compile-time-only intrinsic type inhabitants, quantity-`0` computational binders, proof-only
   terms, and erased indices in accordance with §14.4.
 
+* `INHABITANCE`:
+  compute inhabitance summaries for runtime-relevant algebraic shapes, refined case fibers that survive to runtime,
+  handler/resumption argument shapes, and other types consulted by representation selection. Results are conservative and
+  may be `Unknown`.
+
 * `CONTROL_LOWERING`:
   lower source-level abrupt control, completion-carrying control, handlers, resumptions, `defer`, `using`, `try`, and
   related constructs to explicit runtime control and cleanup operations.
@@ -12622,6 +12700,24 @@ stages:
 
 An implementation MAY fuse, split, reorder, or partially overlap these conceptual stages, provided the resulting
 KBackendIR is observationally equivalent to one produced by the staged lowering above.
+
+#### 17.4.1A Uses of inhabitance summaries
+
+A conforming implementation MAY use `Empty`, `Contractible`, and small exact `Finite n` summaries for
+runtime-representation choices and dead-code elimination.
+
+Permitted uses include:
+
+* eliminating branches whose refined runtime-relevant type is `Empty`;
+* omitting storage for contractible record fields, constructor payloads, variant payloads, or residual results, provided
+  all source-language observations behave as if the unique value were present;
+* choosing compact layouts for small finite enums or variants;
+* simplifying handler or resumption calling conventions when an argument or residual result is contractible.
+
+`Unknown` carries no semantic information and MUST NOT be treated as `Empty`, `Contractible`, or finite.
+
+These optimizations MUST NOT change any externally specified data layout, calling convention, or FFI surface promised
+by a backend profile.
 
 ### 17.4.2 Lowering legality checkpoints
 
