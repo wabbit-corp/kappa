@@ -7,6 +7,7 @@
 
 ---
 
+<!-- design -->
 ## 1. Design Principles
 
 Kappa is a small, statically typed, dependently typed language. The primary design constraints:
@@ -24,8 +25,10 @@ Kappa is a small, statically typed, dependently typed language. The primary desi
 
 ---
 
+<!-- modules -->
 ## 2. Modules, Imports, Prelude, and Resolution
 
+<!-- modules.files -->
 ### 2.1 Modules and files
 
 - The module name of a source file is determined from its file path relative to a source root. For example:
@@ -90,12 +93,14 @@ Standard module attributes:
 
 * `@PrivateByDefault`: all top-level named items are private unless explicitly marked `public`.
 
+<!-- modules.acyclic_imports -->
 ### 2.2 Acyclic imports
 
 - The module dependency graph formed by `import` statements and by any `export M...` statement that references another
   module **must be acyclic**.
 - Implementations must reject programs with cyclic module dependencies.
 
+<!-- modules.imports -->
 ### 2.3 Imports
 
 Imports are explicit; however, implementations provide an implicit prelude interface (declarations only) that is in
@@ -207,6 +212,7 @@ Module aliases and qualification:
   string literal itself never becomes a qualifier.
 
 
+<!-- modules.imports.item_kind_selectors -->
 #### 2.3.1 Import item kind selectors
 
 Kappa resolves names through lexical binding groups (§2.8), not through
@@ -265,6 +271,7 @@ Shadowing and lookup:
 
 The same grammar and rules apply to `export` items in §2.4.
 
+<!-- modules.imports.item_kind_selectors.unhide_clarify_import_items -->
 ##### 2.3.1.1 `unhide` and `clarify` import items
 
 Import items may be prefixed by the modifiers:
@@ -298,11 +305,13 @@ Rules:
   significant.
 * Repeating the same modifier within one import item is a compile-time error.
 
+<!-- modules.imports.url_imports_pinning_reproducibility -->
 #### 2.3.2 URL imports, pinning, and reproducibility
 
 URL imports are intended for scripts and quick one-offs, but Kappa also supports reproducible package-mode builds when
 each imported URL is tied to immutable content.
 
+<!-- modules.imports.url_module_specifiers -->
 #### URL module specifiers
 
 A URL import specifier is a string literal. It may be **unpinned** or **pinned**.
@@ -350,6 +359,7 @@ Rules:
   * In script mode, if a `ref:` pin resolves to a different digest than it did in a previous run, the implementation
     MUST emit a diagnostic the first time that change is observed.
 
+<!-- modules.imports.compilation_modes -->
 #### Compilation modes
 
 Implementations must support (at least) two compilation modes:
@@ -372,6 +382,7 @@ Implementations must support (at least) two compilation modes:
 How a toolchain selects "script mode" vs "package mode" is implementation-defined (e.g. a compiler flag, a package
 manifest, a file directive, etc.).
 
+<!-- modules.imports.host_binding_modules -->
 #### 2.3.3 Host binding modules
 
 Implementations MAY provide backend-specific host binding modules under the reserved module roots:
@@ -410,6 +421,7 @@ Rules:
 * A conforming implementation MAY realize a host binding module as a generated source module, a generated module
   interface artifact, a virtual module, or another observationally equivalent representation.
 
+<!-- modules.exports -->
 ### 2.4 Exports (re-exporting imports)
 
 Kappa does not implicitly re-export imports. To re-export an imported module or imported names, use `export`.
@@ -477,6 +489,7 @@ Rules:
 * An item imported via `unhide` or `clarify` MUST NOT be re-exported. Attempting to apply `export` to such an item is a
   compile-time error.
 
+<!-- modules.visibility_opacity_private_opaque -->
 ### 2.5 Visibility and opacity (private, opaque)
 
 Export default:
@@ -496,6 +509,7 @@ This section defines two orthogonal controls:
 1. Visibility (whether a name is exported at all)
 2. Transparency (whether definitional equality may unfold a definition outside its defining module)
 
+<!-- modules.visibility_opacity_private_opaque.private -->
 #### 2.5.1 private (visibility)
 
 A top-level declaration or definition may be prefixed with private.
@@ -519,6 +533,7 @@ Rules:
 
 private affects only downstream visibility; it does not affect visibility within the defining module.
 
+<!-- modules.visibility_opacity_private_opaque.opaque -->
 #### 2.5.2 opaque (definitional transparency)
 
 A top-level term definition or type alias definition may be prefixed with opaque.
@@ -540,6 +555,7 @@ Rules:
 An importing module may request to treat an opaque item as transparent via an explicit clarify import item, and only if
 the compilation unit has enabled that unsafe/debug facility under §16.2-§16.3.
 
+<!-- modules.visibility_opacity_private_opaque.data -->
 #### 2.5.3 opaque data (representation hiding)
 
 A data declaration may be prefixed with opaque:
@@ -569,6 +585,7 @@ available to definitional equality. Opacity constrains name resolution and defin
 observational behavior; an exported trait such as `Eq` or `Show` may still reveal whatever information its declared API
 itself reveals.
 
+<!-- modules.visibility_opacity_private_opaque.modifier_combinations -->
 #### 2.5.4 Modifier combinations
 
 private and opaque may be combined:
@@ -580,8 +597,10 @@ private opaque let x = ...
 In such cases private controls visibility; opaque controls transparency when the item is accessed via escape hatch
 mechanisms.
 
+<!-- modules.prelude -->
 ### 2.6 Prelude
 
+<!-- modules.prelude.implicit_import_behavior -->
 #### 2.6.1 Implicit import behavior
 
 Although Kappa has explicit imports, implementations provide an implicit **prelude interface** that is in scope by
@@ -625,6 +644,7 @@ The exact contents of std.prelude are implementation-defined, but it must includ
 * fixity declarations for any operator tokens that the implementation expects to parse "out of the box"
 (e.g. `+`, `*`, `==`, `and`, `or`, `..`, `..<`), consistent with infix gating (§3.5.3).
 
+<!-- modules.prelude.contents -->
 #### 2.6.2 Normative minimum contents
 
 Implementations MUST provide a prelude module `std.prelude` that is implicitly imported (§2.6) and exports at least the
@@ -915,6 +935,7 @@ Names not in this list MAY be exported by `std.prelude`, but user code SHOULD NO
 
 The standard prelude provisions for `|>`, `<|`, and the optional `|>=` operator are specified in Appendix B.
 
+<!-- modules.ffi -->
 ### 2.7 Standard FFI support module `std.ffi`
 
 Implementations MUST provide a standard module `std.ffi`. It is not implicitly imported.
@@ -945,6 +966,7 @@ Rules:
 
 ---
 
+<!-- modules.names -->
 ### 2.8 Names, binding groups, and dotted lookup
 
 Kappa uses one lexical lookup system organized by spelling. A lexical
@@ -971,6 +993,7 @@ self labels of `scoped effect` declarations.
 Effect-label identifiers are used in `EffRow`-kinded rows, handlers, and
 effect-operation selection.
 
+<!-- modules.names.lexical_lookup -->
 #### 2.8.1 Ordinary lexical lookup
 
 Unqualified lookup of spelling `x` proceeds by contextual admissibility:
@@ -1012,6 +1035,7 @@ Contextual admissibility:
 Receiver positions for dotted forms use §2.8.3 instead of this ordinary
 rule.
 
+<!-- modules.names.same_spelling_data_families_static_members -->
 #### 2.8.2 Same-spelling data families and static members
 
 A `data` declaration may introduce a type facet and a constructor facet
@@ -1039,6 +1063,7 @@ Rules:
   dotted selection. Thus `Option.Some`, `Vec.Cons`, and `Person.Person`
   are ordinary static-member selections under §2.8.3.
 
+<!-- modules.names.dotted_name_resolution_dotted -->
 #### 2.8.3 Dotted name resolution (`.`)
 
 The tokens `.` and `?.` form left-associative member chains.
@@ -1105,6 +1130,7 @@ Receiver forms:
   constructor-field projection.
 * Otherwise, fallback sugar of §2.8.4 may apply.
 
+<!-- modules.names.method_call_receiver_projection_sugar -->
 #### 2.8.4 Method-call and receiver-projection sugar
 
 Method-call and receiver-projection sugar are fallback forms. A member
@@ -1142,6 +1168,7 @@ Elaboration:
   binder after solving any preceding implicit or explicit binders by
   ordinary application-site elaboration.
 
+<!-- modules.names.module_declarations_reified_module_values -->
 #### 2.8.5 Module declarations and reified module values
 
 An `import M` or `import M as A` introduces a lexical declaration of kind
@@ -1159,8 +1186,10 @@ Rules:
 
 
 
+<!-- lexical -->
 ## 3. Lexical Structure
 
+<!-- lexical.identifiers -->
 ### 3.1 Identifiers
 
 * Standard identifiers:
@@ -1191,6 +1220,7 @@ In a source-written module path, a backticked segment contributes its unquoted t
 Path-derived module names remain constrained by §2.1. In particular, a package-mode module header must still match the
 path-derived module name exactly, so a path-derived segment never requires backticks.
 
+<!-- lexical.keywords -->
 ### 3.2 Keywords
 
 Non-exhaustive but important list of soft keywords and contextual reserved tokens:
@@ -1223,6 +1253,7 @@ Keywords are **soft** (contextual) keywords:
   where a keyword is not syntactically expected.
 * Example: `let type = 42` is permitted (where `type` is a term name), while `type Foo = ...` uses `type` as a keyword.
 
+<!-- lexical.comments -->
 ### 3.3 Comments
 
 * Line comments:
@@ -1240,6 +1271,7 @@ Keywords are **soft** (contextual) keywords:
 
 Comments can nest, i.e. block comments may contain other block comments.
 
+<!-- lexical.whitespace_indentation_continuation -->
 ### 3.4 Whitespace, indentation, and continuation
 
 Kappa uses a Python-style significant indentation rule.
@@ -1291,10 +1323,12 @@ Trailing commas:
 * Wherever the grammar admits a comma-separated list (e.g. tuples, record fields, import/export item lists), an optional
   trailing comma is permitted.
 
+<!-- lexical.operator_identifiers_fixity -->
 ### 3.5 Operator identifiers and fixity
 
 Kappa supports symbolic operator identifiers (e.g. `+`, `*`, `==`, `..`), which are ordinary `term` declarations.
 
+<!-- lexical.operator_identifiers_fixity.operator_tokens -->
 #### 3.5.1 Operator tokens
 
 An operator token is an implementation-defined sequence of non-alphanumeric, non-whitespace characters not otherwise
@@ -1314,6 +1348,7 @@ Special rule for `(-)`:
 * When `(-)` occurs between two expressions, infix fixity applies.
 * A parenthesized `(-)` alone denotes the prefix function.
 
+<!-- lexical.operator_identifiers_fixity.operator_tokens.operator_sections -->
 ##### 3.5.1.1 Operator sections
 
 A parenthesized expression containing a single binary operator and a single operand denotes an operator section,
@@ -1371,6 +1406,7 @@ Token recognition uses longest-match-first.
 * In particular, `?.` is recognized before `?` plus `.`, `?:` is recognized before `?` plus `:`, and a standalone `?`
   remains available as an ordinary operator token (for example, a user-defined postfix operator per §3.5.2).
 
+<!-- lexical.operator_identifiers_fixity.declarations -->
 #### 3.5.2 Fixity declarations
 
 Fixity declarations control parsing of operator use.
@@ -1407,6 +1443,7 @@ Rules:
   forms, such as ->.)
 
 
+<!-- lexical.operator_identifiers_fixity.infix_gating -->
 #### 3.5.3 Infix gating
 
 An operator token may only be used in an operator position if a matching fixity is in scope at that source location:
@@ -1426,10 +1463,13 @@ If no fixity is in scope, the operator may still be used as a normal name via `(
 
 ---
 
+<!-- literals -->
 ## 4. Literals
 
+<!-- literals.numeric_literals -->
 ### 4.1 Numeric literals
 
+<!-- literals.numeric_literals.integers -->
 #### 4.1.1 Integers
 
 Forms:
@@ -1441,6 +1481,7 @@ Forms:
 
 Underscores `_` are allowed between digits for readability; they have no semantic effect.
 
+<!-- literals.numeric_literals.floating_point_float -->
 #### 4.1.2 Floating-point (`Float`)
 
 Decimal floating-point numbers:
@@ -1454,6 +1495,7 @@ General form:
 * `[digits] '.' [digits] [exponent]`
 * `[digits] [exponent]` where exponent is `e` or `E` followed by an optional sign and digits.
 
+<!-- literals.numeric_literals.float_double_semantics -->
 #### 4.1.3 `Float` / `Double` semantics
 
 `Double` is IEEE-754 binary64 (a.k.a. "double precision"). `Float` is the standard prelude alias of `Double`, so the
@@ -1471,6 +1513,7 @@ semantics below apply equally to both names.
 * `floatEq : Float -> Float -> Bool` is provided for IEEE "numeric" equality (the common `==` in many languages), where
   `NaN` is never equal and `+0.0` equals `-0.0`.
 
+<!-- literals.numeric_literals.sign -->
 #### 4.1.4 Sign
 
 `-` is a **unary operator**, not part of the literal.
@@ -1480,6 +1523,7 @@ semantics below apply equally to both names.
 
 Operator precedence rules determine association (see expressions).
 
+<!-- literals.numeric_literals.typing -->
 #### 4.1.5 Literal typing (normative)
 
 This section applies to numeric literals **without** a suffix. If a numeric literal has a suffix, §4.1.6 takes priority
@@ -1513,6 +1557,7 @@ as follows:
 This default is applied after all type inference completes on the enclosing declaration; it is a compile-time error if
 defaulting would cause an otherwise-satisfied constraint to become unsatisfiable.
 
+<!-- literals.numeric_literals.numeric_literal_suffixes -->
 #### 4.1.6 Numeric literal suffixes
 
 After a numeric literal, an identifier suffix with no intervening whitespace is permitted:
@@ -1548,13 +1593,16 @@ Resolution rules:
 Suffix-qualified literals are not subject to the `FromInteger` / `FromFloat` defaulting rule of §4.1.5. The suffix
 determines the result type.
 
+<!-- literals.boolean_literals -->
 ### 4.2 Boolean literals
 
 * `True`
 * `False`
 
+<!-- literals.string_literals -->
 ### 4.3 String literals
 
+<!-- literals.string_literals.basic_strings -->
 #### 4.3.1 Basic strings
 
 * Double-quoted:
@@ -1571,6 +1619,7 @@ Common escapes:
 
 Single-quoted literals are reserved for `Char` literals (§4.4). Single-quoted **string** literals are not valid in v0.1.
 
+<!-- literals.string_literals.raw_strings -->
 #### 4.3.2 Raw strings
 
 Kappa provides a true lexical raw-string form. Raw strings do not process escape sequences and do not treat `$name` or
@@ -1599,6 +1648,7 @@ Rules:
 * A dollar sign has no special meaning in a raw string.
 * The earliest closing delimiter with the matching number of `#` characters terminates the raw string.
 
+<!-- literals.string_literals.multiline_strings_fixed_dedent -->
 #### 4.3.3 Multiline strings and fixed dedent
 
 Triple-quoted forms:
@@ -1639,6 +1689,7 @@ Normative content rule:
 
 This makes the closing-delimiter line the single source of truth for dedent.
 
+<!-- literals.string_literals.prefixed_strings -->
 #### 4.3.4 Prefixed strings
 
 A **prefixed string literal** has the form:
@@ -1664,6 +1715,7 @@ Let the **hash count** of the literal be the number of `#` characters in its del
 Prefixed strings elaborate through one uniform fragment pipeline. There are no built-in special cases for formatting,
 SQL, regex, bytes, or any other DSL.
 
+<!-- literals.string_literals.prefixed_strings.interpolation_syntax -->
 ##### Interpolation syntax
 
 Ordinary prefixed strings (hash count `0`) support:
@@ -1698,6 +1750,7 @@ re##"\b##{word}\b"##
 type#"Vec #{n} Int"#
 ```
 
+<!-- literals.string_literals.prefixed_strings.interpolation_parsing -->
 ##### Interpolation parsing
 
 The expression part of an interpolation is parsed using ordinary Kappa expression parsing.
@@ -1723,6 +1776,7 @@ The format specifier is the exact source text between that top-level `:` and the
 
 The compiler does not interpret the contents of the format specifier.
 
+<!-- literals.string_literals.prefixed_strings.resolution_typing -->
 ##### Resolution and typing
 
 * Let `prefix` resolve to a term `p` in scope at the use site.
@@ -1743,6 +1797,7 @@ trait InterpolatedMacro (t : Type) =
     buildInterpolated : List SyntaxFragment -> Syntax t
 ```
 
+<!-- literals.string_literals.prefixed_strings.fragment_construction_rules -->
 ##### Fragment construction rules
 
 * Literal segments are formed after applying the multiline dedent rule of §4.3.3.
@@ -1754,6 +1809,7 @@ trait InterpolatedMacro (t : Type) =
 * Adjacent `Lit` fragments MUST be merged.
 * Empty `Lit` fragments MUST be omitted, except that a completely empty prefixed string is represented as `[Lit ""]`.
 
+<!-- literals.string_literals.prefixed_strings.semantics -->
 ##### Semantics
 
 A non-interpolated prefixed string:
@@ -1824,6 +1880,7 @@ Any meaning of the format specifier is determined entirely by `p.buildInterpolat
 The standard `f`, `re`, `b`, and `type` prefixes supplied by `std.prelude` are ordinary terms participating in this mechanism.
 They receive no special parser treatment.
 
+<!-- literals.string_literals.type_prefix_handler -->
 #### 4.3.5 Conventional type-prefix handler
 
 There is no built-in `type"..."`
@@ -1840,6 +1897,7 @@ Accordingly, `type"..."` follows §4.3.4 exactly and elaborates through `buildIn
 
 Implementations MAY provide additional ordinary type-producing prefixed-string handlers.
 
+<!-- literals.character_literals_char -->
 ### 4.4 Character literals (`Char`)
 
 A character literal is a single-quoted Unicode scalar value:
@@ -1861,6 +1919,7 @@ Rules:
   * Char has an Ord-like ordering given by numeric scalar value order.
   * Range enumeration over Char (e.g. 'a' .. 'z') enumerates by increasing scalar value.
 
+<!-- literals.unit_tuples -->
 ### 4.5 Unit and tuples
 
 * Unit: `()`
@@ -1892,8 +1951,10 @@ Rules:
 
 ---
 
+<!-- types -->
 ## 5. Types, Universes, and Records
 
+<!-- types.universes -->
 ### 5.1 Universes
 
 Kappa is dependently typed with a stratified universe hierarchy.
@@ -1936,6 +1997,7 @@ Surface syntax:
   surface mechanism for forcing multiple occurrences to live in the same universe level.
 * `*` is syntactic sugar for `Type`.
 
+<!-- types.universes.cumulativity -->
 #### 5.1.1 Cumulativity
 
 Universes are **cumulative**:
@@ -1944,6 +2006,7 @@ Universes are **cumulative**:
 
 Implementations may realize this as an implicit coercion/subtyping rule between universes.
 
+<!-- types.universes.inference_sketch -->
 #### 5.1.2 Universe inference (sketch)
 
 Elaboration generates constraints on universe metavariables (e.g. `?u ≤ ?v`, `?u < ?v`) from typing. Explicit universe
@@ -1952,6 +2015,7 @@ constraint solving. Occurrences of `Type u` therefore share exactly the same use
 introducing fresh metavariables. If the constraints are unsatisfiable, compilation fails. Unconstrained universe
 metavariables may be generalized at top-level (implementation-defined).
 
+<!-- types.universes.constraints_dictionaries -->
 #### 5.1.3 Constraints and dictionaries
 
 `Universe`, `Quantity`, `Region`, `Constraint`, `RecRow`, `VarRow`, `EffRow`, `Label`, and `EffLabel` are intrinsic
@@ -2008,6 +2072,7 @@ Usage rules:
 * A binder may range over `Constraint` itself, e.g. `(c : Constraint) -> ...`; this quantifies over constraint
   descriptors and does not introduce coherent evidence for `c`.
 
+<!-- types.universes.erasure_elaboration_time -->
 #### 5.1.4 Erasure and elaboration time
 
 Kappa distinguishes computational values from compile-time values.
@@ -2035,6 +2100,7 @@ Runtime erasure is governed as follows:
 * Implementations may provide library mechanisms to reify type information or other compile-time information explicitly
   when needed, but there is no implicit runtime reflection.
 
+<!-- types.universes.erasure_elaboration_time.compile_time_bindings_fields -->
 ##### 5.1.4.1 Compile-time bindings and fields
 
 A binder, record field, or package member is compile-time if its annotation elaborates to one of the intrinsic
@@ -2053,6 +2119,7 @@ Writing `let y = x` where `x` is compile-time simply binds `y` to the same compi
 Packaging or rebinding a compile-time value does not discharge region escape. If a compile-time value mentions a fresh
 anonymous rigid region introduced by a local borrow, the ordinary skolem-escape rule of §5.1.6 still applies.
 
+<!-- types.universes.quantities -->
 #### 5.1.5 Quantities
 
 A quantity denotes either a closed interval of permitted exact uses over `ℕ∞`, where `∞` is allowed as an upper bound,
@@ -2235,6 +2302,7 @@ The temporary borrow created by borrow introduction ends exactly when the demand
 application, this is exactly when the call returns. Consequently a callee may not store such a temporary anonymous
 borrow in its result; only explicitly scoped regions may cross that boundary.
 
+<!-- types.universes.quantities.are_ownership -->
 ##### 5.1.5.1 Quantities are ownership-only
 
 The `Quantity` sort is reserved for ownership and usage accounting.
@@ -2250,6 +2318,7 @@ Consequences:
 * borrow introduction, borrow lifetimes, and path-sensitive borrowing continue to be governed only by §§5.1.5-5.1.7;
 * quantity-governed erasure continues to be governed by §§5.1.3-5.1.7 and §14.4.
 
+<!-- types.universes.quantities.reserved_modal_coeffect_extension_lane -->
 ##### 5.1.5.2 Reserved modal/coeffect extension lane
 
 A future version of Kappa may add one or more graded modal or coeffect systems. Any such system MUST be distinct from
@@ -2273,6 +2342,7 @@ budgets, and scheduling budgets.
 A conforming implementation MUST NOT reinterpret `Quantity`, `⊑`, or the borrow rules of this chapter as a
 general-purpose graded logic.
 
+<!-- types.universes.borrow_lifetimes_escape_prevention -->
 #### 5.1.6 Borrow lifetimes and escape prevention
 
 A value bound at quantity `&` is tethered to the lexical scope of the underlying stable root from which the borrowed
@@ -2364,6 +2434,7 @@ surrounding `do`-scope whose unwinding would have to outlive that borrow. This i
 explicit lifetime syntax. If `bracket` is provided, it is sound only when implemented with equivalent protected-scope
 machinery rather than a naive `defer (release res)` source-level expansion.
 
+<!-- types.universes.borrow_lifetimes_escape_prevention.capture_annotated_types -->
 ##### 5.1.6.1 Capture-annotated types
 
 Kappa provides an optional postfix capture annotation on value types:
@@ -2441,6 +2512,7 @@ packGetter :
     (&[s] x : Box a) -> ((get : (Unit -> a) captures (s)))
 ```
 
+<!-- types.universes.disjoint_path_borrowing_records -->
 #### 5.1.7 Disjoint path borrowing for records
 
 Borrow tracking for records is path-sensitive. A borrow of a record field does not automatically lock the entire record.
@@ -2498,6 +2570,7 @@ Consequences:
 This path-sensitive rule is specified only for record fields in v0.1. Other aggregate structures may be treated
 conservatively as whole-value borrows unless a later section defines finer-grained splitting for them.
 
+<!-- types.universes.disjoint_path_borrowing_records.stable_places_place_preserving_bindings -->
 ##### 5.1.7.1 Stable places and place-preserving bindings
 
 A stable place is the semantic notion of an addressable immutable subvalue used by borrowing, path-sensitive
@@ -2539,6 +2612,7 @@ Place identity is preserved only by constructs that explicitly say so, including
 If elaboration introduces a fresh binder as an alias of an existing stable place, that binder carries the same
 underlying root and path. Projecting from the alias extends that same path rather than creating a fresh root.
 
+<!-- types.universes.disjoint_path_borrowing_records.computed_place_expressions -->
 ##### 5.1.7.2 Computed place expressions
 
 A place expression is either:
@@ -2613,6 +2687,7 @@ The returned closure has ordinary function shape `Unit -> a`, but its value type
 region environment may mention `s`. A caller may use or store that closure only where `s` is still live. At a call site,
 an explicit region variable such as `s` may be instantiated by a caller-local rigid region `rho`.
 
+<!-- types.functions -->
 ### 5.2 Function types
 
 * Arrow types are **right-associative**:
@@ -2652,6 +2727,7 @@ A function value type may be capture-annotated under §5.1.6.1. For example:
 Such an annotation describes the hidden region environment of the function value itself; it does not change the binder
 types of that arrow.
 
+<!-- types.functions.suspension_types_strict_binder_sugar -->
 ### 5.2.1 Suspension types and non-strict binder sugar
 
 Kappa has a single ordinary dependent function space.
@@ -2696,6 +2772,7 @@ ordinary appearance of `Thunk A` or `Need A` in the binder type.
 
 Introduction of `Need A` suspensions requires `Shareable A` and obeys the capture restriction of §7.2.2.
 
+<!-- types.quantification -->
 ### 5.3 Universal quantification
 
 `forall` is syntactic sugar over Pi-types:
@@ -2720,6 +2797,7 @@ forall (r : EffRow) (l : EffLabel). SplitEff r l E r' => ...
 forall (row : RecRow) (lab : Label). ContainsRec row lab T => ...
 ```
 
+<!-- types.quantification.rows_labels -->
 #### 5.3.1 Rows and labels
 
 Kappa has three intrinsic compile-time row types:
@@ -2758,6 +2836,7 @@ of member types. Row equality is modulo permutation after row normalization.
 A row variable must have one of the types `RecRow`, `VarRow`, or `EffRow`. Row variables of different row types are
 never interchangeable.
 
+<!-- types.quantification.effect_row_syntax -->
 #### 5.3.2 Effect-row surface syntax
 
 Effect rows are written:
@@ -2777,6 +2856,7 @@ Rules:
 * An open row of the form `<[l : E | r]>` carries the implicit uniqueness side condition `LacksEff r l`.
 * `SplitEff r l E r'` holds iff `r` normalizes to `<[l : E | r']>`.
 
+<!-- types.unions -->
 ### 5.4 Union types
 
 Kappa supports union types (also called variant types in this context) via the `(| ... |)` syntax. A union type denotes
@@ -2787,6 +2867,7 @@ type U = (| Int | String | Error |)
 type OptionalInt = (| Unit | Int |)
 ```
 
+<!-- types.unions.formation -->
 #### 5.4.1 Union formation
 
 ```text
@@ -2815,6 +2896,7 @@ Canonical order is the lexicographic order of the canonical serialized `MemberId
 This canonical order is used for row normalization and definitional equality, not for assigning row-local runtime tag
 ordinals.
 
+<!-- types.unions.introduction_injection -->
 #### 5.4.2 Introduction (injection)
 
 ```kappa
@@ -2830,6 +2912,7 @@ Typing rule:
   `LacksVar` side condition holds.
 * The inferred form `(| e |)` is valid only when the injected type is unambiguously determined from context.
 
+<!-- types.unions.expected_type_directed_injection_widening -->
 #### 5.4.3 Expected-type-directed injection and widening
 
 Union injection and widening are expected-type-directed elaboration rules, not an ambient subtyping relation over the
@@ -2852,6 +2935,7 @@ Otherwise no implicit union injection or widening is inserted.
 When elaboration inserts such a widening, it is zero-cost at runtime: no payload rewrite or row-relative retagging is
 performed. The widened value reuses the same runtime tag identity for each member type (§14.5).
 
+<!-- types.unions.elimination_match -->
 #### 5.4.4 Elimination (`match`)
 
 ```kappa
@@ -2878,6 +2962,7 @@ Exhaustiveness:
   pattern `case (| ..rest |) -> ...`.
 * In a residual-row branch for scrutinee type `(| ... | r |)`, the binder introduced by `..rest` has type `Variant r`.
 
+<!-- types.unions.variant_row_polymorphism -->
 #### 5.4.5 Variant row polymorphism
 
 A function can be polymorphic over the residual row:
@@ -2894,6 +2979,7 @@ let project u =
 
 The constraint `LacksVar r a` ensures `a` is not already present in the row, preventing ambiguous overlaps at use sites.
 
+<!-- types.unions.nullary_singleton_arms -->
 #### 5.4.6 Nullary / singleton arms
 
 ```kappa
@@ -2907,6 +2993,7 @@ type Optional a = (| Missing | a |)
 first be introduced as an ordinary singleton type (or `Unit` may be used when no dedicated name is needed). There is no
 separate tag namespace: every arm of a union is a type.
 
+<!-- types.unions.pattern_grammar_addition_7_6_1 -->
 #### 5.4.7 Pattern grammar (addition to §7.6.1)
 
 ```text
@@ -2920,11 +3007,13 @@ The inferred form `(| x |)` is valid only when the scrutinee type is a singleton
 can be unambiguously determined from context. It is never interpreted as the residual-row case. Residual-row matching
 must be written explicitly as `(| ..rest |)`.
 
+<!-- types.unions.interaction_gadts_indexed_types -->
 #### 5.4.8 Interaction with GADTs / indexed types
 
 Union types may be indexed. An injection such as `(| v : Vec n a |)` is valid when the expected union type contains `Vec
 n a` among its member types. Exhaustiveness and reachability are determined by index unification exactly as in §7.5.1.
 
+<!-- types.unions.optional_type_sugar -->
 #### 5.4.9 Optional-type sugar
 
 For any type expression `T`, the postfix form `T?` is syntactic sugar for `Option T`, where `Option` is the prelude type
@@ -2956,10 +3045,12 @@ explicit parentheses.
 Postfix `?` at the type level is built-in and is not subject to user fixity declarations. A user `postfix N (?)` fixity
 declaration applies only at term positions; it has no effect in type positions.
 
+<!-- types.records -->
 ### 5.5 Records (named tuples)
 
 Records are the single "struct-like" construct in Kappa.
 
+<!-- types.records.syntax -->
 #### 5.5.1 Record syntax
 
 Record types are written:
@@ -3036,6 +3127,7 @@ Opaque members:
   record as a whole is treated as a linear resource for whole-record use until those linear paths have been consumed or
   restored.
 
+<!-- types.records.syntax.record_field_order_lawful_reorderings -->
 ##### 5.5.1.1 Record field order and lawful reorderings
 
 Record types are **order-insensitive up to lawful reorderings**.
@@ -3077,6 +3169,7 @@ More precisely:
 
 Implementations may insert dependency-respecting reordering coercions implicitly where needed.
 
+<!-- types.records.formation -->
 #### 5.5.2 Record formation
 
 Closed record types have exactly the listed fields and may be dependent telescopes.
@@ -3093,6 +3186,7 @@ Restrictions for open records:
 
 Record types and values are usable as Σ-types (dependent pairs), subject to the lawful-reordering rule above.
 
+<!-- types.records.values -->
 #### 5.5.3 Record values
 
 ```kappa
@@ -3138,6 +3232,7 @@ Well-formedness:
   opaque members).
 * Introduction of a signature value uses `seal ... as ...` (§5.5.10).
 
+<!-- types.records.field_projection -->
 #### 5.5.4 Field projection
 
 ```kappa
@@ -3203,6 +3298,7 @@ let n = r.len
 -- `r.buf` is now consumed, but `r.len` remains available
 ```
 
+<!-- types.records.update -->
 #### 5.5.5 Record update
 
 Records are immutable values. Record update produces a new record with selected fields replaced:
@@ -3343,6 +3439,7 @@ let restoredRec = myRec.{ buf = newBuf }
 -- `restoredRec` is whole again; both `buf` and `len` are available
 ```
 
+<!-- types.records.row_extension -->
 #### 5.5.6 Row extension (new)
 
 ```kappa
@@ -3372,11 +3469,13 @@ Result type:
 
 * The result has type `(fields, ℓ : typeof e | r)`, normalized by the ordinary record canonicalization rules.
 
+<!-- types.records.row_polymorphism -->
 #### 5.5.7 Record row polymorphism
 
 A function `(name : String | r) -> String` is polymorphic in the residual row `r : RecRow` with the implicit constraint
 `LacksRec r name`.
 
+<!-- types.records.function_parameters -->
 #### 5.5.8 Records as function parameters
 
 A function can take a **record argument**:
@@ -3411,6 +3510,7 @@ let g (x : A) (y : B) : R = ...
 -- type: A -> B -> R
 ```
 
+<!-- types.records.implicit_record_fields_transparent_unpacking -->
 #### 5.5.9 Implicit record fields and transparent unpacking
 
 Record types may declare implicit fields using the `@` prefix. This mechanism formalizes dependent pairs, packed
@@ -3503,6 +3603,7 @@ This mechanism does not itself create a sealing or opaqueness boundary: omitted 
 members and are not hidden from projection or definitional equality. Sealed opaqueness is provided instead by
 `seal ... as ...` (§5.5.10).
 
+<!-- types.records.sealed_packages_opaque_members -->
 #### 5.5.10 Sealed packages and opaque members
 
 A signature type is a closed record type whose explicit field telescope contains one or more opaque members.
@@ -3599,6 +3700,7 @@ No implicit subtyping:
 * Kappa has no ambient structural subtyping for records or signatures.
 * Hiding fields or opaqueness manifest definitions occurs only through explicit `seal ... as ...`.
 
+<!-- types.records.anonymous_existential_packages_exists -->
 #### 5.5.11 Anonymous existential packages (`exists`)
 
 The `exists` surface form is anonymous sealed-package sugar. It does not introduce a distinct KCore type former.
@@ -3764,10 +3866,12 @@ Because `exists` is anonymous-package sugar over §5.5.10:
 * ordinary aliasing preserves existential identity.
 
 
+<!-- types.propositions -->
 ### 5.6 Propositions via booleans and propositional equality
 
 Kappa supports propositional equality as a built-in inductive family.
 
+<!-- types.propositions.propositional_equality_type_positions -->
 #### 5.6.1 Propositional equality (`=`) in type positions
 
 The propositional equality type `x = y` is a built-in inductive family. It is exported by `std.prelude` as if by:
@@ -3830,6 +3934,7 @@ Pattern matching:
 
   the typechecker treats the two sides of the equality as definitionally equal within `body`.
 
+<!-- types.propositions.boolean_type_coercion_type_positions -->
 #### 5.6.2 Boolean-to-type coercion in type positions
 
 Boolean expressions are not implicitly coerced to types in arbitrary type positions.
@@ -3861,12 +3966,14 @@ let r : (id : Int, ok : id == 1) = (id = 2, ok = _)
 
 To express a "false branch" proposition explicitly, use `b = False`.
 
+<!-- types.splicing -->
 ### 5.7 Monadic splicing (`!`)
 
 The prefix operator `!` is used only within a `do` block as a monadic splice.
 
 Compile-time term and type generation use `Syntax` and top-level `$(...)` splicing (§5.8.2), not `!`.
 
+<!-- types.splicing.term_level_splice_monadic_contexts -->
 #### 5.7.1 Term-level `!` in monadic contexts
 
 Within a `do` block (§8), `!e` runs the monadic computation `e` and yields its result in an expression context.
@@ -3942,8 +4049,10 @@ Use in do-items:
   * any other do-item form that syntactically contains an expression subterm uses the same translation on that subterm
     before applying its ordinary elaboration rule.
 
+<!-- types.macros -->
 ### 5.8 Hygienic syntax values and macros
 
+<!-- types.macros.syntax_type_quote_syntax -->
 #### 5.8.1 `Syntax` type and quote syntax
 
 Kappa provides a built-in type family for inspectable, hygienic syntax values:
@@ -3971,6 +4080,7 @@ requires `s : Syntax t` and inserts the quoted sub-expression into the surroundi
 Note: `${...}` inside a quoted block is distinct from the string-interpolation `${...}` syntax of §4.3.4. The two forms
 occur in disjoint lexical contexts (strings vs. quotes).
 
+<!-- types.macros.top_level_syntax_splicing -->
 #### 5.8.2 Top-level syntax splicing
 
 Outside quoted blocks, `$(s)` is an elaboration-time splice in term and type positions.
@@ -3988,6 +4098,7 @@ Outside quoted blocks, `$(s)` is an elaboration-time splice in term and type pos
 * `$(s)` is the only elaboration-time splice form for `Syntax`.
 * `!` remains reserved for the monadic splice form inside `do` blocks (§5.7.1) and is not a synonym for `$(...)`.
 
+<!-- types.macros.functions -->
 #### 5.8.3 Macros as ordinary functions
 
 A macro is an ordinary elaboration-time function whose result type is `Syntax t` or `Elab (Syntax t)`:
@@ -4006,6 +4117,7 @@ reflection API of §5.8.5. Semantic reflection does not introduce a second user-
 macro lookup space; it is an elaboration-time interface for reasoning about ordinary Kappa terms, types, rows, labels,
 and constraints after elaboration.
 
+<!-- types.macros.hygiene -->
 #### 5.8.4 Hygiene
 
 Syntax quotes are hygienic.
@@ -4014,6 +4126,7 @@ Syntax quotes are hygienic.
 * Spliced syntax preserves its own binding structure.
 * Generated binders are alpha-renamed as needed to avoid capture.
 
+<!-- types.macros.reflection_api -->
 #### 5.8.5 Reflection API
 
 Implementations MUST provide two reflection tiers:
@@ -4256,6 +4369,7 @@ Normative meaning:
   implicit-insertion, visibility, opacity, `unhide`, and `clarify` rules as the underlying reflection operations at the
   call site.
 
+<!-- types.macros.restrictions_macro_effects -->
 #### 5.8.6 Restrictions on macro effects
 
 Macros, and any helper functions they invoke during elaboration-time execution, run under the elaboration-time
@@ -4287,6 +4401,7 @@ equivalent) rather than hanging indefinitely.
 These restrictions are enforced by the elaboration-time evaluator (§17.3.3).
 A macro or splice that violates them is a compile-time error.
 
+<!-- types.macros.typed_elaboration_actions_elab -->
 #### 5.8.7 Typed elaboration actions (`Elab`)
 
 Kappa provides a built-in elaboration-time effect for context-sensitive macros and DSL elaborators:
@@ -4321,8 +4436,10 @@ Rules:
   `Syntax` for `$(...)`.
 * `Elab` values are compile-time only, are erased, and MUST NOT be required at runtime or by `runCode`.
 
+<!-- types.staging -->
 ### 5.9 Staged code values
 
+<!-- types.staging.code_closed_code -->
 #### 5.9.1 `Code` and `ClosedCode`
 
 Kappa provides separate built-in types for generative staged code:
@@ -4335,6 +4452,7 @@ ClosedCode : Type -> Type
 `Code t` is typed staged code. It is generative and is not inspectable as ordinary syntax. Use `Syntax t` for
 inspectable macro ASTs.
 
+<!-- types.staging.quotation_escape -->
 #### 5.9.2 Quotation and escape
 
 MetaOCaml-style quotation syntax constructs staged code:
@@ -4353,6 +4471,7 @@ Escape inside code quotes:
 
 requires `c : Code t` and splices the staged subterm into the surrounding `Code` quote.
 
+<!-- types.staging.stage_persistence -->
 #### 5.9.3 Cross-stage persistence
 
 Cross-stage persistence is lift-based:
@@ -4365,6 +4484,7 @@ trait Lift (a : Type) =
 A present-stage value may occur inside `.< ... >.` only if it is inserted by `liftCode`, either explicitly or via
 elaboration of a simple variable occurrence.
 
+<!-- types.staging.closing_staged_code -->
 #### 5.9.4 Closing staged code
 
 Implementations MUST provide:
@@ -4381,6 +4501,7 @@ Otherwise it returns `None`.
 If a quotation `.< expr >.` is statically known to be closed, implementations MAY elaborate it directly as
 `ClosedCode t` when that type is expected.
 
+<!-- types.staging.let_insertion_sharing -->
 #### 5.9.5 Let insertion and sharing
 
 Implementations MUST provide:
@@ -4411,6 +4532,7 @@ let c = .< .~shared + .~shared >.
 -- __x + __x
 ```
 
+<!-- types.staging.running_staged_code -->
 #### 5.9.6 Running staged code
 
 Staged code may be executed only when closed:
@@ -4421,6 +4543,7 @@ runCode : ClosedCode t -> UIO t
 
 Implementations MUST reject, or fail before execution on, any attempt to run non-closed code.
 
+<!-- types.staging.scope_safety -->
 #### 5.9.7 Scope safety
 
 Implementations MUST prevent scope extrusion for `Code`.
@@ -4433,8 +4556,10 @@ Implementations MUST prevent scope extrusion for `Code`.
 
 ---
 
+<!-- declarations -->
 ## 6. Declarations and Definitions
 
+<!-- declarations.terms -->
 ### 6.1 Term declarations vs definitions
 
 There are four distinct forms:
@@ -4539,6 +4664,7 @@ Modifier rules:
    * Active patterns are ordinary `term` declarations and are imported/exported as ordinary terms.
    * Active patterns are pure functions; `R` must not be a monadic type.
 
+<!-- declarations.terms.projection_definitions -->
 #### 6.1.1 Projection definitions
 
 A projection definition names a pure computed place selector rooted in one or more place parameters.
@@ -4613,6 +4739,7 @@ Elaboration of a fully applied projection call:
 * In an ordinary value-demanding position, the call elaborates branchwise through `ReadPlace` or `MovePlace` according
   to whether the surrounding demand is non-consuming or consuming (§5.1.7.2).
 
+<!-- declarations.terms.irrefutable_patterns_let_bindings -->
 #### 6.1.2 Irrefutable patterns (for `let` bindings)
 
 A pattern `pat` is **irrefutable** for a scrutinee type `T` iff matching `pat` against any value of type `T` cannot
@@ -4637,6 +4764,7 @@ provable-single-constructor case may a constructor pattern be treated as irrefut
 Implementations must reject any `let pat = expr` binding whose `pat` is not irrefutable for the inferred/annotated type
 of `expr`.
 
+<!-- declarations.signatures -->
 ### 6.2 Top-level signatures + definitions
 
 Common forms:
@@ -4675,6 +4803,7 @@ Additional rules:
 * Consequently, the explicit-signature requirement of this section applies only to exported top-level `let` definitions
   whose binder is a single simple name.
 
+<!-- declarations.let_in -->
 ### 6.3 `let ... in` expression
 
 Local bindings can be written using a `let ... in` expression:
@@ -4795,6 +4924,7 @@ Elaboration (schematic):
   where `pat0` is the underlying pattern of `bindPat`. This is only permitted because that underlying pattern is
   required to be irrefutable.
 
+<!-- declarations.let_in.pure_block_expressions -->
 #### 6.3.1 Pure block expressions
 
 A pure block is an expression that introduces sequential local scope without monadic control flow.
@@ -4884,6 +5014,7 @@ Local recursion:
 * Within such a local definition body, the declared local name(s) are in scope exactly as in the top-level recursion
   rule of §6.4.
 
+<!-- declarations.let_in.pure_block_expressions.scoped_local_nominal_effect_declarations -->
 ##### 6.3.1.1 Scoped local nominal and effect declarations
 
 Within a block scope (`block` or `do`), the local-only modifier `scoped` may prefix:
@@ -4937,6 +5068,7 @@ Scoped effects:
 * The local effect-interface constructor, its canonical self label, and all operations declared in the effect body are
   scoped by the same hidden nominal-scope token.
 
+<!-- declarations.totality -->
 ### 6.4 Totality and unfolding
 
 Kappa is total by default.
@@ -4945,6 +5077,7 @@ Normative rule:
 
 * A transparent definition may participate in definitional equality only if it is **termination-certified**.
 
+<!-- declarations.totality.termination_certified_definitions -->
 #### 6.4.1 Termination-certified definitions
 
 A definition is **termination-certified** iff one of the following holds:
@@ -4955,6 +5088,7 @@ A definition is **termination-certified** iff one of the following holds:
 
 A definition accepted solely via `assertTotal` is **not** termination-certified by default.
 
+<!-- declarations.totality.inference_first_termination_checking -->
 #### 6.4.2 Inference-first termination checking
 
 Termination checking is inference-first.
@@ -4992,6 +5126,7 @@ At minimum, a conforming implementation MUST accept **without explicit `decrease
 
 If any strategy above succeeds, the SCC is accepted and no user-written `decreases` clause is required.
 
+<!-- declarations.totality.hidden_phase_components -->
 #### 6.4.3 Hidden phase components
 
 For a mutually recursive SCC, the implementation may synthesize a hidden finite phase ordinal used only as a
@@ -5007,6 +5142,7 @@ This hidden phase component:
 This rule exists specifically so that ordinary mutually recursive definitions need not force users to write auxiliary
 `0` / `1` tie-breakers or ghost phase parameters merely to satisfy the termination checker.
 
+<!-- declarations.totality.explicit_decreases -->
 #### 6.4.4 Explicit `decreases`
 
 Any named function definition may optionally include a `decreases` clause immediately before `=`.
@@ -5034,6 +5170,7 @@ Rules:
   not possible, compilation fails rather than silently falling back to a different termination strategy.
 * `decreases` does not change runtime behavior. It constrains only the termination argument used by elaboration.
 
+<!-- declarations.totality.internal_recursion_introduced_elaboration -->
 #### 6.4.5 Internal recursion introduced by elaboration
 
 Elaboration may introduce internal recursive helpers required by normative desugarings.
@@ -5046,6 +5183,7 @@ Such helpers are admissible only if either:
 
 Desugaring is not a loophole for smuggling uncertified recursion into conversion.
 
+<!-- declarations.totality.relationship_assert_total -->
 #### 6.4.6 Relationship to `assertTotal`
 
 `assertTotal` suppresses termination checking for acceptance only.
@@ -5068,6 +5206,7 @@ declaration.
 An inline annotation on a recursive definition does not by itself introduce recursion; the recursive scope is determined
 from the preceding signature declarations.
 
+<!-- declarations.expect -->
 ### 6.5 `expect` declarations
 
 An `expect` declaration introduces a name and its type/signature, but does not provide a definition in the current file.
@@ -5106,8 +5245,10 @@ fragments.
 
 ---
 
+<!-- expressions -->
 ## 7. Expressions
 
+<!-- expressions.application -->
 ### 7.1 Variables and application
 
 * Variable usage: `x`, `foo`, `map`, etc.
@@ -5144,6 +5285,7 @@ callee has no remaining implicit binder at that application site, the applicatio
 A maximal application site is the head expression of an `applicationExpr` together with its ordered `applicationArg*`
 after any enclosing dotted-form resolution has determined the actual callee and any inserted receiver argument.
 
+<!-- expressions.application.dotted_forms -->
 #### 7.1.1 Dotted forms (`.` / `?.`): qualification, static members, projection, method sugar
 
 The `.` token is used for:
@@ -5170,6 +5312,7 @@ The right-hand side of `?.` is restricted to member-access forms only. In v0.1 t
 Forms such as module qualification, static member selection on a type, projection sections and receiver-projection
 sections, record update, and row extension are ordinary dotted forms but are not reachable through `?.`.
 
+<!-- expressions.application.dotted_forms.projection_sections_receiver_projection_sections -->
 ##### 7.1.1.1 Projection sections and receiver-projection sections
 
 ```kappa
@@ -5204,6 +5347,7 @@ d.(<=)
 
 Such forms are permitted where dotted member projection is otherwise valid.
 
+<!-- expressions.application.dotted_forms.safe_navigation_safe_navigation -->
 ##### 7.1.1.2 Safe-navigation (`?.`)
 
 Let a *chain* be a maximal sequence of dotted-form suffixes attached to an atomic expression. Schematically:
@@ -5394,6 +5538,7 @@ a >>= (.b) >>= (.c)
 a |>= (.b) |>= (.c)
 ```
 
+<!-- expressions.application.elvis -->
 #### 7.1.2 Elvis operator (`?:`)
 
 For `e : Option T` and `d : T`, the expression `e ?: d` desugars to:
@@ -5409,6 +5554,7 @@ This form is specified directly and does not depend on any library helper name.
 `?:` is right-associative at low precedence (`2`, above `|>` at `1` and below comparison / arithmetic operators). It is
 a reserved token and cannot be redefined by user fixity declarations.
 
+<!-- expressions.application.short_circuit -->
 #### 7.1.2A Short-circuit boolean operators
 
 The operator tokens `&&` and `||` are the conventional infix spellings of the ordinary prelude terms of §2.6.2.
@@ -5438,11 +5584,13 @@ differently internally.
 The spellings `&&` and `||` remain ordinary terms rather than special evaluation forms. The prelude names `and` and
 `or` likewise remain ordinary terms; they do not by themselves receive special flow-sensitive treatment.
 
+<!-- expressions.application.subsumption -->
 #### 7.1.3 Application-boundary subsumption
 
 Kappa does not support deep subtyping. However, to maintain ecosystem coherence between linear, borrowed, and
 unrestricted contexts, Kappa implements a localized subsumption rule at function application boundaries.
 
+<!-- expressions.application.subsumption.spine_pipeline -->
 ##### 7.1.3.1 Application-spine elaboration pipeline
 
 To resolve a maximal application site whose head elaborates to a callee `f`, the compiler MUST elaborate the whole site
@@ -5550,6 +5698,7 @@ The expected-type-directed suspension insertion rule applies uniformly whether t
 such as `(thunk x : A)` / `(lazy x : A)` or with the explicit types `Thunk A` / `Need A`.
 
 
+<!-- expressions.lambdas -->
 ### 7.2 Lambdas
 
 Lambda syntax uses backslash and `->`, optionally preceded by a label:
@@ -5609,6 +5758,7 @@ Rules:
   \ x (y : B) -> e    :   A -> B -> T
   ```
 
+<!-- expressions.lambdas.closure_capture_quantities -->
 #### 7.2.1 Closure capture and quantities
 
 A lambda expression forms a closure over its free variables. The permitted usage of the resulting closure value in its
@@ -5639,6 +5789,7 @@ Special cases:
   variable is itself unrestricted. Capturing only unrestricted (`ω`) and/or erased (`0`) variables is sufficient for
   this case.
 
+<!-- expressions.lambdas.suspension_expressions_forcing -->
 #### 7.2.2 Suspension expressions and forcing
 
 Kappa provides two suspension forms:
@@ -5689,6 +5840,7 @@ Control-flow boundary:
 * `thunk expr` and `lazy expr` behave as user-written closure boundaries for `return`, `break`, and `continue`
   resolution.
 
+<!-- expressions.implicit_parameters -->
 ### 7.3 Implicit parameters (`@`)
 
 Implicit binders:
@@ -5731,6 +5883,7 @@ let main =
         log "hello"
 ```
 
+<!-- expressions.implicit_parameters.constraint_sugar -->
 #### 7.3.1 Constraint sugar
 
 A constraint arrow
@@ -5764,6 +5917,7 @@ Multiple constraints associate to the right: `C1 => C2 => T` is equivalent to `(
 `=>` is reserved for actual constraints, except for the boolean-proposition special case above. For ordinary proofs or
 other implicit values of type `P : Type`, write the implicit binder explicitly.
 
+<!-- expressions.implicit_parameters.expression_holes_named_holes -->
 #### 7.3.2 Expression holes (`_` and named holes)
 
 In expression position, `_` denotes a fresh anonymous typed hole.
@@ -5805,6 +5959,7 @@ Kappa does not provide placeholder-abstraction sugar based on holes in v0.1. Use
 explicitly when abstraction is intended, or use existing section forms such as operator sections (§3.5.1.1) and
 projection sections (§7.1.1).
 
+<!-- expressions.implicit_parameters.implicit_resolution_instance_proof_search -->
 #### 7.3.3 Implicit resolution (instance/proof search)
 
 When elaborating an application, if the callee expects an implicit argument `(@x : G)` and the call site does not supply
@@ -5853,6 +6008,7 @@ Resolution proceeds in this order:
 
 If all steps fail, compilation fails with an error indicating the unsolved implicit goal `G`.
 
+<!-- expressions.implicit_parameters.implicit_resolution_instance_proof_search.witness_summon_library_helpers -->
 ##### 7.3.3.1 `witness` and `summon` as library helpers (not syntax)
 
 Implicit resolution can be invoked using ordinary functions with implicit parameters. Conventional helpers are:
@@ -5875,6 +6031,7 @@ let p : (x > 0) = witness (x > 0)
 let eqInt : Dict (Eq Int) = summon (Eq Int)
 ```
 
+<!-- expressions.implicit_parameters.constructor_tag_test_expression_is -->
 #### 7.3.4 Constructor-tag test expression (`is`)
 
 Kappa provides a general constructor-tag test expression:
@@ -5909,6 +6066,7 @@ Dynamic semantics:
 * Evaluate `e` exactly once to a value `v`.
 * The result is `True` iff the top-level constructor of `v` is `C`; otherwise the result is `False`.
 
+<!-- expressions.conditionals -->
 ### 7.4 Conditionals
 
 `if` is an expression.
@@ -5938,6 +6096,7 @@ Scope and evaluation:
 
 Inside a `do` block, an `if` without `else` is allowed as sugar (see §8).
 
+<!-- expressions.conditionals.flow_sensitive_branch_evidence_atomic_conditions -->
 #### 7.4.1 Flow-sensitive branch evidence for atomic conditions
 
 Boolean clauses introduce boolean assumptions into the implicit context.
@@ -5992,6 +6151,7 @@ These erased assumptions participate in implicit resolution (§7.3.3).
 
 `elif` introduces no separate rule beyond its desugaring to nested `else if`.
 
+<!-- expressions.conditionals.flow_typing_through_short_circuit_short_circuit_not -->
 #### 7.4.2 Flow typing through `&&`, `||`, and `not`
 
 Flow typing for plain boolean clauses is defined over ordinary boolean syntax.
@@ -6036,6 +6196,7 @@ Rules:
 * A conforming implementation MAY share those bodies or lower them differently internally, provided branch-local
   refinement and runtime evaluation count are observationally equivalent to the equations above.
 
+<!-- expressions.conditionals.stable_aliases_transport_refinement_evidence -->
 #### 7.4.3 Stable aliases and transport of refinement evidence
 
 Flow typing is defined over stable scrutinee representatives rather than over raw surface spelling.
@@ -6091,6 +6252,7 @@ This section affects only flow typing and refinement transport. It does not chan
 §5.1.7.1: an ordinary value binding remains not a place alias for borrowing or `inout`.
 
 
+<!-- expressions.match -->
 ### 7.5 `match` expressions
 
 Pattern matching expression:
@@ -6115,6 +6277,7 @@ case pattern2           -> expr2
 * For **closed** types (e.g. ADTs, `Bool`), `match` must be exhaustive; missing cases are a compile-time error.
 * For open/infinite domains (e.g. `Int`), you must include a catch-all (`_`) or similar; otherwise it's an error.
 
+<!-- expressions.match.exhaustiveness_indexed_types_gadts -->
 #### 7.5.1 Exhaustiveness with indexed types (GADTs)
 
 For indexed/"GADT-style" types, pattern matching refines the scrutinee's indices and may render some constructor cases
@@ -6134,6 +6297,7 @@ valid only when the compiler can verify the case is unreachable.
 Optional strengthening rules from §17.3.6 MAY improve diagnostics, but acceptance of a `match` MUST NOT depend on any
 rule outside the required structural fragment of that section.
 
+<!-- expressions.match.index_refinement_constructor_knowledge -->
 #### 7.5.1A Index refinement from constructor knowledge
 
 Positive constructor knowledge refines not only the outer constructor tag but also any equalities on indices or
@@ -6150,6 +6314,7 @@ Rules:
 * Accordingly, constructor tests on indexed families may narrow associated indices whenever the constructor declaration
   forces those indices to specific values or shapes.
 
+<!-- expressions.match.discriminating_erased_scrutinees -->
 #### 7.5.1B Discriminating erased scrutinees
 
 A constructor test, constructor-field projection, or pattern match whose discriminating scrutinee is available only at
@@ -6164,6 +6329,7 @@ Rules:
 * This rule applies equally to `if e is C`, `match e`, constructor-field projection made possible by refinement, and any
   future surface form that inspects constructor shape.
 
+<!-- expressions.match.impossible_unreachable_branch_bodies -->
 #### 7.5.2 `impossible` (unreachable branch bodies)
 
 `impossible` is a special expression used to mark an unreachable branch.
@@ -6185,6 +6351,7 @@ Meaning:
 * If accepted, `impossible` may be given any result type required by the surrounding match.
 * At runtime, an `impossible` branch must never be executed; implementations may compile it to a trap.
 
+<!-- expressions.match.boolean_matches_introduce_assumptions -->
 #### 7.5.3 Boolean matches introduce assumptions
 
 When the scrutinee has type `Bool` and a case pattern is the boolean literal `True` or `False`, the corresponding branch
@@ -6198,6 +6365,7 @@ case False -> eF   -- eF checked under  @p : b = False
 
 This applies equally to `try match` success/error branches when the matched value is a `Bool`.
 
+<!-- expressions.match.constructor_branches_introduce_explicit_refinement_evidence -->
 #### 7.5.4 Constructor branches introduce explicit refinement evidence
 
 When a `match` scrutinee `s` is checked against a top-level constructor branch headed by constructor `C`, that branch is
@@ -6229,6 +6397,7 @@ Residual negative evidence:
 This evidence is erased and exists only for typechecking, refinement, reachability, and elaboration. It does not affect
 runtime representation.
 
+<!-- expressions.match.narrowing_is_consuming -->
 #### 7.5.5 Narrowing is non-consuming
 
 Constructor discrimination is observational only.
@@ -6249,6 +6418,7 @@ Rules:
 * Constructor-field projections made available by such a refinement are borrowed projections of that same underlying
   source path, not copied values.
 
+<!-- expressions.match.guarded_cases_introduce_guard_success_evidence -->
 #### 7.5.6 Guarded cases introduce guard-success evidence
 
 In a guarded case
@@ -6282,10 +6452,12 @@ Rules:
 * Therefore guarded branches do not contribute negative constructor evidence past the guard boundary unless some
   separate preceding rule already provides it.
 
+<!-- expressions.patterns -->
 ### 7.6 Patterns (overview)
 
 Patterns are used in `match`, `try match`, `for` generators, and refutable forms (§10.4.1).
 
+<!-- expressions.patterns.forms -->
 #### 7.6.1 Pattern forms
 
 * Wildcard: `_`
@@ -6374,6 +6546,7 @@ Patterns are used in `match`, `try match`, `for` generators, and refutable forms
   ```
   Meaning: try `p1`; if it fails, try `p2`; etc.
 
+<!-- expressions.patterns.scoping_validity -->
 #### 7.6.2 Scoping and validity
 
 * Names bound by a pattern are in scope in:
@@ -6385,6 +6558,7 @@ Patterns are used in `match`, `try match`, `for` generators, and refutable forms
 * In a prefix pattern application, the head must resolve either to a data constructor or to a function explicitly
   declared with the `pattern` keyword. An ordinary function is not permitted in pattern-head position.
 
+<!-- expressions.patterns.validity -->
 #### 7.6.3 Or-pattern validity (`|`)
 
 In `p1 | p2 | ... | pn`:
@@ -6396,12 +6570,14 @@ In `p1 | p2 | ... | pn`:
 
 Or-patterns are tried left-to-right at runtime.
 
+<!-- expressions.active_patterns -->
 ### 7.7 Active patterns (view patterns)
 
 Active patterns allow a module to encapsulate the internal representation of an `opaque data` type while still exposing
 an ergonomic pattern-matching interface. An active pattern is a pure function that acts as a custom pattern constructor
 during `match`, `try match`, or `let?` destructuring.
 
+<!-- expressions.active_patterns.declaration_grammatical_restrictions -->
 #### 7.7.1 Declaration and grammatical restrictions
 
 Active patterns are declared using the `pattern` keyword:
@@ -6449,6 +6625,7 @@ PatternName arg1 ... argN (subpattern)
 The arguments `arg1 ... argN` are ordinary term arguments. The final parenthesized `subpattern` is an ordinary Kappa
 pattern matched against the view returned by the active pattern.
 
+<!-- expressions.active_patterns.partial_active_patterns_option_t -->
 #### 7.7.2 Partial active patterns (`Option T`)
 
 If an active pattern returns `Option T`, it is a partial active pattern. It may succeed with payload `T` or fail and
@@ -6490,6 +6667,7 @@ Linearity restriction:
   would require fallthrough.
 * In particular, `let? P ... = expr` is ill-formed when `P` consumes the scrutinee linearly.
 
+<!-- expressions.active_patterns.linear_fallthrough_threadable_patterns_match_r -->
 #### 7.7.3 Linear fallthrough and threadable patterns (`Match a r`)
 
 To support zero-copy parsing and other state-machine-style matching on owned resources, Kappa uses the prelude type:
@@ -6549,6 +6727,7 @@ Rules:
   chain is terminated by an unconditionally irrefutable final case, such as `_` or another total pattern, that consumes
   the final `Miss` residue.
 
+<!-- expressions.active_patterns.match_finite_local_control_protocol -->
 #### 7.7.3A `Match` as a finite local control protocol
 
 `Match a r` is the source-level semantic representation of a two-arm finite local control protocol.
@@ -6572,6 +6751,7 @@ Rules:
 * This lowering is internal only. It does not introduce first-class return points, does not change source typing, and is
   not part of Kappa's portable ABI.
 
+<!-- expressions.active_patterns.total_active_patterns_adts_variants -->
 #### 7.7.4 Total active patterns (ADTs and variants)
 
 If an active pattern returns a `data` type or a variant type, it is a total active pattern. Its subpattern is matched
@@ -6613,6 +6793,7 @@ Exhaustiveness:
 * Thus the `TreeView (Empty)` / `TreeView (NonEmpty ...)` pair above is exhaustive exactly when `Empty` and `NonEmpty
   ...` exhaust `TreeViewResult`.
 
+<!-- expressions.active_patterns.interaction_qtt_linearity_borrowing -->
 #### 7.7.5 Interaction with QTT (linearity and borrowing)
 
 Active patterns are functions, so their scrutinee parameters obey the ordinary quantity rules of §5.1.5.
@@ -6635,8 +6816,10 @@ Active patterns are functions, so their scrutinee parameters obey the ordinary q
 
 ---
 
+<!-- effects -->
 ## 8. Effects, `do` Blocks, and Control Flow
 
+<!-- effects.monadic_core -->
 ### 8.1 Monadic core
 
 Kappa uses a minimal monadic core at the semantic level. For a monad `m`, we assume:
@@ -6649,6 +6832,7 @@ pure  : forall a. a -> m a
 
 (Names may live in traits; here it's a conceptual interface.)
 
+<!-- effects.monadic_core.io_runtime_computations -->
 #### 8.1.1 `IO` and runtime computations
 
 Kappa provides a standard runtime computation type:
@@ -6684,6 +6868,7 @@ The observable semantics of `IO` are defined by Kappa rather than by any host ru
 host threads, virtual threads, tasks, promises, coroutines, event loops, or other mechanisms, but MUST NOT let host
 behavior redefine Kappa interruption, finalization, fiber lifetime, or failure classification.
 
+<!-- effects.monadic_core.exits_causes_typed_failure_interruption_defects -->
 #### 8.1.2 Exits, causes, typed failure, interruption, and defects
 
 The runtime outcome of an `IO` computation is described by:
@@ -6728,6 +6913,7 @@ For the standard runtime carrier `IO e`:
 * `sandbox` exposes the full `Cause e` in the typed error channel.
 * `unsandbox` reverses that exposure.
 
+<!-- effects.monadic_core.fibers_structured_concurrency -->
 #### 8.1.3 Fibers and structured concurrency
 
 A fiber is a lightweight implementation-managed Kappa thread. Fibers are semantic runtime entities of Kappa. They are
@@ -6777,6 +6963,7 @@ Semantics:
 `fork` is structured by default. Portable source semantics do not provide arbitrary cross-fiber asynchronous exception
 injection. Portable cross-fiber asynchronous failure is limited to interruption.
 
+<!-- effects.monadic_core.interruption_masking -->
 #### 8.1.4 Interruption and masking
 
 Interruption is modeled as an asynchronous request rather than immediate forced termination.
@@ -6823,6 +7010,7 @@ Semantics:
 A backend MAY use host async exceptions or equivalent host mechanisms internally to realize interruption, but no such
 mechanism is part of portable source semantics.
 
+<!-- effects.monadic_core.stm -->
 #### 8.1.5 STM
 
 Kappa provides software transactional memory:
@@ -6886,6 +7074,7 @@ Semantics:
   taken at the next interruption point outside the commit.
 * Once transaction commit has begun, commit is uninterruptible.
 
+<!-- effects.monadic_core.eff_effect_rows -->
 #### 8.1.6 `Eff` and effect rows
 
 Kappa provides a standard algebraic-effect computation type:
@@ -6936,6 +7125,7 @@ effects may occur. A future effect-grade extension, if any, would classify some 
 property of computations and MUST be layered beside `EffRow` rather than by changing row membership, row equality, or
 `SplitEff`.
 
+<!-- effects.monadic_core.effect_declarations -->
 #### 8.1.7 `effect` declarations
 
 An `effect` declaration introduces a named effect interface constructor. Operations within the effect may be annotated
@@ -6990,6 +7180,7 @@ Rules:
   labels, abstract effect-row variables, or explicitly quantified / existentially packaged `EffLabel` and `EffRow`
   witnesses.
 
+<!-- effects.monadic_core.effect_application_linear_soundness -->
 #### 8.1.8 Effect application and linear soundness
 
 In this section, the declared resumption quantity `q` of an operation always ranges over interval quantities only.
@@ -7014,6 +7205,7 @@ Call-site capture rule:
 
 This rule guarantees that multi-shot continuations cannot clone linear resources or extend borrow lifetimes unsoundly.
 
+<!-- effects.monadic_core.effect_application_linear_soundness.repeated_resumption_is_fresh_control_re_entry -->
 ##### 8.1.8.1 Repeated resumption is fresh control re-entry
 
 When a resumption value `k` is used more than once under a resumption quantity that permits multiple uses, each
@@ -7038,6 +7230,7 @@ Accordingly, multi-shot resumption duplicates captured control state, not the en
 If a pending exit action or captured local binding would carry live quantity-`1` or borrowed state in a way that makes
 such duplication unsound, the program is already rejected by the call-site capture rule of §8.1.8.
 
+<!-- effects.monadic_core.shallow_handlers -->
 #### 8.1.9 Shallow handlers
 
 Kappa provides shallow handlers. A shallow handler intercepts operations for one effect label at a time and eliminates
@@ -7104,6 +7297,7 @@ Semantics:
 
 When `m = Eff r`, this rule coincides with the ordinary algebraic-effect elimination behavior.
 
+<!-- effects.monadic_core.shallow_handlers.kcore_realization_interaction_abrupt_completion -->
 ##### 8.1.9.1 KCore realization and interaction with abrupt completion
 
 The control model of shallow handlers is realized in KCore by the effect-operation and handler kernel of §17.3.1.5.
@@ -7146,6 +7340,7 @@ In this completion-carrying case:
 This does not introduce a second control system. It is ordinary composition of the handler kernel with the
 completion-and-scope kernel.
 
+<!-- effects.monadic_core.deep_handlers_deep_handle -->
 #### 8.1.10 Deep handlers (`deep handle`)
 
 Deep handlers automatically reinstall themselves around their resumptions. They eliminate an `Eff` computation into a
@@ -7222,6 +7417,7 @@ Semantics:
 * If the deep resumption `k` is used more than once under its declared resumption quantity, each use behaves as a fresh
   application of the corresponding shallow resumption followed by fresh reinstallation of the same deep handler.
 
+<!-- effects.monadic_core.monad_finally -->
 #### 8.1.11 `MonadFinally`
 
 Kappa provides a trait for monads that support reliable finalization:
@@ -7242,6 +7438,7 @@ the same `m`, either explicitly or via a default implementation compatible with 
 
 For `IO e`, finalizers and releases additionally obey the masking and interruption rules of §§8.1.4 and 14.8.
 
+<!-- effects.monadic_core.monad_finally.laws -->
 ##### 8.1.11.1 Laws
 
 All instances of `MonadFinally` MUST satisfy the following laws, where `≡` denotes observational equivalence in the
@@ -7316,6 +7513,7 @@ bracket :
 4. Acquire before use:
    * `acquire` completes successfully before `use` is called.
 
+<!-- effects.do_blocks -->
 ### 8.2 `do` blocks
 
 A `do` block sequences effectful actions. In the general case it elaborates monadically; Appendix G permits
@@ -7516,6 +7714,7 @@ Control-flow statements:
   * `return` target resolution is defined by §8.4. Bare `return` targets the nearest enclosing named function or method;
     `return@L` may target that named function or method by name, or a lambda labeled `L`.
 
+<!-- effects.do_blocks.refutable_local_binding_let -->
 #### 8.2.1 Refutable local binding (`let?`)
 
 Within a `do` block, Kappa provides two refutable local binding forms:
@@ -7590,6 +7789,7 @@ Schematic elaboration:
     bindC (lift failExpr) (\v -> pure (Normal (absurd v)))
     ```
 
+<!-- effects.do_blocks.do_item_sequences_block_result -->
 #### 8.2.2 Do-item sequences and block result
 
 A `do` block is a non-empty sequence of **do-items**.
@@ -7625,6 +7825,7 @@ Typing:
 * A do-item that is the last reached item on a normal path determines the block result on that path.
 * Abrupt-control items need not produce a normal result on paths where they are taken.
 
+<!-- effects.do_blocks.post_dominating_flow_facts -->
 #### 8.2.2A Post-dominating flow facts
 
 In a sequential `do`-item context, refinement facts may survive past a control-flow split when every alternative that
@@ -7669,6 +7870,7 @@ Rules:
 * Rebinding, assignment, consuming use, or path-state invalidation discards any surviving fact whose stable subject is
   no longer available under §7.4.3.
 
+<!-- effects.do_blocks.labeled_do_blocks_labeled_control_flow -->
 #### 8.2.3 Labeled `do` blocks and labeled control flow
 
 Labels:
@@ -7708,6 +7910,7 @@ Semantics follow Kotlin-style labeled control flow:
 * `defer@label e` schedules `e` to run when the labeled `do`-scope exits. If several inner `do`-scopes exit first, `e`
   remains pending and runs only when the targeted labeled scope itself is unwound (§8.7.2.1).
 
+<!-- effects.do_blocks.simple_desugaring_applicability -->
 #### 8.2.4 Simple desugaring applicability
 
 The schematic monadic desugaring in §8.2 (into `>>=` / `>>` chains) is valid only for `do` blocks that do not use any
@@ -7726,6 +7929,7 @@ When any of the above features are present, the normative semantics and elaborat
 Implementations MAY still generate code equivalent to the §8.2 sketch, but only if it is observationally equivalent to
 the §8.7 model.
 
+<!-- effects.do_blocks.do_local_declarations -->
 #### 8.2.5 Do-local declarations
 
 A `do` block is a block scope. Local declarations that appear as do-items obey the same sequential scoping rules as pure
@@ -7742,6 +7946,7 @@ Rules:
 Abrupt control flow affects which do-items are executed, but it does not change the lexical scoping rules of
 declarations that were already in scope.
 
+<!-- effects.do_if_without_else -->
 ### 8.3 `if` without `else` in `do`
 
 Inside `do` only, you may write:
@@ -7788,6 +7993,7 @@ on branch exit and do not outlive the branch's lexical accessibility. If a value
 after the `if`, the user must make that explicit in the branch result (for example with `Option`). For the tag-test
 form, no bindings escape the test.
 
+<!-- effects.return -->
 ### 8.4 `return`
 
 `return e` is a control-flow statement that exits a target function, method, or labeled lambda, producing `e` as its
@@ -7840,6 +8046,7 @@ Interaction with `defer` / `finally`:
 * Executing `return e` exits the target. All enclosing dynamic `do`-scopes within the target are exited first, and their
   deferred actions run per §8.6 and §8.7. Scopes outside the target are not unwound.
 
+<!-- effects.return.lambda_labels -->
 #### 8.4.1 Lambda labels
 
 A lambda may carry an explicit label written before the backslash:
@@ -7856,6 +8063,7 @@ Rules:
   function or method (§8.4).
 * Labels follow normal lexical scoping and may be shadowed by inner labels with the same name.
 
+<!-- effects.loops -->
 ### 8.5 Loops and mutable variables (`var`, `while`, `for` in `do`)
 
 These are **syntactic sugar** over monadic operations.
@@ -7909,6 +8117,7 @@ These are **syntactic sugar** over monadic operations.
       enclosing loop, it is an error.
     * The precise semantics (including interaction with `defer` and `finally`) are specified in §8.7.
 
+<!-- effects.loops.mutable_variables_var_semantics -->
 #### 8.5.1 Mutable variables (`var`) - normative semantics
 
 A `var` declaration inside a `do` block of monad `m` requires an implicit instance:
@@ -7971,6 +8180,7 @@ do
 
 A `var`-bound identifier may not appear in type positions or elaboration-time macro positions.
 
+<!-- effects.loops.else -->
 #### 8.5.2 Loop `else`
 
 `for` and `while` may optionally include an `else` block:
@@ -7991,6 +8201,7 @@ Semantics:
     * any abrupt control that exits the loop without normal completion (e.g. `break@outer` propagating outward, or
       `return`) then the loop's `else` block is skipped.
 
+<!-- effects.loops.scoped_regions_escape_prevention -->
 #### 8.5.3 Scoped Regions and Escape Prevention
 
 When mutable state must be guaranteed not to escape a specific scope (e.g. for pure computations that use local mutation
@@ -8041,6 +8252,7 @@ implementations MAY implement the `ST` monad using a bump-pointer arena allocato
 `runST` returns, the entire arena is popped off the stack, guaranteeing zero-cost deallocation without garbage
 collection.
 
+<!-- effects.defer -->
 ### 8.6 `defer`
 
 Inside a `do`-scope, `defer e` schedules `e` to run when exiting that `do`-scope (normal completion, `return`,
@@ -8117,12 +8329,14 @@ Restrictions:
 Implementation may desugar this to a bracket/finalizer mechanism; spec only fixes the ordering and guarantee of
 execution on exit.
 
+<!-- effects.elaboration_model -->
 ### 8.7 Normative elaboration model for `do` blocks, loops, and abrupt control
 
 This section defines the normative meaning of `do` blocks with loops, `break` / `continue`, `return`, and `defer` /
 `using`. Implementations may compile using jumps, CPS, internal exceptions, or other techniques, but MUST be
 observationally equivalent to the model below.
 
+<!-- effects.elaboration_model.abrupt_completion_records -->
 #### 8.7.1 Abrupt completion records
 
 The control model of this section is realized in KCore by the explicit completion-and-scope kernel of §17.3.1.4.
@@ -8180,6 +8394,7 @@ Each active `do`-scope contributes one frame. A labeled `do` block contributes a
 resolved surface label. An unlabeled `do` block contributes a fresh implicit scope label that is not nameable by surface
 syntax but still distinguishes that frame for the unwinding model.
 
+<!-- effects.elaboration_model.completion_finite_local_control_protocol -->
 #### 8.7.1A `Completion` as a finite local control protocol
 
 `Completion(RetCtx, A)` is the source-level semantic representation of the finite abrupt-control alternatives in scope
@@ -8205,6 +8420,7 @@ Rules:
 * This lowering is internal only. It does not introduce source-visible return-point syntax, does not make continuations
   first-class, and does not alter the type-theoretic role of `Completion`.
 
+<!-- effects.elaboration_model.do_scope_exit_actions -->
 #### 8.7.2 Dynamic `do`-scope exit and exit actions
 
 Each dynamic execution of a `do`-scope contributes one frame to the active `ScopeStack(m)`. That frame contains a LIFO
@@ -8259,6 +8475,7 @@ The compiler evaluates the exit-action stack exactly as follows:
 Linearity note: because the unwinder executes every exit action before propagating the selected error, all quantity-`1`
 deferred obligations and all hidden owned-resource release obligations are consumed even when the scope exits by error.
 
+<!-- effects.elaboration_model.do_scope_exit_actions.scope_unwinding_targeted_defer -->
 ##### 8.7.2.1 Cross-scope unwinding and targeted `defer`
 
 Suppose a completion record or propagated monadic error leaves the innermost active `do`-scope and continues outward
@@ -8291,6 +8508,7 @@ When `MonadError m` is present, primary-error selection across multiple exited s
 application of §8.7.2. Equivalently, the propagated error is the first error encountered in the actual inner-to-outer
 unwinding sequence, while later finalizer errors may be suppressed or discarded but do not replace it.
 
+<!-- effects.elaboration_model.completion_aware_sequencing -->
 #### 8.7.3 Completion-aware sequencing (schematic helpers over the KCore kernel)
 
 For an enclosing monad `m`, we write computations of the form `m (Completion(RetCtx, A))`.
@@ -8314,6 +8532,7 @@ observationally equivalent internal representation:
 
 Sequencing is `thenC x y = bindC x (\_ -> y)`.
 
+<!-- effects.elaboration_model.do_item_sequences -->
 #### 8.7.4 Elaboration of `do`-item sequences
 
 A `do` block is elaborated in a context that records the resolved labels and result types of the enclosing named
@@ -8331,6 +8550,7 @@ For a do-scope body consisting of a non-empty sequence of do-items, elaboration 
 
 The cases below define `⟦...⟧` for arbitrary `A`.
 
+<!-- effects.elaboration_model.result_producing_item -->
 #### Result-producing item
 
 * Expression item `final` where `final : m A`, and where normal execution reaching `final` means no later do-item is
@@ -8338,6 +8558,7 @@ The cases below define `⟦...⟧` for arbitrary `A`.
 
   `⟦final⟧ = lift final`
 
+<!-- effects.elaboration_model.sequenced_items -->
 #### Sequenced items
 
 * Expression item `act` where `act : m A`:
@@ -8401,6 +8622,7 @@ The cases below define `⟦...⟧` for arbitrary `A`.
   If `bindPat` does not carry quantity `&`, it elaborates as a pure binding of the underlying pattern of `bindPat`,
   introducing each bound variable at the quantity carried by `bindPat`, and continues with `rest`.
 
+<!-- effects.elaboration_model.defer_using -->
 #### `defer` and `using`
 
 Let `S_current` be the resolved label of the current dynamic `do`-scope.
@@ -8438,6 +8660,7 @@ Let `S_current` be the resolved label of the current dynamic `do`-scope.
 Any `return`, `break`, or `continue` inside `rest` therefore becomes an ordinary `Completion(...)` payload that
 `DoScope` ferries outward after executing the scheduled exit action exactly once.
 
+<!-- effects.elaboration_model.elaboration_return -->
 #### Elaboration of `return`
 
 * `return` elaborates as:
@@ -8457,6 +8680,7 @@ Any `return`, `break`, or `continue` inside `rest` therefore becomes an ordinary
 * Target existence is guaranteed by §8.4's compile-time resolution rules: every well-typed `Return[L] r` completion has
   a matching enclosing target on every dynamic execution path.
 
+<!-- effects.elaboration_model.break_continue -->
 #### `break` / `continue`
 
 Within a loop body, each `break` / `continue` targets a specific loop label:
@@ -8475,10 +8699,12 @@ Elaboration:
 
 where `L` is the resolved target label.
 
+<!-- effects.elaboration_model.loop_elaboration -->
 #### 8.7.5 Normative elaboration of loops
 
 Loops are statements within `do` and elaborate to `m (Completion(RetCtx, Unit))`.
 
+<!-- effects.elaboration_model.while_loops -->
 #### While loops
 
 For:
@@ -8510,6 +8736,7 @@ The loop `else` block runs iff the loop completes by condition becoming false, a
 If the `else do` block is present, it is executed as a fresh dynamic `do`-scope (so any `defer` inside it runs on exit
 as usual).
 
+<!-- effects.elaboration_model.loops -->
 #### For loops
 
 For:
@@ -8538,6 +8765,7 @@ Completion behavior matches `while` above:
 
 The loop `else` block runs iff iteration is exhausted and no `Break L` occurs.
 
+<!-- effects.elaboration_model.for_loop_desugaring -->
 #### 8.7.6 Minimal desugaring requirements for `for` loops
 
 Implementations MUST NOT require stronger iteration capabilities than necessary:
@@ -8568,10 +8796,12 @@ Implementations MUST NOT require stronger iteration capabilities than necessary:
   abrupt control, or normal exhaustion decides the loop outcome. Any compiler-generated closures or callbacks used to
   realize this behavior are transparent to the abrupt-control boundary rules of §8.4 and §8.5.
 
+<!-- effects.inout -->
 ### 8.8 `inout` parameters
 
 `inout` is purely surface-level linear-state-threading sugar. It does not extend Kappa's core type theory.
 
+<!-- effects.inout.meaning_inout -->
 #### 8.8.1 Meaning of `inout`
 
 When the user writes:
@@ -8605,6 +8835,7 @@ Because an `inout` parameter consumes a value linearly and returns its threaded 
 implementations SHOULD optimize this pattern to zero-copy in-place mutation when that is safe. The observable semantics
 remain pure linear state threading.
 
+<!-- effects.inout.syntax -->
 #### 8.8.2 `inout` syntax
 
 Declaration syntax:
@@ -8624,6 +8855,7 @@ do
 `inout` is permitted only on explicit parameters of named functions and methods. It is not permitted in lambdas or
 ordinary function types; those use the elaborated `@1` binder form directly.
 
+<!-- effects.inout.call_site_marker -->
 #### 8.8.3 Call-site marker `~`
 
 `~` marks an argument supplied to an `inout` parameter.
@@ -8663,6 +8895,7 @@ Diagnostic requirement:
 * If the compiler cannot recover a stable formal name for the corresponding parameter, the diagnostic SHOULD say that
   `~place` cannot be used because the callee does not expose an `inout`-compatible formal parameter at that position.
 
+<!-- effects.inout.desugaring -->
 #### 8.8.4 Normative desugaring (type-directed)
 
 A maximal application site containing one or more `~` arguments is rewritten before the ordinary `do`-item elaboration
@@ -8787,6 +9020,7 @@ Because anonymous record patterns in Kappa use parentheses rather than braces, t
 let (data = bytes) <- read ~file 1024
 ```
 
+<!-- effects.inout.examples -->
 #### 8.8.5 Examples
 
 Single-field residual result:
@@ -8869,6 +9103,7 @@ Multiple `inout` parameters with empty residual:
 step ~weights ~bias
 ```
 
+<!-- effects.inout.restrictions -->
 #### 8.8.6 Restrictions
 
 * `inout` call syntax is valid only inside `do` blocks.
@@ -8883,8 +9118,10 @@ step ~weights ~bias
 
 ---
 
+<!-- errors -->
 ## 9. Errors and `try match`
 
+<!-- errors.monad_error -->
 ### 9.1 `MonadError`
 
 Error-aware monads are described via a trait like:
@@ -8915,6 +9152,7 @@ For `IO e`:
 * code that must observe or recover from interruption or defects MUST use `sandbox`, `await`, `Exit`, or `Cause`
   inspection explicitly.
 
+<!-- errors.try_except_finally -->
 ### 9.2 `try` / `except` / `finally`
 
 `try` handles errors for monadic computations.
@@ -8972,6 +9210,7 @@ Control-flow interaction:
 * `except` handlers match only monadic error values. They do not intercept `break`, `continue`, or `return`. Such
   control flow propagates outward normally, but `finally` still runs as specified above.
 
+<!-- errors.try_match -->
 ### 9.3 `try match`
 
 `try match` is syntactic sugar that combines a monadic bind + `match` on success with `try` error handling.
@@ -9015,6 +9254,7 @@ Therefore:
 
 ---
 
+<!-- errors.raise -->
 ### 9.4 `raise`
 
 `raise err` is sugar for throwing an error in the current error monad:
@@ -9024,6 +9264,7 @@ Therefore:
 
 `raise` is permitted anywhere an expression of type `m a` is expected (commonly inside `except` handlers).
 
+<!-- errors.monad_resource -->
 ### 9.5 `MonadResource` and scoped allocation
 
 To support resource-safe allocation outside of explicit `do`-block syntax, the prelude provides `MonadResource`. It
@@ -9065,8 +9306,10 @@ Typing and borrow-checking note:
 As a result, `bracket` and `using` realize the same core discipline: acquire an owned resource, permit only borrowed use
 within the protected region, and ensure the owned resource is eventually consumed by `release`.
 
+<!-- collections -->
 ## 10. Collections, Ranges, and Comprehensions
 
+<!-- collections.literals -->
 ### 10.1 Built-in collection literals
 
 * **List:**
@@ -9093,6 +9336,7 @@ within the protected region, and ensure the owned resource is eventually consume
 
 Empty `{}` denotes an empty map; empty set uses `{| |}`.
 
+<!-- collections.ranges -->
 ### 10.2 Range operators
 
 `..` and `..<` are ordinary operator identifiers whose fixities are expected to be provided by `std.prelude`.
@@ -9111,6 +9355,7 @@ Prelude implementation:
 * `from ..< to` ≡  `range from to True`
 * For coherent `Rangeable v` evidence, the result type is `Rangeable.Range v`.
 
+<!-- collections.comprehensions -->
 ### 10.3 Comprehensions: general shape
 
 There are three primary comprehension carriers:
@@ -9150,6 +9395,7 @@ The **clauses** appear before `yield` and may include:
 * `join` / `left join` (joins)
 * (all optional and composable)
 
+<!-- collections.comprehensions.parsing_comprehension_literal -->
 #### 10.3.1 Parsing: comprehension vs literal
 
 A bracketed form may denote either a literal or a comprehension:
@@ -9189,6 +9435,7 @@ Escape hatch:
   ```
 
 
+<!-- collections.comprehensions.encounter_order_order_sensitive_clauses -->
 #### 10.3.2 Encounter order and order-sensitive clauses
 
 Comprehensions process elements in an encounter order induced by generator enumeration and preceding clauses.
@@ -9233,6 +9480,7 @@ When orderedness is Unordered, any semantics that would rely on relative order (
 `order by` keys, or resolving "keep first/keep last" conflicts) is unspecified with respect to those ties.
 
 
+<!-- collections.clauses -->
 ### 10.4 `for` and `let` clauses
 
 Examples:
@@ -9287,6 +9535,7 @@ Map iteration:
   ```
 
 
+<!-- collections.clauses.refutable_patterns_comprehensions -->
 #### 10.4.1 Refutable patterns in comprehensions
 
 Comprehensions support refutable generators and refutable bindings:
@@ -9309,6 +9558,7 @@ such proof, the compiler MUST conservatively reject the clause.
 Normative lowering per §10.10 uses query-level refutable filtering / filter-map over the current row environment. The
 carrier-specific trait factoring is not part of the surface semantics.
 
+<!-- collections.map_comprehensions -->
 ### 10.5 Map comprehensions and `:` vs type ascription
 
 In a **map comprehension**, `yield keyExpr : valueExpr` is always interpreted as a **key/value pair**, not a type
@@ -9346,6 +9596,7 @@ ascription.
   * If a map comprehension produces the same key multiple times, the conflict policy determines the outcome (§10.5.1).
   * If no `on conflict` clause is present, the default policy is `keep last` in the comprehension's encounter order.
 
+<!-- collections.map_comprehensions.map_key_conflicts_conflict -->
 #### 10.5.1 Map key conflicts (`on conflict`)
 
 A map comprehension may specify a key-conflict policy using a final post-`yield` clause:
@@ -9402,8 +9653,10 @@ Order note:
   orderedness is Unordered at the point where pairs are produced, the outcome is unspecified with respect to ties
   (§10.3.2).
 
+<!-- collections.ordering -->
 ### 10.6 Ordering, paging, distinct
 
+<!-- collections.ordering.order -->
 #### 10.6.1 `order by`
 
 Syntax:
@@ -9432,6 +9685,7 @@ Evaluation:
 * In `order by ...`, each ordering key expression is evaluated exactly once per row. Implementations may cache keys for
   sorting.
 
+<!-- collections.ordering.skip_take -->
 #### 10.6.2 `skip` and `take`
 
 `skip` and `take` are order-sensitive clauses:
@@ -9449,6 +9703,7 @@ Notes:
 * After `group by` orderedness is Unordered until another `order by` is applied.
 * After `distinct`, orderedness is preserved only if the input was Ordered.
 
+<!-- collections.ordering.distinct_distinct -->
 #### 10.6.3 `distinct` / `distinct by`
 
 `distinct` and `distinct by` operate on the current row environment at the clause site.
@@ -9474,6 +9729,7 @@ Representative choice:
 * `distinct` / `distinct by` preserves the **first encountered** representative in the current iteration order.
 * If the carrier's iteration order is unspecified, the chosen representative is unspecified as well.
 
+<!-- collections.grouping -->
 ### 10.7 Grouping
 
 Grouping syntax:
@@ -9560,6 +9816,7 @@ Implementation model (permitted):
 * Implementations may compute grouping via single-pass hash aggregation, then continue the pipeline on the grouped rows.
   The exact strategy is not semantically observable except through the Unordered/Ordered rules above.
 
+<!-- collections.joins -->
 ### 10.8 Joins
 
 Syntax (example):
@@ -9597,6 +9854,7 @@ Desugaring (normative; the compiler is free to optimize):
   for tmp in xs, let? pat = tmp, if cond, yield tmp ]` The bindings introduced by `pat` are not in scope after the `left
   join`; only `name` is.
 
+<!-- collections.carriers -->
 ### 10.9 Carrier prefixes, first-class queries, and custom sinks
 
 A comprehension form may optionally be prefixed by a carrier type expression:
@@ -9642,6 +9900,7 @@ Raw custom sinks are intended for query providers, relational backends, and othe
 the original clause structure. Normalized sinks are intended for ordinary collection builders and backends that are
 satisfied by the normalized plan.
 
+<!-- collections.lowering -->
 ### 10.10 Normative lowering: sources, query core, and collection
 
 Normative lowering proceeds in two stages:
@@ -9649,6 +9908,7 @@ Normative lowering proceeds in two stages:
 1. clause lowering to a normalized query pipeline `Query row`,
 2. terminal projection and collection via `ComprehensionPlan`.
 
+<!-- collections.lowering.sources -->
 #### 10.10.1 Sources
 
 A generator source is any expression whose type `src` has an implicit instance `IntoQuery src`.
@@ -9663,6 +9923,7 @@ is the semantic source of rows for `for ... in ...` clauses.
 
 Built-in collection and range sources SHOULD provide standard `IntoQuery` instances.
 
+<!-- collections.lowering.row_environment -->
 #### 10.10.2 Row environment
 
 Before `yield`, a comprehension is elaborated as a pipeline over a current row environment.
@@ -9679,6 +9940,7 @@ Consequences:
 * `distinct by keyExpr` operates on keys computed from the current row environment.
 * `order by`, `group by`, `join`, and filters likewise operate on the current row environment.
 
+<!-- collections.lowering.clause_lowering -->
 #### 10.10.3 Clause lowering
 
 The compiler MUST lower the clause sequence to behavior observationally equivalent to the following normalized query
@@ -9766,6 +10028,7 @@ Required clause behavior:
 
     * preserve the ordered/unordered rules of §10.3.2 and §10.6.
 
+<!-- collections.lowering.yield_terminal_plan -->
 #### 10.10.4 Yield and terminal plan
 
 After all non-yield clauses are lowered, the comprehension performs a final projection.
@@ -9789,6 +10052,7 @@ The final result of `lowerComprehension` is a `ComprehensionPlan item` carrying:
 
 Map-conflict policy is terminal collection metadata, not part of the general `Query` algebra.
 
+<!-- collections.lowering.collection_first_class_queries -->
 #### 10.10.5 Collection and first-class queries
 
 Collection is performed only after clause lowering.
@@ -9799,6 +10063,7 @@ Collection is performed only after clause lowering.
   Its collector returns the normalized `Query item` and may ignore terminal collection metadata not representable in
   `Query` itself.
 
+<!-- collections.lowering.performance_if_rule -->
 #### 10.10.6 Performance and as-if rule
 
 The normative semantics are defined as if the compiler constructs `RawComprehension`, lowers it to
@@ -9827,8 +10092,10 @@ Within a comprehension, implementations MUST preserve the following evaluation-c
   * `keyExpr` is evaluated exactly once per incoming row.
   * each aggregate `valueExpr` is evaluated exactly once per incoming row per aggregate field.
 
+<!-- data_types -->
 ## 11. Algebraic Data Types and Type Aliases
 
+<!-- data_types.data_declarations -->
 ### 11.1 `data` declarations
 
 General form:
@@ -9927,6 +10194,7 @@ Rules:
 * Parameters contribute `type` declarations by default (with sugar `a` ≡ `(a : Type)`) unless specified otherwise.
 * If `opaque` is present on a data declaration, constructors are not exported (§2.5.3).
 
+<!-- data_types.data_declarations.constructor_application_named_arguments_c -->
 #### 11.1.1 Constructor application with named arguments (`C { ... }`)
 
 Constructors may be applied using a record-like named-argument syntax when their explicit parameters have names
@@ -9971,6 +10239,7 @@ C e1 e2 ...
 
 with implicit arguments resolved as usual (§7.3).
 
+<!-- data_types.gadts -->
 ### 11.2 GADT-style constructors
 
 GADT-style constructors are written with an explicit result type after `:`:
@@ -9990,6 +10259,7 @@ as ordinary libraries. A state transition consumes a value at one index and prod
 non-transition operations may instead be expressed over borrowed parameters (`(& x : T state)`), preserving the current
 index without consuming the underlying resource.
 
+<!-- data_types.type_aliases -->
 ### 11.3 Type aliases
 
 Type aliases use `type`:
@@ -10022,6 +10292,7 @@ Because Kappa is dependently typed, types are terms.
 * An equivalent form is a term definition with a universe type, e.g. `let T : Type = RHS`, when `RHS` is intended to be
   a type expression. Implementations may treat these as equivalent after elaboration.
 
+<!-- data_types.well_formedness -->
 ### 11.4 Well-formedness of `data` declarations
 
 Every `data` declaration MUST satisfy strict positivity.
@@ -10090,10 +10361,12 @@ data Rose a = Node a (List (Rose a))
 
 ---
 
+<!-- traits -->
 ## 12. Traits (Typeclasses)
 
 Traits describe typeclasses / interfaces.
 
+<!-- traits.headers -->
 ### 12.1 Trait headers
 
 Trait declarations use Haskell/Idris-style headers, optionally with a supertrait context:
@@ -10170,6 +10443,7 @@ In `std.prelude`, `Ord` is declared with supertrait `Eq`, not `Equiv`, and its e
 
 In `std.prelude`, `Monad` is declared with supertrait `Applicative`.
 
+<!-- traits.headers.supertraits -->
 #### 12.1.1 Supertraits
 
 A trait declaration may have a supertrait context:
@@ -10195,6 +10469,7 @@ trait Functor f =
     map : (a -> b) -> f a -> f b
 ```
 
+<!-- traits.members -->
 ### 12.2 Trait members
 
 Inside a `trait`:
@@ -10219,6 +10494,7 @@ Members in traits share the same two forms as ordinary bindings:
 
 In addition, trait bodies may declare associated static members as specified in §12.2.1.
 
+<!-- traits.members.overloaded_member_names -->
 #### 12.2.1 Overloaded member names
 
 For each term member `m : τ` declared in `trait Tr params`, elaboration introduces an overloaded term name of the shape:
@@ -10276,6 +10552,7 @@ For a dictionary `d : Dict (Tr args)`:
 * term members are projected as `d.name` or `d.(op)`,
 * associated static members are projected as `d.Name` in any syntactic position compatible with their compile-time type.
 
+<!-- traits.instances -->
 ### 12.3 Instances
 
 Instances provide implementations of traits for specific types.
@@ -10360,6 +10637,7 @@ regardless of whether any names from that module are imported.
 This is a global program property, not an import-side effect. Adding a dependency may introduce new instance candidates
 and therefore new ambiguity or coherence failures. This is by design.
 
+<!-- traits.instances.resolution_algorithm -->
 #### 12.3.1 Instance resolution algorithm
 
 When solving a trait constraint goal `Tr args`, instance resolution proceeds as follows:
@@ -10385,6 +10663,7 @@ When solving a trait constraint goal `Tr args`, instance resolution proceeds as 
      * if all surviving instantiated candidate dictionaries have the same canonical Hard Hash, accept and pick any one,
      * otherwise reject the program as incoherent.
 
+<!-- traits.instances.search_termination -->
 #### 12.3.2 Instance search termination
 
 An instance declaration is accepted only if each of its premises is structurally smaller than its head under a
@@ -10399,6 +10678,7 @@ A conforming implementation may use any check at least as strict as the followin
 
 Implementations MAY use a stricter termination check.
 
+<!-- traits.proof_irrelevance -->
 ### 12.4 Proof irrelevance
 
 Kappa does not provide a user-space `Prop` trait or a separate proposition universe in v0.1.
@@ -10424,6 +10704,7 @@ assumePositive :
     (n : Nat) -> (@0 pf : n > 0) -> SafeNat n
 ```
 
+<!-- traits.deriving -->
 ### 12.5 Deriving
 
 Deriving generates instances automatically for eligible declarations.
@@ -10450,15 +10731,18 @@ For `Eq` specifically:
 
 ---
 
+<!-- names_cross_reference -->
 ## 13. Cross-reference: names, binding groups, and dotted lookup
 
 The normative rules for names, binding groups, dotted lookup, method-call / receiver-projection sugar, and reified module values are specified in §2.8. This chapter remains only as a continuity pointer for older citations.
 
+<!-- core_semantics -->
 ## 14. Core Semantics
 
 This chapter defines evaluation, elaboration, definitional equality, and erasure at a level sufficient to make the
 language's typechecking and runtime behavior unambiguous.
 
+<!-- core_semantics.elaboration -->
 ### 14.1 Elaboration overview
 
 Kappa source code is first translated into KFrontIR, the source-preserving frontend IR of §17.2, and is then elaborated
@@ -10500,6 +10784,7 @@ Elaboration performs (non-exhaustive):
 
 Elaboration must be terminating.
 
+<!-- core_semantics.elaboration.local_declarations -->
 #### 14.1.1 Elaboration of local declarations
 
 A local declaration inside a block scope (`block` or `do`) elaborates by closure conversion over the free variables it
@@ -10595,6 +10880,7 @@ Sequential scope:
 * If a local declaration depends on an earlier local declaration, it captures the closure-converted form of that earlier
   declaration just as it would capture any other free variable.
 
+<!-- core_semantics.evaluation -->
 ### 14.2 Dynamic semantics (runtime evaluation)
 
 Runtime evaluation is strict call-by-value with left-to-right evaluation order, except where evaluation is explicitly
@@ -10621,6 +10907,7 @@ Evaluation order:
 * `do` blocks are elaboration-time sugar to monadic operations (`pure`, `bind`, sequencing).
 * Evaluation order follows the desugared monadic structure.
 
+<!-- core_semantics.definitional_equality -->
 ### 14.3 Definitional equality
 
 Definitional equality (also called conversion) is the equality relation used by the typechecker.
@@ -10692,12 +10979,14 @@ Definitional equality also includes canonical normalization of:
 * projection of a non-erased field through a seal is not required to reduce for definitional equality. It remains a
   well-typed neutral elimination form whose runtime behavior is ordinary projection.
 
+<!-- core_semantics.definitional_equality.literal_normalization -->
 #### 14.3.1 Literal normalization
 
 For any type `T` with a `FromInteger T` instance whose `fromInteger` is a total transparent function, `fromInteger @T n`
 with `n : Integer` reduces by δ to a canonical value of `T` during definitional-equality checking. In particular,
 numeric literals appearing as type indices are normalized before comparison.
 
+<!-- core_semantics.erasure -->
 ### 14.4 Erasure
 
 Intrinsic compile-time values, captured-region annotations, universes, `Type u` terms, quantities, regions, constraint
@@ -10726,6 +11015,7 @@ contains computational values together with any evidence or metadata that has be
 Lowering from KCore to KBackendIR occurs only after the erasure obligations of this section have been discharged
 (§17.4).
 
+<!-- core_semantics.variant_runtime -->
 ### 14.5 Union / variant runtime representation
 
 A value of type `Variant r` is represented at runtime as a tagged payload.
@@ -10765,6 +11055,7 @@ Consequences:
 * Canonical row ordering remains relevant for row normalization and definitional equality, but not for runtime tag
   assignment.
 
+<!-- core_semantics.record_canonicalization -->
 ### 14.6 Record canonicalization
 
 Record types and values normalize to a canonical dependency-respecting field order.
@@ -10781,6 +11072,7 @@ Record update:
 
 * Record update is typechecked using definitional equality as specified in §5.5.5.
 
+<!-- core_semantics.mutable_state_elision -->
 ### 14.7 Elision of mutable state
 
 State elision and allocation elision:
@@ -10795,11 +11087,13 @@ returned or passed to a function that retains it, the implementation SHOULD NOT 
 This is an as-if optimization: the observable behavior of the program MUST remain the same as if the `Ref` had been
 represented explicitly.
 
+<!-- core_semantics.runtime_model -->
 ### 14.8 Runtime model for `IO`, fibers, interruption, STM, handlers, and resumptions
 
 This section constrains backend implementations of `IO`, `handle`, and `deep handle`. The concrete representation is
 implementation-defined, but the observable behavior below is mandatory.
 
+<!-- core_semantics.runtime_model.io_is_kappa_owned_runtime_semantics -->
 #### 14.8.1 `IO` is Kappa-owned runtime semantics
 
 `IO` semantics are defined by Kappa source semantics and this chapter.
@@ -10815,6 +11109,7 @@ In particular, the following are defined by Kappa rather than by the host:
 * finalizer execution and unwinding order; and
 * STM serializability and retry behavior.
 
+<!-- core_semantics.runtime_model.fibers_supervision_scopes -->
 #### 14.8.2 Fibers and supervision scopes
 
 Every `IO` computation executes in a fiber.
@@ -10838,6 +11133,7 @@ of resources owned by that scope.
 If mandatory scope shutdown of one or more child fibers produces non-success runtime causes, those causes participate in
 the enclosing scope's sequential cause composition.
 
+<!-- core_semantics.runtime_model.interruption_delivery_masks -->
 #### 14.8.3 Interruption delivery and masks
 
 Interruption is modeled as an asynchronous request.
@@ -10859,6 +11155,7 @@ Finalizers and release actions run in masked state.
 Portable source semantics expose only interruption. Arbitrary cross-fiber asynchronous exception injection is not part
 of the portable subset.
 
+<!-- core_semantics.runtime_model.stm_runtime_obligations -->
 #### 14.8.4 STM runtime obligations
 
 A conforming implementation MUST realize `atomically` with serializable semantics relative to all `atomically`
@@ -10875,6 +11172,7 @@ At minimum:
 A backend that lacks shared-memory parallel execution MAY still satisfy this section for a single runtime agent,
 provided it preserves the same observable semantics for fibers in that agent.
 
+<!-- core_semantics.runtime_model.captured_continuation_boundary -->
 #### 14.8.5 Captured continuation boundary
 
 When evaluation of `handle label in expr` or `deep handle label in expr` intercepts an operation at the handled label,
@@ -10893,6 +11191,7 @@ It does not include:
 * frames outside the matching handler boundary;
 * compile-time-only entities erased under §14.4.
 
+<!-- core_semantics.runtime_model.one_shot_multi_shot_realization -->
 #### 14.8.6 One-shot and multi-shot realization
 
 Let an operation declaration carry resumption quantity `q` under §8.1.7.
@@ -10906,6 +11205,7 @@ Let an operation declaration carry resumption quantity `q` under §8.1.7.
 
 The representation chosen is not observable except through the semantics fixed by this chapter.
 
+<!-- core_semantics.runtime_model.store_interaction -->
 #### 14.8.7 Store interaction
 
 Continuation reuse does not imply global store rollback.
@@ -10918,6 +11218,7 @@ Continuation reuse does not imply global store rollback.
 
 This rule applies equally to shallow and deep handlers.
 
+<!-- core_semantics.runtime_model.exit_actions_resumption_reuse -->
 #### 14.8.8 Exit actions under resumption reuse
 
 Because active `do`-scope frames are part of the captured continuation boundary under §14.8.5, their exit-action
@@ -10934,6 +11235,7 @@ Therefore:
 If such copying would duplicate live linear or borrowed resources unsoundly, the call-site capture rule of §8.1.8
 rejects the program.
 
+<!-- core_semantics.runtime_model.deep_handler_reinstallation -->
 #### 14.8.9 Deep handler reinstallation
 
 A deep handler behaves as if it were lowered to a shallow handler plus an internal recursive driver as specified in
@@ -10944,6 +11246,7 @@ around the resumed computation.
 
 If the deep resumption is multi-shot, this reinstallation occurs afresh for each use.
 
+<!-- identity -->
 ## 15. Content-Addressed Identity
 
 Kappa provides a built-in, content-addressed hashing system with two tiers.
@@ -10964,12 +11267,14 @@ recorded macro input transcript of §5.8.6.
 Hashes are defined over the KCore term or module after implicit resolution and execution of all elaboration-time macros
 via `$(...)`; they do not apply to pre-expansion surface syntax.
 
+<!-- identity.hash_system -->
 ### 15.1 The Two-Tier Hash System
 
 Every top-level definition (term, type alias, trait, instance, `data` declaration, and similar declarations) has an
 **Easy Hash**. A corresponding **Hard Hash** is defined for the same KCore term or module and is computed on demand and
 cached.
 
+<!-- identity.hash_system.easy_hash_structural_identity_hash -->
 #### 15.1.1 Easy Hash (Structural Identity Hash)
 
 The Easy Hash is always computed.
@@ -11002,6 +11307,7 @@ Uses of the Easy Hash include:
 * quick structural lookups,
 * fallback when the Hard Hash is unavailable.
 
+<!-- identity.hash_system.hard_hash_semantic_equivalence_hash -->
 #### 15.1.2 Hard Hash (Semantic Equivalence Hash)
 
 The Hard Hash is computed on demand and cached, keyed by Easy Hash.
@@ -11047,6 +11353,7 @@ emitting a non-canonical approximation. In package mode, if a Hard Hash is requi
 Hard Hash MUST be available from the defining artifact or computable on demand; otherwise package-mode compilation is a
 hard error.
 
+<!-- identity.hash_system.hash_stability_canonicalization -->
 #### 15.1.3 Hash Stability and Canonicalization
 
 Both hashes MUST be stable across compilations of the same source, modulo changes in dependencies and in the macro input
@@ -11061,8 +11368,10 @@ In particular:
 * In package mode, reproducibility claims are absolute with respect to macro execution.
 * In script mode, reproducibility claims are only relative to a fixed macro input transcript.
 
+<!-- identity.hash_uses -->
 ### 15.2 Uses of the Hash System
 
+<!-- identity.hash_uses.instance_coherence -->
 #### 15.2.1 Instance Coherence
 
 For any fully-applied, ground trait constraint `Tr args`, at most one distinct **semantic** implementation may exist in
@@ -11122,6 +11431,7 @@ This rule guarantees that:
 * in script mode under `semantic-if-available`, if the Hard Hash is unavailable, structurally different instances are
   conservatively rejected with a warning.
 
+<!-- identity.hash_uses.fast_path_definitional_equality -->
 #### 15.2.2 Fast-Path Definitional Equality
 
 When checking definitional equality (`t1 ≡ t2`) between two top-level definitions, or between two closed transparent
@@ -11142,6 +11452,7 @@ Restriction:
 * This use-site transparency check affects only whether the fast path may be applied locally. It does not modify either
   definition's canonical Easy Hash or Hard Hash.
 
+<!-- identity.hash_uses.macro_elaboration_time_caching -->
 #### 15.2.3 Macro and Elaboration-Time Caching
 
 A macro invocation of the form `$(macro '{ args... })` MAY be cached only under a key that includes, in addition to:
@@ -11171,6 +11482,7 @@ This mechanism supports:
 * deterministic macro caching across files and compilations,
 * safe incremental recompilation of macro-heavy code.
 
+<!-- identity.hash_uses.future_recommended_uses -->
 #### 15.2.4 Future / Recommended Uses (non-normative)
 
 The two-tier hash system is designed to support additional applications, including:
@@ -11182,11 +11494,13 @@ The two-tier hash system is designed to support additional applications, includi
 
 ---
 
+<!-- unsafe_debug -->
 ## 16. Unsafe and Debug Facilities
 
 Kappa includes a small set of facilities intended for debugging, experimentation, trusted bootstrapping, and other
 non-portable work.
 
+<!-- unsafe_debug.classification -->
 ### 16.1 Classification and portable subset
 
 The safe portable subset of Kappa excludes:
@@ -11205,6 +11519,7 @@ The compiler observability facilities of §17.1.3-§17.1.7 are ordinary required
 They are not classified as unsafe/debug language features merely because they expose intermediate compiler
 representations.
 
+<!-- unsafe_debug.build_gating -->
 ### 16.2 Build-level gating
 
 The legacy per-module attributes `@AllowUnhiding` and `@AllowClarification` are not part of the language. These
@@ -11232,6 +11547,7 @@ Violations are compile-time errors. Diagnostics for such errors MUST identify bo
 * the build setting (`allow_unhiding`, `allow_clarify`, `allow_assert_total`, or `allow_debug_introspection`) that
   disallows it.
 
+<!-- unsafe_debug.visibility_escapes -->
 ### 16.3 `unhide` and `clarify`
 
 Surface syntax for these import-item modifiers is defined in §2.3.1.1.
@@ -11251,6 +11567,7 @@ Semantics:
   item (for example because separate compilation artifacts omit bodies or constructors), `unhide` / `clarify` is a
   compile-time error.
 
+<!-- unsafe_debug.assert_total -->
 ### 16.4 `assertTotal`
 
 `assertTotal` indicates that the programmer asserts a definition is total even if the compiler cannot prove it.
@@ -11291,6 +11608,7 @@ Code accepted solely via `assertTotal` is in the unsafe/debug surface:
 
 * It is a compile-time error unless the build enables `allow_assert_total` (§16.2).
 
+<!-- unsafe_debug.backend_escapes -->
 ### 16.5 Backend-specific surface escapes
 
 The safe portable subset of Kappa excludes any implementation-defined surface syntax or API for directly embedding
@@ -11304,6 +11622,7 @@ If an implementation provides such a facility:
 * the compiler MUST NOT claim portable validation for the embedded backend-specific fragment beyond whatever
   validation is explicitly documented for that facility.
 
+<!-- unsafe_debug.std_debug -->
 ### 16.6 Standard debug-introspection module `std.debug`
 
 When `allow_debug_introspection` is enabled, implementations MUST provide a standard module `std.debug`.
@@ -11393,10 +11712,12 @@ let main : UIO Unit = do
 
 ---
 
+<!-- compiler -->
 ## 17. Compilation pipeline and backend profiles
 
 This chapter defines the normative implementation pipeline and the backend profiles standardized by this specification.
 
+<!-- compiler.pipeline -->
 ### 17.1 Pipeline and artifacts
 
 A conforming implementation processes each compilation unit through the following conceptual stages:
@@ -11417,6 +11738,7 @@ backend-intrinsic set it activates, is part of the effective build configuration
 A compilation that depends on backend intrinsics or backend-specific `expect` satisfaction is valid only when those
 requirements are met by the chosen backend profile.
 
+<!-- compiler.pipeline.incremental_units -->
 #### 17.1.1 Incremental units
 
 A conforming implementation MUST behave as if compilation is decomposed into memoizable incremental units.
@@ -11439,6 +11761,7 @@ compilation unit unless the edit in fact changes every required upstream unit.
 Downstream ordinary compilation depends on imported module-interface units, not on imported implementation bodies,
 except where this specification explicitly permits otherwise (for example the unsafe/debug facilities of §16.3).
 
+<!-- compiler.pipeline.compiler_fingerprints -->
 #### 17.1.2 Compiler fingerprints
 
 For incremental invalidation, a conforming implementation MUST define deterministic compiler fingerprints distinct from
@@ -11495,6 +11818,7 @@ invalidate any result that depends on the affected interface surface.
 The semantic hashes of §15 remain normative for semantic identity, coherence, and related uses.
 They MUST NOT be assumed to be the sole or primary invalidation keys of a conforming implementation.
 
+<!-- compiler.pipeline.compiler_observability -->
 #### 17.1.3 Compiler observability
 
 A conforming implementation MUST provide user-visible or API-visible compiler observability facilities.
@@ -11513,6 +11837,7 @@ metadata required to understand it.
 A stage dump is not required to be a tree.
 In particular, KBackendIR dumps may be graph-structured.
 
+<!-- compiler.pipeline.named_checkpoints -->
 #### 17.1.4 Named checkpoints
 
 A conforming implementation MUST behave as if the following named checkpoints exist:
@@ -11530,6 +11855,7 @@ produce a stage dump observationally equivalent to the representation that would
 For representations that are not themselves IR-shaped, such as a final native executable or classfile bundle, the
 implementation MUST provide an artifact-manifest dump rather than pretending that an AST exists there.
 
+<!-- compiler.pipeline.machine_readable_dump_formats -->
 #### 17.1.5 Machine-readable dump formats
 
 Implementations MUST support at least two machine-readable serializations for every required stage dump:
@@ -11590,6 +11916,7 @@ the redacted value.
 Stage dumps, pipeline traces, and reproducer bundles are observability artifacts only.
 They are not inputs to the hashing rules of §15.
 
+<!-- compiler.pipeline.traces_checkpoint_verification -->
 #### 17.1.6 Pipeline traces and checkpoint verification
 
 A conforming implementation MUST expose a pipeline trace for each compilation request.
@@ -11618,6 +11945,7 @@ crossed by a compilation request.
 
 An implementation SHOULD support before-and-after dumps for each transformation step that changes the representation.
 
+<!-- compiler.pipeline.reproducer_bundles -->
 #### 17.1.7 Reproducer bundles
 
 A conforming implementation MUST provide a mode that emits a reproducer bundle when compilation fails due to an internal
@@ -11641,6 +11969,7 @@ one exists.
 
 A reproducer bundle MAY redact sensitive external data under the rules of §17.1.5.
 
+<!-- compiler.pipeline.compilation_tasks -->
 #### 17.1.8 Compilation tasks
 
 A conforming implementation MAY expose any number of user-facing commands, APIs, or build actions, but it MUST behave as
@@ -11667,6 +11996,7 @@ if the following conceptual tasks exist:
 
 The names of these tasks in any particular toolchain are implementation-defined.
 
+<!-- compiler.pipeline.separate_compilation_artifacts -->
 #### 17.1.9 Separate-compilation artifacts
 
 For separate compilation, a module MAY be represented by:
@@ -11750,6 +12080,7 @@ It MAY embed the interface artifact or refer to it by stable identity.
 
 Ordinary downstream compilation MUST NOT require access to a target-specific implementation artifact.
 
+<!-- compiler.pipeline.separate_compilation_artifacts.interface_view -->
 ##### 17.1.9.1 Canonical interface view
 
 Because ordinary downstream compilation depends on module interface artifacts rather than implementation bodies, a
@@ -11792,6 +12123,7 @@ It MUST omit:
 The rendering MUST be deterministic for fixed inputs and SHOULD use a source-like syntax close to ordinary Kappa
 declarations.
 
+<!-- compiler.pipeline.execution_strategies -->
 #### 17.1.10 Execution strategies
 
 A `run` task executes checked roots under the effective build configuration and selected backend profile.
@@ -11808,6 +12140,7 @@ of the chosen backend profile, `run` MUST fail before execution begins.
 For the same selected roots, build configuration, dependency closure, and backend profile, `run` MUST be observationally
 equivalent to `compile` followed by execution of the resulting artifact.
 
+<!-- compiler.pipeline.full_fidelity_concrete_syntax_ksyntax -->
 #### 17.1.11 Full-fidelity concrete syntax (`KSyntax`)
 
 A conforming implementation MUST behave as if a full-fidelity concrete syntax representation `KSyntax` exists beneath or
@@ -11835,6 +12168,7 @@ behavior is as if `KSyntax` existed.
 Implementations intended for editor, formatter, or refactoring use SHOULD preserve and reuse unchanged `KSyntax`
 subtrees across localized edits.
 
+<!-- compiler.kfrontir -->
 ### 17.2 KFrontIR
 
 KFrontIR is the source-preserving, symbol-bearing, error-tolerant frontend representation of Kappa, constructed from
@@ -11851,6 +12185,7 @@ Normative role:
 * A conforming implementation MAY fuse the parser AST and KFrontIR, or omit materialization of KFrontIR entirely,
   provided the observable behavior is as if a representation satisfying this section existed.
 
+<!-- compiler.kfrontir.structural_invariants -->
 #### 17.2.1 Structural invariants
 
 Every user-written declaration, expression, pattern, import item, export item, type reference, and record field in
@@ -11897,6 +12232,7 @@ Within one analysis session:
 Cross-session symbol identity is implementation-defined. Clients MUST NOT compare symbols from different analysis
 sessions for identity.
 
+<!-- compiler.kfrontir.resolve_phases -->
 #### 17.2.2 Resolve phases
 
 KFrontIR phases are monotone. If phase `B` follows phase `A`, any node resolved to phase `B` is also resolved to phase
@@ -11926,6 +12262,7 @@ A conforming implementation MUST behave as if the following phases exist:
 An implementation MAY subdivide or fuse these phases, provided it preserves the monotone-phase invariant and the
 observable results of queries, diagnostics, and KCore construction.
 
+<!-- compiler.kfrontir.lazy_resolution_local_declarations_expansion -->
 #### 17.2.3 Lazy resolution, local declarations, and expansion
 
 In batch compilation, phases are typically executed sequentially over the whole compilation unit.
@@ -11951,6 +12288,7 @@ requires the expanded form. The implementation MUST preserve:
 * the source anchor of the original user-written construct, and
 * a synthetic-origin mapping for the expanded subtree.
 
+<!-- compiler.kfrontir.error_tolerance_diagnostics -->
 #### 17.2.4 Error tolerance and diagnostics
 
 KFrontIR MUST be error-tolerant.
@@ -11997,6 +12335,7 @@ failed, and at least one candidate explicit `decreases` clause when the implemen
 Tooling queries over syntactically incomplete files are valid. Where possible, they MUST return partial results rather
 than failing wholesale merely because the surrounding file is incomplete.
 
+<!-- compiler.kfrontir.tooling_facing_queries -->
 #### 17.2.5 Tooling-facing queries
 
 An implementation intended for editor, language-server, or refactoring use SHOULD expose queries over KFrontIR or an
@@ -12040,6 +12379,7 @@ instance resolution, or refactoring legality can differ from batch compilation.
 Purely presentation-level services such as syntax coloring, formatting, outline grouping, or snippet expansion MAY use
 lighter-weight mechanisms, provided they do not claim semantic authority.
 
+<!-- compiler.kfrontir.analysis_sessions_invalidation -->
 #### 17.2.6 Analysis sessions and invalidation
 
 An analysis session is the tooling-time environment within which KFrontIR queries are valid.
@@ -12073,6 +12413,7 @@ The implementation MUST determine affected results by consulting recorded query 
 not merely by coarse file-level invalidation, unless the implementation can prove that such coarse invalidation is
 equivalent for the affected request.
 
+<!-- compiler.kfrontir.query_model -->
 #### 17.2.7 Query model
 
 A conforming implementation MUST behave as if frontend analysis, elaboration, KCore construction, KBackendIR
@@ -12121,6 +12462,7 @@ Cycle handling:
   or spinning indefinitely.
 * The diagnostic SHOULD identify the query cycle in terms of declarations, modules, or phases when possible.
 
+<!-- compiler.kfrontir.parallel_execution_determinism -->
 #### 17.2.8 Parallel execution and determinism
 
 A conforming implementation MAY evaluate ready queries in parallel.
@@ -12158,6 +12500,7 @@ A conforming implementation SHOULD exploit parallelism at least across:
 An implementation MAY decline to parallelize any of these cases, but it MUST NOT introduce a semantic dependence on
 serial evaluation order where the source language does not require one.
 
+<!-- compiler.kfrontir.cancellation -->
 #### 17.2.9 Cancellation
 
 A conforming implementation MAY support cancellation of analysis, checking, elaboration, lowering, or target-lowering
@@ -12172,6 +12515,7 @@ If cancellation is supported:
 
 Cancellation behavior is otherwise implementation-defined.
 
+<!-- compiler.kfrontir.fine_grained_source_reuse -->
 #### 17.2.10 Fine-grained source reuse
 
 An implementation intended for editor or language-server use SHOULD preserve unchanged KFrontIR subtrees, declaration
@@ -12182,6 +12526,7 @@ same file, or unchanged syntactic subtrees whose containing incremental units re
 
 This is a performance recommendation rather than a semantic requirement.
 
+<!-- compiler.kfrontir.phase_snapshots -->
 #### 17.2.11 KFrontIR phase snapshots
 
 A KFrontIR stage dump at phase `P` MUST preserve the error-tolerant and partially resolved nature of the representation.
@@ -12207,6 +12552,7 @@ A KFrontIR dump MUST expose, for each relevant node:
 If a tooling query forces lazy phase advancement, an implementation MUST be able to dump both the pre-query and
 post-query KFrontIR snapshots, or observationally equivalent reconstructions thereof.
 
+<!-- compiler.kfrontir.whole_compilation_phase_order -->
 #### 17.2.12 Whole-compilation phase order
 
 Because the module dependency graph is acyclic (§2.2), whole-compilation phase order is constrained by module
@@ -12243,6 +12589,7 @@ A conforming implementation MUST behave as if batch compilation proceeds as foll
 An implementation MAY pipeline or parallelize these steps internally, provided the resulting behavior is as if the
 ordering above had been respected.
 
+<!-- compiler.kcore -->
 ### 17.3 KCore
 
 KCore is the canonical fully resolved, post-macro core language obtained from KFrontIR after the `CORE_LOWERING` phase
@@ -12317,6 +12664,7 @@ proof-irrelevant for typechecking unless that extension explicitly introduces a 
 evidence is erased before KBackendIR and does not participate in definitional equality of ordinary terms or types,
 except through the extension's own specified type formers.
 
+<!-- compiler.kcore.application_spines -->
 #### 17.3.1 Application spines and Pi telescopes
 
 KCore applications are defined against ordered Pi telescopes rather than by appeal to arbitrary unary prefixes.
@@ -12354,6 +12702,7 @@ Rules:
 * KCore normalization of an `AppSpine` is by ordinary left-to-right beta-reduction or an observationally equivalent
   strategy.
 
+<!-- compiler.kcore.suspensions -->
 #### 17.3.1A KCore suspensions
 
 A conforming implementation MUST behave as if KCore contains the primitive type formers:
@@ -12392,6 +12741,7 @@ Well-formedness:
 * Surface `thunk expr`, `lazy expr`, and `force expr` elaborate to `Delay`, `Memo`, and `Force` respectively, or to an
   observationally equivalent internal representation.
 
+<!-- compiler.kcore.application_spines.places_path_operations -->
 ##### 17.3.1.1 KCore places and path operations
 
 A conforming implementation MUST behave as if KCore contains a place category:
@@ -12447,6 +12797,7 @@ write-back is required.
 Path-sensitive field consumption, record update filling, safe-navigation borrowed-alias propagation, and `inout`
 write-back are defined in terms of these place forms or an observationally equivalent internal representation.
 
+<!-- compiler.kcore.application_spines.scoped_borrowing -->
 ##### 17.3.1.2 Scoped borrowing of places
 
 A conforming implementation MUST behave as if KCore contains a scoped borrow eliminator:
@@ -12477,6 +12828,7 @@ Typing and escape:
 Surface borrow introduction, borrowed local bindings, borrowed `?.` aliases, and `using`-introduced borrowed bindings
 elaborate through this form or an observationally equivalent internal representation.
 
+<!-- compiler.kcore.application_spines.projection_lowering -->
 ##### 17.3.1.3 Projection lowering
 
 A conforming implementation MUST behave as if a fully applied call to a `projection` definition (§6.1.1) does not
@@ -12513,6 +12865,7 @@ surface abstraction over ordinary control flow plus the existing stable-place ma
 An implementation MAY further lower this ordinary branching structure to an internal multi-return or join-point form as
 specified in §17.4.7A.
 
+<!-- compiler.kcore.application_spines.projection_section_update_lowering -->
 ##### 17.3.1.3A Projection-section update lowering
 
 A conforming implementation MUST behave as if the surface expression
@@ -12543,6 +12896,7 @@ Consequences:
 * No new runtime reference primitive is introduced.
 * Projection-section update is therefore surface sugar over existing place primitives and projection lowering.
 
+<!-- compiler.kcore.application_spines.completion_kernel -->
 ##### 17.3.1.4 KCore completion and do-scope kernel
 
 A conforming implementation MUST behave as if KCore contains an explicit completion-and-scope kernel for the control
@@ -12605,6 +12959,7 @@ This subsection defines KCore structure only. A conforming implementation MAY re
 explicit frame objects, or other equivalent internal machinery, provided the observable behavior is the same as this
 kernel.
 
+<!-- compiler.kcore.application_spines.effect_handler_kernel -->
 ##### 17.3.1.5 KCore effect-operation and handler kernel
 
 A conforming implementation MUST behave as if KCore contains an explicit effect-operation and shallow-handler kernel for
@@ -12664,6 +13019,7 @@ This subsection defines KCore structure only. A conforming implementation MAY re
 heap-allocated frames, stack copying, segmented stacks, defunctionalized state machines, or other equivalent internal
 machinery, provided the observable behavior is the same as this kernel and the runtime constraints of §14.8.
 
+<!-- compiler.kcore.application_spines.kcore_nominal_scope_binders -->
 ##### 17.3.1.5A KCore nominal-scope binders
 
 A conforming implementation MUST behave as if KCore contains an internal compile-time type:
@@ -12692,6 +13048,7 @@ Rules:
   closure-converted capture telescope.
 * `NomScope` values are compile-time only and are erased before KBackendIR.
 
+<!-- compiler.kcore.application_spines.intrinsic_compile_time_types -->
 ##### 17.3.1.6 KCore intrinsic compile-time types
 
 A conforming implementation MUST behave as if KCore supports ordinary binding, projection, application, sealing, and
@@ -12717,6 +13074,7 @@ Rules:
 * Reflection values MUST NOT survive lowering to KBackendIR except through ordinary reification to `Syntax` followed by
   ordinary elaboration.
 
+<!-- compiler.kcore.application_spines.capture_annotated_types -->
 ##### 17.3.1.7 KCore capture-annotated types
 
 A conforming implementation MUST behave as if KCore contains an explicit capture-annotation former:
@@ -12749,6 +13107,7 @@ Meaning:
 A conforming implementation MAY realize this with another internal representation, provided ordinary downstream
 typechecking, interface emission, definitional equality, and erasure are observationally equivalent to the rules above.
 
+<!-- compiler.kcore.application_spines.branch_refinement_evidence -->
 ##### 17.3.1.8 KCore branch and refinement evidence
 
 A conforming implementation MUST behave as if KCore contains explicit erased evidence for branch-local boolean and
@@ -12791,6 +13150,7 @@ Boolean branch evidence continues to use ordinary propositional equality:
 * `if b then t else f` introduces branch-local erased evidence `b = True` / `b = False`.
 * `match b` on boolean constructors behaves likewise.
 
+<!-- compiler.kcore.provenance_explainability -->
 #### 17.3.2 KCore provenance and explainability
 
 Every synthetic KCore node introduced during elaboration MUST carry provenance sufficient to explain why it exists.
@@ -12826,6 +13186,7 @@ A KCore dump MUST expose this provenance.
 An implementation SHOULD provide an explain query that, given a source span or KCore node, returns the provenance chain
 from KFrontIR through KCore.
 
+<!-- compiler.kcore.elaboration_time_evaluation -->
 #### 17.3.3 Elaboration-time evaluation
 
 The elaboration-time evaluator operates on KCore or an observationally equivalent internal representation.
@@ -12852,6 +13213,7 @@ then compilation fails.
 The evaluator MAY memoize, partially normalize, or reuse cached results, provided the observable result is the same as
 semantic elaboration-time evaluation under the restrictions of §5.8.6.
 
+<!-- compiler.kcore.semantic_object_identities -->
 #### 17.3.4 Semantic object identities
 
 After `CORE_LOWERING`, each semantic object that may be imported, browsed, documented, cached, compiled, or mentioned by
@@ -12888,6 +13250,7 @@ equality is at least as fine as KCore semantic identity.
 Tooling and caches that operate after name resolution SHOULD prefer semantic object identity to source spelling when
 tracking references, rename targets, usages, deduplication, and compiled artifact reuse.
 
+<!-- compiler.kcore.semantic_object_identities.escaped_local_nominal_family_identities -->
 ##### 17.3.4.1 Escaped local nominal family identities
 
 An escaped local nominal family is a local nominal declaration from §14.1.1 whose family identity, or an application of
@@ -12931,6 +13294,7 @@ Interface representability:
 An implementation MAY realize escaped local nominal family identities using hashes or another stable identity scheme,
 provided equality is at least as fine as the semantic equality above.
 
+<!-- compiler.kcore.semantic_object_stores -->
 #### 17.3.5 Semantic object stores
 
 A conforming implementation MAY persist semantic objects in a structured semantic object store or codebase.
@@ -12949,6 +13313,7 @@ Rules:
 A module-interface artifact of §17.1.9 MAY be materialized directly from such a store, embedded within it, or
 reconstructed from it on demand.
 
+<!-- compiler.kcore.inhabitance_summaries -->
 #### 17.3.6 Inhabitance summaries
 
 Implementations MUST behave as if KCore exposes a conservative inhabitance-summary query on types and on case-refined
@@ -13012,6 +13377,7 @@ Source-acceptance stability:
 * Optional strengthening rules MAY affect diagnostics, completion, optimization, and code generation, but they MUST
   remain conservative.
 
+<!-- compiler.kbackendir -->
 ### 17.4 KBackendIR
 
 KBackendIR is the target-neutral runtime IR obtained by erasing KCore and choosing runtime representations.
@@ -13069,6 +13435,7 @@ intrinsic:
 * proof terms whose only purpose is compile-time reasoning;
 * erased indices of dependent data.
 
+<!-- compiler.kbackendir.conceptual_lowering_stages -->
 #### 17.4.1 Conceptual lowering stages
 
 A conforming implementation MUST behave as if lowering from KCore to KBackendIR performs the following conceptual
@@ -13105,6 +13472,7 @@ stages:
 An implementation MAY fuse, split, reorder, or partially overlap these conceptual stages, provided the resulting
 KBackendIR is observationally equivalent to one produced by the staged lowering above.
 
+<!-- compiler.kbackendir.uses_inhabitance_summaries -->
 #### 17.4.1A Uses of inhabitance summaries
 
 A conforming implementation MAY use `Empty`, `Contractible`, and small exact `Finite n` summaries for
@@ -13123,6 +13491,7 @@ Permitted uses include:
 These optimizations MUST NOT change any externally specified data layout, calling convention, or FFI surface promised
 by a backend profile.
 
+<!-- compiler.kbackendir.lowering_legality_checkpoints -->
 #### 17.4.2 Lowering legality checkpoints
 
 At or before publication of KBackendIR, the implementation MUST validate that:
@@ -13142,6 +13511,7 @@ At or before publication of KBackendIR, the implementation MUST validate that:
 Failure of any of these checks is a compile-time error.
 A conforming implementation MUST NOT silently pass malformed or partially lowered runtime IR to target-profile lowering.
 
+<!-- compiler.kbackendir.graph_dumps_legality_witnesses -->
 #### 17.4.3 KBackendIR graph dumps and legality witnesses
 
 A KBackendIR stage dump MUST be graph-capable.
@@ -13166,6 +13536,7 @@ The KBackendIR verifier MUST be user-invokable.
 
 A successful verification MAY be recorded in the dump as a verifier stamp or equivalent witness.
 
+<!-- compiler.kbackendir.post_kbackendir_target_lowering_dumps -->
 #### 17.4.4 Post-KBackendIR target-lowering dumps
 
 If a backend profile exposes post-KBackendIR intermediate forms, each such form MUST participate in the same
@@ -13180,6 +13551,7 @@ observability model:
 If the post-KBackendIR form is not naturally serialized as `json` or `sexpr`, the implementation MUST still provide a
 `json` and `sexpr` manifest describing that form, its identity, and its relation to the surrounding checkpoints.
 
+<!-- compiler.kbackendir.interpretation -->
 #### 17.4.5 KBackendIR interpretation
 
 An implementation MAY provide a KBackendIR interpreter for script execution, REPL use, tests, or debugging.
@@ -13194,6 +13566,7 @@ If it does:
 A KBackendIR interpreter MAY retain extra source metadata for debugging, profiling, or diagnostics, provided that
 metadata does not change program behavior.
 
+<!-- compiler.kbackendir.representation_classes_specialization -->
 #### 17.4.6 Representation classes and specialization
 
 Implementations MAY monomorphize, dictionary-pass, closure-convert, or use any hybrid strategy consistent with
@@ -13211,6 +13584,7 @@ A change that does not alter the erased calling convention, selected runtime rep
 `BackendFingerprint(profile)` inputs SHOULD preserve previously computed KBackendIR and target-lowering results where
 possible.
 
+<!-- compiler.kbackendir.runtime_calling_convention -->
 #### 17.4.7 Runtime calling convention
 
 At KBackendIR boundaries:
@@ -13226,6 +13600,7 @@ At KBackendIR boundaries:
 
 This section does not change source typing. It specifies only the backend-neutral runtime view after elaboration.
 
+<!-- compiler.kbackendir.internal_multi_return_control_protocol_lowering -->
 #### 17.4.7A Internal multi-return control-protocol lowering
 
 A conforming implementation MAY lower a finite local control protocol to an internal multi-return calling convention or
@@ -13260,6 +13635,7 @@ Rules:
 
 These terms name implementation strategies only. They do not add new surface syntax or new source typing rules.
 
+<!-- compiler.kbackendir.incremental_reuse_across_lowering_stages -->
 #### 17.4.8 Incremental reuse across lowering stages
 
 A conforming implementation MAY persist and reuse previously verified results of KCore construction, KBackendIR
@@ -13294,6 +13670,7 @@ A conforming implementation SHOULD support persistent caches across compiler-pro
 
 provided the reuse conditions above are satisfied.
 
+<!-- compiler.kbackendir.implementation_defined_intermediate_forms -->
 #### 17.4.9 Implementation-defined intermediate forms
 
 An implementation MAY introduce additional named intermediate representations between KCore, KBackendIR, and target
@@ -13313,6 +13690,7 @@ also expose:
 Implementations SHOULD avoid introducing an additional intermediate form unless it has a distinct semantic,
 optimization, representation, or deployment purpose.
 
+<!-- compiler.runtime -->
 ### 17.5 Portable runtime obligations
 
 A backend MUST preserve all observable source semantics of Chapters 4, 8, 9, 10, 14, 15, and 16.
@@ -13331,6 +13709,7 @@ In particular, a backend MUST preserve:
 Host-runtime features such as garbage collection, exceptions, stack unwinding, coroutines, JIT compilation, AOT
 compilation, or dynamic linking are implementation techniques only. They do not redefine Kappa semantics.
 
+<!-- compiler.runtime.memory_management -->
 #### 17.5.1 Memory management
 
 Memory-management strategy is implementation-defined.
@@ -13345,6 +13724,7 @@ In particular:
   finalizer behavior;
 * no backend may require prompt garbage-collection finalization to realize source-level resource release.
 
+<!-- compiler.intrinsics -->
 ### 17.6 Backend intrinsics and `expect`
 
 A backend profile MAY provide intrinsic definitions that satisfy `expect` declarations of §6.5.
@@ -13363,6 +13743,7 @@ Rules:
 * If the selected backend profile does not supply a required intrinsic, the corresponding `expect` remains unsatisfied
   and compilation fails.
 
+<!-- compiler.intrinsics.elaboration_available_backend_intrinsics -->
 #### 17.6.1 Elaboration-available backend intrinsics
 
 A backend intrinsic MAY additionally be classified as **elaboration-available**.
@@ -13376,6 +13757,7 @@ effective build configuration and analysis-session identity.
 If elaboration-time evaluation reaches a backend intrinsic that is not classified as elaboration-available, compilation
 fails.
 
+<!-- compiler.intrinsics.frontend_backend_extension_boundary -->
 #### 17.6.2 Frontend/backend extension boundary
 
 Elaboration-time and frontend extensions operate on `KSyntax`, KFrontIR, or KCore.
@@ -13395,6 +13777,7 @@ Rules:
 * any implementation-defined extension point that crosses this boundary MUST document which checkpoint is its input and
   which invariants it may rely on.
 
+<!-- compiler.intrinsics.host_binding_intrinsics -->
 #### 17.6.3 Host binding intrinsics
 
 A backend profile that provides `host.jvm`, `host.dotnet`, or `host.native` MAY satisfy exported declarations of those
@@ -13411,10 +13794,12 @@ Rules:
 * A backend MUST reject a host binding whose required calling convention, marshalling, blocking classification, or
   runtime service it cannot realize under the selected backend profile or deployment mode.
 
+<!-- compiler.ffi -->
 ### 17.7 Foreign interop and portable foreign ABI
 
 A conforming implementation MAY expose backend-specific host bindings and portable foreign-ABI adapters.
 
+<!-- compiler.ffi.foreign_abi -->
 #### 17.7.1 Portable foreign ABI
 
 A conforming implementation MAY expose foreign-ABI adapters. The portable subset of such an ABI is defined after
@@ -13438,6 +13823,7 @@ backend-specific.
 A raw host binding module is not, by itself, part of the portable subset merely because it is expressed using ordinary
 Kappa syntax. Portability requires an exported surface that also obeys the rules of this subsection.
 
+<!-- compiler.ffi.raw_host_binding_surfaces -->
 #### 17.7.2 Raw host binding surfaces
 
 A host binding module MAY expose a mechanically generated raw surface derived from host metadata or an
@@ -13467,6 +13853,7 @@ Rules:
   assign deterministic exported spellings to those overloads. The unsuffixed base spelling MAY be used only when
   exactly one exported member of that source spelling remains after filtering and overlay application.
 
+<!-- compiler.ffi.conservative_typing_minimal_effect_inference -->
 #### 17.7.3 Conservative typing and minimal effect inference
 
 The raw surface of a host binding module MUST be conservative.
@@ -13494,6 +13881,7 @@ Rules:
 * A backend that lacks the runtime capability required by that classification, including `rt-blocking` when relevant,
   MUST reject the declaration or deployment mode rather than silently weakening its behavior.
 
+<!-- compiler.ffi.precise_overlays_shims -->
 #### 17.7.4 Precise overlays and shims
 
 A refined foreign surface is an ordinary Kappa module that wraps a raw host binding module or a user-provided shim.
@@ -13512,6 +13900,7 @@ Rules:
 * This specification does not require a distinct `foreign import` declaration form. An implementation MAY provide such a
   form as surface sugar only if it elaborates to the ordinary mechanisms of this section and preserves their semantics.
 
+<!-- compiler.ffi.backend_specificity_portability_layering -->
 #### 17.7.5 Backend specificity and portability layering
 
 Rules:
@@ -13533,6 +13922,7 @@ Rules:
 
 This keeps backend-specific metadata import ergonomic without making backend-specific surfaces part of the portable ABI.
 
+<!-- compiler.zig -->
 ### 17.8 Native backend profile (`zig`)
 
 A conforming implementation MAY provide the native backend profile `zig`.
@@ -13561,6 +13951,7 @@ Rules:
 The native profile's observable semantics are those of Kappa, not of any intermediate textual form chosen by the
 compiler.
 
+<!-- compiler.zig.native_host_binding_modules -->
 #### 17.8.1 Native host binding modules
 
 The `zig` profile MAY provide `host.native` modules.
@@ -13575,6 +13966,7 @@ Rules:
 * If the implementation cannot derive a sound raw surface from native metadata alone, it MAY require a user-provided
   shim or explicit binding description rather than guessing.
 
+<!-- compiler.jvm -->
 ### 17.9 JVM backend profile
 
 A conforming implementation MAY provide the `jvm` backend profile.
@@ -13598,6 +13990,7 @@ Rules:
 A JVM adapter layer MAY additionally expose Java-friendly wrappers around portable Kappa exports, but those wrappers are
 not part of the portable Kappa ABI.
 
+<!-- compiler.jvm.host_binding_modules -->
 #### 17.9.1 JVM host binding modules
 
 The `jvm` profile MAY provide `host.jvm` modules.
@@ -13612,6 +14005,7 @@ Rules:
 * Nullability MAY be inferred from implementation-documented JVM metadata. In the absence of proof of non-nullability,
   the raw surface MUST use the conservative rules of §17.7.3.
 
+<!-- compiler.dotnet -->
 ### 17.10 CLR backend profile (`dotnet`)
 
 A conforming implementation MAY provide the `dotnet` backend profile.
@@ -13635,6 +14029,7 @@ If a program or library depends on runtime features unavailable under the select
 particular Native AOT mode, the implementation MUST reject that deployment with a compile-time or publish-time
 diagnostic rather than silently weakening semantics.
 
+<!-- compiler.dotnet.clr_host_binding_modules -->
 #### 17.10.1 CLR host binding modules
 
 The `dotnet` profile MAY provide `host.dotnet` modules.
@@ -13652,6 +14047,7 @@ Rules:
   services for a given host binding, the implementation MUST reject that binding or deployment mode rather than silently
   weakening semantics.
 
+<!-- compiler.wasm -->
 ### 17.11 WebAssembly backend profile (`wasm`)
 
 A conforming implementation MAY provide the `wasm` backend profile.
@@ -13663,6 +14059,7 @@ The `wasm` profile has two subprofiles:
 
 An implementation MAY provide either or both.
 
+<!-- compiler.wasm.core -->
 #### 17.11.1 `wasm-core`
 
 `wasm-core` targets the core WebAssembly module model.
@@ -13677,6 +14074,7 @@ Rules:
   references, or a hybrid design, provided the resulting module remains valid for the chosen WebAssembly feature set and
   preserves Kappa semantics.
 
+<!-- compiler.wasm.component -->
 #### 17.11.2 `wasm-component`
 
 `wasm-component` targets the WebAssembly Component Model.
@@ -13696,6 +14094,7 @@ Floating-point restriction:
 * Such values MUST instead be adapted through an implementation-documented lossless representation, such as integer bit
   patterns or byte buffers, or else the interface MUST be marked backend-specific.
 
+<!-- compiler.js -->
 ### 17.12 ECMAScript backend profile (`js`)
 
 A conforming implementation MAY provide the `js` backend profile.
@@ -13718,6 +14117,7 @@ Rules:
 If the selected JavaScript deployment target lacks one or more required runtime capabilities of §17.13, compilation is a
 hard error for programs that require those capabilities.
 
+<!-- compiler.capabilities -->
 ### 17.13 Runtime capability profiles
 
 Every backend profile MUST declare a runtime capability set.
@@ -13789,6 +14189,7 @@ Rules:
 * A backend that cannot realize the required classification MUST reject that foreign declaration or deployment rather
   than silently pretending to support it.
 
+<!-- compiler.conformance -->
 ### 17.14 Backend conformance
 
 A backend profile is conforming iff every accepted program, when compiled under that profile, behaves observationally as
@@ -13804,8 +14205,10 @@ In particular:
 
 ---
 
+<!-- appendices.pipe_operators -->
 ## Appendix B. Pipe operators
 
+<!-- appendices.pipe_operators.prelude_provisions -->
 ### B.1 Prelude provisions
 
 `std.prelude` exports:
@@ -13820,6 +14223,7 @@ let f <| x = f x
 infix right 0 (<|)
 ```
 
+<!-- appendices.pipe_operators.interaction_other_operators -->
 ### B.2 Interaction with other operators
 
 * `|>` has low precedence (`1`), below ordinary comparison and arithmetic operators and below any user-defined operator
@@ -13829,6 +14233,7 @@ infix right 0 (<|)
   sugar, or receiver-projection sugar (§2.8.4). In particular, `x |> obj.method` parses as `x |> (obj.method)`; the
   pipe does not retarget method-call or receiver-projection sugar onto `x`.
 
+<!-- appendices.pipe_operators.optional_typed_pipe -->
 ### B.3 Optional: typed pipe
 
 Implementations MAY additionally provide a monadic pipe:
@@ -13841,10 +14246,12 @@ infix left 1 (|>=)
 
 This is merely a renamed `>>=` with pipe-compatible precedence for stream-style monadic code.
 
+<!-- appendices.applicativedo -->
 ## Appendix G. ApplicativeDo
 
 This appendix amends §8.2.
 
+<!-- appendices.applicativedo.capability -->
 ### G.1 Capability
 
 `std.prelude` provides:
@@ -13860,6 +14267,7 @@ trait Applicative (f : Type -> Type) =
 
 `Monad` refines `Applicative`: any `Monad m` instance MUST also determine an `Applicative m` instance for the same `m`.
 
+<!-- appendices.applicativedo.applicative_do_blocks -->
 ### G.2 Applicative-only `do` blocks
 
 A `do` block may be elaborated using only `Applicative` (not `Monad`) when all of the following hold:
@@ -13890,6 +14298,7 @@ liftA2 (\x1 x2 -> let y = f x1 x2 in final_expr) e1 e2
 
 generalizing to n-ary independent groups via repeated `liftA2` / `<*>`.
 
+<!-- appendices.applicativedo.mixed_blocks -->
 ### G.3 Mixed blocks
 
 If some `<-` binds are independent and others are dependent on earlier `<-` results, the compiler SHOULD partition the
@@ -13898,6 +14307,7 @@ block into maximal independent groups elaborated with `liftA2` / `<*>`, and then
 This is an as-if optimization: the resulting program MUST remain observationally equivalent to the monadic desugaring of
 §8.2 / §8.7.
 
+<!-- appendices.flow_typing_checklist -->
 ## Appendix H. Flow-typing checklist (non-normative)
 
 A conforming implementation SHOULD evaluate the flow-typing subsystem against a stable benchmark such as If-T.
@@ -13916,6 +14326,7 @@ For Kappa v1, the intended support profile is:
 A conforming implementation MAY deliberately omit more expensive global analyses, such as backward fixpoint narrowing,
 provided that omission is documented together with the rationale and the observable conservatism it introduces.
 
+<!-- appendices.modal_coeffects -->
 ## Appendix M. Reserved modal/coeffect architecture (non-normative)
 
 This appendix is explanatory and imposes no user-visible surface syntax in v0.1.
@@ -13957,8 +14368,10 @@ TcOut =
 A future extension should therefore be implemented as "existing checker + extra predicates", not by generalizing
 `Quantity`, `⊑`, borrow introduction, or borrow lifetimes.
 
+<!-- appendices.test_harness -->
 ## Appendix T. Standard test harness
 
+<!-- appendices.test_harness.scope_status -->
 ### T.1 Scope and status
 
 This appendix defines the **standard Kappa test harness**.
@@ -13980,6 +14393,7 @@ Such directives are outside the portable subset.
 
 This appendix does **not** define a standard `xfail`, `todo`, or similar expected-failure escape hatch.
 
+<!-- appendices.test_harness.test_forms -->
 ### T.2 Test forms
 
 The standard harness supports three test forms:
@@ -14005,6 +14419,7 @@ to that suite root as the source root for module-path derivation.
 In an incremental step suite, each step directory is compiled as a complete suite root in numeric order, and the
 harness preserves any compiler caches or reusable session state permitted by Chapter 17 across those steps.
 
+<!-- appendices.test_harness.directive_syntax -->
 ### T.3 Directive syntax
 
 A **test directive line** is a line comment whose first non-whitespace characters are `--!`.
@@ -14046,6 +14461,7 @@ Rules:
 
 All directive files and golden files are UTF-8.
 
+<!-- appendices.test_harness.configuration_directives -->
 ### T.4 Configuration directives
 
 Configuration directives set up the current test case.
@@ -14109,12 +14525,14 @@ Additional capability names are implementation-defined.
 
 If the selected `mode`, backend profile, or requirements are mutually inconsistent, the test is ill-formed.
 
+<!-- appendices.test_harness.assertion_directives -->
 ### T.5 Assertion directives
 
 Unless otherwise stated, assertions are evaluated after the selected test mode has completed.
 
 A test fails if any standard assertion is unsatisfied.
 
+<!-- appendices.test_harness.assertion_directives.diagnostic_assertions -->
 #### T.5.1 Diagnostic assertions
 
 Supported directives:
@@ -14178,6 +14596,7 @@ The code-based diagnostic assertions `assertDiagnostic`, `assertDiagnosticNext`,
 matched by severity and diagnostic code, not by the full human-readable message text.
 `assertDiagnosticMatch` is available for suites that want an additional message-text check.
 
+<!-- appendices.test_harness.assertion_directives.type_declaration_shape_assertions -->
 #### T.5.2 Type and declaration-shape assertions
 
 Supported directives:
@@ -14232,6 +14651,7 @@ In both declaration-kind assertions:
 * the optional module header does not count as a declaration kind;
 * imports, exports, and fixity declarations do count when present.
 
+<!-- appendices.test_harness.assertion_directives.stage_dump_assertions -->
 #### T.5.3 Stage-dump assertions
 
 Supported directives:
@@ -14260,6 +14680,7 @@ Comparison semantics:
 * S-expression dumps are compared after parsing and canonicalization.
 * Implementations MUST NOT compare stage dumps as raw bytes alone for the purpose of this assertion.
 
+<!-- appendices.test_harness.assertion_directives.run_assertions -->
 #### T.5.4 Run assertions
 
 Supported directives:
@@ -14292,6 +14713,7 @@ Rules:
 * For large or frequently changing outputs, `assertStdoutFile` and `assertStderrFile` remain the preferred golden-file
   forms.
 
+<!-- appendices.test_harness.assertion_directives.trace_assertions -->
 #### T.5.5 Trace assertions
 
 Supported directives:
@@ -14343,6 +14765,7 @@ Rules:
   other implementation-defined micro-steps MUST NOT create additional portable counts.
 * The assertion succeeds iff the resulting count satisfies the specified relation.
 
+<!-- appendices.test_harness.suite_level_behavior -->
 ### T.6 Suite-level behavior
 
 Within a directory suite:
@@ -14354,6 +14777,7 @@ Within a directory suite:
 
 If the same configuration key is specified more than once with different values, the suite is ill-formed.
 
+<!-- appendices.test_harness.incremental_step_suites -->
 ### T.7 Incremental step suites
 
 An incremental step suite is a directory with subdirectories named `step0`, `step1`, `step2`, and so on.
@@ -14386,6 +14810,7 @@ Rules:
 
 Each step is interpreted as a complete source snapshot, not as a textual patch.
 
+<!-- appendices.test_harness.result_classification -->
 ### T.8 Result classification
 
 A standard harness reports one of the following outcomes for each test:
@@ -14404,6 +14829,7 @@ Rules:
 * `harnessError` means the test itself was malformed, for example because of an unknown standard directive, invalid
   directive syntax, or an unreadable required golden file.
 
+<!-- appendices.test_harness.determinism -->
 ### T.9 Determinism
 
 For fixed source inputs, suite structure, build configuration, backend profile, and implementation version, the standard
@@ -14419,6 +14845,7 @@ In particular:
 MUST NOT depend on worker count, scheduling order, hash-table iteration order, or platform-specific line-ending
 conventions.
 
+<!-- appendices.test_harness.example -->
 ### T.10 Example
 
 The following is a valid inline test:
