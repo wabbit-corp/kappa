@@ -4713,8 +4713,9 @@ Modifier rules:
       transparent; `public`, `private`, and `opaque` are not permitted there.
     * A named-function parameter may also be written `(inout x : A)`; this is surface sugar specified in §8.8 rather
       than a core binder form.
-    * Apart from `inout`, named-function parameter binders use the same binder forms as lambda binders (§7.2), including
-      receiver-marked binders such as `(this : T)`, `(q this : T)`, `(this x : T)`, and `(q this x : T)`.
+    * Apart from `inout`, named-function parameter binders use the same binder forms as lambda binders (§7.2). This
+      includes wildcard binders such as `_`, `(_ : A)`, and `(q _ : A)`, as well as receiver-marked binders such as
+      `(this : T)`, `(q this : T)`, `(this x : T)`, and `(q this x : T)`.
     * If a definition has the form `let name = \binders -> body` or `let name : T = \binders -> body`, where `name` is a
       simple binder, the lambda is treated as a named function body named `name` for `return` target resolution (§8.4).
       This applies both at top level and for local `let` bindings.
@@ -5799,34 +5800,47 @@ Grammar:
 lambda  ::= [label '@'] '\' binders '->' expr
 binders ::= binder+
 binder  ::= ident                            -- inferred type, quantity ω
-          | '(' ident ':' type ')'          -- explicit type, quantity ω
-          | '(' quantity ident ':' type ')' -- explicit type and quantity
-          | '(' 'thunk' ident ':' type ')'  -- suspension sugar, quantity ω
+          | '_'                              -- anonymous explicit binder, inferred type, quantity ω
+          | '(' ident ':' type ')'           -- explicit type, quantity ω
+          | '(' '_' ':' type ')'             -- anonymous explicit binder, explicit type, quantity ω
+          | '(' quantity ident ':' type ')'  -- explicit type and quantity
+          | '(' quantity '_' ':' type ')'    -- anonymous explicit binder, explicit type and quantity
+          | '(' 'thunk' ident ':' type ')'   -- suspension sugar, quantity ω
+          | '(' 'thunk' '_' ':' type ')'     -- anonymous suspension binder, quantity ω
           | '(' quantity 'thunk' ident ':' type ')' -- suspension sugar, explicit quantity
-          | '(' 'lazy' ident ':' type ')'   -- memoized suspension sugar, quantity ω
+          | '(' quantity 'thunk' '_' ':' type ')'   -- anonymous suspension binder, explicit quantity
+          | '(' 'lazy' ident ':' type ')'    -- memoized suspension sugar, quantity ω
+          | '(' 'lazy' '_' ':' type ')'      -- anonymous memoized suspension binder, quantity ω
           | '(' quantity 'lazy' ident ':' type ')' -- memoized suspension sugar, explicit quantity
-          | '(' 'this' ':' type ')'         -- receiver binder, local name `this`
+          | '(' quantity 'lazy' '_' ':' type ')'   -- anonymous memoized suspension binder, explicit quantity
+          | '(' 'this' ':' type ')'          -- receiver binder, local name `this`
           | '(' quantity 'this' ':' type ')' -- receiver binder, explicit quantity
-          | '(' 'this' ident ':' type ')'   -- receiver binder, local name `ident`
+          | '(' 'this' ident ':' type ')'    -- receiver binder, local name `ident`
           | '(' quantity 'this' ident ':' type ')' -- receiver binder, explicit quantity and local name
           | '(' '@' binder_body ')'         -- implicit binder (as before)
 ```
 
 Rules:
 
-* A bare-identifier binder `x` is equivalent to `(x : _)` with inferred type and default quantity `ω`.
-* Multiple bare binders may be juxtaposed: `\x y z -> e` ≡ `\(x : _) (y : _) (z : _) -> e`.
-* Mixing styles is permitted: `\x (y : Int) z -> e`.
-* The suspension-marked forms `(thunk x : A)`, `(lazy x : A)`, `(q thunk x : A)`, and `(q lazy x : A)` are the
-  ordinary function-binder sugar of §5.2.1.
+* A bare binder `x` or `_` is equivalent to `(x : _)` or `(_ : _)` respectively, with inferred type and default
+  quantity `ω`.
+* When `_` appears in lambda-binder position, it denotes the wildcard-binder form above, not an ordinary identifier.
+* Multiple bare binders may be juxtaposed: `\x _ z -> e` ≡ `\(x : _) (_ : _) (z : _) -> e`.
+* Mixing styles is permitted: `\x (_ : Int) z -> e`.
+* A wildcard binder introduces an explicit parameter but no source-level term name. It is elaborated as if the binder
+  were replaced by a fresh internal identifier not equal to any user-written name.
+* Distinct wildcard binders in the same lambda denote distinct parameters.
+* `_` in lambda-binder position is not an expression hole and does not enable placeholder-abstraction shorthand.
+* The suspension-marked forms `(thunk x : A)`, `(thunk _ : A)`, `(lazy x : A)`, `(lazy _ : A)`, `(q thunk x : A)`,
+  `(q thunk _ : A)`, `(q lazy x : A)`, and `(q lazy _ : A)` are the ordinary function-binder sugar of §5.2.1.
 * Receiver-marked binders are explicit binders. `(this : T)` binds the receiver locally as `this`, while `(this x : T)`
   marks the binder as the receiver and binds it locally as `x`. The quantity-annotated forms `(q this : T)` and `(q this
   x : T)` are the corresponding receiver-marked variants with explicit quantity `q`.
 * Method-call and receiver-projection sugar (§2.8.4) consult the receiver marker, not the local binder name chosen
   inside the function body.
 * A leading label `L@` labels the lambda body for `return@L` (§8.4.1).
-* Parentheses are required for typed, quantity-annotated, and implicit binders; they are not required for bare
-  identifier binders.
+* Parentheses are required for typed, quantity-annotated, suspension-marked, receiver-marked, and implicit binders;
+  they are not required for bare identifier or bare wildcard binders.
 * A lambda must contain at least one binder; there is no point-free "degenerate" lambda.
 * The body after `->` may be either a single expression or an indented pure block suite, which elaborates to `block ...`
   under §6.3.1.
@@ -5999,6 +6013,9 @@ other implicit values of type `P : Type`, write the implicit binder explicitly.
 #### 7.3.2 Expression holes (`_` and named holes)
 
 In expression position, `_` denotes a fresh anonymous typed hole.
+
+This hole meaning applies only in expression position. In lambda-binder position, and in other parameter-binder
+positions that reuse §7.2, `_` denotes the wildcard binder of §7.2.
 
 A named typed hole has the surface form:
 
