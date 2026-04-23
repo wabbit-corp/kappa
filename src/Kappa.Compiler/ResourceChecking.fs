@@ -6,6 +6,7 @@ open Kappa.Compiler.ResourceCheckingDiagnostics
 open Kappa.Compiler.ResourceCheckingSignatures
 open Kappa.Compiler.ResourceCheckingSurface
 
+// Runs the BODY_RESOLVE ownership checker and produces resource diagnostics and facts.
 module ResourceChecking =
     type CheckResult =
         { Diagnostics: Diagnostic list

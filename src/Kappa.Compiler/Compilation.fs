@@ -2,6 +2,7 @@ namespace Kappa.Compiler
 
 open System
 
+// Provides the public compiler facade for parsing, lowering, tracing, verification, and stage dumps.
 module Compilation =
     open CompilationCommon
     open CompilationFrontend

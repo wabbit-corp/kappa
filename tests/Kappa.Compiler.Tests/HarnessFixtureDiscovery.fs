@@ -1,3 +1,4 @@
+// Discovers kp fixture cases and suite-level test inputs from disk.
 module HarnessFixtureDiscovery
 
 open System

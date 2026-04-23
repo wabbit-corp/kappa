@@ -2,6 +2,7 @@ namespace Kappa.Compiler
 
 open System
 
+// Checks published checkpoints against the compiler's observable pipeline contract.
 module CheckpointVerification =
     let private makeDiagnostic message =
         { Severity = Error

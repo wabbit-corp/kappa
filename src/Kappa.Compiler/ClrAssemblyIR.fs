@@ -40,6 +40,7 @@ type ClrAssemblyModule =
       TraitInstances: ClrAssemblyTraitInstance list
       Bindings: ClrAssemblyBinding list }
 
+// Converts KRuntimeIR modules into the managed assembly model consumed by CLR lowering.
 [<RequireQualifiedAccess>]
 module ClrAssemblyIR =
     let private ofRuntimeParameter (parameter: KRuntimeParameter) : ClrAssemblyParameter =

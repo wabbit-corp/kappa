@@ -1,3 +1,4 @@
+// Covers broad compiler smoke tests and repository-level regressions.
 module SmokeTests
 
 open System

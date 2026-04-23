@@ -1,5 +1,6 @@
 namespace Kappa.Compiler
 
+// Supplies the generated C runtime/prelude scaffolding used by the zig backend.
 module internal ZigCcBackendRuntime =
     open ZigCcBackendSupport
 

@@ -821,6 +821,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
           Tokens = List.ofArray tokenArray },
         diagnostics.Items
 
+// Parses tokens into documents and maintains the bootstrap/user fixity environment.
 module Parser =
     let parseWithInitialFixities initialFixities source tokens =
         let parser = TokenParser(tokens, source, initialFixities)

@@ -1,3 +1,4 @@
+// Covers zig backend translation units, native execution, and CLI wiring.
 module ZigBackendTests
 
 open System

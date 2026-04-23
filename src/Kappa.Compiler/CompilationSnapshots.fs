@@ -1,5 +1,6 @@
 namespace Kappa.Compiler
 
+// Constructs phase-specific frontend snapshots for checkpoint dumps and verification.
 module internal CompilationSnapshots =
     let private explicitImportSpecs (document: ParsedDocument) =
         document.Syntax.Declarations

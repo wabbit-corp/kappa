@@ -5,6 +5,7 @@ open System.Globalization
 open System.IO
 open System.Text
 
+// Builds the nonstandard hosted dotnet runner project used for bootstrap-style execution.
 module HostedRuntimeDotNetBackend =
     let private csharpString (value: string) =
         let builder = StringBuilder()

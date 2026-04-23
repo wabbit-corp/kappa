@@ -1,3 +1,4 @@
+// Exercises compiler behavior that does not fit a backend- or milestone-specific suite.
 module CoreTests
 
 open System

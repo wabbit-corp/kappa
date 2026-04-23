@@ -7,6 +7,7 @@ type LexResult =
     { Tokens: Token list
       Diagnostics: Diagnostic list }
 
+// Tokenizes source text, tracks layout, and records lexical diagnostics.
 module Lexer =
     let private token kind text startIndex =
         { Kind = kind

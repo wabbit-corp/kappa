@@ -1,3 +1,4 @@
+// Owns fixture compilation/execution helpers and process-output normalization for tests.
 module HarnessExecution
 
 open System

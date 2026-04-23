@@ -92,6 +92,7 @@ module RuntimeValue =
         | RefCellValue _ -> "<ref>"
         | DictionaryValue dictionary -> $"<dict {dictionary.ModuleName}.{dictionary.TraitName} {dictionary.InstanceKey}>"
 
+// Executes KRuntimeIR directly for evaluation, tests, and bootstrap behavior.
 module Interpreter =
     let private error message =
         Result.Error { Message = message }

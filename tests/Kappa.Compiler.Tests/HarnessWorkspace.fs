@@ -1,3 +1,4 @@
+// Builds in-memory workspaces and compiler utility entry points for test code.
 module HarnessWorkspace
 
 open System

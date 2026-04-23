@@ -1,5 +1,6 @@
 namespace Kappa.Compiler
 
+// The observable frontend checkpoint model stored in workspaces and stage dumps.
 type KFrontIRModule =
     { FilePath: string
       ModuleHeader: string list option

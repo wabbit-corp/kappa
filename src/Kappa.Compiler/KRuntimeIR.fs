@@ -1,5 +1,6 @@
 namespace Kappa.Compiler
 
+// The implementation-defined runtime IR that sits between KCore and KBackendIR.
 type KRuntimeExitAction =
     | KRuntimeDeferred of KRuntimeExpression
     | KRuntimeRelease of resourceTypeText: string option * release: KRuntimeExpression * resource: KRuntimeExpression

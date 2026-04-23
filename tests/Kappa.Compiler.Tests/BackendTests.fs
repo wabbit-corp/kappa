@@ -1,3 +1,4 @@
+// Covers public backend artifact emission and CLI execution paths.
 module BackendTests
 
 open System

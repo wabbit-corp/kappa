@@ -1,3 +1,4 @@
+// Defines the shared fixture configuration, assertion, and discovered-case model.
 module HarnessFixtureModel
 
 open Kappa.Compiler

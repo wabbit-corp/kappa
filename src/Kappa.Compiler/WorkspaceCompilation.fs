@@ -1,5 +1,6 @@
 namespace Kappa.Compiler
 
+// The aggregate workspace snapshot that threads checkpoints, artifacts, and metadata through the compiler.
 type FrontendSnapshot =
     { Modules: KFrontIRModule list
       Diagnostics: Diagnostic list }

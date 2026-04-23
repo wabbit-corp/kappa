@@ -2,6 +2,7 @@ namespace Kappa.Compiler
 
 open System
 
+// Defines naming and runtime conventions for trait dictionaries and instance artifacts.
 module TraitRuntime =
     let private sanitizePart (value: string) =
         value

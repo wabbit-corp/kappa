@@ -2,6 +2,7 @@ namespace Kappa.Compiler
 
 open Kappa.Compiler.ResourceModel
 
+// Extracts quantity and resource-signature information from declarations for the checker.
 module internal ResourceCheckingSignatures =
     let private signatureName (moduleName: string list option) bindingName =
         let simple = bindingName

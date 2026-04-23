@@ -1,3 +1,4 @@
+// Exercises the standalone resource-model helpers used by M3 checking.
 module ResourceModelTests
 
 open Kappa.Compiler

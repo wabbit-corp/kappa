@@ -4,6 +4,7 @@ open System
 open System.Globalization
 open System.IO
 
+// Defines shared zig backend state, naming, and low-level emission helpers.
 module internal ZigCcBackendSupport =
     type internal ResultBuilder() =
         member _.Bind(result, binder) = Result.bind binder result

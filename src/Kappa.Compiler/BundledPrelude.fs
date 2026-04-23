@@ -3,6 +3,7 @@ namespace Kappa.Compiler
 open System.IO
 open System.Reflection
 
+// Loads the embedded std.prelude source used for bootstrap parsing and implicit imports.
 module internal BundledPrelude =
     let private resourceName = "Kappa.Compiler.Stdlib.std.prelude.kp"
 

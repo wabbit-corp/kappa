@@ -1,5 +1,6 @@
 namespace Kappa.Compiler
 
+// The backend-neutral runtime-facing IR consumed by target-specific lowering paths.
 type KBackendRepresentationClass =
     | BackendRepInt64
     | BackendRepFloat64

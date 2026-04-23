@@ -7,6 +7,7 @@ open System.Reflection
 open System.Reflection.Emit
 open System.Runtime.CompilerServices
 
+// Builds and validates the CLR assembly input environment used by IL emission.
 module internal IlDotNetBackendInput =
     open IlDotNetBackendModel
 

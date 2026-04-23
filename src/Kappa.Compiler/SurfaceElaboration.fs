@@ -2,6 +2,7 @@ namespace Kappa.Compiler
 
 open System
 
+// Elaborates resolved surface modules into KCore while preserving observability metadata.
 module SurfaceElaboration =
     open TypeSignatures
 

@@ -1,6 +1,7 @@
 namespace Kappa.Compiler
 
 open System
+// Models the bundled bootstrap prelude and compiler-known intrinsic/prelude surface.
 module Stdlib =
     type BackendIntrinsicSet =
         { Identity: string

@@ -1,5 +1,6 @@
 namespace Kappa.Compiler
 
+// Exposes the IL emitter facade used by managed backend code paths.
 module IlDotNetBackend =
     let emittedModuleTypeName moduleName =
         IlDotNetBackendModel.emittedModuleTypeName moduleName

@@ -6,6 +6,7 @@ type LetHeaderParseResult =
     { Parameters: Parameter list
       ReturnTypeTokens: Token list option }
 
+// Parses shared binder forms used by both surface syntax and type/signature parsing.
 module private SurfaceBinderParsing =
     let makeParameter name typeTokens quantity isImplicit isInout =
         { Name = name
@@ -1169,6 +1170,7 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
 
             Some expression
 
+// Parses declarations, expressions, patterns, and types into the surface syntax tree.
 module CoreParsing =
     let private splitReturnTypeTokens (tokens: Token list) =
         let mutable depth = 0

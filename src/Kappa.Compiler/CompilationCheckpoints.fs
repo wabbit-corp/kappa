@@ -2,6 +2,7 @@ namespace Kappa.Compiler
 
 open System
 
+// Describes published checkpoint contracts and target checkpoint manifests.
 module internal CompilationCheckpoints =
     let targetCheckpointNames (workspace: WorkspaceCompilation) =
         Stdlib.targetCheckpointNamesFor workspace.BackendProfile

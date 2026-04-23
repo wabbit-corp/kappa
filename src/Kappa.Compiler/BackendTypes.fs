@@ -1,5 +1,6 @@
 namespace Kappa.Compiler
 
+// Shared public artifact record types used by backend emitters and their callers.
 type DotNetDeployment =
     | Managed
     | NativeAot

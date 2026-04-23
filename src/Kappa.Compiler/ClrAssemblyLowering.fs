@@ -2,6 +2,7 @@ namespace Kappa.Compiler
 
 open System
 
+// Lowers KBackendIR modules into the CLR-specific assembly IR.
 module internal ClrAssemblyLowering =
     let private qualifiedName (moduleName: string) (memberName: string) =
         moduleName.Split('.', StringSplitOptions.RemoveEmptyEntries)

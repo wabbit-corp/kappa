@@ -2,6 +2,7 @@ namespace Kappa.Compiler
 
 open System
 
+// Shared source-text, span, and location primitives used by lexing, parsing, and diagnostics.
 [<Struct>]
 type TextSpan =
     { Start: int

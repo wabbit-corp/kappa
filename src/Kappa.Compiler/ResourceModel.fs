@@ -1,5 +1,6 @@
 namespace Kappa.Compiler
 
+// Defines quantities, regions, places, ownership events, and checker state shared across M3 analysis.
 module ResourceModel =
     type ResourceQuantity =
         | Interval of minimum: int * maximum: int option

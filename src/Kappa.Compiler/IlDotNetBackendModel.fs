@@ -7,6 +7,7 @@ open System.Reflection
 open System.Reflection.Emit
 open System.Runtime.CompilerServices
 
+// Defines the CLR emitter's internal type, module, and emission-state model.
 module internal IlDotNetBackendModel =
     type internal IlPrimitiveType =
         | IlInt64

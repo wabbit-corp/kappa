@@ -4,6 +4,7 @@ open System
 open System.Collections.Generic
 open System.IO
 
+// Builds frontend documents and phase snapshots from source text and bundled imports.
 module internal CompilationFrontend =
     let parseBundledPrelude () =
         let source = SourceText.From(Stdlib.BundledPreludeVirtualPath, Stdlib.loadBundledPreludeText ())

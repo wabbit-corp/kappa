@@ -2,6 +2,7 @@ namespace Kappa.Compiler
 
 open System
 
+// Emits the public dotnet backend artifact from precomputed CLR assembly IR.
 module internal ClrDotNetBackend =
     let emitAssemblyArtifact (workspace: WorkspaceCompilation) (outputDirectory: string) =
         if workspace.HasErrors then

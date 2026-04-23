@@ -1,3 +1,4 @@
+// Parses harness directives and suite configuration files into fixture assertions.
 module HarnessFixtureParser
 
 open System

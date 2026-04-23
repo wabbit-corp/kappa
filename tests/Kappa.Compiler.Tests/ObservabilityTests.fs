@@ -1,3 +1,4 @@
+// Verifies checkpoints, dumps, traces, fingerprints, and other observability contracts.
 module ObservabilityTests
 
 open System

@@ -1,5 +1,6 @@
 namespace Kappa.Compiler
 
+// The public KCore data model used for post-elaboration observability and lowering.
 type KCoreOrigin =
     { FilePath: string
       ModuleName: string

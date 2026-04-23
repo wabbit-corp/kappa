@@ -7,6 +7,7 @@ open System.Reflection
 open System.Reflection.Emit
 open System.Runtime.CompilerServices
 
+// Generates Reflection.Emit assemblies from the CLR assembly input model.
 module internal IlDotNetBackendEmit =
     open IlDotNetBackendModel
     open IlDotNetBackendInput

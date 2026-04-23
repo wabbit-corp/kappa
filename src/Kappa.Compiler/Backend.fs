@@ -3,6 +3,7 @@ namespace Kappa.Compiler
 open System
 open System.IO
 
+// Routes public backend requests to the appropriate artifact emitter.
 module Backend =
     type private ResultBuilder() =
         member _.Bind(result, binder) = Result.bind binder result

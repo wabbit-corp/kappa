@@ -7,6 +7,7 @@ type internal BundledPreludeExpectContract =
       TraitNames: Set<string>
       TermNames: Set<string> }
 
+// Centralizes intrinsic names, operator classes, and backend-visible builtin metadata.
 module internal IntrinsicCatalog =
     let private aggregateDiagnostics diagnostics =
         diagnostics

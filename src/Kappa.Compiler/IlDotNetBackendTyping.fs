@@ -7,6 +7,7 @@ open System.Reflection
 open System.Reflection.Emit
 open System.Runtime.CompilerServices
 
+// Infers and resolves CLR-side types needed before IL emission.
 module internal IlDotNetBackendTyping =
     open IlDotNetBackendModel
     open IlDotNetBackendInput

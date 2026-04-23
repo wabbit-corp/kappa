@@ -4,6 +4,7 @@ open System
 open System.IO
 open System.Reflection
 
+// Loads embedded backend runtime/template sources and applies lightweight substitutions.
 module internal BundledBackendSources =
     let private loadResourceText resourceName =
         lazy

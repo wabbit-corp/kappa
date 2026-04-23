@@ -1,5 +1,6 @@
 namespace Kappa.Compiler
 
+// Lowers KBackendIR expressions and bindings into generated C fragments for the zig backend.
 module internal ZigCcBackendEmit =
     open ZigCcBackendSupport
 

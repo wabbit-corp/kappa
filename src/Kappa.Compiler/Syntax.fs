@@ -62,6 +62,7 @@ type Keyword =
     | While
     | Yield
 
+// Maps reserved words between token text and the internal keyword enumeration.
 module Keyword =
     let private entries =
         [
@@ -400,6 +401,7 @@ module Token =
         | Keyword _ -> true
         | _ -> false
 
+// Holds syntax-level helpers for names, paths, declarations, and module facts.
 module SyntaxFacts =
     let isIdentifierStart character = Char.IsLetter(character) || character = '_'
 
@@ -502,6 +504,7 @@ type FixityEntry =
 
 type FixityTable = Map<string, FixityEntry>
 
+// Tracks operator fixities for bootstrap parsing and user-defined precedence updates.
 module FixityTable =
     let empty : FixityTable = Map.empty
 

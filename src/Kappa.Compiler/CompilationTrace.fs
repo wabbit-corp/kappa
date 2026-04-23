@@ -1,5 +1,6 @@
 namespace Kappa.Compiler
 
+// Builds the observable pipeline trace from executed stages and verification results.
 module internal CompilationTrace =
     type VerificationSummary =
         { Frontend: bool

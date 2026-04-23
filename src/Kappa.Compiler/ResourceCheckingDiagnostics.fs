@@ -3,6 +3,7 @@ namespace Kappa.Compiler
 open System
 open Kappa.Compiler.ResourceModel
 
+// Builds source locations and diagnostic payloads for resource-checker results.
 module internal ResourceCheckingDiagnostics =
     let linearDropCode = "E_QTT_LINEAR_DROP"
     let linearOveruseCode = "E_QTT_LINEAR_OVERUSE"

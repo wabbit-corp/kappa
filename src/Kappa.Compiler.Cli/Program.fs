@@ -18,6 +18,7 @@ type CliOptions =
       RunBinding: string option
       Inputs: string list }
 
+// Implements the command-line entry point and wires compiler services to CLI commands.
 module private Cli =
     let usage () =
         [

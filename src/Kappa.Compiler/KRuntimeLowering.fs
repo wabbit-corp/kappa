@@ -2,6 +2,7 @@ namespace Kappa.Compiler
 
 open System
 
+// Lowers KCore into the implementation-defined KRuntimeIR checkpoint.
 module internal KRuntimeLowering =
     let private tokensText (tokens: Token list) =
         tokens

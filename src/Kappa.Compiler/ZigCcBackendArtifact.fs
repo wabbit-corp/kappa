@@ -3,6 +3,7 @@ namespace Kappa.Compiler
 open System
 open System.IO
 
+// Builds target manifests and native artifacts from emitted zig translation units.
 module internal ZigCcBackendArtifact =
     open ZigCcBackendSupport
     open ZigCcBackendEmit

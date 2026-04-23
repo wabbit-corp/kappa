@@ -1,3 +1,4 @@
+// Provides shared filesystem, process, RID, and toolchain helpers for tests.
 module HarnessSupport
 
 open System

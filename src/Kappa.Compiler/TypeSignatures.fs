@@ -3,6 +3,7 @@ namespace Kappa.Compiler
 open System
 open System.Collections.Generic
 
+// Parses and reasons about textual type signatures used across compiler stages.
 module TypeSignatures =
     type TypeExpr =
         | TypeName of string list * TypeExpr list

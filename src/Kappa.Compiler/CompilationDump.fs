@@ -3,6 +3,7 @@ namespace Kappa.Compiler
 open System
 open System.Text.Json
 
+// Serializes checkpoints, traces, and target artifacts into JSON and S-expression dumps.
 module CompilationDump =
     open CompilationCommon
     open CompilationFrontend

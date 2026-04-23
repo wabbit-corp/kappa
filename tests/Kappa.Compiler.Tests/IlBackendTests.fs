@@ -1,3 +1,4 @@
+// Covers the internal IL-emitter backend directly.
 module IlBackendTests
 
 open System

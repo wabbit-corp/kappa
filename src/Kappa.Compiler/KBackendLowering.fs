@@ -2,6 +2,7 @@ namespace Kappa.Compiler
 
 open System
 
+// Lowers KRuntimeIR into target-neutral runtime-facing KBackendIR.
 module internal KBackendLowering =
     type private BackendLoweringBindingInfo =
         { ModuleName: string

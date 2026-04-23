@@ -2,6 +2,7 @@ namespace Kappa.Compiler
 
 open System
 
+// Renders compiler IR modules into human-readable text for dumps and debugging.
 module internal IrText =
     let rec kcorePatternText pattern =
         match pattern with

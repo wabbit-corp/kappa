@@ -1,5 +1,6 @@
 namespace Kappa.Compiler
 
+// Walks surface syntax into the lightweight forms consumed by resource checking.
 module internal ResourceCheckingSurface =
     let collectPatternNames (pattern: SurfacePattern) =
         let rec loop current =

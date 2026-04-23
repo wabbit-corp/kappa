@@ -5,6 +5,7 @@ open System.Diagnostics
 open System.IO
 open System.Runtime.InteropServices
 
+// Provides host/process/path utilities shared by the CLI, backends, and tests.
 module HostSupport =
     type ProcessResult =
         { ExitCode: int

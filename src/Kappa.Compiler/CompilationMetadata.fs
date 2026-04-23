@@ -4,6 +4,7 @@ open System
 open CompilationCommon
 open CompilationFrontend
 
+// Computes analysis-session, fingerprint, incremental-unit, and runtime-obligation metadata.
 module internal CompilationMetadata =
     let private targetCheckpointNames (workspace: WorkspaceCompilation) =
         Stdlib.targetCheckpointNamesFor workspace.BackendProfile

@@ -1,3 +1,4 @@
+// Provides the public test harness facade and assertion interpreter used by compiler tests.
 module Harness
 
 open System
