@@ -7688,6 +7688,56 @@ Semantics:
 * If the deep resumption `k` is used more than once under its declared resumption quantity, each use behaves as a fresh
   application of the corresponding shallow resumption followed by fresh reinstallation of the same deep handler.
 
+<!-- effects.monadic_core.deep_handlers.kcore_realization_interaction_abrupt_completion -->
+##### 8.1.10.1 Deep-handler KCore realization and interaction with abrupt completion
+
+The control model of deep handlers is realized by the shallow-handler kernel of §17.3.1.5 together with the recursive
+driver specified in §8.1.10.
+
+In an ordinary effect context, a deep handler consumes a computation of type:
+
+```text
+Eff <[label : E | r]> a
+```
+
+and produces a computation in a single target carrier:
+
+```text
+m b
+```
+
+When a deep handler appears inside the completion-carrying elaboration of §8.7, the handled computation is instead:
+
+```text
+Eff <[label : E | r]> (Completion(RetCtx, a))
+```
+
+and the handler result is:
+
+```text
+m (Completion(RetCtx, b))
+```
+
+In this completion-carrying case:
+
+* the surface clause `case return x -> e_ret` handles only the `Normal x` case;
+* `Break`, `Continue`, and `Return[...]` completions propagate outward unchanged unless user-written code explicitly
+  matches on them after elaboration;
+* the recursive driver `__go` of §8.1.10 has type:
+
+  ```text
+  Eff <[label : E | r]> (Completion(RetCtx, a)) -> m (Completion(RetCtx, b))
+  ```
+
+* a captured deep resumption has type:
+
+  ```text
+  (1 _ : B) -> m (Completion(RetCtx, b))
+  ```
+
+This does not introduce a second control system. It is ordinary composition of the shallow-handler kernel, the deep-
+handler recursive driver, and the completion-and-scope kernel.
+
 <!-- effects.monadic_core.monad_finally -->
 #### 8.1.11 `MonadFinally`
 
@@ -13343,8 +13393,8 @@ Meaning:
   other labels propagate outward unchanged inside resumed computations.
 * A `HandleShallow` return clause is applied only when the handled computation completes normally.
 * If the handled computation is itself completion-carrying, for example of type `Eff r_all (Completion(RetCtx, A))`,
-  then propagation of `Break`, `Continue`, and `Return[...]` is determined by the surface elaboration rule of §8.1.9.1
-  rather than by any extra KCore control primitive.
+  then propagation of `Break`, `Continue`, and `Return[...]` is determined by the surface elaboration rules of
+  §§8.1.9.1 and 8.1.10.1 rather than by any extra KCore control primitive.
 * The captured continuation boundary includes any active `DoScope` frames inside that dynamic segment, so exit actions
   are cloned or consumed exactly as specified by §§8.1.8.1, 8.7.2, and 14.8.
 
@@ -13971,6 +14021,10 @@ Rules:
   was derived.
 * The lowering MUST NOT expose first-class return points, first-class join continuations, or backend-local arm
   identities at source level.
+* A captured handler resumption of §§8.1.8-8.1.10 is not itself a finite local control protocol of this subsection.
+  It remains an ordinary captured continuation value governed by §§14.8.5-14.8.9 and §17.3.1.5.
+  Only finite local control that occurs inside, around, or after such a resumption may be lowered under this
+  subsection.
 * The lowering MUST NOT change the observability of `defer`, `using`, handler unwinding, resumption reuse, or error
   propagation.
 * If a lowered call forwards all still-live arms unchanged, the implementation MAY realize it as a tail transfer.
