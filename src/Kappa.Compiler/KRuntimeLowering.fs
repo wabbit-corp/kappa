@@ -107,6 +107,7 @@ module internal KRuntimeLowering =
                 cases
                 |> List.map (fun caseClause ->
                     { Pattern = lowerKRuntimePattern caseClause.Pattern
+                      Guard = caseClause.Guard |> Option.map lowerKRuntimeExpression
                       Body = lowerKRuntimeExpression caseClause.Body })
             )
         | KCoreExecute inner ->

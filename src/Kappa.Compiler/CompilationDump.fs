@@ -506,6 +506,13 @@ module CompilationDump =
                         let caseId =
                             addNode "match-case" (IrText.backendPatternText caseClause.Pattern) None
 
+                        match caseClause.Guard with
+                        | Some guard ->
+                            let guardId = buildExpression guard
+                            addEdge caseId guardId "guard"
+                        | None ->
+                            ()
+
                         let bodyId = buildExpression caseClause.Body
                         addEdge nodeId caseId $"case:{index}"
                         addEdge caseId bodyId "body"

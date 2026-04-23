@@ -89,7 +89,9 @@ let ``resource checker keeps if branch shadow bindings scoped to the branch`` ()
         |> String.concat "\n"
 
     let consumeDefinition =
-        LetDeclaration(mkLetDefinition "consume" [ mkParameter "owned" (Some QuantityOne) ] (Literal LiteralValue.Unit))
+        LetDeclaration(
+            mkLetDefinition "consume" [ mkParameter "owned" (Some QuantityOne) ] (Apply(Name [ "owned" ], [ Literal LiteralValue.Unit ]))
+        )
 
     let openFileDefinition =
         LetDeclaration(mkLetDefinition "openFile" [ mkParameter "name" None ] (Name [ "file" ]))
@@ -160,7 +162,9 @@ let ``resource checker keeps nested do shadow bindings scoped to the nested bloc
         |> String.concat "\n"
 
     let consumeDefinition =
-        LetDeclaration(mkLetDefinition "consume" [ mkParameter "owned" (Some QuantityOne) ] (Literal LiteralValue.Unit))
+        LetDeclaration(
+            mkLetDefinition "consume" [ mkParameter "owned" (Some QuantityOne) ] (Apply(Name [ "owned" ], [ Literal LiteralValue.Unit ]))
+        )
 
     let openFileDefinition =
         LetDeclaration(mkLetDefinition "openFile" [ mkParameter "name" None ] (Name [ "file" ]))
@@ -225,7 +229,9 @@ let ``resource checker accounts for a direct local lambda call that consumes a c
         |> String.concat "\n"
 
     let consumeDefinition =
-        LetDeclaration(mkLetDefinition "consume" [ mkParameter "owned" (Some QuantityOne) ] (Literal LiteralValue.Unit))
+        LetDeclaration(
+            mkLetDefinition "consume" [ mkParameter "owned" (Some QuantityOne) ] (Apply(Name [ "owned" ], [ Literal LiteralValue.Unit ]))
+        )
 
     let mainDefinition =
         LetDeclaration(
@@ -279,7 +285,9 @@ let ``resource checker treats a local lambda that captures a linear binding as a
         |> String.concat "\n"
 
     let consumeDefinition =
-        LetDeclaration(mkLetDefinition "consume" [ mkParameter "owned" (Some QuantityOne) ] (Literal LiteralValue.Unit))
+        LetDeclaration(
+            mkLetDefinition "consume" [ mkParameter "owned" (Some QuantityOne) ] (Apply(Name [ "owned" ], [ Literal LiteralValue.Unit ]))
+        )
 
     let mainDefinition =
         LetDeclaration(
@@ -333,7 +341,9 @@ let ``resource checker reports dropping a local lambda that captures a linear bi
         |> String.concat "\n"
 
     let consumeDefinition =
-        LetDeclaration(mkLetDefinition "consume" [ mkParameter "owned" (Some QuantityOne) ] (Literal LiteralValue.Unit))
+        LetDeclaration(
+            mkLetDefinition "consume" [ mkParameter "owned" (Some QuantityOne) ] (Apply(Name [ "owned" ], [ Literal LiteralValue.Unit ]))
+        )
 
     let mainDefinition =
         LetDeclaration(
@@ -384,7 +394,9 @@ let ``resource checker rejects repeated direct local lambda calls that overuse a
         |> String.concat "\n"
 
     let consumeDefinition =
-        LetDeclaration(mkLetDefinition "consume" [ mkParameter "owned" (Some QuantityOne) ] (Literal LiteralValue.Unit))
+        LetDeclaration(
+            mkLetDefinition "consume" [ mkParameter "owned" (Some QuantityOne) ] (Apply(Name [ "owned" ], [ Literal LiteralValue.Unit ]))
+        )
 
     let mainDefinition =
         LetDeclaration(
@@ -412,3 +424,182 @@ let ``resource checker rejects repeated direct local lambda calls that overuse a
     let result = ResourceChecking.checkDocumentsWithFacts [ document ]
 
     Assert.Contains(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_LINEAR_OVERUSE")
+
+[<Fact>]
+let ``resource checker treats a local lambda that captures an at-most-once binding as at-most-once`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "let main = do"
+            "    let <=1 token = token"
+            "    let use = \\u -> token"
+            "    use ()"
+            "    use ()"
+        ]
+        |> String.concat "\n"
+
+    let mainDefinition =
+        LetDeclaration(
+            mkLetDefinition
+                "main"
+                []
+                (Do
+                    [
+                        DoLet(mkBindPattern "token" (Some QuantityAtMostOne), Name [ "token" ])
+                        DoLet(
+                            mkBindPattern "use" None,
+                            Lambda([ mkParameter "u" None ], Name [ "token" ])
+                        )
+                        DoExpression(Apply(Name [ "use" ], [ Literal LiteralValue.Unit ]))
+                        DoExpression(Apply(Name [ "use" ], [ Literal LiteralValue.Unit ]))
+                    ])
+        )
+
+    let document = parsedDocumentWithDeclarations "main.kp" text [ mainDefinition ]
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+    let ownership = result.OwnershipFactsByFile[document.Source.FilePath]
+
+    let closureBinding =
+        ownership.OwnershipBindings
+        |> List.find (fun binding -> binding.BindingName = "use")
+
+    Assert.Equal(Some "<=1", closureBinding.BindingDeclaredQuantity)
+    Assert.Contains(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_LINEAR_OVERUSE")
+
+[<Fact>]
+let ``resource checker treats a local lambda that captures an at-least-once binding as requiring use`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "let main = do"
+            "    let >=1 token = token"
+            "    let use = \\u -> token"
+            "    pure ()"
+        ]
+        |> String.concat "\n"
+
+    let mainDefinition =
+        LetDeclaration(
+            mkLetDefinition
+                "main"
+                []
+                (Do
+                    [
+                        DoLet(mkBindPattern "token" (Some QuantityAtLeastOne), Name [ "token" ])
+                        DoLet(
+                            mkBindPattern "use" None,
+                            Lambda([ mkParameter "u" None ], Name [ "token" ])
+                        )
+                        DoExpression(Literal LiteralValue.Unit)
+                    ])
+        )
+
+    let document = parsedDocumentWithDeclarations "main.kp" text [ mainDefinition ]
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+    let ownership = result.OwnershipFactsByFile[document.Source.FilePath]
+
+    let closureBinding =
+        ownership.OwnershipBindings
+        |> List.find (fun binding -> binding.BindingName = "use")
+
+    Assert.Equal(Some ">=1", closureBinding.BindingDeclaredQuantity)
+    Assert.Contains(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_LINEAR_DROP")
+
+[<Fact>]
+let ``resource checker tracks repeated callee-position use of an at-most-once parameter`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "let invoke (<=1 f : Unit -> Unit) = do"
+            "    f ()"
+            "    f ()"
+        ]
+        |> String.concat "\n"
+
+    let invokeDefinition =
+        LetDeclaration(
+            mkLetDefinition
+                "invoke"
+                [ mkParameter "f" (Some QuantityAtMostOne) ]
+                (Do
+                    [
+                        DoExpression(Apply(Name [ "f" ], [ Literal LiteralValue.Unit ]))
+                        DoExpression(Apply(Name [ "f" ], [ Literal LiteralValue.Unit ]))
+                    ])
+        )
+
+    let document = parsedDocumentWithDeclarations "main.kp" text [ invokeDefinition ]
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+
+    Assert.Contains(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_LINEAR_OVERUSE")
+
+[<Fact>]
+let ``resource checker tracks repeated argument-position use of an at-most-once binding`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "let maybeUse (<=1 x : File) = ()"
+            "let main = do"
+            "    let <=1 file = file"
+            "    maybeUse file"
+            "    maybeUse file"
+        ]
+        |> String.concat "\n"
+
+    let maybeUseDefinition =
+        LetDeclaration(mkLetDefinition "maybeUse" [ mkParameter "x" (Some QuantityAtMostOne) ] (Literal LiteralValue.Unit))
+
+    let mainDefinition =
+        LetDeclaration(
+            mkLetDefinition
+                "main"
+                []
+                (Do
+                    [
+                        DoLet(mkBindPattern "file" (Some QuantityAtMostOne), Name [ "file" ])
+                        DoExpression(Apply(Name [ "maybeUse" ], [ Name [ "file" ] ]))
+                        DoExpression(Apply(Name [ "maybeUse" ], [ Name [ "file" ] ]))
+                    ])
+        )
+
+    let document = parsedDocumentWithDeclarations "main.kp" text [ maybeUseDefinition; mainDefinition ]
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+
+    Assert.Contains(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_LINEAR_OVERUSE")
+
+[<Fact>]
+let ``resource checker counts an at-least-once argument use through a function call`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "let mustUse (>=1 x : File) = ()"
+            "let main = do"
+            "    let >=1 file = file"
+            "    mustUse file"
+        ]
+        |> String.concat "\n"
+
+    let mustUseDefinition =
+        LetDeclaration(mkLetDefinition "mustUse" [ mkParameter "x" (Some QuantityAtLeastOne) ] (Literal LiteralValue.Unit))
+
+    let mainDefinition =
+        LetDeclaration(
+            mkLetDefinition
+                "main"
+                []
+                (Do
+                    [
+                        DoLet(mkBindPattern "file" (Some QuantityAtLeastOne), Name [ "file" ])
+                        DoExpression(Apply(Name [ "mustUse" ], [ Name [ "file" ] ]))
+                    ])
+        )
+
+    let document = parsedDocumentWithDeclarations "main.kp" text [ mustUseDefinition; mainDefinition ]
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+
+    Assert.DoesNotContain(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_LINEAR_DROP")

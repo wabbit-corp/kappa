@@ -509,6 +509,13 @@ module SurfaceElaboration =
                         resultType))
             | Name _ ->
                 None
+            | LocalLet(bindingName, value, body) ->
+                let nextLocals =
+                    match inferExpressionType localTypes value with
+                    | Some valueType -> Map.add bindingName valueType localTypes
+                    | None -> localTypes
+
+                inferExpressionType nextLocals body
             | Lambda(lambdaParameters, lambdaBody) ->
                 let parameterTypes =
                     lambdaParameters
@@ -537,6 +544,8 @@ module SurfaceElaboration =
                 |> function
                     | first :: rest when rest |> List.forall ((=) first) -> Some first
                     | _ -> None
+            | RecordUpdate(receiver, _) ->
+                inferExpressionType localTypes receiver
             | Do statements ->
                 inferDoResultType localTypes statements
             | MonadicSplice inner ->
@@ -739,6 +748,17 @@ module SurfaceElaboration =
                 KCoreLiteral literal
             | Name segments ->
                 KCoreName segments
+            | LocalLet(bindingName, value, body) ->
+                let nextLocals =
+                    match inferExpressionType localTypes value with
+                    | Some valueType -> Map.add bindingName valueType localTypes
+                    | None -> localTypes
+
+                KCoreLet(
+                    bindingName,
+                    lowerExpression localTypes value,
+                    lowerExpression nextLocals body
+                )
             | Lambda(lambdaParameters, lambdaBody) ->
                 let lambdaLocals =
                     lambdaParameters
@@ -765,8 +785,11 @@ module SurfaceElaboration =
                     cases
                     |> List.map (fun caseClause ->
                         { Pattern = lowerKCorePattern caseClause.Pattern
+                          Guard = caseClause.Guard |> Option.map (lowerExpression localTypes)
                           Body = lowerExpression localTypes caseClause.Body })
                 )
+            | RecordUpdate(receiver, _) ->
+                lowerExpression localTypes receiver
             | Do statements ->
                 let scopeLabel = freshDoScopeLabel ()
                 KCoreDoScope(scopeLabel, lowerDoStatements scopeLabel localTypes statements)

@@ -172,7 +172,14 @@ module CheckpointVerification =
                        let caseLocals, patternDiagnostics =
                            verifyRuntimePattern checkpoint bindingLabel caseClause.Pattern
 
-                       patternDiagnostics @ verify (Set.union locals caseLocals) caseClause.Body))
+                       let extendedLocals = Set.union locals caseLocals
+
+                       let guardDiagnostics =
+                           caseClause.Guard
+                           |> Option.map (verify extendedLocals)
+                           |> Option.defaultValue []
+
+                       patternDiagnostics @ guardDiagnostics @ verify extendedLocals caseClause.Body))
             | KRuntimeExecute expression ->
                 verify locals expression
             | KRuntimeLet(bindingName, value, body) ->
@@ -448,7 +455,12 @@ module CheckpointVerification =
                        let _, patternDiagnostics =
                            verifyKBackendPattern moduleMap "KBackendIR" bindingLabel caseClause.Pattern
 
-                       patternDiagnostics @ verifyBackendExpression currentModule bindingLabel caseClause.Body))
+                       let guardDiagnostics =
+                           caseClause.Guard
+                           |> Option.map (verifyBackendExpression currentModule bindingLabel)
+                           |> Option.defaultValue []
+
+                       patternDiagnostics @ guardDiagnostics @ verifyBackendExpression currentModule bindingLabel caseClause.Body))
             | BackendExecute(expression, _) ->
                 verifyBackendExpression currentModule bindingLabel expression
             | BackendLet(_, value, body, _) ->

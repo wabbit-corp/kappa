@@ -245,10 +245,14 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
         this.Expect(LeftParen, "Expected '(' to start the list.") |> ignore
 
         while this.Current.Kind <> RightParen && this.Current.Kind <> EndOfFile do
-            items.Add(this.ConsumeName("Expected a name in the list."))
+            let startPosition = position
+            items.Add(this.ConsumeTermBindingName("Expected a name in the list."))
 
             if this.TryConsume(Comma).IsNone && this.Current.Kind <> RightParen then
                 diagnostics.AddError("Expected ',' between list items.", source.GetLocation(this.Current.Span))
+
+            if position = startPosition && this.Current.Kind <> RightParen && this.Current.Kind <> EndOfFile then
+                this.Advance() |> ignore
 
         this.Expect(RightParen, "Expected ')' to close the list.") |> ignore
         List.ofSeq items
@@ -289,17 +293,21 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
 
         { Modifiers = List.ofSeq modifiers
           Namespace = importNamespace
-          Name = this.ConsumeName("Expected an imported name.") }
+          Name = this.ConsumeTermBindingName("Expected an imported name.") }
 
     member private this.ParseImportItems() =
         let items = ResizeArray<ImportItem>()
         this.Expect(LeftParen, "Expected '(' to start the import item list.") |> ignore
 
         while this.Current.Kind <> RightParen && this.Current.Kind <> EndOfFile do
+            let startPosition = position
             items.Add(this.ParseImportItem())
 
             if this.TryConsume(Comma).IsNone && this.Current.Kind <> RightParen then
                 diagnostics.AddError("Expected ',' between import items.", source.GetLocation(this.Current.Span))
+
+            if position = startPosition && this.Current.Kind <> RightParen && this.Current.Kind <> EndOfFile then
+                this.Advance() |> ignore
 
         this.Expect(RightParen, "Expected ')' to close the import item list.") |> ignore
         List.ofSeq items
@@ -794,6 +802,11 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
     member this.ParseCompilationUnit() =
         this.SkipLayout()
 
+        while this.Current.Kind = Indent do
+            diagnostics.AddError("Unexpected indentation.", source.GetLocation(this.Current.Span))
+            this.Advance() |> ignore
+            this.SkipLayout()
+
         let moduleAttributes = ResizeArray<string>()
 
         while this.Current.Kind = AtSign do
@@ -811,6 +824,11 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
 
         while this.Current.Kind <> EndOfFile do
             this.SkipLayout()
+
+            while this.Current.Kind = Indent do
+                diagnostics.AddError("Unexpected indentation.", source.GetLocation(this.Current.Span))
+                this.Advance() |> ignore
+                this.SkipLayout()
 
             if this.Current.Kind <> EndOfFile then
                 declarations.Add(this.ParseTopLevelDeclaration())
@@ -877,3 +895,6 @@ module Parser =
 
     let parse source tokens =
         parseWithInitialFixities bundledPreludeBootstrapFixities.Value source tokens
+
+    let bootstrapFixities () =
+        bundledPreludeBootstrapFixities.Value

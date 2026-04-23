@@ -395,7 +395,15 @@ module internal KBackendLowering =
                                     Set.empty
 
                         let caseBound = Set.union bound (collectPatternBindings caseClause.Pattern)
-                        Set.union state (collectClosureCaptures locals caseBound caseClause.Body))
+
+                        let guardCaptures =
+                            caseClause.Guard
+                            |> Option.map (collectClosureCaptures locals caseBound)
+                            |> Option.defaultValue Set.empty
+
+                        state
+                        |> Set.union guardCaptures
+                        |> Set.union (collectClosureCaptures locals caseBound caseClause.Body))
                     scrutineeCaptures
             | KRuntimeExecute expression ->
                 collectClosureCaptures locals bound expression
@@ -735,12 +743,22 @@ module internal KBackendLowering =
                                     let caseLocals =
                                         Map.fold (fun mapState key value -> Map.add key value mapState) locals discoveredLocals
 
-                                    lowerExpression scopeLabel caseLocals caseClause.Body
-                                     |> Result.map (fun (loweredBody, bodyRepresentation) ->
-                                         { Pattern = loweredPattern
-                                           Body = loweredBody }
-                                         :: loweredCases,
-                                         bodyRepresentation :: caseRepresentations))))
+                                    let loweredGuardResult =
+                                        caseClause.Guard
+                                        |> Option.map (fun guard ->
+                                            lowerExpression scopeLabel caseLocals guard
+                                            |> Result.map (fun (loweredGuard, _) -> Some loweredGuard))
+                                        |> Option.defaultValue (Result.Ok None)
+
+                                    loweredGuardResult
+                                    |> Result.bind (fun loweredGuard ->
+                                        lowerExpression scopeLabel caseLocals caseClause.Body
+                                        |> Result.map (fun (loweredBody, bodyRepresentation) ->
+                                            { Pattern = loweredPattern
+                                              Guard = loweredGuard
+                                              Body = loweredBody }
+                                            :: loweredCases,
+                                            bodyRepresentation :: caseRepresentations)))))
                         |> Result.map (fun (loweredCases, caseRepresentations) ->
                             let resultRepresentation =
                                 match List.rev caseRepresentations with

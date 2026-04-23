@@ -700,6 +700,32 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
 
         let cases = ResizeArray<SurfaceMatchCase>()
 
+        let tryFindTopLevelTokenIndex predicate (tokens: Token array) =
+            let mutable depth = 0
+            let mutable result = None
+            let mutable index = 0
+
+            while result.IsNone && index < tokens.Length do
+                match tokens[index].Kind with
+                | LeftParen
+                | LeftBracket
+                | LeftBrace
+                | LeftSetBrace ->
+                    depth <- depth + 1
+                | RightParen
+                | RightBracket
+                | RightBrace
+                | RightSetBrace ->
+                    depth <- max 0 (depth - 1)
+                | _ when depth = 0 && predicate tokens[index] ->
+                    result <- Some index
+                | _ ->
+                    ()
+
+                index <- index + 1
+
+            result
+
         while Token.isKeyword Keyword.Case this.Current do
             this.Advance() |> ignore
 
@@ -712,15 +738,31 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
                 this.Advance() |> ignore
 
             let tokenArray = lineTokens |> Seq.toArray
-            let splitIndex = tokenArray |> Array.tryFindIndex (fun token -> token.Kind = Arrow)
+            let splitIndex = tryFindTopLevelTokenIndex (fun token -> token.Kind = Arrow) tokenArray
 
             match splitIndex with
             | Some index ->
-                let patternTokens = tokenArray[0 .. index - 1] |> Array.toList
+                let caseHeadTokens = tokenArray[0 .. index - 1]
+                let guardIndex =
+                    tryFindTopLevelTokenIndex (fun token -> Token.isKeyword Keyword.If token) caseHeadTokens
+
+                let patternTokens, guardTokens =
+                    match guardIndex with
+                    | Some guardIndex ->
+                        caseHeadTokens[0 .. guardIndex - 1] |> Array.toList,
+                        Some(caseHeadTokens[guardIndex + 1 ..] |> Array.toList)
+                    | None ->
+                        List.ofArray caseHeadTokens, None
+
                 let bodyTokens = tokenArray[index + 1 ..] |> Array.toList
                 let pattern = this.ParsePatternFromTokens(patternTokens)
+                let guard = guardTokens |> Option.map this.ParseStandaloneExpression
                 let body = this.ParseStandaloneExpression(bodyTokens)
-                cases.Add({ Pattern = pattern; Body = body })
+                cases.Add(
+                    { Pattern = pattern
+                      Guard = guard
+                      Body = body }
+                )
             | None ->
                 diagnostics.AddError("Expected '->' in the case clause.", source.GetLocation(this.Current.Span))
 
@@ -1107,20 +1149,123 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
     member private this.ParseApplicationExpression() =
         let head = this.ParsePrefixExpression()
         let arguments = ResizeArray<SurfaceExpression>()
-        let mutable keepReading = true
+        let mutable keepReadingArguments = true
 
-        while keepReading do
+        while keepReadingArguments do
             this.SkipLayout()
 
             if this.CanStartApplicationArgumentAfterHead(this.Current) then
                 arguments.Add(this.ParsePrefixExpression())
             else
-                keepReading <- false
+                keepReadingArguments <- false
 
-        if arguments.Count = 0 then
-            head
-        else
-            Apply(head, List.ofSeq arguments)
+        let mutable expression =
+            if arguments.Count = 0 then
+                head
+            else
+                Apply(head, List.ofSeq arguments)
+
+        let rec collectBracedTokens (startToken: Token) =
+            let innerTokens = ResizeArray<Token>()
+            let mutable depth = 1
+
+            while depth > 0 && this.Current.Kind <> EndOfFile do
+                match this.Current.Kind with
+                | LeftBrace ->
+                    depth <- depth + 1
+                    innerTokens.Add(this.Advance())
+                | RightBrace ->
+                    depth <- depth - 1
+
+                    if depth > 0 then
+                        innerTokens.Add(this.Advance())
+                    else
+                        this.Advance() |> ignore
+                | _ ->
+                    innerTokens.Add(this.Advance())
+
+            if depth > 0 then
+                diagnostics.AddError("Expected '}' to close the record update.", source.GetLocation(startToken.Span))
+
+            List.ofSeq innerTokens
+
+        let splitTopLevelCommas (tokens: Token list) =
+            let tokenArray = List.toArray tokens
+            let items = ResizeArray<Token list>()
+            let current = ResizeArray<Token>()
+            let mutable depth = 0
+
+            for token in tokenArray do
+                match token.Kind with
+                | LeftParen
+                | LeftBracket
+                | LeftBrace
+                | LeftSetBrace ->
+                    depth <- depth + 1
+                    current.Add(token)
+                | RightParen
+                | RightBracket
+                | RightBrace
+                | RightSetBrace ->
+                    depth <- max 0 (depth - 1)
+                    current.Add(token)
+                | Comma when depth = 0 ->
+                    items.Add(List.ofSeq current)
+                    current.Clear()
+                | _ ->
+                    current.Add(token)
+
+            if current.Count > 0 then
+                items.Add(List.ofSeq current)
+
+            items |> Seq.toList
+
+        let parseRecordUpdateField (tokens: Token list) =
+            let trimmed =
+                tokens
+                |> List.filter (fun token ->
+                    match token.Kind with
+                    | Newline
+                    | Indent
+                    | Dedent -> false
+                    | _ -> true)
+
+            let isImplicit, remaining =
+                match trimmed with
+                | { Kind = AtSign } :: rest -> true, rest
+                | _ -> false, trimmed
+
+            match remaining with
+            | nameToken :: equalsToken :: valueTokens when Token.isName nameToken && equalsToken.Kind = Equals ->
+                { Name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
+                  IsImplicit = isImplicit
+                  Value = this.ParseStandaloneExpression(valueTokens) }
+            | _ ->
+                diagnostics.AddError("Expected a record update field of the form 'name = expr'.", source.GetLocation(this.Current.Span))
+                { Name = "<missing>"
+                  IsImplicit = isImplicit
+                  Value = Literal LiteralValue.Unit }
+
+        let mutable keepReadingPostfix = true
+
+        while keepReadingPostfix do
+            this.SkipLayout()
+
+            if this.Current.Kind = Dot && this.Peek(1).Kind = LeftBrace then
+                let startToken = this.Advance()
+                this.Advance() |> ignore
+
+                let fields =
+                    collectBracedTokens startToken
+                    |> splitTopLevelCommas
+                    |> List.filter (List.isEmpty >> not)
+                    |> List.map parseRecordUpdateField
+
+                expression <- RecordUpdate(expression, fields)
+            else
+                keepReadingPostfix <- false
+
+        expression
 
     member private this.ParseExpression(minimumPrecedence: int) =
         let mutable left = this.ParseApplicationExpression()
@@ -1243,6 +1388,101 @@ module CoreParsing =
         { Parameters = List.ofSeq parameters
           ReturnTypeTokens = returnTypeTokens }
 
-    let parseExpression (fixities: FixityTable) (source: SourceText) (diagnostics: DiagnosticBag) (tokens: Token list) =
-        let parser = ExpressionParser(tokens, source, diagnostics, fixities)
-        parser.Parse()
+    let rec parseExpression
+        (fixities: FixityTable)
+        (source: SourceText)
+        (diagnostics: DiagnosticBag)
+        (tokens: Token list)
+        : SurfaceExpression option =
+        match tryParseIndentedLocalLetSequence fixities source diagnostics tokens with
+        | Some expression ->
+            Some expression
+        | None ->
+            let parser = ExpressionParser(tokens, source, diagnostics, fixities)
+            parser.Parse()
+
+    and private tryParseIndentedLocalLetSequence
+        (fixities: FixityTable)
+        (source: SourceText)
+        (diagnostics: DiagnosticBag)
+        (tokens: Token list)
+        : SurfaceExpression option =
+        let trimmedLeading =
+            tokens |> List.skipWhile (fun token -> token.Kind = Newline)
+
+        let splitIndentedLines remainingTokens =
+            match remainingTokens with
+            | { Kind = Indent } :: rest ->
+                let lines = ResizeArray<Token list>()
+                let current = ResizeArray<Token>()
+                let mutable depth = 1
+                let mutable finished = false
+
+                for token in rest do
+                    if not finished then
+                        match token.Kind with
+                        | Indent ->
+                            depth <- depth + 1
+                            current.Add(token)
+                        | Dedent ->
+                            depth <- depth - 1
+
+                            if depth = 0 then
+                                if current.Count > 0 then
+                                    lines.Add(List.ofSeq current)
+
+                                finished <- true
+                            else
+                                current.Add(token)
+                        | Newline when depth = 1 ->
+                            lines.Add(List.ofSeq current)
+                            current.Clear()
+                        | _ ->
+                            current.Add(token)
+
+                if not finished then
+                    None
+                else
+                    Some(lines |> Seq.toList |> List.filter (List.isEmpty >> not))
+            | _ ->
+                None
+
+        let parseSimpleLocalLetLine lineTokens : (string * SurfaceExpression) option =
+            let trimmed =
+                lineTokens
+                |> List.filter (fun token ->
+                    match token.Kind with
+                    | Newline
+                    | Indent
+                    | Dedent -> false
+                    | _ -> true)
+
+            match trimmed with
+            | letToken :: nameToken :: equalsToken :: valueTokens
+                when Token.isKeyword Keyword.Let letToken && Token.isName nameToken && equalsToken.Kind = Equals ->
+                Some(
+                    SyntaxFacts.trimIdentifierQuotes nameToken.Text,
+                    parseExpression fixities source diagnostics valueTokens
+                    |> Option.defaultValue (Literal LiteralValue.Unit)
+                )
+            | _ ->
+                None
+
+        match splitIndentedLines trimmedLeading with
+        | Some lines when List.length lines >= 2 && (lines |> List.take (List.length lines - 1) |> List.forall (parseSimpleLocalLetLine >> Option.isSome)) ->
+            let body : SurfaceExpression =
+                parseExpression fixities source diagnostics (List.last lines)
+                |> Option.defaultValue (Literal LiteralValue.Unit)
+
+            let nestedExpression : SurfaceExpression =
+                lines
+                |> List.take (List.length lines - 1)
+                |> List.rev
+                |> List.fold (fun (current: SurfaceExpression) lineTokens ->
+                    match parseSimpleLocalLetLine lineTokens with
+                    | Some(bindingName, value) -> LocalLet(bindingName, value, current)
+                    | None -> current) body
+
+            Some nestedExpression
+        | _ ->
+            None

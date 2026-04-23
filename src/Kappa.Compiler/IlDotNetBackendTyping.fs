@@ -433,6 +433,15 @@ module internal IlDotNetBackendTyping =
                                                 | head :: _ -> Some head
                                                 | [] -> expectedType
 
+                                            match caseClause.Guard with
+                                            | Some guard ->
+                                                let! guardType = inferExpressionType currentModule extendedLocals active None guard
+
+                                                if guardType <> IlPrimitive IlBool then
+                                                    return! Result.Error "IL backend requires Bool guards for match cases."
+                                            | None ->
+                                                ()
+
                                             let! caseType =
                                                 inferExpressionType currentModule extendedLocals active expectedCaseType caseClause.Body
 
@@ -571,4 +580,3 @@ module internal IlDotNetBackendTyping =
                         { Modules = modules
                           DataTypes = allDataTypes
                           TraitInstances = traitInstances })))
-

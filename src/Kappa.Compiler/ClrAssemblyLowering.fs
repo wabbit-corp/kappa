@@ -25,6 +25,7 @@ module internal ClrAssemblyLowering =
                 cases
                 |> List.map (fun caseClause ->
                     { Pattern = lowerPattern caseClause.Pattern
+                      Guard = caseClause.Guard |> Option.map lowerExpression
                       Body = lowerExpression caseClause.Body })
             )
         | BackendExecute(inner, _) ->

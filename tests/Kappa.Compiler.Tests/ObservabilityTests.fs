@@ -1888,6 +1888,7 @@ let ``backend verification rejects duplicate pattern binders`` () =
                         [ "::" ],
                         [ KRuntimeNamePattern "x"; KRuntimeNamePattern "x" ]
                     )
+                  Guard = None
                   Body = KRuntimeLiteral(LiteralValue.Integer 0L) }
             ]
         )

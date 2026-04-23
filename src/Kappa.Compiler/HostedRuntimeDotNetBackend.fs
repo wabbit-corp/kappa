@@ -146,7 +146,12 @@ module HostedRuntimeDotNetBackend =
                 | _ ->
                     cases
                     |> List.map (fun caseClause ->
-                        $"new MatchCase({emitBackendPattern caseClause.Pattern}, {emitBackendExpression caseClause.Body})")
+                        let guardCode =
+                            caseClause.Guard
+                            |> Option.map emitBackendExpression
+                            |> Option.defaultValue "null"
+
+                        $"new MatchCase({emitBackendPattern caseClause.Pattern}, {guardCode}, {emitBackendExpression caseClause.Body})")
                     |> String.concat ", "
                     |> fun body -> $"new MatchCase[] {{ {body} }}"
 

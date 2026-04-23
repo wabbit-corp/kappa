@@ -485,7 +485,16 @@ module Interpreter =
                                     bindings
                                     |> List.fold (fun locals (name, value) -> locals.Add(name, value)) scope.Locals }
 
-                        evaluateExpression nextScope caseClause.Body
+                        match caseClause.Guard with
+                        | Some guard ->
+                            evaluateExpression nextScope guard
+                            |> Result.bind (function
+                                | BooleanValue true -> evaluateExpression nextScope caseClause.Body
+                                | BooleanValue false -> tryCases rest
+                                | value ->
+                                    error $"Match guards must evaluate to Bool, but got {RuntimeValue.format value}.")
+                        | None ->
+                            evaluateExpression nextScope caseClause.Body
 
             tryCases cases
 
@@ -503,16 +512,20 @@ module Interpreter =
                 else
                     ok None
             | KRuntimeConstructorPattern(nameSegments, argumentPatterns) ->
-                resolveName scope nameSegments
-                |> Result.bind (fun constructorValue ->
-                    let expectedConstructor =
-                        match constructorValue with
-                        | ConstructorFunctionValue(constructor, _) -> Some constructor
-                        | ConstructedValue constructed when List.isEmpty constructed.Fields -> Some constructed.Constructor
-                        | _ -> None
+                resolvePatternConstructor scope nameSegments
+                |> Result.bind (fun constructor ->
+                    match value with
+                    | BooleanValue booleanValue
+                        when constructor.Arity = 0
+                             && String.Equals(constructor.TypeName, "Bool", StringComparison.Ordinal)
+                             && List.isEmpty argumentPatterns ->
+                        let expectedValue = String.Equals(constructor.Name, "True", StringComparison.Ordinal)
 
-                    match expectedConstructor, value with
-                    | Some constructor, ConstructedValue constructed
+                        if booleanValue = expectedValue then
+                            ok (Some [])
+                        else
+                            ok None
+                    | ConstructedValue constructed
                         when String.Equals(constructor.QualifiedName, constructed.Constructor.QualifiedName, StringComparison.Ordinal)
                              && List.length argumentPatterns = List.length constructed.Fields ->
                         let rec gatherBindings patterns fields acc =
@@ -530,14 +543,8 @@ module Interpreter =
                                 ok None
 
                         gatherBindings argumentPatterns constructed.Fields []
-                    | Some _, ConstructedValue _ ->
-                        ok None
-                    | Some _, _ ->
-                        ok None
-                    | None, _ ->
-                        let patternName = String.concat "." nameSegments
-                        error $"Pattern '{patternName}' does not resolve to a constructor."
-                )
+                    | _ ->
+                        ok None)
 
         and apply (functionValue: RuntimeValue) (arguments: RuntimeValue list) : Result<RuntimeValue, EvaluationError> =
             match functionValue with
@@ -836,6 +843,72 @@ module Interpreter =
                 let qualifierSegments = segments |> List.take (segments.Length - 1)
                 let bindingName = List.last segments
                 resolveQualifiedName scope qualifierSegments bindingName
+
+        and resolvePatternConstructor (scope: RuntimeScope) (segments: string list) : Result<RuntimeConstructor, EvaluationError> =
+            let currentModule = scope.Context.Modules[scope.CurrentModule]
+
+            let resolveImportedConstructorModules name =
+                currentModule.Imports
+                |> List.choose (fun spec ->
+                    match spec.Source with
+                    | Url _ ->
+                        None
+                    | Dotted moduleSegments ->
+                        let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
+
+                        match Map.tryFind importedModuleName scope.Context.Modules with
+                        | Some importedModule when selectionImportsConstructorName importedModule spec.Selection name ->
+                            Some(importedModuleName, importedModule)
+                        | _ ->
+                            None)
+                |> List.distinctBy fst
+                |> List.map snd
+
+            match segments with
+            | [] ->
+                error "Encountered an empty constructor pattern."
+            | [ name ] ->
+                if currentModule.Constructors.ContainsKey(name) then
+                    ok currentModule.Constructors[name]
+                else
+                    match resolveImportedConstructorModules name with
+                    | [] ->
+                        error $"Pattern '{name}' is not in scope as a constructor."
+                    | [ importedModule ] ->
+                        ok importedModule.Constructors[name]
+                    | _ ->
+                        error $"Pattern constructor '{name}' is ambiguous across imported modules."
+            | _ ->
+                let qualifierSegments = segments |> List.take (segments.Length - 1)
+                let constructorName = List.last segments
+                let qualifierText = SyntaxFacts.moduleNameToText qualifierSegments
+
+                let targetModule =
+                    if String.Equals(qualifierText, scope.CurrentModule, StringComparison.Ordinal) then
+                        Some currentModule
+                    else
+                        currentModule.Imports
+                        |> List.tryPick (fun spec ->
+                            match spec.Source, spec.Alias, spec.Selection with
+                            | Dotted moduleSegments, Some alias, QualifiedOnly when qualifierSegments = [ alias ] ->
+                                Map.tryFind (SyntaxFacts.moduleNameToText moduleSegments) scope.Context.Modules
+                            | Dotted moduleSegments, None, QualifiedOnly when qualifierSegments = moduleSegments ->
+                                Map.tryFind (SyntaxFacts.moduleNameToText moduleSegments) scope.Context.Modules
+                            | _ ->
+                                None)
+
+                match targetModule with
+                | Some runtimeModule when runtimeModule.Name = scope.CurrentModule || runtimeModule.Exports.Contains(constructorName) ->
+                    match runtimeModule.Constructors.TryGetValue(constructorName) with
+                    | true, constructor ->
+                        ok constructor
+                    | _ ->
+                        let patternName = String.concat "." segments
+                        error $"Pattern '{patternName}' does not resolve to a constructor."
+                | Some runtimeModule ->
+                    error $"'{constructorName}' is not exported from module '{runtimeModule.Name}'."
+                | None ->
+                    error $"Module qualifier '{qualifierText}' is not in scope."
 
         and itemImportsTermName (item: ImportItem) =
             item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Term

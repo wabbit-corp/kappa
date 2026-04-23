@@ -6,6 +6,13 @@ open System.IO
 
 // Builds frontend documents and phase snapshots from source text and bundled imports.
 module internal CompilationFrontend =
+    type private ModuleExportInventory =
+        { Terms: Set<string>
+          Types: Set<string>
+          Traits: Set<string>
+          Constructors: Set<string>
+          UnqualifiedBindings: Set<string> }
+
     let parseBundledPrelude () =
         let source = SourceText.From(Stdlib.BundledPreludeVirtualPath, Stdlib.loadBundledPreludeText ())
         let lexed = Lexer.tokenize source
@@ -70,10 +77,26 @@ module internal CompilationFrontend =
         diagnostics.Items
 
     let parseFile (options: CompilationOptions) filePath =
+        let initialFixities = Parser.bootstrapFixities ()
         let source = readSource options.FileSystem filePath
         let inferredModuleName = tryInferModuleName options.FileSystem options.SourceRoot source.FilePath
         let lexed = Lexer.tokenize source
-        let parsed = Parser.parse source lexed.Tokens
+        let parsed = Parser.parseWithInitialFixities initialFixities source lexed.Tokens
+
+        let document =
+            { Source = source
+              InferredModuleName = inferredModuleName
+              Syntax = parsed.Syntax
+              Diagnostics = lexed.Diagnostics @ parsed.Diagnostics }
+
+        { document with
+            Diagnostics = document.Diagnostics @ validateModuleName options document }
+
+    let private parseFileWithFixities (options: CompilationOptions) initialFixities filePath =
+        let source = readSource options.FileSystem filePath
+        let inferredModuleName = tryInferModuleName options.FileSystem options.SourceRoot source.FilePath
+        let lexed = Lexer.tokenize source
+        let parsed = Parser.parseWithInitialFixities initialFixities source lexed.Tokens
 
         let document =
             { Source = source
@@ -252,6 +275,8 @@ module internal CompilationFrontend =
             | Literal(LiteralValue.Character value) -> $"'{value}'"
             | Literal LiteralValue.Unit -> "()"
             | Name segments -> String.concat "." segments
+            | LocalLet(bindingName, value, body) ->
+                $"(let {bindingName} {render value} {render body})"
             | Lambda(parameters, body) ->
                 let names = parameters |> List.map (fun parameter -> parameter.Name) |> String.concat " "
                 $"(lambda ({names}) {render body})"
@@ -260,10 +285,25 @@ module internal CompilationFrontend =
             | Match(scrutinee, cases) ->
                 let caseText =
                     cases
-                    |> List.map (fun caseClause -> $"(case {renderPattern caseClause.Pattern} {render caseClause.Body})")
+                    |> List.map (fun caseClause ->
+                        let guardText =
+                            caseClause.Guard
+                            |> Option.map (fun guard -> $" if {render guard}")
+                            |> Option.defaultValue ""
+
+                        $"(case {renderPattern caseClause.Pattern}{guardText} {render caseClause.Body})")
                     |> String.concat " "
 
                 $"(match {render scrutinee} {caseText})"
+            | RecordUpdate(receiver, fields) ->
+                let fieldText =
+                    fields
+                    |> List.map (fun field ->
+                        let prefix = if field.IsImplicit then "@" else ""
+                        $"{prefix}{field.Name} = {render field.Value}")
+                    |> String.concat ", "
+
+                $"(update {render receiver} {{{fieldText}}})"
             | Do statements ->
                 let renderBindPattern binding =
                     let quantityText =
@@ -349,11 +389,239 @@ module internal CompilationFrontend =
         document.Syntax.ModuleAttributes
         |> List.exists (fun attributeName -> String.Equals(attributeName, "PrivateByDefault", StringComparison.Ordinal))
 
-    let private isExportedDefinition (document: ParsedDocument) (definition: LetDefinition) =
-        match definition.Visibility with
+    let private isExportedVisibility isPrivateByDefault visibility =
+        match visibility with
         | Some Visibility.Public -> true
         | Some Visibility.Private -> false
-        | None -> not (isPrivateByDefault document)
+        | None -> not isPrivateByDefault
+
+    let private isExportedDefinition (document: ParsedDocument) (definition: LetDefinition) =
+        isExportedVisibility (isPrivateByDefault document) definition.Visibility
+
+    let private exportedSignature (document: ParsedDocument) (signature: BindingSignature) =
+        isExportedVisibility (isPrivateByDefault document) signature.Visibility
+
+    let private exportedDataDeclaration (document: ParsedDocument) (declaration: DataDeclaration) =
+        isExportedVisibility (isPrivateByDefault document) declaration.Visibility
+
+    let private exportedTypeAlias (document: ParsedDocument) (declaration: TypeAlias) =
+        isExportedVisibility (isPrivateByDefault document) declaration.Visibility
+
+    let private exportedTraitDeclaration (document: ParsedDocument) (declaration: TraitDeclaration) =
+        isExportedVisibility (isPrivateByDefault document) declaration.Visibility
+
+    let private tokenName (token: Token) =
+        match token.Kind with
+        | Identifier
+        | Keyword _ ->
+            Some(SyntaxFacts.trimIdentifierQuotes token.Text)
+        | Operator ->
+            Some token.Text
+        | _ ->
+            None
+
+    let private findTokenLocation (document: ParsedDocument) name =
+        document.Syntax.Tokens
+        |> List.tryPick (fun token ->
+            tokenName token
+            |> Option.filter (fun tokenName -> String.Equals(tokenName, name, StringComparison.Ordinal))
+            |> Option.map (fun _ -> document.Source.GetLocation(token.Span)))
+
+    let private buildModuleExportInventory (documents: ParsedDocument list) =
+        let emptyInventory =
+            { Terms = Set.empty
+              Types = Set.empty
+              Traits = Set.empty
+              Constructors = Set.empty
+              UnqualifiedBindings = Set.empty }
+
+        let addDocument inventory (document: ParsedDocument) =
+            document.Syntax.Declarations
+            |> List.fold (fun current declaration ->
+                match declaration with
+                | SignatureDeclaration signature when exportedSignature document signature ->
+                    { current with
+                        Terms = Set.add signature.Name current.Terms
+                        UnqualifiedBindings = Set.add signature.Name current.UnqualifiedBindings }
+                | LetDeclaration definition when isExportedDefinition document definition ->
+                    match definition.Name with
+                    | Some name ->
+                        { current with
+                            Terms = Set.add name current.Terms
+                            UnqualifiedBindings = Set.add name current.UnqualifiedBindings }
+                    | None ->
+                        current
+                | DataDeclarationNode declaration when exportedDataDeclaration document declaration ->
+                    let constructorNames =
+                        declaration.Constructors
+                        |> List.map (fun constructor -> constructor.Name)
+
+                    let sameSpellingConstructors, _ =
+                        constructorNames
+                        |> List.partition (fun name -> String.Equals(name, declaration.Name, StringComparison.Ordinal))
+
+                    { current with
+                        Types = Set.add declaration.Name current.Types
+                        Constructors = Set.union current.Constructors (Set.ofList constructorNames)
+                        UnqualifiedBindings =
+                            current.UnqualifiedBindings
+                            |> Set.add declaration.Name
+                            |> fun bindings ->
+                                sameSpellingConstructors
+                                |> List.fold (fun state name -> Set.add name state) bindings }
+                | TypeAliasNode declaration when exportedTypeAlias document declaration ->
+                    { current with
+                        Types = Set.add declaration.Name current.Types
+                        UnqualifiedBindings = Set.add declaration.Name current.UnqualifiedBindings }
+                | TraitDeclarationNode declaration when exportedTraitDeclaration document declaration ->
+                    { current with
+                        Traits = Set.add declaration.Name current.Traits
+                        UnqualifiedBindings = Set.add declaration.Name current.UnqualifiedBindings }
+                | _ ->
+                    current) inventory
+
+        documents
+        |> List.choose (fun document ->
+            document.ModuleName
+            |> Option.map (fun moduleName -> SyntaxFacts.moduleNameToText moduleName, document))
+        |> List.groupBy fst
+        |> List.map (fun (moduleNameText, entries) ->
+            let syntaxInventory =
+                entries
+                |> List.map snd
+                |> List.fold addDocument emptyInventory
+
+            let inventory =
+                if String.Equals(moduleNameText, Stdlib.PreludeModuleText, StringComparison.Ordinal) then
+                    let contract = IntrinsicCatalog.bundledPreludeExpectContract ()
+
+                    { syntaxInventory with
+                        Terms = Set.union syntaxInventory.Terms contract.TermNames
+                        Types = Set.union syntaxInventory.Types contract.TypeNames
+                        Traits = Set.union syntaxInventory.Traits contract.TraitNames
+                        UnqualifiedBindings =
+                            syntaxInventory.UnqualifiedBindings
+                            |> Set.union contract.TermNames
+                            |> Set.union contract.TypeNames
+                            |> Set.union contract.TraitNames
+                            |> Set.union (Set.ofList Stdlib.FixedPreludeConstructors) }
+                else
+                    syntaxInventory
+
+            moduleNameText, inventory)
+        |> Map.ofList
+
+    let private importItemExists inventory (item: ImportItem) =
+        match item.Namespace with
+        | Some ImportNamespace.Term ->
+            Set.contains item.Name inventory.Terms
+        | Some ImportNamespace.Type ->
+            Set.contains item.Name inventory.Types
+        | Some ImportNamespace.Trait ->
+            Set.contains item.Name inventory.Traits
+        | Some ImportNamespace.Constructor ->
+            Set.contains item.Name inventory.Constructors
+        | None ->
+            Set.contains item.Name inventory.UnqualifiedBindings
+
+    let validateImportSelections (documents: ParsedDocument list) =
+        let diagnostics = DiagnosticBag()
+        let exportInventories = buildModuleExportInventory documents
+
+        for document in documents do
+            for declaration in document.Syntax.Declarations do
+                match declaration with
+                | ImportDeclaration (_, specs) ->
+                    for spec in specs do
+                        match spec.Source, spec.Selection with
+                        | Dotted moduleName, Items items ->
+                            let importedModuleName = SyntaxFacts.moduleNameToText moduleName
+
+                            match Map.tryFind importedModuleName exportInventories with
+                            | Some inventory ->
+                                for item in items do
+                                    if not (importItemExists inventory item) then
+                                        diagnostics.AddError(
+                                            $"Import item '{item.Name}' was not found in module '{importedModuleName}'.",
+                                            defaultArg (findTokenLocation document item.Name) (document.Source.GetLocation(TextSpan.FromBounds(0, 0))),
+                                            code = "E_IMPORT_ITEM_NOT_FOUND",
+                                            stage = "KFrontIR",
+                                            phase = KFrontIRPhase.phaseName CHECKERS
+                                        )
+                            | None ->
+                                ()
+                        | _ ->
+                            ()
+                | _ ->
+                    ()
+
+        diagnostics.Items
+
+    let private buildModuleFixityInventory (documents: ParsedDocument list) =
+        documents
+        |> List.choose (fun document ->
+            document.ModuleName
+            |> Option.map (fun moduleName -> SyntaxFacts.moduleNameToText moduleName, document))
+        |> List.groupBy fst
+        |> List.map (fun (moduleNameText, entries) ->
+            let declarations =
+                entries
+                |> List.collect (fun (_, document) ->
+                    document.Syntax.Declarations
+                    |> List.choose (function
+                        | FixityDeclarationNode declaration -> Some declaration
+                        | _ -> None))
+
+            moduleNameText, declarations)
+        |> Map.ofList
+
+    let private selectionImportsFixityName inventory selection name =
+        match selection with
+        | QualifiedOnly ->
+            false
+        | Items items ->
+            items
+            |> List.exists (fun item ->
+                String.Equals(item.Name, name, StringComparison.Ordinal)
+                && importItemExists inventory item)
+        | All ->
+            Set.contains name inventory.UnqualifiedBindings
+        | AllExcept excludedNames ->
+            Set.contains name inventory.UnqualifiedBindings
+            && not (excludedNames |> List.exists (fun excluded -> String.Equals(excluded, name, StringComparison.Ordinal)))
+
+    let reparseDocumentsWithImportedFixities (options: CompilationOptions) (documents: ParsedDocument list) =
+        let baseFixities = Parser.bootstrapFixities ()
+        let exportInventories = buildModuleExportInventory documents
+        let moduleFixityInventory = buildModuleFixityInventory documents
+
+        documents
+        |> List.map (fun document ->
+            let importedFixities =
+                document.Syntax.Declarations
+                |> List.collect (function
+                    | ImportDeclaration (_, specs) -> specs
+                    | _ -> [])
+                |> List.collect (fun spec ->
+                    match spec.Source with
+                    | Dotted moduleName ->
+                        let moduleNameText = SyntaxFacts.moduleNameToText moduleName
+
+                        match Map.tryFind moduleNameText exportInventories, Map.tryFind moduleNameText moduleFixityInventory with
+                        | Some inventory, Some fixities ->
+                            fixities
+                            |> List.filter (fun declaration ->
+                                selectionImportsFixityName inventory spec.Selection declaration.OperatorName)
+                        | _ ->
+                            []
+                    | Url _ ->
+                        [])
+
+            let initialFixities =
+                importedFixities
+                |> List.fold (fun table declaration -> FixityTable.add declaration table) baseFixities
+
+            parseFileWithFixities options initialFixities document.Source.FilePath)
 
     let declarationKindText (declaration: TopLevelDeclaration) =
         match declaration with

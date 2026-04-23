@@ -826,15 +826,48 @@ module internal ZigCcBackendEmit =
                     (fun state case ->
                         result {
                             let! accumulated = state
-                            let! emittedCase =
+                            let nextCaseLabel = freshTemp context "match_next_case"
+                            let emittedCaseResult =
                                 emitPatternCase context scope scrutineeValue case.Pattern (fun caseScope ->
                                     result {
+                                        let! emittedGuard =
+                                            match case.Guard with
+                                            | Some guard ->
+                                                emitExpression context caseScope guard
+                                                |> Result.map Some
+                                            | None ->
+                                                Result.Ok None
+
                                         let! emittedBody = emitExpression context caseScope case.Body
+
+                                        let guardStatements =
+                                            match emittedGuard with
+                                            | Some emittedGuard ->
+                                                let guardValue = freshTemp context "match_guard"
+
+                                                emittedGuard.Statements
+                                                @ [ $"KValue* {guardValue} = {emittedGuard.ValueExpression};"
+                                                    $"if (!kappa_expect_bool({guardValue})) {{"
+                                                    $"    goto {nextCaseLabel};"
+                                                    "}" ]
+                                            | None ->
+                                                []
+
                                         return
-                                            emittedBody.Statements
+                                            guardStatements
+                                            @ emittedBody.Statements
                                             @ [ $"{resultValue} = {emittedBody.ValueExpression};"
                                                 $"goto {endLabel};" ]
                                     })
+
+                            let! emittedCase =
+                                emittedCaseResult
+                                |> Result.map (fun emittedCase ->
+                                    match case.Guard with
+                                    | Some _ ->
+                                        emittedCase @ [ $"{nextCaseLabel}:;" ]
+                                    | None ->
+                                        emittedCase)
 
                             return accumulated @ emittedCase
                         })
@@ -891,4 +924,3 @@ module internal ZigCcBackendEmit =
                   SupportDefinitions = []
                   Definition = joinLines definitionLines }
         }
-

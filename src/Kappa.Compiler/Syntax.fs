@@ -263,9 +263,11 @@ type FixityDeclaration =
 type SurfaceExpression =
     | Literal of LiteralValue
     | Name of string list
+    | LocalLet of bindingName: string * value: SurfaceExpression * body: SurfaceExpression
     | Lambda of Parameter list * SurfaceExpression
     | IfThenElse of SurfaceExpression * SurfaceExpression * SurfaceExpression
     | Match of SurfaceExpression * SurfaceMatchCase list
+    | RecordUpdate of receiver: SurfaceExpression * fields: SurfaceRecordUpdateField list
     | Do of SurfaceDoStatement list
     | MonadicSplice of SurfaceExpression
     | Apply of SurfaceExpression * SurfaceExpression list
@@ -278,6 +280,11 @@ and SurfaceInterpolatedStringPart =
     | StringText of string
     | StringInterpolation of SurfaceExpression
 
+and SurfaceRecordUpdateField =
+    { Name: string
+      IsImplicit: bool
+      Value: SurfaceExpression }
+
 and SurfacePattern =
     | WildcardPattern
     | NamePattern of string
@@ -286,6 +293,7 @@ and SurfacePattern =
 
 and SurfaceMatchCase =
     { Pattern: SurfacePattern
+      Guard: SurfaceExpression option
       Body: SurfaceExpression }
 
 and SurfaceBindPattern =

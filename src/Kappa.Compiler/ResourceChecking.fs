@@ -90,19 +90,49 @@ module ResourceChecking =
         | Some quantity -> ResourceQuantity.isBorrow quantity
         | _ -> false
 
+    let private concreteQuantityCountsUse quantity =
+        match quantity with
+        | ResourceQuantity.Interval(0, Some 0) -> false
+        | ResourceQuantity.Interval _ -> true
+        | _ -> false
+
     let private quantityText quantity =
         quantity |> Option.map ResourceQuantity.toSurfaceText
 
-    let private inferLambdaBindingQuantity (capturedBindings: ResourceBinding list) =
-        if
-            capturedBindings
-            |> List.exists (fun binding ->
-                binding.DeclaredQuantity
-                |> Option.exists ResourceQuantity.isExactOne)
-        then
+    let private combineLambdaBindingQuantity left right =
+        match left, right with
+        | Some(ResourceQuantity.Interval(1, Some 1)), _
+        | _, Some(ResourceQuantity.Interval(1, Some 1)) ->
             Some ResourceQuantity.one
-        else
+        | Some(ResourceQuantity.Interval(0, Some 1)), Some(ResourceQuantity.Interval(1, None))
+        | Some(ResourceQuantity.Interval(1, None)), Some(ResourceQuantity.Interval(0, Some 1)) ->
+            Some ResourceQuantity.one
+        | Some(ResourceQuantity.Interval(0, Some 1)), _
+        | _, Some(ResourceQuantity.Interval(0, Some 1)) ->
+            Some ResourceQuantity.atMostOne
+        | Some(ResourceQuantity.Interval(1, None)), _
+        | _, Some(ResourceQuantity.Interval(1, None)) ->
+            Some ResourceQuantity.atLeastOne
+        | Some(ResourceQuantity.Interval(0, Some 0)), other
+        | other, Some(ResourceQuantity.Interval(0, Some 0)) ->
+            other
+        | Some(ResourceQuantity.Interval(0, None)), other
+        | other, Some(ResourceQuantity.Interval(0, None)) ->
+            other
+        | Some(ResourceQuantity.Borrow _), other
+        | other, Some(ResourceQuantity.Borrow _) ->
+            other
+        | Some(ResourceQuantity.Variable _), _
+        | _, Some(ResourceQuantity.Variable _) ->
+            left |> Option.orElse right
+        | None, None ->
             None
+        | _ ->
+            left |> Option.orElse right
+
+    let private inferLambdaBindingQuantity (capturedBindings: ResourceBinding list) =
+        capturedBindings
+        |> List.fold (fun current binding -> combineLambdaBindingQuantity current binding.DeclaredQuantity) None
 
     let private bindingDemand (binding: ResourceBinding) =
         match binding.BorrowRegion with
@@ -262,6 +292,12 @@ module ResourceChecking =
             | Literal _ -> ()
             | Name [ name ] -> yield name
             | Name _ -> ()
+            | LocalLet(bindingName, value, body) ->
+                yield! expressionNames value
+
+                for name in expressionNames body do
+                    if not (String.Equals(name, bindingName, StringComparison.Ordinal)) then
+                        yield name
             | Lambda(parameters, body) ->
                 let parameterNames =
                     parameters
@@ -279,7 +315,16 @@ module ResourceChecking =
                 yield! expressionNames scrutinee
 
                 for caseClause in cases do
+                    match caseClause.Guard with
+                    | Some guard -> yield! expressionNames guard
+                    | None -> ()
+
                     yield! expressionNames caseClause.Body
+            | RecordUpdate(receiver, fields) ->
+                yield! expressionNames receiver
+
+                for field in fields do
+                    yield! expressionNames field.Value
             | Do statements ->
                 for statement in statements do
                     yield! doStatementNames statement
@@ -709,6 +754,25 @@ module ResourceChecking =
         | Literal _
         | Name _ ->
             state
+        | LocalLet(bindingName, value, body) ->
+            let state = checkExpression document signatures state value
+
+            withScope $"let_{bindingName}" (fun scopedState ->
+                let scopedState =
+                    addBinding
+                        bindingName
+                        None
+                        None
+                        Set.empty
+                        []
+                        false
+                        None
+                        None
+                        (findBinderLocation document bindingName)
+                        scopedState
+
+                checkExpression document signatures scopedState body
+                |> checkScopeLinearDrops document) state
         | Lambda _ ->
             state
         | IfThenElse(condition, whenTrue, whenFalse) ->
@@ -724,13 +788,27 @@ module ResourceChecking =
             match cases with
             | [] -> state
             | first :: rest ->
-                let firstState = checkExpressionInScope "match_case0" document signatures state first.Body
+                let checkCase index (caseClause: SurfaceMatchCase) =
+                    withScope $"match_case{index}" (fun scopedState ->
+                        let scopedState =
+                            match caseClause.Guard with
+                            | Some guard -> checkExpression document signatures scopedState guard
+                            | None -> scopedState
+
+                        checkExpression document signatures scopedState caseClause.Body
+                        |> checkScopeLinearDrops document) state
+
+                let firstState = checkCase 0 first
 
                 rest
                 |> List.mapi (fun index caseClause ->
                     index + 1, caseClause)
                 |> List.fold (fun current (index, caseClause) ->
-                    mergeBranchState current (checkExpressionInScope $"match_case{index}" document signatures state caseClause.Body)) firstState
+                    mergeBranchState current (checkCase index caseClause)) firstState
+        | RecordUpdate(receiver, fields) ->
+            fields
+            |> List.fold (fun current field ->
+                checkExpression document signatures current field.Value) (checkExpression document signatures state receiver)
         | Do statements ->
             checkDoStatementsInScope "do" document signatures state statements
         | MonadicSplice inner
@@ -770,7 +848,7 @@ module ResourceChecking =
 
             let state =
                 match calleeBinding with
-                | Some binding when quantityConsumes binding.DeclaredQuantity ->
+                | Some binding when binding.DeclaredQuantity |> Option.exists concreteQuantityCountsUse ->
                     consumeBinding document binding.Name state
                 | Some binding when quantityBorrows binding.DeclaredQuantity ->
                     addNamedEvent "borrow" (findUseLocation document binding.Name 1) binding.Name state
@@ -836,9 +914,9 @@ module ResourceChecking =
 
                     let next =
                         match quantity, argument with
-                        | Some quantity, Name [ name ] when quantityConsumes quantity ->
+                        | Some quantity, Name [ name ] when quantity |> Option.exists concreteQuantityCountsUse ->
                             consumeBinding document name current
-                        | Some quantity, InoutArgument(Name [ name ]) when quantityConsumes quantity ->
+                        | Some quantity, InoutArgument(Name [ name ]) when quantity |> Option.exists concreteQuantityCountsUse ->
                             consumeBinding document name current
                         | Some quantity, Name [ name ] when quantityBorrows quantity ->
                             current
@@ -1012,6 +1090,8 @@ module ResourceChecking =
             else
                 parameter.Quantity |> Option.map ResourceQuantity.ofSurface
 
+        let checkDrop = quantity |> Option.exists ResourceQuantity.requiresUse
+
         let region: BorrowRegion option =
             match quantity with
             | Some(ResourceQuantity.Borrow explicitRegion) ->
@@ -1026,7 +1106,7 @@ module ResourceChecking =
             | Some region -> addBorrowRegionFact region state
             | None -> state
 
-        addBinding parameter.Name quantity region Set.empty [] false None None (findBinderLocation document parameter.Name) state
+        addBinding parameter.Name quantity region Set.empty [] checkDrop None None (findBinderLocation document parameter.Name) state
 
     let private checkDefinition (signatures: Map<string, FunctionSignature>) (document: ParsedDocument) scopeId (definition: LetDefinition) =
         match definition.Body with

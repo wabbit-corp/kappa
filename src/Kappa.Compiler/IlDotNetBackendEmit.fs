@@ -1022,11 +1022,21 @@ module internal IlDotNetBackendEmit =
 
                         emitPatternMatch localValues scrutineeType caseClause.Pattern scrutineeLocal nextCaseLabel
                         |> Result.bind (fun caseScope ->
-                            emitExpression state currentModule typeParameters caseScope (Some matchType) il caseClause.Body
-                            |> Result.map (fun () ->
-                                il.Emit(OpCodes.Stloc, resultLocal)
-                                il.Emit(OpCodes.Br, endLabel)
-                                il.MarkLabel(nextCaseLabel)))
+                            let emitBody () =
+                                emitExpression state currentModule typeParameters caseScope (Some matchType) il caseClause.Body
+                                |> Result.map (fun () ->
+                                    il.Emit(OpCodes.Stloc, resultLocal)
+                                    il.Emit(OpCodes.Br, endLabel)
+                                    il.MarkLabel(nextCaseLabel))
+
+                            match caseClause.Guard with
+                            | Some guard ->
+                                emitExpression state currentModule typeParameters caseScope (Some(IlPrimitive IlBool)) il guard
+                                |> Result.map (fun () ->
+                                    il.Emit(OpCodes.Brfalse, nextCaseLabel))
+                                |> Result.bind (fun () -> emitBody ())
+                            | None ->
+                                emitBody ())
                         |> Result.bind (fun () -> emitCases rest)
 
                 do! emitCases cases

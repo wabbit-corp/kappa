@@ -46,6 +46,7 @@ and KCorePattern =
 
 and KCoreMatchCase =
     { Pattern: KCorePattern
+      Guard: KCoreExpression option
       Body: KCoreExpression }
 
 type KCoreBinding =

@@ -36,6 +36,7 @@ and KRuntimePattern =
 
 and KRuntimeMatchCase =
     { Pattern: KRuntimePattern
+      Guard: KRuntimeExpression option
       Body: KRuntimeExpression }
 
 type KRuntimeParameter =

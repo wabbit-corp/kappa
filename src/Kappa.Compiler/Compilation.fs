@@ -73,6 +73,7 @@ module Compilation =
         let userDocuments =
             collectInputFiles options inputs
             |> List.map (parseFile options)
+            |> reparseDocumentsWithImportedFixities options
 
         let documents =
             if userDocuments |> List.exists (fun document -> document.ModuleName = Some Stdlib.PreludeModuleName) then
@@ -83,6 +84,7 @@ module Compilation =
         let frontendDiagnostics =
             (documents |> List.collect (fun document -> document.Diagnostics))
             @ detectImportCycles documents
+            @ validateImportSelections documents
             @ validateExpectDeclarations normalizedBackendProfile documents
 
         let resourceCheckResult: ResourceChecking.CheckResult =

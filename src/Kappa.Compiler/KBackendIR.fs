@@ -124,6 +124,7 @@ and KBackendPattern =
 
 and KBackendMatchCase =
     { Pattern: KBackendPattern
+      Guard: KBackendExpression option
       Body: KBackendExpression }
 
 type KBackendEnvironmentLayout =

@@ -47,7 +47,13 @@ module internal IrText =
         | KCoreMatch(scrutinee, cases) ->
             let caseText =
                 cases
-                |> List.map (fun caseClause -> $"(case {kcorePatternText caseClause.Pattern} {kcoreExpressionText caseClause.Body})")
+                |> List.map (fun caseClause ->
+                    let guardText =
+                        caseClause.Guard
+                        |> Option.map (fun guard -> $" if {kcoreExpressionText guard}")
+                        |> Option.defaultValue ""
+
+                    $"(case {kcorePatternText caseClause.Pattern}{guardText} {kcoreExpressionText caseClause.Body})")
                 |> String.concat " "
 
             $"(match {kcoreExpressionText scrutinee} {caseText})"
@@ -142,7 +148,13 @@ module internal IrText =
         | KRuntimeMatch(scrutinee, cases) ->
             let caseText =
                 cases
-                |> List.map (fun caseClause -> $"(case {runtimePatternText caseClause.Pattern} {runtimeExpressionText caseClause.Body})")
+                |> List.map (fun caseClause ->
+                    let guardText =
+                        caseClause.Guard
+                        |> Option.map (fun guard -> $" if {runtimeExpressionText guard}")
+                        |> Option.defaultValue ""
+
+                    $"(case {runtimePatternText caseClause.Pattern}{guardText} {runtimeExpressionText caseClause.Body})")
                 |> String.concat " "
 
             $"(match {runtimeExpressionText scrutinee} {caseText})"
@@ -303,7 +315,13 @@ module internal IrText =
         | BackendMatch(scrutinee, cases, resultRepresentation) ->
             let caseText =
                 cases
-                |> List.map (fun caseClause -> $"(case {backendPatternText caseClause.Pattern} {backendExpressionText caseClause.Body})")
+                |> List.map (fun caseClause ->
+                    let guardText =
+                        caseClause.Guard
+                        |> Option.map (fun guard -> $" if {backendExpressionText guard}")
+                        |> Option.defaultValue ""
+
+                    $"(case {backendPatternText caseClause.Pattern}{guardText} {backendExpressionText caseClause.Body})")
                 |> String.concat " "
 
             $"(match rep={backendRepresentationText resultRepresentation} {backendExpressionText scrutinee} {caseText})"
@@ -350,4 +368,3 @@ module internal IrText =
                 |> String.concat " | "
 
             $"({prefix}-string rep={backendRepresentationText resultRepresentation} {partText})"
-

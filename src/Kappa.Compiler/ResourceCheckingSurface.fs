@@ -1,5 +1,7 @@
 namespace Kappa.Compiler
 
+open System
+
 // Walks surface syntax into the lightweight forms consumed by resource checking.
 module internal ResourceCheckingSurface =
     let collectPatternNames (pattern: SurfacePattern) =
@@ -22,6 +24,12 @@ module internal ResourceCheckingSurface =
             | Literal _ -> ()
             | Name [ name ] -> yield name
             | Name _ -> ()
+            | LocalLet(bindingName, value, body) ->
+                yield! expressionNames value
+
+                for name in expressionNames body do
+                    if not (String.Equals(name, bindingName, StringComparison.Ordinal)) then
+                        yield name
             | Lambda(parameters, body) ->
                 let parameterNames =
                     parameters
@@ -39,7 +47,16 @@ module internal ResourceCheckingSurface =
                 yield! expressionNames scrutinee
 
                 for caseClause in cases do
+                    match caseClause.Guard with
+                    | Some guard -> yield! expressionNames guard
+                    | None -> ()
+
                     yield! expressionNames caseClause.Body
+            | RecordUpdate(receiver, fields) ->
+                yield! expressionNames receiver
+
+                for field in fields do
+                    yield! expressionNames field.Value
             | Do statements ->
                 for statement in statements do
                     yield! doStatementNames statement

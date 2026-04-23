@@ -205,11 +205,13 @@ internal sealed class Pattern
 internal sealed class MatchCase
 {
     public Pattern Pattern { get; }
+    public KExpr? Guard { get; }
     public KExpr Body { get; }
 
-    public MatchCase(Pattern pattern, KExpr body)
+    public MatchCase(Pattern pattern, KExpr? guard, KExpr body)
     {
         Pattern = pattern;
+        Guard = guard;
         Body = body;
     }
 }
@@ -778,7 +780,24 @@ internal static class KappaRunner
                 nextLocals[name] = value;
             }
 
-            return EvaluateExpression(new RuntimeScope(nextLocals, scope.CurrentModule, scope.Context), matchCase.Body);
+            var nextScope = new RuntimeScope(nextLocals, scope.CurrentModule, scope.Context);
+
+            if (matchCase.Guard is not null)
+            {
+                var guardValue = EvaluateExpression(nextScope, matchCase.Guard);
+
+                if (guardValue is not BooleanValue booleanValue)
+                {
+                    throw new RuntimeError($"Match guards must evaluate to Bool, but got {Format(guardValue)}.");
+                }
+
+                if (!booleanValue.Value)
+                {
+                    continue;
+                }
+            }
+
+            return EvaluateExpression(nextScope, matchCase.Body);
         }
 
         throw new RuntimeError($"Non-exhaustive match for {Format(scrutineeValue)}.");
@@ -798,20 +817,17 @@ internal static class KappaRunner
                     : null;
             case PatternKind.Constructor:
             {
-                var constructorValue = ResolveName(scope, pattern.Segments);
+                var expectedConstructor = ResolvePatternConstructor(scope, pattern.Segments);
 
-                RuntimeConstructor? expectedConstructor =
-                    constructorValue switch
-                    {
-                        ConstructorFunctionValue functionValue => functionValue.Constructor,
-                        ConstructedValue resolvedConstructedValue when resolvedConstructedValue.Fields.Count == 0 => resolvedConstructedValue.Constructor,
-                        _ => null
-                    };
-
-                if (expectedConstructor is null)
+                if (value is BooleanValue booleanValue
+                    && expectedConstructor.Arity == 0
+                    && string.Equals(expectedConstructor.TypeName, "Bool", StringComparison.Ordinal)
+                    && pattern.Arguments.Length == 0)
                 {
-                    var patternName = string.Join(".", pattern.Segments);
-                    throw new RuntimeError($"Pattern '{patternName}' does not resolve to a constructor.");
+                    var expectedValue = string.Equals(expectedConstructor.Name, "True", StringComparison.Ordinal);
+                    return booleanValue.Value == expectedValue
+                        ? new List<(string Name, KValue Value)>()
+                        : null;
                 }
 
                 if (value is not ConstructedValue actualConstructedValue
@@ -1379,6 +1395,108 @@ internal static class KappaRunner
         }
 
         throw new RuntimeError($"'{bindingName}' is not exported from module '{targetModule.Name}'.");
+    }
+
+    private static RuntimeConstructor ResolvePatternConstructor(RuntimeScope scope, string[] segments)
+    {
+        if (segments.Length == 0)
+        {
+            throw new RuntimeError("Encountered an empty constructor pattern.");
+        }
+
+        var currentModule = scope.Context.Modules[scope.CurrentModule];
+
+        if (segments.Length == 1)
+        {
+            var name = segments[0];
+
+            if (currentModule.Constructors.TryGetValue(name, out var localConstructor))
+            {
+                return localConstructor;
+            }
+
+            var matches = new Dictionary<string, RuntimeModule>(StringComparer.Ordinal);
+
+            foreach (var spec in currentModule.Imports)
+            {
+                if (spec.Source.IsUrl)
+                {
+                    continue;
+                }
+
+                var importedModuleName = string.Join(".", spec.Source.Segments);
+
+                if (!scope.Context.Modules.TryGetValue(importedModuleName, out var importedModule))
+                {
+                    continue;
+                }
+
+                if (SelectionImportsConstructorName(importedModule, spec.Selection, name))
+                {
+                    matches[importedModuleName] = importedModule;
+                }
+            }
+
+            return matches.Count switch
+            {
+                0 => throw new RuntimeError($"Pattern '{name}' is not in scope as a constructor."),
+                1 => matches.Values.Single().Constructors[name],
+                _ => throw new RuntimeError($"Pattern constructor '{name}' is ambiguous across imported modules.")
+            };
+        }
+
+        var qualifierSegments = segments.Take(segments.Length - 1).ToArray();
+        var constructorName = segments[^1];
+        var qualifierText = string.Join(".", qualifierSegments);
+        RuntimeModule? targetModule = null;
+
+        if (string.Equals(qualifierText, scope.CurrentModule, StringComparison.Ordinal))
+        {
+            targetModule = currentModule;
+        }
+        else
+        {
+            foreach (var spec in currentModule.Imports)
+            {
+                if (spec.Source.IsUrl || spec.Selection.Kind != ImportSelectionKind.QualifiedOnly)
+                {
+                    continue;
+                }
+
+                if (spec.Alias is not null
+                    && qualifierSegments.Length == 1
+                    && string.Equals(spec.Alias, qualifierSegments[0], StringComparison.Ordinal)
+                    && scope.Context.Modules.TryGetValue(string.Join(".", spec.Source.Segments), out var aliasedModule))
+                {
+                    targetModule = aliasedModule;
+                    break;
+                }
+
+                if (qualifierSegments.SequenceEqual(spec.Source.Segments)
+                    && scope.Context.Modules.TryGetValue(string.Join(".", spec.Source.Segments), out var importedModule))
+                {
+                    targetModule = importedModule;
+                    break;
+                }
+            }
+        }
+
+        if (targetModule is null)
+        {
+            throw new RuntimeError($"Module qualifier '{qualifierText}' is not in scope.");
+        }
+
+        if (targetModule.Name != scope.CurrentModule && !targetModule.Exports.Contains(constructorName))
+        {
+            throw new RuntimeError($"'{constructorName}' is not exported from module '{targetModule.Name}'.");
+        }
+
+        if (targetModule.Constructors.TryGetValue(constructorName, out var constructor))
+        {
+            return constructor;
+        }
+
+        throw new RuntimeError($"Pattern '{string.Join(".", segments)}' does not resolve to a constructor.");
     }
 
     private static KValue ForceBinding(RuntimeModule runtimeModule, string bindingName)
