@@ -17,6 +17,69 @@ module ResourceChecking =
     let private emptyState scopeId =
         ResourceModel.ResourceContext.empty scopeId
 
+    let private currentScopeId (state: CheckState) =
+        state.ActiveScopes
+        |> List.head
+        |> fun scope -> scope.Id
+
+    let private pushScope label (state: CheckState) =
+        let scopeId = $"{currentScopeId state}.{label}{state.NextScopeId}"
+
+        { state with
+            ActiveScopes =
+                { Id = scopeId
+                  IntroducedBindings = [] }
+                :: state.ActiveScopes
+            NextScopeId = state.NextScopeId + 1 }
+
+    let private popActiveBinding name (activeBindingIds: Map<string, string list>) =
+        match Map.tryFind name activeBindingIds with
+        | Some(_ :: rest) when List.isEmpty rest ->
+            Map.remove name activeBindingIds
+        | Some(_ :: rest) ->
+            Map.add name rest activeBindingIds
+        | _ ->
+            activeBindingIds
+
+    let private popScope (state: CheckState) =
+        match state.ActiveScopes with
+        | [] ->
+            state
+        | _rootOnly when List.length state.ActiveScopes = 1 ->
+            state
+        | scope :: rest ->
+            let activeBindingIds =
+                scope.IntroducedBindings
+                |> List.fold (fun current (name, _) -> popActiveBinding name current) state.ActiveBindingIds
+
+            { state with
+                ActiveScopes = rest
+                ActiveBindingIds = activeBindingIds }
+
+    let private withScope label checker state =
+        state
+        |> pushScope label
+        |> checker
+        |> popScope
+
+    let private tryFindBindingId name (state: CheckState) =
+        state.ActiveBindingIds
+        |> Map.tryFind name
+        |> Option.bind List.tryHead
+
+    let private tryFindBinding name (state: CheckState) =
+        tryFindBindingId name state
+        |> Option.bind (fun bindingId -> Map.tryFind bindingId state.Bindings)
+
+    let private updateBinding bindingId updater (state: CheckState) =
+        match Map.tryFind bindingId state.Bindings with
+        | Some binding ->
+            let updated = updater binding
+            { state with
+                Bindings = Map.add bindingId updated state.Bindings }
+        | None ->
+            state
+
     let private quantityConsumes quantity =
         match quantity with
         | Some quantity -> ResourceQuantity.isExactOne quantity
@@ -30,19 +93,19 @@ module ResourceChecking =
     let private quantityText quantity =
         quantity |> Option.map ResourceQuantity.toSurfaceText
 
-    let private bindingDemand binding =
+    let private bindingDemand (binding: ResourceBinding) =
         match binding.BorrowRegion with
         | Some _ -> "&"
         | None -> $"[{binding.UseMinimum},{binding.UseMaximum}]"
 
-    let private bindingState binding =
+    let private bindingState (binding: ResourceBinding) =
         match binding.BorrowRegion with
         | Some _ -> "borrowed"
         | None when binding.UseMaximum > 0 -> "consumed"
         | None when binding.CheckLinearDrop -> "unconsumed"
         | None -> "available"
 
-    let private wouldOveruseBinding binding =
+    let private wouldOveruseBinding (binding: ResourceBinding) =
         let capability =
             binding.DeclaredQuantity
             |> Option.defaultValue ResourceQuantity.omega
@@ -50,7 +113,7 @@ module ResourceChecking =
         let nextDemand = ResourceQuantity.exact (binding.UseMaximum + 1)
         not (ResourceQuantity.satisfies capability nextDemand)
 
-    let private bindingFact binding =
+    let private bindingFact (binding: ResourceBinding) =
         { BindingId = binding.Id
           BindingName = binding.Name
           BindingKind = "local"
@@ -62,9 +125,9 @@ module ResourceChecking =
           BindingBorrowRegionId = binding.BorrowRegion |> Option.map (fun region -> region.Id)
           BindingOrigin = binding.Origin }
 
-    let private addEvent useKind origin binding (state: CheckState) =
+    let private addEvent useKind origin (binding: ResourceBinding) (state: CheckState) =
         let event: OwnershipUseFact =
-            { UseId = $"{state.ScopeId}.u{state.NextEventId}"
+            { UseId = $"{currentScopeId state}.u{state.NextEventId}"
               UseKindName = useKind
               UseTargetBindingId = Some binding.Id
               UseTargetName = binding.Name
@@ -77,11 +140,11 @@ module ResourceChecking =
             NextEventId = state.NextEventId + 1 }
 
     let private addNamedEvent useKind origin name (state: CheckState) =
-        match Map.tryFind name state.Bindings with
+        match tryFindBinding name state with
         | Some binding -> addEvent useKind origin binding state
         | None ->
             let event: OwnershipUseFact =
-                { UseId = $"{state.ScopeId}.u{state.NextEventId}"
+                { UseId = $"{currentScopeId state}.u{state.NextEventId}"
                   UseKindName = useKind
                   UseTargetBindingId = None
                   UseTargetName = name
@@ -140,8 +203,8 @@ module ResourceChecking =
         else
             { state with DeferredFacts = state.DeferredFacts @ [ fact ] }
 
-    let private addClosureFact name capturedBindings capturedRegions (state: CheckState) =
-        let closureId = $"{state.ScopeId}.c{state.NextClosureId}"
+    let private addClosureFact name (capturedBindings: ResourceBinding list) capturedRegions (state: CheckState) =
+        let closureId = $"{currentScopeId state}.c{state.NextClosureId}"
 
         let fact: OwnershipClosureFact =
             { ClosureId = closureId
@@ -247,7 +310,7 @@ module ResourceChecking =
 
     let private capturedBindings (state: CheckState) expression =
         expressionNames expression
-        |> Seq.choose (fun name -> Map.tryFind name state.Bindings)
+        |> Seq.choose (fun name -> tryFindBinding name state)
         |> Seq.distinctBy (fun binding -> binding.Id)
         |> Seq.toList
 
@@ -268,8 +331,10 @@ module ResourceChecking =
             { Root = name
               Path = [] }
 
+        let bindingId = $"{currentScopeId state}.b{state.NextBindingId}"
+
         let binding: ResourceBinding =
-            { Id = $"{state.ScopeId}.b{state.NextBindingId}"
+            { Id = bindingId
               Name = name
               DeclaredQuantity = quantity
               Place = place
@@ -283,8 +348,23 @@ module ResourceChecking =
               Origin = origin
               FirstConsumeOrigin = None }
 
+        let activeBindingIds =
+            state.ActiveBindingIds
+            |> Map.change name (fun existing -> Some(bindingId :: Option.defaultValue [] existing))
+
+        let activeScopes =
+            match state.ActiveScopes with
+            | currentScope :: rest ->
+                { currentScope with
+                    IntroducedBindings = (name, bindingId) :: currentScope.IntroducedBindings }
+                :: rest
+            | [] ->
+                []
+
         { state with
-            Bindings = Map.add name binding state.Bindings
+            ActiveScopes = activeScopes
+            ActiveBindingIds = activeBindingIds
+            Bindings = Map.add bindingId binding state.Bindings
             NextBindingId = state.NextBindingId + 1 }
 
     let private addPatternBindings (document: ParsedDocument) (binding: SurfaceBindPattern) quantity borrowRegion capturedRegions capturedBindingOrigins checkDrop closureFactId state =
@@ -304,7 +384,7 @@ module ResourceChecking =
     let private tryMovedLinearBinding expression (state: CheckState) =
         match expression with
         | Name [ name ] ->
-            Map.tryFind name state.Bindings
+            tryFindBinding name state
             |> Option.filter (fun binding ->
                 binding.DeclaredQuantity
                 |> Option.exists ResourceQuantity.isExactOne)
@@ -312,7 +392,7 @@ module ResourceChecking =
             None
 
     let private consumeBinding (document: ParsedDocument) name (state: CheckState) =
-        match Map.tryFind name state.Bindings with
+        match tryFindBinding name state with
         | None -> state
         | Some binding ->
             let consumeOrigin = findBindingUseLocation document binding (binding.UseMaximum + 1)
@@ -370,21 +450,36 @@ module ResourceChecking =
                     FirstConsumeOrigin = binding.FirstConsumeOrigin |> Option.orElse consumeOrigin }
 
             { state with
-                Bindings = Map.add name updated state.Bindings }
+                Bindings = Map.add binding.Id updated state.Bindings }
+
+    let private mergeBindingSnapshots (leftBinding: ResourceBinding) (rightBinding: ResourceBinding) =
+        { leftBinding with
+            CapturedRegions = Set.union leftBinding.CapturedRegions rightBinding.CapturedRegions
+            CapturedBindingOrigins =
+                leftBinding.CapturedBindingOrigins @ rightBinding.CapturedBindingOrigins
+                |> List.distinctBy (fun location -> location.FilePath, location.Span.Start, location.Span.Length)
+            UseMinimum = min leftBinding.UseMinimum rightBinding.UseMinimum
+            UseMaximum = max leftBinding.UseMaximum rightBinding.UseMaximum
+            FirstConsumeOrigin = leftBinding.FirstConsumeOrigin |> Option.orElse rightBinding.FirstConsumeOrigin }
 
     let private mergeBranchState (left: CheckState) (right: CheckState) =
-        let mergeBinding name leftBinding =
-            match Map.tryFind name right.Bindings with
-            | Some rightBinding ->
-                { leftBinding with
-                    UseMinimum = min leftBinding.UseMinimum rightBinding.UseMinimum
-                    UseMaximum = max leftBinding.UseMaximum rightBinding.UseMaximum
-                    CapturedRegions = Set.union leftBinding.CapturedRegions rightBinding.CapturedRegions }
-            | None -> leftBinding
-
         let mergedBindings =
-            left.Bindings
-            |> Map.map mergeBinding
+            let combined =
+                right.Bindings
+                |> Map.fold (fun current bindingId binding -> Map.add bindingId binding current) left.Bindings
+
+            left.ActiveBindingIds
+            |> Map.fold (fun current name leftBindingIds ->
+                match leftBindingIds, Map.tryFind name right.ActiveBindingIds with
+                | leftBindingId :: _, Some(rightBindingId :: _)
+                    when String.Equals(leftBindingId, rightBindingId, StringComparison.Ordinal) ->
+                    match Map.tryFind leftBindingId left.Bindings, Map.tryFind rightBindingId right.Bindings with
+                    | Some leftBinding, Some rightBinding ->
+                        Map.add leftBindingId (mergeBindingSnapshots leftBinding rightBinding) current
+                    | _ ->
+                        current
+                | _ ->
+                    current) combined
 
         { left with
             Bindings = mergedBindings
@@ -394,6 +489,7 @@ module ResourceChecking =
             UsingScopes = left.UsingScopes @ right.UsingScopes
             Closures = left.Closures @ right.Closures
             DeferredFacts = (left.DeferredFacts @ right.DeferredFacts) |> List.distinct |> List.sort
+            NextScopeId = max left.NextScopeId right.NextScopeId
             NextBindingId = max left.NextBindingId right.NextBindingId
             NextEventId = max left.NextEventId right.NextEventId
             NextRegionId = max left.NextRegionId right.NextRegionId
@@ -433,7 +529,7 @@ module ResourceChecking =
             let state =
                 match expression with
                 | Name [ name ] ->
-                    match Map.tryFind name state.Bindings with
+                    match tryFindBinding name state with
                     | Some binding ->
                         let state = addEvent "escape" escapeOrigin binding state
 
@@ -504,8 +600,8 @@ module ResourceChecking =
             state
         | IfThenElse(condition, whenTrue, whenFalse) ->
             let state = checkExpression document signatures state condition
-            let left = checkExpression document signatures state whenTrue
-            let right = checkExpression document signatures state whenFalse
+            let left = checkExpressionInScope "if_then" document signatures state whenTrue
+            let right = checkExpressionInScope "if_else" document signatures state whenFalse
             mergeBranchState left right
         | Match(scrutinee, cases) ->
             let state =
@@ -515,13 +611,15 @@ module ResourceChecking =
             match cases with
             | [] -> state
             | first :: rest ->
-                let firstState = checkExpression document signatures state first.Body
+                let firstState = checkExpressionInScope "match_case0" document signatures state first.Body
 
                 rest
-                |> List.fold (fun current caseClause ->
-                    mergeBranchState current (checkExpression document signatures state caseClause.Body)) firstState
+                |> List.mapi (fun index caseClause ->
+                    index + 1, caseClause)
+                |> List.fold (fun current (index, caseClause) ->
+                    mergeBranchState current (checkExpressionInScope $"match_case{index}" document signatures state caseClause.Body)) firstState
         | Do statements ->
-            checkDoStatements document signatures state statements
+            checkDoStatementsInScope "do" document signatures state statements
         | MonadicSplice inner
         | InoutArgument inner
         | Unary(_, inner) ->
@@ -607,6 +705,9 @@ module ResourceChecking =
                 next, index + 1)
             |> fst
 
+    and private checkExpressionInScope scopeLabel (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state expression =
+        withScope scopeLabel (fun scopedState -> checkExpression document signatures scopedState expression) state
+
     and private checkDoStatements (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state statements =
         let rec loop current remaining =
             match remaining with
@@ -667,7 +768,7 @@ module ResourceChecking =
                     |> List.choose (fun binding -> binding.Origin)
 
                 let borrowRegion, current =
-                    introduceBorrowRegionForQuantity $"{current.ScopeId}.let" declaredQuantity current
+                    introduceBorrowRegionForQuantity $"{currentScopeId current}.let" declaredQuantity current
 
                 let current = addPatternBindings document binding declaredQuantity borrowRegion captured capturedBindingOrigins checkDrop closureFactId current
                 loop current rest
@@ -677,7 +778,7 @@ module ResourceChecking =
                 let checkDrop = declaredQuantity |> Option.exists ResourceQuantity.requiresUse
 
                 let borrowRegion, current =
-                    introduceBorrowRegionForQuantity $"{current.ScopeId}.bind" declaredQuantity current
+                    introduceBorrowRegionForQuantity $"{currentScopeId current}.bind" declaredQuantity current
 
                 let current = addPatternBindings document binding declaredQuantity borrowRegion Set.empty [] checkDrop None current
                 loop current rest
@@ -687,7 +788,7 @@ module ResourceChecking =
                 let region, current =
                     introduceBorrowRegion "using" None current
 
-                let usingScopeId = $"{current.ScopeId}.using{current.NextUsingScopeId}"
+                let usingScopeId = $"{currentScopeId current}.using{current.NextUsingScopeId}"
                 let hiddenOwnedBinding = $"{usingScopeId}.owned"
 
                 let current =
@@ -725,14 +826,21 @@ module ResourceChecking =
                     checkExpression document signatures current condition
                     |> addDeferredFact "while-resource-fixed-point"
 
-                let bodyState = checkDoStatements document signatures current body
+                let bodyState = checkDoStatementsInScope "while" document signatures current body
                 let current = mergeBranchState current bodyState
                 loop current rest
 
         let checkedState = loop state statements
 
-        checkedState.Bindings
-        |> Map.fold (fun current _ binding ->
+        let scopeBindingIds =
+            checkedState.ActiveScopes
+            |> List.head
+            |> fun scope -> scope.IntroducedBindings |> List.map snd
+
+        scopeBindingIds
+        |> List.fold (fun current bindingId ->
+            let binding = checkedState.Bindings[bindingId]
+
             if binding.CheckLinearDrop && binding.UseMinimum < 1 then
                 addDiagnostic
                     linearDropCode
@@ -743,6 +851,9 @@ module ResourceChecking =
                     current
             else
                 current) checkedState
+
+    and private checkDoStatementsInScope scopeLabel (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state statements =
+        withScope scopeLabel (fun scopedState -> checkDoStatements document signatures scopedState statements) state
 
     let private addParameterBinding (document: ParsedDocument) (parameter: Parameter) state =
         let quantity =

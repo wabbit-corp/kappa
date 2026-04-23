@@ -109,8 +109,14 @@ module ResourceModel =
           Origin: SourceLocation option
           FirstConsumeOrigin: SourceLocation option }
 
+    type ResourceScope =
+        { Id: string
+          IntroducedBindings: (string * string) list }
+
     type ResourceContext =
         { ScopeId: string
+          ActiveScopes: ResourceScope list
+          ActiveBindingIds: Map<string, string list>
           Bindings: Map<string, ResourceBinding>
           Diagnostics: Diagnostic list
           Events: OwnershipUseFact list
@@ -118,6 +124,7 @@ module ResourceModel =
           UsingScopes: OwnershipUsingScopeFact list
           Closures: OwnershipClosureFact list
           DeferredFacts: string list
+          NextScopeId: int
           NextBindingId: int
           NextEventId: int
           NextRegionId: int
@@ -127,6 +134,12 @@ module ResourceModel =
     module ResourceContext =
         let empty scopeId =
             { ScopeId = scopeId
+              ActiveScopes =
+                [
+                    { Id = scopeId
+                      IntroducedBindings = [] }
+                ]
+              ActiveBindingIds = Map.empty
               Bindings = Map.empty
               Diagnostics = []
               Events = []
@@ -134,6 +147,7 @@ module ResourceModel =
               UsingScopes = []
               Closures = []
               DeferredFacts = []
+              NextScopeId = 0
               NextBindingId = 0
               NextEventId = 0
               NextRegionId = 0
