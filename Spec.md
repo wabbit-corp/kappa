@@ -5520,12 +5520,17 @@ Explicit-argument pipeline for binder `(q_dem x : T_dem)` and supplied argument 
    * Let `T_cap = (q_inner_cap y : A) -> B`.
    * The parameter domain `A` and result type `B` must match up to definitional equality; only the outermost arrow
      quantity mismatch is tolerated by this step.
-   * The compiler then checks the contravariant satisfaction condition `q_inner_dem ⊑ q_inner_cap`.
-   * If that condition holds, the argument is accepted and the compiler MUST elaborate `e` by inserting an internal
+   * The compiler then checks both:
+     * the contravariant satisfaction condition `q_inner_dem ⊑ q_inner_cap`, and
+     * the ordinary outer argument-slot capability check `q_cap ⊑ q_dem` using the available capability `q_cap` of the
+       supplied expression itself, exactly as in Step 2.
+   * An inserted coercion or eta-expansion adjusts only the exposed function type of the argument. It does not increase
+     the permitted usage of the closure value itself.
+   * If both conditions hold, the argument is accepted and the compiler MUST elaborate `e` by inserting an internal
      coercion or eta-expansion whose exposed binder quantity matches the demanded type `T_dem`.
-   * If the condition is undecidable after surrounding constraints are processed, compilation fails with an unsolved
-     quantity-metavariable error.
-   * If the condition does not hold, the application is a compile-time error.
+   * If either condition remains undecidable after surrounding constraints are processed, compilation fails with an
+     unsolved quantity-metavariable error.
+   * If either condition does not hold, the application is a compile-time error.
 
 After an explicit or implicit argument is accepted, the compiler substitutes it through later binder types and continues
 with the next binder in the same application spine.
