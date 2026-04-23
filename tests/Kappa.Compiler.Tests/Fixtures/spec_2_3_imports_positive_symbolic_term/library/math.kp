@@ -1,0 +1,4 @@
+module library.math
+
+infix left 60 (++)
+let (++) x y = x + y

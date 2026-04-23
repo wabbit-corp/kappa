@@ -1,0 +1,7 @@
+module main
+
+  import std.prelude.(not)
+
+let result = 42
+
+--! assertDiagnosticMatch Unexpected indentation

@@ -1,0 +1,11 @@
+module main
+
+data Buffer : Type =
+    Buffer
+
+demo : (1 r : (1 buf : Buffer, len : Nat)) -> Nat
+let demo r =
+    let old = r.buf
+    r.len
+
+--! assertNoErrors
