@@ -40,6 +40,7 @@ let ``zig backend emits C source for recursive list matches`` () =
     Assert.Contains("kappa_module_main_sumList", source)
     Assert.Contains("KTYPE_", source)
     Assert.Contains("List", source)
+    Assert.DoesNotContain("__KAPPA_", source)
 
 [<Fact>]
 let ``cli can run the zig backend for recursive list matches`` () =

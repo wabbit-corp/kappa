@@ -37,6 +37,7 @@
     <Compile Include="BackendTypes.fs" />
     <Compile Include="CheckpointVerification.fs" />
     <Compile Include="HostSupport.fs" />
+    <Compile Include="BundledBackendSources.fs" />
     <Compile Include="HostedRuntimeDotNetBackend.fs" />
     <Compile Include="IlDotNetBackendModel.fs" />
     <Compile Include="IlDotNetBackendInput.fs" />
@@ -44,6 +45,10 @@
     <Compile Include="IlDotNetBackendEmit.fs" />
     <Compile Include="IlDotNetBackend.fs" />
     <Compile Include="ClrDotNetBackend.fs" />
+    <Compile Include="ZigCcBackendSupport.fs" />
+    <Compile Include="ZigCcBackendEmit.fs" />
+    <Compile Include="ZigCcBackendRuntime.fs" />
+    <Compile Include="ZigCcBackendArtifact.fs" />
     <Compile Include="ZigCcBackend.fs" />
     <Compile Include="IrText.fs" />
     <Compile Include="CompilationCommon.fs" />
@@ -60,6 +65,9 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Stdlib\std\prelude.kp" LogicalName="Kappa.Compiler.Stdlib.std.prelude.kp" />
+    <EmbeddedResource Include="Runtime\Hosted\KappaRuntime.cs" LogicalName="Kappa.Compiler.Runtime.Hosted.KappaRuntime.cs" />
+    <EmbeddedResource Include="Runtime\Zig\kappa_runtime.c" LogicalName="Kappa.Compiler.Runtime.Zig.kappa_runtime.c" />
+    <EmbeddedResource Include="Runtime\Zig\kappa_entrypoint.c" LogicalName="Kappa.Compiler.Runtime.Zig.kappa_entrypoint.c" />
   </ItemGroup>
 
 </Project>

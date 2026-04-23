@@ -134,6 +134,7 @@ let ``hosted dotnet backend remains available`` () =
 
     let runtimeSource = File.ReadAllText(artifact.RuntimeFilePath)
     Assert.Contains("abstract class KExpr", runtimeSource)
+    Assert.DoesNotContain("__KAPPA_", runtimeSource)
 
     let runResult =
         runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
