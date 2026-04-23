@@ -2888,16 +2888,21 @@ let p2 = p.{ y = 99 }          -- (x = 1, y = 99)
 Syntax:
 
 ```text
-recordUpdate ::= expr '.{' updateField (',' updateField)* '}'
-updateField  ::= [ '@' ] ident '=' expr
+recordUpdate ::= expr '.{' updateItem (',' updateItem)* '}'
+updateItem   ::= ordinaryUpdateField | projectionUpdateField
+ordinaryUpdateField ::= [ '@' ] ident '=' expr
+projectionUpdateField ::= projectionSection '=' expr
 ```
 
-A record update must contain only `=` fields. A record update containing `:=` is ill-formed.
+A record update must contain only `=` update items. A record update containing `:=` is ill-formed.
 If a record field is declared as an implicit field `@label : T`, it may be explicitly updated with surface syntax
 `@label = expr`.
-Unlike record literals and constructor applications, field punning is not permitted in record updates. Every update
-field MUST provide an explicit right-hand side. Writing `r.{ x }` as shorthand for `r.{ x = x }` is a compile-time
-error.
+Unlike record literals and constructor applications, field punning is not permitted in record updates. Every update item
+MUST provide an explicit right-hand side. Writing `r.{ x }` as shorthand for `r.{ x = x }` is a compile-time error.
+
+Here `projectionSection` is the section form of §7.1.1.1.
+
+Ordinary field update:
 
 Normative elaboration:
 
@@ -2934,7 +2939,10 @@ Consequences:
 * If an omitted field path is currently in the consumed state of the scrutinee, the implicit filler `r.field` is
   ill-typed; that field must therefore be supplied explicitly.
 
-Field references inside supplied update expressions:
+A bare update item `name = rhs` is always an ordinary field update. A computed receiver-relative update must be written
+using a projection section, as in `(.name args...) = rhs`.
+
+Field references inside supplied ordinary update expressions:
 
 * `this` refers to the evolving updated record prefix in canonical dependency-respecting order, not to the original
   record `r`.
@@ -2942,6 +2950,19 @@ Field references inside supplied update expressions:
   came from an explicit update or from an implicit copied projection `r.field`.
 * A bare identifier `label` is shorthand for `this.label` only when that reading is unambiguous; otherwise `this.label`
   is required.
+
+Projection-section update:
+
+* A field of the form `(.member args...) = rhs` inside `lhs.{ ... }` is a projection-section update.
+* It is not an ordinary field update.
+* The section body is resolved exactly as if it had been written as a dotted form on the outer receiver `lhs`.
+* After receiver insertion and ordinary resolution, the resulting form must denote either:
+  * a stable place rooted in `lhs`, or
+  * a fully applied projection call whose yielded alternatives are all rooted in the receiver inserted for `lhs`.
+* The replacement expression `rhs` is checked against the selected type of that place or projection.
+* The whole update expression has the same type as `lhs`.
+* In v0.1, a projection-section update form may contain at most one `projectionUpdateField`.
+* In v0.1, ordinary field updates and projection-section updates must not be mixed in the same `lhs.{ ... }` form.
 
 Source order:
 
@@ -4739,9 +4760,10 @@ The `.` token is used for:
 * static member selection on a type (`Vec.Cons`)
 * record or package member projection (`p.x`, `d.name`, `d.(==)`, `d.Name` in any syntactic position compatible with the
   projected compile-time member)
-* projection sections (`(.field)`, `(.field1.field2)`)
+* projection sections and receiver-projection sections (`(.field)`, `(.field1.field2)`, `(.degrees)`, `(.at i)`)
 * method-call and receiver-projection sugar (`x.show`, `a.degrees`)
 * record update (`r.{ field = expr, ... }`)
+* projection-section update (`r.{ (.member args...) = expr }`)
 
 The `?.` token is an additional dotted-form operator performing safe-navigation projection over `Option`:
 
@@ -4753,23 +4775,33 @@ The right-hand side of `?.` is restricted to member-access forms only. In v0.1 t
 * constructor-field projection,
 * method-call and receiver-projection sugar.
 
-Forms such as module qualification, static member selection on a type, projection sections, record update, and row extension are
-ordinary dotted forms but are not reachable through `?.`.
+Forms such as module qualification, static member selection on a type, projection sections and receiver-projection
+sections, record update, and row extension are ordinary dotted forms but are not reachable through `?.`.
 
-#### 7.1.1.1 Projection sections
+#### 7.1.1.1 Projection sections and receiver-projection sections
 
 ```kappa
 (.field)                 -- \__x -> __x.field
 (.field1.field2)         -- \__x -> __x.field1.field2
+(.degrees)               -- \__x -> __x.degrees
+(.at i)                  -- \__x -> __x.at i
 ```
 
 Formation rule:
 
-* A parenthesized expression whose sole content is a dot followed by one or more field names is a **projection
-  section**.
-* `(.field1.field2 ... fieldN)` elaborates to `\__x -> __x.field1.field2 ... fieldN`.
+* A parenthesized expression whose content begins with `.` is a section form over a fresh receiver binder.
+* The body after the leading `.` is resolved exactly as if it had been written as a dotted form on a fresh receiver
+  `__x`.
+* Thus:
+  * `(.field1.field2)` elaborates to `\__x -> __x.field1.field2`.
+  * `(.name args...)` elaborates to `\__x -> __x.name args...`, where `name args...` is resolved using the ordinary
+    dotted-form and receiver-sugar rules of §§13.3-13.4.
 * The binder `__x` is fresh.
-* The result type is inferred by checking the field chain against the elaborated argument type of the fresh binder.
+* A section is well-formed only if the corresponding dotted form on `__x` is well-formed.
+* Module qualification, static member selection on a type, record update, and row extension are not admitted inside a
+  section body.
+* A section whose body resolves to a fully applied receiver projection counts as a fully applied projection call after
+  insertion of the fresh receiver.
 
 Projection syntax also permits parenthesized operator members:
 
@@ -4779,9 +4811,6 @@ d.(<=)
 ```
 
 Such forms are permitted where dotted member projection is otherwise valid.
-
-Resolution of dotted forms is defined in §13.3. Method-call and receiver-projection sugar are defined in §13.4 and
-supply `lhs` to the unique receiver-marked binder, which may appear in any argument position.
 
 #### 7.1.1.2 Safe-navigation (`?.`)
 
@@ -12102,6 +12131,36 @@ surface abstraction over ordinary control flow plus the existing stable-place ma
 An implementation MAY further lower this ordinary branching structure to an internal multi-return or join-point form as
 specified in §17.4.7A.
 
+#### 17.3.1.3A Projection-section update lowering
+
+A conforming implementation MUST behave as if the surface expression
+
+```kappa
+lhs.{ (.member args...) = rhs }
+```
+
+does not survive as a distinct KCore form.
+
+Instead, elaboration proceeds as follows:
+
+1. Elaborate `lhs` once to a fresh hidden temporary `__root`.
+2. Elaborate `rhs` once to a fresh hidden temporary `__new`.
+3. Resolve `(.member args...)` exactly as a section body applied to `__root`, i.e. as the dotted form
+   `__root.member args...`.
+4. Require the resolved form to denote either:
+   * a stable place rooted in `__root`, or
+   * a fully applied projection call whose yielded stable-place alternatives are all rooted in `__root`.
+5. If the resolved form is a stable place `p`, elaborate as `FillPlace p __new`.
+6. If the resolved form is a fully applied projection call, inline and lower it exactly as in projection lowering,
+   except that each leaf `yield p` elaborates as `FillPlace p __new`.
+
+Consequences:
+
+* `lhs` is evaluated exactly once.
+* `rhs` is evaluated exactly once.
+* No new runtime reference primitive is introduced.
+* Projection-section update is therefore surface sugar over existing place primitives and projection lowering.
+
 #### 17.3.1.4 KCore completion and do-scope kernel
 
 A conforming implementation MUST behave as if KCore contains an explicit completion-and-scope kernel for the control
@@ -12341,6 +12400,7 @@ Introduction kinds are implementation-defined, but MUST distinguish at least:
 * record reordering;
 * place lowering / path restoration;
 * projection lowering;
+* projection-section update lowering;
 * branch-refinement lowering;
 * completion-kernel lowering;
 * multi-return / join-point lowering;
