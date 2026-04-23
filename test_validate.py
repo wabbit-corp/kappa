@@ -63,6 +63,7 @@ def test_parse_markdown_ignores_inline_and_fenced_references(tmp_path: Path) -> 
     path = write_text(
         tmp_path / "doc.md",
         """
+        <!-- intro -->
         ## 1. Intro
         Inline `[[Ignored.md:1]]` and `\u00A71.9` should not count.
         ```
@@ -92,9 +93,11 @@ def test_parse_markdown_ignores_inline_and_fenced_references(tmp_path: Path) -> 
 def test_validate_markdown_sections_reports_missing_parent_and_nonconsecutive_numbers(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "Spec.md"
+    path = tmp_path / "Guide.md"
     lines = [
+        "<!-- child -->",
         "### 1.2 Child",
+        "<!-- later -->",
         "## 3. Later",
     ]
 
@@ -109,11 +112,15 @@ def test_validate_markdown_sections_reports_missing_parent_and_nonconsecutive_nu
 
 
 def test_validate_markdown_sections_accepts_consecutive_numeric_headings(tmp_path: Path) -> None:
-    path = tmp_path / "Spec.md"
+    path = tmp_path / "Guide.md"
     lines = [
+        "<!-- one -->",
         "## 1. One",
+        "<!-- one.child_one -->",
         "### 1.1 Child One",
+        "<!-- one.child_two -->",
         "### 1.2 Child Two",
+        "<!-- two -->",
         "## 2. Two",
     ]
 
@@ -124,10 +131,13 @@ def test_validate_markdown_sections_accepts_consecutive_numeric_headings(tmp_pat
 
 
 def test_validate_markdown_sections_reports_nonconsecutive_child_heading(tmp_path: Path) -> None:
-    path = tmp_path / "Spec.md"
+    path = tmp_path / "Guide.md"
     lines = [
+        "<!-- one -->",
         "## 1. One",
+        "<!-- one.child_one -->",
         "### 1.1 Child One",
+        "<!-- one.child_three -->",
         "### 1.3 Child Three",
     ]
 
@@ -142,13 +152,19 @@ def test_validate_markdown_sections_reports_nonconsecutive_child_heading(tmp_pat
 def test_validate_markdown_sections_accepts_letter_suffixed_numeric_sections(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "Spec.md"
+    path = tmp_path / "Guide.md"
     lines = [
+        "<!-- expressions -->",
         "## 1. Expressions",
+        "<!-- expressions.match -->",
         "### 1.1 Match",
+        "<!-- expressions.match.base -->",
         "#### 1.1.1 Base",
+        "<!-- expressions.match.inserted_a -->",
         "#### 1.1.1A Inserted A",
+        "<!-- expressions.match.inserted_b -->",
         "#### 1.1.1B Inserted B",
+        "<!-- expressions.match.next -->",
         "#### 1.1.2 Next",
     ]
 
@@ -159,9 +175,11 @@ def test_validate_markdown_sections_accepts_letter_suffixed_numeric_sections(
 
 
 def test_validate_markdown_sections_accepts_appendix_and_first_child(tmp_path: Path) -> None:
-    path = tmp_path / "Spec.md"
+    path = tmp_path / "Guide.md"
     lines = [
+        "<!-- appendix.foo -->",
         "## Appendix A. Foo",
+        "<!-- appendix.foo.bar -->",
         "### A.1 Bar",
     ]
 
@@ -174,9 +192,11 @@ def test_validate_markdown_sections_accepts_appendix_and_first_child(tmp_path: P
 def test_validate_markdown_sections_accepts_appendix_child_with_trailing_dot(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "Spec.md"
+    path = tmp_path / "Guide.md"
     lines = [
+        "<!-- appendix.foo -->",
         "## Appendix A. Foo",
+        "<!-- appendix.foo.bar -->",
         "### A.1. Bar",
     ]
 
@@ -187,9 +207,11 @@ def test_validate_markdown_sections_accepts_appendix_child_with_trailing_dot(
 
 
 def test_validate_markdown_sections_reports_heading_level_jump(tmp_path: Path) -> None:
-    path = tmp_path / "Spec.md"
+    path = tmp_path / "Guide.md"
     lines = [
+        "<!-- parent -->",
         "## Parent",
+        "<!-- parent.too_deep -->",
         "#### Too Deep",
     ]
 
@@ -202,9 +224,11 @@ def test_validate_markdown_sections_reports_heading_level_jump(tmp_path: Path) -
 
 
 def test_validate_markdown_sections_reports_duplicate_appendix(tmp_path: Path) -> None:
-    path = tmp_path / "Spec.md"
+    path = tmp_path / "Guide.md"
     lines = [
+        "<!-- appendix.foo -->",
         "## Appendix A. Foo",
+        "<!-- appendix.bar -->",
         "## Appendix A. Bar",
     ]
 
@@ -217,9 +241,11 @@ def test_validate_markdown_sections_reports_duplicate_appendix(tmp_path: Path) -
 
 
 def test_validate_markdown_sections_reports_duplicate_titles(tmp_path: Path) -> None:
-    path = tmp_path / "Spec.md"
+    path = tmp_path / "Guide.md"
     lines = [
+        "<!-- one.foo -->",
         "## 1. Foo",
+        "<!-- two.foo -->",
         "## 2. Foo",
     ]
 
@@ -228,6 +254,94 @@ def test_validate_markdown_sections_reports_duplicate_titles(tmp_path: Path) -> 
     assert sections == {"1", "2"}
     assert [problem.message for problem in problems] == [
         "heading title 'Foo' is declared more than once"
+    ]
+
+
+def test_validate_markdown_sections_accepts_unique_section_ids(tmp_path: Path) -> None:
+    path = tmp_path / "Spec.md"
+    lines = [
+        "# Kappa Language Specification",
+        "<!-- design -->",
+        "## 1. Design",
+        "<!-- design.principles -->",
+        "### 1.1 Principles",
+        "<!-- design.principles.readability_counts -->",
+        "#### Readability counts",
+    ]
+
+    problems, sections = validate.validate_markdown_sections(path, lines)
+
+    assert problems == []
+    assert sections == {"1", "1.1"}
+
+
+def test_validate_markdown_sections_requires_section_ids_in_any_markdown_file(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "Guide.md"
+    lines = [
+        "## 1. Intro",
+        "### 1.1 Details",
+    ]
+
+    problems, sections = validate.validate_markdown_sections(path, lines)
+
+    assert [problem.message for problem in problems] == [
+        "heading is missing a preceding section id comment like <!-- modules.files -->",
+        "heading is missing a preceding section id comment like <!-- modules.files -->",
+    ]
+    assert sections == {"1", "1.1"}
+
+
+def test_validate_markdown_sections_requires_section_id_for_every_section_heading(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "Guide.md"
+    lines = [
+        "<!-- modules -->",
+        "## 1. Modules",
+        "<!-- modules.imports -->",
+        "### 1.1 Imports",
+        "#### URL module specifiers",
+    ]
+
+    problems, sections = validate.validate_markdown_sections(path, lines)
+
+    assert sections == {"1", "1.1"}
+    assert [problem.message for problem in problems] == [
+        "heading is missing a preceding section id comment like <!-- modules.files -->"
+    ]
+
+
+def test_validate_markdown_sections_reports_invalid_section_id_format(tmp_path: Path) -> None:
+    path = tmp_path / "Spec.md"
+    lines = [
+        "<!-- Modules.Files -->",
+        "## 1. Modules and files",
+    ]
+
+    problems, sections = validate.validate_markdown_sections(path, lines)
+
+    assert sections == {"1"}
+    assert [problem.message for problem in problems] == [
+        "section id 'Modules.Files' must use lowercase dot-separated identifiers"
+    ]
+
+
+def test_validate_markdown_sections_reports_duplicate_section_ids(tmp_path: Path) -> None:
+    path = tmp_path / "Spec.md"
+    lines = [
+        "<!-- design -->",
+        "## 1. Design",
+        "<!-- design -->",
+        "### 1.1 Principles",
+    ]
+
+    problems, sections = validate.validate_markdown_sections(path, lines)
+
+    assert sections == {"1", "1.1"}
+    assert [problem.message for problem in problems] == [
+        "section id 'design' is declared more than once"
     ]
 
 
@@ -245,6 +359,7 @@ def test_main_ignores_fenced_lines_for_max_line_length(tmp_path: Path, capsys) -
     path = write_text(
         tmp_path / "doc.md",
         f"""
+        <!-- intro -->
         ## 1. Intro
         ```
         {'x' * 40}
@@ -265,6 +380,7 @@ def test_main_reports_cross_file_reference_errors(tmp_path: Path, capsys) -> Non
     write_text(
         tmp_path / "A.md",
         """
+        <!-- intro -->
         ## 1. Intro
         See [[B.md:2]] and [[Missing.md:1]].
         """,
@@ -272,6 +388,7 @@ def test_main_reports_cross_file_reference_errors(tmp_path: Path, capsys) -> Non
     write_text(
         tmp_path / "B.md",
         """
+        <!-- present -->
         ## 1. Present
         """,
     )
@@ -290,6 +407,7 @@ def test_main_reports_problems_in_referenced_markdown_files(tmp_path: Path, caps
     write_text(
         tmp_path / "A.md",
         """
+        <!-- intro -->
         ## 1. Intro
         See [[B.md]].
         """,
@@ -297,6 +415,7 @@ def test_main_reports_problems_in_referenced_markdown_files(tmp_path: Path, caps
     write_text(
         tmp_path / "B.md",
         """
+        <!-- child -->
         ### 1.2 Child
         """,
     )
@@ -305,9 +424,9 @@ def test_main_reports_problems_in_referenced_markdown_files(tmp_path: Path, caps
     captured = capsys.readouterr()
 
     assert exit_code == 1
-    assert "B.md:1: section 1.2 is missing its numbered parent 1" in captured.out
+    assert "B.md:2: section 1.2 is missing its numbered parent 1" in captured.out
     assert (
-        "B.md:1: section number 1.2 is not consecutive within section 1; expected 1"
+        "B.md:2: section number 1.2 is not consecutive within section 1; expected 1"
         in captured.out
     )
     assert "Validation failed: 2 problem(s) across 1 file(s)." in captured.out
@@ -331,6 +450,7 @@ def test_main_validates_appendix_wiki_link_sections(tmp_path: Path, capsys) -> N
     write_text(
         tmp_path / "A.md",
         """
+        <!-- intro -->
         ## 1. Intro
         See [[B.md:A.2]].
         """,
@@ -338,7 +458,9 @@ def test_main_validates_appendix_wiki_link_sections(tmp_path: Path, capsys) -> N
     write_text(
         tmp_path / "B.md",
         """
+        <!-- appendix.notes -->
         ## Appendix A. Notes
+        <!-- appendix.notes.details -->
         ### A.1 Details
         """,
     )
@@ -356,6 +478,7 @@ def test_parse_markdown_expands_numeric_section_ranges(tmp_path: Path) -> None:
     path = write_text(
         tmp_path / "doc.md",
         """
+        <!-- intro -->
         ## 1. Intro
         See \u00A71-3 and \u00A7\u00A71.1 \u2013 1.3.
         """,
@@ -382,6 +505,7 @@ def test_parse_markdown_collects_section_lists_with_oxford_comma(tmp_path: Path)
     path = write_text(
         tmp_path / "doc.md",
         """
+        <!-- intro -->
         ## 1. Intro
         See \u00A7\u00A72.1, 2.2, 2.3, and 2.3.2.
         """,
@@ -406,9 +530,13 @@ def test_parse_markdown_collects_letter_suffixed_numeric_references(tmp_path: Pa
     path = write_text(
         tmp_path / "doc.md",
         """
+        <!-- expressions -->
         ## 1. Expressions
+        <!-- expressions.match -->
         ### 1.1 Match
+        <!-- expressions.match.base -->
         #### 1.1.1 Base
+        <!-- expressions.match.inserted_a -->
         #### 1.1.1A Inserted A
         See \u00A71.1.1A and \u00A717.4.7A.
         """,
@@ -432,10 +560,15 @@ def test_parse_markdown_collects_plain_appendix_references(tmp_path: Path) -> No
     path = write_text(
         tmp_path / "doc.md",
         """
+        <!-- appendix.pipe_operators -->
         ## Appendix B. Pipe operators
+        <!-- appendix.pipe_operators.prelude_provisions -->
         ### B.1 Prelude provisions
+        <!-- appendix.pipe_operators.interaction -->
         ### B.2 Interaction
+        <!-- appendix.pipe_operators.optional_typed_pipe -->
         ### B.3 Optional typed pipe
+        <!-- appendix.applicative_do -->
         ## Appendix G. ApplicativeDo
         See Appendix G and Appendix B.3.
         """,
@@ -456,8 +589,11 @@ def test_parse_markdown_warns_on_appendix_ranges(tmp_path: Path) -> None:
     path = write_text(
         tmp_path / "doc.md",
         """
+        <!-- appendix.notes -->
         ## Appendix A. Notes
+        <!-- appendix.notes.one -->
         ### A.1 One
+        <!-- appendix.notes.two -->
         ### A.2 Two
         See \u00A7A.1-A.3.
         """,
@@ -494,6 +630,7 @@ def test_parse_markdown_ignores_blockquote_fences(tmp_path: Path) -> None:
     path = write_text(
         tmp_path / "doc.md",
         """
+        <!-- intro -->
         ## 1. Intro
         > ```
         > [[Ignored.md:1]]
@@ -519,6 +656,7 @@ def test_parse_markdown_ignores_references_in_indented_code_blocks(tmp_path: Pat
     path = write_text(
         tmp_path / "doc.md",
         """
+        <!-- intro -->
         ## 1. Intro
 
             [[Ignored.md:1]]
@@ -573,6 +711,7 @@ def test_parse_markdown_ignores_references_after_unterminated_inline_code(tmp_pa
     path = write_text(
         tmp_path / "doc.md",
         """
+        <!-- intro -->
         ## 1. Intro
         Unterminated `[[Ignored.md:1]] and \u00A72
         See [[Guide.md:1]] and \u00A71.

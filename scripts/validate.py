@@ -64,6 +64,8 @@ SECTION_TOKEN = rf"(?:{APPENDIX_SECTION_TOKEN}|{NUMERIC_SECTION_TOKEN})"
 FENCE_RE = re.compile(r"^(?P<marker>`{3,}|~{3,})(?P<rest>.*)$")
 WIKI_REFERENCE_RE = re.compile(rf"\[\[([^\[\]:]+\.md)(?::({SECTION_TOKEN}))?\]\]")
 APPENDIX_REFERENCE_RE = re.compile(rf"\bAppendix (?P<section>{APPENDIX_SECTION_TOKEN})\b")
+SECTION_ID_FORMAT_RE = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*$")
+HTML_COMMENT_RE = re.compile(r"^\s*<!--\s*(?P<body>.*?)\s*-->\s*$")
 
 NUMERIC_HEADING_RE = re.compile(
     rf"^(?P<hashes>#{{2,6}})\s+(?P<section>{NUMERIC_SECTION_TOKEN})(?:\.)?\s+(?P<title>\S.*\S|\S)\s*$"
@@ -477,6 +479,49 @@ def format_missing_heading_levels(previous_level: int, current_level: int) -> st
     return f"{', '.join(missing_levels)} headings"
 
 
+def validate_section_id(
+    path: Path,
+    lines: list[str],
+    line_number: int,
+    seen_section_ids: set[str],
+) -> list[Problem]:
+    if line_number <= 1:
+        return [
+            Problem(
+                path,
+                line_number,
+                "heading is missing a preceding section id comment like <!-- modules.files -->",
+            )
+        ]
+
+    previous_line = lines[line_number - 2]
+    comment = HTML_COMMENT_RE.fullmatch(previous_line)
+    if comment is None:
+        return [
+            Problem(
+                path,
+                line_number,
+                "heading is missing a preceding section id comment like <!-- modules.files -->",
+            )
+        ]
+
+    section_id = comment.group("body")
+    if SECTION_ID_FORMAT_RE.fullmatch(section_id) is None:
+        return [
+            Problem(
+                path,
+                line_number,
+                f"section id {section_id!r} must use lowercase dot-separated identifiers",
+            )
+        ]
+
+    if section_id in seen_section_ids:
+        return [Problem(path, line_number, f"section id {section_id!r} is declared more than once")]
+
+    seen_section_ids.add(section_id)
+    return []
+
+
 def validate_markdown_sections(path: Path, lines: list[str]) -> tuple[list[Problem], set[str]]:
     problems: list[Problem] = []
     sections: set[str] = set()
@@ -485,6 +530,7 @@ def validate_markdown_sections(path: Path, lines: list[str]) -> tuple[list[Probl
     seen_numeric_sections: set[str] = set()
     seen_appendix_sections: set[tuple[str, ...]] = set()
     seen_appendices: set[str] = set()
+    seen_section_ids: set[str] = set()
     seen_titles: set[str] = set()
     previous_heading_level: int | None = None
 
@@ -508,6 +554,8 @@ def validate_markdown_sections(path: Path, lines: list[str]) -> tuple[list[Probl
                 )
             )
         previous_heading_level = heading_level
+        if heading_level >= 2:
+            problems.extend(validate_section_id(path, lines, index, seen_section_ids))
 
         numeric = NUMERIC_HEADING_RE.match(line)
         if numeric:
