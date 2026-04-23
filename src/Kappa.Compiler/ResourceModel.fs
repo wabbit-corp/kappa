@@ -94,6 +94,10 @@ module ResourceModel =
           ExplicitName: string option
           OwnerScope: string }
 
+    type LocalLambda =
+        { Parameters: Parameter list
+          Body: SurfaceExpression }
+
     type ResourceBinding =
         { Id: string
           Name: string
@@ -106,6 +110,7 @@ module ResourceModel =
           UseMaximum: int
           CheckLinearDrop: bool
           ClosureFactId: string option
+          LocalLambda: LocalLambda option
           Origin: SourceLocation option
           FirstConsumeOrigin: SourceLocation option }
 

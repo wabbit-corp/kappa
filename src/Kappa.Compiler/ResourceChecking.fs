@@ -93,6 +93,17 @@ module ResourceChecking =
     let private quantityText quantity =
         quantity |> Option.map ResourceQuantity.toSurfaceText
 
+    let private inferLambdaBindingQuantity (capturedBindings: ResourceBinding list) =
+        if
+            capturedBindings
+            |> List.exists (fun binding ->
+                binding.DeclaredQuantity
+                |> Option.exists ResourceQuantity.isExactOne)
+        then
+            Some ResourceQuantity.one
+        else
+            None
+
     let private bindingDemand (binding: ResourceBinding) =
         match binding.BorrowRegion with
         | Some _ -> "&"
@@ -326,7 +337,7 @@ module ResourceChecking =
             })
         |> Set.ofSeq
 
-    let private addBinding name quantity borrowRegion capturedRegions capturedBindingOrigins checkDrop closureFactId origin (state: CheckState) =
+    let private addBinding name quantity borrowRegion capturedRegions capturedBindingOrigins checkDrop closureFactId localLambda origin (state: CheckState) =
         let place: ResourcePlace =
             { Root = name
               Path = [] }
@@ -345,6 +356,7 @@ module ResourceChecking =
               UseMaximum = 0
               CheckLinearDrop = checkDrop
               ClosureFactId = closureFactId
+              LocalLambda = localLambda
               Origin = origin
               FirstConsumeOrigin = None }
 
@@ -367,7 +379,7 @@ module ResourceChecking =
             Bindings = Map.add bindingId binding state.Bindings
             NextBindingId = state.NextBindingId + 1 }
 
-    let private addPatternBindings (document: ParsedDocument) (binding: SurfaceBindPattern) quantity borrowRegion capturedRegions capturedBindingOrigins checkDrop closureFactId state =
+    let private addPatternBindings (document: ParsedDocument) (binding: SurfaceBindPattern) quantity borrowRegion capturedRegions capturedBindingOrigins checkDrop closureFactId localLambda state =
         collectPatternNames binding.Pattern
         |> List.fold (fun current name ->
             addBinding
@@ -378,6 +390,7 @@ module ResourceChecking =
                 capturedBindingOrigins
                 checkDrop
                 closureFactId
+                localLambda
                 (findBinderLocation document name)
                 current) state
 
@@ -591,7 +604,107 @@ module ResourceChecking =
         | _ ->
             state
 
-    let rec private checkExpression (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state expression =
+    let private currentScopeBindingIds (state: CheckState) =
+        state.ActiveScopes
+        |> List.head
+        |> fun scope -> scope.IntroducedBindings |> List.map snd
+
+    let private checkScopeLinearDrops (document: ParsedDocument) (state: CheckState) =
+        currentScopeBindingIds state
+        |> List.fold (fun current bindingId ->
+            let binding = current.Bindings[bindingId]
+
+            if binding.CheckLinearDrop && binding.UseMinimum < 1 then
+                addDiagnostic
+                    linearDropCode
+                    $"Linear resource '{binding.Name}' is not consumed on every path."
+                    binding.Origin
+                    []
+                    document
+                    current
+            else
+                current) state
+
+    let private parameterQuantity (parameter: Parameter) =
+        if parameter.IsInout then
+            Some ResourceQuantity.one
+        else
+            parameter.Quantity |> Option.map ResourceQuantity.ofSurface
+
+    let rec private checkLocalLambdaInvocation
+        (document: ParsedDocument)
+        (signatures: Map<string, FunctionSignature>)
+        state
+        (lambdaValue: LocalLambda)
+        arguments
+        =
+        if List.length arguments <> List.length lambdaValue.Parameters then
+            state
+        else
+            withScope "lambda_call" (fun scopedState ->
+                let scopedState =
+                    (scopedState, List.zip lambdaValue.Parameters arguments)
+                    ||> List.fold (fun current (parameter, argument) ->
+                        let quantity = parameterQuantity parameter
+                        let checkDrop = quantity |> Option.exists ResourceQuantity.requiresUse
+
+                        let borrowRegion, current =
+                            match quantity, argument with
+                            | Some(ResourceQuantity.Borrow _), Name [ name ] ->
+                                match tryFindBinding name current with
+                                | Some binding ->
+                                    binding.BorrowRegion, current
+                                | None ->
+                                    introduceBorrowRegionForQuantity $"{currentScopeId current}.param" quantity current
+                            | _ ->
+                                introduceBorrowRegionForQuantity $"{currentScopeId current}.param" quantity current
+
+                        let capturedRegions, capturedBindingOrigins =
+                            match argument with
+                            | Name [ name ] ->
+                                match tryFindBinding name current with
+                                | Some binding ->
+                                    let regions =
+                                        seq {
+                                            match binding.BorrowRegion with
+                                            | Some region -> yield region.Id
+                                            | None -> ()
+
+                                            yield! binding.CapturedRegions
+                                        }
+                                        |> Set.ofSeq
+
+                                    let origins =
+                                        [
+                                            match binding.Origin with
+                                            | Some origin -> yield origin
+                                            | None -> ()
+
+                                            yield! binding.CapturedBindingOrigins
+                                        ]
+
+                                    regions, origins
+                                | None ->
+                                    Set.empty, []
+                            | _ ->
+                                Set.empty, []
+
+                        addBinding
+                            parameter.Name
+                            quantity
+                            borrowRegion
+                            capturedRegions
+                            capturedBindingOrigins
+                            checkDrop
+                            None
+                            None
+                            None
+                            current)
+
+                checkExpression document signatures scopedState lambdaValue.Body
+                |> checkScopeLinearDrops document) state
+
+    and private checkExpression (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state expression =
         match expression with
         | Literal _
         | Name _ ->
@@ -637,73 +750,114 @@ module ResourceChecking =
         | Apply(callee, arguments) ->
             let state = checkExpression document signatures state callee
             let calleeName = tryCalleeName callee
+            let calleeBinding =
+                match callee with
+                | Name [ name ] -> tryFindBinding name state
+                | _ -> None
+
+            let localLambda =
+                match calleeBinding with
+                | Some binding ->
+                    binding.LocalLambda
+                | None ->
+                    match callee with
+                    | Lambda(parameters, body) ->
+                        Some
+                            { Parameters = parameters
+                              Body = body }
+                    | _ ->
+                        None
+
+            let state =
+                match calleeBinding with
+                | Some binding when quantityConsumes binding.DeclaredQuantity ->
+                    consumeBinding document binding.Name state
+                | Some binding when quantityBorrows binding.DeclaredQuantity ->
+                    addNamedEvent "borrow" (findUseLocation document binding.Name 1) binding.Name state
+                | _ ->
+                    state
 
             let parameterQuantities =
-                calleeName
-                |> Option.bind (fun name -> Map.tryFind name signatures)
-                |> Option.map (fun signature -> signature.ParameterQuantities)
-                |> Option.defaultValue []
+                match localLambda with
+                | Some lambdaValue ->
+                    lambdaValue.Parameters |> List.map parameterQuantity
+                | None ->
+                    calleeName
+                    |> Option.bind (fun name -> Map.tryFind name signatures)
+                    |> Option.map (fun signature -> signature.ParameterQuantities)
+                    |> Option.defaultValue []
 
             let parameterInout =
-                calleeName
-                |> Option.bind (fun name -> Map.tryFind name signatures)
-                |> Option.map (fun signature -> signature.ParameterInout)
-                |> Option.defaultValue []
+                match localLambda with
+                | Some lambdaValue ->
+                    lambdaValue.Parameters |> List.map (fun parameter -> parameter.IsInout)
+                | None ->
+                    calleeName
+                    |> Option.bind (fun name -> Map.tryFind name signatures)
+                    |> Option.map (fun signature -> signature.ParameterInout)
+                    |> Option.defaultValue []
 
-            ((state, 0), arguments)
-            ||> List.fold (fun (current, index) argument ->
-                let quantity =
-                    parameterQuantities
-                    |> List.tryItem index
+            let state =
+                ((state, 0), arguments)
+                ||> List.fold (fun (current, index) argument ->
+                    let quantity =
+                        parameterQuantities
+                        |> List.tryItem index
 
-                let expectsInout =
-                    parameterInout
-                    |> List.tryItem index
-                    |> Option.defaultValue false
+                    let expectsInout =
+                        parameterInout
+                        |> List.tryItem index
+                        |> Option.defaultValue false
 
-                let hasInoutMarker =
-                    match argument with
-                    | InoutArgument _ -> true
-                    | _ -> false
+                    let hasInoutMarker =
+                        match argument with
+                        | InoutArgument _ -> true
+                        | _ -> false
 
-                let current =
-                    if expectsInout && not hasInoutMarker then
-                        addDiagnostic
-                            inoutMarkerRequiredCode
-                            "An argument supplied to an 'inout' parameter must be marked with '~'."
-                            (argumentLocation document argument)
-                            []
-                            document
+                    let current =
+                        if expectsInout && not hasInoutMarker then
+                            addDiagnostic
+                                inoutMarkerRequiredCode
+                                "An argument supplied to an 'inout' parameter must be marked with '~'."
+                                (argumentLocation document argument)
+                                []
+                                document
+                                current
+                        elif hasInoutMarker && not expectsInout then
+                            addDiagnostic
+                                inoutMarkerUnexpectedCode
+                                "The '~' marker can only be used for an 'inout' parameter."
+                                (argumentLocation document argument)
+                                []
+                                document
+                                current
+                        else
                             current
-                    elif hasInoutMarker && not expectsInout then
-                        addDiagnostic
-                            inoutMarkerUnexpectedCode
-                            "The '~' marker can only be used for an 'inout' parameter."
-                            (argumentLocation document argument)
-                            []
-                            document
+
+                    let next =
+                        match quantity, argument with
+                        | Some quantity, Name [ name ] when quantityConsumes quantity ->
+                            consumeBinding document name current
+                        | Some quantity, InoutArgument(Name [ name ]) when quantityConsumes quantity ->
+                            consumeBinding document name current
+                        | Some quantity, Name [ name ] when quantityBorrows quantity ->
                             current
-                    else
-                        current
+                            |> addNamedEvent "borrow" (findUseLocation document name 1) name
+                            |> fun current -> checkExpression document signatures current argument
+                        | Some quantity, _ when quantityBorrows quantity ->
+                            checkExpression document signatures current argument
+                        | _ ->
+                            let current = checkEscape document argument current
+                            checkExpression document signatures current argument
 
-                let next =
-                    match quantity, argument with
-                    | Some quantity, Name [ name ] when quantityConsumes quantity ->
-                        consumeBinding document name current
-                    | Some quantity, InoutArgument(Name [ name ]) when quantityConsumes quantity ->
-                        consumeBinding document name current
-                    | Some quantity, Name [ name ] when quantityBorrows quantity ->
-                        current
-                        |> addNamedEvent "borrow" (findUseLocation document name 1) name
-                        |> fun current -> checkExpression document signatures current argument
-                    | Some quantity, _ when quantityBorrows quantity ->
-                        checkExpression document signatures current argument
-                    | _ ->
-                        let current = checkEscape document argument current
-                        checkExpression document signatures current argument
+                    next, index + 1)
+                |> fst
 
-                next, index + 1)
-            |> fst
+            match localLambda with
+            | Some lambdaValue ->
+                checkLocalLambdaInvocation document signatures state lambdaValue arguments
+            | None ->
+                state
 
     and private checkExpressionInScope scopeLabel (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state expression =
         withScope scopeLabel (fun scopedState -> checkExpression document signatures scopedState expression) state
@@ -740,6 +894,15 @@ module ResourceChecking =
                     | Lambda _, [ name ] -> Some name
                     | _ -> None
 
+                let localLambda =
+                    match expression, collectPatternNames binding.Pattern with
+                    | Lambda(parameters, body), [ _ ] ->
+                        Some
+                            { Parameters = parameters
+                              Body = body }
+                    | _ ->
+                        None
+
                 let closureFactId, current =
                     match expression with
                     | Lambda _ ->
@@ -750,6 +913,10 @@ module ResourceChecking =
                 let declaredQuantity =
                     binding.Quantity
                     |> Option.map ResourceQuantity.ofSurface
+                    |> Option.orElseWith (fun () ->
+                        match expression with
+                        | Lambda _ -> inferLambdaBindingQuantity capturedBindings
+                        | _ -> None)
                     |> Option.orElseWith (fun () ->
                         movedLinearBinding
                         |> Option.bind (fun sourceBinding -> sourceBinding.DeclaredQuantity))
@@ -770,7 +937,7 @@ module ResourceChecking =
                 let borrowRegion, current =
                     introduceBorrowRegionForQuantity $"{currentScopeId current}.let" declaredQuantity current
 
-                let current = addPatternBindings document binding declaredQuantity borrowRegion captured capturedBindingOrigins checkDrop closureFactId current
+                let current = addPatternBindings document binding declaredQuantity borrowRegion captured capturedBindingOrigins checkDrop closureFactId localLambda current
                 loop current rest
             | DoBind(binding, expression) :: rest ->
                 let current = checkExpression document signatures current expression
@@ -780,7 +947,7 @@ module ResourceChecking =
                 let borrowRegion, current =
                     introduceBorrowRegionForQuantity $"{currentScopeId current}.bind" declaredQuantity current
 
-                let current = addPatternBindings document binding declaredQuantity borrowRegion Set.empty [] checkDrop None current
+                let current = addPatternBindings document binding declaredQuantity borrowRegion Set.empty [] checkDrop None None current
                 loop current rest
             | DoUsing(pattern, expression) :: rest ->
                 let current = checkExpression document signatures current expression
@@ -807,13 +974,14 @@ module ResourceChecking =
                             []
                             false
                             None
+                            None
                             (findBinderLocation document name)
                             state) current
 
                 loop current rest
             | DoVar(name, expression) :: rest ->
                 let current = checkExpression document signatures current expression
-                let current = addBinding name None None Set.empty [] false None (findBinderLocation document name) current
+                let current = addBinding name None None Set.empty [] false None None (findBinderLocation document name) current
                 loop current rest
             | DoAssign(_, expression) :: rest ->
                 let current = checkExpression document signatures current expression
@@ -832,25 +1000,7 @@ module ResourceChecking =
 
         let checkedState = loop state statements
 
-        let scopeBindingIds =
-            checkedState.ActiveScopes
-            |> List.head
-            |> fun scope -> scope.IntroducedBindings |> List.map snd
-
-        scopeBindingIds
-        |> List.fold (fun current bindingId ->
-            let binding = checkedState.Bindings[bindingId]
-
-            if binding.CheckLinearDrop && binding.UseMinimum < 1 then
-                addDiagnostic
-                    linearDropCode
-                    $"Linear resource '{binding.Name}' is not consumed on every path."
-                    binding.Origin
-                    []
-                    document
-                    current
-            else
-                current) checkedState
+        checkScopeLinearDrops document checkedState
 
     and private checkDoStatementsInScope scopeLabel (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state statements =
         withScope scopeLabel (fun scopedState -> checkDoStatements document signatures scopedState statements) state
@@ -876,7 +1026,7 @@ module ResourceChecking =
             | Some region -> addBorrowRegionFact region state
             | None -> state
 
-        addBinding parameter.Name quantity region Set.empty [] false None (findBinderLocation document parameter.Name) state
+        addBinding parameter.Name quantity region Set.empty [] false None None (findBinderLocation document parameter.Name) state
 
     let private checkDefinition (signatures: Map<string, FunctionSignature>) (document: ParsedDocument) scopeId (definition: LetDefinition) =
         match definition.Body with
