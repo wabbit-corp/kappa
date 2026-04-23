@@ -12349,7 +12349,7 @@ A module interface artifact MUST record at least:
 * the hashes or equivalent identity data required by §15 for exported definitions, instances, and escaped local nominal
   families recorded by the interface artifact;
 * for a host binding module, the pinned host-source identity, binding-generator identity, host scope kind, and any
-  implementation-documented marshalling profile required by §17.7;
+  implementation-documented marshalling profile or trusted binding-summary identities required by §17.7;
 * for an exported raw foreign binding, the binder metadata required for downstream application-site elaboration,
   including any receiver marker, overload-disambiguation spelling, nullability classification used to obtain the
   exported signature, and any interface-visible foreign-call blocking classification;
@@ -12722,8 +12722,9 @@ At minimum:
 * a change to a declaration header, explicit type, supertype, import/export surface, build flag, backend profile,
   backend intrinsic set, or dependency interface MUST invalidate dependent results from the earliest phase whose inputs
   changed;
-* a change to a pinned host-source identity, binding-generator version, host metadata input, native ABI description, or
-  shim artifact MUST invalidate any generated host-binding surface and all downstream phase results that depended on it;
+* a change to a pinned host-source identity, binding-generator version, trusted binding summary, host metadata input,
+  native ABI description, or shim artifact MUST invalidate any generated host-binding surface and all downstream phase
+  results that depended on it;
 * a change to macro-observed external input MUST invalidate any expansion, cached query result, or downstream phase
   result that depended on that input.
 
@@ -12757,7 +12758,8 @@ queries exist:
 * compute module interface;
 * compute inhabitance summary for a KCore type, declaration result type, or pattern-refined case type;
 * resolve host binding module scope and compute its host-source identity;
-* build or load a raw host binding surface from host metadata or an ABI description;
+* build or load a raw host binding surface from host metadata or an ABI description, together with any trusted binding
+  summaries that affect its exported interface;
 * lower declaration or module to KCore;
 * evaluate elaboration-time expansion or normalization request;
 * lower declaration or module to KBackendIR;
@@ -14119,10 +14121,11 @@ Rules:
   * the pinned host-source identity,
   * the selected host member identity,
   * the binding-generator identity, and
-  * any implementation-documented marshalling, calling-convention, or adapter mode that affects semantics.
+  * any implementation-documented marshalling, calling-convention, trusted binding-summary, or adapter mode that affects
+    semantics.
 * Unless explicitly classified as elaboration-available under §17.6.1, a raw host binding intrinsic is runtime-only.
-* A backend MUST reject a host binding whose required calling convention, marshalling, blocking classification, or
-  runtime service it cannot realize under the selected backend profile or deployment mode.
+* A backend MUST reject a host binding whose required calling convention, marshalling, blocking classification, trusted
+  summary contract, or runtime service it cannot realize under the selected backend profile or deployment mode.
 
 <!-- compiler.ffi -->
 ### 17.7 Foreign interop and portable foreign ABI
@@ -14211,10 +14214,14 @@ Rules:
 * A backend that lacks the runtime capability required by that classification, including `rt-blocking` when relevant,
   MUST reject the declaration or deployment mode rather than silently weakening its behavior.
 
-<!-- compiler.ffi.precise_overlays_shims -->
-#### 17.7.4 Precise overlays and shims
+<!-- compiler.ffi.precise_overlays_trusted_binding_summaries_shims -->
+#### 17.7.4 Precise overlays, trusted binding summaries, and shims
 
-A refined foreign surface is an ordinary Kappa module that wraps a raw host binding module or a user-provided shim.
+A refined foreign surface is an ordinary Kappa module that wraps a raw host binding module and MAY rely on a trusted
+binding summary or a user-provided shim.
+
+A trusted binding summary is implementation-documented binding metadata associated with a raw host binding declaration or
+with the generator inputs of a host binding module.
 
 Rules:
 
@@ -14222,11 +14229,24 @@ Rules:
   catch and translate host exceptions, and expose more precise result types, including `IO e a`.
 * A refined overlay that exposes `IO e a` MUST make the error translation contract explicit, either:
   * by implementing the translation in Kappa source, or
-  * by delegating to a shim whose documented contract provides that translation.
+  * by delegating to a shim or trusted binding summary whose documented contract provides that translation.
+* A trusted binding summary MAY refine raw typing only by adding facts not recoverable soundly from host metadata alone,
+  such as purity classification, blocking classification, nullability, ownership or handle discipline, status-code
+  meaning, sentinel meaning, or exception-to-error translation.
+* A trusted binding summary that permits a raw declaration to be typed as pure MUST state that the underlying host
+  operation is total, nonblocking, nonthrowing, and observably side-effect free under the selected backend profile.
+* A trusted binding summary that permits a declaration to be exposed as `IO e a` MUST name:
+  * the error type `e`,
+  * the triggering host conditions,
+  * the translation from those conditions to `e`, and
+  * which remaining host failure modes, if any, remain defects or interruption-pending runtime failures rather than
+    typed errors.
+* The identity of every trusted binding summary that affects exported signatures or runtime semantics MUST be recorded in
+  the effective build inputs, host binding implementation identity, and relevant interface artifacts.
 * A shim MAY be provided as Kappa source, as target-host source, as native source, or as another
   implementation-documented separately compiled artifact that the selected backend can compile and link.
-* Overlays and shims participate in ordinary hashing, interface artifacts, semantic object identity, and tooling exactly
-  like other modules and artifacts.
+* Overlays, trusted binding summaries, and shims participate in ordinary hashing, interface artifacts, semantic object
+  identity, and tooling exactly like other modules and artifacts.
 * This specification does not require a distinct `foreign import` declaration form. An implementation MAY provide such a
   form as surface sugar only if it elaborates to the ordinary mechanisms of this section and preserves their semantics.
 
@@ -14295,6 +14315,8 @@ Rules:
   native values.
 * If the implementation cannot derive a sound raw surface from native metadata alone, it MAY require a user-provided
   shim or explicit binding description rather than guessing.
+* A conforming implementation MAY additionally require allowlisted headers, wrapper headers, module maps, or equivalent
+  curated binding inputs rather than importing an unconstrained ambient native namespace.
 
 <!-- compiler.jvm -->
 ### 17.9 JVM backend profile
@@ -14370,6 +14392,8 @@ Rules:
   equivalent CLR metadata units from which the binding was derived.
 * A raw `host.dotnet` surface MAY use ECMA-335 metadata, generic-parameter data, attributes, and nullable-reference
   metadata to build its exported interface.
+* When metadata-only assemblies or reference assemblies are available and are observationally sufficient for interface
+  generation, the implementation SHOULD permit them to serve as the source of the raw exported interface.
 * CLR exceptions do not, by themselves, determine Kappa typed error channels for raw bindings.
 * In the absence of proof of non-nullability from CLR metadata, the raw surface MUST use the conservative rules of
   §17.7.3.
