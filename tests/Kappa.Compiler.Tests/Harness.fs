@@ -70,7 +70,290 @@ let private tokenizeAssertionTypeText (expectedTypeText: string) =
     let lexed = Lexer.tokenize source
 
     Assert.Empty(lexed.Diagnostics)
-    tokenTexts lexed.Tokens
+    lexed.Tokens
+
+type private FixtureTypeInventory =
+    { Types: Set<string>
+      Traits: Set<string> }
+
+type private DeclaredTypeInfo =
+    { Document: ParsedDocument
+      Tokens: Token list }
+
+let private emptyFixtureTypeInventory =
+    { Types = Set.empty
+      Traits = Set.empty }
+
+let private fixtureDocumentPrivateByDefault (document: ParsedDocument) =
+    document.Syntax.ModuleAttributes
+    |> List.exists (fun attributeName -> String.Equals(attributeName, "PrivateByDefault", StringComparison.Ordinal))
+
+let private isFixtureExportedVisibility privateByDefault visibility =
+    match visibility with
+    | Some Visibility.Public -> true
+    | Some Visibility.Private -> false
+    | None -> not privateByDefault
+
+let private buildFixtureTypeInventories (workspace: WorkspaceCompilation) =
+    let addDocument includePrivate inventory (document: ParsedDocument) =
+        let privateByDefault = fixtureDocumentPrivateByDefault document
+
+        let includeVisibility visibility =
+            includePrivate || isFixtureExportedVisibility privateByDefault visibility
+
+        document.Syntax.Declarations
+        |> List.fold (fun state declaration ->
+            match declaration with
+            | DataDeclarationNode dataDeclaration when includeVisibility dataDeclaration.Visibility ->
+                { state with
+                    Types = Set.add dataDeclaration.Name state.Types }
+            | TypeAliasNode typeAlias when includeVisibility typeAlias.Visibility ->
+                { state with
+                    Types = Set.add typeAlias.Name state.Types }
+            | TraitDeclarationNode traitDeclaration when includeVisibility traitDeclaration.Visibility ->
+                { state with
+                    Traits = Set.add traitDeclaration.Name state.Traits }
+            | _ ->
+                state) inventory
+
+    let groupedDocuments =
+        workspace.Documents
+        |> List.choose (fun document ->
+            document.ModuleName
+            |> Option.map (fun moduleName -> SyntaxFacts.moduleNameToText moduleName, document))
+        |> List.groupBy fst
+
+    let localInventories =
+        groupedDocuments
+        |> List.map (fun (moduleName, entries) ->
+            let inventory =
+                entries
+                |> List.map snd
+                |> List.fold (addDocument true) emptyFixtureTypeInventory
+
+            moduleName, inventory)
+        |> Map.ofList
+
+    let exportedInventories =
+        groupedDocuments
+        |> List.map (fun (moduleName, entries) ->
+            let inventory =
+                entries
+                |> List.map snd
+                |> List.fold (addDocument false) emptyFixtureTypeInventory
+
+            moduleName, inventory)
+        |> Map.ofList
+
+    localInventories, exportedInventories
+
+let private addResolutionCandidate name moduleSegments (candidates: Map<string, string list list>) =
+    let existing = candidates |> Map.tryFind name |> Option.defaultValue []
+
+    if existing |> List.exists ((=) moduleSegments) then
+        candidates
+    else
+        Map.add name (moduleSegments :: existing) candidates
+
+let private resolveUniqueCandidates (candidates: Map<string, string list list>) =
+    candidates
+    |> Map.toList
+    |> List.choose (fun (name, moduleCandidates) ->
+        match moduleCandidates |> List.distinct with
+        | [ uniqueModule ] -> Some(name, uniqueModule)
+        | _ -> None)
+    |> Map.ofList
+
+let private fixtureImportedNamesForSelection importNamespace selection (inventory: FixtureTypeInventory) =
+    let inInventory name =
+        match importNamespace with
+        | ImportNamespace.Type -> Set.contains name inventory.Types
+        | ImportNamespace.Trait -> Set.contains name inventory.Traits
+        | _ -> false
+
+    match selection with
+    | QualifiedOnly ->
+        Set.empty
+    | All ->
+        match importNamespace with
+        | ImportNamespace.Type -> inventory.Types
+        | ImportNamespace.Trait -> inventory.Traits
+        | _ -> Set.empty
+    | AllExcept excludedNames ->
+        let excluded = Set.ofList excludedNames
+
+        match importNamespace with
+        | ImportNamespace.Type -> Set.difference inventory.Types excluded
+        | ImportNamespace.Trait -> Set.difference inventory.Traits excluded
+        | _ -> Set.empty
+    | Items items ->
+        items
+        |> List.choose (fun item ->
+            let namespaceMatches =
+                match item.Namespace with
+                | Some itemNamespace -> itemNamespace = importNamespace
+                | None -> inInventory item.Name
+
+            if namespaceMatches && inInventory item.Name then
+                Some item.Name
+            else
+                None)
+        |> Set.ofList
+
+let private collectFixtureImportSpecs (document: ParsedDocument) =
+    Stdlib.implicitImportsFor document.ModuleName
+    @ (document.Syntax.Declarations
+       |> List.collect (function
+           | ImportDeclaration (_, specs) -> specs
+           | _ -> []))
+
+let private fixtureInScopeTypeResolutions (workspace: WorkspaceCompilation) (document: ParsedDocument) =
+    let localInventories, exportedInventories = buildFixtureTypeInventories workspace
+
+    let localTypeResolutions, localTraitResolutions =
+        match document.ModuleName with
+        | Some moduleName ->
+            let moduleNameText = SyntaxFacts.moduleNameToText moduleName
+            let localInventory = localInventories |> Map.tryFind moduleNameText |> Option.defaultValue emptyFixtureTypeInventory
+
+            let types =
+                localInventory.Types
+                |> Seq.map (fun name -> name, moduleName @ [ name ])
+                |> Map.ofSeq
+
+            let traits =
+                localInventory.Traits
+                |> Seq.map (fun name -> name, SyntaxFacts.moduleNameToText (moduleName @ [ name ]))
+                |> Map.ofSeq
+
+            types, traits
+        | None ->
+            Map.empty, Map.empty
+
+    let importedTypeCandidates, importedTraitCandidates =
+        collectFixtureImportSpecs document
+        |> List.fold (fun (typeCandidates, traitCandidates) spec ->
+            match spec.Source with
+            | Dotted moduleName ->
+                let moduleNameText = SyntaxFacts.moduleNameToText moduleName
+                let inventory = exportedInventories |> Map.tryFind moduleNameText |> Option.defaultValue emptyFixtureTypeInventory
+
+                let typeCandidates' =
+                    fixtureImportedNamesForSelection ImportNamespace.Type spec.Selection inventory
+                    |> Seq.fold (fun state name ->
+                        if localTypeResolutions.ContainsKey(name) then
+                            state
+                        else
+                            addResolutionCandidate name moduleName state) typeCandidates
+
+                let traitCandidates' =
+                    fixtureImportedNamesForSelection ImportNamespace.Trait spec.Selection inventory
+                    |> Seq.fold (fun state name ->
+                        if localTraitResolutions.ContainsKey(name) then
+                            state
+                        else
+                            addResolutionCandidate name moduleName state) traitCandidates
+
+                typeCandidates', traitCandidates'
+            | Url _ ->
+                typeCandidates, traitCandidates) (Map.empty, Map.empty)
+
+    let importedTypeResolutions =
+        importedTypeCandidates
+        |> resolveUniqueCandidates
+        |> Map.toList
+        |> List.map (fun (name, moduleName) -> name, moduleName @ [ name ])
+        |> Map.ofList
+
+    let importedTraitResolutions =
+        importedTraitCandidates
+        |> resolveUniqueCandidates
+        |> Map.toList
+        |> List.map (fun (name, moduleName) -> name, SyntaxFacts.moduleNameToText (moduleName @ [ name ]))
+        |> Map.ofList
+
+    let typeResolutions =
+        importedTypeResolutions
+        |> Map.fold (fun (state: Map<string, string list>) name resolvedName ->
+            if Map.containsKey name state then
+                state
+            else
+                Map.add name resolvedName state) localTypeResolutions
+
+    let traitResolutions =
+        importedTraitResolutions
+        |> Map.fold (fun (state: Map<string, string>) name resolvedName ->
+            if Map.containsKey name state then
+                state
+            else
+                Map.add name resolvedName state) localTraitResolutions
+
+    typeResolutions, traitResolutions
+
+let private fixtureTypeNameResolutions (workspace: WorkspaceCompilation) (document: ParsedDocument) =
+    let typeResolutions, traitResolutions = fixtureInScopeTypeResolutions workspace document
+
+    let addResolution name qualifiedName (state: Map<string, string>) =
+        match state |> Map.tryFind name with
+        | None ->
+            Map.add name qualifiedName state
+        | Some existing when String.Equals(existing, qualifiedName, StringComparison.Ordinal) ->
+            state
+        | Some _ ->
+            Map.remove name state
+
+    let withTypes =
+        typeResolutions
+        |> Map.toList
+        |> List.fold (fun state (name, qualifiedName) ->
+            addResolution name (SyntaxFacts.moduleNameToText qualifiedName) state) Map.empty
+
+    traitResolutions
+    |> Map.toList
+    |> List.fold (fun state (name, qualifiedName) -> addResolution name qualifiedName state) withTypes
+
+let private normalizeFixtureTypeTokensWithResolutions (nameResolutions: Map<string, string>) (tokens: Token list) =
+    let significantTokens =
+        tokens |> List.filter (isLayoutOrSentinelToken >> not) |> List.toArray
+
+    let rec loop index normalized =
+        if index >= significantTokens.Length then
+            List.rev normalized
+        else
+            let token = significantTokens[index]
+
+            if Token.isName token then
+                let segments = ResizeArray<string>()
+                segments.Add(SyntaxFacts.trimIdentifierQuotes token.Text)
+
+                let mutable nextIndex = index + 1
+                let mutable keepReading = true
+
+                while keepReading && nextIndex + 1 < significantTokens.Length do
+                    match significantTokens[nextIndex].Kind, significantTokens[nextIndex + 1] with
+                    | Dot, nextToken when Token.isName nextToken ->
+                        segments.Add(SyntaxFacts.trimIdentifierQuotes nextToken.Text)
+                        nextIndex <- nextIndex + 2
+                    | _ ->
+                        keepReading <- false
+
+                let collapsedName = segments |> Seq.toList |> SyntaxFacts.moduleNameToText
+
+                let normalizedName =
+                    match segments |> Seq.toList with
+                    | [ simpleName ] ->
+                        nameResolutions |> Map.tryFind simpleName |> Option.defaultValue collapsedName
+                    | _ ->
+                        collapsedName
+
+                loop nextIndex (normalizedName :: normalized)
+            else
+                loop (index + 1) (token.Text :: normalized)
+
+    loop 0 []
+
+let private normalizeFixtureTypeTokens (workspace: WorkspaceCompilation) (document: ParsedDocument) (tokens: Token list) =
+    normalizeFixtureTypeTokensWithResolutions (fixtureTypeNameResolutions workspace document) tokens
 
 let private normalizeFixtureText (value: string) =
     value.Trim().ToLowerInvariant()
@@ -312,7 +595,7 @@ let private qualifyFixtureBindingTarget (workspace: WorkspaceCompilation) (fileP
                 $"{SyntaxFacts.moduleNameToText moduleName}.{target}"))
         |> Option.defaultValue target
 
-let private tryFindDeclaredTypeTokensInDocument bindingName (document: ParsedDocument) =
+let private tryFindDeclaredTypeInDocument bindingName (document: ParsedDocument) =
     let signatureTokens =
         document.Syntax.Declarations
         |> List.tryPick (function
@@ -323,17 +606,21 @@ let private tryFindDeclaredTypeTokensInDocument bindingName (document: ParsedDoc
 
     match signatureTokens with
     | Some tokens ->
-        Some(tokenTexts tokens)
+        Some
+            { Document = document
+              Tokens = tokens }
     | None ->
         document.Syntax.Declarations
         |> List.tryPick (function
             | LetDeclaration definition when definition.Name = Some bindingName ->
                 definition.ReturnTypeTokens
-                |> Option.map tokenTexts
+                |> Option.map (fun tokens ->
+                    { Document = document
+                      Tokens = tokens })
             | _ ->
                 None)
 
-let private tryFindDeclaredTypeTokens (workspace: WorkspaceCompilation) (currentFilePath: string option) (target: string) =
+let private tryFindDeclaredType (workspace: WorkspaceCompilation) (currentFilePath: string option) (target: string) =
     let segments =
         target.Split('.', StringSplitOptions.RemoveEmptyEntries)
         |> Array.toList
@@ -345,14 +632,14 @@ let private tryFindDeclaredTypeTokens (workspace: WorkspaceCompilation) (current
         let matches =
             workspace.Documents
             |> List.choose (fun document ->
-                tryFindDeclaredTypeTokensInDocument bindingName document
-                |> Option.map (fun tokens ->
+                tryFindDeclaredTypeInDocument bindingName document
+                |> Option.map (fun info ->
                     let moduleName =
                         document.ModuleName
                         |> Option.map SyntaxFacts.moduleNameToText
                         |> Option.defaultValue "<unknown>"
 
-                    moduleName, tokens))
+                    moduleName, info))
 
         match matches with
         | [] ->
@@ -367,27 +654,27 @@ let private tryFindDeclaredTypeTokens (workspace: WorkspaceCompilation) (current
             match preferredModuleName with
             | Some moduleName ->
                 matches
-                |> List.tryPick (fun (candidateModuleName, tokens) ->
+                |> List.tryPick (fun (candidateModuleName, info) ->
                     if String.Equals(candidateModuleName, moduleName, StringComparison.Ordinal) then
-                        Some tokens
+                        Some info
                     else
                         None)
                 |> Option.orElseWith (fun () ->
                     match matches with
-                    | [ _, tokens ] ->
-                        Some tokens
+                    | [ _, info ] ->
+                        Some info
                     | multiple ->
                         let owners = multiple |> List.map fst |> String.concat ", "
                         invalidOp $"assertType target '{target}' is ambiguous across modules: {owners}.")
             | None ->
                 match matches with
-                | [ _, tokens ] ->
-                    Some tokens
+                | [ _, info ] ->
+                    Some info
                 | multiple ->
                     let owners = multiple |> List.map fst |> String.concat ", "
                     invalidOp $"assertType target '{target}' is ambiguous across modules: {owners}."
-        | [ _, tokens ] ->
-            Some tokens
+        | [ _, info ] ->
+            Some info
         | multiple ->
             let owners = multiple |> List.map fst |> String.concat ", "
             invalidOp $"assertType target '{target}' is ambiguous across modules: {owners}."
@@ -399,7 +686,7 @@ let private tryFindDeclaredTypeTokens (workspace: WorkspaceCompilation) (current
         |> List.tryPick (fun document ->
             match document.ModuleName with
             | Some candidate when String.Equals(SyntaxFacts.moduleNameToText candidate, moduleName, StringComparison.Ordinal) ->
-                tryFindDeclaredTypeTokensInDocument bindingName document
+                tryFindDeclaredTypeInDocument bindingName document
             | _ ->
                 None)
 
@@ -526,9 +813,19 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
         | AssertType(target, expectedTypeText, filePath, lineNumber) ->
             let expectedTokens = tokenizeAssertionTypeText expectedTypeText
 
-            match tryFindDeclaredTypeTokens workspace (Some filePath) target with
-            | Some actualTokens ->
-                Assert.Equal<string list>(expectedTokens, actualTokens)
+            match tryFindDeclaredType workspace (Some filePath) target with
+            | Some actualInfo ->
+                let normalizedActual =
+                    normalizeFixtureTypeTokens workspace actualInfo.Document actualInfo.Tokens
+
+                let normalizedExpected =
+                    match tryFindDocumentForFilePath workspace filePath with
+                    | Some expectedDocument ->
+                        normalizeFixtureTypeTokens workspace expectedDocument expectedTokens
+                    | None ->
+                        normalizeFixtureTypeTokensWithResolutions Map.empty expectedTokens
+
+                Assert.Equal<string list>(normalizedExpected, normalizedActual)
             | None ->
                 failwithf "Could not find a declared top-level type for '%s' (%s:%d)." target filePath lineNumber
         | AssertFileDeclarationKinds(relativePath, expectedKinds, _, lineNumber) ->

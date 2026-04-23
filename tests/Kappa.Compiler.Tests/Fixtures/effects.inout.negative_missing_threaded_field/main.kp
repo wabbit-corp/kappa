@@ -6,5 +6,4 @@ badStep : (inout c : Cell) -> Cell
 let badStep c = c
 
 --! assertErrorCount 1
---! assertDiagnosticMatch inout|threaded|field
-
+--! assertDiagnosticCodes E_QTT_INOUT_THREADED_FIELD_MISSING

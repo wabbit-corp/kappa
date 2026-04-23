@@ -13,6 +13,7 @@ module internal ResourceCheckingDiagnostics =
     let erasedRuntimeUseCode = DiagnosticCode.QttErasedRuntimeUse
     let inoutMarkerRequiredCode = DiagnosticCode.QttInoutMarkerRequired
     let inoutMarkerUnexpectedCode = DiagnosticCode.QttInoutMarkerUnexpected
+    let inoutThreadedFieldMissingCode = DiagnosticCode.QttInoutThreadedFieldMissing
 
     let diagnosticLocation (document: ParsedDocument) =
         document.Source.GetLocation(TextSpan.FromBounds(0, 0))

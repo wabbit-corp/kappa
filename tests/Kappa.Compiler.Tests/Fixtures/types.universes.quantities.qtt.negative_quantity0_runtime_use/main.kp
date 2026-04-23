@@ -4,4 +4,4 @@ bad : (@0 n : Nat) -> Unit -> Nat
 let bad n = \_ -> n
 
 --! assertErrorCount 1
---! assertDiagnosticMatch erased|quantity|runtime|computationally relevant
+--! assertDiagnosticCodes E_QTT_ERASED_RUNTIME_USE

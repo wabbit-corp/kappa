@@ -9,6 +9,6 @@ let main : IO Unit = do
     let 1 file = Handle 1
     step file
 
---! assertErrorCount 1
---! assertDiagnosticCodes E_QTT_INOUT_MARKER_REQUIRED
+--! assertErrorCount 2
+--! assertDiagnosticCodes E_QTT_INOUT_THREADED_FIELD_MISSING, E_QTT_INOUT_MARKER_REQUIRED
 --! assertDiagnosticAt main.kp error E_QTT_INOUT_MARKER_REQUIRED 10

@@ -8,4 +8,4 @@ let badShadow x =
         x
 
 --! assertErrorCount 1
---! assertDiagnosticMatch shadow|linear|once|consume
+--! assertDiagnosticCodes E_QTT_LINEAR_DROP

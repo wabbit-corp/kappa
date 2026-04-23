@@ -7,5 +7,4 @@ badBorrowAsOwned : (& x : Int) -> Int
 let badBorrowAsOwned x = needOwned x
 
 --! assertErrorCount 1
---! assertDiagnosticMatch borrow|owned|quantity
-
+--! assertDiagnosticCodes E_QTT_BORROW_CONSUME

@@ -35,6 +35,7 @@ type DiagnosticCode =
     | QttUsingExplicitQuantity
     | QttInoutMarkerRequired
     | QttInoutMarkerUnexpected
+    | QttInoutThreadedFieldMissing
 
 module DiagnosticCode =
     let toIdentifier code =
@@ -68,6 +69,7 @@ module DiagnosticCode =
         | QttUsingExplicitQuantity -> "E_QTT_USING_EXPLICIT_QUANTITY"
         | QttInoutMarkerRequired -> "E_QTT_INOUT_MARKER_REQUIRED"
         | QttInoutMarkerUnexpected -> "E_QTT_INOUT_MARKER_UNEXPECTED"
+        | QttInoutThreadedFieldMissing -> "E_QTT_INOUT_THREADED_FIELD_MISSING"
 
     let tryParseIdentifier (identifier: string) =
         match identifier.Trim() with
@@ -100,6 +102,7 @@ module DiagnosticCode =
         | "E_QTT_USING_EXPLICIT_QUANTITY" -> Some QttUsingExplicitQuantity
         | "E_QTT_INOUT_MARKER_REQUIRED" -> Some QttInoutMarkerRequired
         | "E_QTT_INOUT_MARKER_UNEXPECTED" -> Some QttInoutMarkerUnexpected
+        | "E_QTT_INOUT_THREADED_FIELD_MISSING" -> Some QttInoutThreadedFieldMissing
         | _ -> None
 
 type DiagnosticRelatedLocation =

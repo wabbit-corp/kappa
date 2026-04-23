@@ -289,6 +289,31 @@ module TypeSignatures =
             | Some token when Token.isName token -> true
             | _ -> false
 
+        member private this.TryConsumeCaptureSuffix() =
+            let isCapturesToken token =
+                Token.isName token
+                && String.Equals(SyntaxFacts.trimIdentifierQuotes token.Text, "captures", StringComparison.Ordinal)
+
+            match this.Current, this.Peek(1) with
+            | Some capturesToken, Some { Kind = LeftParen } when isCapturesToken capturesToken ->
+                this.Advance() |> ignore
+                this.Advance() |> ignore
+
+                let mutable depth = 1
+
+                while not this.IsAtEnd && depth > 0 do
+                    match this.Advance() with
+                    | Some { Kind = LeftParen } ->
+                        depth <- depth + 1
+                    | Some { Kind = RightParen } ->
+                        depth <- depth - 1
+                    | _ ->
+                        ()
+
+                true
+            | _ ->
+                false
+
         member private this.ParseApplication() =
             match this.ParseAtom() with
             | None -> None
@@ -302,9 +327,19 @@ module TypeSignatures =
 
                 match head with
                 | TypeName(name, existingArguments) ->
-                    Some(TypeName(name, existingArguments @ List.ofSeq arguments))
+                    let mutable parsed = TypeName(name, existingArguments @ List.ofSeq arguments)
+
+                    while this.TryConsumeCaptureSuffix() do
+                        ()
+
+                    Some parsed
                 | _ when arguments.Count = 0 ->
-                    Some head
+                    let mutable parsed = head
+
+                    while this.TryConsumeCaptureSuffix() do
+                        ()
+
+                    Some parsed
                 | _ ->
                     None
 

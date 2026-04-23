@@ -1930,7 +1930,7 @@ module CoreParsing =
         (tokens: Token list)
         : SurfaceExpression option =
         let trimmedLeading =
-            tokens |> List.skipWhile (fun token -> token.Kind = Newline)
+            trimLeadingLayout tokens
 
         let splitIndentedLines remainingTokens =
             match remainingTokens with
@@ -1966,115 +1966,199 @@ module CoreParsing =
                     None
                 else
                     Some(lines |> Seq.toList |> List.filter (List.isEmpty >> not))
+            | { Kind = Newline } :: { Kind = Indent } :: rest ->
+                let lines = ResizeArray<Token list>()
+                let current = ResizeArray<Token>()
+                let mutable depth = 1
+                let mutable finished = false
+
+                for token in rest do
+                    if not finished then
+                        match token.Kind with
+                        | Indent ->
+                            depth <- depth + 1
+                            current.Add(token)
+                        | Dedent ->
+                            depth <- depth - 1
+
+                            if depth = 0 then
+                                if current.Count > 0 then
+                                    lines.Add(List.ofSeq current)
+
+                                finished <- true
+                            else
+                                current.Add(token)
+                        | Newline when depth = 1 ->
+                            lines.Add(List.ofSeq current)
+                            current.Clear()
+                        | _ ->
+                            current.Add(token)
+
+                if not finished then
+                    None
+                else
+                    Some(lines |> Seq.toList |> List.filter (List.isEmpty >> not))
             | _ ->
                 None
 
-        let parseSimpleLocalLetLine lineTokens : (SurfaceBindPattern * SurfaceExpression) option =
-            let trimmed =
-                lineTokens
-                |> List.filter (fun token ->
-                    match token.Kind with
-                    | Newline
-                    | Indent
-                    | Dedent -> false
-                    | _ -> true)
+        let tryFindTopLevelEquals tokens =
+            let tokenArray = List.toArray tokens
+            let mutable depth = 0
+            let mutable index = 0
+            let mutable result = None
 
-            let tryFindTopLevelEquals tokens =
+            while index < tokenArray.Length && result.IsNone do
+                match tokenArray[index].Kind with
+                | LeftParen
+                | LeftBracket
+                | LeftBrace
+                | LeftSetBrace ->
+                    depth <- depth + 1
+                | RightParen
+                | RightBracket
+                | RightBrace
+                | RightSetBrace ->
+                    depth <- max 0 (depth - 1)
+                | Equals when depth = 0 ->
+                    result <- Some index
+                | _ ->
+                    ()
+
+                index <- index + 1
+
+            result
+
+        let stripBindingTypeAnnotation tokens =
+            let tokenArray = List.toArray tokens
+            let mutable depth = 0
+            let mutable index = 0
+            let mutable splitIndex = -1
+
+            while index < tokenArray.Length && splitIndex < 0 do
+                match tokenArray[index].Kind with
+                | LeftParen
+                | LeftBracket
+                | LeftBrace
+                | LeftSetBrace ->
+                    depth <- depth + 1
+                | RightParen
+                | RightBracket
+                | RightBrace
+                | RightSetBrace ->
+                    depth <- max 0 (depth - 1)
+                | Colon when depth = 0 ->
+                    splitIndex <- index
+                | _ ->
+                    ()
+
+                index <- index + 1
+
+            if splitIndex >= 0 then
+                tokenArray[0 .. splitIndex - 1] |> Array.toList
+            else
+                tokens
+
+        let parseBindingLineCore (bindingTokens: Token list) (valueTokens: Token list) =
+            SurfaceBinderParsing.parseBindPatternFromTokens
+                (fun tokens ->
+                    let nestedParser = PatternParser(tokens, source, diagnostics, fixities)
+                    nestedParser.Parse())
+                bindingTokens,
+            parseExpression fixities source diagnostics valueTokens
+            |> Option.defaultValue (Literal LiteralValue.Unit)
+
+        let parseBindingLineTokens (tokens: Token list) =
+            match tryFindTopLevelEquals tokens with
+            | Some index ->
                 let tokenArray = List.toArray tokens
-                let mutable depth = 0
-                let mutable index = 0
-                let mutable result = None
+                let bindingTokens =
+                    tokenArray[0 .. index - 1]
+                    |> Array.toList
+                    |> stripBindingTypeAnnotation
+                let valueTokens = tokenArray[index + 1 ..] |> Array.toList
+                Some(parseBindingLineCore bindingTokens valueTokens)
+            | None ->
+                None
 
-                while index < tokenArray.Length && result.IsNone do
-                    match tokenArray[index].Kind with
-                    | LeftParen
-                    | LeftBracket
-                    | LeftBrace
-                    | LeftSetBrace ->
-                        depth <- depth + 1
-                    | RightParen
-                    | RightBracket
-                    | RightBrace
-                    | RightSetBrace ->
-                        depth <- max 0 (depth - 1)
-                    | Equals when depth = 0 ->
-                        result <- Some index
-                    | _ ->
-                        ()
+        let trimLineTokens lineTokens =
+            lineTokens
+            |> List.filter (fun token ->
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent -> false
+                | _ -> true)
 
-                    index <- index + 1
+        let parseSimpleLocalBindingLine lineTokens =
+            trimLineTokens lineTokens |> parseBindingLineTokens
 
-                result
-
-            let stripBindingTypeAnnotation tokens =
-                let tokenArray = List.toArray tokens
-                let mutable depth = 0
-                let mutable index = 0
-                let mutable splitIndex = -1
-
-                while index < tokenArray.Length && splitIndex < 0 do
-                    match tokenArray[index].Kind with
-                    | LeftParen
-                    | LeftBracket
-                    | LeftBrace
-                    | LeftSetBrace ->
-                        depth <- depth + 1
-                    | RightParen
-                    | RightBracket
-                    | RightBrace
-                    | RightSetBrace ->
-                        depth <- max 0 (depth - 1)
-                    | Colon when depth = 0 ->
-                        splitIndex <- index
-                    | _ ->
-                        ()
-
-                    index <- index + 1
-
-                if splitIndex >= 0 then
-                    tokenArray[0 .. splitIndex - 1] |> Array.toList
-                else
-                    tokens
-
-            match trimmed with
+        let parseSimpleLocalLetLine lineTokens =
+            match trimLineTokens lineTokens with
             | letToken :: rest when Token.isKeyword Keyword.Let letToken ->
-                match tryFindTopLevelEquals rest with
-                | Some index ->
-                    let tokenArray = List.toArray rest
-                    let bindingTokens =
-                        tokenArray[0 .. index - 1]
-                        |> Array.toList
-                        |> stripBindingTypeAnnotation
-                    let valueTokens = tokenArray[index + 1 ..] |> Array.toList
+                parseBindingLineTokens rest
+            | _ ->
+                None
 
-                    Some(
-                        SurfaceBinderParsing.parseBindPatternFromTokens
-                            (fun tokens ->
-                                let nestedParser = PatternParser(tokens, source, diagnostics, fixities)
-                                nestedParser.Parse())
-                            bindingTokens,
-                        parseExpression fixities source diagnostics valueTokens
-                        |> Option.defaultValue (Literal LiteralValue.Unit)
-                    )
-                | None ->
-                    None
-            | _ -> None
-
-        match splitIndentedLines trimmedLeading with
-        | Some lines when List.length lines >= 2 && (lines |> List.take (List.length lines - 1) |> List.forall (parseSimpleLocalLetLine >> Option.isSome)) ->
+        let buildNestedExpression parseBindingLine bindingLines bodyTokens =
             let body : SurfaceExpression =
-                parseExpression fixities source diagnostics (List.last lines)
+                parseExpression fixities source diagnostics bodyTokens
                 |> Option.defaultValue (Literal LiteralValue.Unit)
 
-            let nestedExpression : SurfaceExpression =
-                lines
-                |> List.take (List.length lines - 1)
-                |> List.rev
-                |> List.fold (fun (current: SurfaceExpression) lineTokens ->
-                    match parseSimpleLocalLetLine lineTokens with
-                    | Some(binding, value) -> LocalLet(binding, value, current)
-                    | None -> current) body
+            bindingLines
+            |> List.rev
+            |> List.fold (fun (current: SurfaceExpression) lineTokens ->
+                match parseBindingLine lineTokens with
+                | Some(binding, value) -> LocalLet(binding, value, current)
+                | None -> current) body
 
-            Some nestedExpression
-        | _ ->
-            None
+        let tryParseIndentedPureBlockSuite () =
+            match splitIndentedLines tokens with
+            | Some lines
+                when List.length lines >= 2
+                     && (lines |> List.take (List.length lines - 1) |> List.forall (parseSimpleLocalLetLine >> Option.isSome)) ->
+                Some(buildNestedExpression parseSimpleLocalLetLine (lines |> List.take (List.length lines - 1)) (List.last lines))
+            | _ ->
+                None
+
+        let tryParseLetInExpression rest =
+            match splitIndentedLines rest with
+            | Some bindingLines ->
+                let afterBindings =
+                    rest
+                    |> List.skipWhile (fun token -> token.Kind <> Dedent)
+                    |> function
+                        | _ :: remaining -> trimLeadingLayout remaining
+                        | [] -> []
+
+                match afterBindings with
+                | inToken :: bodyTokens
+                    when Token.isKeyword Keyword.In inToken
+                         && not (List.isEmpty bindingLines)
+                         && (bindingLines |> List.forall (parseSimpleLocalBindingLine >> Option.isSome)) ->
+                    Some(buildNestedExpression parseSimpleLocalBindingLine bindingLines bodyTokens)
+                | _ ->
+                    None
+            | None ->
+                match splitTopLevelAtKeyword Keyword.In rest with
+                | Some(bindingTokens, bodyTokens) ->
+                    match parseBindingLineTokens bindingTokens with
+                    | Some(binding, value) ->
+                        let body =
+                            parseExpression fixities source diagnostics bodyTokens
+                            |> Option.defaultValue (Literal LiteralValue.Unit)
+
+                        Some(LocalLet(binding, value, body))
+                    | None ->
+                        None
+                | None ->
+                    None
+
+        match tryParseIndentedPureBlockSuite () with
+        | Some expression ->
+            Some expression
+        | None ->
+            match trimmedLeading with
+            | letToken :: rest when Token.isKeyword Keyword.Let letToken ->
+                tryParseLetInExpression rest
+            | _ ->
+                None

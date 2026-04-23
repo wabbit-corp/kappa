@@ -144,6 +144,46 @@ module internal ResourceCheckingSignatures =
             |> List.take (segments.Length - 1)
             |> List.map parameterType
 
+    let private signatureParameterInout tokens =
+        let trimSignificant tokens =
+            tokens
+            |> List.filter (fun token ->
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent
+                | EndOfFile -> false
+                | _ -> true)
+
+        let stripBinderShell tokens =
+            match trimSignificant tokens with
+            | { Kind = LeftParen } :: rest ->
+                match List.rev rest with
+                | { Kind = RightParen } :: reversedInner ->
+                    reversedInner |> List.rev |> trimSignificant
+                | _ ->
+                    trimSignificant tokens
+            | trimmed ->
+                trimmed
+
+        let segments =
+            splitTopLevelArrows tokens
+            |> List.filter (List.isEmpty >> not)
+
+        if List.length segments <= 1 then
+            []
+        else
+            segments
+            |> List.take (segments.Length - 1)
+            |> List.map (fun segmentTokens ->
+                match stripBinderShell segmentTokens with
+                | { Kind = AtSign } :: rest ->
+                    match rest with
+                    | token :: _ when Token.isKeyword Keyword.Inout token -> true
+                    | _ -> false
+                | token :: _ when Token.isKeyword Keyword.Inout token -> true
+                | _ -> false)
+
     let private signatureEntries (document: ParsedDocument) name quantities parameterTypes parameterInout =
         signatureName document.ModuleName name
         |> List.map (fun signatureName ->
@@ -209,7 +249,8 @@ module internal ResourceCheckingSignatures =
                 | SignatureDeclaration declaration ->
                     let quantities = signatureParameterQuantities declaration.TypeTokens
                     let parameterTypes = signatureParameterTypeTokens declaration.TypeTokens
-                    Some(signatureEntries document declaration.Name quantities parameterTypes (quantities |> List.map (fun _ -> false)))
+                    let parameterInout = signatureParameterInout declaration.TypeTokens
+                    Some(signatureEntries document declaration.Name quantities parameterTypes parameterInout)
                 | ExpectDeclarationNode (ExpectTermDeclaration declaration) ->
                     let quantities = signatureParameterQuantities declaration.TypeTokens
                     let parameterTypes = signatureParameterTypeTokens declaration.TypeTokens

@@ -12,4 +12,4 @@ bad : SizedBuffer -> SizedBuffer
 let bad buf = buf.{ len = 20 }
 
 --! assertErrorCount 1
---! assertDiagnosticMatch type|buffer|len|Array
+--! assertDiagnosticCodes E_TYPE_EQUALITY_MISMATCH

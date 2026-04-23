@@ -8,5 +8,4 @@ let badOverlap r =
         r.x
 
 --! assertErrorCount 1
---! assertDiagnosticMatch borrow|overlap|live
-
+--! assertDiagnosticCodes E_QTT_BORROW_OVERLAP

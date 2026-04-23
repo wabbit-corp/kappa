@@ -7,6 +7,5 @@ let badOmitConsumed r =
     in
         r.{ y = r.y }
 
---! assertErrorCount 1
---! assertDiagnosticMatch consumed|update|restore|field
-
+--! assertErrorCount 2
+--! assertDiagnosticCodes E_QTT_LINEAR_OVERUSE, E_QTT_LINEAR_DROP

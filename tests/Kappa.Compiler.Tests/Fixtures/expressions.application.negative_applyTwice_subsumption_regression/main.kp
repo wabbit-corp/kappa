@@ -17,4 +17,4 @@ let bad t =
     applyTwice k
 
 --! assertErrorCount 1
---! assertDiagnosticMatch linear|subsumption|overuse|ω
+--! assertDiagnosticCodes E_QTT_LINEAR_OVERUSE
