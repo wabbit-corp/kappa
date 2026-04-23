@@ -2,4 +2,4 @@ value : Int
 let value = 42
 
 --! assertErrorCount 1
---! assertDiagnosticMatch Could not derive a Kappa module name
+--! assertDiagnosticCodes E_MODULE_NAME_UNRESOLVED

@@ -3,4 +3,4 @@ module main
 let value = "broken
 
 --! assertErrorCount 1
---! assertDiagnosticMatch Unterminated string literal
+--! assertDiagnosticCodes E_UNTERMINATED_STRING_LITERAL

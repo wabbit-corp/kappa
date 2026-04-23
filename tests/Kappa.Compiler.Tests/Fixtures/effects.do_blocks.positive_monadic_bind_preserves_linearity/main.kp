@@ -1,0 +1,11 @@
+module main
+
+data Token : Type =
+    Token
+
+useLinearFn : IO ((1 x : Token) -> Nat) -> (1 t : Token) -> IO Nat
+let useLinearFn mf t = do
+    f <- mf
+    pure (f t)
+
+--! assertNoErrors

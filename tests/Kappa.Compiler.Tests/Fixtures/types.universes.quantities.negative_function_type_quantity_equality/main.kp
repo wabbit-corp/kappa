@@ -1,0 +1,7 @@
+module main
+
+badEq : ((x : Nat) -> Nat) = ((1 x : Nat) -> Nat)
+let badEq = refl
+
+--! assertErrorCount 1
+--! assertDiagnosticCodes E_TYPE_EQUALITY_MISMATCH

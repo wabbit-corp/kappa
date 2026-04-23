@@ -1,0 +1,22 @@
+module main
+
+data File : Type =
+    Handle Int
+
+forward : (1 x : File) -> File
+let forward x = x
+
+consume : (1 y : File) -> Int
+let consume y = 0
+
+h : (1 x : File) -> Int
+let h x =
+    let y = forward x
+    consume y
+
+result : Int
+let result = h (Handle 1)
+
+--! assertNoErrors
+--! assertType result Int
+--! x-assertEval result 0

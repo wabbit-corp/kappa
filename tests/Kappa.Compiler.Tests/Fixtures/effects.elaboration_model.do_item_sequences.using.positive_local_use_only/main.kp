@@ -1,0 +1,17 @@
+module main
+
+data Handle : Type =
+    Handle Int
+
+openFile : String -> IO Handle
+let openFile name = pure (Handle 1)
+
+headerLength : (& h : Handle) -> Nat
+let headerLength h = 5
+
+readHeaderSafe : IO Nat
+let readHeaderSafe = do
+    using h <- openFile "data.txt"
+    pure (headerLength h)
+
+--! assertNoErrors

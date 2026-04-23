@@ -3,5 +3,5 @@ module a
 import b
 
 --! assertErrorCount 1
---! assertDiagnosticMatch Import cycle detected
+--! assertDiagnosticCodes E_IMPORT_CYCLE
 --! assertDeclKinds import

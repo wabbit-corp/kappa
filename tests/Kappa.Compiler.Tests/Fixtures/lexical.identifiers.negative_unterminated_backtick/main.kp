@@ -3,4 +3,4 @@ module main
 let `broken = 42
 
 --! assertErrorCount 2
---! assertDiagnosticMatch Unterminated backtick identifier
+--! assertDiagnosticCodes E_UNTERMINATED_BACKTICK_IDENTIFIER, E_GENERAL

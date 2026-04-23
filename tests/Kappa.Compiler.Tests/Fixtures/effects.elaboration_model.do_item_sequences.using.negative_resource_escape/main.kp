@@ -1,0 +1,15 @@
+module main
+
+data Handle : Type =
+    Handle Int
+
+openFile : String -> IO Handle
+let openFile name = pure (Handle 1)
+
+bad : IO Handle
+let bad = do
+    using h <- openFile "data.txt"
+    pure h
+
+--! assertErrorCount 1
+--! assertDiagnosticCodes E_QTT_BORROW_ESCAPE

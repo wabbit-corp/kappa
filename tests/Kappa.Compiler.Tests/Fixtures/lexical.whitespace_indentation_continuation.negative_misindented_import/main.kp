@@ -4,4 +4,4 @@ module main
 
 let result = 42
 
---! assertDiagnosticMatch Unexpected indentation
+--! assertDiagnosticCodes E_UNEXPECTED_INDENTATION

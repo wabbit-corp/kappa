@@ -4,5 +4,5 @@ value : Int
 let value = 42
 
 --! assertErrorCount 1
---! assertDiagnosticMatch does not match the path-derived module name
+--! assertDiagnosticCodes E_MODULE_PATH_MISMATCH
 --! x-assertModule demo.wrong

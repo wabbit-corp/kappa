@@ -1,0 +1,24 @@
+module main
+
+data A : Type =
+    A
+
+data B : Type =
+    B
+
+data C : Type =
+    C
+
+f : (1 x : A) -> B
+let f x = B
+
+g : (1 y : B) -> C
+let g y = C
+
+h : (1 x : A) -> C
+let h x =
+    let y = f x
+    g y
+
+--! assertNoErrors
+--! assertType h (1 x : A) -> C

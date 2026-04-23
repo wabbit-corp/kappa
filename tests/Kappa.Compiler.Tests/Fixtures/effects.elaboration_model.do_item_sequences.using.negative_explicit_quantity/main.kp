@@ -10,4 +10,4 @@ let main : IO Unit = do
     printInt 0
 
 --! assertErrorCount 1
---! assertDiagnosticMatch explicit quantity markers are not permitted
+--! assertDiagnosticCodes E_QTT_USING_EXPLICIT_QUANTITY

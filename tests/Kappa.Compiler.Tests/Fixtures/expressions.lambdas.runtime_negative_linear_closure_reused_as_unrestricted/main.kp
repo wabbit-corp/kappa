@@ -1,0 +1,18 @@
+module main
+
+data Token : Type =
+    Token
+
+consume : (1 t : Token) -> Unit
+let consume t = ()
+
+twice : (ω f : Unit -> Unit) -> Unit
+let twice f = do
+    f ()
+    f ()
+
+bad : (1 t : Token) -> Unit
+let bad t = twice (\_ -> consume t)
+
+--! assertErrorCount 1
+--! assertDiagnosticMatch linear|overuse|reusable|ω

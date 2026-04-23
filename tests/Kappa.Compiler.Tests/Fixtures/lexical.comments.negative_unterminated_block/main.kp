@@ -5,4 +5,4 @@ value : Int
 let value = 42
 
 --! assertErrorCount 1
---! assertDiagnosticMatch Unterminated block comment
+--! assertDiagnosticCodes E_UNTERMINATED_BLOCK_COMMENT
