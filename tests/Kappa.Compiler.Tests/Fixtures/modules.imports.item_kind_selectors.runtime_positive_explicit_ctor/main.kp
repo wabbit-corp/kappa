@@ -4,7 +4,7 @@ import foo.(ctor Box)
 
 let result =
     match Box 42
-    case Box value -> value
+      case Box value -> value
 
 --! assertNoErrors
 --! assertEval result 42

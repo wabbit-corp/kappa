@@ -3,7 +3,7 @@ module main
 headOnly : List Int -> Int
 let headOnly xs =
     match xs
-    case head :: tail -> head
+      case head :: tail -> head
 
 result : Int
 let result = headOnly Nil

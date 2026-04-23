@@ -1,0 +1,32 @@
+module main
+
+data A : Type =
+    A
+
+data B : Type =
+    B
+
+data C_or_B : Type =
+    FromC
+    | FromB
+
+data Option a : Type =
+    Some a
+    | None
+
+peek : (& x : A) -> Option B
+let peek x = None
+
+consume : (1 x : A) -> C_or_B
+let consume x = FromC
+
+use : B -> C_or_B
+let use y = FromB
+
+foo : (1 x : A) -> C_or_B
+let foo x =
+    match peek x
+      case Some y -> use y
+      case None -> consume x
+
+--! assertNoErrors

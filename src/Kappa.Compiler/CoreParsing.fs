@@ -15,6 +15,10 @@ module private SurfaceBinderParsing =
           IsImplicit = isImplicit
           IsInout = isInout }
 
+    // Wildcard binders elaborate to fresh internal names that cannot be referenced from source.
+    let wildcardParameterName (span: TextSpan) =
+        $"__kappa_wildcard_{span.Start}"
+
     let private tokenTextEquals expected (token: Token) =
         String.Equals(token.Text, expected, StringComparison.Ordinal)
 
@@ -69,6 +73,18 @@ module private SurfaceBinderParsing =
             | [] ->
                 diagnostics.AddError("Expected a parameter binder.", source.GetLocation(eofSpan))
                 None
+            | { Kind = Underscore; Span = span } :: tail ->
+                let name = wildcardParameterName span
+
+                let typeTokens =
+                    match tail with
+                    | [] -> None
+                    | colon :: rest when colon.Kind = Colon -> Some rest
+                    | _ ->
+                        unsupported span
+                        None
+
+                Some(makeParameter name typeTokens quantity isImplicit isInout)
             | head :: tail when Token.isName head ->
                 let name = SyntaxFacts.trimIdentifierQuotes head.Text
 
@@ -255,6 +271,113 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
 
         List.ofSeq innerTokens
 
+    member private this.TryParseAnonymousRecordPattern(tokens: Token list) =
+        let trimmed =
+            tokens
+            |> List.filter (fun token ->
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent -> false
+                | _ -> true)
+
+        let splitTopLevelCommas (fieldTokens: Token list) =
+            let tokenArray = List.toArray fieldTokens
+            let items = ResizeArray<Token list>()
+            let current = ResizeArray<Token>()
+            let mutable depth = 0
+
+            for token in tokenArray do
+                match token.Kind with
+                | LeftParen
+                | LeftBracket
+                | LeftBrace
+                | LeftSetBrace ->
+                    depth <- depth + 1
+                    current.Add(token)
+                | RightParen
+                | RightBracket
+                | RightBrace
+                | RightSetBrace ->
+                    depth <- max 0 (depth - 1)
+                    current.Add(token)
+                | Comma when depth = 0 ->
+                    items.Add(List.ofSeq current)
+                    current.Clear()
+                | _ ->
+                    current.Add(token)
+
+            if current.Count > 0 then
+                items.Add(List.ofSeq current)
+
+            items |> Seq.toList
+
+        let tryFindTopLevelEquals (fieldTokens: Token list) =
+            let tokenArray = List.toArray fieldTokens
+            let mutable depth = 0
+            let mutable index = 0
+            let mutable result = None
+
+            while index < tokenArray.Length && result.IsNone do
+                match tokenArray[index].Kind with
+                | LeftParen
+                | LeftBracket
+                | LeftBrace
+                | LeftSetBrace ->
+                    depth <- depth + 1
+                | RightParen
+                | RightBracket
+                | RightBrace
+                | RightSetBrace ->
+                    depth <- max 0 (depth - 1)
+                | Equals when depth = 0 ->
+                    result <- Some index
+                | _ ->
+                    ()
+
+                index <- index + 1
+
+            result
+
+        if trimmed |> List.exists (fun token -> token.Kind = Equals) |> not then
+            None
+        else
+            let fields =
+                splitTopLevelCommas trimmed
+                |> List.filter (List.isEmpty >> not)
+                |> List.map (fun fieldTokens ->
+                    match tryFindTopLevelEquals fieldTokens with
+                    | Some index ->
+                        let tokenArray = List.toArray fieldTokens
+                        let labelTokens = tokenArray[0 .. index - 1] |> Array.toList
+                        let patternTokens = tokenArray[index + 1 ..] |> Array.toList
+
+                        match labelTokens with
+                        | [ labelToken ] when this.IsNameToken(labelToken) ->
+                            let nestedParser = PatternParser(patternTokens, source, diagnostics, fixities)
+
+                            { Name = SyntaxFacts.trimIdentifierQuotes labelToken.Text
+                              Pattern = nestedParser.Parse() }
+                        | labelToken :: _ ->
+                            diagnostics.AddError("Expected a record pattern field label.", source.GetLocation(labelToken.Span))
+                            { Name = "<missing>"
+                              Pattern = WildcardPattern }
+                        | [] ->
+                            diagnostics.AddError("Expected a record pattern field label.", source.GetLocation(eofSpan))
+                            { Name = "<missing>"
+                              Pattern = WildcardPattern }
+                    | None ->
+                        let errorSpan =
+                            match fieldTokens with
+                            | token :: _ -> token.Span
+                            | [] -> eofSpan
+
+                        diagnostics.AddError("Expected a record pattern field of the form 'name = pattern'.", source.GetLocation(errorSpan))
+                        { Name = "<missing>"
+                          Pattern = WildcardPattern })
+
+            Some(AnonymousRecordPattern fields)
+
     member private this.ParseAtomicPattern() =
         this.SkipLayout()
 
@@ -275,8 +398,11 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
             | [ operatorToken ] when operatorToken.Kind = Operator ->
                 ConstructorPattern([ operatorToken.Text ], [])
             | _ ->
-                let nestedParser = PatternParser(innerTokens, source, diagnostics, fixities)
-                nestedParser.Parse()
+                match this.TryParseAnonymousRecordPattern innerTokens with
+                | Some pattern -> pattern
+                | None ->
+                    let nestedParser = PatternParser(innerTokens, source, diagnostics, fixities)
+                    nestedParser.Parse()
         | _ when this.IsNameToken(this.Current) ->
             let segments = this.ParseQualifiedName()
 
@@ -582,6 +708,17 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
                 match this.ParseParenthesizedBinder() with
                 | Some parameter -> parameters.Add(parameter)
                 | None -> keepReading <- false
+            | Underscore ->
+                let token = this.Advance()
+
+                parameters.Add(
+                    SurfaceBinderParsing.makeParameter
+                        (SurfaceBinderParsing.wildcardParameterName token.Span)
+                        None
+                        None
+                        false
+                        false
+                )
             | _ when this.IsNameToken(this.Current) ->
                 parameters.Add(
                     SurfaceBinderParsing.makeParameter
@@ -698,6 +835,13 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
         if this.Current.Kind = Newline then
             this.Advance() |> ignore
 
+        let hasIndentedCases =
+            if this.Current.Kind = Indent then
+                this.Advance() |> ignore
+                true
+            else
+                false
+
         let cases = ResizeArray<SurfaceMatchCase>()
 
         let tryFindTopLevelTokenIndex predicate (tokens: Token array) =
@@ -768,6 +912,12 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
 
         if cases.Count = 0 then
             diagnostics.AddError("A match expression must declare at least one case.", source.GetLocation(this.Current.Span))
+
+        if hasIndentedCases then
+            if this.Current.Kind = Dedent then
+                this.Advance() |> ignore
+            else
+                diagnostics.AddError("Expected the match cases to dedent.", source.GetLocation(this.Current.Span))
 
         Match(scrutinee, List.ofSeq cases)
 
@@ -904,7 +1054,8 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
 
                         diagnostics.AddError(
                             "'using' binds its pattern at borrowed quantity '&'; explicit quantity markers are not permitted.",
-                            source.GetLocation(location)
+                            source.GetLocation(location),
+                            code = DiagnosticCode.QttUsingExplicitQuantity
                         )
 
                         restPatternTokens
@@ -1357,6 +1508,17 @@ module CoreParsing =
                 )
 
                 index <- index + 1
+            | Underscore ->
+                parameters.Add(
+                    SurfaceBinderParsing.makeParameter
+                        (SurfaceBinderParsing.wildcardParameterName tokenArray[index].Span)
+                        None
+                        None
+                        false
+                        false
+                )
+
+                index <- index + 1
             | LeftParen ->
                 let startToken = tokenArray[index]
                 let mutable depth = 1
@@ -1447,7 +1609,7 @@ module CoreParsing =
             | _ ->
                 None
 
-        let parseSimpleLocalLetLine lineTokens : (string * SurfaceExpression) option =
+        let parseSimpleLocalLetLine lineTokens : (SurfaceBindPattern * SurfaceExpression) option =
             let trimmed =
                 lineTokens
                 |> List.filter (fun token ->
@@ -1457,16 +1619,86 @@ module CoreParsing =
                     | Dedent -> false
                     | _ -> true)
 
+            let tryFindTopLevelEquals tokens =
+                let tokenArray = List.toArray tokens
+                let mutable depth = 0
+                let mutable index = 0
+                let mutable result = None
+
+                while index < tokenArray.Length && result.IsNone do
+                    match tokenArray[index].Kind with
+                    | LeftParen
+                    | LeftBracket
+                    | LeftBrace
+                    | LeftSetBrace ->
+                        depth <- depth + 1
+                    | RightParen
+                    | RightBracket
+                    | RightBrace
+                    | RightSetBrace ->
+                        depth <- max 0 (depth - 1)
+                    | Equals when depth = 0 ->
+                        result <- Some index
+                    | _ ->
+                        ()
+
+                    index <- index + 1
+
+                result
+
+            let stripBindingTypeAnnotation tokens =
+                let tokenArray = List.toArray tokens
+                let mutable depth = 0
+                let mutable index = 0
+                let mutable splitIndex = -1
+
+                while index < tokenArray.Length && splitIndex < 0 do
+                    match tokenArray[index].Kind with
+                    | LeftParen
+                    | LeftBracket
+                    | LeftBrace
+                    | LeftSetBrace ->
+                        depth <- depth + 1
+                    | RightParen
+                    | RightBracket
+                    | RightBrace
+                    | RightSetBrace ->
+                        depth <- max 0 (depth - 1)
+                    | Colon when depth = 0 ->
+                        splitIndex <- index
+                    | _ ->
+                        ()
+
+                    index <- index + 1
+
+                if splitIndex >= 0 then
+                    tokenArray[0 .. splitIndex - 1] |> Array.toList
+                else
+                    tokens
+
             match trimmed with
-            | letToken :: nameToken :: equalsToken :: valueTokens
-                when Token.isKeyword Keyword.Let letToken && Token.isName nameToken && equalsToken.Kind = Equals ->
-                Some(
-                    SyntaxFacts.trimIdentifierQuotes nameToken.Text,
-                    parseExpression fixities source diagnostics valueTokens
-                    |> Option.defaultValue (Literal LiteralValue.Unit)
-                )
-            | _ ->
-                None
+            | letToken :: rest when Token.isKeyword Keyword.Let letToken ->
+                match tryFindTopLevelEquals rest with
+                | Some index ->
+                    let tokenArray = List.toArray rest
+                    let bindingTokens =
+                        tokenArray[0 .. index - 1]
+                        |> Array.toList
+                        |> stripBindingTypeAnnotation
+                    let valueTokens = tokenArray[index + 1 ..] |> Array.toList
+
+                    Some(
+                        SurfaceBinderParsing.parseBindPatternFromTokens
+                            (fun tokens ->
+                                let nestedParser = PatternParser(tokens, source, diagnostics, fixities)
+                                nestedParser.Parse())
+                            bindingTokens,
+                        parseExpression fixities source diagnostics valueTokens
+                        |> Option.defaultValue (Literal LiteralValue.Unit)
+                    )
+                | None ->
+                    None
+            | _ -> None
 
         match splitIndentedLines trimmedLeading with
         | Some lines when List.length lines >= 2 && (lines |> List.take (List.length lines - 1) |> List.forall (parseSimpleLocalLetLine >> Option.isSome)) ->
@@ -1480,7 +1712,7 @@ module CoreParsing =
                 |> List.rev
                 |> List.fold (fun (current: SurfaceExpression) lineTokens ->
                     match parseSimpleLocalLetLine lineTokens with
-                    | Some(bindingName, value) -> LocalLet(bindingName, value, current)
+                    | Some(binding, value) -> LocalLet(binding, value, current)
                     | None -> current) body
 
             Some nestedExpression
