@@ -17,6 +17,8 @@ Kappa is a small, statically typed, dependently typed language. The primary desi
 - **There should be one – and preferably only one – obvious way to do it.**
 - **Minimize unnecessary punctuation and syntax noise.**
 - Default stance: **totality, purity, parametricity** are desirable and encouraged.
+- Non-strictness is represented by explicit suspension types and suspension terms, not by a distinct family of core
+  arrow types. Surface non-strict binder syntax is only sugar over those suspension types.
 
 
 
@@ -640,7 +642,7 @@ Option a, Result e a, List a, Array a, Set a, Map k v,
 Res a r, Match a r, Dec p,
 IO e a, UIO a, Fiber e a, Exit e a, Cause e, InterruptCause, DefectInfo,
 STM a, TVar a,
-Regex, (=)
+Regex, (=), Thunk a, Need a
 ```
 
 `Integer`, `Double`, and `Real` are ordinary user-facing numeric types exported by `std.prelude`.
@@ -680,7 +682,7 @@ refl
 Terms (term namespace):
 ```
 pure, (>>=), (>>), (|>), (<|),
-not, and, or,
+not, and, or, force, (&&), (||),
 empty, (<|>), orElse,
 negate,
 absurd,
@@ -703,7 +705,7 @@ and `+0.0` equals `-0.0`). It is not the default `(==)` for `Float`.
 
 Traits (constraint namespace, restricted to trait):
 ```
-Equiv, Eq, Ord, Show,
+Equiv, Eq, Ord, Show, Shareable,
 Functor, Applicative, Monad, Alternative,
 Foldable, Traversable, Filterable, FilterMap, Monoid, Iterator, InterpolatedMacro,
 IntoQuery, FromComprehensionPlan, FromComprehensionRaw,
@@ -805,6 +807,53 @@ trait FromComprehensionRaw (c : Type) =
     Item : Type
     fromComprehensionRaw : RawComprehension Item -> c
 ```
+
+Primitive suspension types:
+
+```kappa
+Thunk : Type -> Type
+Need  : Type -> Type
+```
+
+`Thunk a` is a non-memoized suspension of a computation producing `a`.
+`Need a` is a memoized suspension of a computation producing `a`.
+
+The prelude additionally provides:
+
+```kappa
+trait Shareable (a : Type)
+```
+
+`Shareable a` classifies values that may be safely cached and reused by `Need`.
+
+The prelude also provides a forcing operator `force` with the following primitive typing cases:
+
+```kappa
+force :
+    forall (@0 a : Type).
+    Thunk a -> a
+
+force :
+    forall (@0 a : Type).
+    Need a -> a
+```
+
+Here `force` denotes one prelude term name with these primitive typing cases, not two separate same-kind top-level
+declarations.
+
+The canonical short-circuit operators are ordinary prelude definitions:
+
+```kappa
+(&&) : Bool -> Thunk Bool -> Bool
+let (&&) lhs rhs =
+    if lhs then force rhs else False
+
+(||) : Bool -> Thunk Bool -> Bool
+let (||) lhs rhs =
+    if lhs then True else force rhs
+```
+
+Thus `&&` and `||` are ordinary terms. They are not special evaluation forms.
 
 `IO e a` is the standard runtime computation type.
 
@@ -1154,7 +1203,7 @@ data, type, trait, module,
 import, export, as, except,
 do, block, return, open,
 forall, exists,
-captures,
+captures, thunk, lazy, force,
 assertTotal, decreases, structural, expect, instance, derive, effect, handle, deep, scoped, pattern,
 projection, place,
 infix, postfix, prefix, left, right,
@@ -2580,7 +2629,9 @@ an explicit region variable such as `s` may be instantiated by a caller-local ri
   (& x : A) -> B
   (&[s] x : A) -> B   -- where s is a bound variable of type Region
   (q x : A) -> B      -- where q is a bound variable of type Quantity
-  (x : A) -> B       -- defaults to ω
+  (thunk x : A) -> B
+  (lazy x : A) -> B
+  (x : A) -> B        -- defaults to ω
   ```
 
   which denotes a function whose result type may depend on `x`.
@@ -2600,6 +2651,50 @@ A function value type may be capture-annotated under §5.1.6.1. For example:
 
 Such an annotation describes the hidden region environment of the function value itself; it does not change the binder
 types of that arrow.
+
+### 5.2.1 Suspension types and non-strict binder sugar
+
+Kappa has a single ordinary dependent function space.
+
+Non-strictness is expressed by suspension types, not by a distinct family of arrow types.
+
+Primitive suspension types:
+
+```kappa
+Thunk : Type -> Type
+Need  : Type -> Type
+```
+
+Meaning:
+
+* `Thunk A` is a by-name suspension of `A`. Each `force` may re-evaluate the suspended body.
+* `Need A` is a by-need suspension of `A`. The first `force` evaluates and memoizes the suspended body; later forces
+  return the cached value.
+
+Surface binder sugar:
+
+```kappa
+(thunk x : A)
+(lazy x : A)
+(q thunk x : A)
+(q lazy x : A)
+```
+
+desugars to:
+
+```kappa
+(x : Thunk A)
+(x : Need A)
+(q x : Thunk A)
+(q x : Need A)
+```
+
+respectively.
+
+This sugar does not introduce a distinct core binder kind and does not change function-type identity beyond the
+ordinary appearance of `Thunk A` or `Need A` in the binder type.
+
+Introduction of `Need A` suspensions requires `Shareable A` and obeys the capture restriction of §7.2.2.
 
 ### 5.3 Universal quantification
 
@@ -2883,8 +2978,17 @@ Record types are written:
 Field declaration grammar:
 
 ```text
-recordFieldDecl ::= [ 'opaque' ] [ '@' ] [quantity] ident ':' type
+recordFieldDecl ::= [ 'opaque' ] [ '@' ] [quantity] [ 'thunk' | 'lazy' ] ident ':' type
 ```
+
+Field-suspension sugar:
+
+* `thunk name : T` is sugar for `name : Thunk T`.
+* `lazy name : T` is sugar for `name : Need T`.
+* `q thunk name : T` is sugar for `q name : Thunk T`.
+* `q lazy name : T` is sugar for `q name : Need T`.
+
+This sugar is purely structural and preserves the correspondence between record fields and function binders.
 
 The annotation after `:` may elaborate either to an ordinary computational type or to a compile-time type in the sense
 of §5.1.4.1.
@@ -3023,6 +3127,13 @@ Well-formedness:
 * In such a punned entry, `label` resolves in the surrounding scope before reordering, and the resolved term must have
   the field type required for that label.
 * A record literal may be checked directly against an ordinary record type.
+* Expected-type-directed suspension insertion:
+  * When a record literal is checked against an expected record type, and a field is declared with type `Thunk T` or
+    `Need T`, the supplied field expression is elaborated by the same expected-type-directed suspension rule as
+    §7.1.3.1.
+  * If the field expression already checks against the demanded suspension type without inserting a new suspension at
+    that same field position, it is used unchanged.
+  * Otherwise, if it checks against `T`, it is elaborated as `thunk expr` or `lazy expr` respectively.
 * A record literal MUST NOT be checked directly against a signature type (that is, a record type containing one or more
   opaque members).
 * Introduction of a signature value uses `seal ... as ...` (§5.5.10).
@@ -3139,6 +3250,13 @@ elaborates to a full record literal in that canonical order:
 
 The resulting full record literal is then typechecked against the original record type `R` using the ordinary
 dependent-record rules of §5.5.1.1 and §5.5.3.
+
+The same expected-type-directed suspension insertion rule applies to explicitly supplied update expressions when the
+updated field type is `Thunk T` or `Need T`:
+
+* if the supplied expression already checks against the demanded suspension type without inserting a new suspension at
+  that same update position, it is used unchanged;
+* otherwise, if it checks against `T`, it is elaborated as `thunk expr` or `lazy expr` respectively.
 
 A conforming implementation MAY realize the same semantics via one or more `FillPlace` operations of §17.3.1.1, or an
 observationally equivalent internal representation, provided the resulting typing and definitional-equality behavior is
@@ -5293,24 +5411,32 @@ a reserved token and cannot be redefined by user fixity declarations.
 
 #### 7.1.2A Short-circuit boolean operators
 
-The operator tokens `&&` and `||` are the canonical short-circuit boolean connectives of the surface language.
+The operator tokens `&&` and `||` are the conventional infix spellings of the ordinary prelude terms of §2.6.2.
 
-Typing:
+Surface typing:
 
 * `a && b : Bool` iff `a : Bool` and `b : Bool`.
 * `a || b : Bool` iff `a : Bool` and `b : Bool`.
 
-Semantics:
+Elaboration and behavior:
 
-* `a && b` behaves as if elaborated to `if a then b else False`.
-* `a || b` behaves as if elaborated to `if a then True else b`.
-* The right operand is evaluated only when required by these equations.
+* `a && b` elaborates as ordinary application of the prelude term `(&&)`.
+* `a || b` elaborates as ordinary application of the prelude term `(||)`.
+* Because those terms have canonical definitions over `Thunk Bool`, and because application uses the expected-type-
+  directed suspension insertion rule of §7.1.3.1, the observable behavior is as if:
 
-These equations are semantic, not merely library equalities. A conforming implementation MUST preserve their
-short-circuit evaluation-count behavior even when it lowers them differently internally.
+  ```kappa
+  a && b  ≡  if a then b else False
+  a || b  ≡  if a then True else b
+  ```
 
-The prelude names `and` and `or` remain ordinary terms. They do not by themselves receive short-circuiting or
-flow-sensitive treatment.
+* The right operand is therefore evaluated only when required by these equations.
+
+A conforming implementation MUST preserve this short-circuit evaluation-count behavior even when it lowers `&&` and `||`
+differently internally.
+
+The spellings `&&` and `||` remain ordinary terms rather than special evaluation forms. The prelude names `and` and
+`or` likewise remain ordinary terms; they do not by themselves receive special flow-sensitive treatment.
 
 #### 7.1.3 Application-boundary subsumption
 
@@ -5342,6 +5468,23 @@ For each next binder of the current callee:
   * otherwise let `e` be the next remaining ordinary surface argument and apply the explicit-argument pipeline below.
 
 Explicit-argument pipeline for binder `(q_dem x : T_dem)` and supplied argument `e`:
+
+0. **Expected-type-directed suspension insertion.**
+
+   Let the next explicit binder demand type `T_dem`.
+
+   * If `T_dem` is definitionally equal to `Thunk T` for some `T`, first try checking whether `e` already satisfies the
+     demanded suspension type without inserting a new suspension at this same binder position.
+     * If so, pass the resulting suspension value unchanged.
+     * Otherwise, if `e` checks against `T`, elaborate the argument as `thunk e`.
+   * If `T_dem` is definitionally equal to `Need T` for some `T`, first try checking whether `e` already satisfies the
+     demanded suspension type without inserting a new suspension at this same binder position.
+     * If so, pass the resulting suspension value unchanged.
+     * Otherwise, if `e` checks against `T`, and `lazy e` is well-formed under §§5.2.1 and 7.2.2, elaborate the
+       argument as `lazy e`.
+   * If either branch above succeeds, the argument is accepted.
+   * This is an expected-type-directed elaboration rule, analogous in spirit to the expected-type-directed variant
+     injection rule of §5.4.3. It does not introduce a distinct family of arrow types.
 
 1. **Outermost borrow introduction (auto-referencing).**
 
@@ -5398,6 +5541,9 @@ implicitly coercible to `List ((1 x : A) -> B)`.
 Borrow introduction for arguments demanded at quantity `&` is not an interval-quantity case of `⊑`. It is handled by
 Step 1 above, via the borrow-introduction rule of §5.1.5.
 
+The expected-type-directed suspension insertion rule applies uniformly whether the callee was written with surface sugar
+such as `(thunk x : A)` / `(lazy x : A)` or with the explicit types `Thunk A` / `Need A`.
+
 
 ### 7.2 Lambdas
 
@@ -5423,6 +5569,10 @@ binders ::= binder+
 binder  ::= ident                            -- inferred type, quantity ω
           | '(' ident ':' type ')'          -- explicit type, quantity ω
           | '(' quantity ident ':' type ')' -- explicit type and quantity
+          | '(' 'thunk' ident ':' type ')'  -- suspension sugar, quantity ω
+          | '(' quantity 'thunk' ident ':' type ')' -- suspension sugar, explicit quantity
+          | '(' 'lazy' ident ':' type ')'   -- memoized suspension sugar, quantity ω
+          | '(' quantity 'lazy' ident ':' type ')' -- memoized suspension sugar, explicit quantity
           | '(' 'this' ':' type ')'         -- receiver binder, local name `this`
           | '(' quantity 'this' ':' type ')' -- receiver binder, explicit quantity
           | '(' 'this' ident ':' type ')'   -- receiver binder, local name `ident`
@@ -5435,6 +5585,8 @@ Rules:
 * A bare-identifier binder `x` is equivalent to `(x : _)` with inferred type and default quantity `ω`.
 * Multiple bare binders may be juxtaposed: `\x y z -> e` ≡ `\(x : _) (y : _) (z : _) -> e`.
 * Mixing styles is permitted: `\x (y : Int) z -> e`.
+* The suspension-marked forms `(thunk x : A)`, `(lazy x : A)`, `(q thunk x : A)`, and `(q lazy x : A)` are the
+  ordinary function-binder sugar of §5.2.1.
 * Receiver-marked binders are explicit binders. `(this : T)` binds the receiver locally as `this`, while `(this x : T)`
   marks the binder as the receiver and binds it locally as `x`. The quantity-annotated forms `(q this : T)` and `(q this
   x : T)` are the corresponding receiver-marked variants with explicit quantity `q`.
@@ -5481,6 +5633,56 @@ Special cases:
 * Unrestricted closures: a closure may be used unrestrictedly (`ω`) only if every computationally relevant captured
   variable is itself unrestricted. Capturing only unrestricted (`ω`) and/or erased (`0`) variables is sufficient for
   this case.
+
+#### 7.2.2 Suspension expressions and forcing
+
+Kappa provides two suspension forms:
+
+```kappa
+thunk expr
+lazy expr
+```
+
+and one eliminator:
+
+```kappa
+force expr
+```
+
+Grammar:
+
+```text
+thunkExpr ::= 'thunk' expr
+lazyExpr  ::= 'lazy' expr
+forceExpr ::= 'force' expr
+```
+
+Typing:
+
+* If `expr : A`, then `thunk expr : Thunk A`.
+* If `expr : A`, `Shareable A` is available implicitly, and the capture restriction below is satisfied, then
+  `lazy expr : Need A`.
+* If `expr : Thunk A`, then `force expr : A`.
+* If `expr : Need A`, then `force expr : A`.
+
+Capture restriction for `lazy`:
+
+* `lazy expr` is permitted only when every computationally relevant captured free variable of `expr` is unrestricted and
+  is not a borrowed view.
+* Compile-time-only captures are always permitted.
+* This rule ensures that memoization does not silently duplicate linear or borrowed state.
+
+Operational meaning:
+
+* `thunk expr` does not evaluate `expr` at construction time.
+* `lazy expr` does not evaluate `expr` at construction time.
+* `force (thunk expr)` evaluates `expr` each time it is forced.
+* `force (lazy expr)` evaluates `expr` at most once and memoizes the result.
+
+Control-flow boundary:
+
+* `thunk expr` and `lazy expr` behave as user-written closure boundaries for `return`, `break`, and `continue`
+  resolution.
 
 ### 7.3 Implicit parameters (`@`)
 
@@ -9662,9 +9864,13 @@ constructorDecl ::= ident [ ctorBinder+ ]
 ctorBinder      ::= ident
                   | '(' ident ':' type ')'
                   | '(' quantity ident ':' type ')'
+                  | '(' 'thunk' ident ':' type ')'
+                  | '(' quantity 'thunk' ident ':' type ')'
+                  | '(' 'lazy' ident ':' type ')'
+                  | '(' quantity 'lazy' ident ':' type ')'
                   | '(' '@' binder_body ')'
                   | '{' fieldDecl (',' fieldDecl)* '}'
-fieldDecl       ::= [quantity] ident ':' type
+fieldDecl       ::= [quantity] [ 'thunk' | 'lazy' ] ident ':' type
 ```
 
 In a constructor declaration, the record-style binder form `{ f1 : T1, ..., fn : Tn }` is syntactic sugar for the
@@ -9672,6 +9878,13 @@ sequence of named binders `(f1 : T1) ... (fn : Tn)`. It does not introduce a sin
 The `binder_body` nonterminal is the same one used by implicit binders in §7.3, so constructor parameters may use the
 ordinary quantity and implicit machinery, for example `(@0 p : P)`. Receiver-marked binders and `inout` are not
 permitted in constructor declarations.
+
+Constructor binders use the same suspension sugar as ordinary function binders and record fields:
+
+* `(thunk x : A)` is sugar for `(x : Thunk A)`,
+* `(lazy x : A)` is sugar for `(x : Need A)`.
+
+No distinct constructor-level evaluation strategy exists in the core.
 
 **Named parameters in GADT-style constructors.** When a constructor is declared using the full GADT form (`C : Π … →
 R`), any explicit binders that appear in the declared signature (e.g. `(head : a)`, `(tail : Vec n a)`) are treated as
@@ -9731,6 +9944,11 @@ Rules:
 * Extra labels not present in the constructor's argument list are an error.
 * Field order is not semantically significant. Implementations elaborate the application in the constructor's argument
   order (or any dependency-respecting order if later arguments depend on earlier ones).
+* Expected-type-directed suspension insertion applies to constructor arguments exactly as in ordinary application:
+  * if a constructor parameter type is `Thunk T` or `Need T`, a supplied argument that already checks against the
+    demanded suspension type without inserting a new suspension at that same argument position is used unchanged;
+  * otherwise, if the supplied argument checks against `T`, it is elaborated as `thunk expr` or `lazy expr`
+    respectively.
 
 Elaboration sketch:
 
@@ -10374,7 +10592,8 @@ Sequential scope:
 
 ### 14.2 Dynamic semantics (runtime evaluation)
 
-Runtime evaluation is strict call-by-value with left-to-right evaluation order.
+Runtime evaluation is strict call-by-value with left-to-right evaluation order, except where evaluation is explicitly
+delayed by the suspension forms of §7.2.2.
 
 Evaluation order:
 
@@ -10386,6 +10605,8 @@ Evaluation order:
 * Projection of a non-erased member from a sealed package evaluates by selecting that stored runtime member.
 * Quantity-`0` members of a sealed package participate only at compile time unless explicitly reified by library code or
   backend intrinsics.
+* `thunk e` and `lazy e` do not evaluate `e` at construction time; `force e` evaluates according to the suspension
+  rules of §7.2.2.
 * `if` evaluates the condition, then evaluates exactly one branch.
 * `match` evaluates the scrutinee once, then tests cases top-to-bottom; guards are evaluated only after the pattern
   matches.
@@ -10430,6 +10651,16 @@ Definitional equality is strictly invariant with respect to quantities.
 
 In particular, eta-expansion must preserve binder quantities; quantity-mismatched eta-expansions are not definitionally
 equal.
+
+Definitional equality additionally includes suspension reduction:
+
+* `force (thunk e)  ↦  e`
+* `force (lazy e)   ↦  e`
+
+Equivalently, after surface desugaring, KCore normalizes `Force (Delay e)` and `Force (Memo e)` to `e`.
+
+Because `(thunk x : A)` and `(lazy x : A)` are only surface sugar for `(x : Thunk A)` and `(x : Need A)`, they do not
+introduce distinct core binder identities.
 
 The quantity subsumption of §7.1.3 is implemented by elaboration-time insertion of an eta-expansion (or equivalent
 coercion term). It is not part of definitional equality and does NOT alter the underlying `≡` relation used by the core
@@ -12053,6 +12284,7 @@ KCore retains all compile-time structure needed by the source semantics. In part
 * explicit handler forms, resumption quantities, completion constructors, `DoScope` frames, and exit-action scheduling
   for cleanup;
 * explicit application spines aligned with Pi telescopes;
+* primitive suspension type formers `Thunk` and `Need`, together with explicit suspension introduction and forcing;
 * explicit stable places, scoped place borrows, and pure read / move / fill operations over stable subpaths;
 * surface `projection` calls do not survive as distinct KCore forms; they elaborate to ordinary control flow whose
   leaves use the existing stable-place machinery;
@@ -12116,6 +12348,44 @@ Rules:
   lifetimes, receiver insertion, and `inout` rewriting.
 * KCore normalization of an `AppSpine` is by ordinary left-to-right beta-reduction or an observationally equivalent
   strategy.
+
+#### 17.3.1A KCore suspensions
+
+A conforming implementation MUST behave as if KCore contains the primitive type formers:
+
+```text
+Thunk : Type -> Type
+Need  : Type -> Type
+```
+
+and primitive term forms:
+
+```text
+Delay : A -> Thunk A
+Memo  : A -> Need A
+Force : Thunk A -> A
+Force : Need A  -> A
+```
+
+Here `Force` denotes one primitive eliminator family with these typing cases, not two unrelated primitive names.
+
+Meaning:
+
+* `Delay e` creates a non-memoized suspension of `e`.
+* `Memo e` creates a memoized suspension of `e`.
+* `Force` eliminates either suspension form.
+
+Runtime meaning:
+
+* `Force (Delay e)` evaluates `e` each time.
+* `Force (Memo e)` evaluates `e` at most once and reuses the cached value thereafter.
+
+Well-formedness:
+
+* `Memo e` is permitted only when the surface `lazy`-formation restrictions of §§5.2.1 and 7.2.2 hold.
+* `Delay e` and `Memo e` do not introduce a distinct family of arrow types and do not change Pi-binder identity.
+* Surface `thunk expr`, `lazy expr`, and `force expr` elaborate to `Delay`, `Memo`, and `Force` respectively, or to an
+  observationally equivalent internal representation.
 
 ##### 17.3.1.1 KCore places and path operations
 
