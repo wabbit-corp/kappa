@@ -603,3 +603,96 @@ let ``resource checker counts an at-least-once argument use through a function c
     let result = ResourceChecking.checkDocumentsWithFacts [ document ]
 
     Assert.DoesNotContain(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_LINEAR_DROP")
+
+[<Fact>]
+let ``resource checker rejects returning a borrowed parameter directly`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "data File : Type ="
+            "    Handle Int"
+            ""
+            "let leak (& file : File) = file"
+        ]
+        |> String.concat "\n"
+
+    let leakDefinition =
+        LetDeclaration(mkLetDefinition "leak" [ mkParameter "file" (Some(QuantityBorrow None)) ] (Name [ "file" ]))
+
+    let document = parsedDocumentWithDeclarations "main.kp" text [ leakDefinition ]
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+
+    Assert.Contains(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_BORROW_ESCAPE")
+
+[<Fact>]
+let ``resource checker rejects returning a using borrow as the result of a do block`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "data File : Type ="
+            "    Handle Int"
+            ""
+            "let openFile name = pure (Handle 1)"
+            ""
+            "let leak : IO File = do"
+            "    using file <- openFile \"data.txt\""
+            "    file"
+        ]
+        |> String.concat "\n"
+
+    let openFileDefinition =
+        LetDeclaration(mkLetDefinition "openFile" [ mkParameter "name" None ] (Name [ "file" ]))
+
+    let leakDefinition =
+        LetDeclaration(
+            mkLetDefinition
+                "leak"
+                []
+                (Do
+                    [
+                        DoUsing(NamePattern "file", Apply(Name [ "openFile" ], [ Literal(LiteralValue.String "data.txt") ]))
+                        DoExpression(Name [ "file" ])
+                    ])
+        )
+
+    let document = parsedDocumentWithDeclarations "main.kp" text [ openFileDefinition; leakDefinition ]
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+
+    Assert.Contains(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_BORROW_ESCAPE")
+
+[<Fact>]
+let ``resource checker rejects a local lambda whose borrowed parameter escapes through its result`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "data File : Type ="
+            "    Handle Int"
+            ""
+            "let main : IO Unit = do"
+            "    let bad = \\(& file : File) -> file"
+            "    ()"
+        ]
+        |> String.concat "\n"
+
+    let mainDefinition =
+        LetDeclaration(
+            mkLetDefinition
+                "main"
+                []
+                (Do
+                    [
+                        DoLet(
+                            mkBindPattern "bad" None,
+                            Lambda([ mkParameter "file" (Some(QuantityBorrow None)) ], Name [ "file" ])
+                        )
+                        DoExpression(Literal LiteralValue.Unit)
+                    ])
+        )
+
+    let document = parsedDocumentWithDeclarations "main.kp" text [ mainDefinition ]
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+
+    Assert.Contains(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_BORROW_ESCAPE")

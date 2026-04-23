@@ -382,6 +382,19 @@ module ResourceChecking =
             })
         |> Set.ofSeq
 
+    let private liveRegionIds (state: CheckState) =
+        state.Bindings
+        |> Map.values
+        |> Seq.collect (fun binding ->
+            seq {
+                match binding.BorrowRegion with
+                | Some region -> yield region.Id
+                | None -> ()
+
+                yield! binding.CapturedRegions
+            })
+        |> Set.ofSeq
+
     let private addBinding name quantity borrowRegion capturedRegions capturedBindingOrigins checkDrop closureFactId localLambda origin (state: CheckState) =
         let place: ResourcePlace =
             { Root = name
@@ -557,8 +570,10 @@ module ResourceChecking =
     let private escapedBorrowRegions state expression =
         capturedRegions state expression
 
-    let private checkEscape (document: ParsedDocument) expression state =
-        let escaped = escapedBorrowRegions state expression
+    let private checkEscapeAgainstAllowed allowedRegions (document: ParsedDocument) expression state =
+        let escaped =
+            escapedBorrowRegions state expression
+            |> Set.filter (fun regionId -> not (Set.contains regionId allowedRegions))
 
         if Set.isEmpty escaped then
             state
@@ -605,6 +620,42 @@ module ResourceChecking =
                 document
                 state
 
+    let private checkEscape (document: ParsedDocument) expression state =
+        checkEscapeAgainstAllowed Set.empty document expression state
+
+    let rec private checkResultEscapeAtBoundary allowedRegions (document: ParsedDocument) expression state =
+        match expression with
+        | Name [ _ ]
+        | Lambda _ ->
+            checkEscapeAgainstAllowed allowedRegions document expression state
+        | LocalLet(_, _, body) ->
+            checkResultEscapeAtBoundary allowedRegions document body state
+        | IfThenElse(_, whenTrue, whenFalse) ->
+            state
+            |> checkResultEscapeAtBoundary allowedRegions document whenTrue
+            |> checkResultEscapeAtBoundary allowedRegions document whenFalse
+        | Match(_, cases) ->
+            (state, cases)
+            ||> List.fold (fun current caseClause ->
+                checkResultEscapeAtBoundary allowedRegions document caseClause.Body current)
+        | Do statements ->
+            match List.tryLast statements with
+            | Some(DoExpression result) ->
+                checkResultEscapeAtBoundary allowedRegions document result state
+            | _ ->
+                state
+        | MonadicSplice inner
+        | InoutArgument inner
+        | Unary(_, inner) ->
+            checkResultEscapeAtBoundary allowedRegions document inner state
+        | Literal _
+        | Name _
+        | Apply _
+        | Binary _
+        | RecordUpdate _
+        | PrefixedString _ ->
+            state
+
     let private checkEscapingLambda (document: ParsedDocument) expression state =
         match expression with
         | Lambda _ ->
@@ -649,6 +700,45 @@ module ResourceChecking =
         | _ ->
             state
 
+    let private checkLambdaParameterEscape (document: ParsedDocument) expression state =
+        let addLambdaParameterBinding (parameter: Parameter) current =
+            let quantity =
+                if parameter.IsInout then
+                    Some ResourceQuantity.one
+                else
+                    parameter.Quantity |> Option.map ResourceQuantity.ofSurface
+
+            let checkDrop = quantity |> Option.exists ResourceQuantity.requiresUse
+
+            let region: BorrowRegion option =
+                match quantity with
+                | Some(ResourceQuantity.Borrow explicitRegion) ->
+                    Some
+                        { Id = defaultArg explicitRegion $"rho_param_{parameter.Name}"
+                          ExplicitName = explicitRegion
+                          OwnerScope = $"parameter:{parameter.Name}" }
+                | _ -> None
+
+            let current =
+                match region with
+                | Some region -> addBorrowRegionFact region current
+                | None -> current
+
+            addBinding parameter.Name quantity region Set.empty [] checkDrop None None (findBinderLocation document parameter.Name) current
+
+        match expression with
+        | Lambda(parameters, body) ->
+            let parameterState =
+                parameters
+                |> List.fold (fun current parameter -> addLambdaParameterBinding parameter current) (emptyState $"{currentScopeId state}.lambda")
+
+            let checkedState = checkResultEscapeAtBoundary Set.empty document body parameterState
+
+            { state with
+                Diagnostics = state.Diagnostics @ checkedState.Diagnostics }
+        | _ ->
+            state
+
     let private currentScopeBindingIds (state: CheckState) =
         state.ActiveScopes
         |> List.head
@@ -686,6 +776,8 @@ module ResourceChecking =
         if List.length arguments <> List.length lambdaValue.Parameters then
             state
         else
+            let allowedRegions = liveRegionIds state
+
             withScope "lambda_call" (fun scopedState ->
                 let scopedState =
                     (scopedState, List.zip lambdaValue.Parameters arguments)
@@ -747,6 +839,7 @@ module ResourceChecking =
                             current)
 
                 checkExpression document signatures scopedState lambdaValue.Body
+                |> checkResultEscapeAtBoundary allowedRegions document lambdaValue.Body
                 |> checkScopeLinearDrops document) state
 
     and private checkExpression (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state expression =
@@ -756,6 +849,7 @@ module ResourceChecking =
             state
         | LocalLet(bindingName, value, body) ->
             let state = checkExpression document signatures state value
+            let allowedRegions = liveRegionIds state
 
             withScope $"let_{bindingName}" (fun scopedState ->
                 let scopedState =
@@ -772,9 +866,10 @@ module ResourceChecking =
                         scopedState
 
                 checkExpression document signatures scopedState body
+                |> checkResultEscapeAtBoundary allowedRegions document body
                 |> checkScopeLinearDrops document) state
         | Lambda _ ->
-            state
+            checkLambdaParameterEscape document expression state
         | IfThenElse(condition, whenTrue, whenFalse) ->
             let state = checkExpression document signatures state condition
             let left = checkExpressionInScope "if_then" document signatures state whenTrue
@@ -789,6 +884,8 @@ module ResourceChecking =
             | [] -> state
             | first :: rest ->
                 let checkCase index (caseClause: SurfaceMatchCase) =
+                    let allowedRegions = liveRegionIds state
+
                     withScope $"match_case{index}" (fun scopedState ->
                         let scopedState =
                             match caseClause.Guard with
@@ -796,6 +893,7 @@ module ResourceChecking =
                             | None -> scopedState
 
                         checkExpression document signatures scopedState caseClause.Body
+                        |> checkResultEscapeAtBoundary allowedRegions document caseClause.Body
                         |> checkScopeLinearDrops document) state
 
                 let firstState = checkCase 0 first
@@ -938,7 +1036,11 @@ module ResourceChecking =
                 state
 
     and private checkExpressionInScope scopeLabel (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state expression =
-        withScope scopeLabel (fun scopedState -> checkExpression document signatures scopedState expression) state
+        let allowedRegions = liveRegionIds state
+
+        withScope scopeLabel (fun scopedState ->
+            checkExpression document signatures scopedState expression
+            |> checkResultEscapeAtBoundary allowedRegions document expression) state
 
     and private checkDoStatements (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state statements =
         let rec loop current remaining =
@@ -959,7 +1061,7 @@ module ResourceChecking =
 
                 let current =
                     match expression with
-                    | Lambda _ -> current
+                    | Lambda _ -> checkLambdaParameterEscape document expression current
                     | _ -> checkExpression document signatures current expression
 
                 let current =
@@ -1081,7 +1183,20 @@ module ResourceChecking =
         checkScopeLinearDrops document checkedState
 
     and private checkDoStatementsInScope scopeLabel (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state statements =
-        withScope scopeLabel (fun scopedState -> checkDoStatements document signatures scopedState statements) state
+        let allowedRegions = liveRegionIds state
+        let expression =
+            match List.tryLast statements with
+            | Some(DoExpression result) -> Some result
+            | _ -> None
+
+        withScope scopeLabel (fun scopedState ->
+            let checkedState = checkDoStatements document signatures scopedState statements
+
+            match expression with
+            | Some result ->
+                checkResultEscapeAtBoundary allowedRegions document result checkedState
+            | None ->
+                checkedState) state
 
     let private addParameterBinding (document: ParsedDocument) (parameter: Parameter) state =
         let quantity =
@@ -1107,7 +1222,6 @@ module ResourceChecking =
             | None -> state
 
         addBinding parameter.Name quantity region Set.empty [] checkDrop None None (findBinderLocation document parameter.Name) state
-
     let private checkDefinition (signatures: Map<string, FunctionSignature>) (document: ParsedDocument) scopeId (definition: LetDefinition) =
         match definition.Body with
         | Some body ->
@@ -1117,7 +1231,9 @@ module ResourceChecking =
 
             match body with
             | Lambda _ -> checkEscapingLambda document body initialState
-            | _ -> checkExpression document signatures initialState body
+            | _ ->
+                checkExpression document signatures initialState body
+                |> checkResultEscapeAtBoundary Set.empty document body
         | None ->
             emptyState scopeId
 
