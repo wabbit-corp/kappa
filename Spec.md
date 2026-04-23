@@ -4714,8 +4714,8 @@ Modifier rules:
     * A named-function parameter may also be written `(inout x : A)`; this is surface sugar specified in §8.8 rather
       than a core binder form.
     * Apart from `inout`, named-function parameter binders use the same binder forms as lambda binders (§7.2). This
-      includes wildcard binders such as `_`, `(_ : A)`, and `(q _ : A)`, as well as receiver-marked binders such as
-      `(this : T)`, `(q this : T)`, `(this x : T)`, and `(q this x : T)`.
+      includes wildcard binders such as `_`, `(_ : A)`, and `(q _ : A)`, the Unit binder `()`, and receiver-marked
+      binders such as `(this : T)`, `(q this : T)`, `(this x : T)`, and `(q this x : T)`.
     * If a definition has the form `let name = \binders -> body` or `let name : T = \binders -> body`, where `name` is a
       simple binder, the lambda is treated as a named function body named `name` for `return` target resolution (§8.4).
       This applies both at top level and for local `let` bindings.
@@ -5791,6 +5791,7 @@ Lambda syntax uses backslash and `->`, optionally preceded by a label:
 \ (@t : Type) (x : t) -> x
 \ (@0 t : Type) (x : t) -> x
 \ (1 x : Res) -> consume x
+\() -> True
 exit@\ x -> x
 ```
 
@@ -5801,6 +5802,7 @@ lambda  ::= [label '@'] '\' binders '->' expr
 binders ::= binder+
 binder  ::= ident                            -- inferred type, quantity ω
           | '_'                              -- anonymous explicit binder, inferred type, quantity ω
+          | '(' ')'                          -- anonymous explicit Unit binder, quantity ω
           | '(' ident ':' type ')'           -- explicit type, quantity ω
           | '(' '_' ':' type ')'             -- anonymous explicit binder, explicit type, quantity ω
           | '(' quantity ident ':' type ')'  -- explicit type and quantity
@@ -5824,6 +5826,10 @@ Rules:
 
 * A bare binder `x` or `_` is equivalent to `(x : _)` or `(_ : _)` respectively, with inferred type and default
   quantity `ω`.
+* The binder form `()` denotes one explicit anonymous binder of type `Unit` and default quantity `ω`.
+  `\() -> e` is equivalent to `\(_ : Unit) -> e`.
+* The dedicated form `()` is only sugar for the default-quantity explicit `Unit` binder. To write an anonymous
+  `Unit` binder with an explicit quantity, use `(_ : Unit)` or `(q _ : Unit)`.
 * When `_` appears in lambda-binder position, it denotes the wildcard-binder form above, not an ordinary identifier.
 * Multiple bare binders may be juxtaposed: `\x _ z -> e` ≡ `\(x : _) (_ : _) (z : _) -> e`.
 * Mixing styles is permitted: `\x (_ : Int) z -> e`.
@@ -5839,9 +5845,10 @@ Rules:
 * Method-call and receiver-projection sugar (§2.8.4) consult the receiver marker, not the local binder name chosen
   inside the function body.
 * A leading label `L@` labels the lambda body for `return@L` (§8.4.1).
-* Parentheses are required for typed, quantity-annotated, suspension-marked, receiver-marked, and implicit binders;
-  they are not required for bare identifier or bare wildcard binders.
+* Parentheses are required for typed, quantity-annotated, suspension-marked, receiver-marked, implicit, and Unit
+  binders `()`; they are not required for bare identifier or bare wildcard binders.
 * A lambda must contain at least one binder; there is no point-free "degenerate" lambda.
+  The Unit binder `()` counts as one binder; it does not denote a binderless lambda.
 * The body after `->` may be either a single expression or an indented pure block suite, which elaborates to `block ...`
   under §6.3.1.
 * Multiple parameters are curried:
