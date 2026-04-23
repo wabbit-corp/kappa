@@ -23,18 +23,26 @@ module SurfaceElaboration =
           HeadTypes: TypeExpr list
           Members: Map<string, LetDefinition> }
 
+    type private TypeAliasInfo =
+        { ModuleName: string
+          Name: string
+          Parameters: string list
+          Body: TypeExpr }
+
     type private BindingSchemeInfo =
         { ModuleName: string
           Name: string
           Scheme: TypeScheme }
 
     type private ModuleSurfaceInfo =
-        { BindingSchemes: Map<string, BindingSchemeInfo>
+        { TypeAliases: Map<string, TypeAliasInfo>
+          BindingSchemes: Map<string, BindingSchemeInfo>
           Traits: Map<string, TraitInfo>
           Instances: InstanceInfo list }
 
     type private BindingLoweringEnvironment =
         { CurrentModuleName: string
+          VisibleTypeAliases: Map<string, TypeAliasInfo>
           VisibleBindings: Map<string, BindingSchemeInfo>
           VisibleTraits: Map<string, TraitInfo>
           VisibleInstances: InstanceInfo list
@@ -110,6 +118,25 @@ module SurfaceElaboration =
             KCoreLiteralPattern literal
         | ConstructorPattern(name, arguments) ->
             KCoreConstructorPattern(name, arguments |> List.map lowerKCorePattern)
+        | AnonymousRecordPattern _ ->
+            KCoreWildcardPattern
+
+    let private collectPatternNames (pattern: SurfacePattern) =
+        let rec loop current =
+            seq {
+                match current with
+                | NamePattern name -> yield name
+                | ConstructorPattern(_, arguments) ->
+                    for argument in arguments do
+                        yield! loop argument
+                | AnonymousRecordPattern fields ->
+                    for field in fields do
+                        yield! loop field.Pattern
+                | WildcardPattern
+                | LiteralPattern _ -> ()
+            }
+
+        loop pattern |> Seq.toList
 
     let private unitType =
         TypeName([ "Unit" ], [])
@@ -218,8 +245,28 @@ module SurfaceElaboration =
         else
             Some(parsed |> List.choose id)
 
+    let private tryParseTypeAliasInfo moduleName (declaration: TypeAlias) =
+        if declaration.IsOpaque then
+            None
+        else
+            declaration.BodyTokens
+            |> Option.bind TypeSignatures.parseType
+            |> Option.map (fun body ->
+                declaration.Name,
+                { ModuleName = moduleName
+                  Name = declaration.Name
+                  Parameters = TypeSignatures.collectLeadingTypeParameters declaration.HeaderTokens
+                  Body = body })
+
     let private buildModuleSurfaceInfo (frontendModule: KFrontIRModule) =
         let moduleName = moduleNameText frontendModule.ModuleIdentity
+
+        let typeAliases =
+            frontendModule.Declarations
+            |> List.choose (function
+                | TypeAliasNode declaration -> tryParseTypeAliasInfo moduleName declaration
+                | _ -> None)
+            |> Map.ofList
 
         let bindingSchemes =
             frontendModule.Declarations
@@ -287,7 +334,8 @@ module SurfaceElaboration =
                 | _ ->
                     None)
 
-        { BindingSchemes = bindingSchemes
+        { TypeAliases = typeAliases
+          BindingSchemes = bindingSchemes
           Traits = traits
           Instances = instances }
 
@@ -313,6 +361,22 @@ module SurfaceElaboration =
         preludeBindings
         |> Map.fold (fun state name info -> Map.add name info state) moduleBindings
 
+    let private mergeVisibleTypeAliases (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
+        let preludeAliases =
+            surfaceIndex
+            |> Map.tryFind Stdlib.PreludeModuleText
+            |> Option.map (fun moduleInfo -> moduleInfo.TypeAliases)
+            |> Option.defaultValue Map.empty
+
+        let moduleAliases =
+            surfaceIndex
+            |> Map.tryFind moduleName
+            |> Option.map (fun moduleInfo -> moduleInfo.TypeAliases)
+            |> Option.defaultValue Map.empty
+
+        preludeAliases
+        |> Map.fold (fun state name info -> Map.add name info state) moduleAliases
+
     let private mergeVisibleTraits (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
         let preludeTraits =
             surfaceIndex
@@ -335,7 +399,44 @@ module SurfaceElaboration =
         |> Option.map (fun moduleInfo -> moduleInfo.Instances)
         |> Option.defaultValue []
 
+    let private normalizeTypeAliases (aliases: Map<string, TypeAliasInfo>) =
+        let rec loop visited typeExpr =
+            match typeExpr with
+            | TypeVariable _ ->
+                typeExpr
+            | TypeArrow(quantity, parameterType, resultType) ->
+                TypeArrow(quantity, loop visited parameterType, loop visited resultType)
+            | TypeEquality(left, right) ->
+                TypeEquality(loop visited left, loop visited right)
+            | TypeName([ name ], arguments) ->
+                let normalizedArguments = arguments |> List.map (loop visited)
+
+                match aliases |> Map.tryFind name with
+                | Some aliasInfo
+                    when not (Set.contains name visited)
+                         && List.length aliasInfo.Parameters = List.length normalizedArguments ->
+                    let substitution = List.zip aliasInfo.Parameters normalizedArguments |> Map.ofList
+                    aliasInfo.Body
+                    |> TypeSignatures.applySubstitution substitution
+                    |> loop (Set.add name visited)
+                | _ ->
+                    TypeName([ name ], normalizedArguments)
+            | TypeName(name, arguments) ->
+                TypeName(name, arguments |> List.map (loop visited))
+
+        loop Set.empty
+
+    let private tryUnifyVisibleTypes
+        (aliases: Map<string, TypeAliasInfo>)
+        (pairs: (TypeExpr * TypeExpr) list)
+        =
+        let normalize = normalizeTypeAliases aliases
+        pairs
+        |> List.map (fun (left, right) -> normalize left, normalize right)
+        |> TypeSignatures.tryUnifyMany
+
     let private unwrapInstantiatedCallType
+        (environment: BindingLoweringEnvironment)
         (freshCounter: int ref)
         (scheme: TypeScheme)
         (argumentTypes: TypeExpr list)
@@ -348,7 +449,7 @@ module SurfaceElaboration =
         if List.length parameterTypes <> List.length argumentTypes then
             None
         else
-            TypeSignatures.tryUnifyMany (List.zip parameterTypes argumentTypes)
+            tryUnifyVisibleTypes environment.VisibleTypeAliases (List.zip parameterTypes argumentTypes)
             |> Option.map (fun substitution ->
                 instantiated
                 |> TypeSignatures.applySchemeSubstitution substitution,
@@ -428,7 +529,7 @@ module SurfaceElaboration =
             elif List.length instanceInfo.HeadTypes <> List.length constraintInfo.Arguments then
                 None
             else
-                TypeSignatures.tryUnifyMany (List.zip instanceInfo.HeadTypes constraintInfo.Arguments)
+                tryUnifyVisibleTypes environment.VisibleTypeAliases (List.zip instanceInfo.HeadTypes constraintInfo.Arguments)
                 |> Option.map (fun _ -> instanceInfo))
 
     let private makeSyntheticBindingDeclaration
@@ -509,10 +610,14 @@ module SurfaceElaboration =
                         resultType))
             | Name _ ->
                 None
-            | LocalLet(bindingName, value, body) ->
+            | LocalLet(binding, value, body) ->
+                let bindingNames = collectPatternNames binding.Pattern
+
                 let nextLocals =
                     match inferExpressionType localTypes value with
-                    | Some valueType -> Map.add bindingName valueType localTypes
+                    | Some valueType ->
+                        bindingNames
+                        |> List.fold (fun state name -> Map.add name valueType state) localTypes
                     | None -> localTypes
 
                 inferExpressionType nextLocals body
@@ -531,7 +636,7 @@ module SurfaceElaboration =
                 |> Option.map (fun resultType ->
                     parameterTypes
                     |> List.rev
-                    |> List.fold (fun state parameterType -> TypeArrow(parameterType, state)) resultType)
+                    |> List.fold (fun state parameterType -> TypeArrow(QuantityOmega, parameterType, state)) resultType)
             | IfThenElse(_, whenTrue, whenFalse) ->
                 match inferExpressionType localTypes whenTrue, inferExpressionType localTypes whenFalse with
                 | Some trueType, Some falseType when trueType = falseType ->
@@ -562,7 +667,7 @@ module SurfaceElaboration =
                     environment.VisibleBindings
                     |> Map.tryFind calleeName
                     |> Option.bind (fun bindingInfo ->
-                        unwrapInstantiatedCallType freshCounter bindingInfo.Scheme (argumentTypes |> List.choose id)
+                        unwrapInstantiatedCallType environment freshCounter bindingInfo.Scheme (argumentTypes |> List.choose id)
                         |> Option.map snd)
             | Apply _ ->
                 None
@@ -748,17 +853,36 @@ module SurfaceElaboration =
                 KCoreLiteral literal
             | Name segments ->
                 KCoreName segments
-            | LocalLet(bindingName, value, body) ->
+            | LocalLet(binding, value, body) ->
+                let bindingNames = collectPatternNames binding.Pattern
+
                 let nextLocals =
                     match inferExpressionType localTypes value with
-                    | Some valueType -> Map.add bindingName valueType localTypes
+                    | Some valueType ->
+                        bindingNames
+                        |> List.fold (fun state name -> Map.add name valueType state) localTypes
                     | None -> localTypes
 
-                KCoreLet(
-                    bindingName,
-                    lowerExpression localTypes value,
-                    lowerExpression nextLocals body
-                )
+                let loweredValue = lowerExpression localTypes value
+                let loweredBody = lowerExpression nextLocals body
+
+                match bindingNames with
+                | [] ->
+                    KCoreLet("__pattern", loweredValue, loweredBody)
+                | [ bindingName ] ->
+                    KCoreLet(bindingName, loweredValue, loweredBody)
+                | bindingName :: rest ->
+                    let loweredBindings =
+                        List.foldBack
+                            (fun name current -> KCoreLet(name, KCoreName [ bindingName ], current))
+                            rest
+                            loweredBody
+
+                    KCoreLet(
+                        "__pattern",
+                        loweredValue,
+                        KCoreLet(bindingName, KCoreName [ "__pattern" ], loweredBindings)
+                    )
             | Lambda(lambdaParameters, lambdaBody) ->
                 let lambdaLocals =
                     lambdaParameters
@@ -821,7 +945,7 @@ module SurfaceElaboration =
                     else
                         let bindingInfo = environment.VisibleBindings[calleeName]
 
-                        match unwrapInstantiatedCallType freshCounter bindingInfo.Scheme (argumentTypes |> List.choose id) with
+                        match unwrapInstantiatedCallType environment freshCounter bindingInfo.Scheme (argumentTypes |> List.choose id) with
                         | Some(instantiatedScheme, _) ->
                             instantiatedScheme.Constraints
                             |> List.choose (fun constraintInfo ->
@@ -988,9 +1112,11 @@ module SurfaceElaboration =
 
         let visibleBindings = mergeVisibleBindings surfaceIndex moduleName
         let visibleTraits = mergeVisibleTraits surfaceIndex moduleName
+        let visibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleName
 
         let environment =
             { CurrentModuleName = moduleName
+              VisibleTypeAliases = visibleTypeAliases
               VisibleBindings = visibleBindings
               VisibleTraits = visibleTraits
               VisibleInstances = visibleInstances surfaceIndex moduleName
@@ -1053,6 +1179,7 @@ module SurfaceElaboration =
 
             let environment =
                 { CurrentModuleName = moduleName
+                  VisibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleName
                   VisibleBindings = mergeVisibleBindings surfaceIndex moduleName
                   VisibleTraits = mergeVisibleTraits surfaceIndex moduleName
                   VisibleInstances = visibleInstances surfaceIndex moduleName

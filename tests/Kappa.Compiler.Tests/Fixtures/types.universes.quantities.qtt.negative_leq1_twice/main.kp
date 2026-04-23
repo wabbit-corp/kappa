@@ -1,0 +1,8 @@
+module main
+
+dupLeq1 : (<=1 x : Int) -> Int
+let dupLeq1 x = x + x
+
+--! assertErrorCount 1
+--! assertDiagnosticMatch once|twice|at most|quantity
+

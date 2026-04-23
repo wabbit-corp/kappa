@@ -78,6 +78,7 @@ module ResourceModel =
     type FunctionSignature =
         { Name: string
           ParameterQuantities: ResourceQuantity option list
+          ParameterTypeTokens: Token list option list
           ParameterInout: bool list }
 
     type ResourcePlace =
@@ -94,6 +95,12 @@ module ResourceModel =
           ExplicitName: string option
           OwnerScope: string }
 
+    type BorrowLock =
+        { Id: string
+          Root: string
+          FootprintPaths: string list list
+          Origin: SourceLocation option }
+
     type LocalLambda =
         { Parameters: Parameter list
           Body: SurfaceExpression }
@@ -103,6 +110,8 @@ module ResourceModel =
           Name: string
           DeclaredQuantity: ResourceQuantity option
           Place: ResourcePlace
+          ConsumedPaths: string list list
+          RecordFieldDependencies: Map<string, Set<string>>
           BorrowRegion: BorrowRegion option
           CapturedRegions: Set<string>
           CapturedBindingOrigins: SourceLocation list
@@ -116,13 +125,15 @@ module ResourceModel =
 
     type ResourceScope =
         { Id: string
-          IntroducedBindings: (string * string) list }
+          IntroducedBindings: (string * string) list
+          IntroducedBorrowLocks: string list }
 
     type ResourceContext =
         { ScopeId: string
           ActiveScopes: ResourceScope list
           ActiveBindingIds: Map<string, string list>
           Bindings: Map<string, ResourceBinding>
+          BorrowLocks: Map<string, BorrowLock>
           Diagnostics: Diagnostic list
           Events: OwnershipUseFact list
           BorrowRegions: OwnershipBorrowRegionFact list
@@ -131,6 +142,7 @@ module ResourceModel =
           DeferredFacts: string list
           NextScopeId: int
           NextBindingId: int
+          NextBorrowLockId: int
           NextEventId: int
           NextRegionId: int
           NextUsingScopeId: int
@@ -142,10 +154,12 @@ module ResourceModel =
               ActiveScopes =
                 [
                     { Id = scopeId
-                      IntroducedBindings = [] }
+                      IntroducedBindings = []
+                      IntroducedBorrowLocks = [] }
                 ]
               ActiveBindingIds = Map.empty
               Bindings = Map.empty
+              BorrowLocks = Map.empty
               Diagnostics = []
               Events = []
               BorrowRegions = []
@@ -154,6 +168,7 @@ module ResourceModel =
               DeferredFacts = []
               NextScopeId = 0
               NextBindingId = 0
+              NextBorrowLockId = 0
               NextEventId = 0
               NextRegionId = 0
               NextUsingScopeId = 0

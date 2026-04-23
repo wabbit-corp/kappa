@@ -1,0 +1,12 @@
+module main
+
+bumpShadow : (1 x : Int) -> Int
+let bumpShadow x =
+    let
+        x = x + 1
+    in
+        x
+
+--! assertNoErrors
+--! assertType bumpShadow (1 x : Int) -> Int
+

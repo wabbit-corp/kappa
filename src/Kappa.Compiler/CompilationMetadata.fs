@@ -219,6 +219,24 @@ module internal CompilationMetadata =
                     |> Option.defaultValue "<inferred>"
 
                 $"parameters=[{parameters}];header={tokensText definition.HeaderTokens};return={returnType}"
+            | ProjectionDeclarationNode declaration ->
+                let binders =
+                    declaration.Binders
+                    |> List.map (function
+                        | ProjectionPlaceBinder binder ->
+                            let receiverMarker = if binder.IsReceiver then "receiver:" else ""
+                            $"{receiverMarker}{binder.Name}:{tokensText binder.TypeTokens}"
+                        | ProjectionValueBinder binder ->
+                            let quantity =
+                                binder.Quantity
+                                |> Option.map Quantity.toSurfaceText
+                                |> Option.defaultValue "<default>"
+
+                            let typeText = binder.TypeTokens |> Option.map tokensText |> Option.defaultValue "<inferred>"
+                            $"{binder.Name}:{quantity}:{typeText}")
+                    |> String.concat ","
+
+                $"binders=[{binders}];return={tokensText declaration.ReturnTypeTokens}"
             | DataDeclarationNode dataDeclaration ->
                 let constructors =
                     dataDeclaration.Constructors

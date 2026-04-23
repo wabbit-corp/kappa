@@ -3,4 +3,4 @@ module main
 let value = 'x
 
 --! assertErrorCount 2
---! assertDiagnosticCodes E_UNTERMINATED_CHARACTER_LITERAL, E_GENERAL
+--! assertDiagnosticCodes E_UNTERMINATED_CHARACTER_LITERAL, E_PARSE

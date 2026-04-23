@@ -85,6 +85,7 @@ module Compilation =
             (documents |> List.collect (fun document -> document.Diagnostics))
             @ detectImportCycles documents
             @ validateImportSelections documents
+            @ CompilationFrontend.validateReflEqualityDeclarations documents
             @ validateExpectDeclarations normalizedBackendProfile documents
 
         let resourceCheckResult: ResourceChecking.CheckResult =

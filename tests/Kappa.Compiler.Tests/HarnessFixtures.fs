@@ -63,6 +63,12 @@ let private parseFixtureDiagnosticSeverity (filePath: string) lineNumber (value:
     | other ->
         invalidOp $"Unsupported diagnostic severity '{other}' ({filePath}:{lineNumber})."
 
+let private parseFixtureDiagnosticCode (filePath: string) lineNumber (value: string) =
+    match DiagnosticCode.tryParseIdentifier value with
+    | Some code -> code
+    | None ->
+        invalidOp $"Unsupported diagnostic code '{value}' ({filePath}:{lineNumber})."
+
 let private parseFixtureRelation (filePath: string) lineNumber (value: string) =
     match value.Trim() with
     | "=" -> KpFixtureRelation.Equal
@@ -275,7 +281,9 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
 
             Some(AssertionDirective(AssertDiagnosticMatch(directiveBody, filePath, lineNumber)))
         | "assertDiagnosticCodes" ->
-            let expectedCodes = parseFixtureList directiveBody
+            let expectedCodes =
+                parseFixtureList directiveBody
+                |> List.map (parseFixtureDiagnosticCode filePath lineNumber)
 
             if List.isEmpty expectedCodes then
                 invalidOp $"assertDiagnosticCodes expects a comma-separated list of diagnostic codes ({filePath}:{lineNumber})."
@@ -309,7 +317,7 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
                     AssertDiagnosticAt(
                         tokens[0],
                         parseFixtureDiagnosticSeverity filePath lineNumber tokens[1],
-                        tokens[2],
+                        parseFixtureDiagnosticCode filePath lineNumber tokens[2],
                         expectedLine,
                         expectedColumn,
                         filePath,

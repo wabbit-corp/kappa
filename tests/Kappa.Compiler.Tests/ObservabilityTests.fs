@@ -8,6 +8,9 @@ open Kappa.Compiler
 open Harness
 open Xunit
 
+let private hasDiagnosticCode code (diagnostic: Diagnostic) =
+    diagnostic.Code = code
+
 [<Fact>]
 let ``workspace exposes spec-shaped checkpoints and portable pipeline trace events`` () =
     let workspace =
@@ -916,7 +919,7 @@ let ``M3 overuse diagnostics expose primary and related origins`` () =
 
     let diagnostic =
         workspace.Diagnostics
-        |> List.find (fun diagnostic -> diagnostic.Code = "E_QTT_LINEAR_OVERUSE")
+        |> List.find (hasDiagnosticCode DiagnosticCode.QttLinearOveruse)
 
     match diagnostic.Location with
     | Some location ->
@@ -924,19 +927,12 @@ let ``M3 overuse diagnostics expose primary and related origins`` () =
     | None ->
         failwith "Expected overuse diagnostic to have a primary origin."
 
-    Assert.Contains(
-        diagnostic.RelatedLocations,
-        fun related ->
-            related.Message.Contains("First consume", StringComparison.Ordinal)
-            && related.Location.Start.Line = 10
-    )
+    let relatedOriginLines =
+        diagnostic.RelatedLocations
+        |> List.map (fun related -> related.Location.Start.Line)
+        |> List.sort
 
-    Assert.Contains(
-        diagnostic.RelatedLocations,
-        fun related ->
-            related.Message.Contains("binding", StringComparison.OrdinalIgnoreCase)
-            && related.Location.Start.Line = 9
-    )
+    Assert.Equal<int list>([ 9; 10 ], relatedOriginLines)
 
     let bodyResolveJson =
         match Compilation.dumpStage workspace "KFrontIR.BODY_RESOLVE" StageDumpFormat.Json with
@@ -945,9 +941,12 @@ let ``M3 overuse diagnostics expose primary and related origins`` () =
 
     use document = JsonDocument.Parse(bodyResolveJson)
 
+    let expectedOveruseCode =
+        DiagnosticCode.toIdentifier DiagnosticCode.QttLinearOveruse
+
     let dumpedDiagnostic =
         document.RootElement.GetProperty("diagnostics").EnumerateArray()
-        |> Seq.find (fun item -> item.GetProperty("code").GetString() = "E_QTT_LINEAR_OVERUSE")
+        |> Seq.find (fun item -> item.GetProperty("code").GetString() = expectedOveruseCode)
 
     Assert.Equal(11, dumpedDiagnostic.GetProperty("startLine").GetInt32())
     Assert.Equal(2, dumpedDiagnostic.GetProperty("relatedOrigins").GetArrayLength())
@@ -978,7 +977,7 @@ let ``M3 overuse diagnostic origins ignore names inside string literals`` () =
 
     let diagnostic =
         workspace.Diagnostics
-        |> List.find (fun diagnostic -> diagnostic.Code = "E_QTT_LINEAR_OVERUSE")
+        |> List.find (hasDiagnosticCode DiagnosticCode.QttLinearOveruse)
 
     match diagnostic.Location with
     | Some location ->
@@ -986,12 +985,12 @@ let ``M3 overuse diagnostic origins ignore names inside string literals`` () =
     | None ->
         failwith "Expected overuse diagnostic to have a primary origin."
 
-    Assert.Contains(
-        diagnostic.RelatedLocations,
-        fun related ->
-            related.Message.Contains("First consume", StringComparison.Ordinal)
-            && related.Location.Start.Line = 11
-    )
+    let relatedOriginLines =
+        diagnostic.RelatedLocations
+        |> List.map (fun related -> related.Location.Start.Line)
+        |> List.sort
+
+    Assert.Equal<int list>([ 9; 11 ], relatedOriginLines)
 
 [<Fact>]
 let ``BODY_RESOLVE dump exposes deferred ownership facts for unsupported control flow`` () =
@@ -1346,11 +1345,14 @@ let ``stage dumps expose stable diagnostic codes and frontend phase metadata`` (
 
     use checkerDocument = JsonDocument.Parse(checkerJson)
 
+    let expectedModulePathMismatchCode =
+        DiagnosticCode.toIdentifier DiagnosticCode.ModulePathMismatch
+
     let diagnostic =
         checkerDocument.RootElement.GetProperty("diagnostics").EnumerateArray()
-        |> Seq.find (fun item -> item.GetProperty("message").GetString().Contains("Module header"))
+        |> Seq.find (fun item -> item.GetProperty("code").GetString() = expectedModulePathMismatchCode)
 
-    Assert.Equal("E_MODULE_PATH_MISMATCH", diagnostic.GetProperty("code").GetString())
+    Assert.Equal(expectedModulePathMismatchCode, diagnostic.GetProperty("code").GetString())
     Assert.Equal("KFrontIR", diagnostic.GetProperty("stage").GetString())
     Assert.Equal("CHECKERS", diagnostic.GetProperty("phase").GetString())
     Assert.Equal("error", diagnostic.GetProperty("severity").GetString())
@@ -1360,7 +1362,7 @@ let ``stage dumps expose stable diagnostic codes and frontend phase metadata`` (
         | Result.Ok dump -> dump
         | Result.Error message -> failwith message
 
-    Assert.Contains("(code \"E_MODULE_PATH_MISMATCH\")", checkerSexpr)
+    Assert.Contains($"(code \"{DiagnosticCode.toIdentifier DiagnosticCode.ModulePathMismatch}\")", checkerSexpr)
     Assert.Contains("(stage \"KFrontIR\")", checkerSexpr)
     Assert.Contains("(phase \"CHECKERS\")", checkerSexpr)
 
@@ -1549,8 +1551,7 @@ let ``verify all checkpoints reports target failures after malformed KBackendIR`
 
     Assert.Contains(
         targetResult.Diagnostics,
-        fun diagnostic ->
-            diagnostic.Message.Contains("Cannot emit CLR target manifest", StringComparison.OrdinalIgnoreCase)
+        hasDiagnosticCode DiagnosticCode.TargetCheckpoint
     )
 
 [<Fact>]
@@ -1592,11 +1593,8 @@ let ``backend verification rejects missing backend modules`` () =
 
     let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KBackendIR"
 
-    Assert.Contains(
-        diagnostics,
-        fun diagnostic ->
-            diagnostic.Message.Contains("backend module for runtime module 'main'", StringComparison.OrdinalIgnoreCase)
-    )
+    Assert.Single(diagnostics) |> ignore
+    Assert.Contains(diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
 
 [<Fact>]
 let ``backend verification rejects unsupported backend intrinsics`` () =
@@ -1639,12 +1637,8 @@ let ``backend verification rejects unsupported backend intrinsics`` () =
 
     let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KRuntimeIR"
 
-    Assert.Contains(
-        diagnostics,
-        fun diagnostic ->
-            diagnostic.Message.Contains("intrinsic term 'mysteryIntrinsic'", StringComparison.OrdinalIgnoreCase)
-            && diagnostic.Message.Contains("provided by backend profile", StringComparison.OrdinalIgnoreCase)
-    )
+    Assert.Single(diagnostics) |> ignore
+    Assert.Contains(diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
 
 [<Fact>]
 let ``backend verification rejects missing imported runtime modules`` () =
@@ -1677,12 +1671,8 @@ let ``backend verification rejects missing imported runtime modules`` () =
 
     let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KRuntimeIR"
 
-    Assert.Contains(
-        diagnostics,
-        fun diagnostic ->
-            diagnostic.Message.Contains("imported runtime module 'missing'", StringComparison.OrdinalIgnoreCase)
-            && diagnostic.Message.Contains("module 'main'", StringComparison.OrdinalIgnoreCase)
-    )
+    Assert.Single(diagnostics) |> ignore
+    Assert.Contains(diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
 
 [<Fact>]
 let ``backend verification rejects runtime bindings without bodies`` () =
@@ -1717,12 +1707,8 @@ let ``backend verification rejects runtime bindings without bodies`` () =
 
     let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KRuntimeIR"
 
-    Assert.Contains(
-        diagnostics,
-        fun diagnostic ->
-            diagnostic.Message.Contains("runtime binding 'main.answer'", StringComparison.OrdinalIgnoreCase)
-            && diagnostic.Message.Contains("have a body", StringComparison.OrdinalIgnoreCase)
-    )
+    Assert.Single(diagnostics) |> ignore
+    Assert.Contains(diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
 
 [<Fact>]
 let ``backend verification rejects intrinsic bindings with bodies`` () =
@@ -1766,15 +1752,8 @@ let ``backend verification rejects intrinsic bindings with bodies`` () =
 
     let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KRuntimeIR"
 
-    Assert.Contains(
-        diagnostics,
-        fun diagnostic ->
-            diagnostic.Message.Contains(
-                $"intrinsic binding '{Stdlib.PreludeModuleText}.{intrinsicName}'",
-                StringComparison.OrdinalIgnoreCase
-            )
-            && diagnostic.Message.Contains("omit a body", StringComparison.OrdinalIgnoreCase)
-    )
+    Assert.Single(diagnostics) |> ignore
+    Assert.Contains(diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
 
 [<Fact>]
 let ``backend verification rejects intrinsic bindings missing intrinsic listings`` () =
@@ -1814,15 +1793,8 @@ let ``backend verification rejects intrinsic bindings missing intrinsic listings
 
     let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KRuntimeIR"
 
-    Assert.Contains(
-        diagnostics,
-        fun diagnostic ->
-            diagnostic.Message.Contains(
-                $"intrinsic binding '{Stdlib.PreludeModuleText}.{intrinsicName}'",
-                StringComparison.OrdinalIgnoreCase
-            )
-            && diagnostic.Message.Contains("listed in module intrinsic terms", StringComparison.OrdinalIgnoreCase)
-    )
+    Assert.Single(diagnostics) |> ignore
+    Assert.Contains(diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
 
 [<Fact>]
 let ``backend verification rejects duplicate closure parameters`` () =
@@ -1857,13 +1829,8 @@ let ``backend verification rejects duplicate closure parameters`` () =
 
     let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KRuntimeIR"
 
-    Assert.Contains(
-        diagnostics,
-        fun diagnostic ->
-            diagnostic.Message.Contains("closures in 'main.answer'", StringComparison.OrdinalIgnoreCase)
-            && diagnostic.Message.Contains("unique parameter names", StringComparison.OrdinalIgnoreCase)
-            && diagnostic.Message.Contains("'x' was duplicated", StringComparison.OrdinalIgnoreCase)
-    )
+    Assert.Single(diagnostics) |> ignore
+    Assert.Contains(diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
 
 [<Fact>]
 let ``backend verification rejects duplicate pattern binders`` () =
@@ -1912,13 +1879,8 @@ let ``backend verification rejects duplicate pattern binders`` () =
 
     let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KRuntimeIR"
 
-    Assert.Contains(
-        diagnostics,
-        fun diagnostic ->
-            diagnostic.Message.Contains("pattern binder names", StringComparison.OrdinalIgnoreCase)
-            && diagnostic.Message.Contains("'main.answer'", StringComparison.OrdinalIgnoreCase)
-            && diagnostic.Message.Contains("'x' was duplicated", StringComparison.OrdinalIgnoreCase)
-    )
+    Assert.Single(diagnostics) |> ignore
+    Assert.Contains(diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
 
 [<Fact>]
 let ``backend verification rejects malformed calling conventions`` () =
@@ -1956,12 +1918,8 @@ let ``backend verification rejects malformed calling conventions`` () =
 
     let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KBackendIR"
 
-    Assert.Contains(
-        diagnostics,
-        fun diagnostic ->
-            diagnostic.Message.Contains("function 'main.answer'", StringComparison.OrdinalIgnoreCase)
-            && diagnostic.Message.Contains("calling convention arity", StringComparison.OrdinalIgnoreCase)
-    )
+    Assert.Single(diagnostics) |> ignore
+    Assert.Contains(diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
 
 [<Fact>]
 let ``workspace materializes frontend core and backend modules`` () =

@@ -133,7 +133,7 @@ let ``compilation reports import cycles across modules`` () =
 
     let cycleDiagnostic =
         workspace.Diagnostics
-        |> List.tryFind (fun diagnostic -> diagnostic.Message.Contains("Import cycle detected"))
+        |> List.tryFind (fun diagnostic -> diagnostic.Code = DiagnosticCode.ImportCycle)
 
     Assert.True(cycleDiagnostic.IsSome, sprintf "Expected an import-cycle diagnostic, got %A" workspace.Diagnostics)
 
@@ -531,7 +531,7 @@ let ``unknown backend profiles leave prelude expects unsatisfied`` () =
 
     let matchingDiagnostic =
         workspace.Diagnostics
-        |> List.tryFind (fun diagnostic -> diagnostic.Message.Contains("Unsatisfied expect declaration for term 'not'", StringComparison.Ordinal))
+        |> List.tryFind (fun diagnostic -> diagnostic.Code = DiagnosticCode.ExpectUnsatisfied)
 
     Assert.True(matchingDiagnostic.IsSome, sprintf "Expected an unsatisfied prelude-term diagnostic, got %A" workspace.Diagnostics)
 
@@ -560,7 +560,7 @@ let ``compilation reports unsatisfied expect declarations outside std prelude`` 
 
     let diagnostic =
         workspace.Diagnostics
-        |> List.tryFind (fun item -> item.Message.Contains("Unsatisfied expect declaration"))
+        |> List.tryFind (fun item -> item.Code = DiagnosticCode.ExpectUnsatisfied)
 
     Assert.True(diagnostic.IsSome, sprintf "Expected an unsatisfied expect diagnostic, got %A" workspace.Diagnostics)
 

@@ -12,6 +12,9 @@ module internal ResourceCheckingSurface =
                 | ConstructorPattern(_, arguments) ->
                     for argument in arguments do
                         yield! loop argument
+                | AnonymousRecordPattern fields ->
+                    for field in fields do
+                        yield! loop field.Pattern
                 | WildcardPattern
                 | LiteralPattern _ -> ()
             }
@@ -24,11 +27,15 @@ module internal ResourceCheckingSurface =
             | Literal _ -> ()
             | Name [ name ] -> yield name
             | Name _ -> ()
-            | LocalLet(bindingName, value, body) ->
+            | LocalLet(binding, value, body) ->
                 yield! expressionNames value
 
+                let boundNames =
+                    collectPatternNames binding.Pattern
+                    |> Set.ofList
+
                 for name in expressionNames body do
-                    if not (String.Equals(name, bindingName, StringComparison.Ordinal)) then
+                    if not (Set.contains name boundNames) then
                         yield name
             | Lambda(parameters, body) ->
                 let parameterNames =

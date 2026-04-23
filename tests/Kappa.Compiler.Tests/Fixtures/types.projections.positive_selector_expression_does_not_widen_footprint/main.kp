@@ -14,5 +14,4 @@ let use buf = 0
 demo : (1 v : VecPair) -> Nat -> Nat
 let demo v i = use (pick v i)
 
---! assertErrorCount 1
---! assertDiagnosticCodes E_PROJECTION_DEFINITION_UNSUPPORTED
+--! assertNoErrors

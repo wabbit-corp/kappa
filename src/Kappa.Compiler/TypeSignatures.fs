@@ -8,7 +8,8 @@ module TypeSignatures =
     type TypeExpr =
         | TypeName of string list * TypeExpr list
         | TypeVariable of string
-        | TypeArrow of TypeExpr * TypeExpr
+        | TypeArrow of Quantity * TypeExpr * TypeExpr
+        | TypeEquality of TypeExpr * TypeExpr
 
     type TraitConstraint =
         { TraitName: string
@@ -59,7 +60,7 @@ module TypeSignatures =
 
             current
 
-        member private _.IsAtEnd = position >= tokenArray.Length
+        member _.IsAtEnd = position >= tokenArray.Length
 
         member private this.IsConstraintArrowAt(index: int, depth: int) =
             if depth <> 0 || index >= tokenArray.Length then
@@ -106,6 +107,125 @@ module TypeSignatures =
                 true
             | _ ->
                 false
+
+        member private _.TryParseQuantityPrefix(tokens: Token list) =
+            match tokens with
+            | { Kind = IntegerLiteral; Text = "0" } :: rest ->
+                Some(QuantityZero, rest)
+            | { Kind = IntegerLiteral; Text = "1" } :: rest ->
+                Some(QuantityOne, rest)
+            | { Kind = Operator; Text = "&" } :: { Kind = LeftBracket } :: regionToken :: { Kind = RightBracket } :: rest
+                when Token.isName regionToken ->
+                Some(QuantityBorrow(Some(SyntaxFacts.trimIdentifierQuotes regionToken.Text)), rest)
+            | { Kind = Operator; Text = "&" } :: rest ->
+                Some(QuantityBorrow None, rest)
+            | { Kind = Operator; Text = "<=" } :: { Kind = IntegerLiteral; Text = "1" } :: rest ->
+                Some(QuantityAtMostOne, rest)
+            | { Kind = Operator; Text = ">=" } :: { Kind = IntegerLiteral; Text = "1" } :: rest ->
+                Some(QuantityAtLeastOne, rest)
+            | head :: rest when Token.isName head && String.Equals(head.Text, "\u03c9", StringComparison.Ordinal) ->
+                Some(QuantityOmega, rest)
+            | head :: rest when Token.isName head && String.Equals(head.Text, "omega", StringComparison.Ordinal) ->
+                Some(QuantityOmega, rest)
+            | head :: rest when Token.isName head ->
+                match rest with
+                | next :: _ when Token.isName next ->
+                    Some(QuantityVariable(SyntaxFacts.trimIdentifierQuotes head.Text), rest)
+                | _ ->
+                    None
+            | _ ->
+                None
+
+        member this.ParseCompleteType() =
+            match this.ParseType() with
+            | Some parsed when this.IsAtEnd ->
+                Some parsed
+            | _ ->
+                None
+
+        member private this.TryParseBinderArrow() =
+            let tryParseBinderType (tokens: Token list) =
+                let rec findColon depth index =
+                    if index >= tokens.Length then
+                        None
+                    else
+                        match tokens[index].Kind with
+                        | LeftParen
+                        | LeftBracket
+                        | LeftBrace
+                        | LeftSetBrace ->
+                            findColon (depth + 1) (index + 1)
+                        | RightParen
+                        | RightBracket
+                        | RightBrace
+                        | RightSetBrace ->
+                            findColon (max 0 (depth - 1)) (index + 1)
+                        | Colon when depth = 0 ->
+                            Some index
+                        | _ ->
+                            findColon depth (index + 1)
+
+                match findColon 0 0 with
+                | Some colonIndex when colonIndex > 0 && colonIndex + 1 < tokens.Length ->
+                    let binderTokens = tokens |> List.take colonIndex
+                    let typeTokens = tokens |> List.skip (colonIndex + 1)
+
+                    let quantity, nameTokens =
+                        match this.TryParseQuantityPrefix binderTokens with
+                        | Some(quantity, rest) ->
+                            quantity, rest
+                        | None ->
+                            QuantityOmega, binderTokens
+
+                    match nameTokens with
+                    | [ nameToken ] when Token.isName nameToken ->
+                        let nestedParser = Parser(typeTokens)
+
+                        nestedParser.ParseCompleteType()
+                        |> Option.map (fun parameterType -> quantity, parameterType)
+                    | _ ->
+                        None
+                | _ ->
+                    None
+
+            match this.Current with
+            | Some { Kind = LeftParen } ->
+                let mutable depth = 0
+                let mutable index = position
+                let mutable closingIndex = None
+
+                while index < tokenArray.Length && closingIndex.IsNone do
+                    match tokenArray[index].Kind with
+                    | LeftParen ->
+                        depth <- depth + 1
+                    | RightParen ->
+                        depth <- depth - 1
+
+                        if depth = 0 then
+                            closingIndex <- Some index
+                    | _ ->
+                        ()
+
+                    index <- index + 1
+
+                match closingIndex with
+                | Some rightParenIndex when rightParenIndex + 1 < tokenArray.Length && tokenArray[rightParenIndex + 1].Kind = Arrow ->
+                    let innerTokens =
+                        tokenArray[position + 1 .. rightParenIndex - 1]
+                        |> Array.toList
+
+                    match tryParseBinderType innerTokens with
+                    | Some(quantity, parameterType) ->
+                        position <- rightParenIndex + 2
+
+                        this.ParseType()
+                        |> Option.map (fun resultType -> TypeArrow(quantity, parameterType, resultType))
+                    | None ->
+                        None
+                | _ ->
+                    None
+            | _ ->
+                None
 
         member private this.ParseQualifiedName() =
             let parseOperatorName () =
@@ -188,14 +308,26 @@ module TypeSignatures =
                 | _ ->
                     None
 
+        member private this.ParseArrow() =
+            match this.TryParseBinderArrow() with
+            | Some arrow ->
+                Some arrow
+            | None ->
+                match this.ParseApplication() with
+                | None -> None
+                | Some left when this.MatchKind Arrow ->
+                    this.ParseType()
+                    |> Option.map (fun right -> TypeArrow(QuantityOmega, left, right))
+                | Some left ->
+                    Some left
+
         member this.ParseType() =
-            match this.ParseApplication() with
-            | None -> None
-            | Some left when this.MatchKind Arrow ->
+            match this.ParseArrow() with
+            | Some left when this.MatchKind Equals ->
                 this.ParseType()
-                |> Option.map (fun right -> TypeArrow(left, right))
-            | Some left ->
-                Some left
+                |> Option.map (fun right -> TypeEquality(left, right))
+            | some ->
+                some
 
         member this.ParseScheme() =
             let parseForall () =
@@ -318,16 +450,20 @@ module TypeSignatures =
 
     let parseType tokens =
         let parser = Parser(tokens)
-        parser.ParseType()
+        parser.ParseCompleteType()
 
     let parseScheme tokens =
         let parser = Parser(tokens)
-        parser.ParseScheme()
+        match parser.ParseScheme() with
+        | Some scheme when parser.IsAtEnd ->
+            Some scheme
+        | _ ->
+            None
 
     let functionParts (typeExpr: TypeExpr) =
         let rec loop current parameters =
             match current with
-            | TypeArrow(parameterType, resultType) ->
+            | TypeArrow(_, parameterType, resultType) ->
                 loop resultType (parameterType :: parameters)
             | _ ->
                 List.rev parameters, current
@@ -451,8 +587,10 @@ module TypeSignatures =
             |> Option.defaultValue typeExpr
         | TypeName(name, arguments) ->
             TypeName(name, arguments |> List.map (applySubstitution substitution))
-        | TypeArrow(parameterType, resultType) ->
-            TypeArrow(applySubstitution substitution parameterType, applySubstitution substitution resultType)
+        | TypeArrow(quantity, parameterType, resultType) ->
+            TypeArrow(quantity, applySubstitution substitution parameterType, applySubstitution substitution resultType)
+        | TypeEquality(left, right) ->
+            TypeEquality(applySubstitution substitution left, applySubstitution substitution right)
 
     let applyConstraintSubstitution substitution (constraintInfo: TraitConstraint) =
         { constraintInfo with
@@ -470,8 +608,10 @@ module TypeSignatures =
                 String.Equals(currentName, name, StringComparison.Ordinal)
             | TypeName(_, arguments) ->
                 arguments |> List.exists loop
-            | TypeArrow(parameterType, resultType) ->
+            | TypeArrow(_, parameterType, resultType) ->
                 loop parameterType || loop resultType
+            | TypeEquality(left, right) ->
+                loop left || loop right
 
         loop typeExpr
 
@@ -500,8 +640,11 @@ module TypeSignatures =
                 | TypeName(leftName, leftArguments), TypeName(rightName, rightArguments)
                     when leftName = rightName && List.length leftArguments = List.length rightArguments ->
                     unify substitution (List.zip leftArguments rightArguments @ rest)
-                | TypeArrow(leftParameter, leftResult), TypeArrow(rightParameter, rightResult) ->
+                | TypeArrow(leftQuantity, leftParameter, leftResult), TypeArrow(rightQuantity, rightParameter, rightResult)
+                    when leftQuantity = rightQuantity ->
                     unify substitution ((leftParameter, rightParameter) :: (leftResult, rightResult) :: rest)
+                | TypeEquality(leftLeft, leftRight), TypeEquality(rightLeft, rightRight) ->
+                    unify substitution ((leftLeft, rightLeft) :: (leftRight, rightRight) :: rest)
                 | _ ->
                     None
 
@@ -537,6 +680,9 @@ module TypeSignatures =
         let substitution = renameVariables prefix nextId scheme.Forall
         applySchemeSubstitution substitution scheme
 
+    let definitionallyEqual left right =
+        left = right
+
     let rec toText typeExpr =
         let rec renderAtom current =
             match current with
@@ -547,11 +693,18 @@ module TypeSignatures =
                 $"{SyntaxFacts.moduleNameToText name} {argumentText}"
             | TypeVariable name ->
                 name
-            | TypeArrow _ ->
+            | TypeArrow _
+            | TypeEquality _ ->
                 $"({toText current})"
 
         match typeExpr with
-        | TypeArrow(parameterType, resultType) ->
-            $"{renderAtom parameterType} -> {toText resultType}"
+        | TypeArrow(quantity, parameterType, resultType) ->
+            match quantity with
+            | QuantityOmega ->
+                $"{renderAtom parameterType} -> {toText resultType}"
+            | _ ->
+                $"({Quantity.toSurfaceText quantity} x : {toText parameterType}) -> {toText resultType}"
+        | TypeEquality(left, right) ->
+            $"{renderAtom left} = {toText right}"
         | _ ->
             renderAtom typeExpr

@@ -367,4 +367,4 @@ type OwnershipFactSet =
       OwnershipUsingScopes: OwnershipUsingScopeFact list
       OwnershipClosures: OwnershipClosureFact list
       OwnershipDeferred: string list
-      OwnershipDiagnostics: string list }
+      OwnershipDiagnostics: DiagnosticCode list }

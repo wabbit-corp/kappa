@@ -19,7 +19,7 @@ let formatDiagnostics (diagnostics: Diagnostic list) =
             | None ->
                 "<unknown>"
 
-        $"{locationText}: {diagnostic.Message}")
+        $"{locationText}: [{DiagnosticCode.toIdentifier diagnostic.Code}] {diagnostic.Message}")
     |> String.concat Environment.NewLine
 
 let countDiagnosticsBySeverity severity (diagnostics: Diagnostic list) =

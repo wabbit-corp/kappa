@@ -56,7 +56,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
         if this.Current.Kind = kind then
             this.Advance()
         else
-            diagnostics.AddError(message, source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticCode.ParseError, message, source.GetLocation(this.Current.Span))
             { Kind = kind
               Text = ""
               Span = this.Current.Span }
@@ -65,7 +65,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
         if Token.isKeyword keyword this.Current then
             this.Advance()
         else
-            diagnostics.AddError(message, source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticCode.ParseError, message, source.GetLocation(this.Current.Span))
             { Kind = Keyword keyword
               Text = Keyword.toText keyword
               Span = this.Current.Span }
@@ -75,7 +75,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
             let token = this.Advance()
             SyntaxFacts.trimIdentifierQuotes token.Text
         else
-            diagnostics.AddError(message, source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticCode.ParseError, message, source.GetLocation(this.Current.Span))
             "<missing>"
 
     member private this.TryConsumeOperatorName() =
@@ -94,7 +94,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
             match this.TryConsumeOperatorName() with
             | Some operatorName -> operatorName
             | None ->
-                diagnostics.AddError(message, source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticCode.ParseError, message, source.GetLocation(this.Current.Span))
                 "<missing>"
 
     member private this.TryConsumeTermBindingName() =
@@ -159,6 +159,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
         | Keyword Keyword.Import
         | Keyword Keyword.Export
         | Keyword Keyword.Expect
+        | Keyword Keyword.Projection
         | Keyword Keyword.Let
         | Keyword Keyword.Data
         | Keyword Keyword.Type
@@ -173,8 +174,8 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
         | Identifier
         | Keyword _ ->
             match nextToken with
-            | Some next -> next.Kind = Colon
-            | None -> false
+               | Some next -> next.Kind = Colon
+               | None -> false
         | _ -> false
 
     member private this.NextNonLayout(offset: int) =
@@ -249,7 +250,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
             items.Add(this.ConsumeTermBindingName("Expected a name in the list."))
 
             if this.TryConsume(Comma).IsNone && this.Current.Kind <> RightParen then
-                diagnostics.AddError("Expected ',' between list items.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticCode.ParseError, "Expected ',' between list items.", source.GetLocation(this.Current.Span))
 
             if position = startPosition && this.Current.Kind <> RightParen && this.Current.Kind <> EndOfFile then
                 this.Advance() |> ignore
@@ -304,7 +305,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
             items.Add(this.ParseImportItem())
 
             if this.TryConsume(Comma).IsNone && this.Current.Kind <> RightParen then
-                diagnostics.AddError("Expected ',' between import items.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticCode.ParseError, "Expected ',' between import items.", source.GetLocation(this.Current.Span))
 
             if position = startPosition && this.Current.Kind <> RightParen && this.Current.Kind <> EndOfFile then
                 this.Advance() |> ignore
@@ -322,7 +323,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
                     match SyntaxFacts.tryDecodeStringLiteral token.Text with
                     | Result.Ok decoded -> decoded
                     | Result.Error message ->
-                        diagnostics.AddError(message, source.GetLocation(token.Span))
+                        diagnostics.AddError(DiagnosticCode.ParseError, message, source.GetLocation(token.Span))
                         SyntaxFacts.trimStringQuotes token.Text
 
                 Url value
@@ -352,7 +353,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
                   Alias = None
                   Selection = Items(this.ParseImportItems()) }
             | _ ->
-                diagnostics.AddError("Expected '*' or '(...)' after '.'.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticCode.ParseError, "Expected '*' or '(...)' after '.'.", source.GetLocation(this.Current.Span))
 
                 { Source = moduleSource
                   Alias = None
@@ -431,7 +432,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
                       TypeTokens = this.CollectUntilTopLevelBoundary()
                       Span = currentSpan })
         | _ ->
-            diagnostics.AddError(
+            diagnostics.AddError(DiagnosticCode.ParseError, 
                 "Expected 'type', 'trait', or 'term' after 'expect'.",
                 source.GetLocation(this.Current.Span)
             )
@@ -467,7 +468,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
                 this.Advance() |> ignore
                 Postfix
             | _ ->
-                diagnostics.AddError("Expected a fixity declaration.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticCode.ParseError, "Expected a fixity declaration.", source.GetLocation(this.Current.Span))
                 Infix NonAssociative
 
         let precedenceToken =
@@ -477,7 +478,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
             match Int32.TryParse(precedenceToken.Text) with
             | true, value -> value
             | _ ->
-                diagnostics.AddError("Expected a valid integer precedence in the fixity declaration.", source.GetLocation(precedenceToken.Span))
+                diagnostics.AddError(DiagnosticCode.ParseError, "Expected a valid integer precedence in the fixity declaration.", source.GetLocation(precedenceToken.Span))
                 0
 
         this.Expect(LeftParen, "Expected '(' before the operator token in the fixity declaration.") |> ignore
@@ -486,7 +487,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
             if this.Current.Kind = Operator then
                 this.Advance().Text
             else
-                diagnostics.AddError("Expected an operator token in the fixity declaration.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticCode.ParseError, "Expected an operator token in the fixity declaration.", source.GetLocation(this.Current.Span))
                 "<missing-operator>"
 
         this.Expect(RightParen, "Expected ')' after the operator token in the fixity declaration.") |> ignore
@@ -515,7 +516,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
             if this.TryConsume(Equals).IsSome then
                 this.CollectUntilTopLevelBoundary()
             else
-                diagnostics.AddError("Expected '=' in the let declaration.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticCode.ParseError, "Expected '=' in the let declaration.", source.GetLocation(this.Current.Span))
                 []
 
         let parsedHeader = CoreParsing.parseLetHeader source diagnostics (List.ofSeq headerTokens)
@@ -527,6 +528,38 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
               Name = name
               Parameters = parsedHeader.Parameters
               HeaderTokens = List.ofSeq headerTokens
+              ReturnTypeTokens = parsedHeader.ReturnTypeTokens
+              BodyTokens = bodyTokens
+              Body = parsedBody }
+
+    member private this.ParseProjectionDeclaration(modifiers: ModifierState) =
+        this.ExpectKeyword(Keyword.Projection, "Expected 'projection'.") |> ignore
+
+        if modifiers.IsOpaque then
+            diagnostics.AddError(DiagnosticCode.ParseError, "Opacity modifiers do not apply to projection declarations.", source.GetLocation(this.Current.Span))
+
+        let name = this.ConsumeName("Expected a projection name.")
+        let headerTokens = ResizeArray<Token>()
+
+        while (this.Current.Kind <> Equals
+               && this.Current.Kind <> Newline
+               && this.Current.Kind <> EndOfFile) do
+            headerTokens.Add(this.Advance())
+
+        let bodyTokens =
+            if this.TryConsume(Equals).IsSome then
+                this.CollectUntilTopLevelBoundary()
+            else
+                diagnostics.AddError(DiagnosticCode.ParseError, "Expected '=' in the projection declaration.", source.GetLocation(this.Current.Span))
+                []
+
+        let parsedHeader = CoreParsing.parseProjectionHeader source diagnostics (List.ofSeq headerTokens)
+        let parsedBody = CoreParsing.parseProjectionBody fixities source diagnostics bodyTokens
+
+        ProjectionDeclarationNode
+            { Visibility = modifiers.Visibility
+              Name = name
+              Binders = parsedHeader.Binders
               ReturnTypeTokens = parsedHeader.ReturnTypeTokens
               BodyTokens = bodyTokens
               Body = parsedBody }
@@ -562,7 +595,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
                 flushLine ()
                 this.Expect(Dedent, "Expected the declaration block to dedent.") |> ignore
             | None ->
-                diagnostics.AddError("Expected an indented block.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticCode.ParseError, "Expected an indented block.", source.GetLocation(this.Current.Span))
         else
             let inlineBody = this.CollectUntilTopLevelBoundary()
 
@@ -593,7 +626,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
                        Tokens = lineTokens
                        Arity = arity }: DataConstructor))
             else
-                diagnostics.AddError("Expected '=' in the data declaration.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticCode.ParseError, "Expected '=' in the data declaration.", source.GetLocation(this.Current.Span))
                 []
 
         DataDeclarationNode
@@ -654,7 +687,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
                     ({ Name = memberName
                        Tokens = lineTokens }: TraitMember))
             else
-                diagnostics.AddError("Expected '=' in the trait declaration.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticCode.ParseError, "Expected '=' in the trait declaration.", source.GetLocation(this.Current.Span))
                 []
 
         TraitDeclarationNode
@@ -719,7 +752,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
                     [ while (current ()).Kind <> EndOfFile do
                           yield advance () ]
                 else
-                    diagnostics.AddError("Expected '=' in the instance member declaration.", source.GetLocation((current ()).Span))
+                    diagnostics.AddError(DiagnosticCode.ParseError, "Expected '=' in the instance member declaration.", source.GetLocation((current ()).Span))
                     []
 
             let parsedHeader = CoreParsing.parseLetHeader source diagnostics (List.ofSeq headerTokens)
@@ -735,7 +768,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
                   BodyTokens = bodyTokens
                   Body = parsedBody }
         | _ ->
-            diagnostics.AddError("Expected an instance member definition starting with 'let'.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(DiagnosticCode.ParseError, "Expected an instance member definition starting with 'let'.", source.GetLocation(this.Current.Span))
             None
 
     member private this.ParseInstanceDeclaration() =
@@ -754,7 +787,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
                 this.ParseIndentedLines()
                 |> List.choose this.ParseInstanceMember
             else
-                diagnostics.AddError("Expected '=' in the instance declaration.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticCode.ParseError, "Expected '=' in the instance declaration.", source.GetLocation(this.Current.Span))
                 []
 
         InstanceDeclarationNode
@@ -784,6 +817,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
         | Keyword Keyword.Import -> this.ParseImportOrExport(false)
         | Keyword Keyword.Export -> this.ParseImportOrExport(true)
         | Keyword Keyword.Expect -> this.ParseExpectDeclaration()
+        | Keyword Keyword.Projection -> this.ParseProjectionDeclaration(modifiers)
         | Keyword Keyword.Infix
         | Keyword Keyword.Prefix
         | Keyword Keyword.Postfix -> this.ParseFixityDeclaration()
@@ -793,7 +827,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
         | Keyword Keyword.Trait -> this.ParseTraitDeclaration(modifiers)
         | Keyword Keyword.Instance ->
             if modifiers.Visibility.IsSome || modifiers.IsOpaque then
-                diagnostics.AddError("Visibility and opacity modifiers do not apply to instance declarations.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticCode.ParseError, "Visibility and opacity modifiers do not apply to instance declarations.", source.GetLocation(this.Current.Span))
 
             this.ParseInstanceDeclaration()
         | _ when this.IsSignatureStart() -> this.ParseSignature(modifiers)
@@ -803,7 +837,11 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
         this.SkipLayout()
 
         while this.Current.Kind = Indent do
-            diagnostics.AddError("Unexpected indentation.", source.GetLocation(this.Current.Span))
+            diagnostics.AddError(
+                DiagnosticCode.UnexpectedIndentation,
+                "Unexpected indentation.",
+                source.GetLocation(this.Current.Span)
+            )
             this.Advance() |> ignore
             this.SkipLayout()
 
@@ -826,7 +864,11 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
             this.SkipLayout()
 
             while this.Current.Kind = Indent do
-                diagnostics.AddError("Unexpected indentation.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(
+                    DiagnosticCode.UnexpectedIndentation,
+                    "Unexpected indentation.",
+                    source.GetLocation(this.Current.Span)
+                )
                 this.Advance() |> ignore
                 this.SkipLayout()
 

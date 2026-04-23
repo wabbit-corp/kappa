@@ -45,8 +45,8 @@ type KpFixtureAssertion =
     | AssertNoWarnings of filePath: string * lineNumber: int
     | AssertErrorCount of expectedCount: int * filePath: string * lineNumber: int
     | AssertWarningCount of expectedCount: int * filePath: string * lineNumber: int
-    | AssertDiagnosticCodes of expectedCodes: string list * filePath: string * lineNumber: int
-    | AssertDiagnosticAt of relativePath: string * severity: DiagnosticSeverity * code: string * expectedLine: int * expectedColumn: int option * filePath: string * lineNumber: int
+    | AssertDiagnosticCodes of expectedCodes: DiagnosticCode list * filePath: string * lineNumber: int
+    | AssertDiagnosticAt of relativePath: string * severity: DiagnosticSeverity * code: DiagnosticCode * expectedLine: int * expectedColumn: int option * filePath: string * lineNumber: int
     | AssertDiagnosticMatch of regexPattern: string * filePath: string * lineNumber: int
     | AssertType of target: string * expectedTypeText: string * filePath: string * lineNumber: int
     | AssertFileDeclarationKinds of relativePath: string * expectedKinds: string list * filePath: string * lineNumber: int

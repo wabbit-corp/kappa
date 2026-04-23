@@ -6,7 +6,7 @@ open System
 module CheckpointVerification =
     let private makeDiagnostic message =
         { Severity = Error
-          Code = "E_CHECKPOINT_VERIFICATION"
+          Code = DiagnosticCode.CheckpointVerification
           Stage = Some "checkpoint-verification"
           Phase = None
           Message = message
@@ -606,21 +606,24 @@ module CheckpointVerification =
         ]
 
     let verifyCheckpoint (workspace: WorkspaceCompilation) checkpoint =
-        match checkpoint with
-        | "surface-source" ->
-            verifySurfaceSource workspace
-        | "KCore" ->
-            verifyKCoreCheckpoint workspace
-        | "KRuntimeIR" ->
-            verifyKRuntimeIRCheckpoint workspace
-        | "KBackendIR" ->
-            verifyKBackendIRCheckpoint workspace
-        | _ ->
-            match tryParseCheckpoint checkpoint with
-            | Some(Some phase) ->
-                let snapshotWorkspace = frontendWorkspaceForPhase workspace phase
-                verifyFrontendCheckpoint snapshotWorkspace checkpoint phase
-            | Some None ->
+        let diagnostics =
+            match checkpoint with
+            | "surface-source" ->
                 verifySurfaceSource workspace
-            | None ->
-                [ makeDiagnostic $"Unknown checkpoint '{checkpoint}'." ]
+            | "KCore" ->
+                verifyKCoreCheckpoint workspace
+            | "KRuntimeIR" ->
+                verifyKRuntimeIRCheckpoint workspace
+            | "KBackendIR" ->
+                verifyKBackendIRCheckpoint workspace
+            | _ ->
+                match tryParseCheckpoint checkpoint with
+                | Some(Some phase) ->
+                    let snapshotWorkspace = frontendWorkspaceForPhase workspace phase
+                    verifyFrontendCheckpoint snapshotWorkspace checkpoint phase
+                | Some None ->
+                    verifySurfaceSource workspace
+                | None ->
+                    [ makeDiagnostic $"Unknown checkpoint '{checkpoint}'." ]
+
+        diagnostics |> List.distinct

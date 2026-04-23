@@ -14,6 +14,11 @@ module ResourceChecking =
 
     type private CheckState = ResourceContext
 
+    type private ProjectionSummary =
+        { Name: string
+          Binders: ProjectionBinder list
+          Body: SurfaceProjectionBody option }
+
     let private emptyState scopeId =
         ResourceModel.ResourceContext.empty scopeId
 
@@ -28,7 +33,8 @@ module ResourceChecking =
         { state with
             ActiveScopes =
                 { Id = scopeId
-                  IntroducedBindings = [] }
+                  IntroducedBindings = []
+                  IntroducedBorrowLocks = [] }
                 :: state.ActiveScopes
             NextScopeId = state.NextScopeId + 1 }
 
@@ -52,9 +58,14 @@ module ResourceChecking =
                 scope.IntroducedBindings
                 |> List.fold (fun current (name, _) -> popActiveBinding name current) state.ActiveBindingIds
 
+            let borrowLocks =
+                scope.IntroducedBorrowLocks
+                |> List.fold (fun current lockId -> Map.remove lockId current) state.BorrowLocks
+
             { state with
                 ActiveScopes = rest
-                ActiveBindingIds = activeBindingIds }
+                ActiveBindingIds = activeBindingIds
+                BorrowLocks = borrowLocks }
 
     let private withScope label checker state =
         state
@@ -142,7 +153,7 @@ module ResourceChecking =
     let private bindingState (binding: ResourceBinding) =
         match binding.BorrowRegion with
         | Some _ -> "borrowed"
-        | None when binding.UseMaximum > 0 -> "consumed"
+        | None when binding.UseMaximum > 0 || not (List.isEmpty binding.ConsumedPaths) -> "consumed"
         | None when binding.CheckLinearDrop -> "unconsumed"
         | None -> "available"
 
@@ -166,19 +177,22 @@ module ResourceChecking =
           BindingBorrowRegionId = binding.BorrowRegion |> Option.map (fun region -> region.Id)
           BindingOrigin = binding.Origin }
 
-    let private addEvent useKind origin (binding: ResourceBinding) (state: CheckState) =
+    let private addEventAtPlace useKind origin placeRoot placePath (binding: ResourceBinding) (state: CheckState) =
         let event: OwnershipUseFact =
             { UseId = $"{currentScopeId state}.u{state.NextEventId}"
               UseKindName = useKind
               UseTargetBindingId = Some binding.Id
               UseTargetName = binding.Name
-              UsePlaceRoot = binding.Place.Root
-              UsePlacePath = binding.Place.Path
+              UsePlaceRoot = placeRoot
+              UsePlacePath = placePath
               UseOrigin = origin }
 
         { state with
             Events = state.Events @ [ event ]
             NextEventId = state.NextEventId + 1 }
+
+    let private addEvent useKind origin (binding: ResourceBinding) (state: CheckState) =
+        addEventAtPlace useKind origin binding.Place.Root binding.Place.Path binding state
 
     let private addNamedEvent useKind origin name (state: CheckState) =
         match tryFindBinding name state with
@@ -272,19 +286,26 @@ module ResourceChecking =
 
         { state with Closures = closures }
 
-    let private collectPatternNames (pattern: SurfacePattern) =
-        let rec loop current =
+    let private collectPatternBindings (pattern: SurfacePattern) =
+        let rec loop path current =
             seq {
                 match current with
-                | NamePattern name -> yield name
+                | NamePattern name ->
+                    yield name, path
                 | ConstructorPattern(_, arguments) ->
                     for argument in arguments do
-                        yield! loop argument
+                        yield! loop path argument
+                | AnonymousRecordPattern fields ->
+                    for field in fields do
+                        yield! loop (path @ [ field.Name ]) field.Pattern
                 | WildcardPattern
                 | LiteralPattern _ -> ()
             }
 
-        loop pattern |> Seq.toList
+        loop [] pattern |> Seq.toList
+
+    let private collectPatternNames (pattern: SurfacePattern) =
+        collectPatternBindings pattern |> List.map fst
 
     let rec private expressionNames (expression: SurfaceExpression) =
         seq {
@@ -292,11 +313,15 @@ module ResourceChecking =
             | Literal _ -> ()
             | Name [ name ] -> yield name
             | Name _ -> ()
-            | LocalLet(bindingName, value, body) ->
+            | LocalLet(binding, value, body) ->
                 yield! expressionNames value
 
+                let boundNames =
+                    collectPatternNames binding.Pattern
+                    |> Set.ofList
+
                 for name in expressionNames body do
-                    if not (String.Equals(name, bindingName, StringComparison.Ordinal)) then
+                    if not (Set.contains name boundNames) then
                         yield name
             | Lambda(parameters, body) ->
                 let parameterNames =
@@ -382,6 +407,359 @@ module ResourceChecking =
             })
         |> Set.ofSeq
 
+    let private inferredClosureQuantity state expression =
+        match expression with
+        | Name [ name ] ->
+            tryFindBinding name state
+            |> Option.bind (fun binding ->
+                match binding.LocalLambda, binding.ClosureFactId with
+                | Some _, _
+                | _, Some _ ->
+                    binding.DeclaredQuantity
+                | _ ->
+                    None)
+        | Lambda _ ->
+            capturedBindings state expression
+            |> inferLambdaBindingQuantity
+        | _ ->
+            None
+
+    let private isProjectionCall projectionSummaries expression =
+        match expression with
+        | Apply(Name [ calleeName ], _) -> Map.containsKey calleeName projectionSummaries
+        | _ -> false
+
+    let private makePlace root path : ResourcePlace =
+        { Root = root
+          Path = path }
+
+    let private tryExpressionPlace expression : ResourcePlace option =
+        match expression with
+        | Name(root :: path) ->
+            Some(makePlace root path)
+        | _ ->
+            None
+
+    let private pathHasPrefix prefix path =
+        List.length prefix <= List.length path
+        && List.forall2 (=) prefix (path |> List.take (List.length prefix))
+
+    let private pathsOverlap left right =
+        pathHasPrefix left right || pathHasPrefix right left
+
+    let private distinctPaths paths =
+        paths
+        |> List.distinct
+        |> List.sortBy (fun path -> String.concat "." path)
+
+    let private distinctPlaces (places: ResourcePlace list) =
+        places
+        |> List.distinctBy (fun place -> place.Root, place.Path)
+        |> List.sortBy (fun place -> String.concat "." (place.Root :: place.Path))
+
+    let private expandBorrowFootprintPaths (state: CheckState) (place: ResourcePlace) =
+        match tryFindBinding place.Root state with
+        | Some binding ->
+            match place.Path with
+            | [] ->
+                [ [] ]
+            | [ fieldName ] ->
+                let rec expandField seen fieldName =
+                    if Set.contains fieldName seen then
+                        [ [ fieldName ] ]
+                    else
+                        let nextSeen = Set.add fieldName seen
+                        let dependencies =
+                            binding.RecordFieldDependencies
+                            |> Map.tryFind fieldName
+                            |> Option.defaultValue Set.empty
+
+                        [ yield [ fieldName ]
+                          for dependency in dependencies do
+                              yield! expandField nextSeen dependency ]
+
+                expandField Set.empty fieldName |> distinctPaths
+            | _ ->
+                [ place.Path ]
+        | None ->
+            [ place.Path ]
+
+    let private tryFindBorrowOverlap (place: ResourcePlace) (state: CheckState) =
+        state.BorrowLocks
+        |> Map.values
+        |> Seq.tryFind (fun borrowLock ->
+            String.Equals(borrowLock.Root, place.Root, StringComparison.Ordinal)
+            && (borrowLock.FootprintPaths |> List.exists (fun footprintPath -> pathsOverlap footprintPath place.Path)))
+
+    let rec private tryBorrowablePlacesWithEnv
+        (env: Map<string, ResourcePlace list>)
+        projectionSummaries
+        (state: CheckState)
+        expression
+        : ResourcePlace list option
+        =
+        match expression with
+        | Name(root :: path) ->
+            match Map.tryFind root env with
+            | Some places ->
+                places
+                |> List.map (fun place -> makePlace place.Root (place.Path @ path))
+                |> distinctPlaces
+                |> Some
+            | None ->
+                Some [ makePlace root path ]
+        | Apply(Name [ calleeName ], arguments) ->
+            projectionSummaries
+            |> Map.tryFind calleeName
+            |> Option.bind (fun projectionSummary ->
+                tryProjectionCallPlacesWithEnv env projectionSummaries state projectionSummary arguments)
+        | _ ->
+            None
+
+    and private tryProjectionCallPlacesWithEnv
+        (env: Map<string, ResourcePlace list>)
+        projectionSummaries
+        (state: CheckState)
+        (projectionSummary: ProjectionSummary)
+        arguments
+        : ResourcePlace list option
+        =
+        if List.length projectionSummary.Binders <> List.length arguments then
+            None
+        else
+            (Some Map.empty, List.zip projectionSummary.Binders arguments)
+            ||> List.fold (fun current (binder, argument) ->
+                current
+                |> Option.bind (fun binderEnv ->
+                    match binder with
+                    | ProjectionPlaceBinder binder ->
+                        tryBorrowablePlacesWithEnv env projectionSummaries state argument
+                        |> Option.map (fun places -> Map.add binder.Name places binderEnv)
+                    | ProjectionValueBinder _ ->
+                        Some binderEnv))
+            |> Option.bind (fun binderEnv ->
+                let combinedEnv =
+                    binderEnv
+                    |> Map.fold (fun current name places -> Map.add name places current) env
+
+                tryProjectionBodyPlacesWithEnv combinedEnv projectionSummaries state projectionSummary.Body)
+
+    and private tryProjectionBodyPlacesWithEnv
+        (env: Map<string, ResourcePlace list>)
+        projectionSummaries
+        (state: CheckState)
+        body
+        : ResourcePlace list option
+        =
+        match body with
+        | None ->
+            None
+        | Some(ProjectionYield expression) ->
+            tryBorrowablePlacesWithEnv env projectionSummaries state expression
+        | Some(ProjectionIfThenElse(_, whenTrue, whenFalse)) ->
+            match
+                tryProjectionBodyPlacesWithEnv env projectionSummaries state (Some whenTrue),
+                tryProjectionBodyPlacesWithEnv env projectionSummaries state (Some whenFalse)
+            with
+            | Some leftPlaces, Some rightPlaces ->
+                Some(distinctPlaces (leftPlaces @ rightPlaces))
+            | _ ->
+                None
+        | Some(ProjectionMatch(_, cases)) ->
+            cases
+            |> List.fold (fun current caseClause ->
+                match current, tryProjectionBodyPlacesWithEnv env projectionSummaries state (Some caseClause.Body) with
+                | Some places, Some casePlaces ->
+                    Some(distinctPlaces (places @ casePlaces))
+                | None, Some casePlaces ->
+                    Some casePlaces
+                | current, None ->
+                    current) None
+
+    let private addBorrowLock (root: string) (footprintPaths: string list list) origin (state: CheckState) =
+        let lockId = $"{currentScopeId state}.l{state.NextBorrowLockId}"
+
+        let borrowLock =
+            { Id = lockId
+              Root = root
+              FootprintPaths = distinctPaths footprintPaths
+              Origin = origin }
+
+        let activeScopes =
+            match state.ActiveScopes with
+            | currentScope :: rest ->
+                { currentScope with
+                    IntroducedBorrowLocks = lockId :: currentScope.IntroducedBorrowLocks }
+                :: rest
+            | [] ->
+                []
+
+        { state with
+            ActiveScopes = activeScopes
+            BorrowLocks = Map.add lockId borrowLock state.BorrowLocks
+            NextBorrowLockId = state.NextBorrowLockId + 1 }
+
+    let private trimSignificantTokens (tokens: Token list) =
+        tokens
+        |> List.filter (fun token ->
+            match token.Kind with
+            | Newline
+            | Indent
+            | Dedent
+            | EndOfFile -> false
+            | _ -> true)
+
+    let private splitTopLevelCommas (tokens: Token list) =
+        let rec loop depth current remaining segments =
+            match remaining with
+            | [] ->
+                List.rev ((List.rev current) :: segments)
+            | token :: tail when token.Kind = LeftParen ->
+                loop (depth + 1) (token :: current) tail segments
+            | token :: tail when token.Kind = RightParen ->
+                loop (max 0 (depth - 1)) (token :: current) tail segments
+            | token :: tail when token.Kind = Comma && depth = 0 ->
+                loop depth [] tail ((List.rev current) :: segments)
+            | token :: tail ->
+                loop depth (token :: current) tail segments
+
+        loop 0 [] tokens []
+
+    let private stripRecordTypeOuterParens (tokens: Token list) =
+        let significant = trimSignificantTokens tokens
+
+        match significant with
+        | { Kind = LeftParen } :: rest ->
+            match List.rev rest with
+            | { Kind = RightParen } :: innerReversed ->
+                Some(innerReversed |> List.rev |> trimSignificantTokens)
+            | _ ->
+                None
+        | _ ->
+            None
+
+    let private collectFieldDependencies (tokens: Token list) =
+        let significant = trimSignificantTokens tokens
+
+        significant
+        |> List.windowed 3
+        |> List.choose (function
+            | [ thisToken; dotToken; nameToken ]
+                when String.Equals(thisToken.Text, "this", StringComparison.Ordinal)
+                     && dotToken.Kind = Dot
+                     && Token.isName nameToken ->
+                Some(SyntaxFacts.trimIdentifierQuotes nameToken.Text)
+            | _ ->
+                None)
+        |> Set.ofList
+
+    let private tryParseRecordFieldDependencies (tokens: Token list) =
+        let dropQuantityPrefix fieldTokens =
+            match trimSignificantTokens fieldTokens with
+            | first :: second :: rest when first.Kind = Operator && (first.Text = "<=" || first.Text = ">=") && second.Text = "1" ->
+                rest
+            | first :: rest when first.Kind = IntegerLiteral && (first.Text = "0" || first.Text = "1") ->
+                rest
+            | first :: rest when first.Kind = Operator && first.Text = "&" ->
+                rest
+            | first :: rest when Token.isName first && (first.Text = "omega" || first.Text = "\u03c9") ->
+                rest
+            | trimmed ->
+                trimmed
+
+        let parseField fieldTokens =
+            let trimmed =
+                fieldTokens
+                |> trimSignificantTokens
+                |> function
+                    | { Kind = AtSign } :: rest -> rest
+                    | rest -> rest
+                |> dropQuantityPrefix
+
+            match trimmed with
+            | nameToken :: colonToken :: typeTokens when Token.isName nameToken && colonToken.Kind = Colon ->
+                Some(
+                    SyntaxFacts.trimIdentifierQuotes nameToken.Text,
+                    collectFieldDependencies typeTokens
+                )
+            | _ ->
+                None
+
+        tokens
+        |> stripRecordTypeOuterParens
+        |> Option.map (fun innerTokens ->
+            innerTokens
+            |> splitTopLevelCommas
+            |> List.choose parseField
+            |> Map.ofList)
+        |> Option.filter (Map.isEmpty >> not)
+
+    let private collectRecordTypeAliases (documents: ParsedDocument list) =
+        let moduleAliasName (document: ParsedDocument) (aliasName: string) : string option =
+            document.ModuleName
+            |> Option.map (fun moduleName -> $"{SyntaxFacts.moduleNameToText moduleName}.{aliasName}")
+
+        documents
+        |> List.collect (fun document ->
+            document.Syntax.Declarations
+            |> List.choose (function
+                | TypeAliasNode declaration ->
+                    declaration.BodyTokens
+                    |> Option.bind tryParseRecordFieldDependencies
+                    |> Option.map (fun dependencies ->
+                        [
+                            declaration.Name, dependencies
+                            match moduleAliasName document declaration.Name with
+                            | Some qualifiedName -> qualifiedName, dependencies
+                            | None -> ()
+                        ])
+                | _ ->
+                    None)
+            |> List.concat)
+        |> Map.ofList
+
+    let private tryResolveRecordFieldDependencies aliasMap tokens =
+        match tryParseRecordFieldDependencies tokens with
+        | Some dependencies ->
+            dependencies
+        | None ->
+            match trimSignificantTokens tokens with
+            | [ aliasToken ] when Token.isName aliasToken ->
+                let aliasName = SyntaxFacts.trimIdentifierQuotes aliasToken.Text
+                aliasMap |> Map.tryFind aliasName |> Option.defaultValue Map.empty
+            | [ leftToken; dotToken; rightToken ] when Token.isName leftToken && dotToken.Kind = Dot && Token.isName rightToken ->
+                let qualifiedName =
+                    $"{SyntaxFacts.trimIdentifierQuotes leftToken.Text}.{SyntaxFacts.trimIdentifierQuotes rightToken.Text}"
+
+                aliasMap |> Map.tryFind qualifiedName |> Option.defaultValue Map.empty
+            | _ ->
+                Map.empty
+
+    let private collectProjectionSummaries (documents: ParsedDocument list) =
+        let projectionEntries (document: ParsedDocument) (declaration: ProjectionDeclaration) =
+            let simple = declaration.Name
+
+            match document.ModuleName with
+            | Some moduleName ->
+                [ simple
+                  $"{SyntaxFacts.moduleNameToText moduleName}.{simple}" ]
+            | None ->
+                [ simple ]
+            |> List.map (fun name ->
+                name,
+                { Name = declaration.Name
+                  Binders = declaration.Binders
+                  Body = declaration.Body })
+
+        documents
+        |> List.collect (fun document ->
+            document.Syntax.Declarations
+            |> List.choose (function
+                | ProjectionDeclarationNode declaration -> Some(projectionEntries document declaration)
+                | _ -> None)
+            |> List.concat)
+        |> Map.ofList
+
     let private liveRegionIds (state: CheckState) =
         state.Bindings
         |> Map.values
@@ -395,11 +773,7 @@ module ResourceChecking =
             })
         |> Set.ofSeq
 
-    let private addBinding name quantity borrowRegion capturedRegions capturedBindingOrigins checkDrop closureFactId localLambda origin (state: CheckState) =
-        let place: ResourcePlace =
-            { Root = name
-              Path = [] }
-
+    let private addBindingWithPlace place name quantity borrowRegion capturedRegions capturedBindingOrigins checkDrop closureFactId localLambda origin (state: CheckState) =
         let bindingId = $"{currentScopeId state}.b{state.NextBindingId}"
 
         let binding: ResourceBinding =
@@ -407,6 +781,8 @@ module ResourceChecking =
               Name = name
               DeclaredQuantity = quantity
               Place = place
+              ConsumedPaths = []
+              RecordFieldDependencies = Map.empty
               BorrowRegion = borrowRegion
               CapturedRegions = capturedRegions
               CapturedBindingOrigins = capturedBindingOrigins
@@ -437,10 +813,44 @@ module ResourceChecking =
             Bindings = Map.add bindingId binding state.Bindings
             NextBindingId = state.NextBindingId + 1 }
 
-    let private addPatternBindings (document: ParsedDocument) (binding: SurfaceBindPattern) quantity borrowRegion capturedRegions capturedBindingOrigins checkDrop closureFactId localLambda state =
-        collectPatternNames binding.Pattern
-        |> List.fold (fun current name ->
-            addBinding
+    let private addBinding name quantity borrowRegion capturedRegions capturedBindingOrigins checkDrop closureFactId localLambda origin state =
+        addBindingWithPlace
+            (ResourcePlace.root name)
+            name
+            quantity
+            borrowRegion
+            capturedRegions
+            capturedBindingOrigins
+            checkDrop
+            closureFactId
+            localLambda
+            origin
+            state
+
+    let private addPatternBindings
+        (document: ParsedDocument)
+        (binding: SurfaceBindPattern)
+        quantity
+        borrowRegion
+        (sourcePlace: ResourcePlace option)
+        capturedRegions
+        capturedBindingOrigins
+        checkDrop
+        closureFactId
+        localLambda
+        state
+        =
+        collectPatternBindings binding.Pattern
+        |> List.fold (fun current (name, path) ->
+            let place =
+                match sourcePlace, quantity with
+                | Some place, Some quantity when ResourceQuantity.isBorrow quantity ->
+                    makePlace place.Root (place.Path @ path)
+                | _ ->
+                    ResourcePlace.root name
+
+            addBindingWithPlace
+                place
                 name
                 quantity
                 borrowRegion
@@ -452,20 +862,43 @@ module ResourceChecking =
                 (findBinderLocation document name)
                 current) state
 
-    let private tryMovedLinearBinding expression (state: CheckState) =
-        match expression with
-        | Name [ name ] ->
-            tryFindBinding name state
-            |> Option.filter (fun binding ->
-                binding.DeclaredQuantity
-                |> Option.exists ResourceQuantity.isExactOne)
-        | _ ->
-            None
+    let private bindingCapturedRegions (binding: ResourceBinding) =
+        seq {
+            match binding.BorrowRegion with
+            | Some region -> yield region.Id
+            | None -> ()
 
-    let private consumeBinding (document: ParsedDocument) name (state: CheckState) =
-        match tryFindBinding name state with
+            yield! binding.CapturedRegions
+        }
+        |> Set.ofSeq
+
+    let private bindingCapturedOrigins (binding: ResourceBinding) =
+        [
+            match binding.Origin with
+            | Some origin -> yield origin
+            | None -> ()
+
+            yield! binding.CapturedBindingOrigins
+        ]
+
+    let private tryMovedLinearBinding expression (state: CheckState) =
+        tryExpressionPlace expression
+        |> Option.bind (fun (place: ResourcePlace) ->
+            match tryFindBorrowOverlap place state with
+            | Some _ ->
+                None
+            | None ->
+                tryFindBinding place.Root state
+                |> Option.filter (fun binding ->
+                    binding.DeclaredQuantity
+                    |> Option.exists ResourceQuantity.isExactOne)
+                |> Option.map (fun binding -> binding, place.Path))
+
+    let private consumeBindingAtPlace (document: ParsedDocument) (place: ResourcePlace) (state: CheckState) =
+        match tryFindBinding place.Root state with
         | None -> state
         | Some binding ->
+            let placeText = String.concat "." (place.Root :: place.Path)
             let consumeOrigin = findBindingUseLocation document binding (binding.UseMaximum + 1)
 
             let state =
@@ -481,12 +914,55 @@ module ResourceChecking =
 
                     addDiagnostic
                         borrowConsumeCode
-                        $"Borrowed resource '{name}' cannot be consumed."
+                        $"Borrowed resource '{place.Root}' cannot be consumed."
                         consumeOrigin
                         relatedLocations
                         document
                         state
-                elif wouldOveruseBinding binding then
+                elif tryFindBorrowOverlap place state |> Option.isSome then
+                    let borrowLock = tryFindBorrowOverlap place state |> Option.get
+                    let relatedLocations =
+                        [
+                            match borrowLock.Origin with
+                            | Some location ->
+                                { Message = "Active borrowed footprint."
+                                  Location = location }
+                            | None -> ()
+                        ]
+
+                    addDiagnostic
+                        borrowOverlapCode
+                        $"Place '{placeText}' overlaps an active borrowed footprint."
+                        consumeOrigin
+                        relatedLocations
+                        document
+                        state
+                elif List.isEmpty place.Path && not (List.isEmpty binding.ConsumedPaths) then
+                    addDiagnostic
+                        linearOveruseCode
+                        $"Linear resource '{place.Root}' cannot be consumed as a whole after one of its field paths has already been consumed."
+                        consumeOrigin
+                        []
+                        document
+                        state
+                elif not (List.isEmpty place.Path) && binding.UseMaximum > 0 then
+                    addDiagnostic
+                        linearOveruseCode
+                        $"Field path '{placeText}' cannot be consumed after its root resource has already been consumed."
+                        consumeOrigin
+                        []
+                        document
+                        state
+                elif not (List.isEmpty place.Path)
+                     && (binding.ConsumedPaths |> List.exists (fun consumedPath -> pathsOverlap consumedPath place.Path)) then
+                    addDiagnostic
+                        linearOveruseCode
+                        $"Field path '{placeText}' has already been consumed."
+                        consumeOrigin
+                        []
+                        document
+                        state
+                elif List.isEmpty place.Path && wouldOveruseBinding binding then
                     let relatedLocations =
                         [
                             match binding.FirstConsumeOrigin with
@@ -504,7 +980,7 @@ module ResourceChecking =
 
                     addDiagnostic
                         linearOveruseCode
-                        $"Linear resource '{name}' is consumed more than once."
+                        $"Linear resource '{place.Root}' is consumed more than once."
                         consumeOrigin
                         relatedLocations
                         document
@@ -512,19 +988,144 @@ module ResourceChecking =
                 else
                     state
 
-            let state = addEvent "consume" consumeOrigin binding state
+            let state = addEventAtPlace "consume" consumeOrigin place.Root place.Path binding state
 
             let updated =
-                { binding with
-                    UseMinimum = binding.UseMinimum + 1
-                    UseMaximum = binding.UseMaximum + 1
-                    FirstConsumeOrigin = binding.FirstConsumeOrigin |> Option.orElse consumeOrigin }
+                if List.isEmpty place.Path then
+                    { binding with
+                        UseMinimum = binding.UseMinimum + 1
+                        UseMaximum = binding.UseMaximum + 1
+                        FirstConsumeOrigin = binding.FirstConsumeOrigin |> Option.orElse consumeOrigin }
+                else
+                    { binding with
+                        ConsumedPaths = distinctPaths (place.Path :: binding.ConsumedPaths)
+                        UseMinimum = max binding.UseMinimum 1
+                        FirstConsumeOrigin = binding.FirstConsumeOrigin |> Option.orElse consumeOrigin }
 
             { state with
                 Bindings = Map.add binding.Id updated state.Bindings }
 
+    let private consumeBinding (document: ParsedDocument) name (state: CheckState) =
+        consumeBindingAtPlace document (ResourcePlace.root name) state
+
+    let private validatePlaceAccess (document: ParsedDocument) (place: ResourcePlace) (state: CheckState) =
+        match tryFindBinding place.Root state with
+        | _ when tryFindBorrowOverlap place state |> Option.isSome ->
+            let borrowLock = tryFindBorrowOverlap place state |> Option.get
+            let placeText = String.concat "." (place.Root :: place.Path)
+
+            addDiagnostic
+                borrowOverlapCode
+                $"Place '{placeText}' overlaps an active borrowed footprint."
+                (borrowLock.Origin |> Option.orElseWith (fun () -> Some(diagnosticLocation document)))
+                [
+                    match borrowLock.Origin with
+                    | Some location ->
+                        { Message = "Active borrowed footprint."
+                          Location = location }
+                    | None -> ()
+                ]
+                document
+                state
+        | Some binding when List.isEmpty place.Path && not (List.isEmpty binding.ConsumedPaths) ->
+            addDiagnostic
+                linearOveruseCode
+                $"Linear resource '{place.Root}' cannot be used as a whole after one of its field paths has already been consumed."
+                (findBindingUseLocation document binding 1)
+                []
+                document
+                state
+        | Some binding when not (List.isEmpty place.Path)
+                            && (binding.ConsumedPaths |> List.exists (fun consumedPath -> pathsOverlap consumedPath place.Path)) ->
+            let placeText = String.concat "." (place.Root :: place.Path)
+            addDiagnostic
+                linearOveruseCode
+                $"Field path '{placeText}' has already been consumed."
+                (findBindingUseLocation document binding 1)
+                []
+                document
+                state
+        | _ ->
+            state
+
+    let private restoreConsumedPaths restoredPaths (binding: ResourceBinding) =
+        let remainingPaths =
+            binding.ConsumedPaths
+            |> List.filter (fun consumedPath ->
+                restoredPaths
+                |> List.exists (fun restoredPath -> pathHasPrefix restoredPath consumedPath)
+                |> not)
+
+        { binding with
+            ConsumedPaths = remainingPaths }
+
+    let private bindMatchPatternNames (document: ParsedDocument) scrutineeName pattern state =
+        match tryFindBinding scrutineeName state with
+        | None ->
+            state
+        | Some scrutineeBinding ->
+            let patternBindings = collectPatternBindings pattern
+
+            if List.isEmpty patternBindings then
+                state
+            else
+                let state =
+                    match scrutineeBinding.DeclaredQuantity with
+                    | Some quantity when ResourceQuantity.isExactOne quantity ->
+                        consumeBinding document scrutineeName state
+                    | _ ->
+                        state
+
+                let checkDrop =
+                    scrutineeBinding.DeclaredQuantity
+                    |> Option.exists ResourceQuantity.requiresUse
+
+                patternBindings
+                |> List.fold (fun current (name, path) ->
+                    addBindingWithPlace
+                        (makePlace scrutineeBinding.Place.Root (scrutineeBinding.Place.Path @ path))
+                        name
+                        scrutineeBinding.DeclaredQuantity
+                        scrutineeBinding.BorrowRegion
+                        (bindingCapturedRegions scrutineeBinding)
+                        (bindingCapturedOrigins scrutineeBinding)
+                        checkDrop
+                        None
+                        None
+                        (findBinderLocation document name)
+                        current) state
+
+    let rec private patternBoundNameCount pattern =
+        match pattern with
+        | WildcardPattern
+        | LiteralPattern _ ->
+            0
+        | NamePattern _ ->
+            1
+        | ConstructorPattern(_, arguments) ->
+            arguments |> List.sumBy patternBoundNameCount
+        | AnonymousRecordPattern fields ->
+            fields |> List.sumBy (fun field -> patternBoundNameCount field.Pattern)
+
+    let private matchPatternOwnershipSupported scrutinee pattern =
+        match patternBoundNameCount pattern with
+        | 0 ->
+            true
+        | 1 ->
+            match scrutinee with
+            | Name [ _ ] -> true
+            | _ -> false
+        | _ ->
+            false
+
     let private mergeBindingSnapshots (leftBinding: ResourceBinding) (rightBinding: ResourceBinding) =
         { leftBinding with
+            ConsumedPaths = distinctPaths (leftBinding.ConsumedPaths @ rightBinding.ConsumedPaths)
+            RecordFieldDependencies =
+                if Map.isEmpty leftBinding.RecordFieldDependencies then
+                    rightBinding.RecordFieldDependencies
+                else
+                    leftBinding.RecordFieldDependencies
             CapturedRegions = Set.union leftBinding.CapturedRegions rightBinding.CapturedRegions
             CapturedBindingOrigins =
                 leftBinding.CapturedBindingOrigins @ rightBinding.CapturedBindingOrigins
@@ -554,6 +1155,7 @@ module ResourceChecking =
 
         { left with
             Bindings = mergedBindings
+            BorrowLocks = left.BorrowLocks
             Diagnostics = left.Diagnostics @ right.Diagnostics
             Events = left.Events @ right.Events
             BorrowRegions = left.BorrowRegions @ right.BorrowRegions
@@ -562,6 +1164,7 @@ module ResourceChecking =
             DeferredFacts = (left.DeferredFacts @ right.DeferredFacts) |> List.distinct |> List.sort
             NextScopeId = max left.NextScopeId right.NextScopeId
             NextBindingId = max left.NextBindingId right.NextBindingId
+            NextBorrowLockId = max left.NextBorrowLockId right.NextBorrowLockId
             NextEventId = max left.NextEventId right.NextEventId
             NextRegionId = max left.NextRegionId right.NextRegionId
             NextUsingScopeId = max left.NextUsingScopeId right.NextUsingScopeId
@@ -623,6 +1226,63 @@ module ResourceChecking =
     let private checkEscape (document: ParsedDocument) expression state =
         checkEscapeAgainstAllowed Set.empty document expression state
 
+    let private addBorrowLocksForPattern (sourcePlaces: ResourcePlace list) pattern origin state =
+        let boundPaths =
+            match collectPatternBindings pattern with
+            | [] -> [ [] ]
+            | bindings -> bindings |> List.map snd
+
+        (state, boundPaths)
+        ||> List.fold (fun current boundPath ->
+            sourcePlaces
+            |> List.fold (fun nextState sourcePlace ->
+                let place = makePlace sourcePlace.Root (sourcePlace.Path @ boundPath)
+
+                addBorrowLock place.Root (expandBorrowFootprintPaths nextState place) origin nextState) current)
+
+    let private introduceHiddenBorrowRoot scopeLabel state =
+        let hiddenName = $"__tmp{state.NextBindingId}"
+
+        ResourcePlace.root hiddenName,
+        addBinding hiddenName (Some ResourceQuantity.one) None Set.empty [] false None None None state
+
+    let private prepareBorrowPatternSource projectionSummaries scopeLabel expression state =
+        match tryBorrowablePlacesWithEnv Map.empty projectionSummaries state expression with
+        | Some [ place ] ->
+            Some place, [ place ], state
+        | Some places ->
+            None, places, state
+        | None ->
+            let place, state = introduceHiddenBorrowRoot scopeLabel state
+            Some place, [ place ], state
+
+    let rec private expressionMayCarryEscapingBorrow expression =
+        match expression with
+        | Name [ _ ]
+        | Lambda _ ->
+            true
+        | LocalLet(_, _, body) ->
+            expressionMayCarryEscapingBorrow body
+        | IfThenElse(_, whenTrue, whenFalse) ->
+            expressionMayCarryEscapingBorrow whenTrue || expressionMayCarryEscapingBorrow whenFalse
+        | Match(_, cases) ->
+            cases |> List.exists (fun caseClause -> expressionMayCarryEscapingBorrow caseClause.Body)
+        | Do statements ->
+            match List.tryLast statements with
+            | Some(DoExpression result) -> expressionMayCarryEscapingBorrow result
+            | _ -> false
+        | MonadicSplice inner
+        | InoutArgument inner
+        | Unary(_, inner) ->
+            expressionMayCarryEscapingBorrow inner
+        | Literal _
+        | Name _
+        | RecordUpdate _
+        | Apply _
+        | Binary _
+        | PrefixedString _ ->
+            false
+
     let rec private checkResultEscapeAtBoundary allowedRegions (document: ParsedDocument) expression state =
         match expression with
         | Name [ _ ]
@@ -660,17 +1320,28 @@ module ResourceChecking =
         match expression with
         | Lambda _ ->
             let captured = capturedRegions state expression
+            let capturedBindingList = capturedBindings state expression
+
+            let state =
+                capturedBindingList
+                |> List.fold (fun current binding ->
+                    addEvent "capture" (findUseLocation document binding.Name 1) binding current) state
+
+            let state =
+                capturedBindingList
+                |> List.filter (fun binding -> binding.DeclaredQuantity = Some ResourceQuantity.zero)
+                |> List.fold (fun current binding ->
+                    addDiagnostic
+                        erasedRuntimeUseCode
+                        $"A runtime closure cannot capture erased quantity-0 binding '{binding.Name}'."
+                        (findUseLocation document binding.Name 1)
+                        []
+                        document
+                        current) state
 
             if Set.isEmpty captured then
                 state
             else
-                let capturedBindingList = capturedBindings state expression
-
-                let state =
-                    capturedBindingList
-                    |> List.fold (fun current binding ->
-                        addEvent "capture" (findUseLocation document binding.Name 1) binding current) state
-
                 let closureId, state = addClosureFact None capturedBindingList captured state
 
                 let escapeOrigin =
@@ -767,6 +1438,7 @@ module ResourceChecking =
             parameter.Quantity |> Option.map ResourceQuantity.ofSurface
 
     let rec private checkLocalLambdaInvocation
+        projectionSummaries
         (document: ParsedDocument)
         (signatures: Map<string, FunctionSignature>)
         state
@@ -838,47 +1510,163 @@ module ResourceChecking =
                             None
                             current)
 
-                checkExpression document signatures scopedState lambdaValue.Body
+                checkExpression projectionSummaries document signatures scopedState lambdaValue.Body
                 |> checkResultEscapeAtBoundary allowedRegions document lambdaValue.Body
                 |> checkScopeLinearDrops document) state
 
-    and private checkExpression (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state expression =
+    and private checkExpression projectionSummaries (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state expression =
         match expression with
         | Literal _
-        | Name _ ->
+        | Name [ _ ] ->
             state
-        | LocalLet(bindingName, value, body) ->
-            let state = checkExpression document signatures state value
+        | Name(root :: path) ->
+            validatePlaceAccess
+                document
+                (makePlace root path)
+                state
+        | Name [] ->
+            state
+        | LocalLet(binding, value, body) ->
+            let movedLinearBinding = tryMovedLinearBinding value state
+            let captured =
+                match value with
+                | Lambda _ -> capturedRegions state value
+                | _ -> Set.empty
+
+            let capturedBindings =
+                match value with
+                | Lambda _ -> capturedBindings state value
+                | _ -> []
+
+            let state =
+                match value with
+                | Lambda _ -> checkLambdaParameterEscape document value state
+                | _ -> checkExpression projectionSummaries document signatures state value
+
+            let state =
+                capturedBindings
+                |> List.fold (fun current binding ->
+                    addEvent "capture" (findUseLocation document binding.Name 1) binding current) state
+
             let allowedRegions = liveRegionIds state
+            let bindingNames = collectPatternNames binding.Pattern
+            let scopeLabel =
+                match bindingNames with
+                | first :: _ -> $"let_{first}"
+                | [] -> "let_pattern"
 
-            withScope $"let_{bindingName}" (fun scopedState ->
+            withScope scopeLabel (fun scopedState ->
+                let declaredQuantity =
+                    binding.Quantity
+                    |> Option.map ResourceQuantity.ofSurface
+                    |> Option.orElseWith (fun () ->
+                        match value with
+                        | Lambda _ -> inferLambdaBindingQuantity capturedBindings
+                        | _ -> None)
+                    |> Option.orElseWith (fun () ->
+                        movedLinearBinding
+                        |> Option.bind (fun (sourceBinding, _) -> sourceBinding.DeclaredQuantity))
+
+                let movedLinearBinding =
+                    if quantityBorrows declaredQuantity then
+                        None
+                    else
+                        movedLinearBinding
+
+                let checkDrop = declaredQuantity |> Option.exists ResourceQuantity.requiresUse
+
+                let localLambda =
+                    match value, bindingNames with
+                    | Lambda(parameters, lambdaBody), [ _ ] ->
+                        Some
+                            { Parameters = parameters
+                              Body = lambdaBody }
+                    | _ ->
+                        None
+
+                let closureFactId, scopedState =
+                    match value with
+                    | Lambda _ ->
+                        let closureName =
+                            match bindingNames with
+                            | [ name ] -> Some name
+                            | _ -> None
+
+                        let closureId, nextState = addClosureFact closureName capturedBindings captured scopedState
+                        Some closureId, nextState
+                    | _ ->
+                        None, scopedState
+
                 let scopedState =
-                    addBinding
-                        bindingName
-                        None
-                        None
-                        Set.empty
-                        []
-                        false
-                        None
-                        None
-                        (findBinderLocation document bindingName)
+                    movedLinearBinding
+                    |> Option.map (fun (sourceBinding, sourcePath) ->
                         scopedState
+                        |> addEventAtPlace
+                            "move"
+                            (findBindingUseLocation document sourceBinding 1)
+                            sourceBinding.Name
+                            sourcePath
+                            sourceBinding
+                        |> consumeBindingAtPlace
+                            document
+                            (makePlace sourceBinding.Name sourcePath))
+                    |> Option.defaultValue scopedState
 
-                checkExpression document signatures scopedState body
+                let scopedState =
+                    let borrowRegion, nextState =
+                        introduceBorrowRegionForQuantity $"{currentScopeId scopedState}.let" declaredQuantity scopedState
+
+                    let sourcePlace, sourcePlaces, nextState =
+                        if quantityBorrows declaredQuantity then
+                            prepareBorrowPatternSource projectionSummaries "let" value nextState
+                        else
+                            None, [], nextState
+
+                    let nextState =
+                        sourcePlaces
+                        |> List.fold (fun current place -> validatePlaceAccess document place current) nextState
+
+                    let capturedBindingOrigins =
+                        capturedBindings
+                        |> List.choose (fun capturedBinding -> capturedBinding.Origin)
+
+                    let nextState =
+                        addPatternBindings
+                            document
+                            binding
+                            declaredQuantity
+                            borrowRegion
+                            sourcePlace
+                            captured
+                            capturedBindingOrigins
+                            checkDrop
+                            closureFactId
+                            localLambda
+                            nextState
+
+                    if quantityBorrows declaredQuantity then
+                        addBorrowLocksForPattern sourcePlaces binding.Pattern (argumentLocation document value) nextState
+                    else
+                        nextState
+
+                checkExpression projectionSummaries document signatures scopedState body
                 |> checkResultEscapeAtBoundary allowedRegions document body
                 |> checkScopeLinearDrops document) state
         | Lambda _ ->
             checkLambdaParameterEscape document expression state
         | IfThenElse(condition, whenTrue, whenFalse) ->
-            let state = checkExpression document signatures state condition
-            let left = checkExpressionInScope "if_then" document signatures state whenTrue
-            let right = checkExpressionInScope "if_else" document signatures state whenFalse
+            let state = checkExpression projectionSummaries document signatures state condition
+            let left = checkExpressionInScope "if_then" projectionSummaries document signatures state whenTrue
+            let right = checkExpressionInScope "if_else" projectionSummaries document signatures state whenFalse
             mergeBranchState left right
         | Match(scrutinee, cases) ->
             let state =
-                checkExpression document signatures state scrutinee
-                |> addDeferredFact "match-pattern-resource-checking"
+                let checkedState = checkExpression projectionSummaries document signatures state scrutinee
+
+                if cases |> List.forall (fun caseClause -> matchPatternOwnershipSupported scrutinee caseClause.Pattern) then
+                    checkedState
+                else
+                    addDeferredFact "match-pattern-resource-checking" checkedState
 
             match cases with
             | [] -> state
@@ -888,11 +1676,18 @@ module ResourceChecking =
 
                     withScope $"match_case{index}" (fun scopedState ->
                         let scopedState =
+                            match scrutinee with
+                            | Name [ scrutineeName ] when matchPatternOwnershipSupported scrutinee caseClause.Pattern ->
+                                bindMatchPatternNames document scrutineeName caseClause.Pattern scopedState
+                            | _ ->
+                                scopedState
+
+                        let scopedState =
                             match caseClause.Guard with
-                            | Some guard -> checkExpression document signatures scopedState guard
+                            | Some guard -> checkExpression projectionSummaries document signatures scopedState guard
                             | None -> scopedState
 
-                        checkExpression document signatures scopedState caseClause.Body
+                        checkExpression projectionSummaries document signatures scopedState caseClause.Body
                         |> checkResultEscapeAtBoundary allowedRegions document caseClause.Body
                         |> checkScopeLinearDrops document) state
 
@@ -904,27 +1699,107 @@ module ResourceChecking =
                 |> List.fold (fun current (index, caseClause) ->
                     mergeBranchState current (checkCase index caseClause)) firstState
         | RecordUpdate(receiver, fields) ->
-            fields
-            |> List.fold (fun current field ->
-                checkExpression document signatures current field.Value) (checkExpression document signatures state receiver)
+            let state = checkExpression projectionSummaries document signatures state receiver
+
+            let state =
+                fields
+                |> List.fold (fun current field ->
+                    checkExpression projectionSummaries document signatures current field.Value) state
+
+            match tryExpressionPlace receiver with
+            | Some receiverPlace ->
+                let restoredPaths =
+                    fields
+                    |> List.map (fun field -> receiverPlace.Path @ [ field.Name ])
+
+                let state =
+                    match tryFindBinding receiverPlace.Root state with
+                    | Some binding ->
+                        let updatedFieldNames =
+                            fields
+                            |> List.map (fun field -> field.Name)
+                            |> Set.ofList
+
+                        let unrepairedPaths =
+                            binding.ConsumedPaths
+                            |> List.filter (fun consumedPath ->
+                                restoredPaths
+                                |> List.exists (fun restoredPath -> pathHasPrefix restoredPath consumedPath)
+                                |> not)
+
+                        let state =
+                            if List.isEmpty unrepairedPaths then
+                                state
+                            else
+                                let firstUnrepairedPath =
+                                    unrepairedPaths
+                                    |> List.head
+                                    |> fun path -> String.concat "." (receiverPlace.Root :: path)
+
+                                addDiagnostic
+                                    linearOveruseCode
+                                    $"Record update on '{receiverPlace.Root}' must explicitly repair previously consumed path '{firstUnrepairedPath}'."
+                                    (argumentLocation document receiver)
+                                    []
+                                    document
+                                    state
+
+                        let state =
+                            if not (List.isEmpty receiverPlace.Path) || Map.isEmpty binding.RecordFieldDependencies then
+                                state
+                            else
+                                let missingRepairField =
+                                    binding.RecordFieldDependencies
+                                    |> Map.toList
+                                    |> List.tryPick (fun (fieldName, dependencies) ->
+                                        if Set.contains fieldName updatedFieldNames then
+                                            None
+                                        elif Set.isEmpty (Set.intersect dependencies updatedFieldNames) then
+                                            None
+                                        else
+                                            Some fieldName)
+
+                                match missingRepairField with
+                                | Some fieldName ->
+                                    addDiagnostic
+                                        DiagnosticCode.TypeEqualityMismatch
+                                        $"Record update on '{receiverPlace.Root}' changes dependent field inputs but does not repair field '{fieldName}'."
+                                        (argumentLocation document receiver)
+                                        []
+                                        document
+                                        state
+                                | None ->
+                                    state
+
+                        state
+                    | None ->
+                        state
+
+                match tryFindBindingId receiverPlace.Root state with
+                | Some bindingId ->
+                    updateBinding bindingId (restoreConsumedPaths restoredPaths) state
+                | None ->
+                    state
+            | None ->
+                state
         | Do statements ->
-            checkDoStatementsInScope "do" document signatures state statements
+            checkDoStatementsInScope "do" projectionSummaries document signatures state statements
         | MonadicSplice inner
         | InoutArgument inner
         | Unary(_, inner) ->
-            checkExpression document signatures state inner
+            checkExpression projectionSummaries document signatures state inner
         | Binary(left, _, right) ->
             state
-            |> fun state -> checkExpression document signatures state left
-            |> fun state -> checkExpression document signatures state right
+            |> fun state -> checkExpression projectionSummaries document signatures state left
+            |> fun state -> checkExpression projectionSummaries document signatures state right
         | PrefixedString(_, parts) ->
             parts
             |> List.fold (fun current part ->
                 match part with
                 | StringText _ -> current
-                | StringInterpolation inner -> checkExpression document signatures current inner) state
+                | StringInterpolation inner -> checkExpression projectionSummaries document signatures current inner) state
         | Apply(callee, arguments) ->
-            let state = checkExpression document signatures state callee
+            let state = checkExpression projectionSummaries document signatures state callee
             let calleeName = tryCalleeName callee
             let calleeBinding =
                 match callee with
@@ -1010,6 +1885,20 @@ module ResourceChecking =
                         else
                             current
 
+                    let current =
+                        match quantity, inferredClosureQuantity current argument with
+                        | Some(Some demandQuantity), Some capability
+                            when not (ResourceQuantity.satisfies capability demandQuantity) ->
+                            addDiagnostic
+                                linearOveruseCode
+                                $"An argument usable at quantity '{ResourceQuantity.toSurfaceText capability}' cannot satisfy parameter demand '{ResourceQuantity.toSurfaceText demandQuantity}'."
+                                (argumentLocation document argument)
+                                []
+                                document
+                                current
+                        | _ ->
+                            current
+
                     let next =
                         match quantity, argument with
                         | Some quantity, Name [ name ] when quantity |> Option.exists concreteQuantityCountsUse ->
@@ -1019,30 +1908,35 @@ module ResourceChecking =
                         | Some quantity, Name [ name ] when quantityBorrows quantity ->
                             current
                             |> addNamedEvent "borrow" (findUseLocation document name 1) name
-                            |> fun current -> checkExpression document signatures current argument
+                            |> fun current -> checkExpression projectionSummaries document signatures current argument
                         | Some quantity, _ when quantityBorrows quantity ->
-                            checkExpression document signatures current argument
+                            checkExpression projectionSummaries document signatures current argument
                         | _ ->
-                            let current = checkEscape document argument current
-                            checkExpression document signatures current argument
+                            let current =
+                                if expressionMayCarryEscapingBorrow argument then
+                                    checkEscape document argument current
+                                else
+                                    current
+
+                            checkExpression projectionSummaries document signatures current argument
 
                     next, index + 1)
                 |> fst
 
             match localLambda with
             | Some lambdaValue ->
-                checkLocalLambdaInvocation document signatures state lambdaValue arguments
+                checkLocalLambdaInvocation projectionSummaries document signatures state lambdaValue arguments
             | None ->
                 state
 
-    and private checkExpressionInScope scopeLabel (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state expression =
+    and private checkExpressionInScope scopeLabel projectionSummaries (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state expression =
         let allowedRegions = liveRegionIds state
 
         withScope scopeLabel (fun scopedState ->
-            checkExpression document signatures scopedState expression
+            checkExpression projectionSummaries document signatures scopedState expression
             |> checkResultEscapeAtBoundary allowedRegions document expression) state
 
-    and private checkDoStatements (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state statements =
+    and private checkDoStatements projectionSummaries (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state statements =
         let rec loop current remaining =
             match remaining with
             | [] -> current
@@ -1062,7 +1956,7 @@ module ResourceChecking =
                 let current =
                     match expression with
                     | Lambda _ -> checkLambdaParameterEscape document expression current
-                    | _ -> checkExpression document signatures current expression
+                    | _ -> checkExpression projectionSummaries document signatures current expression
 
                 let current =
                     capturedBindings
@@ -1099,14 +1993,27 @@ module ResourceChecking =
                         | _ -> None)
                     |> Option.orElseWith (fun () ->
                         movedLinearBinding
-                        |> Option.bind (fun sourceBinding -> sourceBinding.DeclaredQuantity))
+                        |> Option.bind (fun (sourceBinding, _) -> sourceBinding.DeclaredQuantity))
+
+                let movedLinearBinding =
+                    if quantityBorrows declaredQuantity then
+                        None
+                    else
+                        movedLinearBinding
 
                 let current =
                     movedLinearBinding
-                    |> Option.map (fun sourceBinding ->
+                    |> Option.map (fun (sourceBinding, sourcePath) ->
                         current
-                        |> addEvent "move" (findBindingUseLocation document sourceBinding 1) sourceBinding
-                        |> consumeBinding document sourceBinding.Name)
+                        |> addEventAtPlace
+                            "move"
+                            (findBindingUseLocation document sourceBinding 1)
+                            sourceBinding.Name
+                            sourcePath
+                            sourceBinding
+                        |> consumeBindingAtPlace
+                            document
+                            (makePlace sourceBinding.Name sourcePath))
                     |> Option.defaultValue current
 
                 let checkDrop = declaredQuantity |> Option.exists ResourceQuantity.requiresUse
@@ -1117,20 +2024,78 @@ module ResourceChecking =
                 let borrowRegion, current =
                     introduceBorrowRegionForQuantity $"{currentScopeId current}.let" declaredQuantity current
 
-                let current = addPatternBindings document binding declaredQuantity borrowRegion captured capturedBindingOrigins checkDrop closureFactId localLambda current
+                let sourcePlace, sourcePlaces, current =
+                    if quantityBorrows declaredQuantity then
+                        prepareBorrowPatternSource projectionSummaries "do_let" expression current
+                    else
+                        None, [], current
+
+                let current =
+                    sourcePlaces
+                    |> List.fold (fun nextState place -> validatePlaceAccess document place nextState) current
+
+                let current =
+                    addPatternBindings
+                        document
+                        binding
+                        declaredQuantity
+                        borrowRegion
+                        sourcePlace
+                        captured
+                        capturedBindingOrigins
+                        checkDrop
+                        closureFactId
+                        localLambda
+                        current
+
+                let current =
+                    if quantityBorrows declaredQuantity then
+                        addBorrowLocksForPattern sourcePlaces binding.Pattern (argumentLocation document expression) current
+                    else
+                        current
+
                 loop current rest
             | DoBind(binding, expression) :: rest ->
-                let current = checkExpression document signatures current expression
+                let current = checkExpression projectionSummaries document signatures current expression
                 let declaredQuantity = binding.Quantity |> Option.map ResourceQuantity.ofSurface
                 let checkDrop = declaredQuantity |> Option.exists ResourceQuantity.requiresUse
 
                 let borrowRegion, current =
                     introduceBorrowRegionForQuantity $"{currentScopeId current}.bind" declaredQuantity current
 
-                let current = addPatternBindings document binding declaredQuantity borrowRegion Set.empty [] checkDrop None None current
+                let sourcePlace, sourcePlaces, current =
+                    if quantityBorrows declaredQuantity then
+                        prepareBorrowPatternSource projectionSummaries "do_bind" expression current
+                    else
+                        None, [], current
+
+                let current =
+                    sourcePlaces
+                    |> List.fold (fun nextState place -> validatePlaceAccess document place nextState) current
+
+                let current =
+                    addPatternBindings
+                        document
+                        binding
+                        declaredQuantity
+                        borrowRegion
+                        sourcePlace
+                        Set.empty
+                        []
+                        checkDrop
+                        None
+                        None
+                        current
+
+                let current =
+                    if quantityBorrows declaredQuantity then
+                        addBorrowLocksForPattern sourcePlaces binding.Pattern (argumentLocation document expression) current
+                    else
+                        current
+
                 loop current rest
             | DoUsing(pattern, expression) :: rest ->
-                let current = checkExpression document signatures current expression
+                let current = checkExpression projectionSummaries document signatures current expression
 
                 let region, current =
                     introduceBorrowRegion "using" None current
@@ -1144,9 +2109,10 @@ module ResourceChecking =
                     |> addUsingScopeFact usingScopeId hiddenOwnedBinding region
 
                 let current =
-                    collectPatternNames pattern
-                    |> List.fold (fun state name ->
-                        addBinding
+                    collectPatternBindings pattern
+                    |> List.fold (fun state (name, path) ->
+                        addBindingWithPlace
+                            (makePlace hiddenOwnedBinding path)
                             name
                             (Some(ResourceQuantity.Borrow None))
                             (Some region)
@@ -1160,21 +2126,21 @@ module ResourceChecking =
 
                 loop current rest
             | DoVar(name, expression) :: rest ->
-                let current = checkExpression document signatures current expression
+                let current = checkExpression projectionSummaries document signatures current expression
                 let current = addBinding name None None Set.empty [] false None None (findBinderLocation document name) current
                 loop current rest
             | DoAssign(_, expression) :: rest ->
-                let current = checkExpression document signatures current expression
+                let current = checkExpression projectionSummaries document signatures current expression
                 loop current rest
             | DoExpression expression :: rest ->
-                let current = checkExpression document signatures current expression
+                let current = checkExpression projectionSummaries document signatures current expression
                 loop current rest
             | DoWhile(condition, body) :: rest ->
                 let current =
-                    checkExpression document signatures current condition
+                    checkExpression projectionSummaries document signatures current condition
                     |> addDeferredFact "while-resource-fixed-point"
 
-                let bodyState = checkDoStatementsInScope "while" document signatures current body
+                let bodyState = checkDoStatementsInScope "while" projectionSummaries document signatures current body
                 let current = mergeBranchState current bodyState
                 loop current rest
 
@@ -1182,7 +2148,7 @@ module ResourceChecking =
 
         checkScopeLinearDrops document checkedState
 
-    and private checkDoStatementsInScope scopeLabel (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state statements =
+    and private checkDoStatementsInScope scopeLabel projectionSummaries (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state statements =
         let allowedRegions = liveRegionIds state
         let expression =
             match List.tryLast statements with
@@ -1190,7 +2156,7 @@ module ResourceChecking =
             | _ -> None
 
         withScope scopeLabel (fun scopedState ->
-            let checkedState = checkDoStatements document signatures scopedState statements
+            let checkedState = checkDoStatements projectionSummaries document signatures scopedState statements
 
             match expression with
             | Some result ->
@@ -1198,12 +2164,56 @@ module ResourceChecking =
             | None ->
                 checkedState) state
 
-    let private addParameterBinding (document: ParsedDocument) (parameter: Parameter) state =
+    let private tryFindDefinitionSignature
+        (signatures: Map<string, FunctionSignature>)
+        (document: ParsedDocument)
+        (definition: LetDefinition)
+        =
+        definition.Name
+        |> Option.bind (fun name ->
+            let qualifiedName =
+                document.ModuleName
+                |> Option.map (fun moduleName -> $"{SyntaxFacts.moduleNameToText moduleName}.{name}")
+
+            qualifiedName
+            |> Option.bind (fun qualified -> Map.tryFind qualified signatures)
+            |> Option.orElseWith (fun () -> Map.tryFind name signatures))
+
+    let private addParameterBinding
+        aliasMap
+        (document: ParsedDocument)
+        (signature: FunctionSignature option)
+        parameterIndex
+        (parameter: Parameter)
+        state
+        =
+        let signatureQuantity =
+            signature
+            |> Option.bind (fun functionSignature ->
+                functionSignature.ParameterQuantities
+                |> List.tryItem parameterIndex)
+            |> Option.flatten
+
+        let signatureInout =
+            signature
+            |> Option.bind (fun functionSignature ->
+                functionSignature.ParameterInout
+                |> List.tryItem parameterIndex)
+            |> Option.defaultValue false
+
+        let signatureTypeTokens =
+            signature
+            |> Option.bind (fun functionSignature ->
+                functionSignature.ParameterTypeTokens
+                |> List.tryItem parameterIndex)
+            |> Option.flatten
+
         let quantity =
-            if parameter.IsInout then
+            if parameter.IsInout || signatureInout then
                 Some ResourceQuantity.one
             else
-                parameter.Quantity |> Option.map ResourceQuantity.ofSurface
+                signatureQuantity
+                |> Option.orElseWith (fun () -> parameter.Quantity |> Option.map ResourceQuantity.ofSurface)
 
         let checkDrop = quantity |> Option.exists ResourceQuantity.requiresUse
 
@@ -1221,18 +2231,47 @@ module ResourceChecking =
             | Some region -> addBorrowRegionFact region state
             | None -> state
 
-        addBinding parameter.Name quantity region Set.empty [] checkDrop None None (findBinderLocation document parameter.Name) state
-    let private checkDefinition (signatures: Map<string, FunctionSignature>) (document: ParsedDocument) scopeId (definition: LetDefinition) =
+        let recordFieldDependencies =
+            parameter.TypeTokens
+            |> Option.orElse signatureTypeTokens
+            |> Option.map (tryResolveRecordFieldDependencies aliasMap)
+            |> Option.defaultValue Map.empty
+
+        let state =
+            addBinding parameter.Name quantity region Set.empty [] checkDrop None None (findBinderLocation document parameter.Name) state
+
+        match tryFindBindingId parameter.Name state with
+        | Some bindingId ->
+            updateBinding bindingId (fun binding ->
+                { binding with
+                    RecordFieldDependencies = recordFieldDependencies }) state
+        | None ->
+            state
+
+    let private checkDefinition
+        aliasMap
+        projectionSummaries
+        (signatures: Map<string, FunctionSignature>)
+        (document: ParsedDocument)
+        scopeId
+        (definition: LetDefinition)
+        =
         match definition.Body with
         | Some body ->
+            let signature = tryFindDefinitionSignature signatures document definition
+
             let initialState =
                 definition.Parameters
-                |> List.fold (fun state parameter -> addParameterBinding document parameter state) (emptyState scopeId)
+                |> List.mapi (fun index parameter -> index, parameter)
+                |> List.fold
+                    (fun state (parameterIndex, parameter) ->
+                        addParameterBinding aliasMap document signature parameterIndex parameter state)
+                    (emptyState scopeId)
 
             match body with
             | Lambda _ -> checkEscapingLambda document body initialState
             | _ ->
-                checkExpression document signatures initialState body
+                checkExpression projectionSummaries document signatures initialState body
                 |> checkResultEscapeAtBoundary Set.empty document body
         | None ->
             emptyState scopeId
@@ -1293,13 +2332,13 @@ module ResourceChecking =
           OwnershipDeferred = deferred
           OwnershipDiagnostics = diagnosticCodes }
 
-    let private checkDocument signatures (document: ParsedDocument) =
+    let private checkDocument aliasMap projectionSummaries signatures (document: ParsedDocument) =
         let states =
             document.Syntax.Declarations
             |> List.mapi (fun index declaration ->
                 match declaration with
                 | LetDeclaration definition ->
-                    checkDefinition signatures document (definitionScopeId document index definition) definition
+                    checkDefinition aliasMap projectionSummaries signatures document (definitionScopeId document index definition) definition
                 | _ ->
                     emptyState $"{document.Source.FilePath}.decl{index}")
 
@@ -1310,11 +2349,13 @@ module ResourceChecking =
 
     let checkDocumentsWithFacts (documents: ParsedDocument list) =
         let signatures = collectSignatures documents
+        let aliasMap = collectRecordTypeAliases documents
+        let projectionSummaries = collectProjectionSummaries documents
 
         let checkedDocuments =
             documents
             |> List.map (fun document ->
-                let diagnostics, facts = checkDocument signatures document
+                let diagnostics, facts = checkDocument aliasMap projectionSummaries signatures document
                 document.Source.FilePath, diagnostics, facts)
 
         { Diagnostics =

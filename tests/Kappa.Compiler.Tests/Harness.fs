@@ -83,6 +83,7 @@ let private declarationKindText declaration =
     | ExpectDeclarationNode _ -> "expect"
     | SignatureDeclaration _ -> "signature"
     | LetDeclaration _ -> "let"
+    | ProjectionDeclarationNode _ -> "projection"
     | DataDeclarationNode _ -> "data"
     | TypeAliasNode _ -> "type"
     | TraitDeclarationNode _ -> "trait"
@@ -175,6 +176,8 @@ let private declarationDescriptorText declaration =
         joinParts [ visibilityText declaration.Visibility; (if declaration.IsOpaque then "opaque" else ""); "signature"; declaration.Name ]
     | LetDeclaration declaration ->
         joinParts [ visibilityText declaration.Visibility; (if declaration.IsOpaque then "opaque" else ""); "let"; defaultArg declaration.Name "<anonymous>" ]
+    | ProjectionDeclarationNode declaration ->
+        joinParts [ visibilityText declaration.Visibility; "projection"; declaration.Name ]
     | DataDeclarationNode declaration ->
         joinParts [ visibilityText declaration.Visibility; (if declaration.IsOpaque then "opaque" else ""); "data"; declaration.Name ]
     | TypeAliasNode declaration ->
@@ -274,6 +277,11 @@ let rec private fixturePatternText pattern =
         | _ ->
             let argumentText = arguments |> List.map fixturePatternText |> String.concat " "
             $"{nameText} {argumentText}"
+    | AnonymousRecordPattern fields ->
+        fields
+        |> List.map (fun field -> $"{field.Name} = {fixturePatternText field.Pattern}")
+        |> String.concat ", "
+        |> fun fieldText -> $"({fieldText})"
 
 let private fixtureBindPatternText (binding: SurfaceBindPattern) =
     let quantityText =
@@ -476,24 +484,16 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
         | AssertWarningCount(expectedCount, _, _) ->
             Assert.Equal(expectedCount, countDiagnosticsBySeverity DiagnosticSeverity.Warning workspace.Diagnostics)
         | AssertDiagnosticCodes(expectedCodes, _, _) ->
-            let expected =
-                expectedCodes |> List.map normalizeFixtureText
-
-            let actual =
-                workspace.Diagnostics
-                |> List.map (fun diagnostic -> diagnostic.Code)
-                |> List.map normalizeFixtureText
-
-            Assert.Equal<string list>(expected, actual)
+            let actual = workspace.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code)
+            Assert.Equal<DiagnosticCode list>(expectedCodes, actual)
         | AssertDiagnosticAt(relativePath, severity, code, expectedLine, expectedColumn, _, lineNumber) ->
             let expectedPath = rootedFilePath fixtureCase.Root relativePath |> Path.GetFullPath
-            let normalizedCode = normalizeFixtureText code
 
             let matches diagnostic =
                 match diagnostic.Location with
                 | Some location ->
                     diagnostic.Severity = severity
-                    && normalizeFixtureText diagnostic.Code = normalizedCode
+                    && diagnostic.Code = code
                     && String.Equals(Path.GetFullPath(location.FilePath), expectedPath, StringComparison.OrdinalIgnoreCase)
                     && location.Start.Line = expectedLine
                     && (expectedColumn |> Option.forall (fun column -> location.Start.Column = column))
@@ -505,9 +505,11 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
                 |> Option.map (fun column -> $":{column}")
                 |> Option.defaultValue ""
 
+            let codeText = DiagnosticCode.toIdentifier code
+
             Assert.True(
                 workspace.Diagnostics |> List.exists matches,
-                $"Could not find diagnostic {severity} {code} at {relativePath}:{expectedLine}{expectedColumnText} ({fixtureCase.Name}:{lineNumber}). Actual diagnostics:{Environment.NewLine}{formatDiagnostics workspace.Diagnostics}"
+                $"Could not find diagnostic {severity} {codeText} at {relativePath}:{expectedLine}{expectedColumnText} ({fixtureCase.Name}:{lineNumber}). Actual diagnostics:{Environment.NewLine}{formatDiagnostics workspace.Diagnostics}"
             )
         | AssertDiagnosticMatch(pattern, _, lineNumber) ->
             let regex =

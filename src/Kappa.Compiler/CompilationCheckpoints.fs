@@ -123,7 +123,7 @@ module internal CompilationCheckpoints =
             []
         | Result.Error message ->
             [ { Severity = Error
-                Code = "E_TARGET_CHECKPOINT"
+                Code = DiagnosticCode.TargetCheckpoint
                 Stage = Some "target-lowering"
                 Phase = None
                 Message = message

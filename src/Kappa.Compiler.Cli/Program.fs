@@ -156,6 +156,7 @@ let private declarationLabel declaration =
     | ExpectDeclarationNode _ -> "expect"
     | SignatureDeclaration _ -> "signature"
     | LetDeclaration _ -> "let"
+    | ProjectionDeclarationNode _ -> "projection"
     | DataDeclarationNode _ -> "data"
     | TypeAliasNode _ -> "type"
     | TraitDeclarationNode _ -> "trait"
@@ -203,6 +204,8 @@ let private printAst (document: ParsedDocument) =
             printfn "  expect term %s" declaration.Name
         | SignatureDeclaration signature ->
             printfn "  signature %s" signature.Name
+        | ProjectionDeclarationNode declaration ->
+            printfn "  projection %s" declaration.Name
         | LetDeclaration definition ->
             printfn "  let %s" (defaultArg definition.Name "<pattern>")
         | DataDeclarationNode declaration ->

@@ -225,7 +225,7 @@ module CompilationDump =
               EndLine = related.Location.End.Line
               EndColumn = related.Location.End.Column }
 
-        { Code = diagnostic.Code
+        { Code = diagnostic.Code |> DiagnosticCode.toIdentifier
           Stage = diagnostic.Stage
           Phase = diagnostic.Phase
           Severity = severityText diagnostic.Severity
@@ -309,7 +309,7 @@ module CompilationDump =
                   RegionEnvironment = closure.ClosureRegionEnvironment
                   EscapeStatus = closure.ClosureEscapeStatus })
           Deferred = facts.OwnershipDeferred
-          Diagnostics = facts.OwnershipDiagnostics }
+          Diagnostics = facts.OwnershipDiagnostics |> List.map DiagnosticCode.toIdentifier }
 
     let private dumpFrontendDocument (document: KFrontIRModule) =
         { FilePath = document.FilePath

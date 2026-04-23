@@ -6,6 +6,15 @@ open Kappa.Compiler.ResourceModel
 open HarnessWorkspace
 open Xunit
 
+let private hasDiagnosticCode code (diagnostic: Diagnostic) =
+    diagnostic.Code = code
+
+let private assertContainsDiagnostic code (diagnostics: Diagnostic list) =
+    Assert.Contains(diagnostics, hasDiagnosticCode code)
+
+let private assertDoesNotContainDiagnostic code (diagnostics: Diagnostic list) =
+    Assert.DoesNotContain(diagnostics, hasDiagnosticCode code)
+
 let private mkParameter name quantity =
     { Name = name
       TypeTokens = None
@@ -15,6 +24,16 @@ let private mkParameter name quantity =
 
 let private mkBindPattern name quantity =
     { Pattern = NamePattern name
+      Quantity = quantity }
+
+let private mkAnonymousRecordBindPattern quantity fields =
+    { Pattern =
+        AnonymousRecordPattern(
+            fields
+            |> List.map (fun (name, patternName) ->
+                { Name = name
+                  Pattern = NamePattern patternName })
+        )
       Quantity = quantity }
 
 let private mkLetDefinition name parameters body =
@@ -36,6 +55,16 @@ let private parsedDocumentWithDeclarations filePath text declarations =
         { parsed.Syntax with
             ModuleHeader = Some [ "main" ]
             Declarations = declarations }
+      Diagnostics = lexed.Diagnostics @ parsed.Diagnostics }
+
+let private parsedDocument filePath text =
+    let source, lexed, parsed = lexAndParse filePath text
+
+    { Source = source
+      InferredModuleName = Some [ "main" ]
+      Syntax =
+        { parsed.Syntax with
+            ModuleHeader = Some [ "main" ] }
       Diagnostics = lexed.Diagnostics @ parsed.Diagnostics }
 
 [<Fact>]
@@ -69,6 +98,110 @@ let ``resource quantity satisfaction follows interval and borrow rules`` () =
     Assert.False(ResourceQuantity.satisfies one (ResourceQuantity.exact 2))
     Assert.False(ResourceQuantity.satisfies borrow one)
     Assert.False(ResourceQuantity.satisfies zero one)
+
+[<Fact>]
+let ``resource checker preserves borrowed parameter quantities declared by a separate signature`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "data Handle : Type ="
+            "    Handle Int"
+            ""
+            "openFile : String -> IO Handle"
+            "let openFile name = pure (Handle 1)"
+            ""
+            "headerLength : (& h : Handle) -> Nat"
+            "let headerLength h = 5"
+            ""
+            "readHeaderSafe : IO Nat"
+            "let readHeaderSafe = do"
+            "    using h <- openFile \"data.txt\""
+            "    pure (headerLength h)"
+        ]
+        |> String.concat "\n"
+
+    let document = parsedDocument "main.kp" text
+
+    Assert.Empty(document.Diagnostics)
+
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+
+    assertDoesNotContainDiagnostic DiagnosticCode.QttBorrowEscape result.Diagnostics
+
+[<Fact>]
+let ``resource checker rejects a returned lambda that captures a borrowed parameter declared by a separate signature`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "data Box a : Type ="
+            "    Box a"
+            ""
+            "read : (& x : Box Int) -> Int"
+            "let read x = 0"
+            ""
+            "bad : (& x : Box Int) -> (Unit -> Int)"
+            "let bad x = \\_ -> read x"
+        ]
+        |> String.concat "\n"
+
+    let document = parsedDocument "main.kp" text
+
+    Assert.Empty(document.Diagnostics)
+
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+
+    assertContainsDiagnostic DiagnosticCode.QttBorrowEscape result.Diagnostics
+
+[<Fact>]
+let ``resource checker rejects overusing a linear parameter captured through a separate signature`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "data Token : Type ="
+            "    Token"
+            ""
+            "consume : (1 t : Token) -> Unit"
+            "let consume t = ()"
+            ""
+            "twice : (omega f : Unit -> Unit) -> Unit"
+            "let twice f = do"
+            "    f ()"
+            "    f ()"
+            ""
+            "bad : (1 t : Token) -> Unit"
+            "let bad t = twice (\\_ -> consume t)"
+        ]
+        |> String.concat "\n"
+
+    let document = parsedDocument "main.kp" text
+
+    Assert.Empty(document.Diagnostics)
+
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+
+    assertContainsDiagnostic DiagnosticCode.QttLinearOveruse result.Diagnostics
+
+[<Fact>]
+let ``resource checker rejects a runtime closure that captures a quantity-zero parameter declared by a separate signature`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "bad : (@0 n : Nat) -> Unit -> Nat"
+            "let bad n = \\_ -> n"
+        ]
+        |> String.concat "\n"
+
+    let document = parsedDocument "main.kp" text
+
+    Assert.Empty(document.Diagnostics)
+
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+
+    assertContainsDiagnostic DiagnosticCode.QttErasedRuntimeUse result.Diagnostics
 
 [<Fact>]
 let ``resource checker keeps if branch shadow bindings scoped to the branch`` () =
@@ -124,8 +257,8 @@ let ``resource checker keeps if branch shadow bindings scoped to the branch`` ()
 
     let result = ResourceChecking.checkDocumentsWithFacts [ document ]
 
-    Assert.DoesNotContain(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_LINEAR_DROP")
-    Assert.DoesNotContain(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_BORROW_CONSUME")
+    assertDoesNotContainDiagnostic DiagnosticCode.QttLinearDrop result.Diagnostics
+    assertDoesNotContainDiagnostic DiagnosticCode.QttBorrowConsume result.Diagnostics
 
     let ownership = result.OwnershipFactsByFile[document.Source.FilePath]
 
@@ -193,8 +326,8 @@ let ``resource checker keeps nested do shadow bindings scoped to the nested bloc
 
     let result = ResourceChecking.checkDocumentsWithFacts [ document ]
 
-    Assert.DoesNotContain(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_LINEAR_DROP")
-    Assert.DoesNotContain(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_BORROW_CONSUME")
+    assertDoesNotContainDiagnostic DiagnosticCode.QttLinearDrop result.Diagnostics
+    assertDoesNotContainDiagnostic DiagnosticCode.QttBorrowConsume result.Diagnostics
 
     let ownership = result.OwnershipFactsByFile[document.Source.FilePath]
 
@@ -257,8 +390,8 @@ let ``resource checker accounts for a direct local lambda call that consumes a c
 
     let result = ResourceChecking.checkDocumentsWithFacts [ document ]
 
-    Assert.DoesNotContain(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_LINEAR_DROP")
-    Assert.DoesNotContain(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_LINEAR_OVERUSE")
+    assertDoesNotContainDiagnostic DiagnosticCode.QttLinearDrop result.Diagnostics
+    assertDoesNotContainDiagnostic DiagnosticCode.QttLinearOveruse result.Diagnostics
 
     let ownership = result.OwnershipFactsByFile[document.Source.FilePath]
 
@@ -376,7 +509,7 @@ let ``resource checker reports dropping a local lambda that captures a linear bi
 
     Assert.Equal(Some "1", closureBinding.BindingDeclaredQuantity)
     Assert.Equal("unconsumed", closureBinding.BindingState)
-    Assert.Contains(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_LINEAR_DROP")
+    assertContainsDiagnostic DiagnosticCode.QttLinearDrop result.Diagnostics
 
 [<Fact>]
 let ``resource checker rejects repeated direct local lambda calls that overuse a captured linear binding`` () =
@@ -423,7 +556,7 @@ let ``resource checker rejects repeated direct local lambda calls that overuse a
 
     let result = ResourceChecking.checkDocumentsWithFacts [ document ]
 
-    Assert.Contains(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_LINEAR_OVERUSE")
+    assertContainsDiagnostic DiagnosticCode.QttLinearOveruse result.Diagnostics
 
 [<Fact>]
 let ``resource checker treats a local lambda that captures an at-most-once binding as at-most-once`` () =
@@ -465,7 +598,7 @@ let ``resource checker treats a local lambda that captures an at-most-once bindi
         |> List.find (fun binding -> binding.BindingName = "use")
 
     Assert.Equal(Some "<=1", closureBinding.BindingDeclaredQuantity)
-    Assert.Contains(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_LINEAR_OVERUSE")
+    assertContainsDiagnostic DiagnosticCode.QttLinearOveruse result.Diagnostics
 
 [<Fact>]
 let ``resource checker treats a local lambda that captures an at-least-once binding as requiring use`` () =
@@ -505,7 +638,310 @@ let ``resource checker treats a local lambda that captures an at-least-once bind
         |> List.find (fun binding -> binding.BindingName = "use")
 
     Assert.Equal(Some ">=1", closureBinding.BindingDeclaredQuantity)
-    Assert.Contains(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_LINEAR_DROP")
+    assertContainsDiagnostic DiagnosticCode.QttLinearDrop result.Diagnostics
+
+[<Fact>]
+let ``resource checker allows a local borrowed anonymous record pattern over a non-place expression`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "let mkPair unit = stub"
+            "let demo = hidden"
+        ]
+        |> String.concat "\n"
+
+    let mkPairDefinition =
+        LetDeclaration(mkLetDefinition "mkPair" [ mkParameter "unit" None ] (Name [ "stub" ]))
+
+    let demoDefinition =
+        LetDeclaration(
+            mkLetDefinition
+                "demo"
+                []
+                (LocalLet(
+                    mkAnonymousRecordBindPattern (Some(QuantityBorrow None)) [ "x", "bx"; "y", "by" ],
+                    Apply(Name [ "mkPair" ], [ Literal LiteralValue.Unit ]),
+                    Binary(Name [ "bx" ], "+", Name [ "by" ])
+                ))
+        )
+
+    let document =
+        parsedDocumentWithDeclarations "main.kp" text [ mkPairDefinition; demoDefinition ]
+
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+
+    assertDoesNotContainDiagnostic DiagnosticCode.QttBorrowEscape result.Diagnostics
+
+    let ownership = result.OwnershipFactsByFile[document.Source.FilePath]
+
+    let bxBinding =
+        ownership.OwnershipBindings
+        |> List.find (fun binding -> binding.BindingName = "bx")
+
+    let byBinding =
+        ownership.OwnershipBindings
+        |> List.find (fun binding -> binding.BindingName = "by")
+
+    Assert.Equal(Some "&", bxBinding.BindingDeclaredQuantity)
+    Assert.Equal("borrowed", bxBinding.BindingState)
+    Assert.Equal(Some "&", byBinding.BindingDeclaredQuantity)
+    Assert.Equal("borrowed", byBinding.BindingState)
+    Assert.Equal(bxBinding.BindingPlaceRoot, byBinding.BindingPlaceRoot)
+    Assert.Equal<string list>([ "x" ], bxBinding.BindingPlacePath)
+    Assert.Equal<string list>([ "y" ], byBinding.BindingPlacePath)
+
+    let hiddenRootBinding =
+        ownership.OwnershipBindings
+        |> List.find (fun binding -> binding.BindingName = bxBinding.BindingPlaceRoot)
+
+    Assert.Equal(Some "1", hiddenRootBinding.BindingDeclaredQuantity)
+    Assert.Equal<string list>([], hiddenRootBinding.BindingPlacePath)
+
+[<Fact>]
+let ``resource checker rejects a lambda escaping a local borrowed anonymous record pattern`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "let mkPair unit = stub"
+            "let bad = hidden"
+        ]
+        |> String.concat "\n"
+
+    let mkPairDefinition =
+        LetDeclaration(mkLetDefinition "mkPair" [ mkParameter "unit" None ] (Name [ "stub" ]))
+
+    let badDefinition =
+        LetDeclaration(
+            mkLetDefinition
+                "bad"
+                []
+                (LocalLet(
+                    mkAnonymousRecordBindPattern (Some(QuantityBorrow None)) [ "x", "bx" ],
+                    Apply(Name [ "mkPair" ], [ Literal LiteralValue.Unit ]),
+                    Lambda([ mkParameter "unit" None ], Name [ "bx" ])
+                ))
+        )
+
+    let document =
+        parsedDocumentWithDeclarations "main.kp" text [ mkPairDefinition; badDefinition ]
+
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+
+    assertContainsDiagnostic DiagnosticCode.QttBorrowEscape result.Diagnostics
+
+[<Fact>]
+let ``resource checker preserves a named borrow root for local anonymous record pattern aliases`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "let demo = hidden"
+        ]
+        |> String.concat "\n"
+
+    let demoDefinition =
+        LetDeclaration(
+            mkLetDefinition
+                "demo"
+                []
+                (Do
+                    [
+                        DoLet(mkBindPattern "pair" (Some QuantityOne), Name [ "pair" ])
+                        DoExpression(
+                            LocalLet(
+                                mkAnonymousRecordBindPattern (Some(QuantityBorrow None)) [ "x", "bx"; "y", "by" ],
+                                Name [ "pair" ],
+                                Binary(Name [ "bx" ], "+", Name [ "by" ])
+                            )
+                        )
+                    ])
+        )
+
+    let document = parsedDocumentWithDeclarations "main.kp" text [ demoDefinition ]
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+    let ownership = result.OwnershipFactsByFile[document.Source.FilePath]
+
+    let bxBinding =
+        ownership.OwnershipBindings
+        |> List.find (fun binding -> binding.BindingName = "bx")
+
+    let byBinding =
+        ownership.OwnershipBindings
+        |> List.find (fun binding -> binding.BindingName = "by")
+
+    Assert.Equal("pair", bxBinding.BindingPlaceRoot)
+    Assert.Equal<string list>([ "x" ], bxBinding.BindingPlacePath)
+    Assert.Equal("pair", byBinding.BindingPlaceRoot)
+    Assert.Equal<string list>([ "y" ], byBinding.BindingPlacePath)
+
+[<Fact>]
+let ``resource checker rejects reprojecting a consumed linear field path`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "data Buffer : Type ="
+            "    Buffer"
+            ""
+            "bad : (1 r : (1 buf : Buffer, len : Nat)) -> Buffer"
+            "let bad r ="
+            "    let old = r.buf"
+            "    r.buf"
+        ]
+        |> String.concat "\n"
+
+    let document = parsedDocument "main.kp" text
+
+    Assert.Empty(document.Diagnostics)
+
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+
+    assertContainsDiagnostic DiagnosticCode.QttLinearOveruse result.Diagnostics
+
+[<Fact>]
+let ``resource checker rejects consuming a whole record after moving a linear field`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "data Buffer : Type ="
+            "    Buffer"
+            ""
+            "consumeWhole : (1 r : (1 buf : Buffer, len : Nat)) -> Unit"
+            "let consumeWhole r = ()"
+            ""
+            "bad : (1 r : (1 buf : Buffer, len : Nat)) -> Unit"
+            "let bad r ="
+            "    let old = r.buf"
+            "    consumeWhole r"
+        ]
+        |> String.concat "\n"
+
+    let document = parsedDocument "main.kp" text
+
+    Assert.Empty(document.Diagnostics)
+
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+
+    assertContainsDiagnostic DiagnosticCode.QttLinearOveruse result.Diagnostics
+
+[<Fact>]
+let ``resource checker allows reading an unrestricted sibling field after moving and consuming a linear field`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "data Buffer : Type ="
+            "    Buffer"
+            ""
+            "consume : (1 old : Buffer) -> Unit"
+            "let consume old = ()"
+            ""
+            "demo : (1 r : (1 buf : Buffer, len : Nat)) -> Nat"
+            "let demo r ="
+            "    let old = r.buf"
+            "    let used = consume old"
+            "    r.len"
+        ]
+        |> String.concat "\n"
+
+    let document = parsedDocument "main.kp" text
+
+    Assert.Empty(document.Diagnostics)
+
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+
+    assertDoesNotContainDiagnostic DiagnosticCode.QttLinearOveruse result.Diagnostics
+    assertDoesNotContainDiagnostic DiagnosticCode.QttLinearDrop result.Diagnostics
+
+[<Fact>]
+let ``resource checker allows a consumed record field path to be restored by record update`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "data Buffer : Type ="
+            "    Buffer"
+            ""
+            "process : (1 old : Buffer) -> Buffer"
+            "let process old = old"
+            ""
+            "repair : (1 r : (1 buf : Buffer, len : Nat)) -> (1 buf : Buffer, len : Nat)"
+            "let repair r ="
+            "    let old = r.buf"
+            "    let new = process old"
+            "    r.{ buf = new }"
+        ]
+        |> String.concat "\n"
+
+    let document = parsedDocument "main.kp" text
+
+    Assert.Empty(document.Diagnostics)
+
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+
+    assertDoesNotContainDiagnostic DiagnosticCode.QttLinearOveruse result.Diagnostics
+    assertDoesNotContainDiagnostic DiagnosticCode.QttLinearDrop result.Diagnostics
+
+[<Fact>]
+let ``resource checker rejects a record update that omits a dependent field repair`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "data Byte : Type ="
+            "    Byte"
+            ""
+            "data Array n a : Type ="
+            "    Array"
+            ""
+            "type SizedBuffer = (len : Nat, buffer : Array this.len Byte, checksum : Nat)"
+            ""
+            "bad : SizedBuffer -> SizedBuffer"
+            "let bad buf = buf.{ len = 20 }"
+        ]
+        |> String.concat "\n"
+
+    let document = parsedDocument "main.kp" text
+
+    Assert.Empty(document.Diagnostics)
+
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+
+    assertContainsDiagnostic DiagnosticCode.TypeEqualityMismatch result.Diagnostics
+
+[<Fact>]
+let ``resource checker allows a record update that repairs a dependent field`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "data Byte : Type ="
+            "    Byte"
+            ""
+            "data Array n a : Type ="
+            "    Array"
+            ""
+            "mkBuffer : (len : Nat) -> Array len Byte"
+            "let mkBuffer len = Array"
+            ""
+            "type SizedBuffer = (len : Nat, buffer : Array this.len Byte, checksum : Nat)"
+            ""
+            "grow : SizedBuffer -> SizedBuffer"
+            "let grow buf ="
+            "    buf.{ len = 20, buffer = mkBuffer this.len }"
+        ]
+        |> String.concat "\n"
+
+    let document = parsedDocument "main.kp" text
+
+    Assert.Empty(document.Diagnostics)
+
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+
+    assertDoesNotContainDiagnostic DiagnosticCode.TypeEqualityMismatch result.Diagnostics
 
 [<Fact>]
 let ``resource checker tracks repeated callee-position use of an at-most-once parameter`` () =
@@ -534,7 +970,7 @@ let ``resource checker tracks repeated callee-position use of an at-most-once pa
     let document = parsedDocumentWithDeclarations "main.kp" text [ invokeDefinition ]
     let result = ResourceChecking.checkDocumentsWithFacts [ document ]
 
-    Assert.Contains(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_LINEAR_OVERUSE")
+    assertContainsDiagnostic DiagnosticCode.QttLinearOveruse result.Diagnostics
 
 [<Fact>]
 let ``resource checker tracks repeated argument-position use of an at-most-once binding`` () =
@@ -569,7 +1005,7 @@ let ``resource checker tracks repeated argument-position use of an at-most-once 
     let document = parsedDocumentWithDeclarations "main.kp" text [ maybeUseDefinition; mainDefinition ]
     let result = ResourceChecking.checkDocumentsWithFacts [ document ]
 
-    Assert.Contains(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_LINEAR_OVERUSE")
+    assertContainsDiagnostic DiagnosticCode.QttLinearOveruse result.Diagnostics
 
 [<Fact>]
 let ``resource checker counts an at-least-once argument use through a function call`` () =
@@ -602,7 +1038,7 @@ let ``resource checker counts an at-least-once argument use through a function c
     let document = parsedDocumentWithDeclarations "main.kp" text [ mustUseDefinition; mainDefinition ]
     let result = ResourceChecking.checkDocumentsWithFacts [ document ]
 
-    Assert.DoesNotContain(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_LINEAR_DROP")
+    assertDoesNotContainDiagnostic DiagnosticCode.QttLinearDrop result.Diagnostics
 
 [<Fact>]
 let ``resource checker rejects returning a borrowed parameter directly`` () =
@@ -623,7 +1059,7 @@ let ``resource checker rejects returning a borrowed parameter directly`` () =
     let document = parsedDocumentWithDeclarations "main.kp" text [ leakDefinition ]
     let result = ResourceChecking.checkDocumentsWithFacts [ document ]
 
-    Assert.Contains(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_BORROW_ESCAPE")
+    assertContainsDiagnostic DiagnosticCode.QttBorrowEscape result.Diagnostics
 
 [<Fact>]
 let ``resource checker rejects returning a using borrow as the result of a do block`` () =
@@ -660,7 +1096,7 @@ let ``resource checker rejects returning a using borrow as the result of a do bl
     let document = parsedDocumentWithDeclarations "main.kp" text [ openFileDefinition; leakDefinition ]
     let result = ResourceChecking.checkDocumentsWithFacts [ document ]
 
-    Assert.Contains(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_BORROW_ESCAPE")
+    assertContainsDiagnostic DiagnosticCode.QttBorrowEscape result.Diagnostics
 
 [<Fact>]
 let ``resource checker rejects a local lambda whose borrowed parameter escapes through its result`` () =
@@ -695,4 +1131,208 @@ let ``resource checker rejects a local lambda whose borrowed parameter escapes t
     let document = parsedDocumentWithDeclarations "main.kp" text [ mainDefinition ]
     let result = ResourceChecking.checkDocumentsWithFacts [ document ]
 
-    Assert.Contains(result.Diagnostics, fun diagnostic -> diagnostic.Code = "E_QTT_BORROW_ESCAPE")
+    assertContainsDiagnostic DiagnosticCode.QttBorrowEscape result.Diagnostics
+
+[<Fact>]
+let ``resource checker lets a match constructor pattern bind a linear field for consumption`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "data File : Type ="
+            "    Handle Int"
+            ""
+            "data Box : Type ="
+            "    Box File"
+            ""
+            "let consume (1 file : File) = ()"
+            ""
+            "let main : IO Unit = do"
+            "    let 1 box = box"
+            "    match box"
+            "    case Box file -> consume file"
+        ]
+        |> String.concat "\n"
+
+    let consumeDefinition =
+        LetDeclaration(
+            mkLetDefinition "consume" [ mkParameter "file" (Some QuantityOne) ] (Apply(Name [ "file" ], [ Literal LiteralValue.Unit ]))
+        )
+
+    let mainDefinition =
+        LetDeclaration(
+            mkLetDefinition
+                "main"
+                []
+                (Do
+                    [
+                        DoLet(mkBindPattern "box" (Some QuantityOne), Name [ "box" ])
+                        DoExpression(
+                            Match(
+                                Name [ "box" ],
+                                [
+                                    { Pattern = ConstructorPattern([ "Box" ], [ NamePattern "file" ])
+                                      Guard = None
+                                      Body = Apply(Name [ "consume" ], [ Name [ "file" ] ]) }
+                                ]
+                            )
+                        )
+                    ])
+        )
+
+    let document = parsedDocumentWithDeclarations "main.kp" text [ consumeDefinition; mainDefinition ]
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+
+    assertDoesNotContainDiagnostic DiagnosticCode.QttLinearDrop result.Diagnostics
+    assertDoesNotContainDiagnostic DiagnosticCode.QttLinearOveruse result.Diagnostics
+
+    let ownership = result.OwnershipFactsByFile[document.Source.FilePath]
+    Assert.DoesNotContain("match-pattern-resource-checking", ownership.OwnershipDeferred)
+
+[<Fact>]
+let ``resource checker propagates borrowed match bindings as borrowed aliases`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "data File : Type ="
+            "    Handle Int"
+            ""
+            "let consume (1 file : File) = ()"
+            ""
+            "let main : IO Unit = do"
+            "    let & file = Handle 1"
+            "    match file"
+            "    case alias -> consume alias"
+        ]
+        |> String.concat "\n"
+
+    let consumeDefinition =
+        LetDeclaration(
+            mkLetDefinition "consume" [ mkParameter "file" (Some QuantityOne) ] (Apply(Name [ "file" ], [ Literal LiteralValue.Unit ]))
+        )
+
+    let mainDefinition =
+        LetDeclaration(
+            mkLetDefinition
+                "main"
+                []
+                (Do
+                    [
+                        DoLet(mkBindPattern "file" (Some(QuantityBorrow None)), Name [ "file" ])
+                        DoExpression(
+                            Match(
+                                Name [ "file" ],
+                                [
+                                    { Pattern = NamePattern "alias"
+                                      Guard = None
+                                      Body = Apply(Name [ "consume" ], [ Name [ "alias" ] ]) }
+                                ]
+                            )
+                        )
+                    ])
+        )
+
+    let document = parsedDocumentWithDeclarations "main.kp" text [ consumeDefinition; mainDefinition ]
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+
+    assertContainsDiagnostic DiagnosticCode.QttBorrowConsume result.Diagnostics
+
+    let ownership = result.OwnershipFactsByFile[document.Source.FilePath]
+    Assert.DoesNotContain("match-pattern-resource-checking", ownership.OwnershipDeferred)
+
+[<Fact>]
+let ``resource checker keeps multi-binder match patterns deferred`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "data File : Type ="
+            "    Handle Int"
+            ""
+            "data Pair : Type ="
+            "    Pair File File"
+            ""
+            "let consume (1 file : File) = ()"
+            ""
+            "let main : IO Unit = do"
+            "    let 1 pair = pair"
+            "    match pair"
+            "    case Pair left right -> consume left"
+        ]
+        |> String.concat "\n"
+
+    let consumeDefinition =
+        LetDeclaration(
+            mkLetDefinition "consume" [ mkParameter "file" (Some QuantityOne) ] (Apply(Name [ "file" ], [ Literal LiteralValue.Unit ]))
+        )
+
+    let mainDefinition =
+        LetDeclaration(
+            mkLetDefinition
+                "main"
+                []
+                (Do
+                    [
+                        DoLet(mkBindPattern "pair" (Some QuantityOne), Name [ "pair" ])
+                        DoExpression(
+                            Match(
+                                Name [ "pair" ],
+                                [
+                                    { Pattern = ConstructorPattern([ "Pair" ], [ NamePattern "left"; NamePattern "right" ])
+                                      Guard = None
+                                      Body = Apply(Name [ "consume" ], [ Name [ "left" ] ]) }
+                                ]
+                            )
+                        )
+                    ])
+        )
+
+    let document = parsedDocumentWithDeclarations "main.kp" text [ consumeDefinition; mainDefinition ]
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+    let ownership = result.OwnershipFactsByFile[document.Source.FilePath]
+
+    Assert.Contains("match-pattern-resource-checking", ownership.OwnershipDeferred)
+
+[<Fact>]
+let ``resource checker allows a borrowed value to be used in a local non-escaping call result`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "data Handle : Type ="
+            "    Handle Int"
+            ""
+            "let openFile name = pure (Handle 1)"
+            "let headerLength (& h : Handle) = 5"
+            ""
+            "let main : IO Unit = do"
+            "    using h <- openFile \"data.txt\""
+            "    printInt (headerLength h)"
+        ]
+        |> String.concat "\n"
+
+    let openFileDefinition =
+        LetDeclaration(mkLetDefinition "openFile" [ mkParameter "name" None ] (Name [ "file" ]))
+
+    let headerLengthDefinition =
+        LetDeclaration(mkLetDefinition "headerLength" [ mkParameter "h" (Some(QuantityBorrow None)) ] (Literal(LiteralValue.Integer 5L)))
+
+    let mainDefinition =
+        LetDeclaration(
+            mkLetDefinition
+                "main"
+                []
+                (Do
+                    [
+                        DoUsing(NamePattern "h", Apply(Name [ "openFile" ], [ Literal(LiteralValue.String "data.txt") ]))
+                        DoExpression(Apply(Name [ "printInt" ], [ Apply(Name [ "headerLength" ], [ Name [ "h" ] ]) ]))
+                    ])
+        )
+
+    let document =
+        parsedDocumentWithDeclarations "main.kp" text [ openFileDefinition; headerLengthDefinition; mainDefinition ]
+
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+
+    assertDoesNotContainDiagnostic DiagnosticCode.QttBorrowEscape result.Diagnostics

@@ -5,12 +5,14 @@ open Kappa.Compiler.ResourceModel
 
 // Builds source locations and diagnostic payloads for resource-checker results.
 module internal ResourceCheckingDiagnostics =
-    let linearDropCode = "E_QTT_LINEAR_DROP"
-    let linearOveruseCode = "E_QTT_LINEAR_OVERUSE"
-    let borrowConsumeCode = "E_QTT_BORROW_CONSUME"
-    let borrowEscapeCode = "E_QTT_BORROW_ESCAPE"
-    let inoutMarkerRequiredCode = "E_QTT_INOUT_MARKER_REQUIRED"
-    let inoutMarkerUnexpectedCode = "E_QTT_INOUT_MARKER_UNEXPECTED"
+    let linearDropCode = DiagnosticCode.QttLinearDrop
+    let linearOveruseCode = DiagnosticCode.QttLinearOveruse
+    let borrowConsumeCode = DiagnosticCode.QttBorrowConsume
+    let borrowOverlapCode = DiagnosticCode.QttBorrowOverlap
+    let borrowEscapeCode = DiagnosticCode.QttBorrowEscape
+    let erasedRuntimeUseCode = DiagnosticCode.QttErasedRuntimeUse
+    let inoutMarkerRequiredCode = DiagnosticCode.QttInoutMarkerRequired
+    let inoutMarkerUnexpectedCode = DiagnosticCode.QttInoutMarkerUnexpected
 
     let diagnosticLocation (document: ParsedDocument) =
         document.Source.GetLocation(TextSpan.FromBounds(0, 0))

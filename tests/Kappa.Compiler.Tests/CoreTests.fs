@@ -102,6 +102,86 @@ let ``interpreter evaluates imported functions and closures`` () =
         failwithf "Expected successful evaluation, got %s" issue.Message
 
 [<Fact>]
+let ``interpreter supports bare wildcard lambda binders`` () =
+    let mainSource =
+        [
+            "module main"
+            "let ignore = \\_ -> 42"
+            "let result = ignore ()"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-wildcard-lambda-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("42", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected wildcard lambda evaluation to succeed, got %s" issue.Message
+
+[<Fact>]
+let ``interpreter supports typed wildcard binders in lambdas and function headers`` () =
+    let mainSource =
+        [
+            "module main"
+            "twice : (Unit -> Int) -> Int"
+            "let twice f = f () + f ()"
+            "keep : (_ : Int) -> Int -> Int"
+            "let keep (_ : Int) x = x"
+            "demo : Int -> Int"
+            "let demo n = keep 0 (twice (\\(_ : Unit) -> n))"
+            "result : Int"
+            "let result = demo 21"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-typed-wildcard-lambda-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("42", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected typed wildcard binders to evaluate successfully, got %s" issue.Message
+
+[<Fact>]
+let ``interpreter supports typed local let bindings in expression position`` () =
+    let mainSource =
+        [
+            "module main"
+            "result : Int"
+            "let result ="
+            "    let value : Int = 42"
+            "    value"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-typed-local-let-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("42", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected typed local let evaluation to succeed, got %s" issue.Message
+
+[<Fact>]
 let ``parser and interpreter support user defined operators via fixity declarations`` () =
     let mainSource =
         [
@@ -193,6 +273,41 @@ let ``interpreter resolves prelude Bool constructors and functions by implicit i
         Assert.Equal("42", RuntimeValue.format value)
     | Result.Error issue ->
         failwithf "Expected prelude Bool constructor evaluation to succeed, got %s" issue.Message
+
+[<Fact>]
+let ``interpreter resolves trait instances through transparent type aliases`` () =
+    let mainSource =
+        [
+            "module main"
+            "type Alias = Int"
+            ""
+            "trait Show a ="
+            "    show : a -> String"
+            ""
+            "instance Show Int ="
+            "    let show x = primitiveIntToString x"
+            ""
+            "render : Show Alias => Alias -> String"
+            "let render x = show x"
+            ""
+            "message : String"
+            "let message = render 7"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-transparent-alias-instance-root"
+            "main.message"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("\"7\"", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected alias-based instance resolution to succeed, got %s" issue.Message
 
 [<Fact>]
 let ``interpreter evaluates the default inequality operator`` () =
@@ -506,6 +621,46 @@ let ``parser captures recursive list matches and do blocks`` () =
         failwithf "Unexpected declarations: %A" other
 
 [<Fact>]
+let ``parser captures local borrowed anonymous record patterns`` () =
+    let sourceText =
+        [
+            "module main"
+            "let pair = source"
+            "let demo ="
+            "    let & (x = bx, y = by) = pair"
+            "    bx + by"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "main.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Empty(parsed.Diagnostics)
+
+    match parsed.Syntax.Declarations with
+    | [ LetDeclaration _
+        LetDeclaration definition ] ->
+        match definition.Body with
+        | Some(LocalLet(binding, Name [ "pair" ], Binary(Name [ "bx" ], "+", Name [ "by" ]))) ->
+            Assert.Equal<Quantity option>(Some(QuantityBorrow None), binding.Quantity)
+
+            match binding.Pattern with
+            | AnonymousRecordPattern
+                [ { Name = "x"
+                    Pattern = NamePattern "bx" }
+                  { Name = "y"
+                    Pattern = NamePattern "by" } ] -> ()
+            | other ->
+                failwithf "Unexpected local borrowed record pattern: %A" other
+        | other ->
+            failwithf "Unexpected local borrowed record pattern body: %A" other
+    | other ->
+        failwithf "Unexpected declarations: %A" other
+
+[<Fact>]
 let ``interpreter evaluates recursive list matches built from the cons operator`` () =
     let mainSource =
         [
@@ -532,6 +687,28 @@ let ``interpreter evaluates recursive list matches built from the cons operator`
         Assert.Equal("72", RuntimeValue.format value)
     | Result.Error issue ->
         failwithf "Expected recursive list evaluation to succeed, got %s" issue.Message
+
+[<Fact>]
+let ``compilation rejects refl when function type equality changes binder quantity`` () =
+    let mainSource =
+        [
+            "module main"
+            "badEq : ((x : Nat) -> Nat) = ((1 x : Nat) -> Nat)"
+            "let badEq = refl"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-function-quantity-equality-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected a quantity-sensitive equality diagnostic.")
+
+    Assert.True(
+        workspace.Diagnostics
+        |> List.exists (fun diagnostic -> diagnostic.Code = DiagnosticCode.TypeEqualityMismatch)
+    )
 
 [<Fact>]
 let ``interpreter executes io programs against an injected output sink`` () =

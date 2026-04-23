@@ -42,9 +42,11 @@ type Keyword =
     | Module
     | Opaque
     | Order
+    | Place
     | Postfix
     | Prefix
     | Private
+    | Projection
     | Public
     | Return
     | Right
@@ -104,9 +106,11 @@ module Keyword =
             "module", Module
             "opaque", Opaque
             "order", Order
+            "place", Place
             "postfix", Postfix
             "prefix", Prefix
             "private", Private
+            "projection", Projection
             "public", Public
             "return", Return
             "right", Right
@@ -263,7 +267,7 @@ type FixityDeclaration =
 type SurfaceExpression =
     | Literal of LiteralValue
     | Name of string list
-    | LocalLet of bindingName: string * value: SurfaceExpression * body: SurfaceExpression
+    | LocalLet of binding: SurfaceBindPattern * value: SurfaceExpression * body: SurfaceExpression
     | Lambda of Parameter list * SurfaceExpression
     | IfThenElse of SurfaceExpression * SurfaceExpression * SurfaceExpression
     | Match of SurfaceExpression * SurfaceMatchCase list
@@ -290,6 +294,11 @@ and SurfacePattern =
     | NamePattern of string
     | LiteralPattern of LiteralValue
     | ConstructorPattern of string list * SurfacePattern list
+    | AnonymousRecordPattern of SurfaceRecordPatternField list
+
+and SurfaceRecordPatternField =
+    { Name: string
+      Pattern: SurfacePattern }
 
 and SurfaceMatchCase =
     { Pattern: SurfacePattern
@@ -345,6 +354,33 @@ type LetDefinition =
       BodyTokens: Token list
       Body: SurfaceExpression option }
 
+type ProjectionPlaceBinder =
+    { Name: string
+      TypeTokens: Token list
+      IsReceiver: bool }
+
+type ProjectionBinder =
+    | ProjectionPlaceBinder of ProjectionPlaceBinder
+    | ProjectionValueBinder of Parameter
+
+type SurfaceProjectionBody =
+    | ProjectionYield of SurfaceExpression
+    | ProjectionIfThenElse of SurfaceExpression * SurfaceProjectionBody * SurfaceProjectionBody
+    | ProjectionMatch of SurfaceExpression * SurfaceProjectionCase list
+
+and SurfaceProjectionCase =
+    { Pattern: SurfacePattern
+      Guard: SurfaceExpression option
+      Body: SurfaceProjectionBody }
+
+type ProjectionDeclaration =
+    { Visibility: Visibility option
+      Name: string
+      Binders: ProjectionBinder list
+      ReturnTypeTokens: Token list
+      BodyTokens: Token list
+      Body: SurfaceProjectionBody option }
+
 type DataConstructor =
     { Name: string
       Tokens: Token list
@@ -387,6 +423,7 @@ type TopLevelDeclaration =
     | LetDeclaration of LetDefinition
     | DataDeclarationNode of DataDeclaration
     | TypeAliasNode of TypeAlias
+    | ProjectionDeclarationNode of ProjectionDeclaration
     | TraitDeclarationNode of TraitDeclaration
     | InstanceDeclarationNode of InstanceDeclaration
     | UnknownDeclaration of Token list

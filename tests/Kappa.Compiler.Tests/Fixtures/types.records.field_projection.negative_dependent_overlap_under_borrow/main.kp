@@ -15,4 +15,4 @@ let bad r =
     n
 
 --! assertErrorCount 1
---! assertDiagnosticMatch borrow|consume|overlap|len
+--! assertDiagnosticCodes E_QTT_BORROW_OVERLAP

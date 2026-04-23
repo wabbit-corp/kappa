@@ -57,17 +57,17 @@ module internal CompilationFrontend =
         match document.InferredModuleName, document.Syntax.ModuleHeader with
         | Some inferred, Some declared when options.PackageMode && inferred <> declared ->
             diagnostics.AddError(
+                DiagnosticCode.ModulePathMismatch,
                 $"Module header '{SyntaxFacts.moduleNameToText declared}' does not match the path-derived module name '{SyntaxFacts.moduleNameToText inferred}'.",
                 document.Source.GetLocation(TextSpan.FromBounds(0, 0)),
-                code = "E_MODULE_PATH_MISMATCH",
                 stage = "KFrontIR",
                 phase = KFrontIRPhase.phaseName CHECKERS
             )
         | None, None ->
             diagnostics.AddError(
+                DiagnosticCode.ModuleNameUnresolved,
                 $"Could not derive a Kappa module name from '{document.Source.FilePath}'. Files must live under the source root and end in .kp.",
                 document.Source.GetLocation(TextSpan.FromBounds(0, 0)),
-                code = "E_MODULE_NAME_UNRESOLVED",
                 stage = "KFrontIR",
                 phase = KFrontIRPhase.phaseName CHECKERS
             )
@@ -266,6 +266,21 @@ module internal CompilationFrontend =
                 | _ ->
                     let argumentText = arguments |> List.map renderPattern |> String.concat " "
                     $"({nameText} {argumentText})"
+            | AnonymousRecordPattern fields ->
+                let fieldText =
+                    fields
+                    |> List.map (fun field -> $"{field.Name} = {renderPattern field.Pattern}")
+                    |> String.concat ", "
+
+                $"({fieldText})"
+
+        let renderBindPattern binding =
+            let quantityText =
+                binding.Quantity
+                |> Option.map (fun quantity -> Quantity.toSurfaceText quantity + " ")
+                |> Option.defaultValue ""
+
+            quantityText + renderPattern binding.Pattern
 
         let rec render current =
             match current with
@@ -275,8 +290,8 @@ module internal CompilationFrontend =
             | Literal(LiteralValue.Character value) -> $"'{value}'"
             | Literal LiteralValue.Unit -> "()"
             | Name segments -> String.concat "." segments
-            | LocalLet(bindingName, value, body) ->
-                $"(let {bindingName} {render value} {render body})"
+            | LocalLet(binding, value, body) ->
+                $"(let {renderBindPattern binding} {render value} {render body})"
             | Lambda(parameters, body) ->
                 let names = parameters |> List.map (fun parameter -> parameter.Name) |> String.concat " "
                 $"(lambda ({names}) {render body})"
@@ -305,14 +320,6 @@ module internal CompilationFrontend =
 
                 $"(update {render receiver} {{{fieldText}}})"
             | Do statements ->
-                let renderBindPattern binding =
-                    let quantityText =
-                        binding.Quantity
-                        |> Option.map (fun quantity -> Quantity.toSurfaceText quantity + " ")
-                        |> Option.defaultValue ""
-
-                    quantityText + renderPattern binding.Pattern
-
                 let rec renderDoStatement statement =
                     match statement with
                     | DoLet(binding, body) -> $"(let {renderBindPattern binding} {render body})"
@@ -410,6 +417,9 @@ module internal CompilationFrontend =
     let private exportedTraitDeclaration (document: ParsedDocument) (declaration: TraitDeclaration) =
         isExportedVisibility (isPrivateByDefault document) declaration.Visibility
 
+    let private exportedProjectionDeclaration (document: ParsedDocument) (declaration: ProjectionDeclaration) =
+        isExportedVisibility (isPrivateByDefault document) declaration.Visibility
+
     let private tokenName (token: Token) =
         match token.Kind with
         | Identifier
@@ -451,6 +461,10 @@ module internal CompilationFrontend =
                             UnqualifiedBindings = Set.add name current.UnqualifiedBindings }
                     | None ->
                         current
+                | ProjectionDeclarationNode declaration when exportedProjectionDeclaration document declaration ->
+                    { current with
+                        Terms = Set.add declaration.Name current.Terms
+                        UnqualifiedBindings = Set.add declaration.Name current.UnqualifiedBindings }
                 | DataDeclarationNode declaration when exportedDataDeclaration document declaration ->
                     let constructorNames =
                         declaration.Constructors
@@ -542,9 +556,9 @@ module internal CompilationFrontend =
                                 for item in items do
                                     if not (importItemExists inventory item) then
                                         diagnostics.AddError(
+                                            DiagnosticCode.ImportItemNotFound,
                                             $"Import item '{item.Name}' was not found in module '{importedModuleName}'.",
                                             defaultArg (findTokenLocation document item.Name) (document.Source.GetLocation(TextSpan.FromBounds(0, 0))),
-                                            code = "E_IMPORT_ITEM_NOT_FOUND",
                                             stage = "KFrontIR",
                                             phase = KFrontIRPhase.phaseName CHECKERS
                                         )
@@ -631,6 +645,7 @@ module internal CompilationFrontend =
         | ExpectDeclarationNode _ -> "expect"
         | SignatureDeclaration _ -> "signature"
         | LetDeclaration _ -> "let"
+        | ProjectionDeclarationNode _ -> "projection"
         | DataDeclarationNode _ -> "data"
         | TypeAliasNode _ -> "type"
         | TraitDeclarationNode _ -> "trait"
@@ -641,6 +656,7 @@ module internal CompilationFrontend =
         match declaration with
         | SignatureDeclaration declaration -> Some declaration.Name
         | LetDeclaration declaration -> declaration.Name
+        | ProjectionDeclarationNode declaration -> Some declaration.Name
         | DataDeclarationNode declaration -> Some declaration.Name
         | TypeAliasNode declaration -> Some declaration.Name
         | TraitDeclarationNode declaration -> Some declaration.Name
@@ -656,6 +672,7 @@ module internal CompilationFrontend =
         match declaration with
         | SignatureDeclaration declaration -> declaration.IsOpaque
         | LetDeclaration declaration -> declaration.IsOpaque
+        | ProjectionDeclarationNode _ -> false
         | DataDeclarationNode declaration -> declaration.IsOpaque
         | TypeAliasNode declaration -> declaration.IsOpaque
         | TraitDeclarationNode _
@@ -669,6 +686,7 @@ module internal CompilationFrontend =
         match declaration with
         | SignatureDeclaration declaration -> visibilityText declaration.Visibility
         | LetDeclaration declaration -> visibilityText declaration.Visibility
+        | ProjectionDeclarationNode declaration -> visibilityText declaration.Visibility
         | DataDeclarationNode declaration -> visibilityText declaration.Visibility
         | TypeAliasNode declaration -> visibilityText declaration.Visibility
         | TraitDeclarationNode declaration -> visibilityText declaration.Visibility
@@ -711,6 +729,28 @@ module internal CompilationFrontend =
             let opaquePrefix = if declaration.IsOpaque then "opaque " else ""
             let bindingName = defaultArg declaration.Name "<pattern>"
             $"{visibilityPrefix} {opaquePrefix}let {bindingName} {headerText} = {bodyText}".Trim()
+        | ProjectionDeclarationNode declaration ->
+            let binderText =
+                declaration.Binders
+                |> List.map (function
+                    | ProjectionPlaceBinder binder ->
+                        let receiverPrefix = if binder.IsReceiver then "this " else ""
+                        $"(place {receiverPrefix}{binder.Name} : {tokensText binder.TypeTokens})"
+                    | ProjectionValueBinder binder ->
+                        let quantityPrefix =
+                            binder.Quantity
+                            |> Option.map Quantity.toSurfaceText
+                            |> Option.map (fun quantity -> $"{quantity} ")
+                            |> Option.defaultValue ""
+
+                        let implicitPrefix = if binder.IsImplicit then "@ " else ""
+                        let typeText = binder.TypeTokens |> Option.map tokensText |> Option.defaultValue ""
+                        $"({implicitPrefix}{quantityPrefix}{binder.Name} : {typeText})".Trim())
+                |> String.concat " "
+
+            let bodyText = tokensText declaration.BodyTokens
+            let visibilityPrefix = defaultArg (visibilityText declaration.Visibility) ""
+            $"{visibilityPrefix} projection {declaration.Name} {binderText} : {tokensText declaration.ReturnTypeTokens} = {bodyText}".Trim()
         | DataDeclarationNode declaration ->
             let constructors =
                 declaration.Constructors
@@ -747,6 +787,7 @@ module internal CompilationFrontend =
         match declaration with
         | SignatureDeclaration declaration -> Some(tokensText declaration.TypeTokens)
         | LetDeclaration declaration -> declaration.ReturnTypeTokens |> Option.map tokensText
+        | ProjectionDeclarationNode declaration -> Some(tokensText declaration.ReturnTypeTokens)
         | ExpectDeclarationNode (ExpectTermDeclaration declaration) -> Some(tokensText declaration.TypeTokens)
         | _ -> None
 
@@ -757,6 +798,8 @@ module internal CompilationFrontend =
             |> Option.map expressionText
             |> Option.orElseWith (fun () ->
                 if List.isEmpty declaration.BodyTokens then None else Some(tokensText declaration.BodyTokens))
+        | ProjectionDeclarationNode declaration ->
+            if List.isEmpty declaration.BodyTokens then None else Some(tokensText declaration.BodyTokens)
         | TypeAliasNode declaration -> declaration.BodyTokens |> Option.map tokensText
         | _ -> None
 
@@ -815,6 +858,8 @@ module internal CompilationFrontend =
             | ExpectTermDeclaration expected, LetDeclaration definition ->
                 definition.Name
                 |> Option.exists (fun name -> String.Equals(expected.Name, name, StringComparison.Ordinal))
+            | ExpectTermDeclaration expected, ProjectionDeclarationNode declaration ->
+                String.Equals(expected.Name, declaration.Name, StringComparison.Ordinal)
             | _ ->
                 false
 
@@ -831,6 +876,42 @@ module internal CompilationFrontend =
         | ExpectTypeDeclaration declaration -> declaration.Span
         | ExpectTraitDeclaration declaration -> declaration.Span
         | ExpectTermDeclaration declaration -> declaration.Span
+
+    let validateReflEqualityDeclarations (documents: ParsedDocument list) =
+        let diagnostics = DiagnosticBag()
+
+        for document in documents do
+            let mutable signaturesByName = Map.empty
+
+            for declaration in document.Syntax.Declarations do
+                match declaration with
+                | SignatureDeclaration signature ->
+                    signaturesByName <- Map.add signature.Name signature.TypeTokens signaturesByName
+                | LetDeclaration definition ->
+                    match definition.Name, definition.Body with
+                    | Some name, Some(Name [ "refl" ]) ->
+                        let declaredTypeTokens =
+                            definition.ReturnTypeTokens
+                            |> Option.orElseWith (fun () -> Map.tryFind name signaturesByName)
+
+                        match declaredTypeTokens |> Option.bind TypeSignatures.parseType with
+                        | Some(TypeSignatures.TypeEquality(left, right))
+                            when not (TypeSignatures.definitionallyEqual left right) ->
+                            diagnostics.AddError(
+                                DiagnosticCode.TypeEqualityMismatch,
+                                "The proof term 'refl' requires both sides of the equality type to be definitionally equal. Function binder quantities are part of type identity.",
+                                findTokenLocation document name |> Option.defaultValue (document.Source.GetLocation(TextSpan.FromBounds(0, 0))),
+                                stage = "KFrontIR",
+                                phase = KFrontIRPhase.phaseName CHECKERS
+                            )
+                        | _ ->
+                            ()
+                    | _ ->
+                        ()
+                | _ ->
+                    ()
+
+        diagnostics.Items
 
     let validateExpectDeclarations (backendProfile: string) (documents: ParsedDocument list) =
         let diagnostics = DiagnosticBag()
@@ -857,17 +938,17 @@ module internal CompilationFrontend =
 
                     if satisfactionCount = 0 then
                         diagnostics.AddError(
+                            DiagnosticCode.ExpectUnsatisfied,
                             $"Unsatisfied expect declaration for {describeExpectation declaration}.",
                             document.Source.GetLocation(spanOfExpectation declaration),
-                            code = "E_EXPECT_UNSATISFIED",
                             stage = "KFrontIR",
                             phase = KFrontIRPhase.phaseName CHECKERS
                         )
                     elif satisfactionCount > 1 then
                         diagnostics.AddError(
+                            DiagnosticCode.ExpectAmbiguous,
                             $"Multiple satisfactions were found for expected {describeExpectation declaration}.",
                             document.Source.GetLocation(spanOfExpectation declaration),
-                            code = "E_EXPECT_AMBIGUOUS",
                             stage = "KFrontIR",
                             phase = KFrontIRPhase.phaseName CHECKERS
                         )
@@ -910,7 +991,7 @@ module internal CompilationFrontend =
 
                     diagnostics.Add(
                         { Severity = Error
-                          Code = "E_IMPORT_CYCLE"
+                          Code = DiagnosticCode.ImportCycle
                           Stage = Some "KFrontIR"
                           Phase = Some(KFrontIRPhase.phaseName CHECKERS)
                           Message = $"Import cycle detected: {message}."
