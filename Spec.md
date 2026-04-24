@@ -7443,30 +7443,72 @@ Forms such as module qualification, static member selection on a type, projectio
 sections, and record patch forms are ordinary dotted forms but are not reachable through `?.`.
 
 <!-- expressions.application.dotted_forms.projection_sections_receiver_projection_sections -->
-##### 7.1.1.1 Projection sections and receiver-projection sections
+##### 7.1.1.1 Receiver sections
 
 ```kappa
 (.field)                 -- \__x -> __x.field
 (.field1.field2)         -- \__x -> __x.field1.field2
 (.degrees)               -- \__x -> __x.degrees
 (.at i)                  -- \__x -> __x.at i
+(.render options)        -- \__x -> __x.render options
+(.writeTo file)          -- \__x -> __x.writeTo file
 ```
 
 Formation rule:
 
-* A parenthesized expression whose content begins with `.` is a section form over a fresh receiver binder.
-* The body after the leading `.` is resolved exactly as if it had been written as a dotted form on a fresh receiver
-  `__x`.
-* Thus:
-  * `(.field1.field2)` elaborates to `\__x -> __x.field1.field2`.
-  * `(.name args...)` elaborates to `\__x -> __x.name args...`, where `name args...` is resolved using the ordinary
-    dotted-form and receiver-sugar rules of §§2.8.3-2.8.4.
+* A parenthesized expression whose content begins with `.` is a receiver section.
+* A receiver section elaborates to a unary lambda over a fresh receiver binder.
+* The body after the leading `.` is resolved exactly as if it had been written as a dotted form on that fresh receiver
+  binder `__x`.
+
+Thus:
+
+```kappa
+(.field1.field2)
+```
+
+elaborates to:
+
+```kappa
+\__x -> __x.field1.field2
+```
+
+and:
+
+```kappa
+(.name args...)
+```
+
+elaborates to:
+
+```kappa
+\__x -> __x.name args...
+```
+
+where `name args...` is resolved using the ordinary dotted-form and receiver-sugar rules of §§2.8.3-2.8.4.
+
+Rules:
+
 * The binder `__x` is fresh.
-* A section is well-formed only if the corresponding dotted form on `__x` is well-formed.
-* Module qualification, static member selection on a type, record update, and row extension are not admitted inside a
-  section body.
-* A section whose body resolves to a fully applied receiver projection counts as a fully applied projection call after
-  insertion of the fresh receiver.
+* A receiver section is well-formed only if the corresponding dotted form on `__x` is well-formed.
+* Module qualification, static member selection on a type, record patch, and row extension are not admitted inside a
+  receiver-section body.
+* A receiver section whose body resolves to a fully applied receiver projection counts as a fully applied projection
+  call after insertion of the fresh receiver.
+* A receiver section whose body resolves to a projector descriptor application or accessor-bundle descriptor application
+  is treated under §§7.1.3A and 7.1.3B after insertion of the fresh receiver.
+* Receiver sections are ordinary term expressions and may be passed to ordinary functions.
+
+Examples:
+
+```kappa
+users |> map (.name)
+
+doc
+    |> (.normalize)
+    |> (.render options)
+    |> (.writeTo file)
+```
 
 Projection syntax also permits parenthesized operator members:
 
@@ -19495,8 +19537,16 @@ infix right 0 (<|)
   with higher precedence. Thus tighter-binding operator expressions on the right of `|>` group there first.
 * `<|` has precedence `0` and is right-associative, so `f <| g <| x ≡ f (g x)`.
 * Pipe operators are ordinary infix operators. They do not alter the parsing or elaboration of dotted forms, method-call
-  sugar, or receiver-projection sugar (§2.8.4). In particular, `x |> obj.method` parses as `x |> (obj.method)`; the
-  pipe does not retarget method-call or receiver-projection sugar onto `x`.
+  sugar, receiver-projection sugar, or receiver sections (§7.1.1.1).
+* In particular, `x |> obj.method` parses as `x |> (obj.method)`; the pipe does not retarget method-call or
+  receiver-projection sugar onto `x`.
+* To pipe a value through a receiver-style member access or method call, use an explicit receiver section:
+
+  ```kappa
+  x |> (.method)
+  x |> (.method arg)
+  x |> (.field.subfield)
+  ```
 
 <!-- appendices.pipe_operators.optional_typed_pipe -->
 ### B.3 Optional: typed pipe
