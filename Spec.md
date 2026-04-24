@@ -12974,6 +12974,16 @@ The names are taken directly from the binders written in the GADT signature; no 
 required in the `data` header. This unifies the named-argument sugar across both simple and GADT constructor
 declarations.
 
+Defaults and patterns:
+
+Constructor defaults do not apply to patterns.
+
+A defaulted constructor parameter is still an ordinary constructor field for pattern matching. Named constructor
+patterns continue to describe the fields they bind or match; omitting a field in a pattern never inserts that field's
+default expression.
+
+Thus constructor defaults affect construction only, not deconstruction.
+
 Rules:
 * All parameters of a single constructor must use the same style (all positional/named-parenthesized or all
   record-style). Mixing styles inside one constructor is a compile-time error.
@@ -13166,6 +13176,30 @@ User { name = name }
 
 and therefore does not use a default for `name`.
 
+Rebound constructors and default metadata:
+
+Rebinding a constructor preserves its constructor application metadata.
+
+Example:
+
+```kappa
+let MkUser = User
+let ada = MkUser { name = "Ada" }
+```
+
+If `User` has a default for every omitted named parameter, the application of `MkUser` is well-formed and elaborates as
+if `User` had been used directly.
+
+A value is known to preserve constructor application metadata when it is:
+
+* a constructor declaration used directly;
+* a local binding whose right-hand side is known to preserve the same constructor metadata;
+* a record or package field projection whose stored value is known to preserve the same constructor metadata; or
+* an imported or exported value whose module interface records that metadata.
+
+If the callee in `C { ... }` is an ordinary function value not known to preserve constructor metadata, named constructor
+application is ill-formed. Ordinary positional application may still be used.
+
 <!-- data_types.data_declarations.naming_diagnostics -->
 #### 11.1.1A Naming diagnostics for lowercase data and constructor names
 
@@ -13194,6 +13228,27 @@ data Vec (n : Nat) (a : Type) : Type =
 They support the full range of constructor features, including the named-argument sugar described in §11.1 (the binders
 in the Pi signature become the named parameters). Exhaustiveness checking and pattern matching treat GADT constructors
 identically to ordinary constructors once indices are unified.
+
+Defaulted GADT constructor parameters:
+
+In a GADT-style constructor signature, an explicit named binder may carry a default clause using the same syntax and
+rules as §11.1.
+
+Example:
+
+```kappa
+data VecBox (a : Type) : Type =
+    VecBox :
+        (n  : Nat) ->
+        (xs : Vec n a = replicate n defaultElement) ->
+        VecBox a
+```
+
+The default expression for a GADT-style constructor binder is checked in the telescope prefix preceding that binder.
+It may refer to earlier binders in the constructor signature but not to the binder being defaulted or to later binders.
+
+Defaults in GADT-style constructors affect named constructor application only. They do not affect the constructor's
+explicit Pi type.
 
 Free lowercase identifiers in a GADT-style constructor signature that are not already bound by the data header or by
 explicit constructor binders are implicitly universalized per §5.3.3.
