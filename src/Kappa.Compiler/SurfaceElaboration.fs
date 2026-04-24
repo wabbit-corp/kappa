@@ -57,6 +57,10 @@ module SurfaceElaboration =
           ReturnType: TypeExpr
           Body: SurfaceProjectionBody option }
 
+    type private ProjectionDescriptorAliasInfo =
+        { Projection: ProjectionInfo
+          RemainingPlaceBinders: ProjectionPlaceBinder list }
+
     type private ModuleSurfaceInfo =
         { TypeAliases: Map<string, TypeAliasInfo>
           RecordTypes: Map<string, RecordSurfaceInfo>
@@ -1548,6 +1552,45 @@ module SurfaceElaboration =
         | _ ->
             None
 
+    let private tryReceiverProjection
+        (environment: BindingLoweringEnvironment)
+        (localTypes: Map<string, TypeExpr>)
+        receiverName
+        memberName
+        =
+        let receiverType =
+            localTypes
+            |> Map.tryFind receiverName
+            |> Option.orElseWith (fun () ->
+                environment.VisibleBindings
+                |> Map.tryFind receiverName
+                |> Option.map (fun bindingInfo -> snd (TypeSignatures.schemeParts bindingInfo.Scheme)))
+            |> Option.map (normalizeTypeAliases environment.VisibleTypeAliases)
+
+        let binderMatchesReceiverType (binder: ProjectionPlaceBinder) =
+            match receiverType, TypeSignatures.parseType binder.TypeTokens with
+            | Some actualType, Some expectedType ->
+                TypeSignatures.definitionallyEqual
+                    actualType
+                    (normalizeTypeAliases environment.VisibleTypeAliases expectedType)
+            | _ ->
+                true
+
+        environment.VisibleProjections
+        |> Map.tryFind memberName
+        |> Option.bind (fun projectionInfo ->
+            let placeBinders =
+                projectionInfo.Binders
+                |> List.choose (function
+                    | ProjectionPlaceBinder binder -> Some binder
+                    | ProjectionValueBinder _ -> None)
+
+            match placeBinders with
+            | [ binder ] when binder.IsReceiver && binderMatchesReceiverType binder ->
+                Some projectionInfo
+            | _ ->
+                None)
+
     let private resolveConstraintInstance
         (environment: BindingLoweringEnvironment)
         (constraintInfo: TraitConstraint)
@@ -2345,6 +2388,31 @@ module SurfaceElaboration =
             let ordinaryFields = fields |> List.filter (fun field -> not field.IsExtension && field.Name <> "<missing>")
             let extensionFields = fields |> List.filter (fun field -> field.IsExtension && field.Name <> "<missing>")
 
+            let projectionPatchInfo field =
+                match receiver, field.Path with
+                | Name [ receiverName ], [ segment ] ->
+                    tryReceiverProjection environment locals receiverName segment.Name
+                | _ ->
+                    None
+
+            let projectionSupportsSet (projectionInfo: ProjectionInfo) =
+                match projectionInfo.Body with
+                | Some(ProjectionAccessors clauses) ->
+                    let clauseKinds =
+                        clauses
+                        |> List.map (function
+                            | ProjectionGet _ -> "get"
+                            | ProjectionInout _ -> "open"
+                            | ProjectionSet _ -> "set"
+                            | ProjectionSink _ -> "sink")
+                        |> Set.ofList
+
+                    Set.contains "set" clauseKinds || Set.contains "open" clauseKinds
+                | Some _ ->
+                    true
+                | None ->
+                    false
+
             let duplicatePathDiagnostics =
                 ordinaryFields
                 |> List.countBy pathKey
@@ -2420,15 +2488,30 @@ module SurfaceElaboration =
 
                 match receiverRecordInfo with
                 | Some recordInfo ->
-                    ordinaryFields |> List.collect (fun field -> validatePath recordInfo field.Path)
+                    ordinaryFields
+                    |> List.collect (fun field ->
+                        match projectionPatchInfo field with
+                        | Some _ -> []
+                        | None -> validatePath recordInfo field.Path)
                 | None ->
                     []
+
+            let projectionPatchDiagnostics =
+                ordinaryFields
+                |> List.choose (fun field ->
+                    projectionPatchInfo field
+                    |> Option.bind (fun projectionInfo ->
+                        if projectionSupportsSet projectionInfo then
+                            None
+                        else
+                            Some(makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "Projection-section update requires an accessor/setter or selector projection.")))
 
             duplicatePathDiagnostics
             @ prefixDiagnostics
             @ duplicateExtensionDiagnostics
             @ extensionDiagnostics
             @ unknownPathDiagnostics
+            @ projectionPatchDiagnostics
 
         let validateRecordLiteral (fields: SurfaceRecordLiteralField list) =
             let fieldNames = fields |> List.map (fun (field: SurfaceRecordLiteralField) -> field.Name) |> Set.ofList
@@ -2615,14 +2698,18 @@ module SurfaceElaboration =
                 []
             | Name(root :: fieldName :: _) ->
                 let missingFieldDiagnostics =
-                    match tryRecordInfoForRoot locals root with
-                    | Some recordInfo
-                        when recordInfo.Fields
-                             |> List.exists (fun (field: RecordSurfaceFieldInfo) -> String.Equals(field.Name, fieldName, StringComparison.Ordinal))
-                             |> not ->
-                        [ makeDiagnostic DiagnosticCode.RecordProjectionMissingField $"Record type has no field named '{fieldName}'." ]
-                    | _ ->
+                    match tryReceiverProjection environment locals root fieldName with
+                    | Some _ ->
                         []
+                    | None ->
+                        match tryRecordInfoForRoot locals root with
+                        | Some recordInfo
+                            when recordInfo.Fields
+                                 |> List.exists (fun (field: RecordSurfaceFieldInfo) -> String.Equals(field.Name, fieldName, StringComparison.Ordinal))
+                                 |> not ->
+                            [ makeDiagnostic DiagnosticCode.RecordProjectionMissingField $"Record type has no field named '{fieldName}'." ]
+                        | _ ->
+                            []
 
                 missingFieldDiagnostics
             | Name _ ->
@@ -2791,6 +2878,316 @@ module SurfaceElaboration =
                 | DoReturn expression ->
                     validateExpression locals expression
 
+        let rec validateInoutPlacement insideDo expression =
+            let recurse = validateInoutPlacement insideDo
+
+            match expression with
+            | InoutArgument inner ->
+                let markerDiagnostics =
+                    if insideDo then
+                        []
+                    else
+                        [ makeDiagnostic DiagnosticCode.QttInoutMarkerUnexpected "The '~' inout marker is only valid inside do blocks." ]
+
+                markerDiagnostics @ recurse inner
+            | LocalLet(_, value, body) ->
+                recurse value @ recurse body
+            | Lambda(_, body) ->
+                validateInoutPlacement false body
+            | IfThenElse(condition, whenTrue, whenFalse) ->
+                recurse condition @ recurse whenTrue @ recurse whenFalse
+            | Match(scrutinee, cases) ->
+                recurse scrutinee
+                @ (cases
+                   |> List.collect (fun caseClause ->
+                       (caseClause.Guard |> Option.map recurse |> Option.defaultValue [])
+                       @ recurse caseClause.Body))
+            | RecordLiteral fields ->
+                fields |> List.collect (fun field -> recurse field.Value)
+            | Seal(value, _) ->
+                recurse value
+            | RecordUpdate(receiver, fields) ->
+                recurse receiver @ (fields |> List.collect (fun field -> recurse field.Value))
+            | SafeNavigation(receiver, navigation) ->
+                recurse receiver @ (navigation.Arguments |> List.collect recurse)
+            | TagTest(receiver, _) ->
+                recurse receiver
+            | Do statements ->
+                statements |> List.collect validateInoutDoStatement
+            | MonadicSplice inner
+            | Unary(_, inner) ->
+                recurse inner
+            | Apply(callee, arguments) ->
+                recurse callee @ (arguments |> List.collect recurse)
+            | Binary(left, _, right)
+            | Elvis(left, right) ->
+                recurse left @ recurse right
+            | PrefixedString(_, parts) ->
+                parts
+                |> List.collect (function
+                    | StringText _ -> []
+                    | StringInterpolation inner -> recurse inner)
+            | Literal _
+            | Name _ ->
+                []
+
+        and validateInoutDoStatement statement =
+            match statement with
+            | DoLet(_, expression)
+            | DoLetQuestion(_, expression, _)
+            | DoBind(_, expression)
+            | DoVar(_, expression)
+            | DoAssign(_, expression)
+            | DoUsing(_, expression)
+            | DoReturn expression
+            | DoExpression expression ->
+                validateInoutPlacement true expression
+            | DoIf(condition, whenTrue, whenFalse) ->
+                validateInoutPlacement true condition
+                @ (whenTrue |> List.collect validateInoutDoStatement)
+                @ (whenFalse |> List.collect validateInoutDoStatement)
+            | DoWhile(condition, body) ->
+                validateInoutPlacement true condition @ (body |> List.collect validateInoutDoStatement)
+
+        let tryProjectionDescriptorAlias (expression: SurfaceExpression) =
+            let tryBuild projectionName suppliedArguments =
+                environment.VisibleProjections
+                |> Map.tryFind projectionName
+                |> Option.bind (fun projectionInfo ->
+                    if List.length suppliedArguments >= List.length projectionInfo.Binders then
+                        None
+                    else
+                        let suppliedBinders = projectionInfo.Binders |> List.take (List.length suppliedArguments)
+                        let remainingBinders = projectionInfo.Binders |> List.skip (List.length suppliedArguments)
+
+                        let suppliedAreValues =
+                            suppliedBinders
+                            |> List.forall (function
+                                | ProjectionValueBinder _ -> true
+                                | ProjectionPlaceBinder _ -> false)
+
+                        let remainingPlaceBinders =
+                            remainingBinders
+                            |> List.choose (function
+                                | ProjectionPlaceBinder binder -> Some binder
+                                | ProjectionValueBinder _ -> None)
+
+                        if suppliedAreValues && List.length remainingPlaceBinders = List.length remainingBinders then
+                            Some
+                                { Projection = projectionInfo
+                                  RemainingPlaceBinders = remainingPlaceBinders }
+                        else
+                            None)
+
+            match expression with
+            | Name [ projectionName ] -> tryBuild projectionName []
+            | Apply(Name [ projectionName ], suppliedArguments) -> tryBuild projectionName suppliedArguments
+            | _ -> None
+
+        let rec isStableDescriptorPlace (expression: SurfaceExpression) =
+            match expression with
+            | Name(_ :: _) ->
+                true
+            | Apply(Name [ projectionName ], arguments) ->
+                environment.VisibleProjections
+                |> Map.tryFind projectionName
+                |> Option.exists (fun projectionInfo ->
+                    match projectionInfo.Body with
+                    | Some(ProjectionAccessors _) ->
+                        false
+                    | _ ->
+                        List.length projectionInfo.Binders = List.length arguments
+                        && (List.zip projectionInfo.Binders arguments
+                            |> List.forall (fun (binder, argument) ->
+                                match binder with
+                                | ProjectionPlaceBinder _ -> isStableDescriptorPlace argument
+                                | ProjectionValueBinder _ -> true)))
+            | _ ->
+                false
+
+        let descriptorApplicationDiagnostics (remainingPlaceBinders: ProjectionPlaceBinder list) rootsArgument =
+            let rootPackFieldMap (fields: SurfaceRecordLiteralField list) =
+                fields
+                |> List.map (fun field -> field.Name, field.Value)
+                |> Map.ofList
+
+            let unstableRootDiagnostics expressions =
+                expressions
+                |> List.choose (fun expression ->
+                    if isStableDescriptorPlace expression then
+                        None
+                    else
+                        Some(makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "Projector descriptor roots must be stable places or selector-computed places."))
+
+            match remainingPlaceBinders with
+            | [] ->
+                [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "A projector descriptor application must still have at least one root." ]
+            | [ binder ] ->
+                match rootsArgument with
+                | RecordLiteral fields when fields |> List.exists (fun field -> String.Equals(field.Name, binder.Name, StringComparison.Ordinal)) ->
+                    let fieldMap = rootPackFieldMap fields
+                    let fieldNames = fieldMap |> Map.keys |> Set.ofSeq
+                    let expectedNames = Set.singleton binder.Name
+
+                    if fieldNames <> expectedNames then
+                        [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "Projector descriptor roots pack fields must match the projector root binders exactly." ]
+                    else
+                        fieldMap |> Map.find binder.Name |> List.singleton |> unstableRootDiagnostics
+                | RecordLiteral _ ->
+                    [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "Projector descriptor roots pack fields must match the projector root binders exactly." ]
+                | _ ->
+                    unstableRootDiagnostics [ rootsArgument ]
+            | binders ->
+                match rootsArgument with
+                | RecordLiteral fields ->
+                    let fieldMap = rootPackFieldMap fields
+                    let fieldNames = fieldMap |> Map.keys |> Set.ofSeq
+                    let expectedNames = binders |> List.map (fun binder -> binder.Name) |> Set.ofList
+
+                    if fieldNames <> expectedNames then
+                        [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "Projector descriptor roots pack fields must match the projector root binders exactly." ]
+                    else
+                        binders
+                        |> List.map (fun binder -> fieldMap |> Map.find binder.Name)
+                        |> unstableRootDiagnostics
+                | _ ->
+                    [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "Multi-root projector descriptors must be applied to a record literal roots pack." ]
+
+        let fullyAppliedProjectionReturningDescriptorDiagnostic body =
+            let returnTypeIsProjector =
+                definition.ReturnTypeTokens
+                |> Option.bind TypeSignatures.parseType
+                |> Option.exists (function
+                    | TypeName(([ "Projector" ] | [ "std"; "prelude"; "Projector" ]), _) -> true
+                    | _ -> false)
+
+            match returnTypeIsProjector, body with
+            | true, Apply(Name [ projectionName ], arguments) ->
+                environment.VisibleProjections
+                |> Map.tryFind projectionName
+                |> Option.filter (fun projectionInfo -> List.length projectionInfo.Binders = List.length arguments)
+                |> Option.map (fun _ ->
+                    [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "A fully applied projection produces the projected focus, not a projector descriptor value." ])
+                |> Option.defaultValue []
+            | _ ->
+                []
+
+        let rec validateProjectionDescriptorApplications (aliases: Map<string, ProjectionDescriptorAliasInfo>) (expression: SurfaceExpression) =
+            let recurse = validateProjectionDescriptorApplications aliases
+
+            match expression with
+            | Apply(Name [ aliasName ], [ rootsArgument ]) ->
+                let nested = validateProjectionDescriptorApplications aliases rootsArgument
+
+                match aliases |> Map.tryFind aliasName with
+                | Some aliasInfo ->
+                    nested @ descriptorApplicationDiagnostics aliasInfo.RemainingPlaceBinders rootsArgument
+                | None ->
+                    nested
+            | Apply(callee, arguments) ->
+                recurse callee @ (arguments |> List.collect recurse)
+            | LocalLet(binding, value, body) ->
+                let valueDiagnostics = recurse value
+                let shadowedAliases =
+                    collectPatternNames binding.Pattern
+                    |> List.fold (fun current name -> Map.remove name current) aliases
+
+                let bodyAliases =
+                    match binding.Pattern, tryProjectionDescriptorAlias value with
+                    | NamePattern aliasName, Some aliasInfo -> Map.add aliasName aliasInfo shadowedAliases
+                    | _ -> shadowedAliases
+
+                valueDiagnostics @ validateProjectionDescriptorApplications bodyAliases body
+            | Lambda(parameters, body) ->
+                let bodyAliases =
+                    parameters
+                    |> List.fold (fun current parameter -> Map.remove parameter.Name current) aliases
+
+                validateProjectionDescriptorApplications bodyAliases body
+            | IfThenElse(condition, whenTrue, whenFalse) ->
+                recurse condition @ recurse whenTrue @ recurse whenFalse
+            | Match(scrutinee, cases) ->
+                recurse scrutinee
+                @ (cases
+                   |> List.collect (fun caseClause ->
+                       (caseClause.Guard |> Option.map recurse |> Option.defaultValue [])
+                       @ recurse caseClause.Body))
+            | RecordLiteral fields ->
+                fields |> List.collect (fun field -> recurse field.Value)
+            | Seal(value, _) ->
+                recurse value
+            | RecordUpdate(receiver, fields) ->
+                recurse receiver @ (fields |> List.collect (fun field -> recurse field.Value))
+            | SafeNavigation(receiver, navigation) ->
+                recurse receiver @ (navigation.Arguments |> List.collect recurse)
+            | TagTest(receiver, _) ->
+                recurse receiver
+            | Do statements ->
+                validateProjectionDescriptorDoStatements aliases statements
+            | MonadicSplice inner
+            | InoutArgument inner
+            | Unary(_, inner) ->
+                recurse inner
+            | Binary(left, _, right)
+            | Elvis(left, right) ->
+                recurse left @ recurse right
+            | PrefixedString(_, parts) ->
+                parts
+                |> List.collect (function
+                    | StringText _ -> []
+                    | StringInterpolation inner -> recurse inner)
+            | Literal _
+            | Name _ ->
+                []
+
+        and validateProjectionDescriptorDoStatements (aliases: Map<string, ProjectionDescriptorAliasInfo>) (statements: SurfaceDoStatement list) =
+            match statements with
+            | [] ->
+                []
+            | statement :: rest ->
+                match statement with
+                | DoLet(binding, expression)
+                | DoBind(binding, expression)
+                | DoUsing(binding, expression) ->
+                    let nextAliases =
+                        collectPatternNames binding.Pattern
+                        |> List.fold (fun current name -> Map.remove name current) aliases
+
+                    validateProjectionDescriptorApplications aliases expression
+                    @ validateProjectionDescriptorDoStatements nextAliases rest
+                | DoLetQuestion(binding, expression, failure) ->
+                    let nextAliases =
+                        collectPatternNames binding.Pattern
+                        |> List.fold (fun current name -> Map.remove name current) aliases
+
+                    let failureDiagnostics =
+                        failure
+                        |> Option.map (fun block -> validateProjectionDescriptorDoStatements aliases block.Body)
+                        |> Option.defaultValue []
+
+                    validateProjectionDescriptorApplications aliases expression
+                    @ failureDiagnostics
+                    @ validateProjectionDescriptorDoStatements nextAliases rest
+                | DoVar(name, expression) ->
+                    validateProjectionDescriptorApplications aliases expression
+                    @ validateProjectionDescriptorDoStatements (Map.remove name aliases) rest
+                | DoAssign(target, expression) ->
+                    validateProjectionDescriptorApplications aliases expression
+                    @ validateProjectionDescriptorDoStatements aliases rest
+                | DoExpression expression
+                | DoReturn expression ->
+                    validateProjectionDescriptorApplications aliases expression
+                    @ validateProjectionDescriptorDoStatements aliases rest
+                | DoIf(condition, whenTrue, whenFalse) ->
+                    validateProjectionDescriptorApplications aliases condition
+                    @ validateProjectionDescriptorDoStatements aliases whenTrue
+                    @ validateProjectionDescriptorDoStatements aliases whenFalse
+                    @ validateProjectionDescriptorDoStatements aliases rest
+                | DoWhile(condition, body) ->
+                    validateProjectionDescriptorApplications aliases condition
+                    @ validateProjectionDescriptorDoStatements aliases body
+                    @ validateProjectionDescriptorDoStatements aliases rest
+
         let parameterRecordDiagnostics =
             definition.Parameters
             |> List.collect (fun parameter ->
@@ -2802,7 +3199,12 @@ module SurfaceElaboration =
         parameterRecordDiagnostics
         @
             match definition.Body with
-            | Some body -> validateExpression localTypes body @ validateExpectedBody localTypes body
+            | Some body ->
+                validateExpression localTypes body
+                @ validateExpectedBody localTypes body
+                @ validateInoutPlacement false body
+                @ validateProjectionDescriptorApplications Map.empty body
+                @ fullyAppliedProjectionReturningDescriptorDiagnostic body
             | None -> []
 
     let validateSurfaceModules (frontendModules: KFrontIRModule list) =
@@ -2832,6 +3234,78 @@ module SurfaceElaboration =
                   VisibleInstances = visibleInstances surfaceIndex moduleName
                   ConstrainedMembers = Map.empty }
 
+            let validateProjectionDeclaration (declaration: ProjectionDeclaration) =
+                let placeBinders =
+                    declaration.Binders
+                    |> List.choose (function
+                        | ProjectionPlaceBinder binder -> Some binder
+                        | ProjectionValueBinder _ -> None)
+
+                let placeBinderNames = placeBinders |> List.map (fun binder -> binder.Name) |> Set.ofList
+
+                let missingPlaceDiagnostics =
+                    if List.isEmpty placeBinders then
+                        [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "A projection definition must declare at least one place binder." ]
+                    else
+                        []
+
+                let rec selectorYieldDiagnostics body =
+                    match body with
+                    | ProjectionYield(Name(root :: _)) when Set.contains root placeBinderNames ->
+                        []
+                    | ProjectionYield(Apply(Name [ projectionName ], _)) ->
+                        match environment.VisibleProjections |> Map.tryFind projectionName with
+                        | Some nestedProjection ->
+                            match nestedProjection.Body with
+                            | Some(ProjectionAccessors _) ->
+                                [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "A selector projection yield must denote a stable place, not an accessor bundle." ]
+                            | _ ->
+                                []
+                        | None ->
+                            [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "A selector projection yield must denote a stable place." ]
+                    | ProjectionYield _ ->
+                        [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "A selector projection yield must denote a stable place rooted in a place binder." ]
+                    | ProjectionIfThenElse(_, whenTrue, whenFalse) ->
+                        selectorYieldDiagnostics whenTrue @ selectorYieldDiagnostics whenFalse
+                    | ProjectionMatch(_, cases) ->
+                        cases |> List.collect (fun caseClause -> selectorYieldDiagnostics caseClause.Body)
+                    | ProjectionAccessors _ ->
+                        []
+
+                let expandedDiagnostics =
+                    if List.isEmpty placeBinders then
+                        []
+                    else
+                        match declaration.Body with
+                        | Some(ProjectionAccessors clauses) ->
+                            let placeCountDiagnostics =
+                                if List.length placeBinders = 1 then
+                                    []
+                                else
+                                    [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "An expanded accessor projection must declare exactly one place binder." ]
+
+                            let duplicateDiagnostics =
+                                clauses
+                                |> List.map (function
+                                    | ProjectionGet _ -> "get"
+                                    | ProjectionInout _ -> "inout"
+                                    | ProjectionSet _ -> "set"
+                                    | ProjectionSink _ -> "sink")
+                                |> List.countBy id
+                                |> List.choose (fun (kind, count) ->
+                                    if count > 1 then
+                                        Some(makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported $"Projection accessor clause '{kind}' is declared more than once.")
+                                    else
+                                        None)
+
+                            placeCountDiagnostics @ duplicateDiagnostics
+                        | Some body ->
+                            selectorYieldDiagnostics body
+                        | None ->
+                            []
+
+                missingPlaceDiagnostics @ expandedDiagnostics
+
             frontendModule.Declarations
             |> List.collect (function
                 | TypeAliasNode declaration ->
@@ -2853,6 +3327,8 @@ module SurfaceElaboration =
                         |> Option.map (fun bindingInfo -> bindingInfo.Scheme)
 
                     validateBuiltInExpressionsForBinding environment definition scheme
+                | ProjectionDeclarationNode declaration ->
+                    validateProjectionDeclaration declaration
                 | _ ->
                     []))
 
@@ -2925,38 +3401,76 @@ module SurfaceElaboration =
             | Name [ "False" ] ->
                 Some boolType
             | Name(root :: path) ->
-                localTypes
-                |> Map.tryFind root
-                |> Option.orElseWith (fun () ->
-                    environment.VisibleBindings
+                match path with
+                | [ memberName ] ->
+                    tryReceiverProjection environment localTypes root memberName
+                    |> Option.map (fun projectionInfo -> projectionInfo.ReturnType)
+                    |> Option.orElseWith (fun () ->
+                        localTypes
+                        |> Map.tryFind root
+                        |> Option.orElseWith (fun () ->
+                            environment.VisibleBindings
+                            |> Map.tryFind root
+                            |> Option.bind (fun bindingInfo ->
+                                if List.isEmpty path then
+                                    tryPrepareVisibleBindingCall
+                                        environment
+                                        freshCounter
+                                        bindingInfo
+                                        (inferExpressionType localTypes)
+                                        []
+                                    |> Option.map (fun preparedCall -> preparedCall.ResultType)
+                                    |> Option.orElseWith (fun () -> instantiateVisibleBindingResultType environment freshCounter root)
+                                else
+                                    None))
+                        |> Option.orElseWith (fun () ->
+                            environment.VisibleConstructors
+                            |> Map.tryFind root
+                            |> Option.bind (fun constructorInfo ->
+                                if List.isEmpty path then
+                                    tryPrepareVisibleBindingCall
+                                        environment
+                                        freshCounter
+                                        constructorInfo
+                                        (inferExpressionType localTypes)
+                                        []
+                                    |> Option.map (fun preparedCall -> preparedCall.ResultType)
+                                else
+                                    None))
+                        |> Option.bind (fun rootType -> tryProjectVisibleRecordType environment.VisibleTypeAliases rootType path))
+                | _ ->
+                    localTypes
                     |> Map.tryFind root
-                    |> Option.bind (fun bindingInfo ->
-                        if List.isEmpty path then
-                            tryPrepareVisibleBindingCall
-                                environment
-                                freshCounter
-                                bindingInfo
-                                (inferExpressionType localTypes)
-                                []
-                            |> Option.map (fun preparedCall -> preparedCall.ResultType)
-                            |> Option.orElseWith (fun () -> instantiateVisibleBindingResultType environment freshCounter root)
-                        else
-                            None))
-                |> Option.orElseWith (fun () ->
-                    environment.VisibleConstructors
-                    |> Map.tryFind root
-                    |> Option.bind (fun constructorInfo ->
-                        if List.isEmpty path then
-                            tryPrepareVisibleBindingCall
-                                environment
-                                freshCounter
-                                constructorInfo
-                                (inferExpressionType localTypes)
-                                []
-                            |> Option.map (fun preparedCall -> preparedCall.ResultType)
-                        else
-                            None))
-                |> Option.bind (fun rootType -> tryProjectVisibleRecordType environment.VisibleTypeAliases rootType path)
+                    |> Option.orElseWith (fun () ->
+                        environment.VisibleBindings
+                        |> Map.tryFind root
+                        |> Option.bind (fun bindingInfo ->
+                            if List.isEmpty path then
+                                tryPrepareVisibleBindingCall
+                                    environment
+                                    freshCounter
+                                    bindingInfo
+                                    (inferExpressionType localTypes)
+                                    []
+                                |> Option.map (fun preparedCall -> preparedCall.ResultType)
+                                |> Option.orElseWith (fun () -> instantiateVisibleBindingResultType environment freshCounter root)
+                            else
+                                None))
+                    |> Option.orElseWith (fun () ->
+                        environment.VisibleConstructors
+                        |> Map.tryFind root
+                        |> Option.bind (fun constructorInfo ->
+                            if List.isEmpty path then
+                                tryPrepareVisibleBindingCall
+                                    environment
+                                    freshCounter
+                                    constructorInfo
+                                    (inferExpressionType localTypes)
+                                    []
+                                |> Option.map (fun preparedCall -> preparedCall.ResultType)
+                            else
+                                None))
+                    |> Option.bind (fun rootType -> tryProjectVisibleRecordType environment.VisibleTypeAliases rootType path)
             | Name [] ->
                 None
             | LocalLet(binding, value, body) ->
@@ -3540,6 +4054,8 @@ module SurfaceElaboration =
                             )
                         else
                             None
+                    | ProjectionAccessors _ ->
+                        None
 
                 projectionInfo.Body |> Option.bind (lowerProjectionBody localTypes))
 
@@ -3985,6 +4501,12 @@ module SurfaceElaboration =
                     KCoreApply(KCoreName [ bindingName ], lowerPreparedArguments preparedCall.Arguments)
                 | _ ->
                     KCoreName [ bindingName ]
+            | Name [ receiverName; memberName ] ->
+                match tryReceiverProjection environment localTypes receiverName memberName with
+                | Some _ ->
+                    KCoreApply(KCoreName [ memberName ], [ lowerExpression localTypes (Name [ receiverName ]) ])
+                | None ->
+                    KCoreName [ receiverName; memberName ]
             | Name segments ->
                 KCoreName segments
             | LocalLet(binding, value, body) ->

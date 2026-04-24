@@ -19,6 +19,15 @@ module ResourceChecking =
           Binders: ProjectionBinder list
           Body: SurfaceProjectionBody option }
 
+    type private ProjectionDescriptorAlias =
+        { ProjectionName: string
+          SuppliedArguments: SurfaceExpression list
+          RemainingPlaceBinders: ProjectionPlaceBinder list }
+
+    type private TypeAliasSummary =
+        { Parameters: string list
+          Body: TypeSignatures.TypeExpr }
+
     let private emptyState scopeId =
         ResourceModel.ResourceContext.empty scopeId
 
@@ -779,28 +788,51 @@ module ResourceChecking =
         | TypeSignatures.TypeVariable _ ->
             false
 
-    let rec private captureSetFromType typeExpr =
-        seq {
-            match typeExpr with
-            | TypeSignatures.TypeCapture(inner, captures) ->
-                yield! captures
-                yield! captureSetFromType inner
-            | TypeSignatures.TypeArrow(_, parameterType, resultType) ->
-                yield! captureSetFromType parameterType
-                yield! captureSetFromType resultType
-            | TypeSignatures.TypeEquality(left, right) ->
-                yield! captureSetFromType left
-                yield! captureSetFromType right
-            | TypeSignatures.TypeName(_, arguments) ->
-                for argument in arguments do
-                    yield! captureSetFromType argument
-            | TypeSignatures.TypeRecord fields ->
-                for field in fields do
-                    yield! captureSetFromType field.Type
-            | TypeSignatures.TypeVariable _ ->
-                ()
-        }
-        |> Set.ofSeq
+    let private captureSetFromTypeWithAliases typeAliasMap typeExpr =
+        let rec loop visited current =
+            seq {
+                match current with
+                | TypeSignatures.TypeCapture(inner, captures) ->
+                    yield! captures
+                    yield! loop visited inner
+                | TypeSignatures.TypeArrow(_, parameterType, resultType) ->
+                    yield! loop visited parameterType
+                    yield! loop visited resultType
+                | TypeSignatures.TypeEquality(left, right) ->
+                    yield! loop visited left
+                    yield! loop visited right
+                | TypeSignatures.TypeName(([ "BorrowView" ] | [ "std"; "prelude"; "BorrowView" ]), TypeSignatures.TypeVariable regionName :: arguments) ->
+                    yield regionName
+
+                    for argument in arguments do
+                        yield! loop visited argument
+                | TypeSignatures.TypeName(name, arguments) ->
+                    let aliasName = SyntaxFacts.moduleNameToText name
+
+                    match typeAliasMap |> Map.tryFind aliasName with
+                    | Some aliasInfo
+                        when not (Set.contains aliasName visited)
+                             && List.length aliasInfo.Parameters = List.length arguments ->
+                        let substitution = List.zip aliasInfo.Parameters arguments |> Map.ofList
+
+                        yield!
+                            aliasInfo.Body
+                            |> TypeSignatures.applySubstitution substitution
+                            |> loop (Set.add aliasName visited)
+                    | _ ->
+                        for argument in arguments do
+                            yield! loop visited argument
+                | TypeSignatures.TypeRecord fields ->
+                    for field in fields do
+                        yield! loop visited field.Type
+                | TypeSignatures.TypeVariable _ ->
+                    ()
+            }
+
+        loop Set.empty typeExpr |> Set.ofSeq
+
+    let private captureSetFromType typeExpr =
+        captureSetFromTypeWithAliases Map.empty typeExpr
 
     let private applicationBoundaryTypesCompatible demandedType actualType =
         if TypeSignatures.definitionallyEqual demandedType actualType then
@@ -898,6 +930,15 @@ module ResourceChecking =
             String.Equals(borrowLock.Root, place.Root, StringComparison.Ordinal)
             && (borrowLock.FootprintPaths |> List.exists (fun footprintPath -> pathsOverlap footprintPath place.Path)))
 
+    let private fieldPathRequiresUse (state: CheckState) (place: ResourcePlace) =
+        match place.Path, tryFindBinding place.Root state with
+        | fieldName :: _, Some binding ->
+            binding.RecordFieldQuantities
+            |> Map.tryFind fieldName
+            |> Option.exists ResourceQuantity.requiresUse
+        | _ ->
+            false
+
     let rec private tryBorrowablePlacesWithEnv
         (env: Map<string, ResourcePlace list>)
         projectionSummaries
@@ -982,6 +1023,304 @@ module ResourceChecking =
                     Some casePlaces
                 | current, None ->
                     current) None
+        | Some(ProjectionAccessors _) ->
+            None
+
+    let private accessorCapabilities body =
+        match body with
+        | Some(ProjectionAccessors clauses) ->
+            let direct =
+                clauses
+                |> List.fold (fun capabilities clause ->
+                    match clause with
+                    | ProjectionGet _ -> Set.add "get" capabilities
+                    | ProjectionInout _ -> Set.add "open" capabilities
+                    | ProjectionSet _ -> Set.add "set" capabilities
+                    | ProjectionSink _ -> Set.add "sink" capabilities) Set.empty
+
+            let synthesized =
+                direct
+                |> fun capabilities ->
+                    if Set.contains "get" capabilities && Set.contains "set" capabilities then
+                        Set.add "open" capabilities
+                    else
+                        capabilities
+                |> fun capabilities ->
+                    if Set.contains "open" capabilities && not (Set.contains "set" capabilities) then
+                        Set.add "set" capabilities
+                    else
+                        capabilities
+
+            Some synthesized
+        | _ ->
+            None
+
+    let private projectionPlaceArgumentPlaces projectionSummaries state (projectionSummary: ProjectionSummary) arguments =
+        if List.length projectionSummary.Binders <> List.length arguments then
+            None
+        else
+            (Some [], List.zip projectionSummary.Binders arguments)
+            ||> List.fold (fun current (binder, argument) ->
+                current
+                |> Option.bind (fun places ->
+                    match binder with
+                    | ProjectionPlaceBinder _ ->
+                        tryBorrowablePlacesWithEnv Map.empty projectionSummaries state argument
+                        |> Option.map (fun argumentPlaces -> places @ argumentPlaces)
+                    | ProjectionValueBinder _ ->
+                        Some places))
+            |> Option.map distinctPlaces
+
+    let private tryInoutArgumentPlaces
+        (projectionSummaries: Map<string, ProjectionSummary>)
+        (state: CheckState)
+        (expression: SurfaceExpression)
+        =
+        match expression with
+        | Apply(Name [ projectionName ], projectionArguments) when Map.containsKey projectionName projectionSummaries ->
+            let projectionSummary = projectionSummaries[projectionName]
+
+            match accessorCapabilities projectionSummary.Body with
+            | Some _ -> projectionPlaceArgumentPlaces projectionSummaries state projectionSummary projectionArguments
+            | None -> tryBorrowablePlacesWithEnv Map.empty projectionSummaries state expression
+        | _ ->
+            tryExpressionPlace expression |> Option.map List.singleton
+
+    let private sequenceOptions values =
+        (Some [], values)
+        ||> List.fold (fun current value ->
+            match current, value with
+            | Some items, Some item -> Some(items @ [ item ])
+            | _ -> None)
+
+    let private tryProjectionDescriptorAlias projectionSummaries expression =
+        let tryBuild projectionName suppliedArguments =
+            projectionSummaries
+            |> Map.tryFind projectionName
+            |> Option.bind (fun projectionSummary ->
+                if List.length suppliedArguments >= List.length projectionSummary.Binders then
+                    None
+                else
+                    let suppliedBinders = projectionSummary.Binders |> List.take (List.length suppliedArguments)
+                    let remainingBinders = projectionSummary.Binders |> List.skip (List.length suppliedArguments)
+
+                    let suppliedAreValues =
+                        suppliedBinders
+                        |> List.forall (function
+                            | ProjectionValueBinder _ -> true
+                            | ProjectionPlaceBinder _ -> false)
+
+                    let remainingPlaceBinders =
+                        remainingBinders
+                        |> List.choose (function
+                            | ProjectionPlaceBinder binder -> Some binder
+                            | ProjectionValueBinder _ -> None)
+
+                    if suppliedAreValues && List.length remainingPlaceBinders = List.length remainingBinders then
+                        Some
+                            { ProjectionName = projectionName
+                              SuppliedArguments = suppliedArguments
+                              RemainingPlaceBinders = remainingPlaceBinders }
+                    else
+                        None)
+
+        match expression with
+        | Name [ projectionName ] -> tryBuild projectionName []
+        | Apply(Name [ projectionName ], suppliedArguments) -> tryBuild projectionName suppliedArguments
+        | _ -> None
+
+    let private tryProjectionDescriptorApplication (aliasInfo: ProjectionDescriptorAlias) rootsArgument =
+        let recordFieldsByName (fields: SurfaceRecordLiteralField list) =
+            fields
+            |> List.map (fun field -> field.Name, field.Value)
+            |> Map.ofList
+
+        let trySingleRoot (binder: ProjectionPlaceBinder) =
+            match rootsArgument with
+            | RecordLiteral fields when fields |> List.exists (fun field -> String.Equals(field.Name, binder.Name, StringComparison.Ordinal)) ->
+                recordFieldsByName fields |> Map.tryFind binder.Name |> Option.map List.singleton
+            | RecordLiteral _ ->
+                None
+            | _ ->
+                Some [ rootsArgument ]
+
+        let tryMultiRoot (binders: ProjectionPlaceBinder list) =
+            match rootsArgument with
+            | RecordLiteral fields ->
+                let fieldMap = recordFieldsByName fields
+                let fieldNames = fieldMap |> Map.keys |> Set.ofSeq
+                let binderNames = binders |> List.map (fun binder -> binder.Name) |> Set.ofList
+
+                if fieldNames = binderNames then
+                    binders
+                    |> List.map (fun binder -> fieldMap |> Map.tryFind binder.Name)
+                    |> sequenceOptions
+                else
+                    None
+            | _ ->
+                None
+
+        match aliasInfo.RemainingPlaceBinders with
+        | [] ->
+            None
+        | [ binder ] ->
+            trySingleRoot binder
+        | binders ->
+            tryMultiRoot binders
+        |> Option.map (fun placeArguments ->
+            Apply(Name [ aliasInfo.ProjectionName ], aliasInfo.SuppliedArguments @ placeArguments))
+
+    let rec private rewriteProjectionDescriptorApplications (aliases: Map<string, ProjectionDescriptorAlias>) (expression: SurfaceExpression) =
+        let rewrite = rewriteProjectionDescriptorApplications aliases
+
+        match expression with
+        | Apply(Name [ aliasName ], [ rootsArgument ]) ->
+            match aliases |> Map.tryFind aliasName with
+            | Some aliasInfo ->
+                tryProjectionDescriptorApplication aliasInfo rootsArgument
+                |> Option.map (rewriteProjectionDescriptorApplications aliases)
+                |> Option.defaultValue expression
+            | None ->
+                Apply(Name [ aliasName ], [ rewrite rootsArgument ])
+        | Apply(callee, arguments) ->
+            Apply(rewrite callee, arguments |> List.map rewrite)
+        | LocalLet(binding, value, body) ->
+            let shadowedNames = collectPatternNames binding.Pattern
+
+            let bodyAliases =
+                shadowedNames
+                |> List.fold (fun current name -> Map.remove name current) aliases
+
+            LocalLet(binding, rewrite value, rewriteProjectionDescriptorApplications bodyAliases body)
+        | Lambda(parameters, body) ->
+            let bodyAliases =
+                parameters
+                |> List.fold (fun current parameter -> Map.remove parameter.Name current) aliases
+
+            Lambda(parameters, rewriteProjectionDescriptorApplications bodyAliases body)
+        | IfThenElse(condition, whenTrue, whenFalse) ->
+            IfThenElse(rewrite condition, rewrite whenTrue, rewrite whenFalse)
+        | Match(scrutinee, cases) ->
+            let rewriteCase (caseClause: SurfaceMatchCase) =
+                { caseClause with
+                    Guard = caseClause.Guard |> Option.map rewrite
+                    Body = rewrite caseClause.Body }
+
+            Match(rewrite scrutinee, cases |> List.map rewriteCase)
+        | RecordLiteral fields ->
+            RecordLiteral(fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+        | Seal(value, ascriptionTokens) ->
+            Seal(rewrite value, ascriptionTokens)
+        | RecordUpdate(receiver, fields) ->
+            RecordUpdate(receiver |> rewrite, fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+        | SafeNavigation(receiver, navigation) ->
+            SafeNavigation(receiver |> rewrite, { navigation with Arguments = navigation.Arguments |> List.map rewrite })
+        | TagTest(receiver, constructorName) ->
+            TagTest(rewrite receiver, constructorName)
+        | Do statements ->
+            let rec rewriteStatements activeAliases statements =
+                match statements with
+                | [] ->
+                    []
+                | statement :: rest ->
+                    match statement with
+                    | DoLet(binding, value) ->
+                        let restAliases =
+                            collectPatternNames binding.Pattern
+                            |> List.fold (fun current name -> Map.remove name current) activeAliases
+
+                        DoLet(binding, rewriteProjectionDescriptorApplications activeAliases value)
+                        :: rewriteStatements restAliases rest
+                    | DoBind(binding, value) ->
+                        let restAliases =
+                            collectPatternNames binding.Pattern
+                            |> List.fold (fun current name -> Map.remove name current) activeAliases
+
+                        DoBind(binding, rewriteProjectionDescriptorApplications activeAliases value)
+                        :: rewriteStatements restAliases rest
+                    | DoLetQuestion(binding, value, failure) ->
+                        let restAliases =
+                            collectPatternNames binding.Pattern
+                            |> List.fold (fun current name -> Map.remove name current) activeAliases
+
+                        let failure =
+                            failure
+                            |> Option.map (fun block ->
+                                { block with
+                                    Body = rewriteStatements activeAliases block.Body })
+
+                        DoLetQuestion(binding, rewriteProjectionDescriptorApplications activeAliases value, failure)
+                        :: rewriteStatements restAliases rest
+                    | DoUsing(binding, value) ->
+                        let restAliases =
+                            collectPatternNames binding.Pattern
+                            |> List.fold (fun current name -> Map.remove name current) activeAliases
+
+                        DoUsing(binding, rewriteProjectionDescriptorApplications activeAliases value)
+                        :: rewriteStatements restAliases rest
+                    | DoVar(name, value) ->
+                        DoVar(name, rewriteProjectionDescriptorApplications activeAliases value)
+                        :: rewriteStatements (Map.remove name activeAliases) rest
+                    | DoAssign(target, value) ->
+                        DoAssign(target, rewriteProjectionDescriptorApplications activeAliases value)
+                        :: rewriteStatements activeAliases rest
+                    | DoIf(condition, whenTrue, whenFalse) ->
+                        DoIf(
+                            rewriteProjectionDescriptorApplications activeAliases condition,
+                            rewriteStatements activeAliases whenTrue,
+                            rewriteStatements activeAliases whenFalse
+                        )
+                        :: rewriteStatements activeAliases rest
+                    | DoWhile(condition, body) ->
+                        DoWhile(rewriteProjectionDescriptorApplications activeAliases condition, rewriteStatements activeAliases body)
+                        :: rewriteStatements activeAliases rest
+                    | DoExpression value ->
+                        DoExpression(rewriteProjectionDescriptorApplications activeAliases value)
+                        :: rewriteStatements activeAliases rest
+                    | DoReturn value ->
+                        DoReturn(rewriteProjectionDescriptorApplications activeAliases value)
+                        :: rewriteStatements activeAliases rest
+
+            Do(rewriteStatements aliases statements)
+        | MonadicSplice inner ->
+            MonadicSplice(rewrite inner)
+        | InoutArgument inner ->
+            InoutArgument(rewrite inner)
+        | Unary(operatorName, inner) ->
+            Unary(operatorName, rewrite inner)
+        | Binary(left, operatorName, right) ->
+            Binary(rewrite left, operatorName, rewrite right)
+        | Elvis(left, right) ->
+            Elvis(rewrite left, rewrite right)
+        | PrefixedString(prefix, parts) ->
+            let parts =
+                parts
+                |> List.map (function
+                    | StringInterpolation inner -> StringInterpolation(rewrite inner)
+                    | StringText text -> StringText text)
+
+            PrefixedString(prefix, parts)
+        | Literal _
+        | Name _ ->
+            expression
+
+    let private addProjectionCapabilityDiagnostic (document: ParsedDocument) capability expression state =
+        addDiagnostic
+            DiagnosticCode.ProjectionDefinitionUnsupported
+            $"Projection/accessor use requires the '{capability}' capability at this site."
+            (argumentLocation document expression)
+            []
+            document
+            state
+
+    let private addProjectionPlaceDiagnostic (document: ParsedDocument) expression state =
+        addDiagnostic
+            DiagnosticCode.ProjectionDefinitionUnsupported
+            "Projection place arguments must be stable places or computed selector places with stable roots."
+            (argumentLocation document expression)
+            []
+            document
+            state
 
     let private addBorrowLock (root: string) (footprintPaths: string list list) origin (state: CheckState) =
         let lockId = $"{currentScopeId state}.l{state.NextBorrowLockId}"
@@ -1101,6 +1440,45 @@ module ResourceChecking =
             |> Map.ofList)
         |> Option.filter (Map.isEmpty >> not)
 
+    let private tryParseRecordFieldQuantities (tokens: Token list) =
+        let stripQuantity fieldTokens =
+            match trimSignificantTokens fieldTokens with
+            | { Kind = IntegerLiteral; Text = "1" } :: rest ->
+                Some ResourceQuantity.one, rest
+            | { Kind = IntegerLiteral; Text = "0" } :: rest ->
+                Some ResourceQuantity.zero, rest
+            | { Kind = Operator; Text = "&" } :: rest ->
+                Some(ResourceQuantity.Borrow None), rest
+            | { Kind = Operator; Text = "<=" } :: { Kind = IntegerLiteral; Text = "1" } :: rest ->
+                Some ResourceQuantity.atMostOne, rest
+            | { Kind = Operator; Text = ">=" } :: { Kind = IntegerLiteral; Text = "1" } :: rest ->
+                Some ResourceQuantity.atLeastOne, rest
+            | head :: rest when Token.isName head && (head.Text = "omega" || head.Text = "ω") ->
+                Some ResourceQuantity.omega, rest
+            | other ->
+                None, other
+
+        let parseField fieldTokens =
+            let quantity, remaining = stripQuantity fieldTokens
+
+            match trimSignificantTokens remaining with
+            | nameToken :: colonToken :: _ when Token.isName nameToken && colonToken.Kind = Colon ->
+                Some(
+                    SyntaxFacts.trimIdentifierQuotes nameToken.Text,
+                    quantity |> Option.defaultValue ResourceQuantity.omega
+                )
+            | _ ->
+                None
+
+        tokens
+        |> stripRecordTypeOuterParens
+        |> Option.map (fun innerTokens ->
+            innerTokens
+            |> splitTopLevelCommas
+            |> List.choose parseField
+            |> Map.ofList)
+        |> Option.filter (Map.isEmpty >> not)
+
     let private collectRecordTypeAliases (documents: ParsedDocument list) =
         let moduleAliasName (document: ParsedDocument) (aliasName: string) : string option =
             document.ModuleName
@@ -1125,6 +1503,58 @@ module ResourceChecking =
             |> List.concat)
         |> Map.ofList
 
+    let private collectRecordTypeQuantityAliases (documents: ParsedDocument list) =
+        let moduleAliasName (document: ParsedDocument) (aliasName: string) : string option =
+            document.ModuleName
+            |> Option.map (fun moduleName -> $"{SyntaxFacts.moduleNameToText moduleName}.{aliasName}")
+
+        documents
+        |> List.collect (fun document ->
+            document.Syntax.Declarations
+            |> List.choose (function
+                | TypeAliasNode declaration ->
+                    declaration.BodyTokens
+                    |> Option.bind tryParseRecordFieldQuantities
+                    |> Option.map (fun quantities ->
+                        [
+                            declaration.Name, quantities
+                            match moduleAliasName document declaration.Name with
+                            | Some qualifiedName -> qualifiedName, quantities
+                            | None -> ()
+                        ])
+                | _ ->
+                    None)
+            |> List.concat)
+        |> Map.ofList
+
+    let private collectTypeAliases (documents: ParsedDocument list) =
+        let moduleAliasName (document: ParsedDocument) (aliasName: string) : string option =
+            document.ModuleName
+            |> Option.map (fun moduleName -> $"{SyntaxFacts.moduleNameToText moduleName}.{aliasName}")
+
+        documents
+        |> List.collect (fun document ->
+            document.Syntax.Declarations
+            |> List.choose (function
+                | TypeAliasNode declaration when not declaration.IsOpaque ->
+                    declaration.BodyTokens
+                    |> Option.bind TypeSignatures.parseType
+                    |> Option.map (fun body ->
+                        let aliasInfo =
+                            { Parameters = TypeSignatures.collectLeadingTypeParameters declaration.HeaderTokens
+                              Body = body }
+
+                        [
+                            declaration.Name, aliasInfo
+                            match moduleAliasName document declaration.Name with
+                            | Some qualifiedName -> qualifiedName, aliasInfo
+                            | None -> ()
+                        ])
+                | _ ->
+                    None)
+            |> List.concat)
+        |> Map.ofList
+
     let private tryResolveRecordFieldDependencies aliasMap tokens =
         match tryParseRecordFieldDependencies tokens with
         | Some dependencies ->
@@ -1139,6 +1569,20 @@ module ResourceChecking =
                     $"{SyntaxFacts.trimIdentifierQuotes leftToken.Text}.{SyntaxFacts.trimIdentifierQuotes rightToken.Text}"
 
                 aliasMap |> Map.tryFind qualifiedName |> Option.defaultValue Map.empty
+            | _ ->
+                Map.empty
+
+    let private tryResolveRecordFieldQuantities quantityAliasMap tokens =
+        match tryParseRecordFieldQuantities tokens with
+        | Some quantities ->
+            quantities
+        | None ->
+            match trimSignificantTokens tokens with
+            | [ aliasToken ] when Token.isName aliasToken ->
+                let aliasName = SyntaxFacts.trimIdentifierQuotes aliasToken.Text
+                quantityAliasMap |> Map.tryFind aliasName |> Option.defaultValue Map.empty
+            | head :: _ when Token.isName head && SyntaxFacts.trimIdentifierQuotes head.Text = "Zipper" ->
+                Map.ofList [ "fill", ResourceQuantity.one ]
             | _ ->
                 Map.empty
 
@@ -1204,6 +1648,7 @@ module ResourceChecking =
               Place = place
               ConsumedPaths = []
               RecordFieldDependencies = Map.empty
+              RecordFieldQuantities = Map.empty
               BorrowRegion = borrowRegion
               CapturedRegions = capturedRegions
               CapturedBindingOrigins = capturedBindingOrigins
@@ -1373,7 +1818,8 @@ module ResourceChecking =
                 tryFindBinding place.Root state
                 |> Option.filter (fun binding ->
                     binding.DeclaredQuantity
-                    |> Option.exists ResourceQuantity.isExactOne)
+                    |> Option.exists ResourceQuantity.isExactOne
+                    && (List.isEmpty place.Path || fieldPathRequiresUse state place))
                 |> Option.map (fun binding -> binding, place.Path))
 
     let rec private patternCanDischargeMovedValue pattern =
@@ -1876,6 +2322,128 @@ module ResourceChecking =
         | _ ->
             state
 
+    let rec private countProjectionDescriptorAliasUses aliasName expression =
+        let recurse = countProjectionDescriptorAliasUses aliasName
+
+        match expression with
+        | Apply(Name [ name ], [ rootsArgument ]) when String.Equals(name, aliasName, StringComparison.Ordinal) ->
+            1 + recurse rootsArgument
+        | Apply(callee, arguments) ->
+            recurse callee + (arguments |> List.sumBy recurse)
+        | LocalLet(binding, value, body) ->
+            let valueCount = recurse value
+
+            if collectPatternNames binding.Pattern |> List.contains aliasName then
+                valueCount
+            else
+                valueCount + recurse body
+        | Lambda(parameters, body) ->
+            if parameters |> List.exists (fun parameter -> String.Equals(parameter.Name, aliasName, StringComparison.Ordinal)) then
+                0
+            else
+                recurse body
+        | IfThenElse(condition, whenTrue, whenFalse) ->
+            recurse condition + recurse whenTrue + recurse whenFalse
+        | Match(scrutinee, cases) ->
+            recurse scrutinee
+            + (cases
+               |> List.sumBy (fun caseClause ->
+                   (caseClause.Guard |> Option.map recurse |> Option.defaultValue 0)
+                   + recurse caseClause.Body))
+        | RecordLiteral fields ->
+            fields |> List.sumBy (fun field -> recurse field.Value)
+        | Seal(value, _) ->
+            recurse value
+        | RecordUpdate(receiver, fields) ->
+            recurse receiver + (fields |> List.sumBy (fun field -> recurse field.Value))
+        | SafeNavigation(receiver, navigation) ->
+            recurse receiver + (navigation.Arguments |> List.sumBy recurse)
+        | TagTest(receiver, _) ->
+            recurse receiver
+        | Do statements ->
+            countProjectionDescriptorAliasUsesInStatements aliasName statements
+        | MonadicSplice inner
+        | InoutArgument inner
+        | Unary(_, inner) ->
+            recurse inner
+        | Binary(left, _, right)
+        | Elvis(left, right) ->
+            recurse left + recurse right
+        | PrefixedString(_, parts) ->
+            parts
+            |> List.sumBy (function
+                | StringInterpolation inner -> recurse inner
+                | StringText _ -> 0)
+        | Literal _
+        | Name _ ->
+            0
+
+    and private countProjectionDescriptorAliasUsesInStatements aliasName statements =
+        let rec loop activeAlias remaining =
+            match remaining with
+            | [] ->
+                0
+            | statement :: rest ->
+                match statement with
+                | DoLet(binding, expression)
+                | DoBind(binding, expression)
+                | DoUsing(binding, expression) ->
+                    let expressionCount =
+                        if activeAlias then countProjectionDescriptorAliasUses aliasName expression else 0
+
+                    let shadows = collectPatternNames binding.Pattern |> List.contains aliasName
+                    expressionCount + loop (activeAlias && not shadows) rest
+                | DoLetQuestion(binding, expression, failure) ->
+                    let expressionCount =
+                        if activeAlias then countProjectionDescriptorAliasUses aliasName expression else 0
+
+                    let failureCount =
+                        if activeAlias then
+                            failure
+                            |> Option.map (fun block -> loop activeAlias block.Body)
+                            |> Option.defaultValue 0
+                        else
+                            0
+
+                    let shadows = collectPatternNames binding.Pattern |> List.contains aliasName
+                    expressionCount + failureCount + loop (activeAlias && not shadows) rest
+                | DoVar(name, expression) ->
+                    let expressionCount =
+                        if activeAlias then countProjectionDescriptorAliasUses aliasName expression else 0
+
+                    expressionCount + loop (activeAlias && not (String.Equals(name, aliasName, StringComparison.Ordinal))) rest
+                | DoAssign(_, expression)
+                | DoExpression expression
+                | DoReturn expression ->
+                    let expressionCount =
+                        if activeAlias then countProjectionDescriptorAliasUses aliasName expression else 0
+
+                    expressionCount + loop activeAlias rest
+                | DoIf(condition, whenTrue, whenFalse) ->
+                    let currentCount =
+                        if activeAlias then
+                            countProjectionDescriptorAliasUses aliasName condition
+                            + loop activeAlias whenTrue
+                            + loop activeAlias whenFalse
+                        else
+                            0
+
+                    currentCount + loop activeAlias rest
+                | DoWhile(condition, body) ->
+                    let currentCount =
+                        if activeAlias then
+                            countProjectionDescriptorAliasUses aliasName condition + loop activeAlias body
+                        else
+                            0
+
+                    currentCount + loop activeAlias rest
+
+        loop true statements
+
+    let private noteProjectionDescriptorAliasUses document aliasName useCount state =
+        [ 1 .. useCount ]
+        |> List.fold (fun current _ -> noteValueDemandingNameUse document (Name [ aliasName ]) current) state
+
     let private validatePlaceAccess (document: ParsedDocument) (place: ResourcePlace) (state: CheckState) =
         match tryFindBinding place.Root state with
         | _ when tryFindBorrowOverlap place state |> Option.isSome ->
@@ -2018,6 +2586,11 @@ module ResourceChecking =
                     rightBinding.RecordFieldDependencies
                 else
                     leftBinding.RecordFieldDependencies
+            RecordFieldQuantities =
+                if Map.isEmpty leftBinding.RecordFieldQuantities then
+                    rightBinding.RecordFieldQuantities
+                else
+                    leftBinding.RecordFieldQuantities
             CapturedRegions = Set.union leftBinding.CapturedRegions rightBinding.CapturedRegions
             CapturedBindingOrigins =
                 leftBinding.CapturedBindingOrigins @ rightBinding.CapturedBindingOrigins
@@ -2367,6 +2940,11 @@ module ResourceChecking =
                     parameter.Quantity |> Option.map ResourceQuantity.ofSurface
 
             let checkDrop = quantity |> Option.exists ResourceQuantity.requiresUse
+            let capturedRegions =
+                parameter.TypeTokens
+                |> Option.bind TypeSignatures.parseType
+                |> Option.map captureSetFromType
+                |> Option.defaultValue Set.empty
 
             let region: BorrowRegion option =
                 match quantity with
@@ -2382,7 +2960,7 @@ module ResourceChecking =
                 | Some region -> addBorrowRegionFact (findBinderLocation document parameter.Name) region current
                 | None -> current
 
-            addBinding ParameterBinding parameter.Name quantity region Set.empty [] checkDrop None None (findBinderLocation document parameter.Name) current
+            addBinding ParameterBinding parameter.Name quantity region capturedRegions [] checkDrop None None (findBinderLocation document parameter.Name) current
 
         match expression with
         | Lambda(parameters, body) ->
@@ -2483,6 +3061,11 @@ module ResourceChecking =
     let private addLambdaExecutionParameterBinding (document: ParsedDocument) (parameter: Parameter) current =
         let quantity = parameterQuantity parameter
         let checkDrop = quantity |> Option.exists ResourceQuantity.requiresUse
+        let capturedRegions =
+            parameter.TypeTokens
+            |> Option.bind TypeSignatures.parseType
+            |> Option.map captureSetFromType
+            |> Option.defaultValue Set.empty
 
         let region, current =
             introduceBorrowRegionForQuantity
@@ -2496,7 +3079,7 @@ module ResourceChecking =
             parameter.Name
             quantity
             region
-            Set.empty
+            capturedRegions
             []
             checkDrop
             None
@@ -2638,6 +3221,24 @@ module ResourceChecking =
 
             let bindingNames = collectPatternNames binding.Pattern
 
+            let projectionDescriptorAlias =
+                match binding.Pattern with
+                | NamePattern aliasName ->
+                    tryProjectionDescriptorAlias projectionSummaries value
+                    |> Option.map (fun aliasInfo -> aliasName, aliasInfo)
+                | _ ->
+                    None
+
+            let bodyForChecking =
+                projectionDescriptorAlias
+                |> Option.map (fun (aliasName, aliasInfo) ->
+                        rewriteProjectionDescriptorApplications (Map.ofList [ aliasName, aliasInfo ]) body)
+                |> Option.defaultValue body
+
+            let projectionDescriptorAliasUse =
+                projectionDescriptorAlias
+                |> Option.map (fun (aliasName, _) -> aliasName, countProjectionDescriptorAliasUses aliasName body)
+
             let shadowedLinearBindings =
                 bindingNames
                 |> List.choose (fun name -> tryFindBinding name state)
@@ -2776,9 +3377,13 @@ module ResourceChecking =
                         nextState
 
                 scopedState
-                |> noteValueDemandingNameUse document body
-                |> fun current -> checkExpression projectionSummaries document signatures current body
-                |> checkResultEscapeAtBoundary allowedRegions document body
+                |> fun current ->
+                    projectionDescriptorAliasUse
+                    |> Option.map (fun (aliasName, useCount) -> noteProjectionDescriptorAliasUses document aliasName useCount current)
+                    |> Option.defaultValue current
+                |> noteValueDemandingNameUse document bodyForChecking
+                |> fun current -> checkExpression projectionSummaries document signatures current bodyForChecking
+                |> checkResultEscapeAtBoundary allowedRegions document bodyForChecking
                 |> checkScopeLinearDrops document) state
         | Lambda _ ->
             checkLambdaParameterEscape document expression state
@@ -2997,6 +3602,10 @@ module ResourceChecking =
                     current
                     |> noteValueDemandingNameUse document inner
                     |> fun next -> checkExpression projectionSummaries document signatures next inner) state
+        | Apply(Name [ calleeName ], [ view; Lambda(parameters, body) ])
+            when String.Equals(calleeName, "withBorrowView", StringComparison.Ordinal) ->
+            let state = checkExpression projectionSummaries document signatures state view
+            checkImmediateLambdaDemand projectionSummaries document signatures state parameters body
         | Apply(Name [ calleeName ], [ argument ]) when String.Equals(calleeName, "force", StringComparison.Ordinal) ->
             let state = checkExpression projectionSummaries document signatures state argument
 
@@ -3034,8 +3643,72 @@ module ResourceChecking =
                     | _ -> checkExpression projectionSummaries document signatures state argument
 
                 state
+        | Apply(Name [ calleeName ], arguments) when Map.containsKey calleeName projectionSummaries ->
+            match Map.tryFind calleeName projectionSummaries with
+            | None ->
+                state
+            | Some projectionSummary when List.length projectionSummary.Binders = List.length arguments ->
+                let isAccessorProjection = accessorCapabilities projectionSummary.Body |> Option.isSome
+
+                let state =
+                    match accessorCapabilities projectionSummary.Body with
+                    | Some capabilities when not (Set.contains "get" capabilities) ->
+                        addProjectionCapabilityDiagnostic document "get" expression state
+                    | _ ->
+                        state
+
+                let state =
+                    (state, List.zip projectionSummary.Binders arguments)
+                    ||> List.fold (fun current (binder, argument) ->
+                        match binder with
+                        | ProjectionPlaceBinder _ ->
+                            match tryBorrowablePlacesWithEnv Map.empty projectionSummaries current argument with
+                            | Some places when isAccessorProjection ->
+                                places
+                                |> List.fold (fun next place ->
+                                    next
+                                    |> validatePlaceAccess document place
+                                    |> addNonConsumingDemand document place.Root) current
+                            | Some _ ->
+                                current
+                            | None ->
+                                current
+                                |> addProjectionPlaceDiagnostic document argument
+                                |> noteValueDemandingNameUse document argument
+                                |> fun next -> checkExpression projectionSummaries document signatures next argument
+                        | ProjectionValueBinder _ ->
+                            current
+                            |> noteValueDemandingNameUse document argument
+                            |> fun next -> checkExpression projectionSummaries document signatures next argument)
+
+                if isAccessorProjection then
+                    state
+                else
+                    match tryBorrowablePlacesWithEnv Map.empty projectionSummaries state expression with
+                    | Some places ->
+                        places
+                        |> List.fold (fun current place ->
+                            current
+                            |> validatePlaceAccess document place
+                            |> addNonConsumingDemand document place.Root) state
+                    | None ->
+                        state
+                        |> addProjectionPlaceDiagnostic document expression
+            | Some _ ->
+                arguments
+                |> List.fold (fun current argument ->
+                    current
+                    |> noteValueDemandingNameUse document argument
+                    |> fun next -> checkExpression projectionSummaries document signatures next argument) state
         | Apply(callee, arguments) ->
             let state = checkExpression projectionSummaries document signatures state callee
+            let state =
+                match callee with
+                | Name(root :: path) when not (List.isEmpty path) && fieldPathRequiresUse state (makePlace root path) ->
+                    consumeBindingAtPlace document (makePlace root path) state
+                | _ ->
+                    state
+
             let calleeName = tryCalleeName callee
             let calleeBinding =
                 match callee with
@@ -3107,6 +3780,51 @@ module ResourceChecking =
                     |> Option.bind (fun name -> Map.tryFind name signatures)
                     |> Option.map (fun signature -> signature.ParameterInout)
                     |> Option.defaultValue []
+
+            let state =
+                let inoutPlaces =
+                    arguments
+                    |> List.mapi (fun index argument -> index, argument)
+                    |> List.choose (fun (index, argument) ->
+                        let expectsInout =
+                            parameterInout
+                            |> List.tryItem index
+                            |> Option.defaultValue false
+
+                        match expectsInout, argument with
+                        | true, InoutArgument inner ->
+                            tryInoutArgumentPlaces projectionSummaries state inner
+                            |> Option.map (fun places -> argument, places)
+                        | _ ->
+                            None)
+
+                let placePairs =
+                    [
+                        for leftIndex = 0 to List.length inoutPlaces - 1 do
+                            for rightIndex = leftIndex + 1 to List.length inoutPlaces - 1 do
+                                yield inoutPlaces[leftIndex], inoutPlaces[rightIndex]
+                    ]
+
+                placePairs
+                |> List.fold (fun current ((_, leftPlaces), (rightArgument, rightPlaces)) ->
+                    let overlaps =
+                        leftPlaces
+                        |> List.exists (fun leftPlace ->
+                            rightPlaces
+                            |> List.exists (fun rightPlace ->
+                                String.Equals(leftPlace.Root, rightPlace.Root, StringComparison.Ordinal)
+                                && pathsOverlap leftPlace.Path rightPlace.Path))
+
+                    if overlaps then
+                        addDiagnostic
+                            borrowOverlapCode
+                            "Inout arguments must have disjoint place footprints."
+                            (argumentLocation document rightArgument)
+                            []
+                            document
+                            current
+                    else
+                        current) state
 
             let state =
                 ((state, 0), arguments)
@@ -3215,28 +3933,109 @@ module ResourceChecking =
                         match demandQuantity, argument with
                         | Some demandQuantity, Lambda(parameters, body) when lowerBoundIsPositive (Some demandQuantity) ->
                             checkImmediateLambdaDemand projectionSummaries document signatures current parameters body
-                        | Some demandQuantity, Name [ name ] when concreteQuantityCountsUse demandQuantity ->
-                            consumeBinding document name current
-                        | Some demandQuantity, InoutArgument inner when concreteQuantityCountsUse demandQuantity ->
-                            match tryExpressionPlace inner with
-                            | Some place ->
-                                let current = consumeBindingAtPlace document place current
+                        | Some demandQuantity, Name(root :: path) when concreteQuantityCountsUse demandQuantity ->
+                            consumeBindingAtPlace document (makePlace root path) current
+                        | Some demandQuantity, _ when concreteQuantityCountsUse demandQuantity
+                                                     && isProjectionCall projectionSummaries argument ->
+                            match argument with
+                            | Apply(Name [ projectionName ], projectionArguments) ->
+                                match Map.tryFind projectionName projectionSummaries with
+                                | Some projectionSummary ->
+                                    match accessorCapabilities projectionSummary.Body with
+                                    | Some capabilities ->
+                                        let current =
+                                            if Set.contains "sink" capabilities then
+                                                current
+                                            else
+                                                addProjectionCapabilityDiagnostic document "sink" argument current
 
-                                if expectsInout then
-                                    match tryFindBindingId place.Root current with
-                                    | Some bindingId ->
-                                        updateBinding bindingId (restoreConsumedPlace place) current
+                                        match projectionPlaceArgumentPlaces projectionSummaries current projectionSummary projectionArguments with
+                                        | Some places ->
+                                            places
+                                            |> List.fold (fun next place -> consumeBindingAtPlace document place next) current
+                                        | None ->
+                                            current
+                                            |> addProjectionPlaceDiagnostic document argument
+                                            |> fun next -> checkExpression projectionSummaries document signatures next argument
                                     | None ->
+                                        match tryBorrowablePlacesWithEnv Map.empty projectionSummaries current argument with
+                                        | Some places ->
+                                            places
+                                            |> List.fold (fun next place -> consumeBindingAtPlace document place next) current
+                                        | None ->
+                                            current
+                                            |> addProjectionPlaceDiagnostic document argument
+                                            |> fun next -> checkExpression projectionSummaries document signatures next argument
+                                | None ->
+                                    checkExpression projectionSummaries document signatures current argument
+                            | _ ->
+                                checkExpression projectionSummaries document signatures current argument
+                        | Some demandQuantity, InoutArgument inner when concreteQuantityCountsUse demandQuantity ->
+                            match inner with
+                            | Apply(Name [ projectionName ], projectionArguments) when expectsInout && Map.containsKey projectionName projectionSummaries ->
+                                let projectionSummary = projectionSummaries[projectionName]
+                                let current =
+                                    match accessorCapabilities projectionSummary.Body with
+                                    | Some capabilities when not (Set.contains "open" capabilities) ->
+                                        addProjectionCapabilityDiagnostic document "open" inner current
+                                    | _ ->
                                         current
-                                else
+
+                                let places =
+                                    match accessorCapabilities projectionSummary.Body with
+                                    | Some _ -> projectionPlaceArgumentPlaces projectionSummaries current projectionSummary projectionArguments
+                                    | None -> tryBorrowablePlacesWithEnv Map.empty projectionSummaries current inner
+
+                                match places with
+                                | Some places ->
+                                    places
+                                    |> List.fold (fun next place ->
+                                        let next = consumeBindingAtPlace document place next
+
+                                        match tryFindBindingId place.Root next with
+                                        | Some bindingId -> updateBinding bindingId (restoreConsumedPlace place) next
+                                        | None -> next) current
+                                | None ->
                                     current
-                            | None ->
-                                checkExpression projectionSummaries document signatures current inner
+                                    |> addProjectionPlaceDiagnostic document inner
+                                    |> fun next -> checkExpression projectionSummaries document signatures next inner
+                            | _ ->
+                                match tryExpressionPlace inner with
+                                | Some place ->
+                                    let current = consumeBindingAtPlace document place current
+
+                                    if expectsInout then
+                                        match tryFindBindingId place.Root current with
+                                        | Some bindingId ->
+                                            updateBinding bindingId (restoreConsumedPlace place) current
+                                        | None ->
+                                            current
+                                    else
+                                        current
+                                | None ->
+                                    let current =
+                                        if expectsInout then
+                                            addProjectionPlaceDiagnostic document inner current
+                                        else
+                                            current
+
+                                    checkExpression projectionSummaries document signatures current inner
                         | Some demandQuantity, Name [ name ] when ResourceQuantity.isBorrow demandQuantity ->
                             current
                             |> addNonConsumingDemand document name
                             |> fun current -> checkExpression projectionSummaries document signatures current argument
                         | Some demandQuantity, _ when ResourceQuantity.isBorrow demandQuantity ->
+                            let current =
+                                match argument with
+                                | Apply(Name [ projectionName ], _) ->
+                                    match Map.tryFind projectionName projectionSummaries |> Option.bind (fun summary -> accessorCapabilities summary.Body) with
+                                    | Some capabilities when not (Set.contains "get" capabilities) ->
+                                        addProjectionCapabilityDiagnostic document "get" argument current
+                                    | _ ->
+                                        current
+                                | _ ->
+                                    current
+
                             let current = checkExpression projectionSummaries document signatures current argument
 
                             match tryBorrowablePlacesWithEnv Map.empty projectionSummaries current argument with
@@ -3443,7 +4242,29 @@ module ResourceChecking =
                     else
                         current
 
-                loop current rest
+                let projectionDescriptorAlias =
+                    match binding.Pattern with
+                    | NamePattern aliasName ->
+                        tryProjectionDescriptorAlias projectionSummaries expression
+                        |> Option.map (fun aliasInfo -> aliasName, aliasInfo)
+                    | _ ->
+                        None
+
+                let restForChecking =
+                    projectionDescriptorAlias
+                    |> Option.bind (fun (aliasName, aliasInfo) ->
+                        match rewriteProjectionDescriptorApplications (Map.ofList [ aliasName, aliasInfo ]) (Do rest) with
+                        | Do rewrittenRest -> Some rewrittenRest
+                        | _ -> None)
+                    |> Option.defaultValue rest
+
+                let current =
+                    projectionDescriptorAlias
+                    |> Option.map (fun (aliasName, _) ->
+                        noteProjectionDescriptorAliasUses document aliasName (countProjectionDescriptorAliasUsesInStatements aliasName rest) current)
+                    |> Option.defaultValue current
+
+                loop current restForChecking
             | DoLetQuestion(binding, expression, failure) :: rest ->
                 let current =
                     current
@@ -3721,6 +4542,8 @@ module ResourceChecking =
 
     let private addParameterBinding
         aliasMap
+        quantityAliasMap
+        typeAliasMap
         (document: ParsedDocument)
         (signature: FunctionSignature option)
         parameterIndex
@@ -3777,19 +4600,35 @@ module ResourceChecking =
             |> Option.map (tryResolveRecordFieldDependencies aliasMap)
             |> Option.defaultValue Map.empty
 
+        let recordFieldQuantities =
+            parameter.TypeTokens
+            |> Option.orElse signatureTypeTokens
+            |> Option.map (tryResolveRecordFieldQuantities quantityAliasMap)
+            |> Option.defaultValue Map.empty
+
+        let capturedRegions =
+            parameter.TypeTokens
+            |> Option.orElse signatureTypeTokens
+            |> Option.bind TypeSignatures.parseType
+            |> Option.map (captureSetFromTypeWithAliases typeAliasMap)
+            |> Option.defaultValue Set.empty
+
         let state =
-            addBinding ParameterBinding parameter.Name quantity region Set.empty [] checkDrop None None (findBinderLocation document parameter.Name) state
+            addBinding ParameterBinding parameter.Name quantity region capturedRegions [] checkDrop None None (findBinderLocation document parameter.Name) state
 
         match tryFindBindingId parameter.Name state with
         | Some bindingId ->
             updateBinding bindingId (fun binding ->
                 { binding with
-                    RecordFieldDependencies = recordFieldDependencies }) state
+                    RecordFieldDependencies = recordFieldDependencies
+                    RecordFieldQuantities = recordFieldQuantities }) state
         | None ->
             state
 
     let private checkDefinition
         aliasMap
+        quantityAliasMap
+        typeAliasMap
         projectionSummaries
         (signatures: Map<string, FunctionSignature>)
         (document: ParsedDocument)
@@ -3802,7 +4641,7 @@ module ResourceChecking =
             let declaredReturnType = definitionReturnTypeTokens document definition |> Option.bind TypeSignatures.parseType
             let allowedReturnRegions =
                 declaredReturnType
-                |> Option.map captureSetFromType
+                |> Option.map (captureSetFromTypeWithAliases typeAliasMap)
                 |> Option.defaultValue Set.empty
 
             let localTypes =
@@ -3828,32 +4667,42 @@ module ResourceChecking =
                 |> List.mapi (fun index parameter -> index, parameter)
                 |> List.fold
                     (fun state (parameterIndex, parameter) ->
-                        addParameterBinding aliasMap document signature parameterIndex parameter state)
+                        addParameterBinding aliasMap quantityAliasMap typeAliasMap document signature parameterIndex parameter state)
                     (emptyState scopeId)
                 |> checkInoutThreadedFieldRequirements document signature definition
 
             match body with
             | Lambda _ -> checkEscapingLambdaAgainst allowedReturnRegions document body initialState
             | _ ->
-                initialState
-                |> noteValueDemandingNameUse document body
-                |> fun current -> checkExpression projectionSummaries document signatures current body
-                |> checkResultEscapeAtBoundary allowedReturnRegions document body
-                |> checkScopeLinearDrops document
-                |> fun checkedState ->
+                let captureTypeMismatch =
                     match declaredReturnType, tryInferConservativeExpressionType signatures localTypes body with
-                    | Some expectedType, Some actualType
-                        when (typeContainsCaptureAnnotation expectedType || typeContainsCaptureAnnotation actualType)
-                             && not (TypeSignatures.definitionallyEqual actualType expectedType) ->
-                        addDiagnostic
-                            DiagnosticCode.TypeEqualityMismatch
-                            "The definition body does not match the declared result type."
-                            (argumentLocation document body)
-                            []
-                            document
-                            checkedState
+                    | Some expectedType, Some actualType ->
+                        (typeContainsCaptureAnnotation expectedType || typeContainsCaptureAnnotation actualType)
+                        && not (TypeSignatures.definitionallyEqual actualType expectedType)
                     | _ ->
+                        false
+
+                let checkedState =
+                    initialState
+                    |> noteValueDemandingNameUse document body
+                    |> fun current -> checkExpression projectionSummaries document signatures current body
+                    |> fun current ->
+                        if captureTypeMismatch then
+                            current
+                        else
+                            checkResultEscapeAtBoundary allowedReturnRegions document body current
+                    |> checkScopeLinearDrops document
+
+                if captureTypeMismatch then
+                    addDiagnostic
+                        DiagnosticCode.TypeEqualityMismatch
+                        "The definition body does not match the declared result type."
+                        (argumentLocation document body)
+                        []
+                        document
                         checkedState
+                else
+                    checkedState
         | None ->
             emptyState scopeId
 
@@ -3913,13 +4762,13 @@ module ResourceChecking =
           OwnershipDeferred = deferred
           OwnershipDiagnostics = diagnosticCodes }
 
-    let private checkDocument aliasMap projectionSummaries signatures (document: ParsedDocument) =
+    let private checkDocument aliasMap quantityAliasMap typeAliasMap projectionSummaries signatures (document: ParsedDocument) =
         let states =
             document.Syntax.Declarations
             |> List.mapi (fun index declaration ->
                 match declaration with
                 | LetDeclaration definition ->
-                    checkDefinition aliasMap projectionSummaries signatures document (definitionScopeId document index definition) definition
+                    checkDefinition aliasMap quantityAliasMap typeAliasMap projectionSummaries signatures document (definitionScopeId document index definition) definition
                 | _ ->
                     emptyState $"{document.Source.FilePath}.decl{index}")
 
@@ -3941,12 +4790,14 @@ module ResourceChecking =
     let checkDocumentsWithFacts (documents: ParsedDocument list) =
         let signatures = collectSignatures documents
         let aliasMap = collectRecordTypeAliases documents
+        let quantityAliasMap = collectRecordTypeQuantityAliases documents
+        let typeAliasMap = collectTypeAliases documents
         let projectionSummaries = collectProjectionSummaries documents
 
         let checkedDocuments =
             documents
             |> List.map (fun document ->
-                let diagnostics, facts = checkDocument aliasMap projectionSummaries signatures document
+                let diagnostics, facts = checkDocument aliasMap quantityAliasMap typeAliasMap projectionSummaries signatures document
                 document.Source.FilePath, diagnostics, facts)
 
         { Diagnostics =

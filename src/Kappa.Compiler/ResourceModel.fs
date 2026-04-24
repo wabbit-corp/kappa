@@ -135,6 +135,7 @@ module ResourceModel =
           Place: ResourcePlace
           ConsumedPaths: string list list
           RecordFieldDependencies: Map<string, Set<string>>
+          RecordFieldQuantities: Map<string, ResourceQuantity>
           BorrowRegion: BorrowRegion option
           CapturedRegions: Set<string>
           CapturedBindingOrigins: SourceLocation list

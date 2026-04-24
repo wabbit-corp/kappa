@@ -404,11 +404,18 @@ type SurfaceProjectionBody =
     | ProjectionYield of SurfaceExpression
     | ProjectionIfThenElse of SurfaceExpression * SurfaceProjectionBody * SurfaceProjectionBody
     | ProjectionMatch of SurfaceExpression * SurfaceProjectionCase list
+    | ProjectionAccessors of SurfaceProjectionAccessorClause list
 
 and SurfaceProjectionCase =
     { Pattern: SurfacePattern
       Guard: SurfaceExpression option
       Body: SurfaceProjectionBody }
+
+and SurfaceProjectionAccessorClause =
+    | ProjectionGet of SurfaceExpression
+    | ProjectionInout of SurfaceExpression
+    | ProjectionSet of parameterName: string * typeTokens: Token list * body: SurfaceExpression
+    | ProjectionSink of SurfaceExpression
 
 type ProjectionDeclaration =
     { Visibility: Visibility option

@@ -1895,8 +1895,31 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
             fieldGroups
             |> List.exists (fun fieldTokens -> tryFindTopLevelEquals fieldTokens |> Option.isSome)
 
+        let trimFieldSignificantTokens (tokens: Token list) =
+            tokens
+            |> List.filter (fun token ->
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent -> false
+                | _ -> true)
+
+        let isPunnedFieldGroup (fieldTokens: Token list) =
+            match trimFieldSignificantTokens fieldTokens with
+            | [ labelToken ] when this.IsNameToken(labelToken) -> true
+            | _ -> false
+
         if not sawTopLevelComma && not containsTopLevelEquals then
             None
+        elif sawTopLevelComma && not containsTopLevelEquals && not (fieldGroups |> List.forall isPunnedFieldGroup) then
+            fieldGroups
+            |> List.filter (List.isEmpty >> not)
+            |> List.mapi (fun index fieldTokens ->
+                { Name = $"_{index + 1}"
+                  IsImplicit = false
+                  Value = this.ParseStandaloneExpression(fieldTokens) })
+            |> RecordLiteral
+            |> Some
         else
             let parseField (fieldTokens: Token list) : SurfaceRecordLiteralField =
                 let trimmedField =
@@ -2055,7 +2078,7 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
                 MonadicSplice(this.ParseApplicationExpression())
             elif this.Current.Text = "~" then
                 this.Advance() |> ignore
-                InoutArgument(this.ParseApplicationExpression())
+                InoutArgument(this.ParsePrefixExpression())
             else
                 match FixityTable.tryFindPrefix this.Current.Text fixities with
                 | Some precedence ->
@@ -2233,39 +2256,64 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
                 result
 
             let parsePath (pathTokens: Token list) =
+                let trimmedPathTokens =
+                    pathTokens
+                    |> List.filter (fun token ->
+                        match token.Kind with
+                        | Newline
+                        | Indent
+                        | Dedent -> false
+                        | _ -> true)
+
+                let tryProjectionSectionPath () =
+                    match trimmedPathTokens with
+                    | { Kind = LeftParen } :: { Kind = Dot } :: memberToken :: { Kind = RightParen } :: []
+                        when this.IsNameToken(memberToken) ->
+                        Some
+                            [
+                                { Name = SyntaxFacts.trimIdentifierQuotes memberToken.Text
+                                  IsImplicit = false }
+                            ]
+                    | _ ->
+                        None
+
                 let segments = ResizeArray<SurfaceRecordUpdatePathSegment>()
-                let pathArray = List.toArray pathTokens
+                let pathArray = List.toArray trimmedPathTokens
                 let mutable index = 0
                 let mutable valid = true
                 let mutable expectSegment = true
 
-                while index < pathArray.Length && valid do
-                    if expectSegment then
-                        let isImplicit, segmentIndex =
-                            if pathArray[index].Kind = AtSign then
-                                true, index + 1
-                            else
-                                false, index
+                match tryProjectionSectionPath () with
+                | Some path ->
+                    Some path
+                | None ->
+                    while index < pathArray.Length && valid do
+                        if expectSegment then
+                            let isImplicit, segmentIndex =
+                                if pathArray[index].Kind = AtSign then
+                                    true, index + 1
+                                else
+                                    false, index
 
-                        if segmentIndex < pathArray.Length && this.IsNameToken(pathArray[segmentIndex]) then
-                            segments.Add(
-                                { Name = SyntaxFacts.trimIdentifierQuotes pathArray[segmentIndex].Text
-                                  IsImplicit = isImplicit }
-                            )
-                            index <- segmentIndex + 1
-                            expectSegment <- false
+                            if segmentIndex < pathArray.Length && this.IsNameToken(pathArray[segmentIndex]) then
+                                segments.Add(
+                                    { Name = SyntaxFacts.trimIdentifierQuotes pathArray[segmentIndex].Text
+                                      IsImplicit = isImplicit }
+                                )
+                                index <- segmentIndex + 1
+                                expectSegment <- false
+                            else
+                                valid <- false
+                        else if pathArray[index].Kind = Dot then
+                            index <- index + 1
+                            expectSegment <- true
                         else
                             valid <- false
-                    else if pathArray[index].Kind = Dot then
-                        index <- index + 1
-                        expectSegment <- true
-                    else
-                        valid <- false
 
-                if valid && not expectSegment && segments.Count > 0 then
-                    Some(List.ofSeq segments)
-                else
-                    None
+                    if valid && not expectSegment && segments.Count > 0 then
+                        Some(List.ofSeq segments)
+                    else
+                        None
 
             match tryFindPatchOperator () with
             | Some(isExtension, operatorStart, valueStart) ->
@@ -2727,6 +2775,179 @@ module CoreParsing =
         let parseYield rest =
             parseExpr rest |> ProjectionYield
 
+        let tokenName (token: Token) =
+            if Token.isName token then
+                Some(SyntaxFacts.trimIdentifierQuotes token.Text)
+            else
+                None
+
+        let isAccessorHead token =
+            match tokenName token with
+            | Some("get" | "set" | "sink") -> true
+            | _ -> Token.isKeyword Keyword.Inout token
+
+        let isNamedAccessor name token =
+            match tokenName token with
+            | Some tokenText -> String.Equals(tokenText, name, StringComparison.Ordinal)
+            | None -> false
+
+        let isInoutAccessor token =
+            Token.isKeyword Keyword.Inout token
+
+        let splitAccessorClauses tokens =
+            let tokenArray = List.toArray tokens
+            let starts = ResizeArray<int>()
+            let mutable depth = 0
+            let mutable atLineStart = true
+
+            for index = 0 to tokenArray.Length - 1 do
+                let token = tokenArray[index]
+
+                if depth = 0 && atLineStart && isAccessorHead token then
+                    starts.Add(index)
+
+                match token.Kind with
+                | LeftParen
+                | LeftBracket
+                | LeftBrace
+                | LeftSetBrace ->
+                    depth <- depth + 1
+                    atLineStart <- false
+                | RightParen
+                | RightBracket
+                | RightBrace
+                | RightSetBrace ->
+                    depth <- max 0 (depth - 1)
+                    atLineStart <- false
+                | Indent ->
+                    depth <- depth + 1
+                    atLineStart <- true
+                | Dedent ->
+                    depth <- max 0 (depth - 1)
+                    atLineStart <- true
+                | Newline ->
+                    atLineStart <- true
+                | _ ->
+                    atLineStart <- false
+
+            if starts.Count = 0 then
+                None
+            else
+                let clauses =
+                    [ for startIndexIndex = 0 to starts.Count - 1 do
+                          let startIndex = starts[startIndexIndex]
+                          let endIndex =
+                              if startIndexIndex + 1 < starts.Count then
+                                  starts[startIndexIndex + 1]
+                              else
+                                  tokenArray.Length
+
+                          yield
+                              tokenArray[startIndex .. endIndex - 1]
+                              |> Array.toList
+                              |> trimSignificantTokens ]
+                    |> List.filter (List.isEmpty >> not)
+
+                Some clauses
+
+        let tryFindTopLevelArrow (tokens: Token list) =
+            let tokenArray = List.toArray tokens
+            let mutable depth = 0
+            let mutable index = 0
+            let mutable result = None
+
+            while result.IsNone && index < tokenArray.Length do
+                match tokenArray[index].Kind with
+                | LeftParen
+                | LeftBracket
+                | LeftBrace
+                | LeftSetBrace ->
+                    depth <- depth + 1
+                | RightParen
+                | RightBracket
+                | RightBrace
+                | RightSetBrace ->
+                    depth <- max 0 (depth - 1)
+                | Arrow when depth = 0 ->
+                    result <- Some index
+                | _ ->
+                    ()
+
+                index <- index + 1
+
+            result
+
+        let parseSetClauseHeader startSpan headerTokens bodyTokens =
+            match headerTokens with
+            | setToken :: leftParen :: rest when isNamedAccessor "set" setToken && leftParen.Kind = LeftParen ->
+                match List.rev rest with
+                | rightParen :: reversedInner when rightParen.Kind = RightParen ->
+                    let innerTokens = List.rev reversedInner
+
+                    match SurfaceBinderParsing.parseParameterFromTokens diagnostics source startSpan innerTokens with
+                    | Some parameter ->
+                        match parameter.TypeTokens with
+                        | Some typeTokens ->
+                            if parameter.IsImplicit || parameter.IsInout || Option.isSome parameter.Quantity then
+                                diagnostics.AddError(DiagnosticCode.ParseError, "Projection set accessors use an ordinary '(name : Type)' parameter.", source.GetLocation(startSpan))
+
+                            Some(ProjectionSet(parameter.Name, typeTokens, parseExpr bodyTokens))
+                        | None ->
+                            diagnostics.AddError(DiagnosticCode.ParseError, "Projection set accessors require a typed parameter.", source.GetLocation(startSpan))
+                            None
+                    | None ->
+                        None
+                | _ ->
+                    diagnostics.AddError(DiagnosticCode.ParseError, "Expected a projection set accessor parameter of the form '(name : Type)'.", source.GetLocation(startSpan))
+                    None
+            | token :: _ ->
+                diagnostics.AddError(DiagnosticCode.ParseError, "Expected a projection set accessor.", source.GetLocation(token.Span))
+                None
+            | [] ->
+                diagnostics.AddError(DiagnosticCode.ParseError, "Expected a projection set accessor.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
+                None
+
+        let parseAccessorClause clauseTokens =
+            match tryFindTopLevelArrow clauseTokens with
+            | Some arrowIndex ->
+                let tokenArray = List.toArray clauseTokens
+                let headerTokens = tokenArray[0 .. arrowIndex - 1] |> Array.toList |> trimSignificantTokens
+                let bodyTokens = tokenArray[arrowIndex + 1 ..] |> Array.toList
+
+                match headerTokens with
+                | [ token ] when isNamedAccessor "get" token ->
+                    Some(ProjectionGet(parseExpr bodyTokens))
+                | [ token ] when isInoutAccessor token ->
+                    Some(ProjectionInout(parseExpr bodyTokens))
+                | [ token ] when isNamedAccessor "sink" token ->
+                    Some(ProjectionSink(parseExpr bodyTokens))
+                | setToken :: _ when isNamedAccessor "set" setToken ->
+                    parseSetClauseHeader setToken.Span headerTokens bodyTokens
+                | token :: _ ->
+                    diagnostics.AddError(DiagnosticCode.ParseError, "Expected a projection accessor clause.", source.GetLocation(token.Span))
+                    None
+                | [] ->
+                    diagnostics.AddError(DiagnosticCode.ParseError, "Expected a projection accessor clause.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
+                    None
+            | None ->
+                match clauseTokens with
+                | token :: _ ->
+                    diagnostics.AddError(DiagnosticCode.ParseError, "Expected '->' in the projection accessor clause.", source.GetLocation(token.Span))
+                | [] ->
+                    diagnostics.AddError(DiagnosticCode.ParseError, "Expected '->' in the projection accessor clause.", source.GetLocation(TextSpan.FromBounds(source.Length, source.Length)))
+
+                None
+
+        let parseAccessorBody tokens =
+            splitAccessorClauses tokens
+            |> Option.bind (fun clauseTokens ->
+                let clauses = clauseTokens |> List.choose parseAccessorClause
+
+                if List.length clauses = List.length clauseTokens then
+                    Some(ProjectionAccessors clauses)
+                else
+                    Some(ProjectionAccessors clauses))
+
         let parseIfBody rest =
             match splitTopLevelAtKeyword Keyword.Then rest with
             | None ->
@@ -2876,6 +3097,8 @@ module CoreParsing =
             Some(parseIfBody rest)
         | head :: rest when Token.isKeyword Keyword.Match head ->
             Some(parseMatchBody rest)
+        | head :: _ when isAccessorHead head ->
+            parseAccessorBody tokens
         | head :: _ ->
             diagnostics.AddError(DiagnosticCode.ParseError, "Expected 'yield', 'if', or 'match' in the projection body.", source.GetLocation(head.Span))
             Some(parseYield tokens)
