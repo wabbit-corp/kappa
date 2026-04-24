@@ -16900,6 +16900,124 @@ A conforming implementation MUST behave as if batch compilation proceeds as foll
 An implementation MAY pipeline or parallelize these steps internally, provided the resulting behavior is as if the
 ordering above had been respected.
 
+<!-- compiler.diagnostics.path_sensitive_diagnostics -->
+#### 17.2.13 Diagnostics for path-sensitive, dependency-sensitive, and borrow-sensitive failures
+
+Implementations MUST provide structured diagnostics for failures caused by path-sensitive usage, dependent-record
+reconstruction, borrow-region escape, `inout` restoration, and projection/accessor overlap.
+
+A diagnostic in this class MUST include, when applicable:
+
+* the root expression or binding name involved;
+* the selected path or computed projection/accessor expression;
+* whether the failing operation is read, borrow, move, open, fill, update, restore, or consume;
+* the relevant quantity or borrow region;
+* the consumed, borrowed, or unavailable path;
+* the expected type and actual type when the failure is type-based;
+* the dependency path or field whose type was invalidated;
+* the projected or copied filler expression that became ill-typed;
+* the conflicting footprints when the failure is overlap-based;
+* the source range of the original user-written expression; and
+* a repair hint when a local syntactic repair is evident.
+
+The following diagnostic classes are normative. Implementations may use different diagnostic codes, but MUST expose
+equivalent structured information.
+
+Dependent record update repair failure:
+
+When a record patch fails because an omitted copied field depends on an updated field and the copied projection no
+longer has the required type, the diagnostic MUST identify:
+
+* the updated field or path that changed the dependency;
+* the omitted copied field;
+* the copied expression;
+* the expected type after substitution;
+* the actual type of the copied expression; and
+* a suggestion to supply the dependent field explicitly when possible.
+
+Example diagnostic shape:
+
+```text
+Updating `len` changed the expected type of copied field `buffer`.
+
+Copied field:
+    buffer = buf.buffer
+
+Expected:
+    Array 20 Byte
+
+Found:
+    Array 10 Byte
+
+Add an explicit repair:
+    buf.{ len = 20, buffer = ... }
+```
+
+Consumed-path update failure:
+
+When a record patch fails because an omitted copied filler path is already consumed, the diagnostic MUST identify:
+
+* the consumed path;
+* the patch that attempted to copy it implicitly; and
+* the field that must be supplied explicitly.
+
+Example diagnostic shape:
+
+```text
+Field `buf` cannot be copied during record update because path `r.buf` is already consumed.
+
+Supply `buf` explicitly in the update.
+```
+
+Borrow-region escape:
+
+When a borrowed value or a value whose type mentions a rigid region escapes its region scope, the diagnostic MUST
+identify:
+
+* the escaped region;
+* the value or type mentioning that region;
+* the region-introducing construct; and
+* the escaping use site.
+
+If the region could be made explicit in an enclosing interface, the diagnostic SHOULD mention that possibility.
+
+Overlapping borrow or update footprints:
+
+When two borrows, `inout` arguments, projection-section updates, projector descriptor applications, or accessor-bundle
+applications conflict by footprint overlap, the diagnostic MUST identify:
+
+* both source expressions;
+* their roots;
+* their static footprints;
+* the overlapping path or dependency-expanded path; and
+* whether the conflict is due to direct path equality, dependency closure, or conservative computed-projection summary.
+
+Projection/accessor missing capability:
+
+When a projection or accessor is used in a context requiring a capability it does not provide, the diagnostic MUST
+identify:
+
+* the projection/accessor expression;
+* the required capability among read, borrow, open, set, sink, or fill;
+* the available descriptor fields or projection form; and
+* the use context that required the missing capability.
+
+`inout` restoration failure:
+
+When an `inout` call fails because restoring the returned successor invalidates the enclosing record type, the
+diagnostic MUST identify:
+
+* the `~` argument;
+* the restored path;
+* the successor type;
+* the enclosing field or dependent sibling invalidated by restoration; and
+* an explicit repair form when possible.
+
+Determinism:
+
+For fixed source inputs and configuration, diagnostics in this class MUST be emitted with deterministic primary ranges,
+secondary ranges, structured fields, and ordering, subject to the parallel-diagnostics determinism rules of §17.2.8.
+
 <!-- compiler.kcore -->
 ### 17.3 KCore
 
