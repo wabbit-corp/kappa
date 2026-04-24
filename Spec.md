@@ -7796,6 +7796,12 @@ If the expected type of an unsolved hole has inhabitance summary `Contractible`,
 unique inhabitant. If it has summary `Finite n` and `n` does not exceed an implementation-defined completion threshold,
 the diagnostic SHOULD include all inhabitants or the corresponding completion candidates in a deterministic order.
 
+Finite-inhabitant suggestions are diagnostic and tooling aids only.
+
+Unless the hole is solved by ordinary elaboration, implicit resolution, or an explicitly specified source-level
+elaboration rule, the existence of a `Contractible` or `Finite n` inhabitance summary does not by itself make an
+unsolved hole accepted source code.
+
 Kappa does not provide placeholder-abstraction sugar based on holes in v0.1. Users should write an ordinary lambda
 explicitly when abstraction is intended, or use existing section forms such as operator sections (§3.5.1.1) and
 projection sections (§7.1.1).
@@ -15159,6 +15165,19 @@ Normative meaning:
   otherwise documented by the implementation.
 * Use of `std.debug` is outside the safe portable subset of §16.1.
 
+Implementations MAY additionally expose debug-only inhabitance inspection operations.
+
+If provided, such operations MUST be available only when `allow_debug_introspection` is enabled.
+
+They MUST report the same conservative results as the implementation's KCore inhabitance-summary queries, including
+`Unknown` when the implementation cannot establish a stronger result.
+
+They MUST NOT participate in definitional equality, implicit resolution, coherence, source acceptance, optimization
+legality, or portable macro semantics.
+
+The exact API names and result rendering are implementation-defined unless a later version of this specification
+standardizes them.
+
 Example:
 
 ```kappa
@@ -16014,6 +16033,9 @@ queries exist:
 * solve modality predicates for a declaration or module when an enabled modal/coeffect extension emits any;
 * compute module interface;
 * compute inhabitance summary for a KCore type, declaration result type, or pattern-refined case type;
+* compute runtime-shape summary for a KCore type after mandatory erasure;
+* enumerate finite inhabitants for a KCore type when the corresponding exact summary is `Contractible` or `Finite n`
+  and `n` does not exceed the implementation-defined threshold;
 * resolve host binding module scope and compute its host-source identity;
 * build or load a raw host binding surface from host metadata, a native ABI description, or a JVM-specific JNI binding
   description, together with any trusted binding summaries that affect its exported interface;
@@ -16035,6 +16057,26 @@ Query rules:
 * If a dependency changes, the cached query result is invalid from the earliest affected phase onward.
 * Hidden ambient mutable state MUST NOT affect query results except insofar as it is itself modeled as an explicit query
   input or recorded transcript input.
+
+Inhabitance-query determinism:
+
+Inhabitance-summary and finite-enumeration queries MUST be deterministic within an analysis session.
+
+The query key for such a query MUST include every implementation-defined choice that can affect its result, including:
+
+* the inhabitance purpose;
+* active refinement facts;
+* visibility and opacity environment;
+* enabled optional strengthening rules;
+* finite-enumeration thresholds;
+* normalization, rewrite, arithmetic, and search bounds;
+* backend profile, when the query is for runtime-shape or optimization use.
+
+A query result that depends on another query result, transparent definition, module interface, semantic object identity,
+backend intrinsic, or compiler fingerprint MUST record that dependency.
+
+If a query encounters a dependency cycle not otherwise resolved by the ordinary compilation pipeline, the query MUST
+return `Unknown` or `NotEnumerable`, rather than observing a partially published result.
 
 Cycle handling:
 
@@ -17517,23 +17559,51 @@ KBackendIR is observationally equivalent to one produced by the staged lowering 
 #### 17.4.1A Uses of inhabitance summaries
 
 A conforming implementation MAY use `Empty`, `Contractible`, and small exact `Finite n` summaries for
-runtime-representation choices and dead-code elimination.
+runtime-representation choices, calling-convention choices, and dead-code elimination.
 
 Permitted uses include:
 
 * eliminating branches whose refined runtime-relevant type is `Empty`;
-* omitting storage for contractible record fields, constructor payloads, variant payloads, or residual results, provided
-  all source-language observations behave as if the unique value were present;
-* choosing compact layouts for small finite enums or variants;
-* for `Variant` / union layouts, any compact finite representation MUST preserve the stable member-identity rules of the
-  variant typing and runtime-representation sections; in particular, an implementation MUST NOT make row-local tag
-  ordinals observable and MUST NOT require retagging for zero-cost widening;
-* simplifying handler or resumption calling conventions when an argument or residual result is contractible.
+* eliminating a runtime constructor, variant arm, handler arm, resumption path, or join-point arm whose refined input
+  type is `Empty`;
+* omitting storage for contractible record fields, constructor payloads, variant payloads, closure captures, package
+  members, handler arguments, resumption arguments, or residual results, subject to §14.4.1;
+* choosing compact layouts for small finite enums, variants, records, and constructor payloads;
+* bit-packing or dense-index encoding for small exact `Finite n` runtime shapes;
+* replacing a contractible function argument or result with a zero-sized calling-convention slot;
+* simplifying handler or resumption calling conventions when an operation argument, operation result, residual result,
+  or continuation argument is contractible;
+* specializing finite local control protocols whose state space is exact and below an implementation-defined threshold.
 
-`Unknown` carries no semantic information and MUST NOT be treated as `Empty`, `Contractible`, or finite.
+Variant and tag restrictions:
 
-These optimizations MUST NOT change any externally specified data layout, calling convention, or FFI surface promised
-by a backend profile.
+For `Variant` / union layouts, any compact finite representation MUST preserve the stable member-identity rules of §5.4
+and §14.5.
+
+In particular, an implementation MUST NOT:
+
+* make row-local tag ordinals observable;
+* require retagging for zero-cost widening;
+* assign different stable runtime tag identities to the same canonical member type in separately compiled modules; or
+* use inhabitance summaries to collapse two semantically distinct variant member identities.
+
+External-boundary restrictions:
+
+These optimizations MUST NOT change:
+
+* any externally specified data layout;
+* any exported ABI or FFI surface;
+* any bridge-contract surface;
+* dynamic representation behavior under `Dyn`, `DynRep`, or `DynamicType`;
+* source-visible debug or reflection behavior, except where the debug or reflection facility explicitly reports an
+  optimized or elided representation;
+* any calling convention promised by a backend profile.
+
+`Unknown` carries no semantic information and MUST NOT be treated as `Empty`, `Contractible`, finite, inhabited, or
+uninhabited.
+
+If optional strengthening was used to choose a representation or calling convention, the relevant strengthening mode,
+bounds, and query dependencies MUST participate in the backend fingerprint for the affected KBackendIR unit.
 
 <!-- compiler.kbackendir.lowering_legality_checkpoints -->
 #### 17.4.2 Lowering legality checkpoints
