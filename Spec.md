@@ -1389,11 +1389,22 @@ Binding-group formation:
 
 Contextual admissibility:
 
-* term-expression position admits `term`, `ctor`, and `module`;
-* type position admits `type`;
-* constraint position admits `trait`;
+* term-expression position primarily admits `term`, `ctor`, and `module`;
+* type position admits `type` and compile-time term expressions whose elaborated type is `Type u` for some universe `u`;
+* constraint position admits `trait` and compile-time term expressions whose elaborated type is `Constraint`;
 * pattern-head position admits `ctor` and terms declared with `pattern`;
-* effect-label position admits `effect-label`.
+* effect-label position admits `effect-label` and compile-time term expressions whose elaborated type is `EffLabel`.
+
+Reified-static fallback in term-expression position:
+
+* If ordinary term-expression lookup finds an admissible declaration of kind `term`, `ctor`, or `module` in the nearest
+  applicable binding group, that declaration is selected as usual.
+* If ordinary term-expression lookup would otherwise fail, the compiler MAY select a unique reified static-object term
+  facet from the nearest binding group that contains one.
+* If more than one reified static-object term facet is available in that nearest binding group, the use is ambiguous
+  unless an expected type or explicit kind-qualified name expression uniquely selects one.
+* The same-spelling constructor facet of a data declaration continues to win over the reified type-constructor facet in
+  unqualified ordinary term-expression position.
 
 Receiver positions for dotted forms use §2.8.3 instead of this ordinary
 rule.
