@@ -13299,6 +13299,32 @@ tail-resumptive transfer surrounding the resumption.
 The resumption value itself remains governed by §§14.8.5-14.8.9 and is not reclassified as a finite local control
 protocol of §17.4.7A.
 
+<!-- core_semantics.runtime_model.continuation_representation_neutrality_reclamation -->
+#### 14.8.6B Continuation representation neutrality and reclamation
+
+This specification constrains observable behavior of captured continuations. It does not require any particular memory-
+management strategy or continuation representation.
+
+A conforming backend MAY realize captured continuations using heap-allocated frames, copied stack segments, CPS closure
+graphs, persistent frame objects, tracing garbage collection, reference counting, arenas plus explicit clone tracking,
+or another observationally equivalent representation.
+
+Required obligations:
+
+* a one-shot resumption MUST remain valid until it is used once or abandoned under §14.8.8A;
+* a multi-shot resumption MUST behave as if each use operates on an independent logical clone of the captured segment,
+  including the exit-action obligations of §14.8.8;
+* reclaiming storage for a captured segment MUST NOT invalidate any still-live one-shot resumption or any logical clone
+  required for later multi-shot reuse;
+* a backend MUST NOT reject portable programs solely because it chose tracing GC, reference counting, arenas, or
+  another memory-management strategy.
+
+Clarification:
+
+* the stricter restriction on live linear or borrowed captures applies to cloning required for multi-shot reuse;
+* one-shot resumptions remain governed by the ordinary quantity, borrow, and escape rules and do not by themselves
+  require blanket rejection of owned or borrowed captured state.
+
 <!-- core_semantics.runtime_model.store_interaction -->
 #### 14.8.7 Store interaction
 
