@@ -5945,45 +5945,47 @@ projection degrees (place this : Angle) : Float =
 Grammar:
 
 ```text
-projectionDecl   ::= [public|private] 'projection' ident projectionBinder+ ':' type '=' projectionBody
+projectionDecl   ::= [public|private] 'projection' ident projectionBinder+ ':' type '=' projectionRhs
+
 projectionBinder ::= '(' 'place' ident ':' type ')'
                    | '(' 'place' 'this' ':' type ')'
                    | '(' 'place' 'this' ident ':' type ')'
                    | ordinary function binder except `inout`
-projectionBody   ::= 'yield' expr
-                   | 'if' expr 'then' projectionBody 'else' projectionBody
+
+projectionRhs    ::= selectorProjectionBody
+                   | expandedProjectionBody
+
+selectorProjectionBody
+                 ::= 'yield' expr
+                   | 'if' expr 'then' selectorProjectionBody 'else' selectorProjectionBody
                    | 'match' expr NEWLINE INDENT projectionCase+ DEDENT
-projectionCase   ::= 'case' pattern ['if' expr] '->' projectionBody
+
+projectionCase   ::= 'case' pattern ['if' expr] '->' selectorProjectionBody
+
+expandedProjectionBody
+                 ::= NEWLINE INDENT accessorClause+ DEDENT
+
+accessorClause   ::= 'get' '->' expr
+                   | 'inout' '->' expr
+                   | 'set' '(' ident ':' type ')' '->' expr
+                   | 'sink' '->' expr
 ```
 
-Rules:
+Rules common to both forms:
 
 * A projection definition is top-level only.
 * `opaque` does not apply to projection definitions.
 * A projection definition must contain one or more `place` binders.
-* A `place` binder may be receiver-marked using `(place this : T)` or `(place this x : T)`. Such a binder is still a
-  `place` binder, and it participates in dotted receiver-projection sugar under §2.8.4.
-* All other binders are ordinary explicit or implicit function binders except `inout`. They may be erased and may be
-  dependent.
-* A projection definition is pure; its declared result type must not be monadic.
-* Each reachable path of the body must end in exactly one `yield`.
-* All reachable `yield` operands must have the declared result type.
-* The operand of each `yield` must elaborate to either:
-  * a stable place rooted in one of the declaration's `place` binders; or
-  * a fully applied call to another projection definition whose yielded alternatives are themselves rooted in one of
-    those same binders.
-* A `place` binder may be inspected by ordinary pure expressions in the body, but may be yielded only as a place
-  expression, not stored or returned as a first-class value.
-* Selector-observation rule:
-  * In selector positions, a `place` binder (or any stable subprojection rooted in that binder) is observed through the
-    scoped borrow primitive of §17.3.1.2 rather than by consuming the selected place.
-  * Concretely, any non-`yield` use of such a place is elaborated as if the implementation had introduced a fresh
-    scoped borrow of that place for the dynamic extent of the containing selector expression.
-* A consuming use of a `place` binder inside selector code is ill-formed.
-  * Therefore selector code may inspect candidate places in order to decide which place to `yield`, but it may not move
-    from them while making that decision.
-* A projection definition must be fully applied at every use site. Partial application of a projection definition is
-  ill-formed.
+* A `place` binder may be receiver-marked using `(place this : T)` or `(place this x : T)`.
+* A `place` binder introduces a place parameter.
+* A `place` binder is always explicit and may not be combined with `@`, `inout`, or an explicit quantity annotation.
+* At each projection-facet or accessor-facet use site, a `place` parameter must be supplied by a place expression
+  admitted by the corresponding elaboration rule.
+* For typechecking ordinary selector/accessor expressions, each `place` binder is available through a temporary shared
+  borrowed view of its current value. Such use may inspect the place but may not consume it.
+* A projection definition is pure. Its declared result type must not be a monadic type.
+* A projection definition must carry its declared result type inline. There is no separate signature-only form for
+  projections in v0.1.
 
 Descriptor value:
 
