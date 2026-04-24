@@ -665,7 +665,7 @@ In addition to the ordinary exports listed below, implementations MUST provide t
 declarations referenced by §§5.3.1-5.3.2 (`Label`, `EffLabel`, `ContainsRec`, `LacksRec`, `ContainsVar`, `LacksVar`,
 `ContainsEff`, `LacksEff`, and `SplitEff`) whenever those names are user-nameable in source programs.
 
-Implementations MUST also provide the projector declarations referenced by §§5.1.7.2-5.1.7.3, 8.8, and 17.3.1.3
+Implementations MUST also provide the projector declarations referenced by §§5.1.7.3, 7.1.3A, 8.8, and 17.3.1.3
 (`Projector`, `BorrowView`, `Zipper`, `captureBorrow`, `withBorrowView`, and `composeProjector`) whenever those names
 are user-nameable in source programs.
 
@@ -5655,7 +5655,7 @@ Consequences:
 * The full-application restriction applies to the projection facet.
 * The ordinary term facet follows the ordinary term-application rules over `Δ`.
 * Once those ordinary binders are fully applied, the resulting `Projector Roots T` value may itself be used by the
-  computed-place elaboration rules of §5.1.7.2.
+  projector descriptor application rules of §7.1.3A.
 
 Elaboration of a fully applied projection call:
 
@@ -6579,6 +6579,54 @@ The spellings `&&` and `||` remain ordinary terms rather than special evaluation
 
 Kappa does not support deep subtyping. However, to maintain ecosystem coherence between linear, borrowed, and
 unrestricted contexts, Kappa implements a localized subsumption rule at function application boundaries.
+
+<!-- expressions.application.projector_descriptor_application -->
+#### 7.1.3A Projector descriptor application
+
+A maximal application site is a **projector descriptor application** iff, after ordinary elaboration of any earlier
+arguments, its callee elaborates to `Projector Roots T` for some closed record type `Roots` and some result type `T`,
+and exactly one remaining explicit argument is present.
+
+The remaining explicit argument is called the **roots argument**.
+
+Roots-argument admissibility:
+
+* If `Roots` is a one-field closed record `(p : S,)`, the roots argument may be either:
+  * a stable place expression `e` of type `S`; or
+  * a singleton closed record literal `(p = e,)` where `e` is a stable place expression of type `S`.
+* Otherwise the roots argument MUST be a closed record literal `(p1 = e1, ..., pn = en)` whose field labels are
+  exactly the field labels of `Roots` and whose field expressions `ei` are stable place expressions of the
+  corresponding field types.
+* In v0.1, the roots argument of a projector descriptor application is elaborated only from stable places under
+  §5.1.7.1. Nested computed-place roots are reserved for a later revision.
+* In this context the roots argument is elaborated in **place-pack mode** rather than as an ordinary runtime record
+  value.
+* Record punning, ordinary record-literal evaluation, lawful record-literal reordering, and expected-type-directed
+  suspension insertion do not apply inside a roots argument.
+* If any supplied field expression fails to elaborate to a stable place under §5.1.7.1, the projector descriptor
+  application is ill-formed.
+
+Elaboration:
+
+Let the callee elaborate to `proj : Projector Roots T`, and let `pack` be the internal place pack formed from the roots
+argument.
+
+* In an ordinary non-consuming value-demanding position, the application elaborates as `ReadProjector proj pack`.
+* In an ordinary consuming value-demanding position, the application elaborates as `MoveProjector proj pack`.
+* In a borrow-demanding position, the application elaborates as `BorrowProjector proj pack as (ρ, x) in e` in the
+  sense of §17.3.1.3.
+* Under `~`, the application elaborates as `OpenProjector proj pack`.
+* In a projection-section update, the application elaborates as `FillProjector proj pack newValue`.
+
+Examples:
+
+```kappa
+let g = degrees
+let d = g angle
+
+let choose = longer
+let best = choose (x = title, y = subtitle)
+```
 
 <!-- expressions.application.subsumption.spine_pipeline -->
 ##### 7.1.3.1 Application-spine elaboration pipeline
