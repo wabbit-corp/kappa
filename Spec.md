@@ -15295,9 +15295,9 @@ KBackendIR contains only runtime-relevant constructs. In particular, it contains
 * heap allocation and field access;
 * explicit tagged-data and tagged-variant construction / elimination;
 * explicit mutable-cell operations;
-* explicit fiber handles, supervision scopes, monitor handles, fiber-local-state cells, promise objects,
-  timer registrations / timer queues, TVars, STM journals, handler frames, resumption objects,
-  cleanup-scope operations, and error-propagation operations.
+* explicit fiber handles, fiber-id values, fiber-label state, supervision scopes, monitor handles,
+  fiber-local-state cells, promise objects, timer registrations / timer queues, TVars, STM journals,
+  handler frames, resumption objects, cleanup-scope operations, and error-propagation operations.
 
 The following do not appear in KBackendIR except insofar as they are explicitly reified by a library or backend
 intrinsic:
@@ -15340,8 +15340,9 @@ stages:
 
 * `REPRESENTATION_SELECTION`:
   choose runtime representation classes, layouts, and tag encodings for data, variants, records, dictionaries,
-  numerics, strings, bytes, collections, refs, fibers, supervision scopes, monitor handles, fiber-local-state cells,
-  promises, timer registrations / timer queues, TVars, STM journals, handlers, and resumption objects.
+  numerics, strings, bytes, collections, refs, fibers, fiber-id values, fiber-label state, supervision scopes,
+  monitor handles, fiber-local-state cells, promises, timer registrations / timer queues, TVars, STM journals,
+  handlers, and resumption objects.
 
 * `CALL_LOWERING`:
   fix runtime calling conventions, retained-dictionary passing, entrypoint signatures, and ABI-neutral parameter/result
@@ -15386,7 +15387,8 @@ At or before publication of KBackendIR, the implementation MUST validate that:
 * every call, closure, and entrypoint has a fixed runtime arity and runtime calling convention;
 * handler, resumption, cleanup, and error-propagation structures satisfy the runtime obligations of Chapters 8, 9, and
   14;
-* scheduler, timer, promise, and synchronization structures satisfy the runtime obligations of Chapters 8, 14, and 17;
+* scheduler, timer, promise, fiber-identity, fiber-label, and synchronization structures satisfy the runtime
+  obligations of Chapters 8, 14, and 17;
 * any internal multi-return or join-point lowering of `Completion`, `Match`, projection/projector-elimination control,
   or implementation-generated boolean / constructor-refinement / case-split control satisfies §17.4.7A;
 * data, variant, and record layout choices are fixed consistently with §§14.5-14.6;
@@ -15416,8 +15418,9 @@ At minimum it MUST represent:
 * if the implementation classifies a lowered transfer as tail, super-tail, or semi-tail under §17.4.7A, the dump
   SHOULD expose that classification;
 * values and def-use or binding-use relationships;
-* fiber handles, supervision scopes, TVars, STM journals, handler frames, resumption objects, cleanup scopes, and
-  error-propagation structure;
+* fiber handles, fiber identities, fiber-label state, supervision scopes, monitor handles, fiber-local-state cells,
+  promise objects, timer registrations / timer queues, TVars, STM journals, handler frames, resumption objects,
+  cleanup scopes, and error-propagation structure;
 * selected runtime representation classes and calling-convention facts relevant to debugging; and
 * provenance links back to KCore.
 
