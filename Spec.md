@@ -19166,37 +19166,81 @@ A conforming implementation MAY expose backend-specific host bindings and portab
 A conforming implementation MAY expose foreign-ABI adapters. The portable subset of such an ABI is defined after
 elaboration and erasure.
 
-Portable ABI rules:
+A type is a **PortableAbi type** only when it is admitted by the rules of this subsection.
 
-* portable ABI functions are first-order after erasure;
-* implicit parameters, coherent constraint-evidence parameters, quantity-`0` parameters, and proof-only parameters are
-  erased and are not ABI-visible;
-* resumption values, handler frames, cleanup frames, local nominal declarations, and anonymous borrow regions are not
-  portable ABI values;
-* fiber handles, fiber ids, supervision scopes, monitor handles, promises, fiber-local-state cells, and TVars are not
-  portable ABI values;
-* direct borrowed parameters and direct borrowed results are not part of the portable subset;
-* borrow-like or resource-like foreign interfaces in the portable subset MUST be represented using owned values or
-  opaque resource handles.
+Portable ABI functions:
 
-Additional portable ABI rule:
+* A portable ABI function MUST be first-order after erasure.
+* A portable ABI function's ABI-visible parameter and result types MUST be PortableAbi types.
+* Implicit parameters, coherent constraint-evidence parameters, quantity-`0` parameters, and proof-only parameters are
+  erased and are not ABI-visible.
+* Erasure of compile-time information does not by itself make the remaining runtime representation portable. The
+  remaining ABI-visible type must still be admitted by this subsection.
 
-* `std.gradual.Dyn` and `std.gradual.DynRep` are not part of the portable subset unless the selected foreign-ABI adapter
-  documents a stable portable encoding for them.
+PortableAbi type grammar:
 
-Opaque resource handles are ordinary runtime values from the perspective of KBackendIR. Their concrete representation is
-backend-specific.
+A type is PortableAbi iff it is one of the following:
 
-A raw host binding module is not, by itself, part of the portable subset merely because it is expressed using ordinary
-Kappa syntax. Portability requires an exported surface that also obeys the rules of this subsection.
+* `Unit`;
+* `Bool`, when the selected adapter documents a stable ABI representation for Kappa `Bool`;
+* `std.ffi.I8`, `I16`, `I32`, `I64`;
+* `std.ffi.U8`, `U16`, `U32`, `U64`;
+* `std.ffi.Isize`, `Usize`;
+* `std.ffi.F32`, `F64`;
+* one of the C/native ABI spelling types from `std.ffi.c`, when the selected adapter pins the target ABI that defines
+  that spelling;
+* `std.ffi.RawPtr`;
+* a nominal opaque handle type or `std.ffi.OpaqueHandle`, subject to the ownership rules below;
+* a closed record type whose runtime-relevant fields are all PortableAbi types, provided the selected adapter documents
+  the record layout, field order, alignment, padding, and calling-convention behavior;
+* `Option T` where `T` is PortableAbi, provided the selected adapter documents whether the encoding is nullable, tagged,
+  sentinel-based, or another stable representation;
+* `Result e a` where `e` and `a` are PortableAbi, provided the selected adapter documents a stable tagged encoding;
+* a closed variant or closed data type only when the selected adapter documents a stable tag and payload encoding; and
+* `String` or `Bytes` only when the selected adapter documents the encoding, allocation, ownership, lifetime, and release
+  convention.
 
-A precision-preserving Kappa-to-Kappa bridge under §17.7.8 is not limited to the portable foreign ABI subset of this
-subsection. Such a bridge may preserve higher-order values, typed effects, capture annotations, Kappa resource
-contracts, and other Kappa-specific interface structure when both sides of the bridge are compiled Kappa artifacts and
-the selected bridge realization can enforce the corresponding bridge contract.
+Portable ABI exclusions:
 
-This exception does not make those values portable foreign-ABI values for arbitrary non-Kappa hosts. It only defines a
-separate full-fidelity Kappa-to-Kappa bridge lane.
+* Function values, callbacks, callable objects, closures, iterators, streams, dictionaries, packages, trait evidence,
+  effects, resumptions, handlers, handler frames, cleanup frames, local nominal declarations, and anonymous borrow
+  regions are not PortableAbi values.
+* Fiber handles, fiber ids, supervision scopes, monitor handles, promises, fiber-local-state cells, `STM` values, and
+  `TVar` values are not PortableAbi values.
+* Direct borrowed parameters and direct borrowed results are not part of the portable ABI subset.
+* `std.gradual.Dyn` and `std.gradual.DynRep` are not part of the portable ABI subset unless the selected foreign-ABI
+  adapter documents a stable portable encoding for them.
+* Open records, open variants, types whose runtime validity depends on erased indices or erased proofs, and types whose
+  layout depends on importer-local opacity or `clarify` are not PortableAbi values unless a selected adapter defines an
+  explicit stable encoding independent of those erased or local facts.
+
+Opaque resource handles:
+
+* Bare `std.ffi.OpaqueHandle` carries no portable ownership, validity, nullability, release, thread-affinity, borrowing,
+  lifetime, aliasing, or finalization semantics.
+* Borrow-like or resource-like foreign interfaces in the portable ABI subset MUST be represented using owned values,
+  nominal opaque resource wrappers, `BridgePackage`, `Res`, or another explicit resource type whose API states ownership
+  and release behavior.
+* A portable ABI declaration that returns or accepts a resource-like handle MUST document whether the handle is borrowed,
+  owned, retained, nullable, thread-affine, immortal, or invalidatable.
+* A portable ABI declaration MUST NOT expose an owning resource as bare `OpaqueHandle` unless the owning behavior is
+  represented by an adjacent explicit release operation and the surface is marked raw or backend-specific.
+
+Portability rule:
+
+* A raw host binding module is not, by itself, part of the portable subset merely because it is expressed using ordinary
+  Kappa syntax.
+* Portability requires an exported surface that obeys the rules of this subsection and records the selected adapter
+  identity, encoding version, ABI target identity, and any layout or ownership convention needed to reproduce the ABI.
+
+Kappa-to-Kappa bridge exception:
+
+* A precision-preserving Kappa-to-Kappa bridge under §17.7.8 is not limited to the PortableAbi subset of this subsection.
+  Such a bridge may preserve higher-order values, typed effects, capture annotations, Kappa resource contracts, and other
+  Kappa-specific interface structure when both sides of the bridge are compiled Kappa artifacts and the selected bridge
+  realization can enforce the corresponding bridge contract.
+* This exception does not make those values portable foreign-ABI values for arbitrary non-Kappa hosts. It only defines a
+  separate full-fidelity Kappa-to-Kappa bridge lane.
 
 <!-- compiler.ffi.raw_host_binding_surfaces -->
 #### 17.7.2 Raw host binding surfaces
