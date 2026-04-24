@@ -12994,6 +12994,94 @@ Rules:
   annotation for an unannotated lowercase parameter from use.
 * If `opaque` is present on a data declaration, constructors are not exported (§2.5.3).
 
+Defaulted constructor parameters:
+
+* A named explicit constructor parameter may carry a default expression:
+
+  ```kappa
+  data User : Type =
+      User {
+          name   : String,
+          active : Bool = True,
+          roles  : List Role = Nil
+      }
+  ```
+
+* The same default syntax is available in parenthesized named constructor binders:
+
+  ```kappa
+  data User : Type =
+      User (name : String) (active : Bool = True)
+  ```
+
+* A constructor parameter with a default remains an ordinary constructor parameter.
+  Defaults do not affect:
+  * the constructor's core type;
+  * runtime representation;
+  * pattern matching;
+  * constructor-field projection; or
+  * constructor identity.
+
+* Defaults are metadata for named constructor application only (§11.1.1).
+
+* Positional application never inserts defaults.
+
+Thus, for:
+
+```kappa
+data User : Type =
+    User { name : String, active : Bool = True }
+```
+
+both of the following are valid:
+
+```kappa
+User { name = "Ada" }
+User "Ada" True
+```
+
+but this is not default-completed:
+
+```kappa
+User "Ada"       -- partial positional application, not User "Ada" True
+```
+
+Default expression scope and typing:
+
+Let a constructor's explicit named parameters, in constructor order, be:
+
+```text
+(p1 : A1 [= d1]) ... (pn : An [= dn])
+```
+
+For parameter `pi`, its default expression `di`, if present, is elaborated in the declaration context extended by:
+
+* the data type parameters;
+* any earlier constructor parameters `p1 ... p(i-1)`;
+* any earlier implicit constructor binders; and
+* ordinary top-level and local declarations in scope at the data declaration site.
+
+A default expression may not refer to:
+
+* the parameter being defaulted;
+* any later constructor parameter;
+* any later implicit constructor binder; or
+* any name introduced by a call site.
+
+The default expression is checked against the elaborated parameter type after applying the ordinary constructor-binder
+sugar, including quantity, `thunk`, and `lazy` sugar.
+
+Consequences:
+
+* In `(thunk x : A = e)`, the default `e` is checked against `Thunk A`.
+* In `(lazy x : A = e)`, the default `e` is checked against `Need A`.
+* In `(0 p : P = e)`, the default `e` is checked at erased quantity exactly as an explicitly supplied erased argument
+  would be.
+
+Default expressions are elaborated in the defining module's lexical context.
+At each call site, a default is instantiated with the actual earlier arguments already selected for that constructor
+application.
+
 <!-- data_types.data_declarations.constructor_application_named_arguments_c -->
 #### 11.1.1 Constructor application with named arguments (`C { ... }`)
 
