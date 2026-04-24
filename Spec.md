@@ -10783,11 +10783,20 @@ trait MonadFinally m => MonadError (m : Type -> Type) =
 The prelude minimum requires a trait providing at least these operations and associated type; this section uses the name
 `MonadError`. Any `MonadError m` instance MUST also determine a `MonadFinally m` instance for the same `m`.
 
-When both a primary computation and one or more finalizers fail during unwinding, the primary error is the one
-propagated by ordinary `throwError` / `catchError` semantics. Later finalizer errors do not change that ordinary
-propagated error. Implementations MAY attach such secondary errors to the primary error as suppressed diagnostic
-information, or MAY discard them, but this behavior is implementation-defined and is not part of portable pattern
-matching over `Error`.
+When both a primary computation and one or more finalizers fail during unwinding, ordinary `MonadError` observation is
+governed by the instance for that monad.
+
+For an abstract `MonadError m`, secondary finalizer failures are not automatically part of `MonadError.Error m` unless
+the instance specifies that behavior.
+
+For the standard runtime carrier `IO e`, two views coexist:
+
+* the ordinary typed-error view exposed by `throwError` / `catchError`, which operates only on `Fail e`; and
+* the full runtime-cause view exposed by `Exit`, `sandbox`, `await`, and `Cause`.
+
+Therefore, for `IO e`, later finalizer failures, unhandled-child failures, and other cleanup failures are preserved in
+the full `Cause e` tree according to §14.8.4C even though ordinary `catchError` continues to observe only the primary
+`Fail e` branch.
 
 For the standard runtime carrier `IO e`, the associated `Error` type of `MonadError (IO e)` is exactly `e`.
 
@@ -13155,6 +13164,18 @@ Consequently:
   beyond the happens-before edges above;
 * portable cross-fiber coordination MUST use `await` / `join`, scopes / monitors, promises, interruption, `STM`, or a
   backend-specific atomic facility documented outside the portable subset.
+
+Single-fiber ordering:
+
+* Within one fiber, reads and writes of ordinary refs and other `MonadRef (IO e)` cells are observed in source program
+  order, subject only to source-level transformations that preserve single-fiber behavior.
+* A backend MUST NOT reorder same-fiber mutable operations in a way that is observable in Kappa source semantics.
+
+Non-portable atomics:
+
+* The portable core does not standardize atomics, fences, compare-and-swap, or explicit memory orders in v1.
+* Backends MAY provide such facilities outside the portable subset, but ordinary refs do not acquire those semantics
+  implicitly.
 
 <!-- core_semantics.runtime_model.runtime_tracing_diagnostics -->
 #### 14.8.4B Runtime tracing and diagnostics
