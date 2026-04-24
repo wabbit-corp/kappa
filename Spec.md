@@ -8011,6 +8011,14 @@ interrupt     :
 interruptFork :
     forall (e : Type) (a : Type).
     Fiber e a -> UIO Unit
+
+interruptAs   :
+    forall (e : Type) (a : Type).
+    InterruptCause -> Fiber e a -> UIO Unit
+
+interruptForkAs :
+    forall (e : Type) (a : Type).
+    InterruptCause -> Fiber e a -> UIO Unit
 ```
 
 Semantics:
@@ -8025,6 +8033,14 @@ Semantics:
 * `interrupt` requests interruption of the target fiber and completes only after the target fiber has terminated and all
   of its finalizers have run.
 * `interruptFork` requests interruption of the target fiber but does not wait for termination.
+* `interruptAs cause fiber` requests interruption of the target fiber with explicit structured interrupt metadata and
+  completes only after the target fiber has terminated and all of its finalizers have run.
+* `interruptForkAs cause fiber` requests interruption of the target fiber with explicit structured interrupt metadata
+  but does not wait for termination.
+* `interrupt fiber` behaves as `interruptAs (InterruptCause Requested (Some id)) fiber`, where `id` is the current
+  caller fiber id.
+* `interruptFork fiber` behaves as `interruptForkAs (InterruptCause Requested (Some id)) fiber`, where `id` is the
+  current caller fiber id.
 
 `fork` is structured by default. Portable source semantics do not provide arbitrary cross-fiber asynchronous exception
 injection. Portable cross-fiber asynchronous failure is limited to interruption.
