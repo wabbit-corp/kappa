@@ -13465,6 +13465,9 @@ Implementations SHOULD use readable identifier forms such as `E_IMPORT_CYCLE`, `
 When termination checking fails, the diagnostic MUST identify the recursive SCC, the recursive call edge or edges that
 failed, and at least one candidate explicit `decreases` clause when the implementation can synthesize one.
 
+If a termination-check failure is caused by an implementation limit rather than by a proved failure of the supplied
+termination argument, the diagnostic MUST identify that fact explicitly.
+
 When a standardized modal/coeffect extension is enabled and modality solving fails, the diagnostic MUST identify:
 
 * the extension name;
