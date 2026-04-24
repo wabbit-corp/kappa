@@ -2667,6 +2667,49 @@ Writing `let y = x` where `x` is compile-time simply binds `y` to the same compi
 Packaging or rebinding a compile-time value does not discharge region escape. If a compile-time value mentions a fresh
 anonymous rigid region introduced by a local borrow, the ordinary skolem-escape rule of §5.1.6 still applies.
 
+<!-- types.universes.erasure_elaboration_time.static_object_positions -->
+##### 5.1.4.2 Static-object expression positions
+
+A **static-object expression position** is a source position whose expected classifier is one of:
+
+* `Type u`
+* `Constraint`
+* `EffLabel`
+* `Label`
+* `RecRow`
+* `VarRow`
+* `EffRow`
+* `Universe`
+* `Quantity`
+* `Region`
+
+At such a position, elaboration proceeds by ordinary expression checking against the expected compile-time type, subject
+to the syntactic restrictions of the surrounding grammar.
+
+Consequences:
+
+* A type position is a static-object expression position expecting `Type u` for some universe `u`.
+* A constraint position is a static-object expression position expecting `Constraint`.
+* An effect-label position is a static-object expression position expecting `EffLabel`.
+* A record-label position remains structural and is not automatically an arbitrary term expression; where labels are
+  user-nameable, the expected type is `Label`.
+
+Examples:
+
+```kappa
+let F = Option
+let x : F Int = F.Some 1
+
+let C = Eq
+let d : Dict (C Int) = ...
+
+let L = state
+handle L in computation
+```
+
+Static-object expression positions are compile-time only unless the surrounding type explicitly uses a runtime reified
+carrier such as `Dict`.
+
 <!-- types.universes.quantities -->
 #### 5.1.5 Quantities
 
