@@ -15198,6 +15198,14 @@ A module interface artifact MUST record at least:
   * place-binder positions and any receiver marker,
   * the normalized selector tree or observationally equivalent lowering summary needed for §17.3.1.3,
   * and the static footprint summary required by §§5.1.7.2 and 8.8;
+* for each exported expanded-form projection definition:
+  * its accessor-bundle term-facet type;
+  * the set of produced descriptor fields among `get`, `open`, `set`, and `sink`;
+  * for each produced descriptor field, its lowered descriptor type;
+  * any synthesized descriptor fields and their synthesis source;
+  * the unique receiver-marked `place` binder, if present; and
+  * enough accessor metadata for downstream elaboration of §7.1.3B, §8.8, and §17.3.1.3B without consulting source
+    bodies;
 * the signatures of exported types, traits, constructors, associated static members, effect interfaces, and effect
   operations, insofar as those entities are available to downstream code;
 * for each exported declaration, whether it has a reified static-object term facet under §2.8.6;
@@ -15903,9 +15911,10 @@ KCore retains all compile-time structure needed by the source semantics. In part
   for cleanup;
 * explicit application spines aligned with Pi telescopes;
 * primitive suspension type formers `Thunk` and `Need`, together with explicit suspension introduction and forcing;
-* explicit stable places, scoped place borrows, first-class projector descriptors, first-class borrowed-view values, and
-  opened-place packages;
-* surface `projection` definitions lower to ordinary projector descriptor constants;
+* explicit stable places, scoped place borrows, first-class projector descriptors, first-class accessor descriptors,
+  first-class borrowed-view values, and opened-place packages;
+* selector-form surface `projection` definitions lower to ordinary projector descriptor constants;
+* expanded-form surface `projection` definitions lower to ordinary structural accessor-bundle descriptor constants;
 * surface fully applied projection calls lower to projector eliminators plus ordinary control flow, rather than
   disappearing into ad-hoc inlining alone;
 * explicit `seal` nodes, manifest compile-time members, opaque compile-time members, and package/member projections;
