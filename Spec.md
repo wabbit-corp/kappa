@@ -1533,9 +1533,9 @@ Receiver forms:
 * If the receiver denotes a type, the type facet of a same-spelling data family, or a reified static-object term facet
   whose elaborated value preserves the identity of a named type declaration, `recv.name` selects a static member of that
   type. For data types, constructors are static members.
-* If the receiver denotes an effect label, `recv.name` selects an
-  operation declared by the effect interface carried at that label in
-  the current effect row.
+* If the receiver denotes an effect label or a compile-time term value of type `EffLabel`, `recv.name` selects an
+  operation declared by the effect interface carried at that label in the current effect row. The result of this
+  selection is an ordinary first-class term value.
 * If the receiver denotes a record, package, or explicit dictionary
   value, `recv.name` selects an ordinary member of that value.
 * If the local refinement context proves that the receiver has
@@ -1561,6 +1561,28 @@ let b = Option.None
 
 If a value of type `Type u` is not known to preserve the identity of a named type declaration, static-member lookup on
 that value is ill-formed.
+
+Effect-operation values:
+
+If `l : EffLabel` is associated in the current effect row with effect interface `E`, and `E` declares operation `op`
+with elaborated operation type `σ`, then `l.op` elaborates to an ordinary term value of type `σ`, with the same
+operation-invocation behavior as a direct use of `l.op`.
+
+Consequences:
+
+```kappa
+let get = state.get
+let x <- get ()
+
+let ops = (get = state.get, put = state.put)
+let y <- ops.get ()
+```
+
+Applying a rebound operation value invokes the same effect operation at the same effect label as applying the direct
+selection.
+
+The selected operation value is compile-time parameterized by the effect label. Rebinding or packaging it does not
+remove the operation's effect-row requirements.
 
 <!-- modules.names.method_call_receiver_projection_sugar -->
 #### 2.8.4 Method-call and receiver-projection sugar
@@ -8952,9 +8974,11 @@ Rules:
   that operation.
 * Because a resumption is captured control state rather than a borrowable place, there is no borrowed-resumption mode in
   this specification.
-* Operation names declared inside an `effect` declaration do not contribute ordinary unqualified `term` declarations. They are
-  selected via `label.op` (§2.8.3), and are additionally available within a handler for that label when handlers are
-  specified.
+* Operation names declared inside an `effect` declaration do not contribute ordinary unqualified `term` declarations.
+  They are selected via `label.op` (§2.8.3).
+* A selected operation `label.op` is an ordinary first-class term value. It may be rebound, stored in records or
+  packages, passed as an argument, and returned, subject to its ordinary type and effect-row requirements.
+* Operation names are additionally available within a handler for that label when handlers are specified.
 * Operation signatures may be arbitrary dependently typed function types after elaborating any outer `forall`s. This
   includes multiple explicit or implicit parameters, quantity annotations on binders (defaulting to `ω`), and dependent
   result types.
