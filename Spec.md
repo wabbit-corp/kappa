@@ -15156,8 +15156,16 @@ space, and it MUST NOT consist solely of digits.
 Implementations SHOULD use readable identifier forms such as `E_IMPORT_CYCLE`, `E_TYPE_MISMATCH`, or
 `W_UNUSED_BINDING` rather than bare numeric codes.
 
-When termination checking fails, the diagnostic MUST identify the recursive SCC, the recursive call edge or edges that
-failed, and at least one candidate explicit `decreases` clause when the implementation can synthesize one.
+When termination checking fails, diagnostics MUST include:
+
+* the recursive SCC;
+* each recursive call site considered;
+* the attempted strategy or strategies;
+* for structural checking, the selected structural parameter(s) and why each failed call is not smaller;
+* for measure checking, the caller and callee measures;
+* for size-change checking, the call matrix and the failing cycle when available;
+* for inferred measures, the best candidate measure if one was found but failed; and
+* a suggested `decreases` clause when the implementation can infer one but not prove all obligations.
 
 If a termination-check failure is caused by an implementation limit rather than by a proved failure of the supplied
 termination argument, the diagnostic MUST identify that fact explicitly.
