@@ -16213,16 +16213,55 @@ Consequences:
 * `lhs` is evaluated exactly once.
 * `rhs` is evaluated exactly once.
 * No new runtime reference primitive is introduced.
-* Projection-section update is therefore surface sugar over existing place and projector primitives.
+* Projection-section update is therefore surface sugar over existing place, projector, and accessor primitives.
 
-<!-- compiler.kcore.application_spines.accessor_bundle_lowering -->
-##### 17.3.1.3B Accessor-bundle lowering
+<!-- compiler.kcore.application_spines.accessor_bundle_elimination -->
+##### 17.3.1.3B Accessor-bundle elimination
 
-Accessor-bundle lowering is the KCore lowering family for expanded-form projection definitions and accessor descriptor
-applications under §7.1.3B.
+A conforming implementation MUST behave as if KCore contains the following accessor descriptor eliminators:
 
-In v1, accessor-bundle lowering is used only by surface contexts that explicitly admit accessor facets or accessor
-descriptor applications.
+```text
+ReadGetter   getter pack
+BorrowGetter getter pack as (ρ, x) in e
+
+OpenOpener   opener pack
+FillSetter   setter pack v
+MoveSinker   sinker pack
+```
+
+where:
+
+* `getter : Getter Roots A`;
+* `opener : Opener Roots A`;
+* `setter : Setter Roots A`;
+* `sinker : Sinker Roots A`; and
+* `pack` is an internal place pack whose record shape matches `Roots`.
+
+Meaning:
+
+* `ReadGetter getter pack` yields the computed focus value as a non-consuming read.
+* `BorrowGetter getter pack as (ρ, x) in e` evaluates the getter, binds its result to a fresh hidden temporary, and
+  introduces a borrowed view of that temporary for the dynamic extent of `e`.
+* `OpenOpener opener pack` yields a `Zipper Roots A A`.
+* `FillSetter setter pack v` rebuilds the root pack by replacing the accessor focus with `v`.
+* `MoveSinker sinker pack` consumes the root pack and yields the computed focus value.
+
+Admissibility:
+
+* `ReadGetter` is admissible only when all root fields in `pack` are admissible for non-consuming read or borrow.
+* `BorrowGetter` is admissible only when `ReadGetter` is admissible and the borrowed temporary does not escape its
+  rigid region.
+* `OpenOpener` is admissible only when all root fields in `pack` are admissible for owned opening.
+* `FillSetter` is admissible only when all root fields in `pack` are admissible for owned replacement.
+* `MoveSinker` is admissible only when all root fields in `pack` are admissible for consuming use.
+
+Accessor descriptors are pure values. Applying an accessor descriptor does not mutate storage by itself.
+All rebuilding is expressed through the returned root pack or zipper fill function.
+
+The rebuilt root pack produced by `FillSetter` or by the `fill` component of `OpenOpener` is scattered back to the
+corresponding actual stable roots in declaration order.
+
+For a one-field root pack, this scattering is just projection of the unique field.
 
 <!-- compiler.kcore.application_spines.completion_kernel -->
 ##### 17.3.1.4 KCore completion and do-scope kernel
