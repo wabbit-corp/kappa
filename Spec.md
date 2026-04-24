@@ -19983,6 +19983,16 @@ Rules:
 * A bridge realization MUST preserve ordinary pure-vs-effectful classification. A bridge implementation failure,
   contract mismatch, linkage failure, or runtime representation violation is a defect or bridge failure, not an
   expected typed error, unless the bridge contract explicitly exposes it as such.
+* A bridge-visible pure declaration MAY be exposed as pure only when the bridge contract guarantees that invoking it does
+  not require ordinary runtime effects, blocking transport, fallible member lookup, fallible lazy linkage, runtime
+  representation discovery, expected bridge failure, or expected transport failure.
+* Linkage, contract, representation, or member-resolution failures discovered after successful bridge initialization are
+  defects when no explicit effect or expected-error channel is present.
+* If ordinary bridge failure, transport failure, blocking communication, runtime lookup, callback registration, or other
+  runtime effect may occur during invocation, the declaration MUST be exposed through `IO` or another explicit effectful
+  surface.
+* A bridge MAY still expose a pure declaration through a generated direct stub, in-process entry point, or already
+  validated table entry when the contract guarantees that ordinary invocation is pure in the Kappa sense.
 * A bridge realization MUST preserve resource ownership and release contracts for bridge-visible resource types.
 * A bridge realization MUST preserve explicit capture annotations. If a bridge-visible value would capture a bridge
   handle, runtime scope, native runtime, JVM runtime, callback registration, or borrowed region, the resulting type or
