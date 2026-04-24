@@ -8134,6 +8134,43 @@ Semantics:
 Restart strategies such as one-for-one, one-for-all, and rest-for-one are library-level constructions over `Scope`,
 `Monitor`, `Promise`, and ordinary `IO`. They are not part of the portable core source semantics.
 
+<!-- effects.monadic_core.one_shot_promises -->
+#### 8.1.3E One-shot promises
+
+Kappa provides one-shot promise cells carrying terminal `Exit` values:
+
+```kappa
+newPromise :
+    forall (e : Type) (a : Type).
+    UIO (Promise e a)
+
+awaitPromiseExit :
+    forall (e : Type) (a : Type).
+    Promise e a -> UIO (Exit e a)
+
+awaitPromise :
+    forall (e : Type) (a : Type).
+    Promise e a -> IO e a
+
+completePromise :
+    forall (e : Type) (a : Type).
+    Promise e a -> Exit e a -> UIO Bool
+```
+
+Semantics:
+
+* `newPromise` creates a fresh uncompleted one-shot promise.
+* `completePromise promise exit` attempts to complete `promise` with `exit`.
+* The first successful completion returns `True`.
+* Any later completion attempt returns `False` and leaves the original completion unchanged.
+* `awaitPromiseExit promise` waits until `promise` is completed and returns the stored `Exit`.
+* `awaitPromise promise` waits until `promise` is completed and then:
+  * returns the value on `Success a`,
+  * fails with `e` on `Failure (Fail e)`,
+  * otherwise terminates the waiter with the same non-typed runtime cause.
+* `awaitPromiseExit` and `awaitPromise` are interruptible waits.
+* Completing a promise wakes all waiters observing that promise.
+
 <!-- effects.monadic_core.interruption_masking -->
 #### 8.1.4 Interruption and masking
 
