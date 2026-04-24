@@ -19805,6 +19805,16 @@ Rules:
 * If the bridge cannot preserve or enforce some part of the Kappa surface, the binding is ill-formed unless the user
   explicitly supplies a less precise adapter module.
 
+Additional rules:
+
+* A precision-preserving Kappa-to-Kappa bridge contract MUST be `Exact` for the bridge-visible Kappa surface it claims
+  to provide.
+* A `Conservative` or `Lossy` bridge contract MAY be used only when the imported or exported Kappa surface explicitly
+  exposes that reduced precision, for example through an adapter module, `Dyn`, opaque handles, copied values, or
+  another documented less-precise type.
+* A bridge realization MUST NOT describe itself as precision-preserving for any member whose contract is `Conservative`
+  or `Lossy` unless that member's Kappa type itself makes the conservatism or loss explicit.
+
 Borrow and region rules:
 
 * A direct borrowed parameter MAY cross a Kappa-to-Kappa bridge only when the bridge contract proves that the borrowed
