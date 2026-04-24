@@ -1459,6 +1459,11 @@ Rules:
 * A conforming implementation MAY provide `BridgeBindable` only for a
   restricted class of record, signature, or other bridge-bindable
   surfaces.
+* For a Kappa-to-Kappa bridge under §17.7.8, an implementation SHOULD derive `BridgeContract sig` from the same
+  canonical Kappa interface or signature data used for static bridge-supplied modules.
+* A derived Kappa-to-Kappa `BridgeContract sig` MUST preserve the precise Kappa surface of `sig`; it MUST NOT replace
+  bridge-visible members with `Dyn`, opaque host values, raw pointers, serialized blobs, or weaker first-order
+  approximations unless `sig` itself requests such a surface.
 * `BridgeHandle` does not itself specify how a handle is created or
   released.
   Bridge-specific modules provide startup/configuration APIs and SHOULD
@@ -19606,6 +19611,26 @@ Rules:
 * If the selected JVM deployment mode cannot realize the required native-access prerequisite, adapter mode, callback
   bridge, thread-attachment policy, blocking classification, or generated companion artifact of the selected binding,
   the implementation MUST reject that binding or deployment mode rather than silently weakening semantics.
+
+The `jvm` profile MAY additionally consume or provide precision-preserving Kappa-to-Kappa bridges through the standard
+bridge realization `kappa.jni`.
+
+Rules:
+
+* `kappa.jni` is distinct from `jvm.jni-shim`.
+  `jvm.jni-shim` realizes ordinary native-ABI bindings for `host.native`.
+  `kappa.jni` realizes precise Kappa module interfaces between JVM Kappa and native Kappa artifacts.
+* A JVM Kappa artifact that imports a bridge-supplied Kappa module through `kappa.jni` MUST typecheck against the
+  provider's Kappa module interface artifact, not against a Java class surface or raw JNI surface.
+* The JVM backend MAY generate hidden JVM companion classes, native method declarations, registration tables, runtime
+  identity checks, and callback ingress stubs required by the `kappa.jni` bridge.
+* The user need not author Java bridge classes or JNI boilerplate merely to import a native Kappa module through
+  `kappa.jni`.
+* A JVM Kappa artifact that exports a module for native Kappa consumption through `kappa.jni` MUST provide a bridge
+  contract derived from the exported Kappa module interface.
+* If a selected JVM deployment mode cannot realize the required `kappa.jni` bridge contract, callback ingress policy,
+  native-access prerequisite, thread attachment behavior, reference discipline, or generated companion artifact, the
+  implementation MUST reject that binding or deployment mode rather than silently weakening semantics.
 
 <!-- compiler.dotnet -->
 ### 17.10 CLR backend profile (`dotnet`)
