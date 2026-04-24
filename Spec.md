@@ -5629,15 +5629,17 @@ Built-in elaboration-time reflection types:
 CoreCtx : Type
 Core    : CoreCtx -> Type -> Type
 CoreEq  :
-    forall (@0 Γ : CoreCtx) (@0 t : Type).
-    Core Γ t -> Core Γ t -> Type
+    forall (@0 Γ : CoreCtx) (@0 a : Type) (@0 b : Type).
+    Core Γ a -> Core Γ b -> Type
 Symbol  : Type
 ```
 
 `Core Γ t` denotes an elaborated, well-scoped core term of object-language type `t` in lexical context `Γ`.
 
-`CoreEq x y` denotes macro-level exact equality between reflected core terms `x` and `y` of the same object-language
-type in the same lexical context.
+`CoreEq x y` denotes macro-level exact equality between reflected core terms `x` and `y` in the same lexical context.
+The reflected terms may have different object-language type indices. A `CoreEq x y` witness exists only when ordinary
+elaboration can justify the comparison, including any required definitional equality between the reflected types of `x`
+and `y`.
 
 `Core` applies uniformly to reflected terms, reflected types, reflected rows, reflected labels, and reflected
 constraints. For example:
@@ -5677,32 +5679,39 @@ normalize :
     forall (@0 Γ : CoreCtx) (@0 t : Type).
     Core Γ t -> Core Γ t
 
+tryProveDefEq :
+    forall (@0 Γ : CoreCtx) (@0 a : Type) (@0 b : Type).
+    (x : Core Γ a) -> (y : Core Γ b) -> Option (CoreEq x y)
+
 proveDefEq :
-    forall (@0 Γ : CoreCtx) (@0 t : Type).
-    (x : Core Γ t) -> (y : Core Γ t) -> CoreEq x y
+    forall (@0 Γ : CoreCtx) (@0 a : Type) (@0 b : Type).
+    (x : Core Γ a) -> (y : Core Γ b) -> CoreEq x y
 
 defEq :
     forall (@0 Γ : CoreCtx) (@0 a : Type) (@0 b : Type).
     Core Γ a -> Core Γ b -> Bool
 
 reflCoreEq :
-    forall (@0 Γ : CoreCtx) (@0 t : Type) (@0 x : Core Γ t).
+    forall (@0 Γ : CoreCtx) (@0 a : Type) (@0 x : Core Γ a).
     CoreEq x x
 
 symCoreEq :
-    forall (@0 Γ : CoreCtx) (@0 t : Type) (@0 x : Core Γ t) (@0 y : Core Γ t).
+    forall (@0 Γ : CoreCtx) (@0 a : Type) (@0 b : Type)
+           (@0 x : Core Γ a) (@0 y : Core Γ b).
     CoreEq x y -> CoreEq y x
 
 transCoreEq :
-    forall (@0 Γ : CoreCtx) (@0 t : Type)
-           (@0 x : Core Γ t) (@0 y : Core Γ t) (@0 z : Core Γ t).
+    forall (@0 Γ : CoreCtx)
+           (@0 a : Type) (@0 b : Type) (@0 c : Type)
+           (@0 x : Core Γ a) (@0 y : Core Γ b) (@0 z : Core Γ c).
     CoreEq x y -> CoreEq y z -> CoreEq x z
 
 substCoreEq :
-    forall (@0 Γ : CoreCtx) (@0 t : Type)
-           (@0 P : Core Γ t -> Type)
-           (@0 x : Core Γ t) (@0 y : Core Γ t).
-    CoreEq x y -> P x -> P y
+    forall (@0 Γ : CoreCtx)
+           (@0 P : forall (@0 u : Type). Core Γ u -> Type)
+           (@0 a : Type) (@0 b : Type)
+           (@0 x : Core Γ a) (@0 y : Core Γ b).
+    CoreEq x y -> P a x -> P b y
 
 headSymbol :
     forall (@0 Γ : CoreCtx) (@0 t : Type).
@@ -5721,13 +5730,14 @@ Normative meaning:
   compilation fails with an elaboration-time error.
 * `reifyCore` reifies a core term back to hygienic `Syntax`. Consequently `$(reifyCore e)` is the canonical way to
   splice the result of semantic reflection.
-* `inferType`, `whnf`, `normalize`, `defEq`, and `proveDefEq` use the same elaboration, normalization, and
-  definitional-equality machinery that ordinary Kappa elaboration would use at that source site.
-* `proveDefEq x y` succeeds iff the elaborator judges the reflected core terms `x` and `y` definitionally equal under
-  the ordinary reduction rules and the current visibility / opacity environment. Otherwise it is an elaboration-time
-  error.
-* `defEq` is the Boolean convenience query. For reflected terms of the same object-language type and lexical context,
-  `defEq x y = True` iff `proveDefEq x y` would succeed.
+* `inferType`, `whnf`, `normalize`, `tryProveDefEq`, `defEq`, and `proveDefEq` use the same elaboration, normalization,
+  and definitional-equality machinery that ordinary Kappa elaboration would use at that source site.
+* `tryProveDefEq x y` returns `Some p` iff the elaborator judges the reflected core terms `x` and `y` definitionally
+  equal under the ordinary reduction rules and the current visibility / opacity environment; otherwise it returns
+  `None`.
+* `proveDefEq x y` succeeds iff `tryProveDefEq x y` would return `Some p`, and returns such a witness. Otherwise it is
+  an elaboration-time error.
+* `defEq x y = True` iff `tryProveDefEq x y` would return `Some _`.
 * `reflCoreEq`, `symCoreEq`, `transCoreEq`, and `substCoreEq` are the witness-level exact-equality operations for
   semantic reflection.
 * `substCoreEq reflCoreEq v` reduces to `v`.
@@ -5738,11 +5748,11 @@ Normative meaning:
 
 Exact equality for macros:
 
-* `CoreEq` and `proveDefEq` are the witness-bearing macro-level exact-equality facilities.
+* `CoreEq`, `tryProveDefEq`, and `proveDefEq` are the witness-bearing macro-level exact-equality facilities.
 * They are distinct from propositional equality (`=`), `Equiv`, and any user-defined comparison function.
-* `defEq`, `proveDefEq`, `whnf`, `normalize`, and `substCoreEq` MUST obey the current module's ordinary visibility,
-  opacity, `unhide`, and `clarify` rules. In particular, an opaque definition remains opaque unless ordinary elaboration
-  at that source site could unfold it.
+* `defEq`, `tryProveDefEq`, `proveDefEq`, `whnf`, `normalize`, and `substCoreEq` MUST obey the current module's ordinary
+  visibility, opacity, `unhide`, and `clarify` rules. In particular, an opaque definition remains opaque unless
+  ordinary elaboration at that source site could unfold it.
 
 Shared-context discipline:
 
@@ -5939,8 +5949,21 @@ failElab :
     forall (@0 a : Type).
     String -> Elab a
 
+failElabWith :
+    forall (@0 a : Type).
+    (code : String) ->
+    (message : String) ->
+    (related : List SyntaxOrigin) ->
+    Elab a
+
 warnElab :
     String -> Elab Unit
+
+warnElabWith :
+    (code : String) ->
+    (message : String) ->
+    (related : List SyntaxOrigin) ->
+    Elab Unit
 
 asCoreGoal :
     forall (@0 g : ElabGoal) (@0 t : Type).
@@ -5962,9 +5985,15 @@ Rules:
 * `Elab` actions run only during elaboration.
 * `currentGoal.ctx` is the lexical context that ordinary elaboration would use at the splice site.
 * `currentGoal.expected` is the expected type at the splice site when one is available; otherwise it is `None`.
-* `warnElab` emits a deterministic elaboration-time warning associated with the current source or synthetic-origin chain.
-  Warnings emitted by `Elab` are diagnostics only; they do not affect typing, normalization, hashing, or interface
-  identity except through their recorded origins.
+* `warnElab` emits a deterministic elaboration-time warning associated with the current source or synthetic-origin
+  chain. It is shorthand for `warnElabWith` using an implementation-defined diagnostic code.
+* `failElab` aborts the current elaboration action with an elaboration-time error associated with the current source or
+  synthetic-origin chain. It is shorthand for `failElabWith` using an implementation-defined diagnostic code.
+* `failElabWith code message related` and `warnElabWith code message related` emit structured diagnostics. The `code`
+  argument MUST satisfy the diagnostic-code requirements of §17.2.4. Each origin in `related` is attached as a related
+  origin in the emitted diagnostic, subject to the source / synthetic-origin model of §17.2.1.
+* Diagnostics emitted by `Elab` are deterministic. They do not affect typing, normalization, hashing, or interface
+  identity except through their recorded origins and the explicit diagnostic records made available to tooling.
 * `asCoreGoal g s` elaborates `s` in the lexical context `g.ctx`. If `g.expected = Some T`, the implementation MUST use
   the same expected-type-directed elaboration that ordinary source elaboration would use at that site.
 * `withExpectedGoal g T act` executes `act` with the same lexical context as `g` and with expected type overridden to
@@ -5972,7 +6001,7 @@ Rules:
 * `ensureDefEqGoal g x y` succeeds iff the ordinary elaborator judges `x` and `y` definitionally equal in `g.ctx`
   under the current visibility / opacity environment; otherwise it fails with an elaboration-time error.
 * `Elab` actions MAY use the reflection operations of §5.8.5, including `asCoreIn`, `asCoreGoal`, `inferType`, `whnf`,
-  `normalize`, `proveDefEq`, `defEq`, and `reifyCore`.
+  `normalize`, `tryProveDefEq`, `proveDefEq`, `defEq`, and `reifyCore`.
 * `Elab` is subject to the same determinism, transcript, visibility, opacity, implicit-resolution, package-mode effect,
   and termination restrictions as other elaboration-time execution in §5.8.6.
 * `Elab` does not provide a second re-entry path into object code. It re-enters object-language code only by producing
