@@ -19301,12 +19301,15 @@ A boundary contract specifies, for each wrapped parameter or result:
 * the exposed Kappa type;
 * any marshaling performed between the foreign representation and the Kappa representation;
 * the dynamic checks, if any, used to justify the exposed type; and
-* whether those checks are Exact or Conservative.
+* whether those checks are Exact, Conservative, or Lossy.
 
 Definitions:
 
 * Exact: the boundary check is sound and complete with respect to the exposed invariant.
 * Conservative: the boundary check is sound but not necessarily complete.
+  It may reject foreign values that would satisfy the exposed invariant.
+* Lossy: the boundary intentionally forgets, approximates, copies, canonicalizes, rounds, normalizes, or otherwise
+  changes information while preserving the documented exposed Kappa contract.
 
 Rules:
 
@@ -19328,6 +19331,19 @@ Rules:
   crossed a boundary claiming type `T`, later runtime type failures attributable solely to hidden wrapper mismatch
   SHOULD not occur; subsequent failures SHOULD arise only from surrounding context misuse or from later explicit
   boundary checks.
+
+Additional rules:
+
+* A Lossy boundary MUST be labelled as Lossy by the overlay, trusted summary, bridge contract, or
+  implementation-defined binding metadata.
+* A Lossy boundary MUST document what information may be lost.
+* A Lossy boundary MUST NOT be used to justify propositional equality, representation identity, pointer identity, alias
+  preservation, object identity, or an inverse conversion unless an additional Exact boundary or proof supplies that
+  justification.
+* A Lossy boundary MAY still expose a precise Kappa value when the exposed value itself satisfies its Kappa type after
+  conversion.
+* If a Lossy boundary produces a dependent value, the dependent indices refer to the produced Kappa value, not
+  necessarily to the original foreign representation.
 
 <!-- compiler.ffi.higher_order_boundaries -->
 #### 17.7.4B Higher-order boundaries
@@ -19513,6 +19529,32 @@ Rules:
   mechanism of this subsection and does not participate in the static
   import graph, module interfaces, or module-dependency cycle checks.
 
+Additional rules:
+
+* A dynamic bridge handle is a capability.
+  Possessing the handle authorizes bridge operations supported by that handle's `BridgeHandle` instance.
+* The standard library MUST NOT prescribe a single global bridge handle for a runtime family such as Python, Ruby, Perl,
+  or another dynamic runtime.
+* A bridge library MAY provide convenience functions that use an application-level default handle, but such functions are
+  ordinary library functions and MUST NOT affect the static import graph.
+* Multiple bridge handles for the same runtime family may coexist.
+  They may differ in executable path, environment, transport, authentication, sandboxing, timeout policy, runtime
+  version, or other implementation-documented configuration.
+* Values obtained from distinct bridge handles MUST NOT be assumed mutually interchangeable unless a bridge contract,
+  trusted summary, or explicit Kappa conversion establishes that relationship.
+* A bridge-bound value that closes over a handle may be:
+  * borrowed, in which case its type records the borrowed region using `captures (r)`; or
+  * owned, in which case it is represented by `std.bridge.BridgePackage` or another implementation-documented resource
+    wrapper with equivalent lifetime behavior.
+* An implementation MAY provide surface sugar resembling runtime import, such as:
+
+  ```kappa
+  let np <- py.bind @Numpy "numpy"
+  ```
+
+  but such sugar MUST elaborate to ordinary bridge-handle operations.
+  It MUST NOT elaborate to a static `import` declaration.
+
 <!-- compiler.ffi.bridge_contract_formation -->
 #### 17.7.7A Bridge contract formation and bridge-bound package semantics
 
@@ -19622,6 +19664,54 @@ Rules:
   ordinary query model.
 * A bridge transcript MUST NOT be required for ordinary dynamic bridge execution unless the selected bridge profile
   documents replay or deterministic-execution requirements.
+
+<!-- compiler.ffi.bridge_contract_formation.example_python_numpy_bridge -->
+#### Example: Python NumPy bridge
+
+Non-normative example:
+
+```kappa
+import std.bridge
+import std.gradual
+
+type PyError : Type = ...
+type PyObject : Type = ...
+type PyArray : Type = ...
+
+type Numpy : Type =
+    ( array :
+          forall (@0 a : Type).
+          (@_ : std.gradual.DynamicType a) ->
+          List a -> IO PyError PyArray,
+
+      sin :
+          PyArray -> IO PyError PyArray,
+
+      linspace :
+          (start : Float, stop : Float, count : Nat) ->
+          IO PyError (exists (n : Nat). (len : n = count, value : PyArray))
+    )
+
+instance std.bridge.BridgeBindable Numpy =
+    let bridgeContract =
+        ... -- contract describing "array", "sin", and "linspace"
+
+let main : IO PyError Unit = do
+    using py <- Python.start
+        ( executable = "/opt/venv/bin/python",
+          transport = Python.Transport.MsgPack,
+          timeout = Duration.seconds 30 )
+
+    let np <- std.bridge.bindModule @Numpy py "numpy"
+
+    let xs <- np.array [0, 1, 2]
+    let ys <- np.sin xs
+
+    println (show ys)
+```
+
+Here `py` is an ordinary runtime bridge handle. `np` is an ordinary package-like value whose member selection uses
+§2.8.3. No static module named `python.numpy` is introduced, and no global Python interpreter is implied.
 
 <!-- compiler.ffi.precision_preserving_kappa_to_kappa_bridges -->
 #### 17.7.8 Precision-preserving Kappa-to-Kappa bridges
