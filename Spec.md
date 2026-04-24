@@ -3557,15 +3557,34 @@ Quantities on compile-time binders and fields:
 
 Typing discipline:
 
-* Elaboration infers a usage interval for ordinary binders and a borrow obligation for `&`-annotated binders.
-* A binder annotated with an interval quantity `q` is accepted iff the inferred demand interval is contained within the
-  declared demand `q`.
-* A binder annotated with `&` is accepted iff all uses are non-consuming and the binder does not escape the borrow scope
-  described in §5.1.6.
+* Elaboration infers an interval demand for ordinary binders and a borrow obligation for `&`-annotated binders.
+* A binder annotated with an interval quantity `[l,u]` is accepted iff the inferred demand interval `[l',u']` satisfies
+  `l <= l'` and `u' <= u`.
+* Equivalently, the inferred number of runtime-relevant demands must be within the interval declared by the binder.
+* A binder annotated with `&` is accepted iff all uses are non-consuming and the borrowed view does not escape the borrow
+  scope described in §5.1.6.
 * Sequential composition adds interval usages.
-* Alternative control-flow paths merge interval usages with `⊔`.
+* Alternative control-flow paths merge interval usages with `⊔`, where `[a,b] ⊔ [c,d] = [min(a,c), max(b,d)]`.
 * Pattern components add usages structurally.
 * Or-pattern alternatives merge binder usages with `⊔`.
+* A branch or completion path that is proven unreachable contributes no usage interval.
+* A branch or completion path that exits a scope by `return`, `break`, `continue`, or another source-level completion
+  still contributes the usages that occur before that completion.
+* Positive lower-bound obligations, including `1` and `>=1`, must be discharged before such a completion may leave the
+  binder's scope, as specified in §5.1.5A.
+
+<!-- types.universes.quantities.lower_bound_completion -->
+##### 5.1.5A Positive lower-bound completion obligations
+
+A positive lower-bound obligation is an interval-quantity obligation whose lower bound is greater than `0`.
+
+Rules:
+
+* A completion path that leaves a binder's scope must have already accumulated enough demands to satisfy every positive
+  lower-bound obligation for binders whose scopes it exits.
+* This applies to ordinary fallthrough completion and to source-level completions such as `return`, `break`, `continue`,
+  and any other source form that leaves the binder's scope.
+* A completion path proven unreachable contributes no obligation.
 
 Borrow binders may optionally name a region variable already in scope:
 
