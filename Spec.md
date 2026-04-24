@@ -5943,8 +5943,26 @@ projection longer (place x : String) (place y : String) : String =
     else
         yield y
 
-projection degrees (place this : Angle) : Float =
+-- selector-form projection: selects an actual stored place
+projection radians (place this : Angle) : Float =
     yield this.radians
+
+-- expanded-form projection: computed reversible view
+projection degrees (place this : Angle) : Float =
+    get -> radiansToDegrees this.radians
+
+    set (new_value : Float) ->
+        this.{ radians = degreesToRadians new_value }
+
+let d = angle.degrees
+
+let deg = degrees
+let d2 = deg angle
+
+let angle2 = angle.{ (.degrees) = 90.0 }
+
+do
+    normalizeAngle ~(degrees angle)
 ```
 
 Grammar:
