@@ -19172,6 +19172,14 @@ Rules:
 * A raw `host.native` surface denotes the native ABI itself rather than a particular backend realization of that ABI.
   Different backend profiles MAY realize the same raw `host.native` surface through different adapter modes under
   §17.7.2.1 without changing its source-level spelling.
+* A raw `host.native` surface identity MUST include every ABI-description input that can affect the generated Kappa raw
+  surface, including target triple, platform ABI, calling convention, selected headers or module maps, relevant
+  preprocessor definitions, layout-affecting compiler options, symbol-selection inputs, and trusted binding summaries
+  that affect exported signatures.
+* Two backend profiles MAY share a canonical `host.native` raw surface only when they agree on the canonical ABI
+  description and on the generated Kappa raw surface.
+* Adapter-mode identity is distinct from native ABI identity, but MUST be recorded whenever it affects exported
+  signatures, runtime semantics, deployment requirements, or generated companion artifacts.
 * A raw `host.jvm.jni` surface is backend-specific to the `jvm` profile and MAY expose JNI reference types, interface
   pointers, or registration surfaces using opaque exported types, `RawPtr`, `OpaqueHandle`, or another
   implementation-documented equivalent representation.
@@ -19214,6 +19222,13 @@ Rules:
 * If incompatible adapter modes are requested for the same binding by multiple selection mechanisms, compilation fails.
 * Adapter-mode selection is part of the effective build configuration and of the host-binding implementation identity
   whenever it affects exported signatures, runtime semantics, or deployment requirements.
+* When adapter mode is explicitly selected, the implementation MUST use that adapter mode or reject the binding.
+* When adapter mode is not explicitly selected, the implementation MAY choose the first adapter mode, in the
+  backend-defined preference order, that can realize the binding exactly under the selected deployment mode.
+* Skipping a preferred adapter mode during automatic selection is permitted only when the implementation records why that
+  mode could not realize the binding.
+* Automatic adapter selection MUST NOT silently choose a less precise surface, weaker marshalling contract, weaker
+  callback contract, weaker blocking classification, or weaker ownership contract.
 * If a selected adapter mode requires generated companion classes, generated interop declarations, registration tables,
   shim source, headers, native helper objects, or another auxiliary artifact, those artifacts are part of the binding
   realization under §§17.2.6 and 17.6.3.
