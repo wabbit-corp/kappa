@@ -8770,6 +8770,23 @@ In this completion-carrying case:
 This does not introduce a second control system. It is ordinary composition of the shallow-handler kernel, the deep-
 handler recursive driver, and the completion-and-scope kernel.
 
+<!-- effects.monadic_core.surface_control_boundary -->
+#### 8.1.10A Surface control boundary
+
+Kappa v1 does not provide raw undelimited or prompt-delimited continuation operators such as `call/cc`, `shift`,
+`reset`, `control`, or `prompt`.
+
+The only portable source-level captured-control values are the handler-bound resumptions `k` introduced by
+§§8.1.9-8.1.10.
+
+Kappa v1 also does not add a dedicated source-level multi-return-call syntax.
+Finite local control at source level is expressed through ordinary branching, `Completion`, `Match`, projections,
+and handlers.
+Backend-local multi-return / join-point lowering is permitted by §17.4.7A but is not surface syntax.
+
+Implementations MAY realize handlers using such operators internally, but those operators are not part of portable
+source syntax, module interfaces, or the portability contract of this specification.
+
 <!-- effects.monadic_core.monad_finally -->
 #### 8.1.11 `MonadFinally`
 
@@ -15199,6 +15216,8 @@ At minimum it MUST represent:
   * projection yielded-leaf alternatives for projector-elimination control; and
   * success / failure or case-split alternatives for implementation-generated boolean or constructor-refinement join
     points;
+* if the implementation classifies a lowered transfer as tail, super-tail, or semi-tail under §17.4.7A, the dump
+  SHOULD expose that classification;
 * values and def-use or binding-use relationships;
 * fiber handles, supervision scopes, TVars, STM journals, handler frames, resumption objects, cleanup scopes, and
   error-propagation structure;
@@ -16442,6 +16461,110 @@ Operational intent:
   or policy property.
 * A future extension should therefore be implemented as "existing checker + extra predicates", not by generalizing
   `Quantity`, `⊑`, borrow introduction, or borrow lifetimes.
+
+<!-- appendices.local_control_lowering_examples -->
+## Appendix N. Local control lowering examples (non-normative)
+
+This appendix is explanatory.
+It illustrates the permitted backend-local finite-control lowerings of §§7.7.3A, 8.1.9, 8.1.10, 8.1.10A, 14.8.6A, and
+17.4.7A.
+
+<!-- appendices.local_control_lowering_examples.match_parser_chain -->
+### N.1 `Match` parser chain to a finite local arm graph
+
+Source parser chain:
+
+```kappa
+match input
+  case ParseHeader -> 
+      match parseBody input
+        case Match.Hit body ->
+            use body
+        case Match.Miss rest ->
+            recover rest
+  case Match.Miss rest ->
+      recover rest
+```
+
+The normative source semantics remain the explicit `Match` constructors and nested case analysis.
+
+An implementation MAY lower the surrounding chain to an internal finite local control protocol whose arms correspond to:
+
+* `headerHit`;
+* `bodyHit`;
+* `bodyMiss`; and
+* `outerMiss`.
+
+Schematic arm graph:
+
+```text
+entry
+  -> headerHit
+  -> outerMiss(rest)
+
+headerHit
+  -> bodyHit(body)
+  -> bodyMiss(rest)
+
+bodyHit(body)
+  -> return(use body)
+
+bodyMiss(rest)
+  -> return(recover rest)
+
+outerMiss(rest)
+  -> return(recover rest)
+```
+
+Required preserved properties:
+
+* the source scrutinee and parser calls are still evaluated exactly once in left-to-right order;
+* residue threading remains exact;
+* `recover` is still reached only through the source failure arms; and
+* no first-class multi-return value becomes visible at source level.
+
+This is exactly the kind of finite local protocol permitted by §17.4.7A: it is non-escaping, bounded, and equivalent
+to the explicit `Match` constructors at the source level.
+
+<!-- appendices.local_control_lowering_examples.tail_resumptive_handler -->
+### N.2 Tail-resumptive handler clause to in-place transfer
+
+Consider a shallow handler whose operation clause immediately tail-resumes:
+
+```kappa
+handle Log io with
+  case return x -> pure x
+  case log msg k -> k Unit
+```
+
+The source semantics still bind `k` as a captured resumption value under §8.1.9.
+
+Because the clause:
+
+* performs exactly one resumption,
+* performs it in tail position, and
+* neither stores nor duplicates `k`,
+
+it is tail-resumptive in the sense of §14.8.6A.
+
+A conforming implementation MAY therefore realize the clause without full general resumption capture, using an
+observationally equivalent in-place transfer or join-point handoff:
+
+```text
+on log(msg):
+  discard current clause frame
+  jump directly to resumed suffix with payload Unit
+```
+
+This optimization is valid only if it preserves:
+
+* the exact handled effect label;
+* the shallow-handler rule that the handler is not automatically reinstalled around the resumed suffix;
+* the current interruption-mask state and other captured control state required by §14.8.5; and
+* all pending `defer`, `using`, and cleanup obligations in the captured segment.
+
+If the clause instead duplicated `k`, stored it, or resumed it under multiple branches, the implementation would have
+to fall back to the ordinary resumption realization rules of §§14.8.5-14.8.9.
 
 <!-- appendices.test_harness -->
 ## Appendix T. Standard test harness
