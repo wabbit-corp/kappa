@@ -4042,9 +4042,12 @@ Projection-section update:
 * It is not an ordinary field update.
 * The section body is resolved exactly as if it had been written as a dotted form on the outer receiver `lhs`.
 * After receiver insertion and ordinary resolution, the resulting form must denote either:
-  * a stable place rooted in `lhs`, or
-  * a fully applied projection call whose yielded alternatives are all rooted in the receiver inserted for `lhs`.
-* The replacement expression `rhs` is checked against the selected type of that place or projection.
+  * a stable place rooted in `lhs`;
+  * a fully applied projection call whose yielded alternatives are all rooted in the receiver inserted for `lhs`; or
+  * a projector descriptor application under §7.1.3A whose `Roots` type is a one-field closed record and whose roots
+    argument is the receiver inserted for `lhs`.
+* The replacement expression `rhs` is checked against the selected type of that place, projection call, or projector
+  descriptor application.
 * The whole update expression has the same type as `lhs`.
 * In v0.1, a projection-section update form may contain at most one `projectionUpdateField`.
 * In v0.1, a `projectionUpdateField` MUST NOT appear in the same `lhs.{ ... }` form as any ordinary update field or any
