@@ -17265,6 +17265,113 @@ In particular:
 
 Tooling may use enumeration to propose edits, hole fillings, case splits, and completion candidates.
 
+<!-- compiler.kcore.optional_cardinality_strengthening -->
+#### 17.3.6B Optional algebraic and higher-order strengthening
+
+Implementations MAY apply additional sound cardinality, inhabitance, and enumeration rules beyond the required
+structural fragment.
+
+All such rules are optional.
+
+Permitted strengthening techniques include, but are not limited to:
+
+* exact finite-cardinality arithmetic for transparent closed types;
+* bounded normalization and bounded rewriting by type isomorphisms;
+* finite-domain instantiation;
+* variance analysis;
+* recognition of covariant, contravariant, and phantom occurrences of a bound type variable;
+* representable-functor and container decompositions;
+* Yoneda-style simplifications;
+* bounded recursive-equation unfolding for strictly positive transparent data;
+* bounded search over derived subgoals.
+
+Nondependent finite functions:
+
+For a nondependent function type `A -> B`, if both `A` and `B` have exact finite source-level summaries and the
+implementation's arithmetic bound is not exceeded, an implementation MAY summarize `A -> B` as:
+
+```text
+Finite (|B| ^ |A|)
+```
+
+with the usual exact finite-cardinality conventions:
+
+* `0 -> B` has one inhabitant;
+* `A -> Unit` has one inhabitant;
+* `A -> Void` is empty when `A` is known inhabited.
+
+This rule is optional and MUST NOT be required for source acceptance.
+
+Dependent products over finite enumerated domains:
+
+For a dependent function type `(x : A) -> B x`, if `A` has an exact finite enumeration below the implementation's
+threshold and every instantiated fiber `B x` has an exact finite summary, the implementation MAY summarize the type by
+the exact product:
+
+```text
+Π (x : A). |B x|
+```
+
+If any fiber is `Unknown`, or if enumeration of `A` is unavailable, this strengthening rule yields `Unknown`.
+
+Dependent records over finite enumerated prefixes:
+
+For a dependent record telescope, if an earlier field has exact finite enumeration below the implementation's threshold,
+an implementation MAY compute the exact dependent sum over its inhabitants:
+
+```text
+Σ (x : A). |Rest x|
+```
+
+This is optional strengthening. The required fragment only requires propagation through contractible fields.
+
+Container and representable-functor strengthening:
+
+An implementation MAY recognize a transparent covariant type expression `F X` as a finite or bounded container:
+
+```text
+F X ≅ Σ (s : Shape). Position s -> X
+```
+
+or, equivalently, as a finite series:
+
+```text
+Σᵢ Coeffᵢ * (Positionᵢ -> X)
+```
+
+When such a decomposition is available and a target expression `G X` is recognized as covariant in `X`, the
+implementation MAY use Yoneda-style rules to summarize polymorphic function types such as:
+
+```text
+forall X. F X -> G X
+```
+
+by reducing them to products of instantiated targets:
+
+```text
+Πᵢ (Coeffᵢ -> G Positionᵢ)
+```
+
+This rule is optional. It must respect opacity, visibility, totality, purity, and parametricity assumptions available in
+KCore.
+
+Boundedness and failure:
+
+Every optional strengthening rule MUST be bounded, deterministic, and terminating.
+
+If a bound is exceeded, arithmetic overflows an implementation-defined exact limit, a required normal form is
+unavailable, a variance check fails, a decomposition is not recognized, an opacity boundary prevents inspection, or a
+proof obligation is unsupported, the rule MUST return `Unknown` or `NotEnumerable`.
+
+It MUST NOT produce a compile-time error unless another rule of this specification already requires rejection of the
+program.
+
+Determinism:
+
+If optional strengthening can affect generated KBackendIR, target artifacts, interface-visible diagnostics, or
+tooling-visible query results, the implementation-defined bounds and enabled strengthening rules MUST be part of the
+relevant compiler fingerprint or query key.
+
 <!-- compiler.kbackendir -->
 ### 17.4 KBackendIR
 
