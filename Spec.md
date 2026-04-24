@@ -14509,6 +14509,13 @@ A module interface artifact MUST record at least:
   * and the static footprint summary required by §§5.1.7.2 and 8.8;
 * the signatures of exported types, traits, constructors, associated static members, effect interfaces, and effect
   operations, insofar as those entities are available to downstream code;
+* for each exported declaration, whether it has a reified static-object term facet under §2.8.6;
+* for each exported reified static-object term facet, its elaborated compile-time type;
+* for each exported reified type-object facet, the static-member table identity needed for downstream dotted static
+  member selection on rebound values;
+* for each exported reified trait-constructor facet, the trait telescope and resulting `Constraint` classifier;
+* for each exported effect-label value or operation selection value, the effect-label identity and effect-interface
+  operation identity needed for downstream effect-row checking and operation invocation;
 * any escaped local nominal families referenced by exported signatures, exported compile-time members, or transparent
   definitional content, together with:
   * their canonical family identities under §17.3.4.1,
@@ -15733,6 +15740,49 @@ Boolean branch evidence continues to use ordinary propositional equality:
 
 * `if b then t else f` introduces branch-local erased evidence `b = True` / `b = False`.
 * `match b` on boolean constructors behaves likewise.
+
+<!-- compiler.kcore.application_spines.reified_static_object_values -->
+##### 17.3.1.9 Reified static-object values
+
+A conforming implementation MUST behave as if KCore contains ordinary compile-time values for reified static objects.
+
+Primitive compile-time semantic-object classes include at least:
+
+```text
+TypeObject
+TraitObject
+EffectLabelObject
+EffectOperationObject
+ModuleObject
+ProjectorObject
+```
+
+These names are descriptive; an implementation may use another internal representation if it is observationally
+equivalent.
+
+Rules:
+
+* A reified type declaration lowers to a KCore compile-time value preserving:
+  * its type constructor identity;
+  * its elaborated telescope;
+  * its result universe; and
+  * its static-member table identity.
+* A reified trait declaration lowers to a KCore compile-time value preserving:
+  * its trait identity;
+  * its elaborated telescope; and
+  * its resulting `Constraint` classifier.
+* A reified effect label lowers to a KCore compile-time value of type `EffLabel` preserving its label identity.
+* A selected effect operation `label.op` lowers to a KCore term value preserving:
+  * the selected effect label identity;
+  * the selected effect-interface identity;
+  * the operation identity; and
+  * the elaborated operation type.
+* Application of a reified effect operation value lowers to the same effect-operation invocation node as direct
+  `label.op` application.
+* Dotted static-member selection on a reified type object consults the preserved static-member table identity.
+* Rebinding, record construction, package construction, sealing, opening, and projection of reified static-object values
+  preserve the corresponding semantic-object identity.
+* All such values are compile-time only unless explicitly carried by a runtime reification type supplied elsewhere.
 
 <!-- compiler.kcore.provenance_explainability -->
 #### 17.3.2 KCore provenance and explainability
