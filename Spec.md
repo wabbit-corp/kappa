@@ -1374,6 +1374,160 @@ Rules:
   Bridge-specific modules provide startup/configuration APIs and SHOULD
   also provide `Releasable` instances for their handle types.
 
+<!-- modules.atomic -->
+### 2.7C Standard atomic support module `std.atomic`
+
+Implementations that advertise backend capability `rt-atomics` MUST provide a standard module `std.atomic`.
+It is not implicitly imported.
+
+Types (type namespace):
+
+```text
+AtomicRef a,
+LoadOrder, StoreOrder, RmwOrder, CasFailureOrder,
+CompareExchangeResult a
+```
+
+Traits:
+
+```text
+AtomicValue a
+```
+
+Terms:
+
+```text
+newAtomicRef,
+atomicLoad,
+atomicStore,
+atomicExchange,
+atomicCompareExchange,
+atomicFetchAdd,
+atomicFetchSub,
+atomicFetchAnd,
+atomicFetchOr,
+atomicFetchXor
+```
+
+Canonical declarations:
+
+```kappa
+expect data AtomicRef (a : Type) : Type
+
+data LoadOrder : Type =
+    LoadRelaxed
+    LoadAcquire
+    LoadSeqCst
+
+data StoreOrder : Type =
+    StoreRelaxed
+    StoreRelease
+    StoreSeqCst
+
+data RmwOrder : Type =
+    RmwRelaxed
+    RmwAcquire
+    RmwRelease
+    RmwAcqRel
+    RmwSeqCst
+
+data CasFailureOrder : Type =
+    CasFailRelaxed
+    CasFailAcquire
+    CasFailSeqCst
+
+data CompareExchangeResult (a : Type) : Type =
+    Exchanged (old : a)
+    NotExchanged (current : a)
+
+trait AtomicValue (a : Type)
+
+newAtomicRef :
+    forall (a : Type).
+    (@_ : AtomicValue a) ->
+    a -> UIO (AtomicRef a)
+
+atomicLoad :
+    forall (a : Type).
+    (@_ : AtomicValue a) ->
+    LoadOrder -> AtomicRef a -> UIO a
+
+atomicStore :
+    forall (a : Type).
+    (@_ : AtomicValue a) ->
+    StoreOrder -> AtomicRef a -> a -> UIO Unit
+
+atomicExchange :
+    forall (a : Type).
+    (@_ : AtomicValue a) ->
+    RmwOrder -> AtomicRef a -> a -> UIO a
+
+atomicCompareExchange :
+    forall (a : Type).
+    (@_ : AtomicValue a) ->
+    success : RmwOrder ->
+    failure : CasFailureOrder ->
+    AtomicRef a ->
+    expected : a ->
+    desired : a ->
+    UIO (CompareExchangeResult a)
+
+atomicFetchAdd :
+    RmwOrder -> AtomicRef Int -> Int -> UIO Int
+
+atomicFetchSub :
+    RmwOrder -> AtomicRef Int -> Int -> UIO Int
+
+atomicFetchAnd :
+    RmwOrder -> AtomicRef Int -> Int -> UIO Int
+
+atomicFetchOr :
+    RmwOrder -> AtomicRef Int -> Int -> UIO Int
+
+atomicFetchXor :
+    RmwOrder -> AtomicRef Int -> Int -> UIO Int
+```
+
+Rules:
+
+* `AtomicRef a` is a distinct mutable cell kind. It is not an ordinary `var`, ordinary `Ref`, `TVar`, or `MonadRef`
+  cell.
+* Atomic operations on one `AtomicRef` participate in a single modification order for that cell.
+* Atomic operations do not participate in STM transactions.
+* `AtomicValue a` classifies values that have a backend-supported atomic representation.
+* A conforming implementation of `std.atomic` MUST provide `AtomicValue` instances at least for:
+  * `Bool`,
+  * `Int`,
+  * and the exact-width integer types exported by `std.ffi` when `std.ffi` is available for the selected backend.
+* A backend MAY provide additional `AtomicValue` instances.
+* Atomic equality for `atomicCompareExchange` is representation equality for the selected `AtomicValue` instance.
+* Atomic operations are interruption points only if the implementation documents them as potentially suspending.
+  Ordinary lock-free atomic operations SHOULD NOT suspend.
+
+Memory-order meaning:
+
+* `Relaxed` operations are atomic but introduce no inter-fiber happens-before edge by themselves.
+* A `StoreRelease`, `RmwRelease`, `RmwAcqRel`, or `RmwSeqCst` operation may publish preceding writes.
+* A `LoadAcquire`, `RmwAcquire`, `RmwAcqRel`, or `RmwSeqCst` operation may observe such publication.
+* A release operation on an atomic cell synchronizes-with an acquire operation on the same cell when the acquire
+  operation reads from the release operation, or from a release sequence beginning at that operation.
+* `SeqCst` operations additionally participate in one global sequentially consistent order consistent with each
+  affected atomic cell's modification order.
+
+Compare-exchange:
+
+* On success, `atomicCompareExchange` atomically replaces the current value with `desired`, returns `Exchanged old`, and
+  applies the `success` order.
+* On failure, it leaves the cell unchanged, returns `NotExchanged current`, and applies the `failure` order.
+* The failure order has load-like behavior only. It never has release behavior.
+
+Atomic arithmetic and bitwise operations:
+
+* `atomicFetchAdd`, `atomicFetchSub`, `atomicFetchAnd`, `atomicFetchOr`, and `atomicFetchXor` return the old value.
+* Their update is atomic with respect to all other atomic operations on the same cell.
+* Overflow behavior follows the ordinary backend-defined representation of `Int` only if `Int` is fixed-width for that
+  backend. Otherwise, the operation MUST either be implemented exactly or be rejected for that backend profile.
+
 ---
 
 <!-- modules.names -->
@@ -14472,11 +14626,29 @@ Single-fiber ordering:
   order, subject only to source-level transformations that preserve single-fiber behavior.
 * A backend MUST NOT reorder same-fiber mutable operations in a way that is observable in Kappa source semantics.
 
-Non-portable atomics:
+Backend-specific atomics:
 
-* The portable core does not standardize atomics, fences, compare-and-swap, or explicit memory orders in v1.
-* Backends MAY provide such facilities outside the portable subset, but ordinary refs do not acquire those semantics
-  implicitly.
+* Apart from `std.atomic` under `rt-atomics`, the portable core does not standardize backend-specific atomics, fences,
+  compare-and-swap, or explicit memory orders in v1.
+* Backends MAY provide additional atomic facilities outside the portable subset, but ordinary refs do not acquire those
+  semantics implicitly.
+
+Atomic synchronization:
+
+If the selected backend advertises `rt-atomics`, operations from `std.atomic` add the following portable synchronization
+edges:
+
+* every atomic cell has a modification order containing all atomic writes, exchanges, successful compare-exchanges, and
+  read-modify-write operations on that cell;
+* a release operation synchronizes-with an acquire operation on the same atomic cell when the acquire observes the value
+  written by that release operation, or a value in the release sequence beginning at that operation;
+* synchronization through atomics introduces happens-before in the ordinary transitive way;
+* sequentially consistent atomic operations participate in one global `SeqCst` order consistent with per-cell
+  modification order and happens-before.
+
+Ordinary refs and atomic refs are distinct cell kinds.
+A program cannot obtain an `AtomicRef a` view of an ordinary `Ref a` or `var`, or an ordinary `Ref a` view of an
+`AtomicRef a`, through the portable core.
 
 <!-- core_semantics.runtime_model.runtime_tracing_diagnostics -->
 #### 14.8.4B Runtime tracing and diagnostics
@@ -18642,6 +18814,7 @@ The standard runtime capability names are:
 * `rt-parallel`
 * `rt-shared-stm`
 * `rt-blocking`
+* `rt-atomics`
 
 Meaning:
 
@@ -18674,6 +18847,13 @@ Meaning:
   * together with foreign-call interruption classification and any documented safe cancellation mechanisms required by
     `blocking-cancellable`.
 
+* `rt-atomics`:
+  * the standard module `std.atomic`,
+  * atomic references,
+  * compare-exchange,
+  * read-modify-write operations,
+  * and the memory-order semantics of §14.8.4A.
+
 Capability rules:
 
 * A backend that lacks a required capability MUST reject the affected program or deployment mode rather than silently
@@ -18687,6 +18867,10 @@ Capability rules:
 * Absence of `rt-shared-stm` does not remove `STM` from the language. It restricts `STM` to a single runtime agent.
 * Use of the source-level `blocking` combinator requires `rt-blocking`.
 * Absence of `rt-blocking` makes blocking foreign-call bridges unavailable in the portable subset.
+* Use of `std.atomic` requires backend capability `rt-atomics`.
+* Absence of `rt-atomics` does not affect `STM`, ordinary refs, promises, scopes, monitors, or fibers.
+* A backend advertising `rt-atomics` MUST reject any `AtomicValue` instance it cannot implement with the required
+  atomicity and memory-order semantics.
 
 Recommended backend declarations:
 
@@ -18694,11 +18878,15 @@ Recommended backend declarations:
   * `rt-core`,
   * `rt-parallel`,
   * `rt-shared-stm`,
-  * `rt-blocking`.
+  * `rt-blocking`,
+  * `rt-atomics`.
 
 * `wasm-core`, `wasm-component`, and `js` MUST advertise `rt-core`.
   They MAY additionally advertise `rt-parallel`, `rt-shared-stm`, or `rt-blocking` only when the selected embedder or
   deployment configuration actually provides them.
+
+* `wasm-core`, `wasm-component`, and `js` MAY advertise `rt-atomics` only when the selected embedder or deployment
+  configuration provides compatible atomic memory operations.
 
 For the standard target families covered by this specification, `zig`, `jvm`, managed `dotnet`, `wasm-core`,
 `wasm-component`, and `js` SHOULD all support the full `rt-core` surface, including timers and promises.
