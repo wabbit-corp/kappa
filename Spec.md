@@ -10588,14 +10588,17 @@ Rules:
 * `~` is valid only inside a `do` block, and only on arguments of the maximal application site (§7.1.3) that forms a
   `do`-item rewrite site.
 * `~` may be applied only to:
-  * a stable place as defined in §5.1.7.1; or
-  * a parenthesized, fully applied projection call under §6.1.1.
-* Parentheses are required around a projection call under `~`, for example `~(focusedBuffer editor)`.
+  * a stable place as defined in §5.1.7.1;
+  * a parenthesized, fully applied projection call under §6.1.1; or
+  * a parenthesized projector descriptor application under §7.1.3A.
+* Parentheses are required around a projection call or projector descriptor application under `~`, for example
+  `~(focusedBuffer editor)` or `~(foo editor)`.
 * If the source place is rooted at a `var`-bound name, elaboration first reads the current contents of that `Ref` into a
   fresh hidden temporary root and then proceeds on that temporary root.
 * A given stable place, or a given projection call occurrence, may appear in at most one `~` argument within a single
   application.
-* For a projection call, static disjointness checking uses the static footprint summary of §5.1.7.2.
+* For a projection call or projector descriptor application, static disjointness checking uses the static footprint
+  summary of §5.1.7.2.
 * A `~place` argument is well-formed if and only if the compiler can statically resolve the callee at that application
   site to a Pi-telescope in which the corresponding explicit parameter:
   * has quantity `@1`,
@@ -10642,6 +10645,12 @@ or the pure analogue `let pat = func ~x1 ... ~xk args`, elaboration proceeds as 
    * If the marked argument is a fully applied projection call, elaboration first constructs the projector descriptor
      value `proj` and the internal place pack `pack` for that call, then elaborates the marked argument as
      `OpenProjector proj pack`.
+   * The callee receives the `focus` component of the resulting zipper.
+   * On return, the returned successor is written back by applying the zipper's linear `fill` component.
+   * If the zipper rebuilds a root pack containing more than one root field, the rebuilt pack is then scattered back to
+     the corresponding actual stable roots in declaration order.
+   * If the marked argument is a projector descriptor application under §7.1.3A, elaboration first constructs its
+     internal place pack and then elaborates the marked argument as `OpenProjector proj pack`.
    * The callee receives the `focus` component of the resulting zipper.
    * On return, the returned successor is written back by applying the zipper's linear `fill` component.
    * If the zipper rebuilds a root pack containing more than one root field, the rebuilt pack is then scattered back to
