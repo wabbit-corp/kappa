@@ -12695,7 +12695,12 @@ The captured continuation includes:
 * the evaluation context between the operation site and that handler;
 * the loop, match, and return-target context in that segment;
 * the active `do`-scope frames in that segment together with their current exit-action stacks;
+* any fiber-local dynamic control state in that segment whose semantics affect subsequent execution, including the
+  current interruption-mask state under §14.8.3;
 * any intervening handler frames for other labels in that segment.
+
+Resuming a captured continuation re-enters under the same interruption-mask state that held at the capture point, until
+the resumed computation changes that state by ordinary execution.
 
 It does not include:
 
@@ -15109,6 +15114,12 @@ stages:
 * `CONTROL_LOWERING`:
   lower source-level abrupt control, completion-carrying control, handlers, resumptions, `defer`, `using`, `try`, and
   related constructs to explicit runtime control and cleanup operations.
+
+* `LOCAL_CONTROL_PROTOCOL_LOWERING`:
+  lower finite non-escaping local control protocols such as `Completion`, `Match`,
+  projection/projector-elimination control, and implementation-generated boolean /
+  constructor-refinement / case-split joins to internal arm graphs, join points, or
+  multi-return form as permitted by §17.4.7A.
 
 * `ENVIRONMENT_LOWERING`:
   closure-convert lambdas and local declarations, and choose runtime environment layouts for captured values.
