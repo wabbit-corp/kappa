@@ -19861,6 +19861,21 @@ Rules:
 * A bridge implementation MUST prevent use-after-release either statically through regions and quantities, dynamically
   through checked resource state, or by an observationally equivalent mechanism.
 
+Owned package release:
+
+* If `BridgePackage sig` owns, retains, registers, pins, leases, keeps alive, or otherwise controls any runtime resource,
+  bridge connection, callback registration, host object, foreign object, process, interpreter, endpoint, transport,
+  native handle, or bridge capability, the implementation MUST provide a `Releasable` instance or another
+  specification-defined release operation with equivalent source-level behavior.
+* Releasing an owned `BridgePackage sig` MUST release, unregister, unpin, decrement, close, detach, or otherwise end the
+  owned bridge resources according to the bridge contract.
+* Release MUST be idempotent unless the bridge contract explicitly states otherwise and the type system prevents double
+  release through ordinary linearity.
+* Host finalization or garbage collection MAY be used as a backup cleanup mechanism, but it MUST NOT be the only
+  source-level release mechanism for an owned `BridgePackage sig`.
+* If release can fail, the bridge contract MUST specify whether that failure is represented as an expected typed failure,
+  a bridge failure, or a defect.
+
 <!-- compiler.ffi.bridge_contract_formation.provenance_diagnostics -->
 #### Provenance and diagnostics
 
