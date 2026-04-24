@@ -15804,6 +15804,47 @@ For `Eq` specifically:
 * A `derive` declaration that appears in a block scope generates a local instance. Its visibility, closure-conversion
   behavior, and admissibility rules are exactly those of a handwritten local instance under §14.1.1.
 
+<!-- traits.derived_hashable -->
+#### Derived `Hashable`
+
+A data type, record type, or tuple type may derive `std.hash.Hashable` when all runtime-relevant fields that participate
+in the corresponding `Eq` instance are themselves `Hashable`.
+
+Derived `Hashable` MUST be structurally aligned with the type's `Eq` semantics.
+
+For an algebraic data type:
+
+* hash the constructor identity using `std.hash.hashNatTag`;
+* then hash each runtime-relevant constructor field in constructor-field order;
+* erased fields and compile-time-only fields do not contribute to the runtime hash unless the corresponding `Eq`
+  semantics makes them runtime-observable through an explicit runtime representation.
+
+For a tuple:
+
+* hash the tuple arity tag;
+* then hash each runtime-relevant element in tuple order.
+
+For a record:
+
+* hash a record-shape tag derived from the canonical record shape;
+* then hash fields in canonical dependency-respecting order;
+* field source order does not affect derived hashing.
+
+For `Float` and `Double` fields, derived hashing uses `hashFloatRaw` and `hashDoubleRaw`, matching the raw-bit `Eq`
+instances.
+
+For opaque data:
+
+* `Hashable` may be derived only in a scope where the representation is visible;
+* the exported derived instance does not reveal constructors or fields;
+* clients observe only the `Hashable` dictionary, not the representation.
+
+The compiler MUST NOT derive `Hashable` from `Equiv`.
+
+If a type has a custom `Eq` instance whose behavior is not the structural derived `Eq`, then a derived `Hashable`
+instance is permitted only when the compiler can derive hashing from that same `Eq`-compatible representation.
+Otherwise the user must write the `Hashable` instance explicitly.
+
 ---
 
 <!-- names_cross_reference -->
