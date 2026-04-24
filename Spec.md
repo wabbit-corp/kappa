@@ -8786,6 +8786,43 @@ Capture restriction for `lazy`:
 * Compile-time-only captures are always permitted.
 * This rule ensures that memoization does not silently duplicate linear or borrowed state.
 
+Positive lower-bound capture in suspensions:
+
+Constructing a `thunk expr` or `lazy expr` does not demand the free variables used by `expr`.
+
+For purposes of quantity checking:
+
+* demands inside `thunk expr` are multiplied by the number of times that thunk is forced;
+* demands inside `lazy expr` are multiplied by the number of times the corresponding `Need` value may evaluate its body,
+  which is at most once operationally;
+* a positive lower-bound obligation outside the suspension is not discharged unless the suspension is forced sufficiently
+  before that obligation scope closes.
+
+Because `lazy` may evaluate its body zero times if it is never forced, `lazy expr` MUST NOT capture variables with
+positive lower-bound obligations unless those obligations are independently satisfied outside the lazy body.
+
+Example:
+
+```kappa
+bad :
+    (>=1 x : Int) -> Unit
+let bad x =
+    let t = thunk x
+    ()
+```
+
+Rejected: constructing `t` does not demand `x`.
+
+```kappa
+ok :
+    (>=1 x : Int) -> Int
+let ok x =
+    let t = thunk x
+    force t
+```
+
+Accepted: forcing `t` demands `x`.
+
 Operational meaning:
 
 * `thunk expr` does not evaluate `expr` at construction time.
