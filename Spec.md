@@ -8923,10 +8923,24 @@ Rules:
 * `opaque` does not apply to `effect` declarations.
 * Every effect declaration introduces an effect-interface constructor of declaration kind `type`.
 * Effect labels are separate identifiers of declaration kind `effect-label`.
+  Each effect-label declaration also has a reified static-object term facet of type `EffLabel` under §2.8.6.
 * Effect-row syntax may introduce effect-label identifiers.
-* A binder or package member of compile-time type `EffLabel` introduces an effect-label identifier that is admissible in
-  effect-row syntax, in `handle label expr with ...`, and in effect-operation selection `label.op`, subject to the
-  ordinary scope rules for that binder.
+* A binder, local binding, record field, or package member of compile-time type `EffLabel` introduces a value that may
+  be used in effect-label positions under §5.1.4.2.
+* If such a value is bound by an identifier, that identifier is admissible in effect-row syntax, in
+  `handle label expr with ...`, and in effect-operation selection `label.op`, subject to the ordinary scope rules for
+  that binder.
+* Rebinding an effect label preserves its label identity.
+
+  Example:
+
+  ```kappa
+  let l = state
+  handle l computation with ...
+
+  let pkg = (label = state)
+  handle pkg.label computation with ...
+  ```
 * A `scoped effect` declaration additionally introduces a canonical self label of the same spelling in declaration kind
   `effect-label` for the same lexical scope.
 * A row entry `<[l : E | r]>` associates the effect label `l` with the effect interface `E`.
