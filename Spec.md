@@ -9631,6 +9631,43 @@ Rules:
 * Therefore guarded branches do not contribute negative constructor evidence past the guard boundary unless some
   separate preceding rule already provides it.
 
+<!-- expressions.match.positive_lower_bound_checking -->
+#### 7.5.7 Positive lower-bound checking through `match`
+
+A `match` expression checks positive lower-bound obligations branchwise.
+
+For a variable `x`, the usage interval contributed by a `match` is the join of the usage intervals contributed by all
+reachable branches.
+
+Unreachable branches, including branches whose body is accepted as `impossible`, do not contribute usage intervals.
+
+A variable declared with quantity `>=1` must therefore be demanded in every reachable branch of a `match` that can leave
+the variable's scope.
+
+Example:
+
+```kappa
+let f (>=1 x : Int) (o : Option Int) : Int =
+    match o
+    case Some y -> x + y
+    case None   -> x
+```
+
+Accepted.
+
+```kappa
+let g (>=1 x : Int) (o : Option Int) : Int =
+    match o
+    case Some y -> x + y
+    case None   -> 0
+```
+
+Rejected.
+
+For active patterns returning `Match a r`, both the `Hit` and `Miss` paths are checked. If a `Miss` residue carries a
+positive lower-bound obligation, that residue must be demanded by the subsequent threaded case chain or by the final
+residue case.
+
 <!-- expressions.patterns -->
 ### 7.6 Patterns (overview)
 
