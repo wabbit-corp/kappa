@@ -20318,6 +20318,13 @@ Default classification rule:
 * A timeout parameter accepted by a foreign function does not by itself make the call `blocking-cancellable`.
   It may support a higher-level Kappa wrapper that retries, polls, or bounds waiting, but that wrapper is distinct from
   cancellation of the in-flight call.
+* A raw managed-host call, including an imported JVM or CLR method, constructor, property accessor, field accessor, or
+  delegate invocation, is `blocking` unless the implementation can prove, or a trusted binding summary states, that the
+  call is `nonblocking`.
+* Host metadata alone is not sufficient to infer `nonblocking` unless the implementation documents the metadata source
+  and its soundness assumptions for that classification.
+* A raw managed-host call MUST NOT be classified as `blocking-cancellable` unless the selected adapter mode, trusted
+  binding summary, or shim names the cancellation mechanism and states that invoking it is safe for that binding.
 
 * A call MAY be classified as `blocking-cancellable` only when the selected adapter mode, trusted binding summary, or
   shim names a specific cancellation mechanism for that call and states that invoking it is safe.
