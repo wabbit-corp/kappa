@@ -1507,9 +1507,11 @@ Eligibility:
   admissible term named `name`.
 * From `G`, keep only:
   * ordinary callable terms whose elaborated type has exactly one
-    explicit receiver-marked binder; and
+    explicit receiver-marked binder;
   * projection definitions whose declaration has exactly one
-    receiver-marked `place` binder.
+    receiver-marked `place` binder; and
+  * ordinary terms whose elaborated type is `Projector Roots T`
+    for some one-field closed record type `Roots`.
 * If exactly one eligible callable remains, use it.
 * If more than one eligible callable remains, the member step is
   ambiguous.
@@ -1526,6 +1528,13 @@ Elaboration:
   applies using its unique receiver-marked `place` binder, and the
   result is then treated as an ordinary fully applied projection call
   for §§5.1.7.2 and 8.8.
+* If the chosen callable is an ordinary term `p` whose elaborated type
+  is `Projector Roots T` for some one-field closed record type `Roots`,
+  `recv.name` elaborates as the projector descriptor application
+  `p recv`, and the result is then treated under §7.1.3A.
+* If additional explicit application arguments follow in the same
+  maximal application site after such a projector-term member step, the
+  site is ill-formed.
 * The inserted receiver must typecheck against the chosen receiver
   binder after solving any preceding implicit or explicit binders by
   ordinary application-site elaboration.
@@ -2689,6 +2698,9 @@ For projections:
 * If the borrowed argument is a fully applied projection call under §6.1.1, the temporary borrow applies to the
   dynamically selected yielded stable place. Static overlap and admissibility use the static footprint summary of
   §5.1.7.2.
+* If the borrowed argument is a projector descriptor application under §7.1.3A, the temporary borrow applies to the
+  dynamically selected yielded stable place of that descriptor/roots-pack pair. Static overlap and admissibility use
+  the same static footprint summary that would apply to the corresponding fully applied projection call.
 * If the compiler cannot identify a stable borrowable root and projection path for the argument expression, it MAY
   conservatively reject borrow introduction for that expression.
 
