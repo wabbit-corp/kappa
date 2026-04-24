@@ -12011,6 +12011,83 @@ Rules:
 
 These are **syntactic sugar** over monadic operations.
 
+Positive lower-bound checking in loops:
+
+Loop bodies are not assumed to execute at least once.
+
+Therefore, for a variable bound outside a loop, demands occurring only inside the loop body do not by themselves
+discharge a positive lower-bound obligation for the code following the loop.
+
+A conforming implementation MAY use branch refinement, inhabitance summaries, or type-level evidence to prove that a
+loop body executes at least once, but portable v1 source programs MUST NOT rely on such proof unless it is expressed by a
+specified language rule.
+
+Conservative portable rule:
+
+* A `while` loop contributes lower-bound usage `0` for an outer variable on the path where the condition is false before
+  the first iteration.
+* A `for` loop contributes lower-bound usage `0` for an outer variable on the path where the iterator is empty.
+* Uses inside a loop may contribute to the upper bound of an outer variable. If the number of iterations is not
+  statically bounded, the upper contribution is `∞`.
+* Uses before every `break` that exits the loop contribute to that `break` path.
+* Uses before every `continue` contribute to that iteration path, but do not by themselves prove that the loop eventually
+  exits normally.
+
+Examples:
+
+```kappa
+bad :
+    (>=1 x : Int) -> IO e Unit
+let bad x =
+    do
+        while cond do
+            use x
+        pure ()
+```
+
+Rejected: the loop may execute zero times.
+
+```kappa
+ok :
+    (>=1 x : Int) -> IO e Unit
+let ok x =
+    do
+        while cond do
+            observe x
+        use x
+```
+
+Accepted: `x` is demanded after the loop on every normal path.
+
+Bindings introduced inside loops:
+
+A variable with a positive lower-bound quantity introduced inside a loop body must satisfy its obligation within each
+iteration path that leaves that binding's scope.
+
+This includes:
+
+* fallthrough to the next do-item in the loop body;
+* `continue`;
+* `break`;
+* `return`;
+* terminal `m Void` branches, unless proven unreachable.
+
+Thus a loop-local `1` or `>=1` binding cannot be skipped by `continue` or `break`.
+
+Example:
+
+```kappa
+bad :
+    IO e Unit
+let bad =
+    do
+        while cond do
+            let >=1 x = makeToken ()
+            continue
+```
+
+Rejected: `continue` exits the scope of `x` without demanding it.
+
 * `while cond do body`:
 
   ```kappa
