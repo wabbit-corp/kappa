@@ -19353,6 +19353,15 @@ Rules:
   * `T` only when host metadata proves non-nullability;
   * `Option T` when host metadata proves nullability; and
   * `Option T` when nullability is unknown.
+* For native pointer-like parameters and results, the generated raw type is:
+  * `RawPtr` or a nominal non-null opaque pointer type only when a trusted binding summary, shim, or binding description
+    proves non-nullability for that position;
+  * `Option RawPtr` or an explicitly nullable nominal pointer wrapper when nullability is known; and
+  * `Option RawPtr` or an explicitly nullable nominal pointer wrapper when nullability is unknown.
+* A raw native pointer-like value MUST NOT be exposed as non-null merely because the source spelling is a pointer type,
+  reference-like typedef, handle typedef, or platform handle type.
+* A trusted binding summary MAY expose sentinel protocols more precisely through `Option`, `Result`, a nominal refined
+  wrapper, or a refined overlay.
 * For native raw bindings, out-parameters, status-code returns, sentinel returns, adapter-captured call-state snapshots,
   and other ABI-level conventions MAY be exposed directly in the raw surface. Such shapes are backend-specific and are
   not portable merely because they are expressible in Kappa syntax.
