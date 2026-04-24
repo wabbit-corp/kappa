@@ -11524,7 +11524,20 @@ toQuery : src -> Query a
 
 is the semantic source of rows for `for ... in ...` clauses.
 
-Built-in collection and range sources SHOULD provide standard `IntoQuery` instances.
+Built-in source obligations:
+
+* Implementations MUST provide standard `IntoQuery` instances for:
+  * `List a`,
+  * `Array a`,
+  * the built-in set type,
+  * map iteration as specified by §10.4,
+  * the canonical range result type of §10.2,
+  * and `Query a` itself.
+
+* `IntoQuery (Query a)` MUST behave as identity on element streams.
+
+* A conforming implementation MAY provide additional `IntoQuery` instances for implementation-defined sources, but those
+  additional instances MUST NOT change the semantics of the required built-in instances.
 
 <!-- collections.lowering.row_environment -->
 #### 10.10.2 Row environment
@@ -11542,6 +11555,24 @@ Consequences:
 * `distinct` operates on the full current row environment at its clause site.
 * `distinct by keyExpr` operates on keys computed from the current row environment.
 * `order by`, `group by`, `join`, and filters likewise operate on the current row environment.
+
+<!-- collections.lowering.initial_row_stream -->
+#### 10.10.2A Initial row stream
+
+A comprehension with no pre-yield clause sequence begins from a singleton empty-row stream.
+
+Formally:
+
+* before any non-yield clause is processed, the initial pipeline is `Query (Row(∅))`;
+* `Row(∅)` is the zero-field closed record type; under §4.5 it is identified with `Unit`.
+
+Consequences:
+
+* `[ yield valueExpr ]` is well-formed and lowers from a singleton `Query Unit`;
+* `{| yield valueExpr |}` is well-formed and lowers from a singleton `Query Unit`;
+* `{ yield keyExpr : valueExpr }` is well-formed and lowers from a singleton `Query Unit`.
+
+In these forms, `valueExpr`, `keyExpr`, and `valueExpr` are elaborated in the empty row environment.
 
 <!-- collections.lowering.clause_lowering -->
 #### 10.10.3 Clause lowering
@@ -11662,9 +11693,17 @@ Collection is performed only after clause lowering.
 
 * Built-in list, set, and map comprehensions use the corresponding built-in collectors.
 * A prefixed carrier uses the selection rule of §10.9.
-* `Query [ ... ]` is the standard first-class query form.
-  Its collector returns the normalized `Query item` and may ignore terminal collection metadata not representable in
-  `Query` itself.
+
+`Query [ ... ]` is the standard first-class query form for element-stream comprehensions.
+
+Rules:
+
+* `Query [ clauses..., yield valueExpr ]` is well-formed and returns the normalized `Query item`.
+* `Query {| ... |}` is ill-formed in v1.
+* `Query { ... }` is ill-formed in v1.
+* No collector is permitted to silently discard terminal collection metadata.
+* A carrier that wishes to represent set-like or key/value query semantics as first-class values MUST do so through its
+  own explicit carrier type rather than by reusing `Query` with metadata loss.
 
 <!-- collections.lowering.performance_if_rule -->
 #### 10.10.6 Performance and as-if rule
