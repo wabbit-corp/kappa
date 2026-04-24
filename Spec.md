@@ -12587,7 +12587,7 @@ Map-conflict policy is terminal collection metadata, not part of the general `Qu
 
 Collection is performed only after clause lowering.
 
-* Built-in list, set, and map comprehensions use the corresponding built-in collectors.
+* Built-in list, set, map, array, and query comprehensions use the standard built-in collection behavior of §10.10.1A.
 * A prefixed carrier uses the selection rule of §10.9.
 
 `Query [ ... ]` is the standard first-class query form for element-stream comprehensions.
