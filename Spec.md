@@ -6629,6 +6629,29 @@ Minimum portable acceptance:
 * With explicit `decreases`, a conforming implementation MUST accept any recursive definition or SCC satisfying
   §§6.4.2A, 6.4.2B, 6.4.3, and 6.4.4.
 
+<!-- declarations.totality.sized_termination_extension_lane -->
+#### 6.4.4A Reserved extension lane: sized termination
+
+Portable v1 reserves sized termination for a future extension.
+
+A future revision MAY add declarations equivalent to:
+
+```kappa
+Size   : Type0
+SizeLt : Size -> Size -> Type
+SizeLe : Size -> Size -> Type
+```
+
+and sized data/type annotations that expose depth information across abstraction boundaries.
+
+If enabled, sized termination checking must:
+
+* erase all size arguments at runtime;
+* preserve definitional equality for programs not using sized annotations;
+* record size-polymorphic termination certificates in module interfaces;
+* prevent size variables from escaping their scope except through explicit binders; and
+* define interaction with opacity and sealed packages.
+
 <!-- declarations.totality.internal_recursion_introduced_elaboration -->
 #### 6.4.5 Internal recursion introduced by elaboration
 
