@@ -4365,11 +4365,14 @@ Projection-section update:
 * The section body is resolved exactly as if it had been written as a dotted form on the outer receiver `lhs`.
 * After receiver insertion and ordinary resolution, the resulting form must denote either:
   * a stable place rooted in `lhs`;
-  * a fully applied projection call whose yielded alternatives are all rooted in the receiver inserted for `lhs`; or
+  * a fully applied selector-form projection call whose yielded alternatives are all rooted in the receiver inserted
+    for `lhs`;
   * a projector descriptor application under §7.1.3A whose `Roots` type is a one-field closed record and whose roots
-    argument is the receiver inserted for `lhs`.
-* The replacement expression `rhs` is checked against the selected type of that place, projection call, or projector
-  descriptor application.
+    argument is the receiver inserted for `lhs`; or
+  * an accessor-bundle descriptor application under §7.1.3B whose `Roots` type is a one-field closed record, whose roots
+    argument is the receiver inserted for `lhs`, and whose bundle contains a `set` descriptor field.
+* The replacement expression `rhs` is checked against the selected type of that place, projection call, projector
+  descriptor application, or accessor-bundle descriptor application.
 * The whole update expression has the same type as `lhs`.
 * In v0.1, a projection-section update form may contain at most one `projectionUpdateField`.
 * In v0.1, a `projectionUpdateField` MUST NOT appear in the same `lhs.{ ... }` form as any ordinary update field or any
@@ -16191,14 +16194,18 @@ Instead, elaboration proceeds as follows:
    `__root.member args...`.
 4. Require the resolved form to denote either:
    * a stable place rooted in `__root`;
-   * a fully applied projection call whose yielded stable-place alternatives are all rooted in `__root`; or
+   * a fully applied selector-form projection call whose yielded stable-place alternatives are all rooted in `__root`;
    * a projector descriptor application under §7.1.3A whose `Roots` type is a one-field closed record and whose
-     roots argument is `__root`.
+     roots argument is `__root`; or
+   * an accessor-bundle descriptor application under §7.1.3B whose `Roots` type is a one-field closed record, whose
+     roots argument is `__root`, and whose bundle contains a `set` descriptor field.
 5. If the resolved form is a stable place `p`, elaborate as `FillPlace p __new`.
-6. If the resolved form is either a fully applied projection call or a projector descriptor application, elaborate it to
-   its projector descriptor value `proj` and internal place pack `pack`, then elaborate the update as
+6. If the resolved form is either a fully applied selector-form projection call or a projector descriptor application,
+   elaborate it to its projector descriptor value `proj` and internal place pack `pack`, then elaborate the update as
    `FillProjector proj pack __new`.
-7. Scatter the rebuilt root pack back to the corresponding actual stable roots in declaration order.
+7. If the resolved form is an accessor-bundle descriptor application, elaborate it to its accessor-bundle descriptor
+   value `bundle` and internal place pack `pack`, then elaborate the update as `FillSetter bundle.set pack __new`.
+8. Scatter the rebuilt root pack back to the corresponding actual stable roots in declaration order.
    For a one-field root pack, this is just the unique field.
 
 Consequences:
