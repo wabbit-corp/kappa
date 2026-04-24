@@ -245,8 +245,8 @@ exceptItem   ::= [kindSelector] nameRef
 Rules:
 
 * `term` selects an ordinary term declaration, including active patterns.
-* `type` selects a type constructor or type alias.
-* `trait` selects a trait constructor.
+* `type` selects a type constructor or type alias, including its reified static-object term facet.
+* `trait` selects a trait constructor, including its reified static-object term facet.
 * `ctor` selects a data constructor.
 * `type T(..)` imports the type `T` together with all constructors declared by `T`.
 
@@ -258,6 +258,14 @@ Unqualified import of a spelling:
   its type facet and its same-spelling constructor facet (§2.8.2).
 * Distinct-spelling constructors are not imported unqualified by default.
   Use `ctor K` or `type T(..)`.
+
+Reified static-object facets and imports:
+
+* Importing a declaration by its primary kind also imports its reified static-object term facet, if it has one.
+* The selector `term` does not select reified static-object term facets of `type`, `trait`, or `effect-label`
+  declarations.
+* An unqualified import item imports all selected declaration facets for that spelling according to the ordinary
+  unqualified import rules.
 
 Wildcard imports:
 
@@ -493,6 +501,9 @@ Semantic disambiguation of bare dotted export forms:
 
 The `except` form uses the same `exceptItem` grammar as §2.3. In particular, `export M.(type T(..))` re-exports the type
 `T` together with all of its constructors.
+
+The import/export rules for reified static-object term facets are identical. Re-exporting a declaration by its primary
+kind also re-exports its reified static-object term facet, if present.
 
 Rules:
 
