@@ -3871,6 +3871,35 @@ An ordinary source program that uses no surface form of an enabled modal extensi
 extension were absent, except for implementation-defined diagnostics or tooling metadata that report the extension as
 inactive.
 
+<!-- types.universes.quantities.dependent_multiplicity_extension_lane -->
+##### 5.1.5.4 Reserved extension lane: dependent multiplicities
+
+Kappa v1 quantity intervals are static.
+
+In particular, the quantity of a binder in portable v1 is not allowed to depend on a runtime value.
+
+This means the checker may reject programs whose actual usage is value-dependent but safe. For example, a function that
+uses one argument exactly when a boolean is true and another argument exactly when that boolean is false may require
+affine or unrestricted annotations in portable v1 unless the control-flow join proves the required lower bound.
+
+A future revision MAY add dependent multiplicities, where multiplicities may depend on earlier values.
+
+Such an extension MUST specify:
+
+* the syntax for value-dependent quantity expressions;
+* the classifier of dependent multiplicity expressions;
+* substitution of values into multiplicities;
+* branch refinement of multiplicities;
+* interaction with erasure;
+* interaction with implicit arguments and compile-time-only values;
+* interface serialization of dependent quantity expressions;
+* decidable checking or a checked certificate format for multiplicity obligations;
+* interaction with borrow regions and `captures (...)`.
+
+Until such an extension is standardized, `>=1` remains the static interval `[1,∞]`.
+
+Implementations MUST NOT silently infer value-dependent quantities for portable v1 module interfaces.
+
 <!-- types.universes.borrow_lifetimes_escape_prevention -->
 #### 5.1.6 Borrow lifetimes and escape prevention
 
