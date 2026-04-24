@@ -2855,6 +2855,10 @@ The inferred hidden region environment of an elaborated value is defined structu
 * A variable, package-member projection, or other neutral value inherits the capture annotation already present in its
   elaborated type.
 * A lambda or local function value has the capture set inferred from its hidden region environment under §7.2.1.
+* A handler-bound resumption value introduced by §§8.1.9-8.1.10 has the capture set of the captured continuation
+  boundary of §14.8.5, restricted to explicit region variables that may appear in surface types.
+* If that capture set would require an anonymous rigid region to escape, the ordinary skolem-escape rule rejects the
+  value.
 * A runtime composite value, including a tuple, record, constructor application, variant injection, or sealed package,
   has the union of the capture sets of its runtime-relevant constituents.
 * The result of `if`, `match`, or other branching expression forms has the union of the capture sets of all reachable
@@ -8548,6 +8552,10 @@ Then the handler is well-typed iff:
   substituted into later parameter types and into `B`,
 * in that clause, the resumption `k` is itself bound at quantity `q`,
 * the resumption `k` has type `(1 _ : B) -> Eff <[label : E | r]> a`, where `B` is instantiated by the clause binders,
+* The function shape written above is the ordinary surface shape of `k`.
+  Its elaborated type may additionally carry an inferred capture annotation under §5.1.6.1.
+  Returning, storing, or otherwise escaping `k` is well-typed only when that capture set is expressible and permitted
+  at the escape site.
 * and the clause body `e` has type `m b`.
 
 At source level, `k v` remains ordinary application syntax. Its KCore realization is resumption application under
@@ -8666,6 +8674,10 @@ is typed as follows:
 * each `xᵢ` is bound at type `Aᵢ` with the usual substitution of earlier parameters into later ones and into `B`,
 * the continuation `k` is itself bound at quantity `q`,
 * `k` has type `(1 _ : B) -> m b`,
+* The function shape written above is the ordinary surface shape of `k`.
+  Its elaborated type may additionally carry an inferred capture annotation under §5.1.6.1.
+  Returning, storing, or otherwise escaping `k` is well-typed only when that capture set is expressible and permitted
+  at the escape site.
 * and the clause body `e` has type `m b`.
 
 The return clause has `x : a` and body `e_ret : m b`.
@@ -14731,6 +14743,10 @@ Meaning:
   in interface artifacts.
 * KCore closure conversion, package construction, and interface emission propagate these annotations structurally by
   taking unions of hidden region environments and checking containment where an explicit annotation is written.
+* When a source-visible handler clause binds a resumption `k`, any ordinary function-shaped source type used to
+  describe that `k` carries the capture annotation induced by the captured continuation boundary of §14.8.5.
+* KCore typing, interface emission, and escape checking MUST propagate that annotation in the same way they propagate
+  capture annotations for closures.
 * Anonymous rigid regions never appear in `Captures(...)`; any attempt to form such an annotation is rejected earlier by
   skolem-escape checking.
 
