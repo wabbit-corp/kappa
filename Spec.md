@@ -8042,6 +8042,33 @@ For the standard runtime carrier `IO e`:
 * Sandboxed code MAY inspect `InterruptCause` to discriminate among standard interruption reasons or library-defined
   `Custom` interruption tags.
 
+<!-- effects.monadic_core.portable_defect_classes -->
+#### 8.1.2A Portable defect classes
+
+The portable core standardizes a minimum defect vocabulary through `DefectTag` and `DefectInfo`.
+
+Required mappings:
+
+* An uncaught host exception, host panic, or equivalent foreign-runtime failure that crosses into Kappa execution
+  without explicit typed-error translation becomes `Defect (DefectInfo HostFailure msg)`.
+* A failed foreign boundary contract, failed higher-order wrapper obligation, or callback-surface contract failure
+  becomes `Defect (DefectInfo ForeignContractViolation msg)`.
+* An attached child fiber that terminates with unacknowledged typed failure or defect and remains unacknowledged when
+  its enclosing scope exits becomes `Defect (DefectInfo UnhandledChildFailure msg)`.
+* A backend-detected assertion failure or explicit runtime panic in Kappa implementation code becomes
+  `Defect (DefectInfo Panic msg)` or `Defect (DefectInfo AssertionFailed msg)`.
+* A backend-detected arithmetic trap during Kappa execution SHOULD use `ArithmeticFault`.
+
+Resource exhaustion:
+
+* When the backend can recover control to Kappa after stack exhaustion or heap/resource exhaustion, it SHOULD classify
+  those failures respectively as `StackOverflow` or `OutOfMemory`.
+* When the backend cannot recover control to Kappa after such exhaustion, abrupt process termination is permitted.
+  Portable source code MUST NOT rely on catching or recovering from that case.
+
+`message` is diagnostic text only. Implementations MAY additionally retain stack traces, host cause chains, source
+origins, or richer defect payloads outside the portable `DefectInfo` value.
+
 <!-- effects.monadic_core.fibers_structured_concurrency -->
 #### 8.1.3 Fibers and structured concurrency
 
