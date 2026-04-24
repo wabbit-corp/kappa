@@ -18184,7 +18184,7 @@ compilation, or dynamic linking are implementation techniques only. They do not 
 <!-- compiler.runtime.memory_management -->
 #### 17.5.1 Memory management
 
-Memory-management strategy is implementation-defined.
+Memory-management strategy is implementation-defined, but memory-management obligations are not.
 
 A backend MAY use tracing garbage collection, reference counting, arena allocation, stack allocation, region-like
 runtime disciplines, manual runtime-managed heaps, or any hybrid thereof, provided the observable behavior of the
@@ -18194,7 +18194,27 @@ In particular:
 
 * `defer`, `using`, and `MonadFinally` obligations are language-level semantics and MUST NOT be weakened into host
   finalizer behavior;
-* no backend may require prompt garbage-collection finalization to realize source-level resource release.
+* no backend may require prompt garbage-collection finalization to realize source-level resource release;
+* continuation storage, continuation cloning, continuation abandonment, and continuation reclamation MUST satisfy
+  §§14.8.5, 14.8.6, 14.8.6A, 14.8.6B, 14.8.7, 14.8.8, and 14.8.8A;
+* a backend advertising `rt-multishot-effects` MUST document the implementation strategy by which multi-shot captured
+  segments remain valid for repeated use;
+* a backend advertising `rt-multishot-effects` MUST document how abandoned or unreachable continuation segments are
+  reclaimed or otherwise bounded;
+* if a backend cannot satisfy the multi-shot continuation obligations for a selected deployment mode, it MUST withhold
+  `rt-multishot-effects` for that mode and reject programs requiring that capability.
+
+The required documentation need not expose private implementation internals, but it MUST be precise enough to determine:
+
+* whether captured continuation segments are represented by heap frames, copied stack segments, CPS closures, persistent
+  state-machine objects, arenas plus clone tracking, or another strategy;
+* whether one-shot resumptions use destructive representation;
+* whether multi-shot resumptions allocate per use, share persistent structure, copy stack segments, or use another
+  strategy; and
+* which runtime events can reclaim abandoned or unreachable captured segments.
+
+This section does not require a particular garbage collector, reference-counting scheme, arena layout, or host runtime.
+It requires only that the chosen strategy preserve Kappa semantics.
 
 <!-- compiler.intrinsics -->
 ### 17.6 Backend intrinsics and `expect`
