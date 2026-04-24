@@ -8634,6 +8634,36 @@ The success-side constructor evidence MUST be strong enough that:
 The success evidence additionally includes any index equalities forced by constructor `C`, exactly as in the
 corresponding constructor branch of `match` (§7.5.1A).
 
+Failure-side constructor narrowing:
+
+A failed constructor test introduces `LacksCtor e ⟨C⟩` evidence for the tested scrutinee.
+
+If the scrutinee type has a finite visible constructor set, and the active refinement context proves `LacksCtor` for all
+but one visible constructor of that type, the implementation MAY derive `HasCtor D` for the unique remaining visible
+constructor `D`.
+
+This strengthening is permitted only when:
+
+* the constructor set is finite and known in the current visibility/opacity environment;
+* all eliminated constructors are visible at the use site;
+* exactly one visible constructor remains; and
+* deriving the positive constructor tag does not require inspecting an opaque representation.
+
+Example:
+
+```kappa
+match opt with
+case None ->
+    noneCase
+case _ ->
+    -- Here, if `Option` is transparent and has exactly constructors `None` and `Some`,
+    -- the branch may be refined with `HasCtor Some opt`.
+    opt.value
+```
+
+Outside a module where an opaque data type's constructors are visible, failure-side `LacksCtor` evidence does not reveal
+hidden constructors.
+
 Pattern clauses introduce bindings but no negative residual fact. The success continuation is checked under the
 bindings and refinements introduced by matching `pat` against `e`; the failure continuation receives no additional
 negative evidence beyond the ordinary control-flow fact that the pattern clause failed.
@@ -8957,6 +8987,9 @@ Residual negative evidence:
 
 * Guarded branches do not contribute negative evidence past the guard boundary, because guard failure does not exclude
   the constructor itself.
+
+If residual negative evidence leaves exactly one visible constructor, the failure-side constructor narrowing rule of
+§7.4 may derive the corresponding `HasCtor` evidence.
 
 This evidence is erased and exists only for typechecking, refinement, reachability, and elaboration. It does not affect
 runtime representation.
@@ -17744,7 +17777,8 @@ Rules:
 
 * `HasCtor v ⟨C⟩` is proof-irrelevant erased evidence that the top-level constructor of `v` is `C`.
 * `LacksCtor v ⟨C⟩` is proof-irrelevant erased evidence that the top-level constructor of `v` is not `C`.
-* `HasCtor` evidence may be introduced only by successful elaboration of a constructor test or constructor branch.
+* `HasCtor` evidence may be introduced only by successful elaboration of a constructor test or constructor branch, or by
+  the finite-visible-constructor failure-side narrowing rule of §7.4.
 * `LacksCtor` evidence may be introduced only by the failing branch of a constructor test or by a residual branch after
   excluding one or more top-level constructor branches as specified in §7.5.4.
 * Refinement evidence is stable under equality transport. If the local erased context contains `@p : x = y`, then the
