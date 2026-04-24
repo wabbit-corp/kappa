@@ -12917,6 +12917,10 @@ The **clauses** appear before `yield` and may include:
 * `join` / `left join` (joins)
 * (all optional and composable)
 
+Reserved query keyword:
+
+* `top` is reserved for a future query/sampling feature and has no v1 surface form.
+
 <!-- collections.comprehensions.parsing_comprehension_literal -->
 #### 10.3.1 Parsing: comprehension vs literal
 
@@ -13663,6 +13667,9 @@ Implementations MUST provide standard collection behavior observationally equiva
 
 Implementations MAY realize these collectors intrinsically rather than as ordinary user-visible instances, but their
 behavior MUST be observationally equivalent to such instances.
+
+For built-in set collection `{| clauses..., yield valueExpr |}`, if `valueExpr : A`, collection requires an implicit
+`Eq A` instance.
 
 For `Query a`:
 
