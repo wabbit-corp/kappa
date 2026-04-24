@@ -20607,6 +20607,20 @@ Rules:
 * A backend that cannot realize the documented safe cancellation mechanism MUST reject that foreign declaration or
   deployment rather than silently downgrading it.
 
+Foreign-call routing consistency:
+
+* Foreign-call classification is part of the callable boundary contract.
+* A raw or refined foreign declaration classified as `blocking` or `blocking-cancellable` requires `rt-blocking` unless
+  the selected backend proves that the call cannot monopolize scheduler resources under its execution model.
+* A backend MUST NOT accept a classified blocking declaration and then execute it on an ordinary scheduler worker in a
+  way that can prevent unrelated runnable fibers from making progress.
+* A backend MAY realize blocking routing through worker offload, compensating worker creation, host virtual-thread
+  support, event-loop integration, asynchronous host APIs, or another observationally equivalent mechanism.
+* If a declaration is classified as `blocking-cancellable`, the documented cancellation mechanism is part of the required
+  runtime capability for that declaration.
+* A backend that can execute a `blocking` call but cannot realize the documented safe cancellation mechanism for the same
+  call MUST reject the `blocking-cancellable` declaration or require it to be reclassified by a trusted binding summary.
+
 <!-- compiler.conformance -->
 ### 17.14 Backend conformance
 
