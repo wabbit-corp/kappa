@@ -16377,6 +16377,12 @@ A module interface artifact MUST record at least:
 * for a host binding module, the pinned host-source identity, binding-generator identity, host scope kind, and any
   implementation-documented adapter-mode identity, marshalling profile, deployment prerequisite, native-library
   identity, or trusted binding-summary identities required by the exported surface under §17.7;
+* for a bridge-supplied Kappa module, the provider artifact identity, provider backend profile, module interface
+  identity, bridge contract identity, bridge generator identity, bridge realization mode, backend pair, and any
+  deployment prerequisites required to realize the bridge;
+* for an exported module intended to be bridge-supplied to another Kappa artifact, enough canonical interface identity
+  and bridge-visible runtime contract metadata to generate or validate a precision-preserving Kappa-to-Kappa bridge
+  under §17.7.8;
 * for an exported raw foreign binding, the binder metadata required for downstream application-site elaboration,
   including any receiver marker, overload-disambiguation spelling, nullability classification used to obtain the
   exported signature, and any interface-visible foreign-call classification, calling-convention classification, or
@@ -16454,6 +16460,8 @@ A module interface artifact MAY omit:
 * the bodies of private items;
 * the definitional content of opaque items;
 * implementation-private host metadata beyond the identities and interface-visible classifications required above;
+* backend-private bridge stub bodies, provided their bridge contract identities and interface-visible classifications
+  are retained;
 * target-specific code.
 
 If a requested `unhide` or `clarify` operation would require private or opaque definitional content that is not present
@@ -16830,8 +16838,9 @@ At minimum:
   changed;
 * a change to a pinned host-source identity, binding-generator version, host metadata input, native ABI description,
   selected adapter mode, marshalling profile, deployment prerequisite, generated companion artifact, trusted binding
-  summary, or shim artifact MUST invalidate any generated host-binding surface, adapter realization, and all
-  downstream phase results that depended on it;
+  summary, shim artifact, bridge provider artifact, bridge contract, bridge generator version, bridge realization mode,
+  or bridge backend pair MUST invalidate any generated host-binding surface, bridge-supplied module surface, adapter
+  realization, bridge realization, and all downstream phase results that depended on it;
 * a change to macro-observed external input MUST invalidate any expansion, cached query result, or downstream phase
   result that depended on that input.
 
@@ -16874,6 +16883,11 @@ queries exist:
   backend profile provides one or more adapter realizations under §17.7;
 * build or load any generated companion fragments, registration tables, source-generated interop declarations, shim
   artifacts, or equivalent adapter realizations required by the selected adapter mode or by a `host.jvm.jni` binding;
+* load a bridge-supplied Kappa module interface from a provider artifact and validate its canonical interface identity;
+* derive or load a Kappa-to-Kappa bridge contract for an exported module interface;
+* select a bridge realization mode for a Kappa-to-Kappa bridge, including backend pair and deployment prerequisites;
+* build or load generated bridge companion artifacts, including JNI entry points, registration tables, JVM companion
+  classes, native bridge stubs, bridge contract tables, and runtime surface-identity checks;
 * lower declaration or module to KCore;
 * evaluate elaboration-time expansion or normalization request;
 * lower declaration or module to KBackendIR;
@@ -18947,6 +18961,14 @@ backend-specific.
 A raw host binding module is not, by itself, part of the portable subset merely because it is expressed using ordinary
 Kappa syntax. Portability requires an exported surface that also obeys the rules of this subsection.
 
+A precision-preserving Kappa-to-Kappa bridge under §17.7.8 is not limited to the portable foreign ABI subset of this
+subsection. Such a bridge may preserve higher-order values, typed effects, capture annotations, Kappa resource
+contracts, and other Kappa-specific interface structure when both sides of the bridge are compiled Kappa artifacts and
+the selected bridge realization can enforce the corresponding bridge contract.
+
+This exception does not make those values portable foreign-ABI values for arbitrary non-Kappa hosts. It only defines a
+separate full-fidelity Kappa-to-Kappa bridge lane.
+
 <!-- compiler.ffi.raw_host_binding_surfaces -->
 #### 17.7.2 Raw host binding surfaces
 
@@ -19226,11 +19248,13 @@ Rules:
 1. mechanically generated raw managed bindings in `host.jvm....Raw` and `host.dotnet....Raw`,
 2. mechanically generated raw native-ABI bindings in `host.native....Raw`, realized per backend by adapter mode,
 3. JVM-specific raw JNI bindings in `host.jvm.jni....Raw` when the user truly needs JNI rather than ordinary native ABI,
-4. refined overlay modules with explicit Kappa types and error mapping, and
-5. portable facades built with `expect` plus backend-selected fragments.
+4. precision-preserving Kappa-to-Kappa bridge modules under §2.3.4 and §17.7.8 when both sides are compiled Kappa
+   artifacts,
+5. refined overlay modules with explicit Kappa types and error mapping, and
+6. portable facades built with `expect` plus backend-selected fragments.
 
-This keeps direct managed-host import and direct native-ABI import ergonomic without making backend-specific surfaces
-part of the portable ABI.
+This keeps direct managed-host import, direct native-ABI import, explicit JNI interop, and full-fidelity Kappa-to-Kappa
+bridging separate instead of flattening four different problems into one miserable API.
 
 Python, Ruby, and Perl interop SHOULD normally use the runtime bridge
 lane of §17.7.7 unless the implementation provides a reproducible static
@@ -19334,6 +19358,109 @@ Rules:
   mechanism of this subsection and does not participate in the static
   import graph, module interfaces, or module-dependency cycle checks.
 
+<!-- compiler.ffi.precision_preserving_kappa_to_kappa_bridges -->
+#### 17.7.8 Precision-preserving Kappa-to-Kappa bridges
+
+A precision-preserving Kappa-to-Kappa bridge is a bridge between two compiled Kappa artifacts, possibly targeting
+different backend profiles, whose Kappa-facing surface is derived from a Kappa module interface artifact rather than
+from a host-language metadata surface or a portable foreign ABI declaration.
+
+The standard bridge realization name for native Kappa <-> JVM Kappa over JNI is:
+
+* `kappa.jni`
+
+Other implementation-documented bridge realization names MAY be provided.
+
+A Kappa-to-Kappa bridge MAY be:
+
+* static, where imported modules are supplied by provider artifacts known to the build and are imported as ordinary
+  Kappa modules under §2.3.4; or
+* dynamic, where user code obtains a bridge handle and binds a package-like surface at runtime through `std.bridge`
+  under §17.7.7.
+
+Rules:
+
+* A precision-preserving Kappa-to-Kappa bridge MUST use a Kappa module interface artifact or a Kappa signature type as
+  its source of truth for the Kappa-facing surface.
+* The bridge contract MUST be generated from, or validated against, that exact Kappa interface or signature.
+* The bridge contract identity MUST include:
+  * the canonical interface identity of the exported Kappa surface;
+  * the bridge generator identity;
+  * the provider and consumer backend profiles;
+  * the bridge realization mode;
+  * any erased ABI encoding version;
+  * any runtime representation-table identity;
+  * any callback-ingress policy;
+  * any resource, capture, or ownership policy that affects observable behavior; and
+  * any deployment prerequisite.
+* The importing side MUST typecheck against the precise Kappa surface. It MUST NOT typecheck against a degraded
+  host-language surface unless the user explicitly imports such an adapter surface.
+* The provider side MUST export bridge entry points whose runtime behavior implements the exported Kappa declarations
+  according to the bridge contract.
+* The consumer side MUST generate or load bridge stubs that call those entry points according to the same bridge
+  contract.
+* At bridge initialization or first use, the implementation MUST validate that the provider and consumer agree on the
+  bridge contract identity. A mismatch is a bridge failure or compile-time/publish-time error, depending on when it is
+  detected.
+* A bridge realization MUST preserve ordinary Kappa erasure. Compile-time-only arguments, proof-only arguments,
+  quantity-`0` arguments, and erased implicit evidence are not runtime bridge arguments merely because the interface is
+  precise.
+* Erasure is not precision loss. Replacing the precise Kappa interface by a less precise runtime type is precision loss.
+* A bridge realization MUST preserve typed `IO e a` success and expected failure behavior.
+* Interruption and defects crossing the bridge MUST be represented through Kappa `Cause` or an observationally
+  equivalent bridge contract representation.
+* A bridge realization MUST preserve ordinary pure-vs-effectful classification. A bridge implementation failure,
+  contract mismatch, linkage failure, or runtime representation violation is a defect or bridge failure, not an
+  expected typed error, unless the bridge contract explicitly exposes it as such.
+* A bridge realization MUST preserve resource ownership and release contracts for bridge-visible resource types.
+* A bridge realization MUST preserve explicit capture annotations. If a bridge-visible value would capture a bridge
+  handle, runtime scope, native runtime, JVM runtime, callback registration, or borrowed region, the resulting type or
+  bridge contract MUST expose that capture or use an equivalent ownership scheme that prevents escape.
+* Higher-order Kappa values crossing the bridge are governed by §17.7.4B. A one-shot shape check is insufficient.
+* Callback ingress from one Kappa runtime into another is governed by §17.7.4C.
+* The bridge MUST NOT silently substitute `std.gradual.Dyn`, opaque host types, raw pointers, serialized byte blobs, or
+  less precise first-order facades for precise Kappa values.
+* If the bridge cannot preserve or enforce some part of the Kappa surface, the binding is ill-formed unless the user
+  explicitly supplies a less precise adapter module.
+
+Borrow and region rules:
+
+* A direct borrowed parameter MAY cross a Kappa-to-Kappa bridge only when the bridge contract proves that the borrowed
+  value is used synchronously and is not retained beyond the call or callback extent that owns the corresponding region.
+* A direct borrowed result MAY cross a Kappa-to-Kappa bridge only when its explicit region is tied to a bridge-visible
+  owner whose lifetime is represented in the returned type by `captures (...)`, `BorrowView`, or another
+  specification-defined lifetime carrier.
+* Anonymous borrow regions MUST NOT escape across a bridge boundary.
+* If these conditions cannot be met, the bridge MUST reject the precise borrowed surface or require an explicit adapter
+  that converts the borrowed protocol into an owned value, opaque resource handle, or another precise Kappa type.
+
+`kappa.jni` rules:
+
+* The `kappa.jni` bridge realization connects a JVM Kappa artifact and a native Kappa artifact through generated JNI
+  companion artifacts.
+* The user need not author Java bridge classes, JNI registration tables, C headers, or native bridge glue merely to
+  expose a Kappa module through `kappa.jni`.
+* The implementation MAY generate:
+  * JVM companion classes;
+  * native method declarations;
+  * JNI registration tables;
+  * `JNI_OnLoad` / load-hook support;
+  * native entry-point stubs;
+  * bridge contract tables;
+  * runtime surface-identity checks;
+  * callback ingress stubs;
+  * thread attach/detach helpers; and
+  * native/JVM runtime coordination helpers.
+* A generated `kappa.jni` bridge MUST validate that the native and JVM sides agree on the bridge contract identity.
+* A generated `kappa.jni` bridge MUST define how JVM exceptions, JNI pending exceptions, native Kappa defects,
+  interruption, and typed Kappa expected failures are represented at the boundary.
+* A generated `kappa.jni` bridge MUST define callback thread attachment, local/global reference discipline, and
+  reference lifetime for every bridge-visible JVM object or callback.
+* If a JVM object is exposed to native Kappa through the bridge, its Kappa type MUST reflect whether it is an imported
+  JVM host object, an opaque bridge handle, or a precise Kappa value represented by a bridge contract.
+* If a native Kappa value is exposed to JVM Kappa through the bridge, its Kappa type MUST reflect whether it is an owned
+  Kappa value, borrowed view, opaque resource handle, callback, or precise bridge-contracted value.
+
 <!-- compiler.zig -->
 ### 17.8 Native backend profile (`zig`)
 
@@ -19384,6 +19511,23 @@ Rules:
 * The raw `host.native` surface used by the `zig` profile MAY also be reused by other backend profiles that provide
   `host.native` through different adapter modes. Such reuse does not by itself make those bindings part of the portable
   ABI.
+
+<!-- compiler.zig.kappa_bridge_exports -->
+#### 17.8.2 Native Kappa bridge exports
+
+The `zig` profile MAY export Kappa modules for use by precision-preserving Kappa-to-Kappa bridges under §17.7.8.
+
+Rules:
+
+* A native Kappa artifact that exports a module for bridge use MUST emit the ordinary Kappa module interface artifact for
+  that module.
+* If the selected bridge realization is `kappa.jni`, the native backend MAY generate JNI-compatible native entry points,
+  registration tables, load-hook support, callback ingress stubs, runtime identity checks, and bridge contract tables.
+* Generated native bridge entry points are implementation artifacts. They are not source-level foreign declarations and
+  are not part of the portable foreign ABI unless separately exported through §17.7.1.
+* The native backend MUST preserve the precise Kappa bridge surface described by the exported module interface.
+* If the native backend cannot realize the bridge-visible surface under the selected bridge realization, it MUST reject
+  the bridge export or require an explicit adapter module.
 
 <!-- compiler.jvm -->
 ### 17.9 JVM backend profile
