@@ -483,6 +483,43 @@ Rules:
 * A conforming implementation MAY realize a host binding module as a generated source module, a generated module
   interface artifact, a virtual module, or another observationally equivalent representation.
 
+<!-- modules.imports.bridge_supplied_kappa_modules -->
+#### 2.3.4 Bridge-supplied Kappa modules
+
+An implementation MAY allow an imported Kappa module to be supplied by another compiled Kappa artifact through a
+bridge realization.
+
+A bridge-supplied Kappa module is not a host binding module. It is an ordinary Kappa module whose source definitions are
+compiled in another artifact, possibly for another backend profile, and whose exported surface is imported from that
+artifact's Kappa module interface.
+
+Examples:
+
+```kappa
+import native.crypto.Hashing
+import jvm.callbacks.Progress
+```
+
+Rules:
+
+* A bridge-supplied Kappa module has an ordinary effective module name.
+  It need not live under `host.jvm`, `host.dotnet`, `host.native`, or `host.jvm.jni`.
+* The provider artifact MUST supply a Kappa module interface artifact for the imported module.
+* The importing artifact MUST typecheck against that Kappa module interface exactly as it would for an ordinary
+  separately compiled Kappa module.
+* The bridge realization MUST supply a bridge contract sufficient to enforce the imported module's exported runtime
+  surface across the selected boundary.
+* In package mode, the provider artifact identity, module interface identity, bridge contract identity, bridge generator
+  identity, backend pair, and bridge realization mode MUST be recorded in a lockfile or equivalent build artifact.
+* A static bridge-supplied module contributes an ordinary module dependency edge to the module dependency graph of
+  §§2.2-2.3.
+* A dynamic bridge bind performed through `std.bridge` remains value-level code and is governed by §17.7.7 instead of
+  this subsection.
+* A bridge-supplied Kappa module MUST NOT silently degrade its exported surface to `std.gradual.Dyn`, opaque host types,
+  raw pointers, erased typed errors, or a less precise foreign-ABI facade.
+* If the selected bridge realization cannot preserve or enforce the exported Kappa surface, compilation fails unless the
+  user explicitly imports or defines a less precise adapter module.
+
 <!-- modules.exports -->
 ### 2.4 Exports (re-exporting imports)
 
