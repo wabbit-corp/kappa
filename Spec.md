@@ -16385,7 +16385,9 @@ Meaning:
 * `rt-core`:
   * `IO e a`,
   * typed failures, causes, exits,
+  * structured interrupt metadata,
   * fibers,
+  * source-visible fiber identities and labels,
   * structured interruption,
   * masking,
   * scheduler fairness and implementation-defined safe-point delivery,
@@ -16394,6 +16396,7 @@ Meaning:
   * fiber-local state,
   * explicit supervision scopes and monitors,
   * finalizers,
+  * the handle-reachability / GC-nonobservability guarantees of §14.8.3C,
   * the portable synchronization guarantees of §14.8.4A,
   * and single-agent STM semantics.
 
@@ -16411,8 +16414,9 @@ Capability rules:
 * A backend that lacks a required capability MUST reject the affected program or deployment mode rather than silently
   weakening semantics.
 * A backend advertising `rt-core` MUST satisfy the scheduler-fairness, timer, promise, scope/monitor,
-  fiber-local-state, and memory-visibility obligations of §§8.1 and 14.8. It MUST NOT expose only a syntactic surface
-  while silently weakening those runtime semantics.
+  fiber-local-state, fiber-identity/label, interrupt-metadata, handle-reachability / GC-nonobservability,
+  and memory-visibility obligations of §§8.1 and 14.8.
+  It MUST NOT expose only a syntactic surface while silently weakening those runtime semantics.
 * Absence of `rt-parallel` does not make `fork` invalid. It means only that concurrency need not execute on more than
   one host execution resource simultaneously.
 * Absence of `rt-shared-stm` does not remove `STM` from the language. It restricts `STM` to a single runtime agent.
