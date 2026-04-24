@@ -11,6 +11,109 @@ open Xunit
 let private hasDiagnosticCode code (diagnostic: Diagnostic) =
     diagnostic.Code = code
 
+let private diagnosticsText diagnostics =
+    diagnostics
+    |> List.map (fun diagnostic -> diagnostic.Message)
+    |> String.concat Environment.NewLine
+
+let rec private containsCoreSyntheticRecordApply expression =
+    match expression with
+    | KCoreApply(KCoreName [ constructorName ], arguments)
+        when constructorName.StartsWith("__kappa_record_", StringComparison.Ordinal) ->
+        true
+    | KCoreApply(callee, arguments) ->
+        containsCoreSyntheticRecordApply callee || (arguments |> List.exists containsCoreSyntheticRecordApply)
+    | KCoreLet(_, value, body) ->
+        containsCoreSyntheticRecordApply value || containsCoreSyntheticRecordApply body
+    | KCoreDoScope(_, body)
+    | KCoreExecute body ->
+        containsCoreSyntheticRecordApply body
+    | KCoreScheduleExit(_, KCoreDeferred deferred, body) ->
+        containsCoreSyntheticRecordApply deferred || containsCoreSyntheticRecordApply body
+    | KCoreScheduleExit(_, KCoreRelease(_, release, resource), body) ->
+        containsCoreSyntheticRecordApply release
+        || containsCoreSyntheticRecordApply resource
+        || containsCoreSyntheticRecordApply body
+    | KCoreSequence(first, second)
+    | KCoreBinary(first, _, second) ->
+        containsCoreSyntheticRecordApply first || containsCoreSyntheticRecordApply second
+    | KCoreIfThenElse(condition, whenTrue, whenFalse) ->
+        containsCoreSyntheticRecordApply condition
+        || containsCoreSyntheticRecordApply whenTrue
+        || containsCoreSyntheticRecordApply whenFalse
+    | KCoreMatch(scrutinee, cases) ->
+        containsCoreSyntheticRecordApply scrutinee
+        || (cases
+            |> List.exists (fun caseClause ->
+                caseClause.Guard |> Option.exists containsCoreSyntheticRecordApply
+                || containsCoreSyntheticRecordApply caseClause.Body))
+    | KCoreWhile(condition, body) ->
+        containsCoreSyntheticRecordApply condition || containsCoreSyntheticRecordApply body
+    | KCoreUnary(_, operand) ->
+        containsCoreSyntheticRecordApply operand
+    | KCoreTraitCall(_, _, dictionary, arguments) ->
+        containsCoreSyntheticRecordApply dictionary || (arguments |> List.exists containsCoreSyntheticRecordApply)
+    | KCoreLambda(_, body) ->
+        containsCoreSyntheticRecordApply body
+    | KCorePrefixedString(_, parts) ->
+        parts
+        |> List.exists (function
+            | KCoreStringText _ -> false
+            | KCoreStringInterpolation inner -> containsCoreSyntheticRecordApply inner)
+    | KCoreLiteral _
+    | KCoreName _
+    | KCoreDictionaryValue _ ->
+        false
+
+let rec private containsRuntimeSyntheticRecordApply expression =
+    match expression with
+    | KRuntimeApply(KRuntimeName [ constructorName ], arguments)
+        when constructorName.StartsWith("__kappa_record_", StringComparison.Ordinal) ->
+        true
+    | KRuntimeApply(callee, arguments) ->
+        containsRuntimeSyntheticRecordApply callee || (arguments |> List.exists containsRuntimeSyntheticRecordApply)
+    | KRuntimeLet(_, value, body) ->
+        containsRuntimeSyntheticRecordApply value || containsRuntimeSyntheticRecordApply body
+    | KRuntimeDoScope(_, body)
+    | KRuntimeExecute body ->
+        containsRuntimeSyntheticRecordApply body
+    | KRuntimeScheduleExit(_, KRuntimeDeferred deferred, body) ->
+        containsRuntimeSyntheticRecordApply deferred || containsRuntimeSyntheticRecordApply body
+    | KRuntimeScheduleExit(_, KRuntimeRelease(_, release, resource), body) ->
+        containsRuntimeSyntheticRecordApply release
+        || containsRuntimeSyntheticRecordApply resource
+        || containsRuntimeSyntheticRecordApply body
+    | KRuntimeSequence(first, second)
+    | KRuntimeBinary(first, _, second) ->
+        containsRuntimeSyntheticRecordApply first || containsRuntimeSyntheticRecordApply second
+    | KRuntimeIfThenElse(condition, whenTrue, whenFalse) ->
+        containsRuntimeSyntheticRecordApply condition
+        || containsRuntimeSyntheticRecordApply whenTrue
+        || containsRuntimeSyntheticRecordApply whenFalse
+    | KRuntimeMatch(scrutinee, cases) ->
+        containsRuntimeSyntheticRecordApply scrutinee
+        || (cases
+            |> List.exists (fun caseClause ->
+                caseClause.Guard |> Option.exists containsRuntimeSyntheticRecordApply
+                || containsRuntimeSyntheticRecordApply caseClause.Body))
+    | KRuntimeWhile(condition, body) ->
+        containsRuntimeSyntheticRecordApply condition || containsRuntimeSyntheticRecordApply body
+    | KRuntimeUnary(_, operand) ->
+        containsRuntimeSyntheticRecordApply operand
+    | KRuntimeTraitCall(_, _, dictionary, arguments) ->
+        containsRuntimeSyntheticRecordApply dictionary || (arguments |> List.exists containsRuntimeSyntheticRecordApply)
+    | KRuntimeClosure(_, body) ->
+        containsRuntimeSyntheticRecordApply body
+    | KRuntimePrefixedString(_, parts) ->
+        parts
+        |> List.exists (function
+            | KRuntimeStringText _ -> false
+            | KRuntimeStringInterpolation inner -> containsRuntimeSyntheticRecordApply inner)
+    | KRuntimeLiteral _
+    | KRuntimeName _
+    | KRuntimeDictionaryValue _ ->
+        false
+
 [<Fact>]
 let ``workspace exposes spec-shaped checkpoints and portable pipeline trace events`` () =
     let workspace =
@@ -555,14 +658,16 @@ let ``BODY_RESOLVE dump exposes M3 ownership facts`` () =
     Assert.Equal("1", ownedBinding.GetProperty("declaredQuantity").GetString())
     Assert.Equal("[1,1]", ownedBinding.GetProperty("inferredDemand").GetString())
     Assert.Equal("consumed", ownedBinding.GetProperty("state").GetString())
+    Assert.Equal(11, ownedBinding.GetProperty("origin").GetProperty("startLine").GetInt32())
 
     let uses = ownership.GetProperty("uses").EnumerateArray()
-    Assert.Contains(
-        uses,
-        fun item ->
+    let ownedConsume =
+        uses
+        |> Seq.find (fun item ->
             item.GetProperty("useKind").GetString() = "consume"
-            && item.GetProperty("targetName").GetString() = "owned"
-    )
+            && item.GetProperty("targetName").GetString() = "owned")
+
+    Assert.Equal(12, ownedConsume.GetProperty("origin").GetProperty("startLine").GetInt32())
 
     let borrowRegions = ownership.GetProperty("borrowRegions").EnumerateArray()
     Assert.Contains(
@@ -570,14 +675,47 @@ let ``BODY_RESOLVE dump exposes M3 ownership facts`` () =
         fun item ->
             item.GetProperty("ownerScope").GetString() = "using"
             && item.GetProperty("explicitName").ValueKind = JsonValueKind.Null
+            && item.GetProperty("introductionOrigin").GetProperty("startLine").GetInt32() = 13
     )
 
     let usingScopes = ownership.GetProperty("usingScopes").EnumerateArray()
+    let usingScope =
+        usingScopes
+        |> Seq.find (fun item -> item.GetProperty("sharedRegionId").GetString().StartsWith("rho", StringComparison.Ordinal))
+
+    Assert.Equal(13, usingScope.GetProperty("surfaceOrigin").GetProperty("startLine").GetInt32())
+
+    let hiddenOwnedBindingName = usingScope.GetProperty("hiddenOwnedBinding").GetString()
+    let hiddenReleaseObligation = usingScope.GetProperty("hiddenReleaseObligation").GetString()
+    let sharedRegionId = usingScope.GetProperty("sharedRegionId").GetString()
+
+    Assert.StartsWith(usingScope.GetProperty("id").GetString() + ".owned", hiddenOwnedBindingName)
+    Assert.StartsWith(usingScope.GetProperty("id").GetString() + ".release", hiddenReleaseObligation)
+
+    let usingRelease =
+        uses
+        |> Seq.find (fun item ->
+            item.GetProperty("useKind").GetString() = "release"
+            && item.GetProperty("targetName").GetString() = hiddenOwnedBindingName)
+
+    Assert.Equal(13, usingRelease.GetProperty("origin").GetProperty("startLine").GetInt32())
+
+    let borrowedUsingBinding =
+        bindings
+        |> Seq.find (fun item ->
+            item.GetProperty("name").GetString() = "file"
+            && item.GetProperty("kind").GetString() = "pattern"
+            && item.GetProperty("borrowRegionId").GetString() = sharedRegionId)
+
+    Assert.Equal(13, borrowedUsingBinding.GetProperty("origin").GetProperty("startLine").GetInt32())
+
     Assert.Contains(
-        usingScopes,
+        bindings,
         fun item ->
-            item.GetProperty("sharedRegionId").GetString().StartsWith("rho", StringComparison.Ordinal)
-            && item.GetProperty("hiddenReleaseObligation").GetString() = "deferred"
+            item.GetProperty("name").GetString() = hiddenOwnedBindingName
+            && item.GetProperty("kind").GetString() = "using-owned"
+            && item.GetProperty("declaredQuantity").GetString() = "1"
+            && item.GetProperty("state").GetString() = "consumed"
     )
 
     let closures = ownership.GetProperty("closures").EnumerateArray()
@@ -1922,6 +2060,52 @@ let ``backend verification rejects malformed calling conventions`` () =
     Assert.Contains(diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
 
 [<Fact>]
+let ``backend verification rejects leaked pre-erasure runtime metadata`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-verify-runtime-erasure-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "id : Int -> Int"
+                    "let id value = value"
+                    "let answer = id 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let malformedWorkspace =
+        { workspace with
+            KRuntimeIR =
+                workspace.KRuntimeIR
+                |> List.map (fun moduleDump ->
+                    if moduleDump.Name = "main" then
+                        { moduleDump with
+                            Bindings =
+                                moduleDump.Bindings
+                                |> List.map (fun binding ->
+                                    if binding.Name = "id" then
+                                        { binding with
+                                            Parameters =
+                                                binding.Parameters
+                                                |> List.map (fun parameter ->
+                                                    if parameter.Name = "value" then
+                                                        { parameter with TypeText = Some "Int captures (s)" }
+                                                    else
+                                                        parameter)
+                                            ReturnTypeText = Some "((Unit -> Int) captures (s))" }
+                                    else
+                                        binding) }
+                    else
+                        moduleDump) }
+
+    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KBackendIR"
+
+    Assert.NotEmpty(diagnostics)
+    Assert.Contains(diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
+
+[<Fact>]
 let ``workspace materializes frontend core and backend modules`` () =
     let workspace =
         compileInMemoryWorkspace
@@ -1991,6 +2175,90 @@ let ``workspace materializes frontend core and backend modules`` () =
         Assert.Equal(Stdlib.PreludeModuleText, moduleName)
     | other ->
         failwithf "Unexpected KBackendIR function body: %A" other
+
+[<Fact>]
+let ``structural records lower through synthetic constructor layouts in core and runtime`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-structural-record-lowering-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "type Point = (x : Int, y : Int)"
+                    "build : Int -> Point"
+                    "let build n = (y = n, x = n + 1)"
+                    "let move (p : Point) : Point = p.{ y = 99 }"
+                    "let project (p : Point) = p.x"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+
+    let coreModule =
+        workspace.KCore
+        |> List.find (fun moduleDump -> moduleDump.Name = "main")
+
+    let runtimeModule =
+        workspace.KRuntimeIR
+        |> List.find (fun moduleDump -> moduleDump.Name = "main")
+
+    Assert.Contains(
+        runtimeModule.DataTypes,
+        fun dataType -> dataType.Name.StartsWith("__kappa_record_", StringComparison.Ordinal)
+    )
+
+    let buildCoreBinding =
+        coreModule.Declarations
+        |> List.pick (fun declaration ->
+            match declaration.Binding with
+            | Some binding when binding.Name = Some "build" -> Some binding
+            | _ -> None)
+
+    let moveCoreBinding =
+        coreModule.Declarations
+        |> List.pick (fun declaration ->
+            match declaration.Binding with
+            | Some binding when binding.Name = Some "move" -> Some binding
+            | _ -> None)
+
+    let buildRuntimeBinding =
+        runtimeModule.Bindings
+        |> List.find (fun binding -> binding.Name = "build")
+
+    let moveRuntimeBinding =
+        runtimeModule.Bindings
+        |> List.find (fun binding -> binding.Name = "move")
+
+    match buildCoreBinding.Body with
+    | Some body ->
+        Assert.True(containsCoreSyntheticRecordApply body, $"Expected synthetic record constructor in KCore build body, got %A{body}")
+    | None ->
+        failwith "Expected KCore build body."
+
+    match moveCoreBinding.Body with
+    | Some(KCoreMatch(_, _)) -> ()
+    | Some other ->
+        failwithf "Expected record update to lower through a KCore match/rebuild, got %A" other
+    | None ->
+        failwith "Expected KCore move body."
+
+    match buildRuntimeBinding.Body with
+    | Some body ->
+        Assert.True(
+            containsRuntimeSyntheticRecordApply body,
+            $"Expected synthetic record constructor in KRuntime build body, got %A{body}"
+        )
+    | None ->
+        failwith "Expected KRuntime build body."
+
+    match moveRuntimeBinding.Body with
+    | Some(KRuntimeMatch(_, _)) -> ()
+    | Some other ->
+        failwithf "Expected record update to lower through a KRuntime match/rebuild, got %A" other
+    | None ->
+        failwith "Expected KRuntime move body."
 
 [<Fact>]
 let ``backend lowering resolves user defined operators through ordinary bindings`` () =

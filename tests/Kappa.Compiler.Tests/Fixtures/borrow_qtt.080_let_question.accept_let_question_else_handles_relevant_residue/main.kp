@@ -1,0 +1,18 @@
+module main
+
+data ParseResult : Type =
+    Parsed (value : Int)
+    Failed (>=1 token : Int)
+
+strictId : (>=1 x : Int) -> Int
+let strictId (>=1 x : Int) : Int = x
+
+ok : ParseResult -> STM Int
+let ok (r : ParseResult) : STM Int =
+    do
+        let? Parsed x = r else Failed token -> do
+            let _ = strictId token
+            empty
+        pure x
+
+--! assertNoErrors

@@ -39,9 +39,17 @@ module CompilationDump =
           EndLine: int
           EndColumn: int }
 
+    type DumpSourceOrigin =
+        { FilePath: string
+          StartLine: int
+          StartColumn: int
+          EndLine: int
+          EndColumn: int }
+
     type DumpOwnershipBinding =
         { Id: string
           Name: string
+          Origin: DumpSourceOrigin option
           Kind: string
           DeclaredQuantity: string option
           InferredDemand: string
@@ -53,6 +61,7 @@ module CompilationDump =
     type DumpOwnershipUse =
         { Id: string
           UseKind: string
+          Origin: DumpSourceOrigin option
           TargetBindingId: string option
           TargetName: string
           PlaceRoot: string
@@ -61,10 +70,12 @@ module CompilationDump =
     type DumpOwnershipBorrowRegion =
         { Id: string
           ExplicitName: string option
+          IntroductionOrigin: DumpSourceOrigin option
           OwnerScope: string }
 
     type DumpOwnershipUsingScope =
         { Id: string
+          SurfaceOrigin: DumpSourceOrigin option
           HiddenOwnedBinding: string
           SharedRegionId: string
           HiddenReleaseObligation: string }
@@ -216,14 +227,23 @@ module CompilationDump =
           EnvironmentLayouts: DumpBackendEnvironmentLayout list
           Functions: DumpBackendFunction list }
 
+    let private dumpSourceOrigin (location: SourceLocation) =
+        { FilePath = location.FilePath
+          StartLine = location.Start.Line
+          StartColumn = location.Start.Column
+          EndLine = location.End.Line
+          EndColumn = location.End.Column }
+
     let private dumpDiagnostic (diagnostic: Diagnostic) =
         let dumpRelatedOrigin (related: DiagnosticRelatedLocation) =
+            let origin = dumpSourceOrigin related.Location
+
             { Message = related.Message
-              FilePath = related.Location.FilePath
-              StartLine = related.Location.Start.Line
-              StartColumn = related.Location.Start.Column
-              EndLine = related.Location.End.Line
-              EndColumn = related.Location.End.Column }
+              FilePath = origin.FilePath
+              StartLine = origin.StartLine
+              StartColumn = origin.StartColumn
+              EndLine = origin.EndLine
+              EndColumn = origin.EndColumn }
 
         { Code = diagnostic.Code |> DiagnosticCode.toIdentifier
           Stage = diagnostic.Stage
@@ -270,10 +290,11 @@ module CompilationDump =
             |> List.map (fun binding ->
                 { Id = binding.BindingId
                   Name = binding.BindingName
-                  Kind = binding.BindingKind
-                  DeclaredQuantity = binding.BindingDeclaredQuantity
-                  InferredDemand = binding.BindingInferredDemand
-                  State = binding.BindingState
+                  Origin = binding.BindingOrigin |> Option.map dumpSourceOrigin
+                  Kind = OwnershipBindingKind.toFactText binding.BindingKind
+                  DeclaredQuantity = binding.BindingDeclaredQuantity |> Option.map OwnershipQuantity.toFactText
+                  InferredDemand = OwnershipBindingDemand.toFactText binding.BindingInferredDemand
+                  State = OwnershipBindingState.toFactText binding.BindingState
                   PlaceRoot = binding.BindingPlaceRoot
                   PlacePath = binding.BindingPlacePath
                   BorrowRegionId = binding.BindingBorrowRegionId })
@@ -281,7 +302,8 @@ module CompilationDump =
             facts.OwnershipUses
             |> List.map (fun useFact ->
                 { Id = useFact.UseId
-                  UseKind = useFact.UseKindName
+                  UseKind = OwnershipUseKind.toFactText useFact.UseKind
+                  Origin = useFact.UseOrigin |> Option.map dumpSourceOrigin
                   TargetBindingId = useFact.UseTargetBindingId
                   TargetName = useFact.UseTargetName
                   PlaceRoot = useFact.UsePlaceRoot
@@ -291,11 +313,13 @@ module CompilationDump =
             |> List.map (fun region ->
                 { Id = region.BorrowRegionId
                   ExplicitName = region.BorrowRegionExplicitName
+                  IntroductionOrigin = region.BorrowRegionIntroductionOrigin |> Option.map dumpSourceOrigin
                   OwnerScope = region.BorrowRegionOwnerScope })
           UsingScopes =
             facts.OwnershipUsingScopes
             |> List.map (fun usingScope ->
                 { Id = usingScope.UsingScopeId
+                  SurfaceOrigin = usingScope.UsingScopeSurfaceOrigin |> Option.map dumpSourceOrigin
                   HiddenOwnedBinding = usingScope.UsingScopeHiddenOwnedBinding
                   SharedRegionId = usingScope.UsingScopeSharedRegionId
                   HiddenReleaseObligation = usingScope.UsingScopeHiddenReleaseObligation })
@@ -307,8 +331,8 @@ module CompilationDump =
                   CaptureBindingIds = closure.ClosureCaptureBindingIds
                   CaptureNames = closure.ClosureCaptureNames
                   RegionEnvironment = closure.ClosureRegionEnvironment
-                  EscapeStatus = closure.ClosureEscapeStatus })
-          Deferred = facts.OwnershipDeferred
+                  EscapeStatus = OwnershipClosureEscapeStatus.toFactText closure.ClosureEscapeStatus })
+          Deferred = facts.OwnershipDeferred |> List.map OwnershipDeferredFact.toFactText
           Diagnostics = facts.OwnershipDiagnostics |> List.map DiagnosticCode.toIdentifier }
 
     let private dumpFrontendDocument (document: KFrontIRModule) =
@@ -756,6 +780,21 @@ module CompilationDump =
         else
             $"({name} {items})"
 
+    let private renderSourceOriginSexpr (name: string) (origin: DumpSourceOrigin option) =
+        match origin with
+        | Some origin ->
+            [
+                sexprStringAtom "file" origin.FilePath
+                sexprAtom "start-line" (string origin.StartLine)
+                sexprAtom "start-column" (string origin.StartColumn)
+                sexprAtom "end-line" (string origin.EndLine)
+                sexprAtom "end-column" (string origin.EndColumn)
+            ]
+            |> String.concat " "
+            |> fun body -> $"({name} {body})"
+        | None ->
+            sexprAtom name "nil"
+
     let private renderDumpRelatedOriginSexpr (related: DumpRelatedOrigin) =
         [
             sexprStringAtom "message" related.Message
@@ -814,6 +853,7 @@ module CompilationDump =
         [
             sexprStringAtom "id" binding.Id
             sexprStringAtom "name" binding.Name
+            renderSourceOriginSexpr "origin" binding.Origin
             sexprStringAtom "kind" binding.Kind
             sexprOptionalStringAtom "declared-quantity" binding.DeclaredQuantity
             sexprStringAtom "inferred-demand" binding.InferredDemand
@@ -829,6 +869,7 @@ module CompilationDump =
         [
             sexprStringAtom "id" useFact.Id
             sexprStringAtom "use-kind" useFact.UseKind
+            renderSourceOriginSexpr "origin" useFact.Origin
             sexprOptionalStringAtom "target-binding-id" useFact.TargetBindingId
             sexprStringAtom "target-name" useFact.TargetName
             sexprStringAtom "place-root" useFact.PlaceRoot
@@ -841,6 +882,7 @@ module CompilationDump =
         [
             sexprStringAtom "id" region.Id
             sexprOptionalStringAtom "explicit-name" region.ExplicitName
+            renderSourceOriginSexpr "introduction-origin" region.IntroductionOrigin
             sexprStringAtom "owner-scope" region.OwnerScope
         ]
         |> String.concat " "
@@ -849,6 +891,7 @@ module CompilationDump =
     let private renderOwnershipUsingScopeSexpr (usingScope: DumpOwnershipUsingScope) =
         [
             sexprStringAtom "id" usingScope.Id
+            renderSourceOriginSexpr "surface-origin" usingScope.SurfaceOrigin
             sexprStringAtom "hidden-owned-binding" usingScope.HiddenOwnedBinding
             sexprStringAtom "shared-region-id" usingScope.SharedRegionId
             sexprStringAtom "hidden-release-obligation" usingScope.HiddenReleaseObligation

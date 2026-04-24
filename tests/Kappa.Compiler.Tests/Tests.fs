@@ -8,6 +8,24 @@ open Kappa.Compiler
 open Harness
 open Xunit
 
+let private parseTypeText (text: string) =
+    let source = createSource "__type_signature_test__.kp" text
+    let lexed = Lexer.tokenize source
+    Assert.Empty(lexed.Diagnostics)
+
+    match TypeSignatures.parseType lexed.Tokens with
+    | Some parsed -> parsed
+    | None -> failwithf "Failed to parse type text: %s" text
+
+let private parseSchemeText (text: string) =
+    let source = createSource "__type_signature_scheme_test__.kp" text
+    let lexed = Lexer.tokenize source
+    Assert.Empty(lexed.Diagnostics)
+
+    match TypeSignatures.parseScheme lexed.Tokens with
+    | Some parsed -> parsed
+    | None -> failwithf "Failed to parse scheme text: %s" text
+
 [<Fact>]
 let ``repo zig bootstrap command uses the native shell for this platform`` () =
     let shellProgram, shellArguments = repoZigBootstrapCommand ()
@@ -100,6 +118,135 @@ let ``parser captures import selectors and declaration kinds`` () =
         failwithf "Unexpected top-level declarations: %A" other
 
 [<Fact>]
+let ``parser reports unexpected indentation for a misindented match case body`` () =
+    let sourceText =
+        [
+            "module main"
+            ""
+            "result : Int"
+            "let result ="
+            "    match True"
+            "      case True ->"
+            "    1"
+            "      case False -> 0"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "memory.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Equal<DiagnosticCode list>([ DiagnosticCode.UnexpectedIndentation ], parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code))
+
+[<Fact>]
+let ``parser reports a single parse error for an explicit brace after layout-introduced do`` () =
+    let sourceText =
+        [
+            "module main"
+            ""
+            "bad : Bool -> IO Bool"
+            "let bad x ="
+            "    match x"
+            "    case False -> do"
+            "    { return x }"
+            "    case True -> return x"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "memory.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Equal<DiagnosticCode list>([ DiagnosticCode.ParseError ], parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code))
+
+[<Fact>]
+let ``parser keeps a multiline lambda body inside an implicit pure block suite`` () =
+    let sourceText =
+        [
+            "module main"
+            ""
+            "data Token : Type ="
+            "    Token"
+            ""
+            "data MaybeToken : Type ="
+            "    None"
+            "    Some Token"
+            ""
+            "consume : (1 token : Token) -> Unit"
+            "let consume token = ()"
+            ""
+            "twice : (ω f : Unit -> Unit) -> Unit"
+            "let twice f = do"
+            "    f ()"
+            "    f ()"
+            ""
+            "bad : (1 tokens : MaybeToken) -> Unit"
+            "let bad tokens ="
+            "    let f = \\(_ : Unit) ->"
+            "        match tokens"
+            "          case Some token -> consume token"
+            "          case None -> ()"
+            "    twice f"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "memory.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Empty(parsed.Diagnostics)
+
+[<Fact>]
+let ``parser treats constructor tag tests as dedicated infix expressions`` () =
+    let source =
+        createSource
+            "__tag_test_precedence__.kp"
+            "module main\nlet result = if p is IntBox || p is NatBox then p.value else 0"
+    let lexed = Lexer.tokenize source
+    Assert.Empty(lexed.Diagnostics)
+
+    let parsed = Parser.parse source lexed.Tokens
+    Assert.Empty(parsed.Diagnostics)
+
+    match parsed.Syntax.Declarations with
+    | [ LetDeclaration { Body = Some(
+            IfThenElse(
+                Binary(TagTest(Name [ "p" ], [ "IntBox" ]), "||", TagTest(Name [ "p" ], [ "NatBox" ])),
+                Name [ "p"; "value" ],
+                Literal(LiteralValue.Integer 0L)
+            ))
+        } ] -> ()
+    | other ->
+        failwithf "Unexpected parsed tag-test expression: %A" other
+
+[<Fact>]
+let ``parser keeps or-pattern alternatives in match cases`` () =
+    let source =
+        createSource
+            "__or_pattern__.kp"
+            "module main\nlet read value = match value\n  case LeftInt x | RightInt x -> x\n  case Empty -> 0"
+    let lexed = Lexer.tokenize source
+    Assert.Empty(lexed.Diagnostics)
+
+    let parsed = Parser.parse source lexed.Tokens
+    Assert.Empty(parsed.Diagnostics)
+
+    match parsed.Syntax.Declarations with
+    | [ LetDeclaration { Body = Some(Match(_, [ firstCase; _ ])) } ] ->
+        match firstCase.Pattern with
+        | OrPattern [ ConstructorPattern([ "LeftInt" ], [ NamePattern "x" ]); ConstructorPattern([ "RightInt" ], [ NamePattern "x" ]) ] -> ()
+        | other ->
+            failwithf "Unexpected parsed or-pattern: %A" other
+    | other ->
+        failwithf "Unexpected parsed declarations for or-pattern test: %A" other
+
+[<Fact>]
 let ``compilation reports import cycles across modules`` () =
     let root = Path.GetFullPath("memory-cycle-root")
     let moduleASource =
@@ -173,6 +320,37 @@ let ``parser captures expect declarations including soft keyword names and opera
         )
     | other ->
         failwithf "Unexpected declarations: %A" other
+
+[<Fact>]
+let ``type signatures normalize built in optional postfix`` () =
+    let optionalInt = parseTypeText "Int?"
+    let preludeOptionInt = parseTypeText "std.prelude.Option Int"
+
+    Assert.True(TypeSignatures.definitionallyEqual optionalInt preludeOptionInt)
+
+[<Fact>]
+let ``parser gives built in safe navigation and elvis their spec precedence`` () =
+    let source = createSource "__safe_navigation_precedence__.kp" "a?.b ?: fallback"
+    let lexed = Lexer.tokenize source
+    let parsed = CoreParsing.parseExpression (Parser.bootstrapFixities ()) source (DiagnosticBag()) lexed.Tokens
+
+    match parsed with
+    | Some(Elvis(SafeNavigation(Name [ "a" ], { Segments = [ "b" ]; Arguments = [] }), Name [ "fallback" ])) -> ()
+    | other -> failwithf "Unexpected expression shape: %A" other
+
+[<Fact>]
+let ``type signatures treat lawful record reorderings as definitionally equal`` () =
+    let left = parseTypeText "(y : Int, x : Int)"
+    let right = parseTypeText "(x : Int, y : Int)"
+
+    Assert.True(TypeSignatures.definitionallyEqual left right)
+
+[<Fact>]
+let ``type signature schemes parse typed forall binders and captures`` () =
+    let scheme =
+        parseSchemeText "forall (s : Region) (a : Type). (&[s] box : Box a) -> ((Unit -> a) captures (s))"
+
+    Assert.Equal<string list>([ "s"; "a" ], scheme.Forall)
 
 [<Fact>]
 let ``compilation injects bundled std prelude and satisfies its intrinsic expects`` () =

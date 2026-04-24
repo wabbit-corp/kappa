@@ -2,6 +2,20 @@ namespace Kappa.Compiler
 
 // Defines quantities, regions, places, ownership events, and checker state shared across M3 analysis.
 module ResourceModel =
+    type ResourceBindingKind =
+        | LocalBinding
+        | ParameterBinding
+        | PatternBinding
+        | UsingOwnedBinding
+
+    module ResourceBindingKind =
+        let toOwnershipKind kind =
+            match kind with
+            | LocalBinding -> OwnershipBindingKind.Local
+            | ParameterBinding -> OwnershipBindingKind.Parameter
+            | PatternBinding -> OwnershipBindingKind.Pattern
+            | UsingOwnedBinding -> OwnershipBindingKind.UsingOwned
+
     type ResourceQuantity =
         | Interval of minimum: int * maximum: int option
         | Borrow of explicitRegion: string option
@@ -37,6 +51,12 @@ module ResourceModel =
             | Borrow None -> "&"
             | Borrow(Some explicitRegion) -> $"&[{explicitRegion}]"
             | Variable name -> name
+
+        let toOwnershipQuantity quantity =
+            match quantity with
+            | Interval(minimum, maximum) -> OwnershipQuantity.Interval(minimum, maximum)
+            | Borrow explicitRegion -> OwnershipQuantity.Borrow explicitRegion
+            | Variable name -> OwnershipQuantity.Variable name
 
         let isExactOne quantity =
             match quantity with
@@ -79,6 +99,7 @@ module ResourceModel =
         { Name: string
           ParameterQuantities: ResourceQuantity option list
           ParameterTypeTokens: Token list option list
+          ReturnTypeTokens: Token list option
           ParameterInout: bool list }
 
     type ResourcePlace =
@@ -103,10 +124,12 @@ module ResourceModel =
 
     type LocalLambda =
         { Parameters: Parameter list
-          Body: SurfaceExpression }
+          Body: SurfaceExpression
+          CapturedBindings: ResourceBinding list }
 
-    type ResourceBinding =
+    and ResourceBinding =
         { Id: string
+          BindingKind: ResourceBindingKind
           Name: string
           DeclaredQuantity: ResourceQuantity option
           Place: ResourcePlace
@@ -123,10 +146,19 @@ module ResourceModel =
           Origin: SourceLocation option
           FirstConsumeOrigin: SourceLocation option }
 
+    type UsingObligation =
+        { Id: string
+          ScopeId: string
+          HiddenOwnedBindingId: string
+          HiddenOwnedBindingName: string
+          SharedRegionId: string
+          SurfaceOrigin: SourceLocation option }
+
     type ResourceScope =
         { Id: string
           IntroducedBindings: (string * string) list
-          IntroducedBorrowLocks: string list }
+          IntroducedBorrowLocks: string list
+          IntroducedUsingObligations: string list }
 
     type ResourceContext =
         { ScopeId: string
@@ -134,12 +166,13 @@ module ResourceModel =
           ActiveBindingIds: Map<string, string list>
           Bindings: Map<string, ResourceBinding>
           BorrowLocks: Map<string, BorrowLock>
+          UsingObligations: Map<string, UsingObligation>
           Diagnostics: Diagnostic list
           Events: OwnershipUseFact list
           BorrowRegions: OwnershipBorrowRegionFact list
           UsingScopes: OwnershipUsingScopeFact list
           Closures: OwnershipClosureFact list
-          DeferredFacts: string list
+          DeferredFacts: OwnershipDeferredFact list
           NextScopeId: int
           NextBindingId: int
           NextBorrowLockId: int
@@ -155,11 +188,13 @@ module ResourceModel =
                 [
                     { Id = scopeId
                       IntroducedBindings = []
-                      IntroducedBorrowLocks = [] }
+                      IntroducedBorrowLocks = []
+                      IntroducedUsingObligations = [] }
                 ]
               ActiveBindingIds = Map.empty
               Bindings = Map.empty
               BorrowLocks = Map.empty
+              UsingObligations = Map.empty
               Diagnostics = []
               Events = []
               BorrowRegions = []

@@ -33,6 +33,7 @@ and KRuntimePattern =
     | KRuntimeNamePattern of string
     | KRuntimeLiteralPattern of LiteralValue
     | KRuntimeConstructorPattern of string list * KRuntimePattern list
+    | KRuntimeOrPattern of KRuntimePattern list
 
 and KRuntimeMatchCase =
     { Pattern: KRuntimePattern
@@ -47,6 +48,7 @@ type KRuntimeConstructor =
     { Name: string
       Arity: int
       TypeName: string
+      FieldNames: string option list
       FieldTypeTexts: string list
       Provenance: KCoreOrigin }
 

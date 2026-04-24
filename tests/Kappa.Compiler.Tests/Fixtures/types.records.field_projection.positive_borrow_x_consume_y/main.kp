@@ -1,0 +1,13 @@
+module main
+
+type P = (x : Int, 1 y : Int)
+
+good : (1 p : P) -> Int
+let good (1 p : P) : Int =
+    block
+        let &x = p.x
+        let y = p.y
+        x + y
+
+--! assertNoErrors
+

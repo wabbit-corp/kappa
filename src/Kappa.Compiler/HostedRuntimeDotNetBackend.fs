@@ -117,6 +117,10 @@ module HostedRuntimeDotNetBackend =
             $"Pattern.FromName({csharpString name})"
         | KRuntimeLiteralPattern literal ->
             $"Pattern.FromLiteral({emitLiteralValue literal})"
+        | KRuntimeOrPattern alternatives ->
+            match alternatives with
+            | first :: _ -> emitBackendPattern first
+            | [] -> "Pattern.Wildcard()"
         | KRuntimeConstructorPattern(name, arguments) ->
             let argumentsCode =
                 match arguments with

@@ -3,7 +3,7 @@ module main
 data File : Type =
     Handle Int
 
-let consume (1 file : File) = ()
+let consume (1 file : File) = let _ = file in ()
 
 let main : IO Unit = do
     let file = Handle 1

@@ -1,0 +1,9 @@
+module b
+
+import a.(valueA)
+
+valueB : Int
+let valueB = valueA + 1
+
+--! assertNoErrors
+

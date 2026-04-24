@@ -36,8 +36,10 @@ type Keyword =
     | Instance
     | Is
     | Join
+    | Lazy
     | Left
     | Let
+    | LetQuestion
     | Match
     | Module
     | Opaque
@@ -50,10 +52,12 @@ type Keyword =
     | Public
     | Return
     | Right
+    | Seal
     | Skip
     | Take
     | Term
     | Then
+    | Thunk
     | Top
     | Trait
     | Try
@@ -100,8 +104,10 @@ module Keyword =
             "instance", Instance
             "is", Is
             "join", Join
+            "lazy", Lazy
             "left", Left
             "let", Let
+            "let?", LetQuestion
             "match", Match
             "module", Module
             "opaque", Opaque
@@ -114,10 +120,12 @@ module Keyword =
             "public", Public
             "return", Return
             "right", Right
+            "seal", Seal
             "skip", Skip
             "take", Take
             "term", Term
             "then", Then
+            "thunk", Thunk
             "top", Top
             "trait", Trait
             "try", Try
@@ -271,18 +279,32 @@ type SurfaceExpression =
     | Lambda of Parameter list * SurfaceExpression
     | IfThenElse of SurfaceExpression * SurfaceExpression * SurfaceExpression
     | Match of SurfaceExpression * SurfaceMatchCase list
+    | RecordLiteral of fields: SurfaceRecordLiteralField list
+    | Seal of value: SurfaceExpression * ascriptionTokens: Token list
     | RecordUpdate of receiver: SurfaceExpression * fields: SurfaceRecordUpdateField list
+    | SafeNavigation of receiver: SurfaceExpression * navigation: SurfaceSafeNavigationMember
+    | TagTest of receiver: SurfaceExpression * constructorName: string list
     | Do of SurfaceDoStatement list
     | MonadicSplice of SurfaceExpression
     | Apply of SurfaceExpression * SurfaceExpression list
     | InoutArgument of SurfaceExpression
     | Unary of operatorName: string * SurfaceExpression
     | Binary of SurfaceExpression * operatorName: string * SurfaceExpression
+    | Elvis of SurfaceExpression * SurfaceExpression
     | PrefixedString of prefix: string * parts: SurfaceInterpolatedStringPart list
 
 and SurfaceInterpolatedStringPart =
     | StringText of string
     | StringInterpolation of SurfaceExpression
+
+and SurfaceSafeNavigationMember =
+    { Segments: string list
+      Arguments: SurfaceExpression list }
+
+and SurfaceRecordLiteralField =
+    { Name: string
+      IsImplicit: bool
+      Value: SurfaceExpression }
 
 and SurfaceRecordUpdateField =
     { Name: string
@@ -294,6 +316,7 @@ and SurfacePattern =
     | NamePattern of string
     | LiteralPattern of LiteralValue
     | ConstructorPattern of string list * SurfacePattern list
+    | OrPattern of SurfacePattern list
     | AnonymousRecordPattern of SurfaceRecordPatternField list
 
 and SurfaceRecordPatternField =
@@ -307,16 +330,24 @@ and SurfaceMatchCase =
 
 and SurfaceBindPattern =
     { Pattern: SurfacePattern
-      Quantity: Quantity option }
+      Quantity: Quantity option
+      BinderSpans: Map<string, TextSpan list> }
 
 and SurfaceDoStatement =
     | DoLet of SurfaceBindPattern * SurfaceExpression
+    | DoLetQuestion of SurfaceBindPattern * SurfaceExpression * SurfaceLetQuestionFailure option
     | DoBind of SurfaceBindPattern * SurfaceExpression
     | DoVar of string * SurfaceExpression
     | DoAssign of string * SurfaceExpression
-    | DoUsing of SurfacePattern * SurfaceExpression
+    | DoUsing of SurfaceBindPattern * SurfaceExpression
+    | DoIf of condition: SurfaceExpression * whenTrue: SurfaceDoStatement list * whenFalse: SurfaceDoStatement list
     | DoWhile of condition: SurfaceExpression * body: SurfaceDoStatement list
+    | DoReturn of SurfaceExpression
     | DoExpression of SurfaceExpression
+
+and SurfaceLetQuestionFailure =
+    { ResiduePattern: SurfaceBindPattern
+      Body: SurfaceDoStatement list }
 
 type BindingSignature =
     { Visibility: Visibility option
@@ -402,6 +433,7 @@ type TypeAlias =
 
 type TraitMember =
     { Name: string option
+      DefaultDefinition: LetDefinition option
       Tokens: Token list }
 
 type TraitDeclaration =
@@ -412,6 +444,7 @@ type TraitDeclaration =
 
 type InstanceDeclaration =
     { TraitName: string
+      FullHeaderTokens: Token list
       HeaderTokens: Token list
       Members: LetDefinition list }
 

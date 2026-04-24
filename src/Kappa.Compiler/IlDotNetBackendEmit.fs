@@ -205,6 +205,12 @@ module internal IlDotNetBackendEmit =
                     else
                         Result.Error
                             $"IL backend cannot match literal of type {formatIlType literalType} against {formatIlType expectedType}."
+                | KRuntimeOrPattern alternatives ->
+                    match alternatives with
+                    | first :: _ ->
+                        inferPatternBindings expectedType first
+                    | [] ->
+                        Result.Ok(Map.empty<string, IlType>)
                 | KRuntimeConstructorPattern(nameSegments, argumentPatterns) ->
                     match tryResolveConstructor modules currentModule nameSegments with
                     | None ->
@@ -964,6 +970,12 @@ module internal IlDotNetBackendEmit =
                     il.Emit(OpCodes.Brfalse, (failureLabel: Label))
                     return currentScope
                 }
+            | KRuntimeOrPattern alternatives ->
+                match alternatives with
+                | first :: _ ->
+                    emitPatternMatch currentScope expectedType first valueLocal failureLabel
+                | [] ->
+                    Result.Ok currentScope
             | KRuntimeConstructorPattern(nameSegments, argumentPatterns) ->
                 match tryResolveConstructor state.Environment.Modules currentModule nameSegments with
                 | None ->

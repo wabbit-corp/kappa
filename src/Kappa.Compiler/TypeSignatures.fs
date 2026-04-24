@@ -10,6 +10,13 @@ module TypeSignatures =
         | TypeVariable of string
         | TypeArrow of Quantity * TypeExpr * TypeExpr
         | TypeEquality of TypeExpr * TypeExpr
+        | TypeCapture of TypeExpr * string list
+        | TypeRecord of RecordField list
+
+    and RecordField =
+        { Name: string
+          Quantity: Quantity
+          Type: TypeExpr }
 
     type TraitConstraint =
         { TraitName: string
@@ -108,7 +115,35 @@ module TypeSignatures =
             | _ ->
                 false
 
+        member private _.FindMatchingIndex(leftKind: TokenKind, rightKind: TokenKind, startIndex: int) =
+            let mutable depth = 0
+            let mutable index = startIndex
+            let mutable closingIndex = None
+
+            while index < tokenArray.Length && closingIndex.IsNone do
+                match tokenArray[index].Kind with
+                | kind when kind = leftKind ->
+                    depth <- depth + 1
+                | kind when kind = rightKind ->
+                    depth <- depth - 1
+
+                    if depth = 0 then
+                        closingIndex <- Some index
+                | _ ->
+                    ()
+
+                index <- index + 1
+
+            closingIndex
+
         member private _.TryParseQuantityPrefix(tokens: Token list) =
+            let isQuantityVariableToken (token: Token) =
+                if not (Token.isName token) then
+                    false
+                else
+                    let text = SyntaxFacts.trimIdentifierQuotes token.Text
+                    not (String.IsNullOrEmpty text) && not (Char.IsUpper text[0])
+
             match tokens with
             | { Kind = IntegerLiteral; Text = "0" } :: rest ->
                 Some(QuantityZero, rest)
@@ -127,7 +162,7 @@ module TypeSignatures =
                 Some(QuantityOmega, rest)
             | head :: rest when Token.isName head && String.Equals(head.Text, "omega", StringComparison.Ordinal) ->
                 Some(QuantityOmega, rest)
-            | head :: rest when Token.isName head ->
+            | head :: rest when isQuantityVariableToken head ->
                 match rest with
                 | next :: _ when Token.isName next ->
                     Some(QuantityVariable(SyntaxFacts.trimIdentifierQuotes head.Text), rest)
@@ -135,6 +170,87 @@ module TypeSignatures =
                     None
             | _ ->
                 None
+
+        member private _.FindTopLevelColon(tokens: Token list) =
+            let rec loop depth index =
+                if index >= tokens.Length then
+                    None
+                else
+                    match tokens[index].Kind with
+                    | LeftParen
+                    | LeftBracket
+                    | LeftBrace
+                    | LeftSetBrace ->
+                        loop (depth + 1) (index + 1)
+                    | RightParen
+                    | RightBracket
+                    | RightBrace
+                    | RightSetBrace ->
+                        loop (max 0 (depth - 1)) (index + 1)
+                    | Colon when depth = 0 ->
+                        Some index
+                    | _ ->
+                        loop depth (index + 1)
+
+            loop 0 0
+
+        member private this.TryParseNamedBinder(tokens: Token list) =
+            match this.FindTopLevelColon(tokens) with
+            | Some colonIndex when colonIndex > 0 && colonIndex + 1 < tokens.Length ->
+                let binderTokens = tokens |> List.take colonIndex
+                let typeTokens = tokens |> List.skip (colonIndex + 1)
+
+                let binderTokens =
+                    match binderTokens with
+                    | { Kind = AtSign } :: rest -> rest
+                    | _ -> binderTokens
+
+                let quantity, nameTokens =
+                    match this.TryParseQuantityPrefix binderTokens with
+                    | Some(quantity, rest) ->
+                        quantity, rest
+                    | None ->
+                        QuantityOmega, binderTokens
+
+                match nameTokens with
+                | [ nameToken ] when Token.isName nameToken ->
+                    Some(quantity, SyntaxFacts.trimIdentifierQuotes nameToken.Text, typeTokens)
+                | [ { Kind = Underscore } ] ->
+                    Some(quantity, "_", typeTokens)
+                | _ ->
+                    None
+            | _ ->
+                None
+
+        member private _.SplitTopLevelCommaGroups(tokens: Token list) =
+            let groups = ResizeArray<Token list>()
+            let current = ResizeArray<Token>()
+            let mutable depth = 0
+            let mutable sawTopLevelComma = false
+
+            for token in tokens do
+                match token.Kind with
+                | LeftParen
+                | LeftBracket
+                | LeftBrace
+                | LeftSetBrace ->
+                    depth <- depth + 1
+                    current.Add(token)
+                | RightParen
+                | RightBracket
+                | RightBrace
+                | RightSetBrace ->
+                    depth <- max 0 (depth - 1)
+                    current.Add(token)
+                | Comma when depth = 0 ->
+                    sawTopLevelComma <- true
+                    groups.Add(List.ofSeq current)
+                    current.Clear()
+                | _ ->
+                    current.Add(token)
+
+            groups.Add(List.ofSeq current)
+            List.ofSeq groups, sawTopLevelComma
 
         member this.ParseCompleteType() =
             match this.ParseType() with
@@ -144,87 +260,63 @@ module TypeSignatures =
                 None
 
         member private this.TryParseBinderArrow() =
-            let tryParseBinderType (tokens: Token list) =
-                let rec findColon depth index =
-                    if index >= tokens.Length then
-                        None
-                    else
-                        match tokens[index].Kind with
-                        | LeftParen
-                        | LeftBracket
-                        | LeftBrace
-                        | LeftSetBrace ->
-                            findColon (depth + 1) (index + 1)
-                        | RightParen
-                        | RightBracket
-                        | RightBrace
-                        | RightSetBrace ->
-                            findColon (max 0 (depth - 1)) (index + 1)
-                        | Colon when depth = 0 ->
-                            Some index
-                        | _ ->
-                            findColon depth (index + 1)
-
-                match findColon 0 0 with
-                | Some colonIndex when colonIndex > 0 && colonIndex + 1 < tokens.Length ->
-                    let binderTokens = tokens |> List.take colonIndex
-                    let typeTokens = tokens |> List.skip (colonIndex + 1)
-
-                    let quantity, nameTokens =
-                        match this.TryParseQuantityPrefix binderTokens with
-                        | Some(quantity, rest) ->
-                            quantity, rest
-                        | None ->
-                            QuantityOmega, binderTokens
-
-                    match nameTokens with
-                    | [ nameToken ] when Token.isName nameToken ->
-                        let nestedParser = Parser(typeTokens)
-
-                        nestedParser.ParseCompleteType()
-                        |> Option.map (fun parameterType -> quantity, parameterType)
-                    | _ ->
-                        None
-                | _ ->
-                    None
-
             match this.Current with
             | Some { Kind = LeftParen } ->
-                let mutable depth = 0
-                let mutable index = position
-                let mutable closingIndex = None
-
-                while index < tokenArray.Length && closingIndex.IsNone do
-                    match tokenArray[index].Kind with
-                    | LeftParen ->
-                        depth <- depth + 1
-                    | RightParen ->
-                        depth <- depth - 1
-
-                        if depth = 0 then
-                            closingIndex <- Some index
-                    | _ ->
-                        ()
-
-                    index <- index + 1
-
-                match closingIndex with
+                match this.FindMatchingIndex(LeftParen, RightParen, position) with
                 | Some rightParenIndex when rightParenIndex + 1 < tokenArray.Length && tokenArray[rightParenIndex + 1].Kind = Arrow ->
                     let innerTokens =
                         tokenArray[position + 1 .. rightParenIndex - 1]
                         |> Array.toList
 
-                    match tryParseBinderType innerTokens with
-                    | Some(quantity, parameterType) ->
-                        position <- rightParenIndex + 2
+                    match this.TryParseNamedBinder innerTokens with
+                    | Some(quantity, _, typeTokens) ->
+                        let nestedParser = Parser(typeTokens)
 
-                        this.ParseType()
-                        |> Option.map (fun resultType -> TypeArrow(quantity, parameterType, resultType))
+                        match nestedParser.ParseCompleteType() with
+                        | Some parameterType ->
+                            position <- rightParenIndex + 2
+
+                            this.ParseType()
+                            |> Option.map (fun resultType -> TypeArrow(quantity, parameterType, resultType))
+                        | None ->
+                            None
                     | None ->
                         None
                 | _ ->
                     None
             | _ ->
+                None
+
+        member private this.TryParseRecordField(tokens: Token list) =
+            match this.TryParseNamedBinder(tokens) with
+            | Some(quantity, name, typeTokens) ->
+                let nestedParser = Parser(typeTokens)
+
+                nestedParser.ParseCompleteType()
+                |> Option.map (fun fieldType ->
+                    { Name = name
+                      Quantity = quantity
+                      Type = fieldType })
+            | None ->
+                None
+
+        member private this.TryParseRecordType(innerTokens: Token list) =
+            let groups, sawTopLevelComma = this.SplitTopLevelCommaGroups(innerTokens)
+            let nonEmptyGroups =
+                groups
+                |> List.filter (List.isEmpty >> not)
+
+            let fields =
+                nonEmptyGroups
+                |> List.map this.TryParseRecordField
+
+            if (sawTopLevelComma || List.length nonEmptyGroups = 1) && fields |> List.forall Option.isSome then
+                fields
+                |> List.choose id
+                |> function
+                    | [] -> None
+                    | parsedFields -> Some(TypeRecord parsedFields)
+            else
                 None
 
         member private this.ParseQualifiedName() =
@@ -265,31 +357,64 @@ module TypeSignatures =
         member private this.ParseAtom() =
             match this.Current with
             | Some { Kind = LeftParen } ->
+                match this.FindMatchingIndex(LeftParen, RightParen, position) with
+                | Some rightParenIndex ->
+                    let innerTokens =
+                        tokenArray[position + 1 .. rightParenIndex - 1]
+                        |> Array.toList
+
+                    match this.TryParseRecordType innerTokens with
+                    | Some recordType ->
+                        position <- rightParenIndex + 1
+                        Some recordType
+                    | None ->
+                        None
+                | None ->
+                    None
+            | _ ->
+                None
+
+        member private this.ParseGroupedOrAtomicType() =
+            match this.Current with
+            | Some { Kind = LeftParen } ->
                 this.Advance() |> ignore
 
-                match this.ParseType() with
-                | Some inner when this.MatchKind RightParen -> Some inner
-                | _ -> None
+                if this.MatchKind RightParen then
+                    Some(TypeName([ "Unit" ], []))
+                else
+                    match this.ParseType() with
+                    | Some inner when this.MatchKind RightParen -> Some inner
+                    | _ -> None
             | _ ->
                 this.ParseQualifiedName()
                 |> Option.map (fun name ->
-                    let head =
-                        match name with
-                        | [ singleName ] -> singleName
-                        | _ -> SyntaxFacts.moduleNameToText name
+                    let terminalSegment = name |> List.last
+                    let collapsedName = SyntaxFacts.moduleNameToText name
 
-                    if head.Length > 0 && Char.IsLower(head[0]) then
-                        TypeVariable head
+                    if terminalSegment.Length > 0 && Char.IsLower(terminalSegment[0]) then
+                        TypeVariable collapsedName
                     else
                         TypeName(name, []))
 
         member private this.CanStartAtom() =
             match this.Current with
             | Some { Kind = LeftParen } -> true
-            | Some token when Token.isName token -> true
+            | Some token when Token.isName token ->
+                not (String.Equals(SyntaxFacts.trimIdentifierQuotes token.Text, "captures", StringComparison.Ordinal))
             | _ -> false
 
-        member private this.TryConsumeCaptureSuffix() =
+        member private this.ParsePostfix() =
+            match this.ParseAtom() |> Option.orElseWith (fun () -> this.ParseGroupedOrAtomicType()) with
+            | None -> None
+            | Some head ->
+                let mutable parsed = head
+
+                while this.MatchOperator("?") do
+                    parsed <- TypeName([ "std"; "prelude"; "Option" ], [ parsed ])
+
+                Some parsed
+
+        member private this.TryParseCaptureSuffix() =
             let isCapturesToken token =
                 Token.isName token
                 && String.Equals(SyntaxFacts.trimIdentifierQuotes token.Text, "captures", StringComparison.Ordinal)
@@ -298,48 +423,58 @@ module TypeSignatures =
             | Some capturesToken, Some { Kind = LeftParen } when isCapturesToken capturesToken ->
                 this.Advance() |> ignore
                 this.Advance() |> ignore
+                let regions = ResizeArray<string>()
+                let mutable keepReading = true
+                let mutable parsed = true
 
-                let mutable depth = 1
+                while keepReading && parsed do
+                    match this.Current with
+                    | Some token when Token.isName token ->
+                        regions.Add(SyntaxFacts.trimIdentifierQuotes token.Text)
+                        this.Advance() |> ignore
 
-                while not this.IsAtEnd && depth > 0 do
-                    match this.Advance() with
-                    | Some { Kind = LeftParen } ->
-                        depth <- depth + 1
+                        if this.MatchKind Comma then
+                            ()
+                        elif this.MatchKind RightParen then
+                            keepReading <- false
+                        else
+                            parsed <- false
                     | Some { Kind = RightParen } ->
-                        depth <- depth - 1
+                        this.Advance() |> ignore
+                        keepReading <- false
                     | _ ->
-                        ()
+                        parsed <- false
 
-                true
+                if parsed then
+                    Some(List.ofSeq regions)
+                else
+                    None
             | _ ->
-                false
+                None
 
         member private this.ParseApplication() =
-            match this.ParseAtom() with
+            match this.ParsePostfix() with
             | None -> None
             | Some head ->
                 let arguments = ResizeArray<TypeExpr>()
 
                 while this.CanStartAtom() do
-                    match this.ParseAtom() with
+                    match this.ParsePostfix() with
                     | Some argument -> arguments.Add(argument)
                     | None -> ()
 
+                let withCaptures parsed =
+                    match this.TryParseCaptureSuffix() with
+                    | Some captures -> TypeCapture(parsed, captures)
+                    | None -> parsed
+
                 match head with
                 | TypeName(name, existingArguments) ->
-                    let mutable parsed = TypeName(name, existingArguments @ List.ofSeq arguments)
-
-                    while this.TryConsumeCaptureSuffix() do
-                        ()
-
-                    Some parsed
+                    TypeName(name, existingArguments @ List.ofSeq arguments)
+                    |> withCaptures
+                    |> Some
                 | _ when arguments.Count = 0 ->
-                    let mutable parsed = head
-
-                    while this.TryConsumeCaptureSuffix() do
-                        ()
-
-                    Some parsed
+                    head |> withCaptures |> Some
                 | _ ->
                     None
 
@@ -378,6 +513,22 @@ module TypeSignatures =
                         | Some token when Token.isName token ->
                             variables.Add(SyntaxFacts.trimIdentifierQuotes token.Text)
                             this.Advance() |> ignore
+                        | Some { Kind = LeftParen } ->
+                            match this.FindMatchingIndex(LeftParen, RightParen, position) with
+                            | Some rightParenIndex ->
+                                let binderTokens =
+                                    tokenArray[position + 1 .. rightParenIndex - 1]
+                                    |> Array.toList
+
+                                position <- rightParenIndex + 1
+
+                                match this.TryParseNamedBinder binderTokens with
+                                | Some(_, binderName, _) ->
+                                    variables.Add(binderName)
+                                | None ->
+                                    keepReading <- false
+                            | None ->
+                                keepReading <- false
                         | Some { Kind = Dot } ->
                             this.Advance() |> ignore
                             keepReading <- false
@@ -626,6 +777,15 @@ module TypeSignatures =
             TypeArrow(quantity, applySubstitution substitution parameterType, applySubstitution substitution resultType)
         | TypeEquality(left, right) ->
             TypeEquality(applySubstitution substitution left, applySubstitution substitution right)
+        | TypeCapture(inner, captures) ->
+            TypeCapture(applySubstitution substitution inner, captures)
+        | TypeRecord fields ->
+            TypeRecord(
+                fields
+                |> List.map (fun field ->
+                    { field with
+                        Type = applySubstitution substitution field.Type })
+            )
 
     let applyConstraintSubstitution substitution (constraintInfo: TraitConstraint) =
         { constraintInfo with
@@ -647,6 +807,10 @@ module TypeSignatures =
                 loop parameterType || loop resultType
             | TypeEquality(left, right) ->
                 loop left || loop right
+            | TypeCapture(inner, _) ->
+                loop inner
+            | TypeRecord fields ->
+                fields |> List.exists (fun field -> loop field.Type)
 
         loop typeExpr
 
@@ -680,6 +844,31 @@ module TypeSignatures =
                     unify substitution ((leftParameter, rightParameter) :: (leftResult, rightResult) :: rest)
                 | TypeEquality(leftLeft, leftRight), TypeEquality(rightLeft, rightRight) ->
                     unify substitution ((leftLeft, rightLeft) :: (leftRight, rightRight) :: rest)
+                | TypeCapture(leftInner, leftCaptures), TypeCapture(rightInner, rightCaptures)
+                    when (leftCaptures |> List.distinct |> List.sort) = (rightCaptures |> List.distinct |> List.sort) ->
+                    unify substitution ((leftInner, rightInner) :: rest)
+                | TypeRecord leftFields, TypeRecord rightFields ->
+                    let normalizeFieldList fields =
+                        fields
+                        |> List.sortBy (fun field -> field.Name)
+
+                    let normalizedLeftFields = normalizeFieldList leftFields
+                    let normalizedRightFields = normalizeFieldList rightFields
+
+                    if List.length normalizedLeftFields = List.length normalizedRightFields
+                       && List.forall2
+                           (fun leftField rightField ->
+                               String.Equals(leftField.Name, rightField.Name, StringComparison.Ordinal)
+                               && leftField.Quantity = rightField.Quantity)
+                           normalizedLeftFields
+                           normalizedRightFields then
+                        let pendingFields =
+                            List.zip normalizedLeftFields normalizedRightFields
+                            |> List.map (fun (leftField, rightField) -> leftField.Type, rightField.Type)
+
+                        unify substitution (pendingFields @ rest)
+                    else
+                        None
                 | _ ->
                     None
 
@@ -715,8 +904,124 @@ module TypeSignatures =
         let substitution = renameVariables prefix nextId scheme.Forall
         applySchemeSubstitution substitution scheme
 
+    let private canonicalCaptureSet captures =
+        captures
+        |> List.distinct
+        |> List.sort
+
+    let private tryFieldDependencyReference (fieldNames: Set<string>) (referenceName: string) =
+        let direct =
+            if Set.contains referenceName fieldNames then
+                Some referenceName
+            else
+                None
+
+        direct
+        |> Option.orElseWith (fun () ->
+            if referenceName.StartsWith("this.", StringComparison.Ordinal) then
+                let suffix = referenceName.Substring("this.".Length)
+
+                if Set.contains suffix fieldNames then
+                    Some suffix
+                else
+                    None
+            else
+                None)
+
+    let private canonicalRecordFields fields =
+        let fieldNames =
+            fields
+            |> List.map (fun field -> field.Name)
+            |> Set.ofList
+
+        let rec collectDependencies typeExpr =
+            match typeExpr with
+            | TypeVariable name ->
+                tryFieldDependencyReference fieldNames name |> Option.toList |> Set.ofList
+            | TypeName(_, arguments) ->
+                arguments
+                |> List.fold (fun state argument -> Set.union state (collectDependencies argument)) Set.empty
+            | TypeArrow(_, parameterType, resultType) ->
+                Set.union (collectDependencies parameterType) (collectDependencies resultType)
+            | TypeEquality(left, right) ->
+                Set.union (collectDependencies left) (collectDependencies right)
+            | TypeCapture(inner, _) ->
+                collectDependencies inner
+            | TypeRecord nestedFields ->
+                nestedFields
+                |> List.fold (fun state field -> Set.union state (collectDependencies field.Type)) Set.empty
+
+        let fieldMap =
+            fields
+            |> List.map (fun field -> field.Name, field)
+            |> Map.ofList
+
+        let dependencyMap =
+            fields
+            |> List.map (fun field ->
+                field.Name, (collectDependencies field.Type |> Set.remove field.Name))
+            |> Map.ofList
+
+        let rec loop remaining resolved ordered =
+            if Set.isEmpty remaining then
+                List.rev ordered
+            else
+                let ready =
+                    remaining
+                    |> Set.filter (fun name ->
+                        dependencyMap[name] |> Set.forall (fun dependency -> Set.contains dependency resolved))
+                    |> Set.toList
+                    |> List.sort
+
+                match ready with
+                | next :: _ ->
+                    loop (Set.remove next remaining) (Set.add next resolved) (fieldMap[next] :: ordered)
+                | [] ->
+                    let fallback =
+                        remaining
+                        |> Set.toList
+                        |> List.sort
+                        |> List.map (fun name -> fieldMap[name])
+
+                    List.rev ordered @ fallback
+
+        loop fieldNames Set.empty []
+
+    let rec private canonicalize typeExpr =
+        match typeExpr with
+        | TypeVariable _ ->
+            typeExpr
+        | TypeName(name, arguments) ->
+            TypeName(name, arguments |> List.map canonicalize)
+        | TypeArrow(quantity, parameterType, resultType) ->
+            TypeArrow(quantity, canonicalize parameterType, canonicalize resultType)
+        | TypeEquality(left, right) ->
+            TypeEquality(canonicalize left, canonicalize right)
+        | TypeCapture(inner, captures) ->
+            TypeCapture(canonicalize inner, canonicalCaptureSet captures)
+        | TypeRecord fields ->
+            TypeRecord(
+                fields
+                |> List.map (fun field ->
+                    { field with
+                        Type = canonicalize field.Type })
+                |> canonicalRecordFields
+            )
+
     let definitionallyEqual left right =
-        left = right
+        canonicalize left = canonicalize right
+
+    let schemeDefinitionallyEqual left right =
+        left.Forall = right.Forall
+        && List.length left.Constraints = List.length right.Constraints
+        && List.forall2
+            (fun leftConstraint rightConstraint ->
+                String.Equals(leftConstraint.TraitName, rightConstraint.TraitName, StringComparison.Ordinal)
+                && List.length leftConstraint.Arguments = List.length rightConstraint.Arguments
+                && List.forall2 definitionallyEqual leftConstraint.Arguments rightConstraint.Arguments)
+            left.Constraints
+            right.Constraints
+        && definitionallyEqual left.Body right.Body
 
     let rec toText typeExpr =
         let rec renderAtom current =
@@ -728,11 +1033,13 @@ module TypeSignatures =
                 $"{SyntaxFacts.moduleNameToText name} {argumentText}"
             | TypeVariable name ->
                 name
+            | TypeCapture _
+            | TypeRecord _
             | TypeArrow _
             | TypeEquality _ ->
                 $"({toText current})"
 
-        match typeExpr with
+        match canonicalize typeExpr with
         | TypeArrow(quantity, parameterType, resultType) ->
             match quantity with
             | QuantityOmega ->
@@ -741,5 +1048,45 @@ module TypeSignatures =
                 $"({Quantity.toSurfaceText quantity} x : {toText parameterType}) -> {toText resultType}"
         | TypeEquality(left, right) ->
             $"{renderAtom left} = {toText right}"
+        | TypeCapture(inner, captures) ->
+            let capturesText = String.concat ", " captures
+            $"{renderAtom inner} captures ({capturesText})"
+        | TypeRecord fields ->
+            let fieldText =
+                fields
+                |> List.map (fun field ->
+                    let quantityText =
+                        match field.Quantity with
+                        | QuantityOmega -> ""
+                        | quantity -> Quantity.toSurfaceText quantity + " "
+
+                    $"{quantityText}{field.Name} : {toText field.Type}")
+                |> String.concat ", "
+
+            $"({fieldText})"
         | _ ->
             renderAtom typeExpr
+
+    let collectFreeTypeVariables typeExpr =
+        let rec loop bound current =
+            match current with
+            | TypeVariable name when not (Set.contains name bound) ->
+                Set.singleton name
+            | TypeVariable _ ->
+                Set.empty
+            | TypeName(_, arguments) ->
+                arguments
+                |> List.fold (fun state argument -> Set.union state (loop bound argument)) Set.empty
+            | TypeArrow(_, parameterType, resultType) ->
+                Set.union (loop bound parameterType) (loop bound resultType)
+            | TypeEquality(left, right) ->
+                Set.union (loop bound left) (loop bound right)
+            | TypeCapture(inner, _) ->
+                loop bound inner
+            | TypeRecord fields ->
+                fields
+                |> List.fold (fun state field -> Set.union state (loop bound field.Type)) Set.empty
+
+        loop Set.empty typeExpr
+        |> Set.toList
+        |> List.sort

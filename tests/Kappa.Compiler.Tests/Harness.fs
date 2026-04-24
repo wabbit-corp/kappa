@@ -355,8 +355,66 @@ let private normalizeFixtureTypeTokensWithResolutions (nameResolutions: Map<stri
 let private normalizeFixtureTypeTokens (workspace: WorkspaceCompilation) (document: ParsedDocument) (tokens: Token list) =
     normalizeFixtureTypeTokensWithResolutions (fixtureTypeNameResolutions workspace document) tokens
 
+let private resolveFixtureTypeExpr
+    (typeResolutions: Map<string, string list>)
+    (typeExpr: TypeSignatures.TypeExpr)
+    =
+    let rec loop current =
+        match current with
+        | TypeSignatures.TypeVariable _ ->
+            current
+        | TypeSignatures.TypeName([ name ], arguments) ->
+            let resolvedName = typeResolutions |> Map.tryFind name |> Option.defaultValue [ name ]
+            TypeSignatures.TypeName(resolvedName, arguments |> List.map loop)
+        | TypeSignatures.TypeName(name, arguments) ->
+            TypeSignatures.TypeName(name, arguments |> List.map loop)
+        | TypeSignatures.TypeArrow(quantity, parameterType, resultType) ->
+            TypeSignatures.TypeArrow(quantity, loop parameterType, loop resultType)
+        | TypeSignatures.TypeEquality(left, right) ->
+            TypeSignatures.TypeEquality(loop left, loop right)
+        | TypeSignatures.TypeCapture(inner, captures) ->
+            TypeSignatures.TypeCapture(loop inner, captures)
+        | TypeSignatures.TypeRecord fields ->
+            TypeSignatures.TypeRecord(
+                fields
+                |> List.map (fun field ->
+                    { field with
+                        Type = loop field.Type })
+            )
+
+    loop typeExpr
+
+let private resolveFixtureTypeScheme
+    (workspace: WorkspaceCompilation)
+    (document: ParsedDocument)
+    (scheme: TypeSignatures.TypeScheme)
+    =
+    let typeResolutions, traitResolutions = fixtureInScopeTypeResolutions workspace document
+
+    { scheme with
+        Constraints =
+            scheme.Constraints
+            |> List.map (fun constraintInfo ->
+                { constraintInfo with
+                    TraitName =
+                        traitResolutions
+                        |> Map.tryFind constraintInfo.TraitName
+                        |> Option.defaultValue constraintInfo.TraitName
+                    Arguments =
+                        constraintInfo.Arguments
+                        |> List.map (resolveFixtureTypeExpr typeResolutions) })
+        Body = resolveFixtureTypeExpr typeResolutions scheme.Body }
+
 let private normalizeFixtureText (value: string) =
     value.Trim().ToLowerInvariant()
+
+let private isPortableFixtureTraceStep (step: PipelineTraceStep) =
+    let stepName = step.StepName
+
+    not (
+        stepName.Contains(Stdlib.BundledPreludeVirtualPath, StringComparison.Ordinal)
+        || stepName.Contains(Stdlib.PreludeModuleText, StringComparison.Ordinal)
+    )
 
 let private declarationKindText declaration =
     match declaration with
@@ -560,6 +618,10 @@ let rec private fixturePatternText pattern =
         | _ ->
             let argumentText = arguments |> List.map fixturePatternText |> String.concat " "
             $"{nameText} {argumentText}"
+    | OrPattern alternatives ->
+        alternatives
+        |> List.map fixturePatternText
+        |> String.concat " | "
     | AnonymousRecordPattern fields ->
         fields
         |> List.map (fun field -> $"{field.Name} = {fixturePatternText field.Pattern}")
@@ -577,11 +639,14 @@ let private fixtureBindPatternText (binding: SurfaceBindPattern) =
 let private doItemDescriptor statement =
     match statement with
     | DoLet(binding, _) -> $"let {fixtureBindPatternText binding}"
+    | DoLetQuestion(binding, _, _) -> $"let? {fixtureBindPatternText binding}"
     | DoBind(binding, _) -> $"<- {fixtureBindPatternText binding}"
-    | DoUsing(pattern, _) -> $"using {fixturePatternText pattern}"
+    | DoUsing(binding, _) -> $"using {fixturePatternText binding.Pattern}"
     | DoVar(name, _) -> $"var {name}"
     | DoAssign(name, _) -> $"assign {name}"
+    | DoIf _ -> "if"
     | DoWhile _ -> "while"
+    | DoReturn _ -> "return"
     | DoExpression _ -> "expression"
 
 let private qualifyFixtureBindingTarget (workspace: WorkspaceCompilation) (filePath: string) (target: string) =
@@ -815,17 +880,32 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
 
             match tryFindDeclaredType workspace (Some filePath) target with
             | Some actualInfo ->
-                let normalizedActual =
-                    normalizeFixtureTypeTokens workspace actualInfo.Document actualInfo.Tokens
+                match
+                    TypeSignatures.parseScheme actualInfo.Tokens,
+                    (match tryFindDocumentForFilePath workspace filePath with
+                     | Some expectedDocument -> TypeSignatures.parseScheme expectedTokens |> Option.map (fun parsed -> parsed, expectedDocument)
+                     | None -> None)
+                with
+                | Some actualScheme, Some(expectedScheme, expectedDocument) ->
+                    let resolvedActual = resolveFixtureTypeScheme workspace actualInfo.Document actualScheme
+                    let resolvedExpected = resolveFixtureTypeScheme workspace expectedDocument expectedScheme
 
-                let normalizedExpected =
-                    match tryFindDocumentForFilePath workspace filePath with
-                    | Some expectedDocument ->
-                        normalizeFixtureTypeTokens workspace expectedDocument expectedTokens
-                    | None ->
-                        normalizeFixtureTypeTokensWithResolutions Map.empty expectedTokens
+                    Assert.True(
+                        TypeSignatures.schemeDefinitionallyEqual resolvedExpected resolvedActual,
+                        $"Declared type for '{target}' does not definitionally equal '{expectedTypeText}'. Expected: {TypeSignatures.toText resolvedExpected.Body}. Actual: {TypeSignatures.toText resolvedActual.Body}."
+                    )
+                | _ ->
+                    let normalizedActual =
+                        normalizeFixtureTypeTokens workspace actualInfo.Document actualInfo.Tokens
 
-                Assert.Equal<string list>(normalizedExpected, normalizedActual)
+                    let normalizedExpected =
+                        match tryFindDocumentForFilePath workspace filePath with
+                        | Some expectedDocument ->
+                            normalizeFixtureTypeTokens workspace expectedDocument expectedTokens
+                        | None ->
+                            normalizeFixtureTypeTokensWithResolutions Map.empty expectedTokens
+
+                    Assert.Equal<string list>(normalizedExpected, normalizedActual)
             | None ->
                 failwithf "Could not find a declared top-level type for '%s' (%s:%d)." target filePath lineNumber
         | AssertFileDeclarationKinds(relativePath, expectedKinds, _, lineNumber) ->
@@ -925,6 +1005,7 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
         | AssertTraceCount(eventName, subjectName, relation, expectedCount, filePath, lineNumber) ->
             let actualCount =
                 Compilation.pipelineTrace workspace
+                |> List.filter isPortableFixtureTraceStep
                 |> List.filter (fun step ->
                     String.Equals(PipelineTraceEvent.toPortableName step.Event, eventName, StringComparison.Ordinal)
                     && String.Equals(PipelineTraceSubject.toPortableName step.Subject, subjectName, StringComparison.Ordinal))

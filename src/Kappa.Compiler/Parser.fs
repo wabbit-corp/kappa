@@ -675,16 +675,24 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
             if this.TryConsume(Equals).IsSome then
                 this.ParseIndentedLines()
                 |> List.map (fun lineTokens ->
+                    let defaultDefinition =
+                        match lineTokens with
+                        | head :: _ when Token.isKeyword Keyword.Let head ->
+                            this.ParseInstanceMember lineTokens
+                        | _ ->
+                            None
+
                     let memberName =
                         match lineTokens with
-                        | head :: second :: _ when Token.isKeyword Keyword.Let head && Token.isName second ->
-                            Some(SyntaxFacts.trimIdentifierQuotes second.Text)
+                        | _ when defaultDefinition.IsSome ->
+                            defaultDefinition.Value.Name
                         | head :: _ when Token.isName head ->
                             Some(SyntaxFacts.trimIdentifierQuotes head.Text)
                         | _ ->
                             None
 
                     ({ Name = memberName
+                       DefaultDefinition = defaultDefinition
                        Tokens = lineTokens }: TraitMember))
             else
                 diagnostics.AddError(DiagnosticCode.ParseError, "Expected '=' in the trait declaration.", source.GetLocation(this.Current.Span))
@@ -696,7 +704,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
               HeaderTokens = List.ofSeq headerTokens
               Members = members }
 
-    member private this.ParseInstanceMember(lineTokens: Token list) =
+    member private this.ParseInstanceMember(lineTokens: Token list) : LetDefinition option =
         match lineTokens with
         | letToken :: rest when Token.isKeyword Keyword.Let letToken ->
             let memberTokens = ResizeArray<Token>(rest)
@@ -773,14 +781,93 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
 
     member private this.ParseInstanceDeclaration() =
         this.ExpectKeyword(Keyword.Instance, "Expected 'instance'.") |> ignore
-        let traitName = this.ConsumeName("Expected a trait name in the instance head.")
 
         let headerTokens = ResizeArray<Token>()
 
-        while (this.Current.Kind <> Equals
+        let isConstraintArrowEquals () =
+            this.Current.Kind = Equals
+            && this.Peek(1).Kind = Operator
+            && String.Equals(this.Peek(1).Text, ">", StringComparison.Ordinal)
+
+        while ((this.Current.Kind <> Equals || isConstraintArrowEquals ())
                && this.Current.Kind <> Newline
                && this.Current.Kind <> EndOfFile) do
             headerTokens.Add(this.Advance())
+
+        let headerTokens = List.ofSeq headerTokens
+
+        let splitInstanceHeader (tokens: Token list) =
+            let tokenArray = tokens |> List.toArray
+            let mutable depth = 0
+            let mutable headStart = 0
+            let mutable index = 0
+
+            while index < tokenArray.Length do
+                match tokenArray[index].Kind with
+                | LeftParen ->
+                    depth <- depth + 1
+                | RightParen ->
+                    depth <- max 0 (depth - 1)
+                | Operator when depth = 0 && String.Equals(tokenArray[index].Text, "=>", StringComparison.Ordinal) ->
+                    headStart <- index + 1
+                | Equals
+                    when depth = 0
+                         && index + 1 < tokenArray.Length
+                         && tokenArray[index + 1].Kind = Operator
+                         && String.Equals(tokenArray[index + 1].Text, ">", StringComparison.Ordinal) ->
+                    headStart <- index + 2
+                    index <- index + 1
+                | _ ->
+                    ()
+
+                index <- index + 1
+
+            let fullTokens = tokenArray |> Array.toList
+
+            let headTokens =
+                if headStart < tokenArray.Length then
+                    tokenArray[headStart..] |> Array.toList
+                else
+                    []
+
+            let rec collectQualifiedName acc remaining =
+                match remaining with
+                | token :: dotToken :: rest when Token.isName token && dotToken.Kind = Dot ->
+                    collectQualifiedName (SyntaxFacts.trimIdentifierQuotes token.Text :: acc) rest
+                | token :: _ when Token.isName token ->
+                    List.rev (SyntaxFacts.trimIdentifierQuotes token.Text :: acc)
+                | _ ->
+                    []
+
+            let rec stripQualifiedName remaining =
+                match remaining with
+                | token :: dotToken :: rest when Token.isName token && dotToken.Kind = Dot ->
+                    stripQualifiedName rest
+                | token :: rest when Token.isName token ->
+                    rest
+                | _ ->
+                    remaining
+
+            let traitName, instanceHeadTokens =
+                match collectQualifiedName [] headTokens with
+                | [] ->
+                    None, headTokens
+                | [ singleName ] ->
+                    Some singleName, stripQualifiedName headTokens
+                | segments ->
+                    Some(SyntaxFacts.moduleNameToText segments), stripQualifiedName headTokens
+
+            fullTokens, instanceHeadTokens, traitName
+
+        let fullHeaderTokens, headTokens, traitNameOption =
+            splitInstanceHeader headerTokens
+
+        let traitName =
+            traitNameOption
+            |> Option.defaultValue ""
+
+        if String.IsNullOrWhiteSpace traitName then
+            diagnostics.AddError(DiagnosticCode.ParseError, "Expected a valid instance head after 'instance'.", source.GetLocation(this.Current.Span))
 
         let members =
             if this.TryConsume(Equals).IsSome then
@@ -792,7 +879,8 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
 
         InstanceDeclarationNode
             { TraitName = traitName
-              HeaderTokens = List.ofSeq headerTokens
+              FullHeaderTokens = fullHeaderTokens
+              HeaderTokens = headTokens
               Members = members }
 
     member private this.ParseImportOrExport(isExport: bool) =

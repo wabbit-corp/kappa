@@ -3,7 +3,9 @@ module main
 data File : Type =
     Handle Int
 
-let h (1 left : File) (1 right : File) = ()
+let h (1 left : File) (1 right : File) =
+    let _ = left
+    in let _ = right in ()
 
 let main : IO Unit = do
     let 1 file = Handle 1
@@ -11,4 +13,4 @@ let main : IO Unit = do
 
 --! assertErrorCount 1
 --! assertDiagnosticCodes E_QTT_LINEAR_OVERUSE
---! assertDiagnosticAt main.kp error E_QTT_LINEAR_OVERUSE 10
+--! assertDiagnosticAt main.kp error E_QTT_LINEAR_OVERUSE 12

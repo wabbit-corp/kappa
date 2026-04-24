@@ -1,0 +1,9 @@
+module main
+
+ok : Option Int -> STM Int
+let ok (m : Option Int) : STM Int =
+    do
+        let? Some x = m
+        pure x
+
+--! assertNoErrors

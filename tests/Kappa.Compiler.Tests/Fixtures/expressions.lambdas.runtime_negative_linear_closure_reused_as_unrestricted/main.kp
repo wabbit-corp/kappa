@@ -4,7 +4,9 @@ data Token : Type =
     Token
 
 consume : (1 t : Token) -> Unit
-let consume t = ()
+let consume t =
+    let _ = t
+    in ()
 
 twice : (ω f : Unit -> Unit) -> Unit
 let twice f = do

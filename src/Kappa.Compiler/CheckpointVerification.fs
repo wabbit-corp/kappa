@@ -13,6 +13,15 @@ module CheckpointVerification =
           Location = None
           RelatedLocations = [] }
 
+    let private tryParseTypeText text =
+        let source = SourceText.From("__checkpoint_type__.kp", text)
+        let lexResult = Lexer.tokenize source
+
+        if not (List.isEmpty lexResult.Diagnostics) then
+            None
+        else
+            TypeSignatures.parseType lexResult.Tokens
+
     let availableCheckpointNames =
         [
             "surface-source"
@@ -136,6 +145,11 @@ module CheckpointVerification =
                     [ makeDiagnostic $"Checkpoint '{checkpoint}' requires unique pattern binder names within '{bindingLabel}', but '{name}' was duplicated." ]
                 else
                     Set.add name locals, []
+            | KRuntimeOrPattern alternatives ->
+                ((locals, []), alternatives)
+                ||> List.fold (fun (localsSoFar, diagnosticsSoFar) alternative ->
+                    let nextLocals, nextDiagnostics = verify localsSoFar alternative
+                    nextLocals, diagnosticsSoFar @ nextDiagnostics)
             | KRuntimeConstructorPattern(_, argumentPatterns) ->
                 ((locals, []), argumentPatterns)
                 ||> List.fold (fun (localsSoFar, diagnosticsSoFar) argumentPattern ->
@@ -143,6 +157,42 @@ module CheckpointVerification =
                     nextLocals, diagnosticsSoFar @ nextDiagnostics)
 
         verify Set.empty pattern
+
+    let private runtimeTypeLeaksErasureMetadata (typeText: string) =
+        let rec loop typeExpr =
+            match typeExpr with
+            | TypeSignatures.TypeVariable _ ->
+                false
+            | TypeSignatures.TypeName(name, arguments) ->
+                let head = name |> List.tryLast |> Option.defaultValue ""
+
+                arguments |> List.exists loop
+                || String.Equals(head, "Type", StringComparison.Ordinal)
+                || String.Equals(head, "Constraint", StringComparison.Ordinal)
+                || String.Equals(head, "Quantity", StringComparison.Ordinal)
+                || String.Equals(head, "Region", StringComparison.Ordinal)
+                || String.Equals(head, "RecRow", StringComparison.Ordinal)
+                || String.Equals(head, "Label", StringComparison.Ordinal)
+            | TypeSignatures.TypeArrow(quantity, parameterType, resultType) ->
+                quantity <> QuantityOmega || loop parameterType || loop resultType
+            | TypeSignatures.TypeEquality _ ->
+                true
+            | TypeSignatures.TypeCapture _ ->
+                true
+            | TypeSignatures.TypeRecord fields ->
+                fields
+                |> List.exists (fun field -> field.Quantity <> QuantityOmega || loop field.Type)
+
+        match tryParseTypeText typeText with
+        | Some parsed ->
+            loop parsed
+        | None ->
+            typeText.Contains("captures (", StringComparison.Ordinal)
+            || typeText.Contains("Region", StringComparison.Ordinal)
+            || typeText.Contains("Constraint", StringComparison.Ordinal)
+            || typeText.Contains("Quantity", StringComparison.Ordinal)
+            || typeText.Contains("&[", StringComparison.Ordinal)
+            || typeText.Contains("(&", StringComparison.Ordinal)
 
     let private verifyRuntimeExpression checkpoint bindingLabel (expression: KRuntimeExpression) =
         let rec verify locals runtimeExpression =
@@ -355,6 +405,43 @@ module CheckpointVerification =
             |> List.map (fun layout -> layout.Name)
             |> Set.ofList
 
+        let erasureDiagnostics =
+            [
+                for runtimeModule in workspace.KRuntimeIR do
+                    for binding in runtimeModule.Bindings do
+                        for parameter in binding.Parameters do
+                            match parameter.TypeText with
+                            | Some typeText when runtimeTypeLeaksErasureMetadata typeText ->
+                                yield
+                                    makeDiagnostic
+                                        $"Checkpoint 'KBackendIR' requires pre-erasure runtime metadata to be removed before backend lowering, but parameter '{runtimeModule.Name}.{binding.Name}.{parameter.Name}' still exposes '{typeText}'."
+                            | _ ->
+                                ()
+
+                        match binding.ReturnTypeText with
+                        | Some typeText when runtimeTypeLeaksErasureMetadata typeText ->
+                            yield
+                                makeDiagnostic
+                                    $"Checkpoint 'KBackendIR' requires pre-erasure runtime metadata to be removed before backend lowering, but return type of '{runtimeModule.Name}.{binding.Name}' still exposes '{typeText}'."
+                        | _ ->
+                            ()
+
+                    for dataType in runtimeModule.DataTypes do
+                        for constructor in dataType.Constructors do
+                            for index, fieldTypeText in constructor.FieldTypeTexts |> List.indexed do
+                                if runtimeTypeLeaksErasureMetadata fieldTypeText then
+                                    yield
+                                        makeDiagnostic
+                                            $"Checkpoint 'KBackendIR' requires pre-erasure runtime metadata to be removed before backend lowering, but constructor field '{runtimeModule.Name}.{constructor.Name}[{index}]' still exposes '{fieldTypeText}'."
+
+                    for instanceInfo in runtimeModule.TraitInstances do
+                        for index, headTypeText in instanceInfo.HeadTypeTexts |> List.indexed do
+                            if runtimeTypeLeaksErasureMetadata headTypeText then
+                                yield
+                                    makeDiagnostic
+                                        $"Checkpoint 'KBackendIR' requires pre-erasure runtime metadata to be removed before backend lowering, but instance head '{runtimeModule.Name}.{instanceInfo.TraitName}[{index}]' still exposes '{headTypeText}'."
+            ]
+
         let constructorExists moduleName typeName constructorName tag fieldCount =
             moduleMap
             |> Map.tryFind moduleName
@@ -509,6 +596,7 @@ module CheckpointVerification =
 
         [
             yield! verifyKRuntimeIRCheckpoint workspace
+            yield! erasureDiagnostics
 
             let runtimeModuleNames =
                 workspace.KRuntimeIR

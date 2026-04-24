@@ -1,0 +1,9 @@
+module main
+
+mayIgnore : Int -> Int
+let mayIgnore (x : Int) : Int = 0
+
+bad : (>=1 x : Int) -> Int
+let bad (>=1 x : Int) : Int = mayIgnore x
+
+--! assertErrorCount 1

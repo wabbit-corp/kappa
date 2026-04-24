@@ -4,7 +4,7 @@ data File : Type =
     Handle Int
 
 let openFile name = pure (Handle 1)
-let consume (1 file : File) = ()
+let consume (1 file : File) = let _ = file in ()
 
 let main : IO Unit = do
     using file <- openFile "data.txt"

@@ -261,8 +261,13 @@ module Lexer =
         and scanSimpleName startOffset =
             let endIndex = readIdentifier lineText startOffset
             let text = lineText.Substring(startOffset, endIndex - startOffset)
-            emitNameToken text startOffset
-            endIndex
+
+            if text = "let" && endIndex < lineText.Length && lineText[endIndex] = '?' then
+                emit (Keyword Keyword.LetQuestion) "let?" startOffset
+                endIndex + 1
+            else
+                emitNameToken text startOffset
+                endIndex
 
         and scanBacktickOrPrefixedString startOffset =
             let endIndex, closed = readBacktickIdentifier lineText startOffset
@@ -286,7 +291,10 @@ module Lexer =
             let endIndex = readIdentifier lineText startOffset
             let text = lineText.Substring(startOffset, endIndex - startOffset)
 
-            if endIndex < lineText.Length && lineText[endIndex] = '"' then
+            if text = "let" && endIndex < lineText.Length && lineText[endIndex] = '?' then
+                emit (Keyword Keyword.LetQuestion) "let?" startOffset
+                endIndex + 1
+            elif endIndex < lineText.Length && lineText[endIndex] = '"' then
                 scanPrefixedString text startOffset endIndex
             else
                 emitNameToken text startOffset

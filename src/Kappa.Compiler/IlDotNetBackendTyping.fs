@@ -159,6 +159,12 @@ module internal IlDotNetBackendTyping =
                         else
                             Result.Error
                                 $"IL backend cannot match literal of type {formatIlType literalType} against {formatIlType expectedType}."
+                    | KRuntimeOrPattern alternatives ->
+                        match alternatives with
+                        | first :: _ ->
+                            inferPatternBindings currentModule active expectedType first
+                        | [] ->
+                            Result.Ok(Map.empty<string, IlType>)
                     | KRuntimeConstructorPattern(nameSegments, argumentPatterns) ->
                         match tryResolveConstructor rawModules currentModule nameSegments with
                         | None ->

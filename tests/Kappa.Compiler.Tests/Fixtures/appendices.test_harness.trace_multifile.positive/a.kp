@@ -1,0 +1,7 @@
+module a
+
+valueA : Int
+let valueA = 1
+
+--! assertNoErrors
+

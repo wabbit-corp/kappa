@@ -184,13 +184,26 @@ module internal ResourceCheckingSignatures =
                 | token :: _ when Token.isKeyword Keyword.Inout token -> true
                 | _ -> false)
 
-    let private signatureEntries (document: ParsedDocument) name quantities parameterTypes parameterInout =
+    let private signatureReturnTypeTokens tokens =
+        splitTopLevelArrows tokens
+        |> List.filter (List.isEmpty >> not)
+        |> List.tryLast
+
+    let private signatureEntries
+        (document: ParsedDocument)
+        (name: string)
+        quantities
+        parameterTypes
+        returnTypeTokens
+        parameterInout
+        =
         signatureName document.ModuleName name
         |> List.map (fun signatureName ->
             signatureName,
             { Name = signatureName
               ParameterQuantities = quantities
               ParameterTypeTokens = parameterTypes
+              ReturnTypeTokens = returnTypeTokens
               ParameterInout = parameterInout })
 
     let private mergeParameterQuantities existing next =
@@ -238,6 +251,9 @@ module internal ResourceCheckingSignatures =
                 mergeParameterQuantities existing.ParameterQuantities next.ParameterQuantities
             ParameterTypeTokens =
                 mergeParameterTypes existing.ParameterTypeTokens next.ParameterTypeTokens
+            ReturnTypeTokens =
+                next.ReturnTypeTokens
+                |> Option.orElse existing.ReturnTypeTokens
             ParameterInout =
                 mergeParameterInout existing.ParameterInout next.ParameterInout }
 
@@ -249,12 +265,23 @@ module internal ResourceCheckingSignatures =
                 | SignatureDeclaration declaration ->
                     let quantities = signatureParameterQuantities declaration.TypeTokens
                     let parameterTypes = signatureParameterTypeTokens declaration.TypeTokens
+                    let returnTypeTokens = signatureReturnTypeTokens declaration.TypeTokens
                     let parameterInout = signatureParameterInout declaration.TypeTokens
-                    Some(signatureEntries document declaration.Name quantities parameterTypes parameterInout)
+                    Some(signatureEntries document declaration.Name quantities parameterTypes returnTypeTokens parameterInout)
                 | ExpectDeclarationNode (ExpectTermDeclaration declaration) ->
                     let quantities = signatureParameterQuantities declaration.TypeTokens
                     let parameterTypes = signatureParameterTypeTokens declaration.TypeTokens
-                    Some(signatureEntries document declaration.Name quantities parameterTypes (quantities |> List.map (fun _ -> false)))
+                    let returnTypeTokens = signatureReturnTypeTokens declaration.TypeTokens
+
+                    Some(
+                        signatureEntries
+                            document
+                            declaration.Name
+                            quantities
+                            parameterTypes
+                            returnTypeTokens
+                            (quantities |> List.map (fun _ -> false))
+                    )
                 | LetDeclaration definition ->
                     definition.Name
                     |> Option.map (fun name ->
@@ -275,6 +302,7 @@ module internal ResourceCheckingSignatures =
                             name
                             quantities
                             parameterTypes
+                            definition.ReturnTypeTokens
                             (definition.Parameters |> List.map (fun parameter -> parameter.IsInout)))
                 | _ -> None)
             |> List.concat)

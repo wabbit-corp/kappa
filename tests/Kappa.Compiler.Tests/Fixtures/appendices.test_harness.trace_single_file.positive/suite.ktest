@@ -1,0 +1,3 @@
+--! assertTraceCount parse file = 1
+--! assertTraceCount buildKFrontIR file = 1
+

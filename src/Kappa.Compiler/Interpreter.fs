@@ -33,7 +33,8 @@ and RuntimeConstructor =
     { Name: string
       QualifiedName: string
       Arity: int
-      TypeName: string }
+      TypeName: string
+      FieldNames: string option list }
 and RuntimeConstructed =
     { Constructor: RuntimeConstructor
       Fields: RuntimeValue list }
@@ -100,6 +101,25 @@ module Interpreter =
     let private ok value =
         Result.Ok value
 
+    let private runtimeConstructorOf value =
+        match value with
+        | ConstructorFunctionValue(constructor, _)
+        | ConstructedValue { Constructor = constructor } ->
+            Some constructor
+        | _ ->
+            None
+
+    let private tryProjectConstructedField fieldName value =
+        match value with
+        | ConstructedValue constructed ->
+            constructed.Constructor.FieldNames
+            |> List.tryFindIndex (function
+                | Some candidate -> String.Equals(candidate, fieldName, StringComparison.Ordinal)
+                | None -> false)
+            |> Option.bind (fun index -> constructed.Fields |> List.tryItem index)
+        | _ ->
+            None
+
     let private literalToValue literal =
         match literal with
         | LiteralValue.Integer value -> IntegerValue value
@@ -119,7 +139,8 @@ module Interpreter =
                         { Name = constructor.Name
                           QualifiedName = $"{backendModule.Name}.{constructor.Name}"
                           Arity = constructor.Arity
-                          TypeName = constructor.TypeName })
+                          TypeName = constructor.TypeName
+                          FieldNames = constructor.FieldNames })
                     |> Map.ofList
 
                 let definitions =
@@ -262,6 +283,12 @@ module Interpreter =
                 ok (BooleanValue(left && right))
             | "||", BooleanValue left, BooleanValue right ->
                 ok (BooleanValue(left || right))
+            | "is", left, right ->
+                match runtimeConstructorOf left, runtimeConstructorOf right with
+                | Some leftConstructor, Some rightConstructor ->
+                    ok (BooleanValue(String.Equals(leftConstructor.QualifiedName, rightConstructor.QualifiedName, StringComparison.Ordinal)))
+                | _ ->
+                    error $"Operator 'is' expects a constructed value and a constructor, but got {RuntimeValue.format left} and {RuntimeValue.format right}."
             | _ ->
                 error $"Operator '{operatorName}' is not supported for {RuntimeValue.format left} and {RuntimeValue.format right}."
 
@@ -511,6 +538,20 @@ module Interpreter =
                     ok (Some [])
                 else
                     ok None
+            | KRuntimeOrPattern alternatives ->
+                let rec tryAlternatives remaining =
+                    match remaining with
+                    | [] ->
+                        ok None
+                    | alternative :: rest ->
+                        tryMatchPattern scope value alternative
+                        |> Result.bind (function
+                            | Some bindings ->
+                                ok (Some bindings)
+                            | None ->
+                                tryAlternatives rest)
+
+                tryAlternatives alternatives
             | KRuntimeConstructorPattern(nameSegments, argumentPatterns) ->
                 resolvePatternConstructor scope nameSegments
                 |> Result.bind (fun constructor ->
@@ -839,10 +880,25 @@ module Interpreter =
                 error "Encountered an empty name."
             | [ name ] ->
                 resolveUnqualifiedName scope name
-            | _ ->
-                let qualifierSegments = segments |> List.take (segments.Length - 1)
-                let bindingName = List.last segments
-                resolveQualifiedName scope qualifierSegments bindingName
+            | receiverName :: memberSegments ->
+                match resolveUnqualifiedName scope receiverName with
+                | Result.Ok receiverValue ->
+                    let rec project current remaining =
+                        match remaining with
+                        | [] ->
+                            ok current
+                        | memberName :: rest ->
+                            match tryProjectConstructedField memberName current with
+                            | Some projected ->
+                                project projected rest
+                            | None ->
+                                error $"Value '{receiverName}' has no projected member '{memberName}'."
+
+                    project receiverValue memberSegments
+                | Result.Error _ ->
+                    let qualifierSegments = segments |> List.take (segments.Length - 1)
+                    let bindingName = List.last segments
+                    resolveQualifiedName scope qualifierSegments bindingName
 
         and resolvePatternConstructor (scope: RuntimeScope) (segments: string list) : Result<RuntimeConstructor, EvaluationError> =
             let currentModule = scope.Context.Modules[scope.CurrentModule]

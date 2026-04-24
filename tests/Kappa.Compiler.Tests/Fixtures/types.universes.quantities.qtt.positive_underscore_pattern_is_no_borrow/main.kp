@@ -7,7 +7,9 @@ inspectOnly : (& x : Resource) -> Unit
 let inspectOnly x = ()
 
 consume : (1 x : Resource) -> Unit
-let consume x = ()
+let consume x =
+    let _ = x
+    in ()
 
 demo : (1 x : Resource) -> Unit
 let demo x =

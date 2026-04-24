@@ -317,13 +317,106 @@ type StageDumpFormat =
     | Json
     | SExpression
 
+[<RequireQualifiedAccess>]
+type OwnershipUseKind =
+    | Consume
+    | Borrow
+    | Capture
+    | Move
+    | CopyForbidden
+    | Escape
+    | Release
+
+module OwnershipUseKind =
+    let toFactText kind =
+        match kind with
+        | OwnershipUseKind.Consume -> "consume"
+        | OwnershipUseKind.Borrow -> "borrow"
+        | OwnershipUseKind.Capture -> "capture"
+        | OwnershipUseKind.Move -> "move"
+        | OwnershipUseKind.CopyForbidden -> "copy-forbidden"
+        | OwnershipUseKind.Escape -> "escape"
+        | OwnershipUseKind.Release -> "release"
+
+[<RequireQualifiedAccess>]
+type OwnershipDeferredFact =
+    | WhileResourceFixedPoint
+    | MatchPatternResourceChecking
+
+module OwnershipDeferredFact =
+    let toFactText fact =
+        match fact with
+        | OwnershipDeferredFact.WhileResourceFixedPoint -> "while-resource-fixed-point"
+        | OwnershipDeferredFact.MatchPatternResourceChecking -> "match-pattern-resource-checking"
+
+[<RequireQualifiedAccess>]
+type OwnershipBindingKind =
+    | Local
+    | Parameter
+    | Pattern
+    | UsingOwned
+
+module OwnershipBindingKind =
+    let toFactText kind =
+        match kind with
+        | OwnershipBindingKind.Local -> "local"
+        | OwnershipBindingKind.Parameter -> "parameter"
+        | OwnershipBindingKind.Pattern -> "pattern"
+        | OwnershipBindingKind.UsingOwned -> "using-owned"
+
+[<RequireQualifiedAccess>]
+type OwnershipBindingState =
+    | Available
+    | Borrowed
+    | Consumed
+    | Unconsumed
+
+module OwnershipBindingState =
+    let toFactText state =
+        match state with
+        | OwnershipBindingState.Available -> "available"
+        | OwnershipBindingState.Borrowed -> "borrowed"
+        | OwnershipBindingState.Consumed -> "consumed"
+        | OwnershipBindingState.Unconsumed -> "unconsumed"
+
+[<RequireQualifiedAccess>]
+type OwnershipBindingDemand =
+    | Interval of minimum: int * maximum: int
+    | Borrow
+
+module OwnershipBindingDemand =
+    let toFactText demand =
+        match demand with
+        | OwnershipBindingDemand.Interval(minimum, maximum) -> $"[{minimum},{maximum}]"
+        | OwnershipBindingDemand.Borrow -> "&"
+
+[<RequireQualifiedAccess>]
+type OwnershipQuantity =
+    | Interval of minimum: int * maximum: int option
+    | Borrow of explicitRegion: string option
+    | Variable of name: string
+
+module OwnershipQuantity =
+    let toFactText quantity =
+        match quantity with
+        | OwnershipQuantity.Interval(0, Some 0) -> "0"
+        | OwnershipQuantity.Interval(1, Some 1) -> "1"
+        | OwnershipQuantity.Interval(0, None) -> Quantity.toSurfaceText QuantityOmega
+        | OwnershipQuantity.Interval(0, Some 1) -> "<=1"
+        | OwnershipQuantity.Interval(1, None) -> ">=1"
+        | OwnershipQuantity.Interval(minimum, Some maximum) -> $"[{minimum},{maximum}]"
+        | OwnershipQuantity.Interval(minimum, None) -> $"[{minimum},inf]"
+        | OwnershipQuantity.Borrow None -> "&"
+        | OwnershipQuantity.Borrow(Some explicitRegion) -> $"&[{explicitRegion}]"
+        | OwnershipQuantity.Variable name -> name
+
 type OwnershipBindingFact =
     { BindingId: string
       BindingName: string
-      BindingKind: string
-      BindingDeclaredQuantity: string option
-      BindingInferredDemand: string
-      BindingState: string
+      BindingKind: OwnershipBindingKind
+      BindingDeclaredQuantity: OwnershipQuantity option
+      BindingInferredDemand: OwnershipBindingDemand
+      BindingState: OwnershipBindingState
       BindingPlaceRoot: string
       BindingPlacePath: string list
       BindingBorrowRegionId: string option
@@ -331,7 +424,7 @@ type OwnershipBindingFact =
 
 type OwnershipUseFact =
     { UseId: string
-      UseKindName: string
+      UseKind: OwnershipUseKind
       UseTargetBindingId: string option
       UseTargetName: string
       UsePlaceRoot: string
@@ -351,13 +444,24 @@ type OwnershipUsingScopeFact =
       UsingScopeSharedRegionId: string
       UsingScopeHiddenReleaseObligation: string }
 
+[<RequireQualifiedAccess>]
+type OwnershipClosureEscapeStatus =
+    | Contained
+    | Escaped
+
+module OwnershipClosureEscapeStatus =
+    let toFactText status =
+        match status with
+        | OwnershipClosureEscapeStatus.Contained -> "contained"
+        | OwnershipClosureEscapeStatus.Escaped -> "escaped"
+
 type OwnershipClosureFact =
     { ClosureId: string
       ClosureName: string option
       ClosureCaptureBindingIds: string list
       ClosureCaptureNames: string list
       ClosureRegionEnvironment: string list
-      ClosureEscapeStatus: string
+      ClosureEscapeStatus: OwnershipClosureEscapeStatus
       ClosureOrigin: SourceLocation option }
 
 type OwnershipFactSet =
@@ -366,5 +470,5 @@ type OwnershipFactSet =
       OwnershipBorrowRegions: OwnershipBorrowRegionFact list
       OwnershipUsingScopes: OwnershipUsingScopeFact list
       OwnershipClosures: OwnershipClosureFact list
-      OwnershipDeferred: string list
+      OwnershipDeferred: OwnershipDeferredFact list
       OwnershipDiagnostics: DiagnosticCode list }

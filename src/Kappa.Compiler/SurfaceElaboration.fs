@@ -1,6 +1,8 @@
 namespace Kappa.Compiler
 
 open System
+open System.Security.Cryptography
+open System.Text
 
 // Elaborates resolved surface modules into KCore while preserving observability metadata.
 module SurfaceElaboration =
@@ -8,7 +10,8 @@ module SurfaceElaboration =
 
     type private TraitMemberInfo =
         { Name: string
-          Scheme: TypeScheme }
+          Scheme: TypeScheme
+          DefaultDefinition: LetDefinition option }
 
     type private TraitInfo =
         { ModuleName: string
@@ -20,6 +23,7 @@ module SurfaceElaboration =
         { ModuleName: string
           TraitName: string
           InstanceKey: string
+          Constraints: TraitConstraint list
           HeadTypes: TypeExpr list
           Members: Map<string, LetDefinition> }
 
@@ -35,13 +39,23 @@ module SurfaceElaboration =
           Scheme: TypeScheme
           ParameterLayouts: Parameter list option }
 
+    type private ProjectionInfo =
+        { ModuleName: string
+          Name: string
+          Binders: ProjectionBinder list
+          ReturnType: TypeExpr
+          Body: SurfaceProjectionBody option }
+
     type private ModuleSurfaceInfo =
         { TypeAliases: Map<string, TypeAliasInfo>
           BindingSchemes: Map<string, BindingSchemeInfo>
+          Constructors: Map<string, BindingSchemeInfo>
+          Projections: Map<string, ProjectionInfo>
           Traits: Map<string, TraitInfo>
           Instances: InstanceInfo list
           Imports: ImportSpec list
           ExportedTerms: Set<string>
+          ExportedConstructors: Set<string>
           ExportedTypes: Set<string>
           ExportedTraits: Set<string> }
 
@@ -49,6 +63,8 @@ module SurfaceElaboration =
         { CurrentModuleName: string
           VisibleTypeAliases: Map<string, TypeAliasInfo>
           VisibleBindings: Map<string, BindingSchemeInfo>
+          VisibleConstructors: Map<string, BindingSchemeInfo>
+          VisibleProjections: Map<string, ProjectionInfo>
           VisibleTraits: Map<string, TraitInfo>
           VisibleInstances: InstanceInfo list
           ConstrainedMembers: Map<string, string * string> }
@@ -57,15 +73,39 @@ module SurfaceElaboration =
         | ExplicitArgument of SurfaceExpression
         | ImplicitArgument of KCoreExpression
 
+    type private PreparedCallParameter =
+        { Layout: Parameter option
+          ParameterType: TypeExpr
+          AssignedArgument: PreparedCallArgument option }
+
     type private PreparedBindingCall =
         { InstantiatedScheme: TypeScheme
           ResultType: TypeExpr
+          Parameters: PreparedCallParameter list
           Arguments: PreparedCallArgument list }
+
+    type private SyntheticRecordLayout =
+        { TypeKey: string
+          TypeExpr: TypeExpr
+          TypeName: string
+          ConstructorName: string
+          TypeParameters: string list
+          Fields: RecordField list
+          Provenance: KCoreOrigin }
 
     let private tokensText (tokens: Token list) =
         tokens
         |> List.map (fun token -> token.Text)
         |> String.concat " "
+
+    let private tryParseTypeText (text: string) =
+        let source = SourceText.From("__surface_elaboration_type__.kp", text)
+        let lexResult = Lexer.tokenize source
+
+        if not (List.isEmpty lexResult.Diagnostics) then
+            None
+        else
+            TypeSignatures.parseType lexResult.Tokens
 
     let private significantTokens (tokens: Token list) =
         tokens
@@ -106,6 +146,21 @@ module SurfaceElaboration =
           ModuleName = moduleName
           DeclarationName = Some declarationName
           IntroductionKind = introductionKind }
+
+    let private stableSyntheticSuffix (value: string) =
+        let bytes = Encoding.UTF8.GetBytes(value)
+        let hash = SHA256.HashData(bytes)
+
+        hash
+        |> Seq.take 10
+        |> Seq.map (fun value -> value.ToString("x2"))
+        |> String.concat ""
+
+    let private syntheticRecordTypeName recordKey =
+        "__kappa_record_" + stableSyntheticSuffix recordKey
+
+    let private syntheticRecordConstructorName recordKey =
+        syntheticRecordTypeName recordKey
 
     let private syntheticLetSource name =
         LetDeclaration
@@ -159,6 +214,180 @@ module SurfaceElaboration =
             }
 
         loop pattern |> Seq.toList
+
+    let private isOmegaText text =
+        String.Equals(text, "\u03c9", StringComparison.Ordinal)
+        || String.Equals(text, "omega", StringComparison.Ordinal)
+
+    let private isQuantityVariableToken (token: Token) =
+        if not (Token.isName token) then
+            false
+        else
+            let text = SyntaxFacts.trimIdentifierQuotes token.Text
+            not (String.IsNullOrEmpty text) && not (Char.IsUpper text[0])
+
+    let private tryParseQuantityPrefix (tokens: Token list) =
+        match tokens with
+        | { Kind = IntegerLiteral; Text = "0" } :: rest ->
+            Some(QuantityZero, rest)
+        | { Kind = IntegerLiteral; Text = "1" } :: rest ->
+            Some(QuantityOne, rest)
+        | { Kind = Operator; Text = "&" } :: { Kind = LeftBracket } :: regionToken :: { Kind = RightBracket } :: rest
+            when Token.isName regionToken ->
+            Some(QuantityBorrow(Some(SyntaxFacts.trimIdentifierQuotes regionToken.Text)), rest)
+        | { Kind = Operator; Text = "&" } :: rest ->
+            Some(QuantityBorrow None, rest)
+        | { Kind = Operator; Text = "<=" } :: { Kind = IntegerLiteral; Text = "1" } :: rest ->
+            Some(QuantityAtMostOne, rest)
+        | { Kind = Operator; Text = ">=" } :: { Kind = IntegerLiteral; Text = "1" } :: rest ->
+            Some(QuantityAtLeastOne, rest)
+        | head :: rest when Token.isName head && isOmegaText head.Text ->
+            Some(QuantityOmega, rest)
+        | head :: rest when isQuantityVariableToken head ->
+            match rest with
+            | next :: _ when Token.isName next ->
+                Some(QuantityVariable(SyntaxFacts.trimIdentifierQuotes head.Text), rest)
+            | _ ->
+                None
+        | _ ->
+            None
+
+    let private stripDelimitedParameterTokens tokens =
+        match tokens with
+        | { Kind = LeftParen } :: rest when not (List.isEmpty rest) && (List.last rest).Kind = RightParen ->
+            Some(false, rest |> List.take (List.length rest - 1))
+        | { Kind = LeftBrace } :: rest when not (List.isEmpty rest) && (List.last rest).Kind = RightBrace ->
+            Some(true, rest |> List.take (List.length rest - 1))
+        | _ ->
+            None
+
+    let private tryParseSignatureParameterLayout (tokens: Token list) =
+        stripDelimitedParameterTokens tokens
+        |> Option.bind (fun (isImplicit, innerTokens) ->
+            let isInout, remainingTokens =
+                match innerTokens with
+                | head :: rest when Token.isKeyword Keyword.Inout head -> true, rest
+                | _ -> false, innerTokens
+
+            let quantity, bodyTokens =
+                if isInout then
+                    Some QuantityOne, remainingTokens
+                else
+                    match tryParseQuantityPrefix remainingTokens with
+                    | Some(parsedQuantity, rest) -> Some parsedQuantity, rest
+                    | None -> None, remainingTokens
+
+            match bodyTokens with
+            | nameToken :: { Kind = Colon } :: typeTokens when Token.isName nameToken && not (List.isEmpty typeTokens) ->
+                Some
+                    { Name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
+                      TypeTokens = Some typeTokens
+                      Quantity = quantity
+                      IsImplicit = isImplicit
+                      IsInout = isInout }
+            | _ ->
+                None)
+
+    let private bindingSignatureBodyTokens (tokens: Token list) =
+        let tokenArray = significantTokens tokens |> List.toArray
+        let mutable parenDepth = 0
+        let mutable braceDepth = 0
+        let mutable bracketDepth = 0
+        let mutable bodyStart = 0
+
+        for index = 0 to tokenArray.Length - 1 do
+            match tokenArray[index].Kind with
+            | LeftParen -> parenDepth <- parenDepth + 1
+            | RightParen -> parenDepth <- max 0 (parenDepth - 1)
+            | LeftBrace -> braceDepth <- braceDepth + 1
+            | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
+            | LeftBracket -> bracketDepth <- bracketDepth + 1
+            | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
+            | Operator when parenDepth = 0 && braceDepth = 0 && bracketDepth = 0 && String.Equals(tokenArray[index].Text, "=>", StringComparison.Ordinal) ->
+                bodyStart <- index + 1
+            | Equals when parenDepth = 0 && braceDepth = 0 && bracketDepth = 0 && index + 1 < tokenArray.Length ->
+                match tokenArray[index + 1] with
+                | { Kind = Operator; Text = ">" } ->
+                    bodyStart <- index + 2
+                | _ ->
+                    ()
+            | _ ->
+                ()
+
+        List.ofArray tokenArray[bodyStart..]
+
+    let private splitSignatureParameterTokens (tokens: Token list) =
+        let bodyTokens = bindingSignatureBodyTokens tokens
+        let tokenArray = bodyTokens |> List.toArray
+        let segments = ResizeArray<Token list>()
+        let mutable parenDepth = 0
+        let mutable braceDepth = 0
+        let mutable bracketDepth = 0
+        let mutable segmentStart = 0
+
+        for index = 0 to tokenArray.Length - 1 do
+            match tokenArray[index].Kind with
+            | LeftParen -> parenDepth <- parenDepth + 1
+            | RightParen -> parenDepth <- max 0 (parenDepth - 1)
+            | LeftBrace -> braceDepth <- braceDepth + 1
+            | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
+            | LeftBracket -> bracketDepth <- bracketDepth + 1
+            | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
+            | Arrow when parenDepth = 0 && braceDepth = 0 && bracketDepth = 0 ->
+                if index > segmentStart then
+                    segments.Add(List.ofArray tokenArray[segmentStart .. index - 1])
+
+                segmentStart <- index + 1
+            | _ ->
+                ()
+
+        segments |> Seq.toList
+
+    let private mergeParameterLayouts
+        (signatureLayouts: Parameter option list option)
+        (definitionLayouts: Parameter list option)
+        =
+        match signatureLayouts, definitionLayouts with
+        | Some signatureParameters, Some definitionParameters
+            when List.length signatureParameters = List.length definitionParameters ->
+            List.zip signatureParameters definitionParameters
+            |> List.map (fun (signatureParameter, definitionParameter) ->
+                match signatureParameter with
+                | Some signatureParameter ->
+                    { definitionParameter with
+                        Name = signatureParameter.Name
+                        TypeTokens = signatureParameter.TypeTokens |> Option.orElse definitionParameter.TypeTokens
+                        Quantity = signatureParameter.Quantity |> Option.orElse definitionParameter.Quantity
+                        IsImplicit = signatureParameter.IsImplicit
+                        IsInout = signatureParameter.IsInout }
+                | None ->
+                    definitionParameter)
+            |> Some
+        | Some signatureParameters, None when signatureParameters |> List.forall Option.isSome ->
+            signatureParameters |> List.choose id |> Some
+        | _ ->
+            definitionLayouts
+
+    let private tryResolveVisibleConstructorInfo
+        (environment: BindingLoweringEnvironment)
+        nameSegments
+        =
+        match List.rev nameSegments with
+        | [] ->
+            None
+        | constructorName :: reversedModuleSegments ->
+            environment.VisibleConstructors
+            |> Map.tryFind constructorName
+            |> Option.filter (fun constructorInfo ->
+                match reversedModuleSegments with
+                | [] ->
+                    true
+                | _ ->
+                    String.Equals(
+                        constructorInfo.ModuleName,
+                        SyntaxFacts.moduleNameToText (List.rev reversedModuleSegments),
+                        StringComparison.Ordinal
+                    ))
 
     let private unitType =
         TypeName([ "Unit" ], [])
@@ -214,58 +443,25 @@ module SurfaceElaboration =
 
                 memberName,
                 { Name = memberName
-                  Scheme = scheme })
+                  Scheme = scheme
+                  DefaultDefinition = memberDeclaration.DefaultDefinition })
         | _ ->
             None
 
-    let private splitLeadingTypeArgumentTokens argumentCount tokens =
-        let tokens = significantTokens tokens
+    let private tryParseInstanceHeader (declaration: InstanceDeclaration) =
+        declaration.FullHeaderTokens
+        |> TypeSignatures.parseScheme
+        |> Option.bind (fun scheme ->
+            match scheme.Body with
+            | TypeName(name, headTypes) ->
+                let traitName =
+                    match name with
+                    | [ singleName ] -> singleName
+                    | _ -> SyntaxFacts.moduleNameToText name
 
-        let takeAtom remaining =
-            match remaining with
-            | [] ->
-                [], []
-            | first :: rest when first.Kind = LeftParen ->
-                let mutable depth = 0
-                let mutable index = 0
-                let mutable keepReading = true
-                let tokenArray = remaining |> List.toArray
-
-                while keepReading && index < tokenArray.Length do
-                    match tokenArray[index].Kind with
-                    | LeftParen -> depth <- depth + 1
-                    | RightParen ->
-                        depth <- depth - 1
-
-                        if depth = 0 then
-                            keepReading <- false
-                    | _ -> ()
-
-                    index <- index + 1
-
-                List.ofArray tokenArray[0 .. index - 1], List.ofArray tokenArray[index ..]
-            | first :: rest ->
-                [ first ], rest
-
-        let rec loop remaining count groups =
-            if count <= 1 then
-                List.rev (remaining :: groups)
-            else
-                let group, rest = takeAtom remaining
-                loop rest (count - 1) (group :: groups)
-
-        loop tokens (max 1 argumentCount) []
-
-    let private tryParseInstanceHeadTypes argumentCount (declaration: InstanceDeclaration) =
-        let parsed =
-            declaration.HeaderTokens
-            |> splitLeadingTypeArgumentTokens argumentCount
-            |> List.map TypeSignatures.parseType
-
-        if parsed |> List.exists Option.isNone then
-            None
-        else
-            Some(parsed |> List.choose id)
+                Some(traitName, scheme.Constraints, headTypes)
+            | _ ->
+                None)
 
     let private tryParseTypeAliasInfo moduleName (declaration: TypeAlias) =
         if declaration.IsOpaque then
@@ -298,6 +494,29 @@ module SurfaceElaboration =
 
     let private itemImportsTraitName (item: ImportItem) =
         item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Trait
+
+    let private itemImportsConstructorName (item: ImportItem) =
+        item.Namespace = Some ImportNamespace.Constructor
+
+    let private tryParseConstructorScheme (dataDeclaration: DataDeclaration) (constructor: DataConstructor) =
+        let typeParameters = TypeSignatures.collectLeadingTypeParameters dataDeclaration.HeaderTokens
+        let resultType = TypeName([ dataDeclaration.Name ], typeParameters |> List.map TypeVariable)
+
+        let body =
+            constructor
+            |> TypeSignatures.constructorFieldTypes
+            |> List.rev
+            |> List.fold (fun state fieldType -> TypeArrow(QuantityOmega, fieldType, state)) resultType
+
+        Some
+            (constructor.Name,
+             { ModuleName = ""
+               Name = constructor.Name
+               Scheme =
+                { Forall = typeParameters
+                  Constraints = []
+                  Body = body }
+               ParameterLayouts = None })
 
     let private selectionImportsExportedName
         (exportedNames: Set<string>)
@@ -345,6 +564,13 @@ module SurfaceElaboration =
             frontendModule.Declarations
             |> List.choose (function
                 | SignatureDeclaration declaration ->
+                    let signatureParameterLayouts =
+                        declaration.TypeTokens
+                        |> splitSignatureParameterTokens
+                        |> function
+                            | [] -> None
+                            | parameterTokens -> Some(parameterTokens |> List.map tryParseSignatureParameterLayout)
+
                     TypeSignatures.parseScheme declaration.TypeTokens
                     |> Option.map (fun scheme ->
                         declaration.Name,
@@ -354,7 +580,8 @@ module SurfaceElaboration =
                           ParameterLayouts =
                             bindingDefinitions
                             |> Map.tryFind declaration.Name
-                            |> Option.map (fun definition -> definition.Parameters) })
+                            |> Option.map (fun definition -> definition.Parameters)
+                            |> mergeParameterLayouts signatureParameterLayouts })
                 | ExpectDeclarationNode (ExpectTermDeclaration declaration) ->
                     TypeSignatures.parseScheme declaration.TypeTokens
                     |> Option.map (fun scheme ->
@@ -363,6 +590,39 @@ module SurfaceElaboration =
                           Name = declaration.Name
                           Scheme = scheme
                           ParameterLayouts = None })
+                | _ ->
+                    None)
+            |> Map.ofList
+
+        let constructors =
+            frontendModule.Declarations
+            |> List.choose (function
+                | DataDeclarationNode dataDeclaration ->
+                    dataDeclaration.Constructors
+                    |> List.choose (fun constructor ->
+                        tryParseConstructorScheme dataDeclaration constructor
+                        |> Option.map (fun (name, info) ->
+                            name,
+                            { info with
+                                ModuleName = moduleName }))
+                    |> Some
+                | _ ->
+                    None)
+            |> List.concat
+            |> Map.ofList
+
+        let projections =
+            frontendModule.Declarations
+            |> List.choose (function
+                | ProjectionDeclarationNode declaration ->
+                    TypeSignatures.parseType declaration.ReturnTypeTokens
+                    |> Option.map (fun returnType ->
+                        declaration.Name,
+                        { ModuleName = moduleName
+                          Name = declaration.Name
+                          Binders = declaration.Binders
+                          ReturnType = returnType
+                          Body = declaration.Body })
                 | _ ->
                     None)
             |> Map.ofList
@@ -391,6 +651,16 @@ module SurfaceElaboration =
                     None)
             |> Set.ofList
 
+        let exportedConstructors =
+            frontendModule.Declarations
+            |> List.choose (function
+                | DataDeclarationNode declaration when isExportedVisibility privateByDefault declaration.Visibility ->
+                    Some(declaration.Constructors |> List.map (fun constructor -> constructor.Name))
+                | _ ->
+                    None)
+            |> List.concat
+            |> Set.ofList
+
         let exportedTraits =
             frontendModule.Declarations
             |> List.choose (function
@@ -406,8 +676,31 @@ module SurfaceElaboration =
                 | TraitDeclarationNode declaration ->
                     let members =
                         declaration.Members
-                        |> List.choose tryParseTraitMemberInfo
-                        |> Map.ofList
+                        |> List.fold (fun state memberDeclaration ->
+                            match tryParseTraitMemberInfo memberDeclaration with
+                            | Some(memberName, memberInfo) ->
+                                let mergedInfo =
+                                    match Map.tryFind memberName state with
+                                    | Some existingInfo ->
+                                        { memberInfo with
+                                            DefaultDefinition =
+                                                memberInfo.DefaultDefinition
+                                                |> Option.orElse existingInfo.DefaultDefinition }
+                                    | None ->
+                                        memberInfo
+
+                                Map.add memberName mergedInfo state
+                            | None ->
+                                match memberDeclaration.Name, memberDeclaration.DefaultDefinition with
+                                | Some memberName, Some defaultDefinition ->
+                                    state
+                                    |> Map.change memberName (function
+                                        | Some existingInfo ->
+                                            Some { existingInfo with DefaultDefinition = Some defaultDefinition }
+                                        | None ->
+                                            None)
+                                | _ ->
+                                    state) Map.empty
 
                     Some(
                         declaration.Name,
@@ -424,17 +717,12 @@ module SurfaceElaboration =
             frontendModule.Declarations
             |> List.choose (function
                 | InstanceDeclarationNode declaration ->
-                    let argumentCount =
-                        traits
-                        |> Map.tryFind declaration.TraitName
-                        |> Option.map (fun traitInfo -> traitInfo.TypeParameters.Length)
-                        |> Option.defaultValue 1
-
-                    tryParseInstanceHeadTypes argumentCount declaration
-                    |> Option.map (fun headTypes ->
+                    tryParseInstanceHeader declaration
+                    |> Option.map (fun (traitName, constraints, headTypes) ->
                         { ModuleName = moduleName
-                          TraitName = declaration.TraitName
+                          TraitName = traitName
                           InstanceKey = TraitRuntime.instanceKeyFromTokens declaration.HeaderTokens
+                          Constraints = constraints
                           HeadTypes = headTypes
                           Members =
                             declaration.Members
@@ -447,10 +735,13 @@ module SurfaceElaboration =
 
         { TypeAliases = typeAliases
           BindingSchemes = bindingSchemes
+          Constructors = constructors
+          Projections = projections
           Traits = traits
           Instances = instances
           Imports = frontendModule.Imports
           ExportedTerms = exportedTerms
+          ExportedConstructors = exportedConstructors
           ExportedTypes = exportedTypes
           ExportedTraits = exportedTraits }
 
@@ -474,7 +765,12 @@ module SurfaceElaboration =
                     surfaceIndex
                     |> Map.tryFind importedModuleName
                     |> Option.map (fun importedModule -> spec, importedModule))
-            |> List.distinctBy (fun (_, importedModule) -> importedModule.BindingSchemes.Keys |> Seq.toList, importedModule.Traits.Keys |> Seq.toList, importedModule.TypeAliases.Keys |> Seq.toList))
+            |> List.distinctBy (fun (_, importedModule) ->
+                importedModule.BindingSchemes.Keys |> Seq.toList,
+                importedModule.Constructors.Keys |> Seq.toList,
+                importedModule.Projections.Keys |> Seq.toList,
+                importedModule.Traits.Keys |> Seq.toList,
+                importedModule.TypeAliases.Keys |> Seq.toList))
         |> Option.defaultValue []
 
     let private mergeVisibleBindings (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
@@ -503,6 +799,52 @@ module SurfaceElaboration =
         preludeBindings
         |> Map.fold (fun state name info -> Map.add name info state) importedBindings
         |> fun state -> moduleBindings |> Map.fold (fun current name info -> Map.add name info current) state
+
+    let private mergeVisibleConstructors (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
+        let importedConstructors =
+            importedModuleInfos surfaceIndex moduleName
+            |> List.fold (fun state (spec, importedModule) ->
+                importedModule.Constructors
+                |> Map.fold (fun current name info ->
+                    if
+                        selectionImportsExportedName
+                            importedModule.ExportedConstructors
+                            itemImportsConstructorName
+                            spec.Selection
+                            name
+                    then
+                        Map.add name info current
+                    else
+                        current) state) Map.empty
+
+        let moduleConstructors =
+            surfaceIndex
+            |> Map.tryFind moduleName
+            |> Option.map (fun moduleInfo -> moduleInfo.Constructors)
+            |> Option.defaultValue Map.empty
+
+        moduleConstructors
+        |> Map.fold (fun state name info -> Map.add name info state) importedConstructors
+
+    let private mergeVisibleProjections (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
+        let importedProjections =
+            importedModuleInfos surfaceIndex moduleName
+            |> List.fold (fun state (spec, importedModule) ->
+                importedModule.Projections
+                |> Map.fold (fun current name info ->
+                    if selectionImportsExportedName importedModule.ExportedTerms itemImportsTermName spec.Selection name then
+                        Map.add name info current
+                    else
+                        current) state) Map.empty
+
+        let moduleProjections =
+            surfaceIndex
+            |> Map.tryFind moduleName
+            |> Option.map (fun moduleInfo -> moduleInfo.Projections)
+            |> Option.defaultValue Map.empty
+
+        moduleProjections
+        |> Map.fold (fun state name info -> Map.add name info state) importedProjections
 
     let private mergeVisibleTypeAliases (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
         let importedAliases =
@@ -610,6 +952,76 @@ module SurfaceElaboration =
 
         loop Set.empty
 
+    let private tryCanonicalRecordType
+        (aliases: Map<string, TypeAliasInfo>)
+        typeExpr
+        =
+        match normalizeTypeAliases aliases typeExpr with
+        | TypeRecord fields ->
+            Some(TypeRecord fields)
+        | _ ->
+            None
+
+    let rec private eraseSyntheticRecordTypeExpr typeExpr =
+        match typeExpr with
+        | TypeVariable name ->
+            TypeVariable name
+        | TypeName(name, arguments) ->
+            TypeName(name, arguments |> List.map eraseSyntheticRecordTypeExpr)
+        | TypeArrow(_, parameterType, resultType) ->
+            TypeArrow(QuantityOmega, eraseSyntheticRecordTypeExpr parameterType, eraseSyntheticRecordTypeExpr resultType)
+        | TypeEquality(left, _) ->
+            eraseSyntheticRecordTypeExpr left
+        | TypeCapture(inner, _) ->
+            eraseSyntheticRecordTypeExpr inner
+        | TypeRecord fields ->
+            fields
+            |> List.choose (fun field ->
+                if field.Quantity = QuantityZero then
+                    None
+                else
+                    Some
+                        { field with
+                            Quantity = QuantityOmega
+                            Type = eraseSyntheticRecordTypeExpr field.Type })
+            |> TypeRecord
+
+    let private ensureSyntheticRecordLayout
+        (moduleName: string)
+        (filePath: string)
+        (layouts: Map<string, SyntheticRecordLayout> ref)
+        recordType
+        =
+        let erasedRecordType = eraseSyntheticRecordTypeExpr recordType
+        let recordKey = TypeSignatures.toText erasedRecordType
+        let canonicalRecordType = tryParseTypeText recordKey |> Option.defaultValue erasedRecordType
+
+        match Map.tryFind recordKey layouts.Value with
+        | Some layout ->
+            layout
+        | None ->
+            let fields =
+                match canonicalRecordType with
+                | TypeRecord fields -> fields
+                | _ -> []
+
+            let typeName = syntheticRecordTypeName recordKey
+            let constructorName = syntheticRecordConstructorName recordKey
+            let provenance = syntheticOrigin filePath moduleName typeName "synthetic-record"
+            let typeParameters = TypeSignatures.collectFreeTypeVariables canonicalRecordType
+
+            let layout =
+                { TypeKey = recordKey
+                  TypeExpr = canonicalRecordType
+                  TypeName = typeName
+                  ConstructorName = constructorName
+                  TypeParameters = typeParameters
+                  Fields = fields
+                  Provenance = provenance }
+
+            layouts.Value <- Map.add recordKey layout layouts.Value
+            layout
+
     let private composeTypeSubstitution
         (existing: Map<string, TypeExpr>)
         (next: Map<string, TypeExpr>)
@@ -644,6 +1056,67 @@ module SurfaceElaboration =
         pairs
         |> List.map (fun (left, right) -> normalize left, normalize right)
         |> TypeSignatures.tryUnifyMany
+
+    let private extendPatternLocalTypes
+        (environment: BindingLoweringEnvironment)
+        (freshCounter: int ref)
+        (localTypes: Map<string, TypeExpr>)
+        expectedType
+        pattern
+        =
+        let rec loop locals expected currentPattern =
+            match currentPattern with
+            | WildcardPattern
+            | LiteralPattern _ ->
+                locals
+            | NamePattern name ->
+                match expected with
+                | Some expectedType -> Map.add name expectedType locals
+                | None -> locals
+            | AnonymousRecordPattern fields ->
+                match expected |> Option.bind (tryCanonicalRecordType environment.VisibleTypeAliases) with
+                | Some(TypeRecord recordFields) ->
+                    fields
+                    |> List.fold (fun state field ->
+                        let fieldType =
+                            recordFields
+                            |> List.tryFind (fun recordField -> String.Equals(recordField.Name, field.Name, StringComparison.Ordinal))
+                            |> Option.map (fun recordField -> recordField.Type)
+
+                        loop state fieldType field.Pattern) locals
+                | _ ->
+                    fields |> List.fold (fun state field -> loop state None field.Pattern) locals
+            | ConstructorPattern(nameSegments, arguments) ->
+                let argumentTypes =
+                    match expected, tryResolveVisibleConstructorInfo environment nameSegments with
+                    | Some expectedResultType, Some constructorInfo ->
+                        let instantiated = TypeSignatures.instantiate "t" freshCounter.Value constructorInfo.Scheme
+                        freshCounter.Value <- freshCounter.Value + instantiated.Forall.Length
+
+                        let parameterTypes, constructorResultType = TypeSignatures.schemeParts instantiated
+
+                        if List.length parameterTypes = List.length arguments then
+                            match tryUnifyVisibleTypes environment.VisibleTypeAliases [ constructorResultType, expectedResultType ] with
+                            | Some substitution ->
+                                parameterTypes
+                                |> List.map (TypeSignatures.applySubstitution substitution >> Some)
+                            | None ->
+                                List.replicate arguments.Length None
+                        else
+                            List.replicate arguments.Length None
+                    | _ ->
+                        List.replicate arguments.Length None
+
+                List.zip arguments argumentTypes
+                |> List.fold (fun state (argumentPattern, argumentType) -> loop state argumentType argumentPattern) locals
+            | OrPattern alternatives ->
+                match alternatives with
+                | first :: _ ->
+                    loop locals expected first
+                | [] ->
+                    locals
+
+        loop localTypes expectedType pattern
 
     let private unwrapInstantiatedCallType
         (environment: BindingLoweringEnvironment)
@@ -875,15 +1348,41 @@ module SurfaceElaboration =
         (environment: BindingLoweringEnvironment)
         (constraintInfo: TraitConstraint)
         =
-        environment.VisibleInstances
-        |> List.tryPick (fun instanceInfo ->
-            if not (String.Equals(instanceInfo.TraitName, constraintInfo.TraitName, StringComparison.Ordinal)) then
-                None
-            elif List.length instanceInfo.HeadTypes <> List.length constraintInfo.Arguments then
+        let normalizeConstraint (constraintInfo: TraitConstraint) =
+            let normalizedArguments =
+                constraintInfo.Arguments
+                |> List.map (normalizeTypeAliases environment.VisibleTypeAliases >> TypeSignatures.toText)
+                |> String.concat ","
+
+            $"{constraintInfo.TraitName}({normalizedArguments})"
+
+        let rec solve visited (goal: TraitConstraint) =
+            let goalKey = normalizeConstraint goal
+
+            if Set.contains goalKey visited then
                 None
             else
-                tryUnifyVisibleTypes environment.VisibleTypeAliases (List.zip instanceInfo.HeadTypes constraintInfo.Arguments)
-                |> Option.map (fun _ -> instanceInfo))
+                let visited = Set.add goalKey visited
+
+                environment.VisibleInstances
+                |> List.tryPick (fun instanceInfo ->
+                    if not (String.Equals(instanceInfo.TraitName, goal.TraitName, StringComparison.Ordinal)) then
+                        None
+                    elif List.length instanceInfo.HeadTypes <> List.length goal.Arguments then
+                        None
+                    else
+                        tryUnifyVisibleTypes environment.VisibleTypeAliases (List.zip instanceInfo.HeadTypes goal.Arguments)
+                        |> Option.bind (fun substitution ->
+                            let instantiatedPremises =
+                                instanceInfo.Constraints
+                                |> List.map (TypeSignatures.applyConstraintSubstitution substitution)
+
+                            if instantiatedPremises |> List.forall (solve visited >> Option.isSome) then
+                                Some instanceInfo
+                            else
+                                None))
+
+        solve Set.empty constraintInfo
 
     let private trySynthesizeImplicitArgument
         (environment: BindingLoweringEnvironment)
@@ -927,6 +1426,7 @@ module SurfaceElaboration =
                 |> Option.map (fun (instantiatedScheme, resultType) ->
                     { InstantiatedScheme = instantiatedScheme
                       ResultType = resultType
+                      Parameters = []
                       Arguments = arguments |> List.map ExplicitArgument })
         | Some parameterLayouts ->
             let parameterTypes, resultType = TypeSignatures.schemeParts instantiated
@@ -937,6 +1437,7 @@ module SurfaceElaboration =
                 let mutable remainingArguments = arguments
                 let mutable substitution = Map.empty<string, TypeExpr>
                 let preparedArguments = ResizeArray<PreparedCallArgument>()
+                let preparedParameters = ResizeArray<PreparedCallParameter>()
                 let mutable success = true
 
                 for parameterLayout, rawParameterType in List.zip parameterLayouts parameterTypes do
@@ -946,6 +1447,11 @@ module SurfaceElaboration =
                         match trySynthesizeImplicitArgument environment parameterType with
                         | Some implicitArgument ->
                             preparedArguments.Add(ImplicitArgument implicitArgument)
+                            preparedParameters.Add(
+                                { Layout = Some parameterLayout
+                                  ParameterType = parameterType
+                                  AssignedArgument = Some(ImplicitArgument implicitArgument) }
+                            )
                         | None ->
                             success <- false
                     elif isCompileTimeArgumentType environment.VisibleTypeAliases parameterType then
@@ -958,6 +1464,11 @@ module SurfaceElaboration =
                                     composeTypeSubstitution
                                         substitution
                                         (Map.ofList [ parameterLayout.Name, explicitTypeArgument ])
+                                preparedParameters.Add(
+                                    { Layout = Some parameterLayout
+                                      ParameterType = parameterType
+                                      AssignedArgument = None }
+                                )
                             | None ->
                                 success <- false
                         | [] ->
@@ -970,6 +1481,11 @@ module SurfaceElaboration =
                                 match tryUnifyVisibleTypes environment.VisibleTypeAliases [ parameterType, argumentType ] with
                                 | Some inferredSubstitution ->
                                     preparedArguments.Add(ExplicitArgument nextArgument)
+                                    preparedParameters.Add(
+                                        { Layout = Some parameterLayout
+                                          ParameterType = parameterType
+                                          AssignedArgument = Some(ExplicitArgument nextArgument) }
+                                    )
                                     remainingArguments <- rest
                                     substitution <- composeTypeSubstitution substitution inferredSubstitution
                                 | None ->
@@ -986,9 +1502,56 @@ module SurfaceElaboration =
                     Some
                         { InstantiatedScheme = instantiatedScheme
                           ResultType = appliedResultType
+                          Parameters = List.ofSeq preparedParameters
                           Arguments = List.ofSeq preparedArguments }
                 else
                     None
+
+    let private tryPrepareVisibleTraitMemberCall
+        (environment: BindingLoweringEnvironment)
+        (freshCounter: int ref)
+        memberName
+        (inferArgumentType: SurfaceExpression -> TypeExpr option)
+        (arguments: SurfaceExpression list)
+        =
+        let candidates =
+            environment.VisibleTraits
+            |> Map.toList
+            |> List.choose (fun (_, traitInfo) ->
+                traitInfo.Members
+                |> Map.tryFind memberName
+                |> Option.bind (fun memberInfo ->
+                    let candidateCounter = ref freshCounter.Value
+
+                    let overloadedScheme =
+                        { memberInfo.Scheme with
+                            Constraints =
+                                { TraitName = traitInfo.Name
+                                  Arguments = traitInfo.TypeParameters |> List.map TypeVariable }
+                                :: memberInfo.Scheme.Constraints }
+
+                    let bindingInfo =
+                        { ModuleName = traitInfo.ModuleName
+                          Name = memberName
+                          Scheme = overloadedScheme
+                          ParameterLayouts = None }
+
+                    tryPrepareVisibleBindingCall environment candidateCounter bindingInfo inferArgumentType arguments
+                    |> Option.bind (fun preparedCall ->
+                        match preparedCall.InstantiatedScheme.Constraints with
+                        | owningConstraint :: [] when String.Equals(owningConstraint.TraitName, traitInfo.Name, StringComparison.Ordinal) ->
+                            resolveConstraintInstance environment owningConstraint
+                            |> Option.map (fun instanceInfo ->
+                                traitInfo, memberInfo, preparedCall, instanceInfo, candidateCounter.Value)
+                        | _ ->
+                            None)))
+
+        match candidates with
+        | [ traitInfo, memberInfo, preparedCall, instanceInfo, nextFreshValue ] ->
+            freshCounter.Value <- nextFreshValue
+            Some(traitInfo, memberInfo, preparedCall, instanceInfo)
+        | _ ->
+            None
 
 
     let rec private inferValidationExpressionType
@@ -1021,6 +1584,20 @@ module SurfaceElaboration =
                         |> Option.orElseWith (fun () -> instantiateVisibleBindingResultType environment freshCounter root)
                     else
                         instantiateVisibleBindingResultType environment freshCounter root))
+            |> Option.orElseWith (fun () ->
+                environment.VisibleConstructors
+                |> Map.tryFind root
+                |> Option.bind (fun constructorInfo ->
+                    if List.isEmpty path then
+                        tryPrepareVisibleBindingCall
+                            environment
+                            freshCounter
+                            constructorInfo
+                            (inferValidationExpressionType environment freshCounter localTypes)
+                            []
+                        |> Option.map (fun preparedCall -> preparedCall.ResultType)
+                    else
+                        None))
             |> Option.bind (fun rootType -> tryProjectVisibleRecordType environment.VisibleTypeAliases rootType path)
         | Name [] ->
             None
@@ -1061,9 +1638,16 @@ module SurfaceElaboration =
                 Some trueType
             | _ ->
                 None
-        | Match(_, cases) ->
+        | Match(scrutinee, cases) ->
+            let scrutineeType =
+                inferValidationExpressionType environment freshCounter localTypes scrutinee
+
             cases
-            |> List.choose (fun caseClause -> inferValidationExpressionType environment freshCounter localTypes caseClause.Body)
+            |> List.choose (fun caseClause ->
+                let caseLocals =
+                    extendPatternLocalTypes environment freshCounter localTypes scrutineeType caseClause.Pattern
+
+                inferValidationExpressionType environment freshCounter caseLocals caseClause.Body)
             |> function
                 | first :: rest when rest |> List.forall ((=) first) -> Some first
                 | _ -> None
@@ -1084,6 +1668,8 @@ module SurfaceElaboration =
                 |> Some
             else
                 None
+        | Seal(value, _) ->
+            inferValidationExpressionType environment freshCounter localTypes value
         | RecordUpdate(receiver, _) ->
             inferValidationExpressionType environment freshCounter localTypes receiver
         | SafeNavigation(receiver, navigation) ->
@@ -1120,6 +1706,25 @@ module SurfaceElaboration =
                     (inferValidationExpressionType environment freshCounter localTypes)
                     arguments
                 |> Option.map (fun preparedCall -> preparedCall.ResultType))
+            |> Option.orElseWith (fun () ->
+                environment.VisibleConstructors
+                |> Map.tryFind calleeName
+                |> Option.bind (fun constructorInfo ->
+                    tryPrepareVisibleBindingCall
+                        environment
+                        freshCounter
+                        constructorInfo
+                        (inferValidationExpressionType environment freshCounter localTypes)
+                        arguments
+                    |> Option.map (fun preparedCall -> preparedCall.ResultType)))
+            |> Option.orElseWith (fun () ->
+                tryPrepareVisibleTraitMemberCall
+                    environment
+                    freshCounter
+                    calleeName
+                    (inferValidationExpressionType environment freshCounter localTypes)
+                    arguments
+                |> Option.map (fun (_, _, preparedCall, _) -> preparedCall.ResultType))
         | Apply _ ->
             None
         | Unary("not", _) ->
@@ -1173,11 +1778,6 @@ module SurfaceElaboration =
         (localTypes: Map<string, TypeExpr>)
         statements
         =
-        let bindPatternName (binding: SurfaceBindPattern) =
-            match binding.Pattern with
-            | NamePattern name -> Some name
-            | _ -> None
-
         match statements with
         | [] ->
             Some unitType
@@ -1188,23 +1788,48 @@ module SurfaceElaboration =
             inferValidationDoResultType environment freshCounter localTypes rest
         | DoLet(binding, expression) :: rest ->
             let nextLocals =
-                match bindPatternName binding, inferValidationExpressionType environment freshCounter localTypes expression with
-                | Some bindingName, Some valueType -> Map.add bindingName valueType localTypes
-                | _ -> localTypes
+                inferValidationExpressionType environment freshCounter localTypes expression
+                |> Option.map (fun valueType ->
+                    extendPatternLocalTypes environment freshCounter localTypes (Some valueType) binding.Pattern)
+                |> Option.defaultValue localTypes
+
+            inferValidationDoResultType environment freshCounter nextLocals rest
+        | DoLetQuestion(binding, expression, failure) :: rest ->
+            let nextLocals =
+                inferValidationExpressionType environment freshCounter localTypes expression
+                |> Option.map (fun valueType ->
+                    extendPatternLocalTypes environment freshCounter localTypes (Some valueType) binding.Pattern)
+                |> Option.defaultValue localTypes
+
+            failure
+            |> Option.iter (fun failure ->
+                inferValidationDoResultType environment freshCounter localTypes failure.Body |> ignore)
 
             inferValidationDoResultType environment freshCounter nextLocals rest
         | DoBind(binding, expression) :: rest ->
             let nextLocals =
-                match bindPatternName binding, inferValidationExpressionType environment freshCounter localTypes expression with
-                | Some bindingName, Some valueType -> Map.add bindingName (unwrapIoType valueType) localTypes
-                | _ -> localTypes
+                inferValidationExpressionType environment freshCounter localTypes expression
+                |> Option.map (fun valueType ->
+                    extendPatternLocalTypes
+                        environment
+                        freshCounter
+                        localTypes
+                        (Some(unwrapIoType valueType))
+                        binding.Pattern)
+                |> Option.defaultValue localTypes
 
             inferValidationDoResultType environment freshCounter nextLocals rest
-        | DoUsing(pattern, expression) :: rest ->
+        | DoUsing(binding, expression) :: rest ->
             let nextLocals =
-                match pattern, inferValidationExpressionType environment freshCounter localTypes expression with
-                | NamePattern bindingName, Some valueType -> Map.add bindingName (unwrapIoType valueType) localTypes
-                | _ -> localTypes
+                inferValidationExpressionType environment freshCounter localTypes expression
+                |> Option.map (fun valueType ->
+                    extendPatternLocalTypes
+                        environment
+                        freshCounter
+                        localTypes
+                        (Some(unwrapIoType valueType))
+                        binding.Pattern)
+                |> Option.defaultValue localTypes
 
             inferValidationDoResultType environment freshCounter nextLocals rest
         | DoVar(bindingName, expression) :: rest ->
@@ -1216,8 +1841,12 @@ module SurfaceElaboration =
             inferValidationDoResultType environment freshCounter nextLocals rest
         | DoAssign _ :: rest ->
             inferValidationDoResultType environment freshCounter localTypes rest
+        | DoIf(_, _, _) :: rest ->
+            inferValidationDoResultType environment freshCounter localTypes rest
         | DoWhile _ :: rest ->
             inferValidationDoResultType environment freshCounter localTypes rest
+        | DoReturn expression :: _ ->
+            inferValidationExpressionType environment freshCounter localTypes expression
 
     let private validateBuiltInExpressionsForBinding
         (environment: BindingLoweringEnvironment)
@@ -1285,6 +1914,8 @@ module SurfaceElaboration =
                 recurse scrutinee @ caseDiagnostics
             | RecordLiteral fields ->
                 fields |> List.collect (fun field -> recurse field.Value)
+            | Seal(value, _) ->
+                recurse value
             | RecordUpdate(receiver, fields) ->
                 recurse receiver @ (fields |> List.collect (fun field -> recurse field.Value))
             | SafeNavigation(receiver, navigation) ->
@@ -1368,9 +1999,26 @@ module SurfaceElaboration =
                             locals
 
                     validateExpression locals expression @ validateDoStatements nextLocals rest
-                | DoUsing(pattern, expression) ->
+                | DoLetQuestion(binding, expression, failure) ->
                     let nextLocals =
-                        match pattern, inferValidationExpressionType environment freshCounter locals expression with
+                        match inferValidationExpressionType environment freshCounter locals expression with
+                        | Some valueType ->
+                            collectPatternNames binding.Pattern
+                            |> List.fold (fun state name -> Map.add name valueType state) locals
+                        | None ->
+                            locals
+
+                    let failureDiagnostics =
+                        match failure with
+                        | Some failure -> validateDoStatements locals failure.Body
+                        | None -> []
+
+                    validateExpression locals expression
+                    @ failureDiagnostics
+                    @ validateDoStatements nextLocals rest
+                | DoUsing(binding, expression) ->
+                    let nextLocals =
+                        match binding.Pattern, inferValidationExpressionType environment freshCounter locals expression with
                         | NamePattern bindingName, Some valueType -> Map.add bindingName (unwrapIoType valueType) locals
                         | _ -> locals
 
@@ -1385,10 +2033,17 @@ module SurfaceElaboration =
                 | DoAssign(_, expression)
                 | DoExpression expression ->
                     validateExpression locals expression @ validateDoStatements locals rest
+                | DoIf(condition, whenTrue, whenFalse) ->
+                    validateExpression locals condition
+                    @ validateDoStatements locals whenTrue
+                    @ validateDoStatements locals whenFalse
+                    @ validateDoStatements locals rest
                 | DoWhile(condition, body) ->
                     validateExpression locals condition
                     @ validateDoStatements locals body
                     @ validateDoStatements locals rest
+                | DoReturn expression ->
+                    validateExpression locals expression
 
         match definition.Body with
         | Some body -> validateExpression localTypes body
@@ -1405,6 +2060,8 @@ module SurfaceElaboration =
                 { CurrentModuleName = moduleName
                   VisibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleName
                   VisibleBindings = mergeVisibleBindings surfaceIndex moduleName
+                  VisibleConstructors = mergeVisibleConstructors surfaceIndex moduleName
+                  VisibleProjections = mergeVisibleProjections surfaceIndex moduleName
                   VisibleTraits = mergeVisibleTraits surfaceIndex moduleName
                   VisibleInstances = visibleInstances surfaceIndex moduleName
                   ConstrainedMembers = Map.empty }
@@ -1443,6 +2100,7 @@ module SurfaceElaboration =
 
     let private lowerBindingBody
         (environment: BindingLoweringEnvironment)
+        (recordLayouts: Map<string, SyntheticRecordLayout> ref)
         (scheme: TypeScheme option)
         (parameters: Parameter list)
         (body: SurfaceExpression)
@@ -1506,6 +2164,20 @@ module SurfaceElaboration =
                             |> Option.orElseWith (fun () -> instantiateVisibleBindingResultType environment freshCounter root)
                         else
                             None))
+                |> Option.orElseWith (fun () ->
+                    environment.VisibleConstructors
+                    |> Map.tryFind root
+                    |> Option.bind (fun constructorInfo ->
+                        if List.isEmpty path then
+                            tryPrepareVisibleBindingCall
+                                environment
+                                freshCounter
+                                constructorInfo
+                                (inferExpressionType localTypes)
+                                []
+                            |> Option.map (fun preparedCall -> preparedCall.ResultType)
+                        else
+                            None))
                 |> Option.bind (fun rootType -> tryProjectVisibleRecordType environment.VisibleTypeAliases rootType path)
             | Name [] ->
                 None
@@ -1542,9 +2214,15 @@ module SurfaceElaboration =
                     Some trueType
                 | _ ->
                     None
-            | Match(_, cases) ->
+            | Match(scrutinee, cases) ->
+                let scrutineeType = inferExpressionType localTypes scrutinee
+
                 cases
-                |> List.choose (fun caseClause -> inferExpressionType localTypes caseClause.Body)
+                |> List.choose (fun caseClause ->
+                    let caseLocals =
+                        extendPatternLocalTypes environment freshCounter localTypes scrutineeType caseClause.Pattern
+
+                    inferExpressionType caseLocals caseClause.Body)
                 |> function
                     | first :: rest when rest |> List.forall ((=) first) -> Some first
                     | _ -> None
@@ -1565,6 +2243,8 @@ module SurfaceElaboration =
                     |> Some
                 else
                     None
+            | Seal(value, _) ->
+                inferExpressionType localTypes value
             | RecordUpdate(receiver, _) ->
                 inferExpressionType localTypes receiver
             | SafeNavigation(receiver, navigation) ->
@@ -1600,6 +2280,30 @@ module SurfaceElaboration =
                         (inferExpressionType localTypes)
                         arguments
                     |> Option.map (fun preparedCall -> preparedCall.ResultType))
+                |> Option.orElseWith (fun () ->
+                    environment.VisibleConstructors
+                    |> Map.tryFind calleeName
+                    |> Option.bind (fun constructorInfo ->
+                        tryPrepareVisibleBindingCall
+                            environment
+                            freshCounter
+                            constructorInfo
+                            (inferExpressionType localTypes)
+                            arguments
+                        |> Option.map (fun preparedCall -> preparedCall.ResultType)))
+                |> Option.orElseWith (fun () ->
+                    tryPrepareVisibleTraitMemberCall
+                        environment
+                        freshCounter
+                        calleeName
+                        (inferExpressionType localTypes)
+                        arguments
+                    |> Option.map (fun (_, _, preparedCall, _) -> preparedCall.ResultType))
+                |> Option.orElseWith (fun () ->
+                    environment.VisibleProjections
+                    |> Map.tryFind calleeName
+                    |> Option.bind (fun projectionInfo ->
+                        tryInferProjectionCallResultType localTypes projectionInfo arguments))
             | Apply _ ->
                 None
             | Unary("not", _) ->
@@ -1642,12 +2346,61 @@ module SurfaceElaboration =
             | PrefixedString _ ->
                 Some stringType
 
-        and inferDoResultType localTypes statements =
-            let bindPatternName (binding: SurfaceBindPattern) =
-                match binding.Pattern with
-                | NamePattern name -> Some name
-                | _ -> None
+        and tryInferProjectionCallResultType localTypes (projectionInfo: ProjectionInfo) arguments =
+            if List.length projectionInfo.Binders <> List.length arguments then
+                None
+            else
+                let tryUnifyExpected expectedType actualType substitution =
+                    let expectedType = TypeSignatures.applySubstitution substitution expectedType
 
+                    tryUnifyVisibleTypes environment.VisibleTypeAliases [ expectedType, actualType ]
+                    |> Option.map (composeTypeSubstitution substitution)
+                    |> Option.orElseWith (fun () ->
+                        if
+                            TypeSignatures.definitionallyEqual
+                                (normalizeTypeAliases environment.VisibleTypeAliases expectedType)
+                                (normalizeTypeAliases environment.VisibleTypeAliases actualType)
+                        then
+                            Some substitution
+                        else
+                            None)
+
+                let rec tryInferPlaceExpressionType expression =
+                    match expression with
+                    | Name(root :: path) ->
+                        localTypes
+                        |> Map.tryFind root
+                        |> Option.bind (fun rootType ->
+                            tryProjectVisibleRecordType environment.VisibleTypeAliases rootType path)
+                    | Apply(Name [ projectionName ], projectionArguments) ->
+                        environment.VisibleProjections
+                        |> Map.tryFind projectionName
+                        |> Option.bind (fun nestedProjectionInfo ->
+                            tryInferProjectionCallResultType localTypes nestedProjectionInfo projectionArguments)
+                    | _ ->
+                        None
+
+                (Some Map.empty, List.zip projectionInfo.Binders arguments)
+                ||> List.fold (fun current (binder, argument) ->
+                    current
+                    |> Option.bind (fun substitution ->
+                        match binder with
+                        | ProjectionPlaceBinder placeBinder ->
+                            match TypeSignatures.parseType placeBinder.TypeTokens, tryInferPlaceExpressionType argument with
+                            | Some expectedType, Some actualType ->
+                                tryUnifyExpected expectedType actualType substitution
+                            | _ ->
+                                None
+                        | ProjectionValueBinder valueBinder ->
+                            match tryParseParameterType valueBinder, inferExpressionType localTypes argument with
+                            | Some expectedType, Some actualType ->
+                                tryUnifyExpected expectedType actualType substitution
+                            | _ ->
+                                None))
+                |> Option.map (fun substitution ->
+                    TypeSignatures.applySubstitution substitution projectionInfo.ReturnType)
+
+        and inferDoResultType localTypes statements =
             match statements with
             | [] ->
                 Some unitType
@@ -1657,23 +2410,47 @@ module SurfaceElaboration =
                 inferDoResultType localTypes rest
             | DoLet(binding, expression) :: rest ->
                 let nextLocals =
-                    match bindPatternName binding, inferExpressionType localTypes expression with
-                    | Some bindingName, Some valueType -> Map.add bindingName valueType localTypes
-                    | _ -> localTypes
+                    inferExpressionType localTypes expression
+                    |> Option.map (fun valueType ->
+                        extendPatternLocalTypes environment freshCounter localTypes (Some valueType) binding.Pattern)
+                    |> Option.defaultValue localTypes
+
+                inferDoResultType nextLocals rest
+            | DoLetQuestion(binding, expression, failure) :: rest ->
+                let nextLocals =
+                    inferExpressionType localTypes expression
+                    |> Option.map (fun valueType ->
+                        extendPatternLocalTypes environment freshCounter localTypes (Some valueType) binding.Pattern)
+                    |> Option.defaultValue localTypes
+
+                failure
+                |> Option.iter (fun failure -> inferDoResultType localTypes failure.Body |> ignore)
 
                 inferDoResultType nextLocals rest
             | DoBind(binding, expression) :: rest ->
                 let nextLocals =
-                    match bindPatternName binding, inferExpressionType localTypes expression with
-                    | Some bindingName, Some valueType -> Map.add bindingName (unwrapIoType valueType) localTypes
-                    | _ -> localTypes
+                    inferExpressionType localTypes expression
+                    |> Option.map (fun valueType ->
+                        extendPatternLocalTypes
+                            environment
+                            freshCounter
+                            localTypes
+                            (Some(unwrapIoType valueType))
+                            binding.Pattern)
+                    |> Option.defaultValue localTypes
 
                 inferDoResultType nextLocals rest
-            | DoUsing(pattern, expression) :: rest ->
+            | DoUsing(binding, expression) :: rest ->
                 let nextLocals =
-                    match pattern, inferExpressionType localTypes expression with
-                    | NamePattern bindingName, Some valueType -> Map.add bindingName (unwrapIoType valueType) localTypes
-                    | _ -> localTypes
+                    inferExpressionType localTypes expression
+                    |> Option.map (fun valueType ->
+                        extendPatternLocalTypes
+                            environment
+                            freshCounter
+                            localTypes
+                            (Some(unwrapIoType valueType))
+                            binding.Pattern)
+                    |> Option.defaultValue localTypes
 
                 inferDoResultType nextLocals rest
             | DoVar(bindingName, expression) :: rest ->
@@ -1685,8 +2462,12 @@ module SurfaceElaboration =
                 inferDoResultType nextLocals rest
             | DoAssign _ :: rest ->
                 inferDoResultType localTypes rest
+            | DoIf(_, _, _) :: rest ->
+                inferDoResultType localTypes rest
             | DoWhile _ :: rest ->
                 inferDoResultType localTypes rest
+            | DoReturn expression :: _ ->
+                inferExpressionType localTypes expression
 
         and buildUsingReleaseAction localTypes expression hiddenOwnedName =
             let defaultRelease =
@@ -1717,6 +2498,523 @@ module SurfaceElaboration =
             | _ ->
                 defaultRelease
 
+        and buildPlaceWritebackExpression rootName path replacement =
+            let rec loop currentSegments remainingPath =
+                match remainingPath with
+                | [] ->
+                    replacement
+                | fieldName :: rest ->
+                    let nestedValue = loop (currentSegments @ [ fieldName ]) rest
+
+                    RecordUpdate(
+                        Name currentSegments,
+                        [
+                            { Name = fieldName
+                              IsImplicit = false
+                              Value = nestedValue }
+                        ]
+                    )
+
+            loop [ rootName ] path
+
+        and tryExpressionPlace expression =
+            match expression with
+            | Name(root :: path) ->
+                Some(root, path)
+            | _ ->
+                None
+
+        and unwrapRefLikeType typeExpr =
+            match normalizeTypeAliases environment.VisibleTypeAliases typeExpr with
+            | TypeName([ "Ref" ], [ inner ]) -> Some inner
+            | _ -> None
+
+        and substituteProjectionExpression
+            (placeArguments: Map<string, string * string list>)
+            (valueArguments: Map<string, SurfaceExpression>)
+            expression
+            =
+            let rec loop current =
+                match current with
+                | Name(root :: path) ->
+                    match Map.tryFind root placeArguments with
+                    | Some(actualRoot, actualPath) ->
+                        Name(actualRoot :: (actualPath @ path))
+                    | None ->
+                        match Map.tryFind root valueArguments with
+                        | Some replacement when List.isEmpty path ->
+                            replacement
+                        | Some(Name replacementSegments) ->
+                            Name(replacementSegments @ path)
+                        | _ ->
+                            current
+                | Name [] ->
+                    current
+                | LocalLet(binding, value, body) ->
+                    LocalLet(binding, loop value, loop body)
+                | Lambda(parameters, body) ->
+                    Lambda(parameters, loop body)
+                | IfThenElse(condition, whenTrue, whenFalse) ->
+                    IfThenElse(loop condition, loop whenTrue, loop whenFalse)
+                | Match(scrutinee, cases) ->
+                    Match(
+                        loop scrutinee,
+                        cases
+                        |> List.map (fun caseClause ->
+                            { caseClause with
+                                Guard = caseClause.Guard |> Option.map loop
+                                Body = loop caseClause.Body })
+                    )
+                | RecordLiteral fields ->
+                    RecordLiteral(fields |> List.map (fun field -> { field with Value = loop field.Value }))
+                | Seal(value, ascriptionTokens) ->
+                    Seal(loop value, ascriptionTokens)
+                | RecordUpdate(receiver, fields) ->
+                    RecordUpdate(receiver |> loop, fields |> List.map (fun field -> { field with Value = loop field.Value }))
+                | SafeNavigation(receiver, navigation) ->
+                    SafeNavigation(receiver |> loop, { navigation with Arguments = navigation.Arguments |> List.map loop })
+                | TagTest(receiver, constructorName) ->
+                    TagTest(loop receiver, constructorName)
+                | Do statements ->
+                    let rec substituteDoStatement statement =
+                        match statement with
+                        | DoLet(binding, value) -> DoLet(binding, loop value)
+                        | DoLetQuestion(binding, value, failure) ->
+                            DoLetQuestion(
+                                binding,
+                                loop value,
+                                failure
+                                |> Option.map (fun failure ->
+                                    { failure with
+                                        Body = failure.Body |> List.map substituteDoStatement })
+                            )
+                        | DoBind(binding, value) -> DoBind(binding, loop value)
+                        | DoVar(name, value) -> DoVar(name, loop value)
+                        | DoAssign(name, value) -> DoAssign(name, loop value)
+                        | DoUsing(binding, value) -> DoUsing(binding, loop value)
+                        | DoIf(condition, whenTrue, whenFalse) ->
+                            DoIf(
+                                loop condition,
+                                whenTrue |> List.map substituteDoStatement,
+                                whenFalse |> List.map substituteDoStatement
+                            )
+                        | DoWhile(condition, body) ->
+                            DoWhile(loop condition, body |> List.map substituteDoStatement)
+                        | DoReturn value -> DoReturn(loop value)
+                        | DoExpression value -> DoExpression(loop value)
+
+                    Do(statements |> List.map substituteDoStatement)
+                | MonadicSplice inner ->
+                    MonadicSplice(loop inner)
+                | Apply(callee, arguments) ->
+                    Apply(loop callee, arguments |> List.map loop)
+                | InoutArgument inner ->
+                    InoutArgument(loop inner)
+                | Unary(operatorName, operand) ->
+                    Unary(operatorName, loop operand)
+                | Binary(left, operatorName, right) ->
+                    Binary(loop left, operatorName, loop right)
+                | Elvis(left, right) ->
+                    Elvis(loop left, loop right)
+                | PrefixedString(prefix, parts) ->
+                    PrefixedString(
+                        prefix,
+                        parts
+                        |> List.map (function
+                            | StringText text -> StringText text
+                            | StringInterpolation inner -> StringInterpolation(loop inner))
+                    )
+                | Literal _ ->
+                    current
+
+            loop expression
+
+        and tryProjectionCallExpression expression =
+            match expression with
+            | Apply(Name [ projectionName ], projectionArguments) ->
+                environment.VisibleProjections
+                |> Map.tryFind projectionName
+                |> Option.map (fun projectionInfo -> projectionInfo, projectionArguments)
+            | _ ->
+                None
+
+        and tryProjectionArgumentBindings (projectionInfo: ProjectionInfo) projectionArguments =
+            if List.length projectionInfo.Binders <> List.length projectionArguments then
+                None
+            else
+                (Some(Map.empty, Map.empty), List.zip projectionInfo.Binders projectionArguments)
+                ||> List.fold (fun state (binder, argument) ->
+                    state
+                    |> Option.bind (fun (placeArguments, valueArguments) ->
+                        match binder with
+                        | ProjectionPlaceBinder placeBinder ->
+                            tryExpressionPlace argument
+                            |> Option.map (fun place ->
+                                Map.add placeBinder.Name place placeArguments, valueArguments)
+                        | ProjectionValueBinder valueBinder ->
+                            Some(placeArguments, Map.add valueBinder.Name argument valueArguments)))
+
+        and lowerPatternBinding
+            (localTypes: Map<string, TypeExpr>)
+            valueType
+            (binding: SurfaceBindPattern)
+            valueExpression
+            continueWith
+            =
+            let nextLocals =
+                extendPatternLocalTypes environment freshCounter localTypes valueType binding.Pattern
+
+            let loweredBody = continueWith nextLocals
+
+            match binding.Pattern with
+            | NamePattern bindingName ->
+                KCoreLet(bindingName, valueExpression, loweredBody)
+            | _ ->
+                let tempBindingName = freshSyntheticName "__kappa_bind_"
+
+                KCoreLet(
+                    tempBindingName,
+                    valueExpression,
+                    KCoreMatch(
+                        KCoreName [ tempBindingName ],
+                        [
+                            { Pattern = lowerPattern nextLocals valueType binding.Pattern
+                              Guard = None
+                              Body = loweredBody }
+                        ]
+                    )
+                )
+
+        and tryLowerProjectionInoutDoSite
+            scopeLabel
+            (localTypes: Map<string, TypeExpr>)
+            (binding: SurfaceBindPattern option)
+            calleeName
+            explicitParameters
+            targetExplicitIndex
+            (projectionInfo: ProjectionInfo)
+            projectionArguments
+            rest
+            isMonadicSite
+            =
+            tryProjectionArgumentBindings projectionInfo projectionArguments
+            |> Option.bind (fun (placeArguments, valueArguments) ->
+                let substitute =
+                    substituteProjectionExpression placeArguments valueArguments
+
+                let rec lowerProjectionBody bodyLocals body =
+                    match body with
+                    | ProjectionYield yielded ->
+                        let yieldedPlace = substitute yielded
+
+                        match tryExpressionPlace yieldedPlace with
+                        | Some _ ->
+                            let rewrittenArguments =
+                                explicitParameters
+                                |> List.map (fun (explicitIndex, _, _, argument) ->
+                                    if explicitIndex = targetExplicitIndex then
+                                        InoutArgument yieldedPlace
+                                    else
+                                        argument)
+
+                            tryLowerInoutDoSite
+                                scopeLabel
+                                bodyLocals
+                                binding
+                                (Apply(Name [ calleeName ], rewrittenArguments))
+                                rest
+                                isMonadicSite
+                        | None ->
+                            None
+                    | ProjectionIfThenElse(condition, whenTrue, whenFalse) ->
+                        match lowerProjectionBody bodyLocals whenTrue, lowerProjectionBody bodyLocals whenFalse with
+                        | Some loweredTrue, Some loweredFalse ->
+                            Some(KCoreIfThenElse(lowerExpression bodyLocals (substitute condition), loweredTrue, loweredFalse))
+                        | _ ->
+                            None
+                    | ProjectionMatch(scrutinee, cases) ->
+                        let loweredScrutinee = substitute scrutinee
+                        let scrutineeType = inferExpressionType bodyLocals loweredScrutinee
+
+                        let loweredCases : KCoreMatchCase option list =
+                            cases
+                            |> List.map (fun caseClause ->
+                                let caseLocals =
+                                    extendPatternLocalTypes environment freshCounter bodyLocals scrutineeType caseClause.Pattern
+
+                                lowerProjectionBody caseLocals caseClause.Body
+                                |> Option.map (fun loweredBody ->
+                                    ({ Pattern = lowerPattern caseLocals scrutineeType caseClause.Pattern
+                                       Guard = caseClause.Guard |> Option.map (substitute >> lowerExpression caseLocals)
+                                       Body = loweredBody }
+                                     : KCoreMatchCase)))
+
+                        if loweredCases |> List.forall Option.isSome then
+                            Some(
+                                KCoreMatch(
+                                    lowerExpression bodyLocals loweredScrutinee,
+                                    loweredCases |> List.choose id
+                                )
+                            )
+                        else
+                            None
+
+                projectionInfo.Body |> Option.bind (lowerProjectionBody localTypes))
+
+        and tryLowerInoutDoSite
+            scopeLabel
+            (localTypes: Map<string, TypeExpr>)
+            (binding: SurfaceBindPattern option)
+            expression
+            rest
+            isMonadicSite
+            =
+            match expression with
+            | Apply(Name [ calleeName ], arguments) ->
+                environment.VisibleBindings
+                |> Map.tryFind calleeName
+                |> Option.bind (fun bindingInfo ->
+                    tryPrepareVisibleBindingCall environment freshCounter bindingInfo (inferExpressionType localTypes) arguments
+                    |> Option.bind (fun preparedCall ->
+                        let explicitParameters =
+                            preparedCall.Parameters
+                            |> List.choose (fun parameter ->
+                                match parameter.Layout, parameter.AssignedArgument with
+                                | Some layout, Some(ExplicitArgument argument) ->
+                                    Some(layout, parameter.ParameterType, argument)
+                                | _ ->
+                                    None)
+                            |> List.mapi (fun explicitIndex (layout, parameterType, argument) ->
+                                explicitIndex, layout, parameterType, argument)
+
+                        let inoutParameters =
+                            explicitParameters
+                            |> List.choose (fun (explicitIndex, layout, parameterType, argument) ->
+                                match layout.IsInout, argument with
+                                | true, InoutArgument inner -> Some(explicitIndex, layout, parameterType, inner)
+                                | _ -> None)
+
+                        if List.isEmpty inoutParameters then
+                            None
+                        else
+                            let siteResultType =
+                                if isMonadicSite then
+                                    unwrapIoType preparedCall.ResultType
+                                else
+                                    preparedCall.ResultType
+
+                            match tryCanonicalRecordType environment.VisibleTypeAliases siteResultType with
+                            | Some(TypeRecord resultFields as resultRecordType) ->
+                                let inoutNames =
+                                    inoutParameters |> List.map (fun (_, layout, _, _) -> layout.Name) |> Set.ofList
+
+                                let residualFields =
+                                    resultFields
+                                    |> List.filter (fun field -> not (Set.contains field.Name inoutNames))
+
+                                let projectionInoutParameter =
+                                    inoutParameters
+                                    |> List.tryPick (fun (explicitIndex, _, _, inner) ->
+                                        tryProjectionCallExpression inner
+                                        |> Option.map (fun (projectionInfo, projectionArguments) ->
+                                            explicitIndex, projectionInfo, projectionArguments))
+
+                                match projectionInoutParameter with
+                                | Some(targetExplicitIndex, projectionInfo, projectionArguments) ->
+                                    tryLowerProjectionInoutDoSite
+                                        scopeLabel
+                                        localTypes
+                                        binding
+                                        calleeName
+                                        explicitParameters
+                                        targetExplicitIndex
+                                        projectionInfo
+                                        projectionArguments
+                                        rest
+                                        isMonadicSite
+                                | None ->
+                                    let layout =
+                                        ensureSyntheticRecordLayout environment.CurrentModuleName "<binding>" recordLayouts resultRecordType
+
+                                    let mutable rewrittenArguments = ResizeArray<SurfaceExpression>()
+                                    let mutable callLocalTypes = localTypes
+                                    let preludeBindings = ResizeArray<string * TypeExpr * KCoreExpression>()
+                                    let restorePlans = ResizeArray<string * string * string list * bool>()
+
+                                    for _, parameterLayout, _, argument in explicitParameters do
+                                        match parameterLayout.IsInout, argument with
+                                        | true, InoutArgument inner ->
+                                            match tryExpressionPlace inner with
+                                            | Some(rootName, path) ->
+                                                match localTypes |> Map.tryFind rootName |> Option.bind unwrapRefLikeType with
+                                                | Some refInnerType ->
+                                                    let hiddenRootName = freshSyntheticName $"__kappa_inout_{rootName}_"
+                                                    preludeBindings.Add(
+                                                        hiddenRootName,
+                                                        refInnerType,
+                                                        KCoreExecute(KCoreApply(KCoreName [ "readRef" ], [ KCoreName [ rootName ] ]))
+                                                    )
+
+                                                    callLocalTypes <- Map.add hiddenRootName refInnerType callLocalTypes
+                                                    restorePlans.Add(parameterLayout.Name, rootName, path, true)
+                                                    rewrittenArguments.Add(InoutArgument(Name(hiddenRootName :: path)))
+                                                | None ->
+                                                    restorePlans.Add(parameterLayout.Name, rootName, path, false)
+                                                    rewrittenArguments.Add(argument)
+                                            | None ->
+                                                rewrittenArguments.Add(argument)
+                                        | _ ->
+                                            rewrittenArguments.Add(argument)
+
+                                    let rewrittenCallExpression =
+                                        Apply(Name [ calleeName ], List.ofSeq rewrittenArguments)
+
+                                    let resultBindingName = freshSyntheticName "__kappa_inout_result_"
+                                    let fieldBindingNames =
+                                        layout.Fields
+                                        |> List.map (fun field -> field.Name, freshSyntheticName $"__kappa_inout_field_{field.Name}_")
+                                        |> Map.ofList
+
+                                    let pattern =
+                                        KCoreConstructorPattern(
+                                            [ layout.ConstructorName ],
+                                            layout.Fields
+                                            |> List.map (fun field -> KCoreNamePattern fieldBindingNames[field.Name])
+                                        )
+
+                                    let matchLocalTypes =
+                                        let withPrelude =
+                                            preludeBindings
+                                            |> Seq.fold (fun state (name, fieldType, _) -> Map.add name fieldType state) callLocalTypes
+
+                                        layout.Fields
+                                        |> List.fold (fun state field ->
+                                            Map.add fieldBindingNames[field.Name] field.Type state) withPrelude
+
+                                    let restLocalTypes =
+                                        restorePlans
+                                        |> Seq.fold (fun state (formalName, rootName, path, isVarRoot) ->
+                                            match resultFields |> List.tryFind (fun field -> String.Equals(field.Name, formalName, StringComparison.Ordinal)) with
+                                            | Some field when List.isEmpty path ->
+                                                if isVarRoot then
+                                                    Map.add rootName (refType field.Type) state
+                                                else
+                                                    Map.add rootName field.Type state
+                                            | _ ->
+                                                state) localTypes
+
+                                    let residualResultType =
+                                        match residualFields with
+                                        | [] -> unitType
+                                        | _ -> TypeRecord residualFields
+
+                                    let loweredContinuation =
+                                        match binding with
+                                        | None ->
+                                            if List.isEmpty residualFields then
+                                                Some(lowerDoStatements scopeLabel restLocalTypes rest)
+                                            else
+                                                None
+                                        | Some residualBinding ->
+                                            let residualValueExpression =
+                                                match residualFields with
+                                                | [] ->
+                                                    KCoreLiteral LiteralValue.Unit
+                                                | _ ->
+                                                    let residualLayout =
+                                                        ensureSyntheticRecordLayout
+                                                            environment.CurrentModuleName
+                                                            "<binding>"
+                                                            recordLayouts
+                                                            residualResultType
+
+                                                    KCoreApply(
+                                                        KCoreName [ residualLayout.ConstructorName ],
+                                                        residualLayout.Fields
+                                                        |> List.map (fun field -> KCoreName [ fieldBindingNames[field.Name] ])
+                                                    )
+
+                                            Some(
+                                                lowerPatternBinding
+                                                    restLocalTypes
+                                                    (Some residualResultType)
+                                                    residualBinding
+                                                    residualValueExpression
+                                                    (fun nextLocals -> lowerDoStatements scopeLabel nextLocals rest)
+                                            )
+
+                                    loweredContinuation
+                                    |> Option.map (fun continuationBody ->
+                                        let restoredBody =
+                                            restorePlans
+                                            |> Seq.toList
+                                            |> List.rev
+                                            |> List.fold (fun current (formalName, rootName, path, isVarRoot) ->
+                                                let replacement = Name [ fieldBindingNames[formalName] ]
+
+                                                let rebuiltValue =
+                                                    if isVarRoot then
+                                                        let hiddenRootName, hiddenRootType =
+                                                            preludeBindings
+                                                            |> Seq.find (fun (name, _, _) ->
+                                                                name.StartsWith($"__kappa_inout_{rootName}_", StringComparison.Ordinal))
+                                                            |> fun (name, fieldType, _) -> name, fieldType
+
+                                                        if List.isEmpty path then
+                                                            KCoreName [ fieldBindingNames[formalName] ]
+                                                        else
+                                                            lowerExpression
+                                                                (Map.add hiddenRootName hiddenRootType matchLocalTypes)
+                                                                (buildPlaceWritebackExpression hiddenRootName path replacement)
+                                                    elif List.isEmpty path then
+                                                        KCoreName [ fieldBindingNames[formalName] ]
+                                                    else
+                                                        lowerExpression
+                                                            matchLocalTypes
+                                                            (buildPlaceWritebackExpression rootName path replacement)
+
+                                                if isVarRoot then
+                                                    KCoreSequence(
+                                                        KCoreExecute(KCoreApply(KCoreName [ "writeRef" ], [ KCoreName [ rootName ]; rebuiltValue ])),
+                                                        current
+                                                    )
+                                                else
+                                                    KCoreLet(rootName, rebuiltValue, current))
+                                                continuationBody
+
+                                        let matchBody =
+                                            KCoreMatch(
+                                                KCoreName [ resultBindingName ],
+                                                [
+                                                    { Pattern = pattern
+                                                      Guard = None
+                                                      Body = restoredBody }
+                                                ]
+                                            )
+
+                                        let callValue =
+                                            if isMonadicSite then
+                                                KCoreExecute(lowerExpression callLocalTypes rewrittenCallExpression)
+                                            else
+                                                lowerExpression callLocalTypes rewrittenCallExpression
+
+                                        let callBody =
+                                            KCoreLet(
+                                                resultBindingName,
+                                                callValue,
+                                                matchBody
+                                            )
+
+                                        preludeBindings
+                                        |> Seq.toList
+                                        |> List.rev
+                                        |> List.fold (fun current (bindingName, _, valueExpression) ->
+                                            KCoreLet(bindingName, valueExpression, current)) callBody)
+                            | _ ->
+                                None))
+            | _ ->
+                None
+
         and lowerDoStatements scopeLabel localTypes statements =
             let bindPatternName (binding: SurfaceBindPattern) =
                 match binding.Pattern with
@@ -1727,32 +3025,73 @@ module SurfaceElaboration =
             | [] ->
                 KCoreLiteral LiteralValue.Unit
             | [ DoExpression expression ] ->
-                KCoreExecute(lowerExpression localTypes expression)
+                match tryLowerInoutDoSite scopeLabel localTypes None expression [] true with
+                | Some lowered ->
+                    lowered
+                | None ->
+                    KCoreExecute(lowerExpression localTypes expression)
             | DoExpression expression :: rest ->
-                KCoreSequence(KCoreExecute(lowerExpression localTypes expression), lowerDoStatements scopeLabel localTypes rest)
+                match tryLowerInoutDoSite scopeLabel localTypes None expression rest true with
+                | Some lowered ->
+                    lowered
+                | None ->
+                    KCoreSequence(KCoreExecute(lowerExpression localTypes expression), lowerDoStatements scopeLabel localTypes rest)
             | DoLet(binding, expression) :: rest ->
-                let bindingName = bindPatternName binding
-                let loweredValue = lowerExpression localTypes expression
+                match tryLowerInoutDoSite scopeLabel localTypes (Some binding) expression rest false with
+                | Some lowered ->
+                    lowered
+                | None ->
+                    let loweredValue = lowerExpression localTypes expression
+                    let valueType = inferExpressionType localTypes expression
 
-                let nextLocals =
-                    match inferExpressionType localTypes expression with
-                    | Some valueType -> Map.add bindingName valueType localTypes
-                    | None -> localTypes
+                    lowerPatternBinding
+                        localTypes
+                        valueType
+                        binding
+                        loweredValue
+                        (fun nextLocals -> lowerDoStatements scopeLabel nextLocals rest)
+            | DoLetQuestion(binding, expression, failure) :: rest ->
+                let valueType = inferExpressionType localTypes expression
+                let successLocals =
+                    extendPatternLocalTypes environment freshCounter localTypes valueType binding.Pattern
 
-                KCoreLet(bindingName, loweredValue, lowerDoStatements scopeLabel nextLocals rest)
+                let successCase: KCoreMatchCase =
+                    { Pattern = lowerPattern localTypes valueType binding.Pattern
+                      Guard = None
+                      Body = lowerDoStatements scopeLabel successLocals rest }
+
+                let failureCase: KCoreMatchCase =
+                    match failure with
+                    | Some failure ->
+                        let failureLocals =
+                            extendPatternLocalTypes environment freshCounter localTypes valueType failure.ResiduePattern.Pattern
+
+                        { Pattern = lowerPattern localTypes valueType failure.ResiduePattern.Pattern
+                          Guard = None
+                          Body = lowerDoStatements scopeLabel failureLocals failure.Body }
+                    | None ->
+                        { Pattern = KCoreWildcardPattern
+                          Guard = None
+                          Body = KCoreExecute(KCoreName [ "empty" ]) }
+
+                KCoreMatch(lowerExpression localTypes expression, [ successCase; failureCase ])
             | DoBind(binding, expression) :: rest ->
-                let bindingName = bindPatternName binding
-                let loweredValue = KCoreExecute(lowerExpression localTypes expression)
+                match tryLowerInoutDoSite scopeLabel localTypes (Some binding) expression rest true with
+                | Some lowered ->
+                    lowered
+                | None ->
+                    let loweredValue = KCoreExecute(lowerExpression localTypes expression)
+                    let valueType = inferExpressionType localTypes expression |> Option.map unwrapIoType
 
-                let nextLocals =
-                    match inferExpressionType localTypes expression with
-                    | Some valueType -> Map.add bindingName (unwrapIoType valueType) localTypes
-                    | None -> localTypes
-
-                KCoreLet(bindingName, loweredValue, lowerDoStatements scopeLabel nextLocals rest)
-            | DoUsing(pattern, expression) :: rest ->
+                    lowerPatternBinding
+                        localTypes
+                        valueType
+                        binding
+                        loweredValue
+                        (fun nextLocals -> lowerDoStatements scopeLabel nextLocals rest)
+            | DoUsing(binding, expression) :: rest ->
                 let bindingName =
-                    match pattern with
+                    match binding.Pattern with
                     | NamePattern name -> name
                     | _ -> "__using"
 
@@ -1788,11 +3127,57 @@ module SurfaceElaboration =
                     KCoreExecute(KCoreApply(KCoreName [ "writeRef" ], [ KCoreName [ bindingName ]; lowerExpression localTypes expression ])),
                     lowerDoStatements scopeLabel localTypes rest
                 )
+            | DoIf(condition, whenTrue, whenFalse) :: rest ->
+                KCoreSequence(
+                    KCoreIfThenElse(
+                        lowerExpression localTypes condition,
+                        lowerDoStatements scopeLabel localTypes whenTrue,
+                        lowerDoStatements scopeLabel localTypes whenFalse
+                    ),
+                    lowerDoStatements scopeLabel localTypes rest
+                )
             | DoWhile(condition, body) :: rest ->
                 KCoreSequence(
                     KCoreWhile(lowerExpression localTypes condition, lowerDoStatements scopeLabel localTypes body),
                     lowerDoStatements scopeLabel localTypes rest
                 )
+            | DoReturn expression :: _ ->
+                KCoreExecute(KCoreApply(KCoreName [ "return" ], [ lowerExpression localTypes expression ]))
+
+        and lowerPattern localTypes expectedType pattern =
+            match pattern with
+            | WildcardPattern ->
+                KCoreWildcardPattern
+            | NamePattern name ->
+                KCoreNamePattern name
+            | LiteralPattern literal ->
+                KCoreLiteralPattern literal
+            | ConstructorPattern(name, arguments) ->
+                KCoreConstructorPattern(name, arguments |> List.map (lowerPattern localTypes None))
+            | OrPattern alternatives ->
+                KCoreOrPattern(alternatives |> List.map (lowerPattern localTypes expectedType))
+            | AnonymousRecordPattern fields ->
+                match expectedType |> Option.bind (tryCanonicalRecordType environment.VisibleTypeAliases) with
+                | Some recordType ->
+                    let layout =
+                        ensureSyntheticRecordLayout environment.CurrentModuleName "<binding>" recordLayouts recordType
+
+                    let fieldPatterns =
+                        fields
+                        |> List.map (fun field -> field.Name, field.Pattern)
+                        |> Map.ofList
+
+                    KCoreConstructorPattern(
+                        [ layout.ConstructorName ],
+                        layout.Fields
+                        |> List.map (fun field ->
+                            fieldPatterns
+                            |> Map.tryFind field.Name
+                            |> Option.map (lowerPattern localTypes (Some field.Type))
+                            |> Option.defaultValue KCoreWildcardPattern)
+                    )
+                | None ->
+                    KCoreWildcardPattern
 
         and lowerExpression localTypes expression =
             let lowerArguments arguments =
@@ -1871,6 +3256,8 @@ module SurfaceElaboration =
                     lowerExpression localTypes whenFalse
                 )
             | Match(scrutinee, cases) ->
+                let scrutineeType = inferExpressionType localTypes scrutinee
+
                 let loweredCases : KCoreMatchCase list =
                     cases
                     |> List.collect (fun caseClause ->
@@ -1881,19 +3268,97 @@ module SurfaceElaboration =
 
                         alternatives
                         |> List.map (fun pattern ->
-                            ({ Pattern = lowerKCorePattern pattern
-                               Guard = caseClause.Guard |> Option.map (lowerExpression localTypes)
-                               Body = lowerExpression localTypes caseClause.Body }
+                            let caseLocals =
+                                extendPatternLocalTypes environment freshCounter localTypes scrutineeType pattern
+
+                            ({ Pattern = lowerPattern caseLocals scrutineeType pattern
+                               Guard = caseClause.Guard |> Option.map (lowerExpression caseLocals)
+                               Body = lowerExpression caseLocals caseClause.Body }
                              : KCoreMatchCase)))
 
                 KCoreMatch(
                     lowerExpression localTypes scrutinee,
                     loweredCases
                 )
-            | RecordLiteral _ ->
-                KCoreLiteral LiteralValue.Unit
-            | RecordUpdate(receiver, _) ->
-                lowerExpression localTypes receiver
+            | RecordLiteral fields ->
+                let inferredFields =
+                    fields
+                    |> List.map (fun field ->
+                        inferExpressionType localTypes field.Value
+                        |> Option.map (fun fieldType ->
+                            { Name = field.Name
+                              Quantity = if field.IsImplicit then QuantityZero else QuantityOmega
+                              Type = fieldType }))
+
+                if inferredFields |> List.forall Option.isSome then
+                    let recordType = TypeRecord(inferredFields |> List.choose id)
+                    let layout =
+                        ensureSyntheticRecordLayout environment.CurrentModuleName "<binding>" recordLayouts recordType
+
+                    let fieldValues =
+                        fields
+                        |> List.map (fun field -> field.Name, field.Value)
+                        |> Map.ofList
+
+                    KCoreApply(
+                        KCoreName [ layout.ConstructorName ],
+                        layout.Fields
+                        |> List.map (fun field ->
+                            fieldValues
+                            |> Map.tryFind field.Name
+                            |> Option.map (lowerExpression localTypes)
+                            |> Option.defaultValue (KCoreLiteral LiteralValue.Unit))
+                    )
+                else
+                    KCoreLiteral LiteralValue.Unit
+            | Seal(value, _) ->
+                lowerExpression localTypes value
+            | RecordUpdate(receiver, fields) ->
+                let loweredReceiver = lowerExpression localTypes receiver
+
+                match inferExpressionType localTypes receiver |> Option.bind (tryCanonicalRecordType environment.VisibleTypeAliases) with
+                | Some recordType ->
+                    let layout =
+                        ensureSyntheticRecordLayout environment.CurrentModuleName "<binding>" recordLayouts recordType
+
+                    let boundFields =
+                        layout.Fields
+                        |> List.map (fun field -> field.Name, freshSyntheticName $"__kappa_record_{field.Name}_")
+
+                    let updatedFields =
+                        fields
+                        |> List.map (fun field -> field.Name, field.Value)
+                        |> Map.ofList
+
+                    let pattern =
+                        KCoreConstructorPattern(
+                            [ layout.ConstructorName ],
+                            boundFields
+                            |> List.map (fun (_, bindingName) -> KCoreNamePattern bindingName)
+                        )
+
+                    let rebuiltFields =
+                        layout.Fields
+                        |> List.map (fun field ->
+                            updatedFields
+                            |> Map.tryFind field.Name
+                            |> Option.map (lowerExpression localTypes)
+                            |> Option.defaultValue (
+                                boundFields
+                                |> List.find (fun (name, _) -> String.Equals(name, field.Name, StringComparison.Ordinal))
+                                |> snd
+                                |> fun bindingName -> KCoreName [ bindingName ]))
+
+                    KCoreMatch(
+                        loweredReceiver,
+                        [
+                            { Pattern = pattern
+                              Guard = None
+                              Body = KCoreApply(KCoreName [ layout.ConstructorName ], rebuiltFields) }
+                        ]
+                    )
+                | None ->
+                    loweredReceiver
             | SafeNavigation(receiver, navigation) ->
                 let loweredReceiver = lowerExpression localTypes receiver
                 let binderName = freshSyntheticName "__kappa_safe_"
@@ -1993,6 +3458,24 @@ module SurfaceElaboration =
                             )
                         | None ->
                             KCoreApply(KCoreName [ calleeName ], lowerArguments arguments)
+                    | [ calleeName ] ->
+                        match
+                            tryPrepareVisibleTraitMemberCall
+                                environment
+                                freshCounter
+                                calleeName
+                                (inferExpressionType localTypes)
+                                arguments
+                        with
+                        | Some(traitInfo, _, preparedCall, instanceInfo) ->
+                            KCoreTraitCall(
+                                traitInfo.Name,
+                                calleeName,
+                                KCoreDictionaryValue(instanceInfo.ModuleName, instanceInfo.TraitName, instanceInfo.InstanceKey),
+                                lowerPreparedArguments preparedCall.Arguments
+                            )
+                        | None ->
+                            KCoreApply(KCoreName [ calleeName ], lowerArguments arguments)
                     | _ ->
                         KCoreApply(lowerExpression localTypes (Name nameSegments), lowerArguments arguments)
             | Apply(callee, arguments) ->
@@ -2031,6 +3514,7 @@ module SurfaceElaboration =
 
     let private lowerUserBinding
         (environment: BindingLoweringEnvironment)
+        (recordLayouts: Map<string, SyntheticRecordLayout> ref)
         (filePath: string)
         (moduleName: string)
         (definition: LetDefinition)
@@ -2076,7 +3560,7 @@ module SurfaceElaboration =
 
         let loweredBody =
             definition.Body
-            |> Option.map (lowerBindingBody bodyEnvironment scheme definition.Parameters)
+            |> Option.map (lowerBindingBody bodyEnvironment recordLayouts scheme definition.Parameters)
 
         let parameters =
             hiddenParameters @ buildBindingParameters environment.VisibleTypeAliases scheme definition.Parameters
@@ -2150,10 +3634,81 @@ module SurfaceElaboration =
 
     let private synthesizeInstanceBindings
         (surfaceIndex: Map<string, ModuleSurfaceInfo>)
+        (recordLayouts: Map<string, SyntheticRecordLayout> ref)
         (filePath: string)
         (moduleName: string)
         (instanceInfo: InstanceInfo)
         =
+        let selfDictionaryName = "__kappa_self_dict"
+
+        let rec substituteSelfDictionary expression =
+            match expression with
+            | KCoreLiteral _ ->
+                expression
+            | KCoreName [ name ] when String.Equals(name, selfDictionaryName, StringComparison.Ordinal) ->
+                KCoreDictionaryValue(moduleName, instanceInfo.TraitName, instanceInfo.InstanceKey)
+            | KCoreName _ ->
+                expression
+            | KCoreLambda(parameters, body) ->
+                KCoreLambda(parameters, substituteSelfDictionary body)
+            | KCoreIfThenElse(condition, whenTrue, whenFalse) ->
+                KCoreIfThenElse(
+                    substituteSelfDictionary condition,
+                    substituteSelfDictionary whenTrue,
+                    substituteSelfDictionary whenFalse
+                )
+            | KCoreMatch(scrutinee, cases) ->
+                KCoreMatch(
+                    substituteSelfDictionary scrutinee,
+                    cases
+                    |> List.map (fun caseClause ->
+                        { caseClause with
+                            Guard = caseClause.Guard |> Option.map substituteSelfDictionary
+                            Body = substituteSelfDictionary caseClause.Body })
+                )
+            | KCoreExecute inner ->
+                KCoreExecute(substituteSelfDictionary inner)
+            | KCoreLet(bindingName, value, body) ->
+                KCoreLet(bindingName, substituteSelfDictionary value, substituteSelfDictionary body)
+            | KCoreDoScope(scopeLabel, body) ->
+                KCoreDoScope(scopeLabel, substituteSelfDictionary body)
+            | KCoreScheduleExit(scopeLabel, action, body) ->
+                let rewrittenAction =
+                    match action with
+                    | KCoreDeferred deferred ->
+                        KCoreDeferred(substituteSelfDictionary deferred)
+                    | KCoreRelease(resourceTypeText, release, resource) ->
+                        KCoreRelease(resourceTypeText, substituteSelfDictionary release, substituteSelfDictionary resource)
+
+                KCoreScheduleExit(scopeLabel, rewrittenAction, substituteSelfDictionary body)
+            | KCoreSequence(first, second) ->
+                KCoreSequence(substituteSelfDictionary first, substituteSelfDictionary second)
+            | KCoreWhile(condition, body) ->
+                KCoreWhile(substituteSelfDictionary condition, substituteSelfDictionary body)
+            | KCoreApply(callee, arguments) ->
+                KCoreApply(substituteSelfDictionary callee, arguments |> List.map substituteSelfDictionary)
+            | KCoreDictionaryValue _ ->
+                expression
+            | KCoreTraitCall(traitName, memberName, dictionary, arguments) ->
+                KCoreTraitCall(
+                    traitName,
+                    memberName,
+                    substituteSelfDictionary dictionary,
+                    arguments |> List.map substituteSelfDictionary
+                )
+            | KCoreUnary(operatorName, operand) ->
+                KCoreUnary(operatorName, substituteSelfDictionary operand)
+            | KCoreBinary(left, operatorName, right) ->
+                KCoreBinary(substituteSelfDictionary left, operatorName, substituteSelfDictionary right)
+            | KCorePrefixedString(prefix, parts) ->
+                KCorePrefixedString(
+                    prefix,
+                    parts
+                    |> List.map (function
+                        | KCoreStringText _ as part -> part
+                        | KCoreStringInterpolation inner -> KCoreStringInterpolation(substituteSelfDictionary inner))
+                )
+
         let traitInfo =
             surfaceIndex[moduleName].Traits[instanceInfo.TraitName]
 
@@ -2166,28 +3721,57 @@ module SurfaceElaboration =
         let visibleBindings = mergeVisibleBindings surfaceIndex moduleName
         let visibleTraits = mergeVisibleTraits surfaceIndex moduleName
         let visibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleName
+        let visibleProjections = mergeVisibleProjections surfaceIndex moduleName
 
         let environment =
             { CurrentModuleName = moduleName
               VisibleTypeAliases = visibleTypeAliases
               VisibleBindings = visibleBindings
+              VisibleConstructors = mergeVisibleConstructors surfaceIndex moduleName
+              VisibleProjections = visibleProjections
               VisibleTraits = visibleTraits
               VisibleInstances = visibleInstances surfaceIndex moduleName
               ConstrainedMembers = Map.empty }
 
+        let defaultBodyEnvironment =
+            { environment with
+                ConstrainedMembers =
+                    traitInfo.Members
+                    |> Map.toList
+                    |> List.map (fun (memberName, _) -> memberName, (instanceInfo.TraitName, selfDictionaryName))
+                    |> Map.ofList }
+
         let memberBindings =
-            instanceInfo.Members
+            traitInfo.Members
             |> Map.toList
-            |> List.choose (fun (memberName, definition) ->
-                traitInfo.Members
-                |> Map.tryFind memberName
-                |> Option.map (fun memberInfo ->
+            |> List.choose (fun (memberName, memberInfo) ->
+                let memberDefinition =
+                    instanceInfo.Members
+                    |> Map.tryFind memberName
+                    |> Option.map (fun definition -> definition, false)
+                    |> Option.orElseWith (fun () ->
+                        memberInfo.DefaultDefinition
+                        |> Option.map (fun definition -> definition, true))
+
+                memberDefinition
+                |> Option.map (fun (definition, isDefaultDefinition) ->
                     let specializedScheme =
                         memberInfo.Scheme |> TypeSignatures.applySchemeSubstitution substitution
 
                     let loweredBody =
                         definition.Body
-                        |> Option.map (lowerBindingBody environment (Some specializedScheme) definition.Parameters)
+                        |> Option.map (
+                            lowerBindingBody
+                                (if isDefaultDefinition then defaultBodyEnvironment else environment)
+                                recordLayouts
+                                (Some specializedScheme)
+                                definition.Parameters
+                        )
+                        |> Option.map (fun body ->
+                            if isDefaultDefinition then
+                                substituteSelfDictionary body
+                            else
+                                body)
 
                     let parameters =
                         buildBindingParameters environment.VisibleTypeAliases (Some specializedScheme) definition.Parameters
@@ -2197,7 +3781,7 @@ module SurfaceElaboration =
                             filePath
                             moduleName
                             (TraitRuntime.instanceMemberBindingName instanceInfo.TraitName instanceInfo.InstanceKey memberName)
-                            "instance-member"
+                            (if isDefaultDefinition then "instance-default-member" else "instance-member")
 
                     makeSyntheticBindingDeclaration
                         (TraitRuntime.instanceMemberBindingName instanceInfo.TraitName instanceInfo.InstanceKey memberName)
@@ -2230,11 +3814,14 @@ module SurfaceElaboration =
         |> List.map (fun frontendModule ->
             let moduleName = moduleNameText frontendModule.ModuleIdentity
             let moduleInfo = surfaceIndex[moduleName]
+            let recordLayouts = ref Map.empty
 
             let environment =
                 { CurrentModuleName = moduleName
                   VisibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleName
                   VisibleBindings = mergeVisibleBindings surfaceIndex moduleName
+                  VisibleConstructors = mergeVisibleConstructors surfaceIndex moduleName
+                  VisibleProjections = mergeVisibleProjections surfaceIndex moduleName
                   VisibleTraits = mergeVisibleTraits surfaceIndex moduleName
                   VisibleInstances = visibleInstances surfaceIndex moduleName
                   ConstrainedMembers = Map.empty }
@@ -2252,7 +3839,7 @@ module SurfaceElaboration =
                                 |> Map.tryFind definition.Name.Value
                                 |> Option.map (fun bindingInfo -> bindingInfo.Scheme)
 
-                            [ lowerUserBinding environment frontendModule.FilePath moduleName definition scheme ]
+                            [ lowerUserBinding environment recordLayouts frontendModule.FilePath moduleName definition scheme ]
                         | _ ->
                             [ { Source = declaration
                                 Binding = None
@@ -2270,7 +3857,8 @@ module SurfaceElaboration =
                                 String.Equals(info.TraitName, declaration.TraitName, StringComparison.Ordinal)
                                 && String.Equals(info.InstanceKey, instanceKey, StringComparison.Ordinal))
 
-                        originalDeclaration @ synthesizeInstanceBindings surfaceIndex frontendModule.FilePath moduleName instanceInfo
+                        originalDeclaration
+                        @ synthesizeInstanceBindings surfaceIndex recordLayouts frontendModule.FilePath moduleName instanceInfo
                     | _ ->
                         originalDeclaration)
 
@@ -2294,5 +3882,17 @@ module SurfaceElaboration =
               ModuleAttributes = frontendModule.ModuleAttributes
               Imports = frontendModule.Imports
               IntrinsicTerms = intrinsicTerms |> List.distinct |> List.sort
+              SyntheticDataTypes =
+                recordLayouts.Value
+                |> Map.toList
+                |> List.map snd
+                |> List.sortBy (fun layout -> layout.TypeName)
+                |> List.map (fun layout ->
+                    { Name = layout.TypeName
+                      TypeParameters = layout.TypeParameters
+                      ConstructorName = layout.ConstructorName
+                      FieldNames = layout.Fields |> List.map (fun field -> field.Name)
+                      FieldTypeTexts = layout.Fields |> List.map (fun field -> TypeSignatures.toText field.Type)
+                      Provenance = layout.Provenance })
               Ownership = frontendModule.Ownership
               Declarations = declarations })

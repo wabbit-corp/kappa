@@ -18,15 +18,19 @@ peek : (& x : A) -> Option B
 let peek x = None
 
 consume : (1 x : A) -> C_or_B
-let consume x = FromC
+let consume x =
+    let _ = x
+    in FromC
 
 use : B -> C_or_B
 let use y = FromB
 
 foo : (1 x : A) -> C_or_B
 let foo x =
-    match peek x
-      case Some y -> use y
-      case None -> consume x
+    do
+      match peek x
+        case Some y -> use y
+        case None -> FromC
+      consume x
 
 --! assertNoErrors

@@ -266,6 +266,10 @@ module internal CompilationFrontend =
                 | _ ->
                     let argumentText = arguments |> List.map renderPattern |> String.concat " "
                     $"({nameText} {argumentText})"
+            | OrPattern alternatives ->
+                alternatives
+                |> List.map renderPattern
+                |> String.concat " | "
             | AnonymousRecordPattern fields ->
                 let fieldText =
                     fields
@@ -310,6 +314,18 @@ module internal CompilationFrontend =
                     |> String.concat " "
 
                 $"(match {render scrutinee} {caseText})"
+            | RecordLiteral fields ->
+                let fieldText =
+                    fields
+                    |> List.map (fun field ->
+                        let prefix = if field.IsImplicit then "@" else ""
+                        $"{prefix}{field.Name} = {render field.Value}")
+                    |> String.concat ", "
+
+                $"({fieldText})"
+            | Seal(value, ascriptionTokens) ->
+                let ascriptionText = ascriptionTokens |> List.map (fun token -> token.Text) |> String.concat " "
+                $"(seal {render value} as {ascriptionText})"
             | RecordUpdate(receiver, fields) ->
                 let fieldText =
                     fields
@@ -319,14 +335,55 @@ module internal CompilationFrontend =
                     |> String.concat ", "
 
                 $"(update {render receiver} {{{fieldText}}})"
+            | SafeNavigation(receiver, navigation) ->
+                let argumentText =
+                    navigation.Arguments
+                    |> List.map render
+                    |> String.concat " "
+
+                let segmentsText = String.concat "." navigation.Segments
+                let memberText =
+                    match argumentText with
+                    | "" -> segmentsText
+                    | _ -> $"{segmentsText} {argumentText}"
+
+                $"(safe-nav {render receiver} {memberText})"
+            | TagTest(receiver, constructorName) ->
+                let constructorText = String.concat "." constructorName
+                $"(is {render receiver} {constructorText})"
             | Do statements ->
                 let rec renderDoStatement statement =
                     match statement with
                     | DoLet(binding, body) -> $"(let {renderBindPattern binding} {render body})"
+                    | DoLetQuestion(binding, body, failure) ->
+                        let failureText =
+                            match failure with
+                            | Some failure ->
+                                let bodyText =
+                                    failure.Body
+                                    |> List.map renderDoStatement
+                                    |> String.concat " "
+
+                                $" (else {renderBindPattern failure.ResiduePattern} {bodyText})"
+                            | None -> ""
+
+                        $"(let? {renderBindPattern binding} {render body}{failureText})"
                     | DoBind(binding, body) -> $"(<- {renderBindPattern binding} {render body})"
                     | DoVar(name, body) -> $"(var {name} {render body})"
                     | DoAssign(name, body) -> $"(assign {name} {render body})"
-                    | DoUsing(pattern, body) -> $"(using {renderPattern pattern} {render body})"
+                    | DoUsing(binding, body) -> $"(using {renderPattern binding.Pattern} {render body})"
+                    | DoIf(condition, whenTrue, whenFalse) ->
+                        let trueText =
+                            whenTrue
+                            |> List.map renderDoStatement
+                            |> String.concat " "
+
+                        let falseText =
+                            whenFalse
+                            |> List.map renderDoStatement
+                            |> String.concat " "
+
+                        $"(if {render condition} (do {trueText}) (do {falseText}))"
                     | DoWhile(condition, body) ->
                         let bodyText =
                             body
@@ -334,6 +391,7 @@ module internal CompilationFrontend =
                             |> String.concat " "
 
                         $"(while {render condition} {bodyText})"
+                    | DoReturn body -> $"(return {render body})"
                     | DoExpression body -> $"(expr {render body})"
 
                 let statementText =
@@ -360,6 +418,8 @@ module internal CompilationFrontend =
                 $"({operatorName} {render operand})"
             | Binary(left, operatorName, right) ->
                 $"({operatorName} {render left} {render right})"
+            | Elvis(left, right) ->
+                $"(?: {render left} {render right})"
             | PrefixedString(prefix, parts) ->
                 let partText =
                     parts
@@ -779,7 +839,7 @@ module internal CompilationFrontend =
                 |> List.choose (fun memberDeclaration -> memberDeclaration.Name)
                 |> String.concat ", "
 
-            $"instance {declaration.TraitName} {tokensText declaration.HeaderTokens} [{members}]".Trim()
+            $"instance {tokensText declaration.FullHeaderTokens} [{members}]".Trim()
         | UnknownDeclaration tokens ->
             $"unknown {tokensText tokens}".Trim()
 

@@ -20,6 +20,10 @@ type DiagnosticCode =
     | ModuleNameUnresolved
     | ModulePathMismatch
     | ProjectionDefinitionUnsupported
+    | OrPatternBinderMismatch
+    | SafeNavigationAmbiguous
+    | SafeNavigationReceiverNotOption
+    | ElvisReceiverNotOption
     | TypeEqualityMismatch
     | UnexpectedIndentation
     | UnterminatedBacktickIdentifier
@@ -54,6 +58,10 @@ module DiagnosticCode =
         | ModuleNameUnresolved -> "E_MODULE_NAME_UNRESOLVED"
         | ModulePathMismatch -> "E_MODULE_PATH_MISMATCH"
         | ProjectionDefinitionUnsupported -> "E_PROJECTION_DEFINITION_UNSUPPORTED"
+        | OrPatternBinderMismatch -> "E_OR_PATTERN_BINDER_MISMATCH"
+        | SafeNavigationAmbiguous -> "E_SAFE_NAVIGATION_AMBIGUOUS"
+        | SafeNavigationReceiverNotOption -> "E_SAFE_NAVIGATION_RECEIVER_NOT_OPTION"
+        | ElvisReceiverNotOption -> "E_ELVIS_RECEIVER_NOT_OPTION"
         | TypeEqualityMismatch -> "E_TYPE_EQUALITY_MISMATCH"
         | UnexpectedIndentation -> "E_UNEXPECTED_INDENTATION"
         | UnterminatedBacktickIdentifier -> "E_UNTERMINATED_BACKTICK_IDENTIFIER"
@@ -87,6 +95,10 @@ module DiagnosticCode =
         | "E_MODULE_NAME_UNRESOLVED" -> Some ModuleNameUnresolved
         | "E_MODULE_PATH_MISMATCH" -> Some ModulePathMismatch
         | "E_PROJECTION_DEFINITION_UNSUPPORTED" -> Some ProjectionDefinitionUnsupported
+        | "E_OR_PATTERN_BINDER_MISMATCH" -> Some OrPatternBinderMismatch
+        | "E_SAFE_NAVIGATION_AMBIGUOUS" -> Some SafeNavigationAmbiguous
+        | "E_SAFE_NAVIGATION_RECEIVER_NOT_OPTION" -> Some SafeNavigationReceiverNotOption
+        | "E_ELVIS_RECEIVER_NOT_OPTION" -> Some ElvisReceiverNotOption
         | "E_TYPE_EQUALITY_MISMATCH" -> Some TypeEqualityMismatch
         | "E_UNEXPECTED_INDENTATION" -> Some UnexpectedIndentation
         | "E_UNTERMINATED_BACKTICK_IDENTIFIER" -> Some UnterminatedBacktickIdentifier

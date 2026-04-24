@@ -10,10 +10,14 @@ data C : Type =
     C
 
 f : (1 x : A) -> B
-let f x = B
+let f x =
+    let _ = x
+    in B
 
 g : (1 y : B) -> C
-let g y = C
+let g y =
+    let _ = y
+    in C
 
 h : (1 x : A) -> C
 let h x =

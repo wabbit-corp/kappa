@@ -43,6 +43,7 @@ and KCorePattern =
     | KCoreNamePattern of string
     | KCoreLiteralPattern of LiteralValue
     | KCoreConstructorPattern of string list * KCorePattern list
+    | KCoreOrPattern of KCorePattern list
 
 and KCoreMatchCase =
     { Pattern: KCorePattern
@@ -64,11 +65,20 @@ type KCoreDeclaration =
       Binding: KCoreBinding option
       Provenance: KCoreOrigin }
 
+type KCoreSyntheticDataType =
+    { Name: string
+      TypeParameters: string list
+      ConstructorName: string
+      FieldNames: string list
+      FieldTypeTexts: string list
+      Provenance: KCoreOrigin }
+
 type KCoreModule =
     { Name: string
       SourceFile: string
       ModuleAttributes: string list
       Imports: ImportSpec list
       IntrinsicTerms: string list
+      SyntheticDataTypes: KCoreSyntheticDataType list
       Ownership: OwnershipFactSet option
       Declarations: KCoreDeclaration list }

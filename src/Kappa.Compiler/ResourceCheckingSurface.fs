@@ -12,6 +12,9 @@ module internal ResourceCheckingSurface =
                 | ConstructorPattern(_, arguments) ->
                     for argument in arguments do
                         yield! loop argument
+                | OrPattern alternatives ->
+                    for alternative in alternatives do
+                        yield! loop alternative
                 | AnonymousRecordPattern fields ->
                     for field in fields do
                         yield! loop field.Pattern
@@ -25,8 +28,8 @@ module internal ResourceCheckingSurface =
         seq {
             match expression with
             | Literal _ -> ()
-            | Name [ name ] -> yield name
-            | Name _ -> ()
+            | Name(root :: _) -> yield root
+            | Name [] -> ()
             | LocalLet(binding, value, body) ->
                 yield! expressionNames value
 
@@ -59,11 +62,23 @@ module internal ResourceCheckingSurface =
                     | None -> ()
 
                     yield! expressionNames caseClause.Body
+            | RecordLiteral fields ->
+                for field in fields do
+                    yield! expressionNames field.Value
+            | Seal(value, _) ->
+                yield! expressionNames value
             | RecordUpdate(receiver, fields) ->
                 yield! expressionNames receiver
 
                 for field in fields do
                     yield! expressionNames field.Value
+            | SafeNavigation(receiver, navigation) ->
+                yield! expressionNames receiver
+
+                for argument in navigation.Arguments do
+                    yield! expressionNames argument
+            | TagTest(receiver, _) ->
+                yield! expressionNames receiver
             | Do statements ->
                 for statement in statements do
                     yield! doStatementNames statement
@@ -77,6 +92,9 @@ module internal ResourceCheckingSurface =
                 for argument in arguments do
                     yield! expressionNames argument
             | Binary(left, _, right) ->
+                yield! expressionNames left
+                yield! expressionNames right
+            | Elvis(left, right) ->
                 yield! expressionNames left
                 yield! expressionNames right
             | PrefixedString(_, parts) ->
@@ -94,8 +112,25 @@ module internal ResourceCheckingSurface =
             | DoVar(_, expression)
             | DoAssign(_, expression)
             | DoUsing(_, expression)
+            | DoReturn expression
             | DoExpression expression ->
                 yield! expressionNames expression
+            | DoLetQuestion(_, expression, failure) ->
+                yield! expressionNames expression
+
+                match failure with
+                | Some failure ->
+                    for statement in failure.Body do
+                        yield! doStatementNames statement
+                | None -> ()
+            | DoIf(condition, whenTrue, whenFalse) ->
+                yield! expressionNames condition
+
+                for statement in whenTrue do
+                    yield! doStatementNames statement
+
+                for statement in whenFalse do
+                    yield! doStatementNames statement
             | DoWhile(condition, body) ->
                 yield! expressionNames condition
 

@@ -130,7 +130,7 @@ module internal KBackendLowering =
             inferKRuntimeExpressionRepresentation operand
         | KRuntimeUnary _ ->
             backendOpaqueRepresentation None
-        | KRuntimeBinary(_, ("&&" | "||" | "==" | "!=" | "<" | ">" | "<=" | ">="), _) ->
+        | KRuntimeBinary(_, ("&&" | "||" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "is"), _) ->
             BackendRepBoolean
         | KRuntimeBinary(left, ("+" | "-" | "*" | "/"), right) ->
             match inferKRuntimeExpressionRepresentation left, inferKRuntimeExpressionRepresentation right with
@@ -387,6 +387,11 @@ module internal KBackendLowering =
                                 Set.empty
                             | KRuntimeNamePattern name ->
                                 Set.singleton name
+                            | KRuntimeOrPattern alternatives ->
+                                alternatives
+                                |> List.tryHead
+                                |> Option.map collectPatternBindings
+                                |> Option.defaultValue Set.empty
                             | KRuntimeConstructorPattern(_, arguments) ->
                                 arguments
                                 |> List.fold
@@ -619,6 +624,12 @@ module internal KBackendLowering =
                           Representation = patternRepresentation }
 
                     Result.Ok(BackendBindPattern binding, Map.ofList [ name, patternRepresentation ])
+                | KRuntimeOrPattern alternatives ->
+                    match alternatives with
+                    | first :: _ ->
+                        lowerPattern locals patternRepresentation first
+                    | [] ->
+                        Result.Ok(BackendWildcardPattern, Map.empty)
                 | KRuntimeConstructorPattern(nameSegments, argumentPatterns) ->
                     let constructorText = String.concat "." nameSegments
 
@@ -896,7 +907,8 @@ module internal KBackendLowering =
                                 | "<"
                                 | ">"
                                 | "<="
-                                | ">=" ->
+                                | ">="
+                                | "is" ->
                                     BackendRepBoolean
                                 | "+" | "-" | "*" | "/" ->
                                     mergeBackendRepresentations leftRepresentation rightRepresentation

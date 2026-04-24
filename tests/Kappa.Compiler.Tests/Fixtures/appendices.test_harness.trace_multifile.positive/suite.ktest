@@ -1,0 +1,3 @@
+--! assertNoErrors
+--! assertTraceCount parse file = 2
+--! assertTraceCount buildKFrontIR file = 2

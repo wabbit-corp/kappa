@@ -22,6 +22,10 @@ module internal IrText =
             | _ ->
                 let argumentText = arguments |> List.map kcorePatternText |> String.concat " "
                 $"({nameText} {argumentText})"
+        | KCoreOrPattern alternatives ->
+            alternatives
+            |> List.map kcorePatternText
+            |> String.concat " | "
 
     let rec kcoreExitActionText action =
         match action with
@@ -123,6 +127,10 @@ module internal IrText =
             | _ ->
                 let argumentText = arguments |> List.map runtimePatternText |> String.concat " "
                 $"({nameText} {argumentText})"
+        | KRuntimeOrPattern alternatives ->
+            alternatives
+            |> List.map runtimePatternText
+            |> String.concat " | "
 
     let rec runtimeExitActionText action =
         match action with

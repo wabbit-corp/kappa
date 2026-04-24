@@ -34,7 +34,8 @@ module ResourceChecking =
             ActiveScopes =
                 { Id = scopeId
                   IntroducedBindings = []
-                  IntroducedBorrowLocks = [] }
+                  IntroducedBorrowLocks = []
+                  IntroducedUsingObligations = [] }
                 :: state.ActiveScopes
             NextScopeId = state.NextScopeId + 1 }
 
@@ -54,6 +55,44 @@ module ResourceChecking =
         | _rootOnly when List.length state.ActiveScopes = 1 ->
             state
         | scope :: rest ->
+            let state =
+                scope.IntroducedUsingObligations
+                |> List.fold
+                    (fun current obligationId ->
+                        match Map.tryFind obligationId current.UsingObligations with
+                        | Some obligation ->
+                            match Map.tryFind obligation.HiddenOwnedBindingId current.Bindings with
+                            | Some binding ->
+                                let updatedBinding =
+                                    { binding with
+                                        ConsumedPaths =
+                                            if binding.ConsumedPaths |> List.contains [] then
+                                                binding.ConsumedPaths
+                                            else
+                                                [] :: binding.ConsumedPaths
+                                        UseMinimum = max binding.UseMinimum 1
+                                        UseMaximum = max binding.UseMaximum 1
+                                        FirstConsumeOrigin = binding.FirstConsumeOrigin }
+
+                                let releaseEvent: OwnershipUseFact =
+                                    { UseId = $"{currentScopeId current}.u{current.NextEventId}"
+                                      UseKind = OwnershipUseKind.Release
+                                      UseTargetBindingId = Some binding.Id
+                                      UseTargetName = binding.Name
+                                      UsePlaceRoot = binding.Place.Root
+                                      UsePlacePath = binding.Place.Path
+                                      UseOrigin = obligation.SurfaceOrigin }
+
+                                { current with
+                                    Bindings = Map.add binding.Id updatedBinding current.Bindings
+                                    Events = current.Events @ [ releaseEvent ]
+                                    NextEventId = current.NextEventId + 1 }
+                            | None ->
+                                current
+                        | None ->
+                            current)
+                    state
+
             let activeBindingIds =
                 scope.IntroducedBindings
                 |> List.fold (fun current (name, _) -> popActiveBinding name current) state.ActiveBindingIds
@@ -62,10 +101,15 @@ module ResourceChecking =
                 scope.IntroducedBorrowLocks
                 |> List.fold (fun current lockId -> Map.remove lockId current) state.BorrowLocks
 
+            let usingObligations =
+                scope.IntroducedUsingObligations
+                |> List.fold (fun current obligationId -> Map.remove obligationId current) state.UsingObligations
+
             { state with
                 ActiveScopes = rest
                 ActiveBindingIds = activeBindingIds
-                BorrowLocks = borrowLocks }
+                BorrowLocks = borrowLocks
+                UsingObligations = usingObligations }
 
     let private withScope label checker state =
         state
@@ -77,6 +121,11 @@ module ResourceChecking =
         state.ActiveBindingIds
         |> Map.tryFind name
         |> Option.bind List.tryHead
+
+    let private tryFindBindingIdExcluding excludedBindingId name (state: CheckState) =
+        state.ActiveBindingIds
+        |> Map.tryFind name
+        |> Option.bind (List.tryFind (fun bindingId -> not (String.Equals(bindingId, excludedBindingId, StringComparison.Ordinal))))
 
     let private tryFindBinding name (state: CheckState) =
         tryFindBindingId name state
@@ -107,6 +156,18 @@ module ResourceChecking =
         | ResourceQuantity.Interval _ -> true
         | _ -> false
 
+    let private closureCaptureTransfersOwnership quantity =
+        match quantity with
+        | Some(ResourceQuantity.Interval(0, Some 0))
+        | Some(ResourceQuantity.Interval(0, None))
+        | Some(ResourceQuantity.Borrow _) ->
+            false
+        | Some(ResourceQuantity.Interval _)
+        | Some(ResourceQuantity.Variable _) ->
+            true
+        | None ->
+            false
+
     let private isExactOneBinding (binding: ResourceBinding) =
         binding.DeclaredQuantity
         |> Option.exists ResourceQuantity.isExactOne
@@ -116,8 +177,8 @@ module ResourceChecking =
         || after.UseMaximum > before.UseMaximum
         || List.length after.ConsumedPaths > List.length before.ConsumedPaths
 
-    let private quantityText quantity =
-        quantity |> Option.map ResourceQuantity.toSurfaceText
+    let private quantityFact quantity =
+        quantity |> Option.map ResourceQuantity.toOwnershipQuantity
 
     let private combineLambdaBindingQuantity left right =
         match left, right with
@@ -156,15 +217,15 @@ module ResourceChecking =
 
     let private bindingDemand (binding: ResourceBinding) =
         match binding.BorrowRegion with
-        | Some _ -> "&"
-        | None -> $"[{binding.UseMinimum},{binding.UseMaximum}]"
+        | Some _ -> OwnershipBindingDemand.Borrow
+        | None -> OwnershipBindingDemand.Interval(binding.UseMinimum, binding.UseMaximum)
 
     let private bindingState (binding: ResourceBinding) =
         match binding.BorrowRegion with
-        | Some _ -> "borrowed"
-        | None when binding.UseMaximum > 0 || not (List.isEmpty binding.ConsumedPaths) -> "consumed"
-        | None when binding.CheckLinearDrop -> "unconsumed"
-        | None -> "available"
+        | Some _ -> OwnershipBindingState.Borrowed
+        | None when binding.UseMaximum > 0 || not (List.isEmpty binding.ConsumedPaths) -> OwnershipBindingState.Consumed
+        | None when binding.CheckLinearDrop -> OwnershipBindingState.Unconsumed
+        | None -> OwnershipBindingState.Available
 
     let private wouldOveruseBinding (binding: ResourceBinding) =
         let capability =
@@ -177,8 +238,8 @@ module ResourceChecking =
     let private bindingFact (binding: ResourceBinding) =
         { BindingId = binding.Id
           BindingName = binding.Name
-          BindingKind = "local"
-          BindingDeclaredQuantity = quantityText binding.DeclaredQuantity
+          BindingKind = ResourceBindingKind.toOwnershipKind binding.BindingKind
+          BindingDeclaredQuantity = quantityFact binding.DeclaredQuantity
           BindingInferredDemand = bindingDemand binding
           BindingState = bindingState binding
           BindingPlaceRoot = binding.Place.Root
@@ -189,7 +250,7 @@ module ResourceChecking =
     let private addEventAtPlace useKind origin placeRoot placePath (binding: ResourceBinding) (state: CheckState) =
         let event: OwnershipUseFact =
             { UseId = $"{currentScopeId state}.u{state.NextEventId}"
-              UseKindName = useKind
+              UseKind = useKind
               UseTargetBindingId = Some binding.Id
               UseTargetName = binding.Name
               UsePlaceRoot = placeRoot
@@ -203,13 +264,16 @@ module ResourceChecking =
     let private addEvent useKind origin (binding: ResourceBinding) (state: CheckState) =
         addEventAtPlace useKind origin binding.Place.Root binding.Place.Path binding state
 
+    let private addCopyForbiddenEventAtPlace origin placeRoot placePath binding state =
+        addEventAtPlace OwnershipUseKind.CopyForbidden origin placeRoot placePath binding state
+
     let private addNamedEvent useKind origin name (state: CheckState) =
         match tryFindBinding name state with
         | Some binding -> addEvent useKind origin binding state
         | None ->
             let event: OwnershipUseFact =
                 { UseId = $"{currentScopeId state}.u{state.NextEventId}"
-                  UseKindName = useKind
+                  UseKind = useKind
                   UseTargetBindingId = None
                   UseTargetName = name
                   UsePlaceRoot = name
@@ -220,17 +284,30 @@ module ResourceChecking =
                 Events = state.Events @ [ event ]
                 NextEventId = state.NextEventId + 1 }
 
-    let private addBorrowRegionFact (region: BorrowRegion) state =
+    let private addNonConsumingDemand document name state =
+        let origin = findUseLocation document name 1
+
+        match tryFindBinding name state with
+        | Some binding ->
+            state
+            |> addEvent OwnershipUseKind.Borrow origin binding
+            |> updateBinding binding.Id (fun current ->
+                { current with
+                    UseMinimum = max current.UseMinimum 1 })
+        | None ->
+            addNamedEvent OwnershipUseKind.Borrow origin name state
+
+    let private addBorrowRegionFact introductionOrigin (region: BorrowRegion) state =
         let fact: OwnershipBorrowRegionFact =
             { BorrowRegionId = region.Id
               BorrowRegionExplicitName = region.ExplicitName
-              BorrowRegionIntroductionOrigin = None
+              BorrowRegionIntroductionOrigin = introductionOrigin
               BorrowRegionOwnerScope = region.OwnerScope }
 
         { state with
             BorrowRegions = state.BorrowRegions @ [ fact ] }
 
-    let private introduceBorrowRegion ownerScope explicitRegion (state: CheckState) =
+    let private introduceBorrowRegion ownerScope explicitRegion introductionOrigin (state: CheckState) =
         let region: BorrowRegion =
             { Id = defaultArg explicitRegion $"rho{state.NextRegionId}"
               ExplicitName = explicitRegion
@@ -241,25 +318,47 @@ module ResourceChecking =
             | Some _ -> state
             | None -> { state with NextRegionId = state.NextRegionId + 1 }
 
-        region, addBorrowRegionFact region nextState
+        region, addBorrowRegionFact introductionOrigin region nextState
 
-    let private introduceBorrowRegionForQuantity ownerScope quantity state =
+    let private introduceBorrowRegionForQuantity ownerScope quantity introductionOrigin state =
         match quantity with
         | Some(ResourceQuantity.Borrow explicitRegion) ->
-            let region, state = introduceBorrowRegion ownerScope explicitRegion state
+            let region, state = introduceBorrowRegion ownerScope explicitRegion introductionOrigin state
             Some region, state
         | _ -> None, state
 
-    let private addUsingScopeFact usingScopeId hiddenOwnedBinding (region: BorrowRegion) state =
+    let private addUsingScopeFact usingScopeId surfaceOrigin hiddenOwnedBinding hiddenReleaseObligation (region: BorrowRegion) state =
         let fact: OwnershipUsingScopeFact =
             { UsingScopeId = usingScopeId
-              UsingScopeSurfaceOrigin = None
+              UsingScopeSurfaceOrigin = surfaceOrigin
               UsingScopeHiddenOwnedBinding = hiddenOwnedBinding
               UsingScopeSharedRegionId = region.Id
-              UsingScopeHiddenReleaseObligation = "deferred" }
+              UsingScopeHiddenReleaseObligation = hiddenReleaseObligation }
 
         { state with
             UsingScopes = state.UsingScopes @ [ fact ] }
+
+    let private addUsingObligation obligationId scopeId hiddenOwnedBindingId hiddenOwnedBindingName sharedRegionId surfaceOrigin (state: CheckState) =
+        let obligation: UsingObligation =
+            { Id = obligationId
+              ScopeId = scopeId
+              HiddenOwnedBindingId = hiddenOwnedBindingId
+              HiddenOwnedBindingName = hiddenOwnedBindingName
+              SharedRegionId = sharedRegionId
+              SurfaceOrigin = surfaceOrigin }
+
+        let activeScopes =
+            match state.ActiveScopes with
+            | currentScope :: rest ->
+                { currentScope with
+                    IntroducedUsingObligations = obligationId :: currentScope.IntroducedUsingObligations }
+                :: rest
+            | [] ->
+                []
+
+        { state with
+            ActiveScopes = activeScopes
+            UsingObligations = Map.add obligationId obligation state.UsingObligations }
 
     let private addDeferredFact fact state =
         if state.DeferredFacts |> List.contains fact then
@@ -276,7 +375,7 @@ module ResourceChecking =
               ClosureCaptureBindingIds = capturedBindings |> List.map (fun binding -> binding.Id) |> List.distinct |> List.sort
               ClosureCaptureNames = capturedBindings |> List.map (fun binding -> binding.Name) |> List.distinct |> List.sort
               ClosureRegionEnvironment = capturedRegions |> Set.toList |> List.sort
-              ClosureEscapeStatus = "contained"
+              ClosureEscapeStatus = OwnershipClosureEscapeStatus.Contained
               ClosureOrigin = None }
 
         closureId,
@@ -289,7 +388,7 @@ module ResourceChecking =
             state.Closures
             |> List.map (fun closure ->
                 if String.Equals(closure.ClosureId, closureId, StringComparison.Ordinal) then
-                    { closure with ClosureEscapeStatus = "escaped" }
+                    { closure with ClosureEscapeStatus = OwnershipClosureEscapeStatus.Escaped }
                 else
                     closure)
 
@@ -302,8 +401,14 @@ module ResourceChecking =
                 | NamePattern name ->
                     yield name, path
                 | ConstructorPattern(_, arguments) ->
-                    for argument in arguments do
-                        yield! loop path argument
+                    for index, argument in arguments |> List.indexed do
+                        yield! loop (path @ [ $"#{index}" ]) argument
+                | OrPattern alternatives ->
+                    match alternatives with
+                    | first :: _ ->
+                        yield! loop path first
+                    | [] ->
+                        ()
                 | AnonymousRecordPattern fields ->
                     for field in fields do
                         yield! loop (path @ [ field.Name ]) field.Pattern
@@ -316,12 +421,23 @@ module ResourceChecking =
     let private collectPatternNames (pattern: SurfacePattern) =
         collectPatternBindings pattern |> List.map fst
 
+    let private bindPatternNameLocation (document: ParsedDocument) (binding: SurfaceBindPattern) name =
+        binding.BinderSpans
+        |> Map.tryFind name
+        |> Option.bind List.tryHead
+        |> Option.map document.Source.GetLocation
+        |> Option.orElseWith (fun () -> findBinderLocation document name)
+
+    let private bindPatternIntroductionOrigin (document: ParsedDocument) (binding: SurfaceBindPattern) =
+        collectPatternNames binding.Pattern
+        |> List.tryPick (bindPatternNameLocation document binding)
+
     let rec private expressionNames (expression: SurfaceExpression) =
         seq {
             match expression with
             | Literal _ -> ()
-            | Name [ name ] -> yield name
-            | Name _ -> ()
+            | Name(root :: _) -> yield root
+            | Name [] -> ()
             | LocalLet(binding, value, body) ->
                 yield! expressionNames value
 
@@ -354,11 +470,23 @@ module ResourceChecking =
                     | None -> ()
 
                     yield! expressionNames caseClause.Body
+            | RecordLiteral fields ->
+                for field in fields do
+                    yield! expressionNames field.Value
+            | Seal(value, _) ->
+                yield! expressionNames value
             | RecordUpdate(receiver, fields) ->
                 yield! expressionNames receiver
 
                 for field in fields do
                     yield! expressionNames field.Value
+            | SafeNavigation(receiver, navigation) ->
+                yield! expressionNames receiver
+
+                for argument in navigation.Arguments do
+                    yield! expressionNames argument
+            | TagTest(receiver, _) ->
+                yield! expressionNames receiver
             | Do statements ->
                 for statement in statements do
                     yield! doStatementNames statement
@@ -372,6 +500,9 @@ module ResourceChecking =
                 for argument in arguments do
                     yield! expressionNames argument
             | Binary(left, _, right) ->
+                yield! expressionNames left
+                yield! expressionNames right
+            | Elvis(left, right) ->
                 yield! expressionNames left
                 yield! expressionNames right
             | PrefixedString(_, parts) ->
@@ -389,8 +520,25 @@ module ResourceChecking =
             | DoVar(_, expression)
             | DoAssign(_, expression)
             | DoUsing(_, expression)
+            | DoReturn expression
             | DoExpression expression ->
                 yield! expressionNames expression
+            | DoLetQuestion(_, expression, failure) ->
+                yield! expressionNames expression
+
+                match failure with
+                | Some failure ->
+                    for statement in failure.Body do
+                        yield! doStatementNames statement
+                | None -> ()
+            | DoIf(condition, whenTrue, whenFalse) ->
+                yield! expressionNames condition
+
+                for statement in whenTrue do
+                    yield! doStatementNames statement
+
+                for statement in whenFalse do
+                    yield! doStatementNames statement
             | DoWhile(condition, body) ->
                 yield! expressionNames condition
 
@@ -430,6 +578,256 @@ module ResourceChecking =
         | Lambda _ ->
             capturedBindings state expression
             |> inferLambdaBindingQuantity
+        | _ ->
+            None
+
+    let private tryDelayedExpressionBody expression =
+        match expression with
+        | Apply(Name [ calleeName ], [ body ])
+            when String.Equals(calleeName, "thunk", StringComparison.Ordinal)
+                 || String.Equals(calleeName, "lazy", StringComparison.Ordinal) ->
+            Some body
+        | _ ->
+            None
+
+    let private tryForcedExpressionArgument expression =
+        match expression with
+        | Apply(Name [ calleeName ], [ argument ]) when String.Equals(calleeName, "force", StringComparison.Ordinal) ->
+            Some argument
+        | _ ->
+            None
+
+    let private lowerBoundIsPositive quantity =
+        quantity |> Option.exists ResourceQuantity.requiresUse
+
+    let private demandedParameterQuantity quantity =
+        match quantity with
+        | Some(Some demandQuantity) -> Some demandQuantity
+        | Some None -> Some ResourceQuantity.omega
+        | None -> None
+
+    let private quantityFromFunctionSignatureQuantity quantity =
+        match quantity with
+        | ResourceQuantity.Interval(0, Some 0) -> QuantityZero
+        | ResourceQuantity.Interval(1, Some 1) -> QuantityOne
+        | ResourceQuantity.Interval(0, None) -> QuantityOmega
+        | ResourceQuantity.Interval(0, Some 1) -> QuantityAtMostOne
+        | ResourceQuantity.Interval(1, None) -> QuantityAtLeastOne
+        | ResourceQuantity.Borrow explicitRegion -> QuantityBorrow explicitRegion
+        | ResourceQuantity.Variable name -> QuantityVariable name
+        | ResourceQuantity.Interval(minimum, Some maximum) when minimum = maximum ->
+            if minimum = 0 then QuantityZero elif minimum = 1 then QuantityOne else QuantityVariable(ResourceQuantity.toSurfaceText quantity)
+        | _ ->
+            QuantityVariable(ResourceQuantity.toSurfaceText quantity)
+
+    let private tryBuildFunctionTypeFromSignature (signature: FunctionSignature) =
+        let returnType = signature.ReturnTypeTokens |> Option.bind TypeSignatures.parseType
+
+        let rec build index currentResult =
+            if index < 0 then
+                Some currentResult
+            else
+                match signature.ParameterTypeTokens |> List.tryItem index |> Option.flatten with
+                | Some parameterTokens ->
+                    match TypeSignatures.parseType parameterTokens with
+                    | Some parameterType ->
+                        let quantity =
+                            signature.ParameterQuantities
+                            |> List.tryItem index
+                            |> Option.flatten
+                            |> Option.map quantityFromFunctionSignatureQuantity
+                            |> Option.defaultValue QuantityOmega
+
+                        build (index - 1) (TypeSignatures.TypeArrow(quantity, parameterType, currentResult))
+                    | None ->
+                        None
+                | None ->
+                    None
+
+        match returnType with
+        | Some resultType ->
+            build (signature.ParameterTypeTokens.Length - 1) resultType
+        | None ->
+            None
+
+    let private tryInferConservativeExpressionType
+        (signatures: Map<string, FunctionSignature>)
+        (localTypes: Map<string, TypeSignatures.TypeExpr>)
+        expression
+        =
+        let tryOptionPayloadType typeExpr =
+            match typeExpr with
+            | TypeSignatures.TypeName([ "Option" ], [ payloadType ])
+            | TypeSignatures.TypeName([ "std"; "prelude"; "Option" ], [ payloadType ]) ->
+                Some payloadType
+            | _ ->
+                None
+
+        let rec tryProjectRecordType currentType path =
+            match path, currentType with
+            | [], _ ->
+                Some currentType
+            | fieldName :: rest, TypeSignatures.TypeRecord fields ->
+                fields
+                |> List.tryFind (fun field -> String.Equals(field.Name, fieldName, StringComparison.Ordinal))
+                |> Option.bind (fun field -> tryProjectRecordType field.Type rest)
+            | _ ->
+                None
+
+        let rec loop locals current =
+            match current with
+            | Name(root :: path) ->
+                locals
+                |> Map.tryFind root
+                |> Option.orElseWith (fun () ->
+                    signatures
+                    |> Map.tryFind root
+                    |> Option.bind tryBuildFunctionTypeFromSignature)
+                |> Option.bind (fun rootType -> tryProjectRecordType rootType path)
+            | Name [] ->
+                None
+            | RecordLiteral fields ->
+                let inferredFields =
+                    fields
+                    |> List.map (fun field ->
+                        loop locals field.Value
+                        |> Option.map (fun fieldType ->
+                            ({ Name = field.Name
+                               Quantity = if field.IsImplicit then QuantityZero else QuantityOmega
+                               Type = fieldType }: TypeSignatures.RecordField)))
+
+                if inferredFields |> List.forall Option.isSome then
+                    inferredFields
+                    |> List.choose id
+                    |> TypeSignatures.TypeRecord
+                    |> Some
+                else
+                    None
+            | Seal(value, _) ->
+                loop locals value
+            | Lambda(parameters, body) ->
+                let parameterTypes =
+                    parameters
+                    |> List.choose (fun parameter ->
+                        parameter.TypeTokens
+                        |> Option.bind TypeSignatures.parseType
+                        |> Option.map (fun parameterType -> parameter, parameterType))
+
+                if List.length parameterTypes <> List.length parameters then
+                    None
+                else
+                    let lambdaLocals =
+                        parameterTypes
+                        |> List.fold (fun state (parameter, parameterType) -> Map.add parameter.Name parameterType state) locals
+
+                    loop lambdaLocals body
+                    |> Option.map (fun resultType ->
+                        parameterTypes
+                        |> List.rev
+                        |> List.fold (fun state (parameter, parameterType) ->
+                            let quantity =
+                                if parameter.IsInout then
+                                    QuantityOne
+                                else
+                                    parameter.Quantity |> Option.defaultValue QuantityOmega
+
+                            TypeSignatures.TypeArrow(quantity, parameterType, state)) resultType)
+            | SafeNavigation(receiver, navigation) ->
+                loop locals receiver
+                |> Option.bind (fun receiverType ->
+                    tryOptionPayloadType receiverType
+                    |> Option.bind (fun payloadType ->
+                        tryProjectRecordType payloadType navigation.Segments
+                        |> Option.bind (fun memberType -> tryApplyType locals memberType navigation.Arguments)
+                        |> Option.map (fun memberType ->
+                            match tryOptionPayloadType memberType with
+                            | Some _ -> memberType
+                            | None -> TypeSignatures.TypeName([ "Option" ], [ memberType ]))))
+            | Elvis(left, right) ->
+                match loop locals left, loop locals right with
+                | Some leftType, Some defaultType ->
+                    tryOptionPayloadType leftType
+                    |> Option.filter (fun payloadType -> payloadType = defaultType)
+                | _ ->
+                    None
+            | _ ->
+                None
+
+        and tryApplyType locals currentType arguments =
+            match currentType, arguments with
+            | currentType, [] ->
+                Some currentType
+            | TypeSignatures.TypeArrow(_, parameterType, resultType), argument :: rest when loop locals argument = Some parameterType ->
+                tryApplyType locals resultType rest
+            | _ ->
+                None
+
+        loop localTypes expression
+
+    let rec private typeContainsCaptureAnnotation typeExpr =
+        match typeExpr with
+        | TypeSignatures.TypeCapture _ ->
+            true
+        | TypeSignatures.TypeArrow(_, parameterType, resultType) ->
+            typeContainsCaptureAnnotation parameterType || typeContainsCaptureAnnotation resultType
+        | TypeSignatures.TypeEquality(left, right) ->
+            typeContainsCaptureAnnotation left || typeContainsCaptureAnnotation right
+        | TypeSignatures.TypeName(_, arguments) ->
+            arguments |> List.exists typeContainsCaptureAnnotation
+        | TypeSignatures.TypeRecord fields ->
+            fields |> List.exists (fun field -> typeContainsCaptureAnnotation field.Type)
+        | TypeSignatures.TypeVariable _ ->
+            false
+
+    let rec private captureSetFromType typeExpr =
+        seq {
+            match typeExpr with
+            | TypeSignatures.TypeCapture(inner, captures) ->
+                yield! captures
+                yield! captureSetFromType inner
+            | TypeSignatures.TypeArrow(_, parameterType, resultType) ->
+                yield! captureSetFromType parameterType
+                yield! captureSetFromType resultType
+            | TypeSignatures.TypeEquality(left, right) ->
+                yield! captureSetFromType left
+                yield! captureSetFromType right
+            | TypeSignatures.TypeName(_, arguments) ->
+                for argument in arguments do
+                    yield! captureSetFromType argument
+            | TypeSignatures.TypeRecord fields ->
+                for field in fields do
+                    yield! captureSetFromType field.Type
+            | TypeSignatures.TypeVariable _ ->
+                ()
+        }
+        |> Set.ofSeq
+
+    let private applicationBoundaryTypesCompatible demandedType actualType =
+        if TypeSignatures.definitionallyEqual demandedType actualType then
+            true
+        else
+            match demandedType, actualType with
+            | TypeSignatures.TypeArrow(demandedInnerQuantity, demandedParameterType, demandedResultType),
+              TypeSignatures.TypeArrow(capabilityInnerQuantity, capabilityParameterType, capabilityResultType) ->
+                TypeSignatures.definitionallyEqual demandedParameterType capabilityParameterType
+                && TypeSignatures.definitionallyEqual demandedResultType capabilityResultType
+                && ResourceQuantity.satisfies
+                    (ResourceQuantity.ofSurface demandedInnerQuantity)
+                    (ResourceQuantity.ofSurface capabilityInnerQuantity)
+            | _ ->
+                false
+
+    let private tryOutermostFunctionTypeFromArgument signatures argument =
+        match argument with
+        | Name [ name ] ->
+            signatures
+            |> Map.tryFind name
+            |> Option.bind tryBuildFunctionTypeFromSignature
+            |> Option.bind (function
+                | TypeSignatures.TypeArrow(quantity, parameterType, resultType) ->
+                    Some(quantity, parameterType, resultType)
+                | _ ->
+                    None)
         | _ ->
             None
 
@@ -782,11 +1180,25 @@ module ResourceChecking =
             })
         |> Set.ofSeq
 
-    let private addBindingWithPlace place name quantity borrowRegion capturedRegions capturedBindingOrigins checkDrop closureFactId localLambda origin (state: CheckState) =
+    let private addBindingWithPlace
+        kind
+        place
+        name
+        quantity
+        borrowRegion
+        capturedRegions
+        capturedBindingOrigins
+        checkDrop
+        closureFactId
+        localLambda
+        origin
+        (state: CheckState)
+        =
         let bindingId = $"{currentScopeId state}.b{state.NextBindingId}"
 
         let binding: ResourceBinding =
             { Id = bindingId
+              BindingKind = kind
               Name = name
               DeclaredQuantity = quantity
               Place = place
@@ -822,8 +1234,68 @@ module ResourceChecking =
             Bindings = Map.add bindingId binding state.Bindings
             NextBindingId = state.NextBindingId + 1 }
 
-    let private addBinding name quantity borrowRegion capturedRegions capturedBindingOrigins checkDrop closureFactId localLambda origin state =
+    let private addBindingSnapshot (binding: ResourceBinding) (state: CheckState) =
+        let bindingId = $"{currentScopeId state}.b{state.NextBindingId}"
+
+        let snapshot =
+            { binding with
+                Id = bindingId }
+
+        let activeBindingIds =
+            state.ActiveBindingIds
+            |> Map.change binding.Name (fun existing -> Some(bindingId :: Option.defaultValue [] existing))
+
+        let activeScopes =
+            match state.ActiveScopes with
+            | currentScope :: rest ->
+                { currentScope with
+                    IntroducedBindings = (binding.Name, bindingId) :: currentScope.IntroducedBindings }
+                :: rest
+            | [] ->
+                []
+
+        { state with
+            ActiveScopes = activeScopes
+            ActiveBindingIds = activeBindingIds
+            Bindings = Map.add bindingId snapshot state.Bindings
+            NextBindingId = state.NextBindingId + 1 }
+
+    let private transferCapturedBindingIntoClosure (document: ParsedDocument) (binding: ResourceBinding) (state: CheckState) =
+        if not (closureCaptureTransfersOwnership binding.DeclaredQuantity) then
+            state
+        else
+            let captureOrigin = findBindingUseLocation document binding 1
+
+            updateBinding binding.Id (fun current ->
+                { current with
+                    ConsumedPaths = distinctPaths ([] :: current.ConsumedPaths)
+                    UseMinimum = max current.UseMinimum 1
+                    UseMaximum = max current.UseMaximum 1
+                    FirstConsumeOrigin = current.FirstConsumeOrigin |> Option.orElse captureOrigin }) state
+
+    let private transferImmediateClosureArgumentCaptures (document: ParsedDocument) argument state =
+        let transferCaptured state =
+            let captured = capturedBindings state argument
+
+            captured
+            |> List.fold (fun current binding ->
+                addEvent OwnershipUseKind.Capture (findUseLocation document binding.Name 1) binding current) state
+            |> fun current ->
+                captured
+                |> List.fold (fun next binding ->
+                    transferCapturedBindingIntoClosure document binding next) current
+
+        match argument with
+        | Lambda _ ->
+            transferCaptured state
+        | _ when tryDelayedExpressionBody argument |> Option.isSome ->
+            transferCaptured state
+        | _ ->
+            state
+
+    let private addBinding kind name quantity borrowRegion capturedRegions capturedBindingOrigins checkDrop closureFactId localLambda origin state =
         addBindingWithPlace
+            kind
             (ResourcePlace.root name)
             name
             quantity
@@ -859,6 +1331,7 @@ module ResourceChecking =
                     ResourcePlace.root name
 
             addBindingWithPlace
+                PatternBinding
                 place
                 name
                 quantity
@@ -868,7 +1341,7 @@ module ResourceChecking =
                 checkDrop
                 closureFactId
                 localLambda
-                (findBinderLocation document name)
+                (bindPatternNameLocation document binding name)
                 current) state
 
     let private bindingCapturedRegions (binding: ResourceBinding) =
@@ -1007,6 +1480,116 @@ module ResourceChecking =
         | other ->
             None, other
 
+    let private constructorFieldGroups (constructor: DataConstructor) =
+        let tokens =
+            constructor.Tokens
+            |> trimSignificantTokens
+            |> List.skip 1
+            |> List.toArray
+
+        let groups = ResizeArray<Token list>()
+        let mutable index = 0
+
+        while index < tokens.Length do
+            match tokens[index].Kind with
+            | LeftParen ->
+                let mutable depth = 1
+                let startIndex = index + 1
+                index <- index + 1
+
+                while index < tokens.Length && depth > 0 do
+                    match tokens[index].Kind with
+                    | LeftParen -> depth <- depth + 1
+                    | RightParen -> depth <- depth - 1
+                    | _ -> ()
+
+                    index <- index + 1
+
+                if depth = 0 then
+                    groups.Add(tokens[startIndex .. index - 2] |> Array.toList)
+            | _ ->
+                index <- index + 1
+
+        groups |> Seq.toList
+
+    let private constructorFieldQuantities constructor =
+        constructorFieldGroups constructor
+        |> List.map (fun tokens -> stripFieldQuantityPrefix tokens |> fst)
+
+    let private constructorHasPositiveOwnedField constructor =
+        constructorFieldQuantities constructor
+        |> List.exists (function
+            | Some quantity -> ResourceQuantity.requiresUse quantity
+            | None -> false)
+
+    let private patternConstructorNames pattern =
+        let rec loop current =
+            seq {
+                match current with
+                | ConstructorPattern(segments, arguments) ->
+                    match List.tryLast segments with
+                    | Some name -> yield name
+                    | None -> ()
+
+                    for argument in arguments do
+                        yield! loop argument
+                | OrPattern alternatives ->
+                    for alternative in alternatives do
+                        yield! loop alternative
+                | AnonymousRecordPattern fields ->
+                    for field in fields do
+                        yield! loop field.Pattern
+                | WildcardPattern
+                | NamePattern _
+                | LiteralPattern _ -> ()
+            }
+
+        loop pattern |> Set.ofSeq
+
+    let private letQuestionPlainFailureDropsPositiveResidue (document: ParsedDocument) pattern =
+        let successConstructors = patternConstructorNames pattern
+
+        if Set.isEmpty successConstructors then
+            false
+        else
+            document.Syntax.Declarations
+            |> List.exists (function
+                | DataDeclarationNode declaration ->
+                    let constructorNames =
+                        declaration.Constructors
+                        |> List.map (fun constructor -> constructor.Name)
+                        |> Set.ofList
+
+                    not (Set.isEmpty (Set.intersect successConstructors constructorNames))
+                    && declaration.Constructors
+                       |> List.exists (fun constructor ->
+                           not (Set.contains constructor.Name successConstructors)
+                           && constructorHasPositiveOwnedField constructor)
+                | _ ->
+                    false)
+
+    let private tryConstructorPatternQuantity (document: ParsedDocument) pattern =
+        match pattern with
+        | ConstructorPattern(segments, arguments) ->
+            match List.tryLast segments with
+            | None -> None
+            | Some constructorName ->
+                document.Syntax.Declarations
+                |> List.tryPick (function
+                    | DataDeclarationNode declaration ->
+                        declaration.Constructors
+                        |> List.tryFind (fun constructor -> String.Equals(constructor.Name, constructorName, StringComparison.Ordinal))
+                        |> Option.bind (fun constructor ->
+                            let quantities = constructorFieldQuantities constructor
+
+                            match arguments, quantities with
+                            | [ NamePattern _ ], [ Some quantity ] -> Some quantity
+                            | _ -> None)
+                    | _ ->
+                        None)
+        | _ ->
+            None
+
     let private returnTypeContainsThreadedField fieldName (tokens: Token list) =
         let recordTokens =
             tryUnwrapWholeParenthesizedTokens tokens
@@ -1108,12 +1691,20 @@ module ResourceChecking =
                     document
                     current) state
 
-    let private consumeBindingAtPlace (document: ParsedDocument) (place: ResourcePlace) (state: CheckState) =
-        match tryFindBinding place.Root state with
+    let rec private consumeBindingByIdAtPlace
+        (document: ParsedDocument)
+        (place: ResourcePlace)
+        bindingId
+        originOverride
+        (state: CheckState)
+        =
+        match Map.tryFind bindingId state.Bindings with
         | None -> state
         | Some binding ->
             let placeText = String.concat "." (place.Root :: place.Path)
-            let consumeOrigin = findBindingUseLocation document binding (binding.UseMaximum + 1)
+            let consumeOrigin =
+                originOverride
+                |> Option.orElseWith (fun () -> findBindingUseLocation document binding (binding.UseMaximum + 1))
 
             let state =
                 if binding.BorrowRegion.IsSome then
@@ -1152,30 +1743,33 @@ module ResourceChecking =
                         document
                         state
                 elif List.isEmpty place.Path && not (List.isEmpty binding.ConsumedPaths) then
-                    addDiagnostic
+                    state
+                    |> addCopyForbiddenEventAtPlace consumeOrigin place.Root place.Path binding
+                    |> addDiagnostic
                         linearOveruseCode
                         $"Linear resource '{place.Root}' cannot be consumed as a whole after one of its field paths has already been consumed."
                         consumeOrigin
                         []
                         document
-                        state
                 elif not (List.isEmpty place.Path) && binding.UseMaximum > 0 then
-                    addDiagnostic
+                    state
+                    |> addCopyForbiddenEventAtPlace consumeOrigin place.Root place.Path binding
+                    |> addDiagnostic
                         linearOveruseCode
                         $"Field path '{placeText}' cannot be consumed after its root resource has already been consumed."
                         consumeOrigin
                         []
                         document
-                        state
                 elif not (List.isEmpty place.Path)
                      && (binding.ConsumedPaths |> List.exists (fun consumedPath -> pathsOverlap consumedPath place.Path)) then
-                    addDiagnostic
+                    state
+                    |> addCopyForbiddenEventAtPlace consumeOrigin place.Root place.Path binding
+                    |> addDiagnostic
                         linearOveruseCode
                         $"Field path '{placeText}' has already been consumed."
                         consumeOrigin
                         []
                         document
-                        state
                 elif List.isEmpty place.Path && wouldOveruseBinding binding then
                     let relatedLocations =
                         [
@@ -1192,17 +1786,18 @@ module ResourceChecking =
                             | None -> ()
                         ]
 
-                    addDiagnostic
+                    state
+                    |> addCopyForbiddenEventAtPlace consumeOrigin place.Root place.Path binding
+                    |> addDiagnostic
                         linearOveruseCode
                         $"Linear resource '{place.Root}' is consumed more than once."
                         consumeOrigin
                         relatedLocations
                         document
-                        state
                 else
                     state
 
-            let state = addEventAtPlace "consume" consumeOrigin place.Root place.Path binding state
+            let state = addEventAtPlace OwnershipUseKind.Consume consumeOrigin place.Root place.Path binding state
 
             let updated =
                 if List.isEmpty place.Path then
@@ -1216,8 +1811,30 @@ module ResourceChecking =
                         UseMinimum = max binding.UseMinimum 1
                         FirstConsumeOrigin = binding.FirstConsumeOrigin |> Option.orElse consumeOrigin }
 
-            { state with
-                Bindings = Map.add binding.Id updated state.Bindings }
+            let state =
+                { state with
+                    Bindings = Map.add binding.Id updated state.Bindings }
+
+            consumeAliasedSourcePlace document consumeOrigin binding state
+
+    and private consumeAliasedSourcePlace document consumeOrigin (binding: ResourceBinding) state =
+        let aliasesSourcePlace =
+            not (String.Equals(binding.Place.Root, binding.Name, StringComparison.Ordinal))
+            || not (List.isEmpty binding.Place.Path)
+
+        if not aliasesSourcePlace || binding.BorrowRegion.IsSome then
+            state
+        else
+            match tryFindBindingIdExcluding binding.Id binding.Place.Root state with
+            | Some sourceBindingId ->
+                consumeBindingByIdAtPlace document binding.Place sourceBindingId consumeOrigin state
+            | None ->
+                state
+
+    let private consumeBindingAtPlace (document: ParsedDocument) (place: ResourcePlace) (state: CheckState) =
+        match tryFindBindingId place.Root state with
+        | Some bindingId -> consumeBindingByIdAtPlace document place bindingId None state
+        | None -> state
 
     let private consumeBinding (document: ParsedDocument) name (state: CheckState) =
         consumeBindingAtPlace document (ResourcePlace.root name) state
@@ -1226,10 +1843,18 @@ module ResourceChecking =
         match expression with
         | Name [ name ] ->
             match tryFindBinding name state with
+            | Some binding when binding.DeclaredQuantity = Some ResourceQuantity.zero ->
+                addDiagnostic
+                    erasedRuntimeUseCode
+                    $"Quantity-0 binding '{binding.Name}' cannot be used at runtime."
+                    (findUseLocation document name 1)
+                    []
+                    document
+                    state
             | Some binding when binding.DeclaredQuantity |> Option.exists concreteQuantityCountsUse ->
                 consumeBinding document name state
             | Some binding when quantityBorrows binding.DeclaredQuantity ->
-                addNamedEvent "borrow" (findUseLocation document name 1) binding.Name state
+                addNonConsumingDemand document binding.Name state
             | _ ->
                 state
         | _ ->
@@ -1286,6 +1911,15 @@ module ResourceChecking =
         { binding with
             ConsumedPaths = remainingPaths }
 
+    let private restoreConsumedPlace place (binding: ResourceBinding) =
+        let restored = restoreConsumedPaths [ place.Path ] binding
+
+        if List.isEmpty place.Path then
+            { restored with
+                UseMaximum = 0 }
+        else
+            restored
+
     let private bindMatchPatternNames (document: ParsedDocument) scrutineeName pattern state =
         match tryFindBinding scrutineeName state with
         | None ->
@@ -1295,10 +1929,8 @@ module ResourceChecking =
 
             let state =
                 match scrutineeBinding.DeclaredQuantity with
-                | Some quantity when ResourceQuantity.isExactOne quantity ->
-                    consumeBinding document scrutineeName state
                 | _ when quantityBorrows scrutineeBinding.DeclaredQuantity ->
-                    addNamedEvent "borrow" (findUseLocation document scrutineeName 1) scrutineeBinding.Name state
+                    addNamedEvent OwnershipUseKind.Borrow (findUseLocation document scrutineeName 1) scrutineeBinding.Name state
                 | _ ->
                     state
 
@@ -1309,6 +1941,7 @@ module ResourceChecking =
             patternBindings
             |> List.fold (fun current (name, path) ->
                 addBindingWithPlace
+                    PatternBinding
                     (makePlace scrutineeBinding.Place.Root (scrutineeBinding.Place.Path @ path))
                     name
                     scrutineeBinding.DeclaredQuantity
@@ -1330,19 +1963,36 @@ module ResourceChecking =
             1
         | ConstructorPattern(_, arguments) ->
             arguments |> List.sumBy patternBoundNameCount
+        | OrPattern alternatives ->
+            alternatives
+            |> List.tryHead
+            |> Option.map patternBoundNameCount
+            |> Option.defaultValue 0
         | AnonymousRecordPattern fields ->
             fields |> List.sumBy (fun field -> patternBoundNameCount field.Pattern)
 
     let private matchPatternOwnershipSupported scrutinee pattern =
+        let rec supports topLevel current =
+            match current with
+            | WildcardPattern
+            | LiteralPattern _ ->
+                topLevel
+            | NamePattern _ ->
+                true
+            | ConstructorPattern(_, arguments) ->
+                arguments |> List.forall (supports false)
+            | AnonymousRecordPattern fields ->
+                fields |> List.forall (fun field -> supports false field.Pattern)
+            | OrPattern alternatives ->
+                patternBoundNameCount current = 0 && alternatives |> List.forall (supports topLevel)
+
         match patternBoundNameCount pattern with
         | 0 ->
-            true
-        | 1 ->
-            match scrutinee with
-            | Name [ _ ] -> true
-            | _ -> false
+            supports true pattern
         | _ ->
-            false
+            match scrutinee with
+            | Name [ _ ] -> supports true pattern
+            | _ -> false
 
     let private mergeBindingSnapshots (leftBinding: ResourceBinding) (rightBinding: ResourceBinding) =
         { leftBinding with
@@ -1382,6 +2032,9 @@ module ResourceChecking =
         { left with
             Bindings = mergedBindings
             BorrowLocks = left.BorrowLocks
+            UsingObligations =
+                right.UsingObligations
+                |> Map.fold (fun current obligationId obligation -> Map.add obligationId obligation current) left.UsingObligations
             Diagnostics = left.Diagnostics @ right.Diagnostics
             Events = left.Events @ right.Events
             BorrowRegions = left.BorrowRegions @ right.BorrowRegions
@@ -1433,12 +2086,12 @@ module ResourceChecking =
                 | Name [ name ] ->
                     match tryFindBinding name state with
                     | Some binding ->
-                        let state = addEvent "escape" escapeOrigin binding state
+                        let state = addEvent OwnershipUseKind.Escape escapeOrigin binding state
 
                         match binding.ClosureFactId with
                         | Some closureId -> markClosureEscaped closureId state
                         | None -> state
-                    | None -> addNamedEvent "escape" escapeOrigin name state
+                    | None -> addNamedEvent OwnershipUseKind.Escape escapeOrigin name state
                 | _ -> state
 
             addDiagnostic
@@ -1470,7 +2123,7 @@ module ResourceChecking =
         let hiddenName = $"__tmp{state.NextBindingId}"
 
         ResourcePlace.root hiddenName,
-        addBinding hiddenName (Some ResourceQuantity.one) None Set.empty [] false None None None state
+        addBinding LocalBinding hiddenName (Some ResourceQuantity.one) None Set.empty [] false None None None state
 
     let private prepareBorrowPatternSource projectionSummaries scopeLabel expression state =
         match tryBorrowablePlacesWithEnv Map.empty projectionSummaries state expression with
@@ -1482,10 +2135,59 @@ module ResourceChecking =
             let place, state = introduceHiddenBorrowRoot scopeLabel state
             Some place, [ place ], state
 
+    let rec private expressionResultMayCarryBorrow state expression =
+        match expression with
+        | Name [ name ] ->
+            match tryFindBinding name state with
+            | Some binding ->
+                binding.BorrowRegion.IsSome
+                || not (Set.isEmpty binding.CapturedRegions)
+                || binding.ClosureFactId.IsSome
+                || binding.LocalLambda.IsSome
+            | None ->
+                false
+        | Lambda _ ->
+            not (Set.isEmpty (capturedRegions state expression))
+        | Apply _ when tryDelayedExpressionBody expression |> Option.isSome ->
+            not (Set.isEmpty (capturedRegions state expression))
+        | LocalLet(_, _, body) ->
+            expressionResultMayCarryBorrow state body
+        | IfThenElse(_, whenTrue, whenFalse) ->
+            expressionResultMayCarryBorrow state whenTrue || expressionResultMayCarryBorrow state whenFalse
+        | Match(_, cases) ->
+            cases |> List.exists (fun caseClause -> expressionResultMayCarryBorrow state caseClause.Body)
+        | RecordLiteral fields ->
+            fields |> List.exists (fun field -> expressionResultMayCarryBorrow state field.Value)
+        | Seal(value, _) ->
+            expressionResultMayCarryBorrow state value
+        | Apply(Name [ "captureBorrow" ], [ _ ]) ->
+            not (Set.isEmpty (capturedRegions state expression))
+        | Do statements ->
+            match List.tryLast statements with
+            | Some(DoExpression result)
+            | Some(DoReturn result) -> expressionResultMayCarryBorrow state result
+            | _ -> false
+        | MonadicSplice inner
+        | InoutArgument inner
+        | Unary(_, inner) ->
+            expressionResultMayCarryBorrow state inner
+        | SafeNavigation _
+        | Elvis _ ->
+            not (Set.isEmpty (capturedRegions state expression))
+        | Literal _
+        | Name _
+        | RecordUpdate _
+        | Apply _
+        | Binary _
+        | TagTest _
+        | PrefixedString _ ->
+            false
+
     let rec private expressionMayCarryEscapingBorrow expression =
         match expression with
-        | Name [ _ ]
         | Lambda _ ->
+            true
+        | Name [ name ] ->
             true
         | LocalLet(_, _, body) ->
             expressionMayCarryEscapingBorrow body
@@ -1493,10 +2195,21 @@ module ResourceChecking =
             expressionMayCarryEscapingBorrow whenTrue || expressionMayCarryEscapingBorrow whenFalse
         | Match(_, cases) ->
             cases |> List.exists (fun caseClause -> expressionMayCarryEscapingBorrow caseClause.Body)
+        | RecordLiteral fields ->
+            fields |> List.exists (fun field -> expressionMayCarryEscapingBorrow field.Value)
+        | Seal(value, _) ->
+            expressionMayCarryEscapingBorrow value
+        | TagTest(receiver, _) ->
+            expressionMayCarryEscapingBorrow receiver
+        | SafeNavigation _ ->
+            true
         | Do statements ->
             match List.tryLast statements with
             | Some(DoExpression result) -> expressionMayCarryEscapingBorrow result
+            | Some(DoReturn result) -> expressionMayCarryEscapingBorrow result
             | _ -> false
+        | Apply _ when tryDelayedExpressionBody expression |> Option.isSome ->
+            true
         | MonadicSplice inner
         | InoutArgument inner
         | Unary(_, inner) ->
@@ -1506,14 +2219,22 @@ module ResourceChecking =
         | RecordUpdate _
         | Apply _
         | Binary _
+        | Elvis _
         | PrefixedString _ ->
             false
 
     let rec private checkResultEscapeAtBoundary allowedRegions (document: ParsedDocument) expression state =
         match expression with
-        | Name [ _ ]
         | Lambda _ ->
             checkEscapeAgainstAllowed allowedRegions document expression state
+        | Name [ name ] ->
+            match tryFindBinding name state with
+            | Some binding when not (Set.isEmpty binding.CapturedRegions)
+                                || binding.ClosureFactId.IsSome
+                                || binding.LocalLambda.IsSome ->
+                checkEscapeAgainstAllowed allowedRegions document expression state
+            | _ ->
+                state
         | LocalLet(_, _, body) ->
             checkResultEscapeAtBoundary allowedRegions document body state
         | IfThenElse(_, whenTrue, whenFalse) ->
@@ -1524,9 +2245,22 @@ module ResourceChecking =
             (state, cases)
             ||> List.fold (fun current caseClause ->
                 checkResultEscapeAtBoundary allowedRegions document caseClause.Body current)
+        | RecordLiteral fields ->
+            (state, fields)
+            ||> List.fold (fun current field ->
+                checkResultEscapeAtBoundary allowedRegions document field.Value current)
+        | Seal(value, _) ->
+            checkResultEscapeAtBoundary allowedRegions document value state
+        | TagTest(receiver, _) ->
+            checkResultEscapeAtBoundary allowedRegions document receiver state
+        | SafeNavigation _
+        | Elvis _ ->
+            checkEscapeAgainstAllowed allowedRegions document expression state
         | Do statements ->
             match List.tryLast statements with
             | Some(DoExpression result) ->
+                checkResultEscapeAtBoundary allowedRegions document result state
+            | Some(DoReturn result) ->
                 checkResultEscapeAtBoundary allowedRegions document result state
             | _ ->
                 state
@@ -1534,6 +2268,10 @@ module ResourceChecking =
         | InoutArgument inner
         | Unary(_, inner) ->
             checkResultEscapeAtBoundary allowedRegions document inner state
+        | Apply _ when tryDelayedExpressionBody expression |> Option.isSome ->
+            checkEscapeAgainstAllowed allowedRegions document expression state
+        | Apply(Name [ "captureBorrow" ], [ _ ]) ->
+            checkEscapeAgainstAllowed allowedRegions document expression state
         | Literal _
         | Name _
         | Apply _
@@ -1542,7 +2280,7 @@ module ResourceChecking =
         | PrefixedString _ ->
             state
 
-    let private checkEscapingLambda (document: ParsedDocument) expression state =
+    let private checkEscapingLambdaAgainst allowedRegions (document: ParsedDocument) expression state =
         match expression with
         | Lambda _ ->
             let captured = capturedRegions state expression
@@ -1551,7 +2289,7 @@ module ResourceChecking =
             let state =
                 capturedBindingList
                 |> List.fold (fun current binding ->
-                    addEvent "capture" (findUseLocation document binding.Name 1) binding current) state
+                    addEvent OwnershipUseKind.Capture (findUseLocation document binding.Name 1) binding current) state
 
             let state =
                 capturedBindingList
@@ -1565,7 +2303,11 @@ module ResourceChecking =
                         document
                         current) state
 
-            if Set.isEmpty captured then
+            let escaped =
+                captured
+                |> Set.filter (fun regionId -> not (Set.contains regionId allowedRegions))
+
+            if Set.isEmpty escaped then
                 state
             else
                 let closureId, state = addClosureFact None capturedBindingList captured state
@@ -1597,6 +2339,9 @@ module ResourceChecking =
         | _ ->
             state
 
+    let private checkEscapingLambda document expression state =
+        checkEscapingLambdaAgainst Set.empty document expression state
+
     let private checkLambdaParameterEscape (document: ParsedDocument) expression state =
         let addLambdaParameterBinding (parameter: Parameter) current =
             let quantity =
@@ -1618,10 +2363,10 @@ module ResourceChecking =
 
             let current =
                 match region with
-                | Some region -> addBorrowRegionFact region current
+                | Some region -> addBorrowRegionFact (findBinderLocation document parameter.Name) region current
                 | None -> current
 
-            addBinding parameter.Name quantity region Set.empty [] checkDrop None None (findBinderLocation document parameter.Name) current
+            addBinding ParameterBinding parameter.Name quantity region Set.empty [] checkDrop None None (findBinderLocation document parameter.Name) current
 
         match expression with
         | Lambda(parameters, body) ->
@@ -1641,12 +2386,68 @@ module ResourceChecking =
         |> List.head
         |> fun scope -> scope.IntroducedBindings |> List.map snd
 
+    let private isResourceDiagnosticCode code =
+        match code with
+        | DiagnosticCode.QttLinearDrop
+        | DiagnosticCode.QttLinearOveruse
+        | DiagnosticCode.QttBorrowConsume
+        | DiagnosticCode.QttBorrowOverlap
+        | DiagnosticCode.QttBorrowEscape
+        | DiagnosticCode.QttErasedRuntimeUse
+        | DiagnosticCode.QttInoutMarkerRequired
+        | DiagnosticCode.QttInoutMarkerUnexpected
+        | DiagnosticCode.QttInoutThreadedFieldMissing ->
+            true
+        | _ ->
+            false
+
+    let private hasPriorNonDropResourceError (state: CheckState) =
+        state.Diagnostics
+        |> List.exists (fun diagnostic ->
+            diagnostic.Severity = Error
+            && isResourceDiagnosticCode diagnostic.Code
+            && diagnostic.Code <> linearOveruseCode
+            && diagnostic.Code <> linearDropCode)
+
+    let private hasPriorLinearDropAt origin (state: CheckState) =
+        state.Diagnostics
+        |> List.exists (fun diagnostic ->
+            diagnostic.Code = linearDropCode
+            && diagnostic.Location = origin)
+
     let private checkScopeLinearDrops (document: ParsedDocument) (state: CheckState) =
         currentScopeBindingIds state
         |> List.fold (fun current bindingId ->
             let binding = current.Bindings[bindingId]
 
-            if binding.CheckLinearDrop && binding.UseMinimum < 1 then
+            if binding.CheckLinearDrop
+               && binding.UseMinimum < 1
+               && not (hasPriorNonDropResourceError current)
+               && not (hasPriorLinearDropAt binding.Origin current) then
+                addDiagnostic
+                    linearDropCode
+                    $"Linear resource '{binding.Name}' is not consumed on every path."
+                    binding.Origin
+                    []
+                    document
+                    current
+            else
+                current) state
+
+    let private allActiveScopeBindingIds (state: CheckState) =
+        state.ActiveScopes
+        |> List.collect (fun scope -> scope.IntroducedBindings |> List.map snd)
+        |> List.distinct
+
+    let private checkAllActiveLinearDrops (document: ParsedDocument) (state: CheckState) =
+        allActiveScopeBindingIds state
+        |> List.fold (fun current bindingId ->
+            let binding = current.Bindings[bindingId]
+
+            if binding.CheckLinearDrop
+               && binding.UseMinimum < 1
+               && not (hasPriorNonDropResourceError current)
+               && not (hasPriorLinearDropAt binding.Origin current) then
                 addDiagnostic
                     linearDropCode
                     $"Linear resource '{binding.Name}' is not consumed on every path."
@@ -1663,6 +2464,30 @@ module ResourceChecking =
         else
             parameter.Quantity |> Option.map ResourceQuantity.ofSurface
 
+    let private addLambdaExecutionParameterBinding (document: ParsedDocument) (parameter: Parameter) current =
+        let quantity = parameterQuantity parameter
+        let checkDrop = quantity |> Option.exists ResourceQuantity.requiresUse
+
+        let region, current =
+            introduceBorrowRegionForQuantity
+                $"{currentScopeId current}.lambda_param"
+                quantity
+                (findBinderLocation document parameter.Name)
+                current
+
+        addBinding
+            ParameterBinding
+            parameter.Name
+            quantity
+            region
+            Set.empty
+            []
+            checkDrop
+            None
+            None
+            (findBinderLocation document parameter.Name)
+            current
+
     let rec private checkLocalLambdaInvocation
         projectionSummaries
         (document: ParsedDocument)
@@ -1678,6 +2503,10 @@ module ResourceChecking =
 
             withScope "lambda_call" (fun scopedState ->
                 let scopedState =
+                    lambdaValue.CapturedBindings
+                    |> List.fold (fun current binding -> addBindingSnapshot binding current) scopedState
+
+                let scopedState =
                     (scopedState, List.zip lambdaValue.Parameters arguments)
                     ||> List.fold (fun current (parameter, argument) ->
                         let quantity = parameterQuantity parameter
@@ -1690,9 +2519,17 @@ module ResourceChecking =
                                 | Some binding ->
                                     binding.BorrowRegion, current
                                 | None ->
-                                    introduceBorrowRegionForQuantity $"{currentScopeId current}.param" quantity current
+                                    introduceBorrowRegionForQuantity
+                                        $"{currentScopeId current}.param"
+                                        quantity
+                                        (argumentLocation document argument)
+                                        current
                             | _ ->
-                                introduceBorrowRegionForQuantity $"{currentScopeId current}.param" quantity current
+                                introduceBorrowRegionForQuantity
+                                    $"{currentScopeId current}.param"
+                                    quantity
+                                    (argumentLocation document argument)
+                                    current
 
                         let capturedRegions, capturedBindingOrigins =
                             match argument with
@@ -1725,6 +2562,7 @@ module ResourceChecking =
                                 Set.empty, []
 
                         addBinding
+                            ParameterBinding
                             parameter.Name
                             quantity
                             borrowRegion
@@ -1736,9 +2574,20 @@ module ResourceChecking =
                             None
                             current)
 
-                checkExpression projectionSummaries document signatures scopedState lambdaValue.Body
+                scopedState
+                |> noteValueDemandingNameUse document lambdaValue.Body
+                |> fun current -> checkExpression projectionSummaries document signatures current lambdaValue.Body
                 |> checkResultEscapeAtBoundary allowedRegions document lambdaValue.Body
                 |> checkScopeLinearDrops document) state
+
+    and private checkImmediateLambdaDemand projectionSummaries document signatures state parameters body =
+        withScope "lambda_arg" (fun scopedState ->
+            parameters
+            |> List.fold (fun current parameter -> addLambdaExecutionParameterBinding document parameter current) scopedState
+            |> noteValueDemandingNameUse document body
+            |> fun current -> checkExpression projectionSummaries document signatures current body
+            |> checkResultEscapeAtBoundary (liveRegionIds state) document body
+            |> checkScopeLinearDrops document) state
 
     and private checkExpression projectionSummaries (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state expression =
         match expression with
@@ -1753,15 +2602,18 @@ module ResourceChecking =
         | Name [] ->
             state
         | LocalLet(binding, value, body) ->
+            let delayedBody = tryDelayedExpressionBody value
             let movedLinearBinding = tryMovedLinearBinding value state
             let captured =
-                match value with
-                | Lambda _ -> capturedRegions state value
+                match value, delayedBody with
+                | Lambda _, _
+                | _, Some _ -> capturedRegions state value
                 | _ -> Set.empty
 
             let capturedBindings =
-                match value with
-                | Lambda _ -> capturedBindings state value
+                match value, delayedBody with
+                | Lambda _, _
+                | _, Some _ -> capturedBindings state value
                 | _ -> []
 
             let bindingNames = collectPatternNames binding.Pattern
@@ -1773,8 +2625,9 @@ module ResourceChecking =
                 |> List.filter isExactOneBinding
 
             let stateAfterValue =
-                match value with
-                | Lambda _ -> checkLambdaParameterEscape document value state
+                match value, delayedBody with
+                | Lambda _, _ -> checkLambdaParameterEscape document value state
+                | _, Some _ -> state
                 | _ -> checkExpression projectionSummaries document signatures state value
 
             let state =
@@ -1783,7 +2636,12 @@ module ResourceChecking =
             let state =
                 capturedBindings
                 |> List.fold (fun current binding ->
-                    addEvent "capture" (findUseLocation document binding.Name 1) binding current) state
+                    addEvent OwnershipUseKind.Capture (findUseLocation document binding.Name 1) binding current) state
+
+            let state =
+                capturedBindings
+                |> List.fold (fun current binding ->
+                    transferCapturedBindingIntoClosure document binding current) state
 
             let allowedRegions = liveRegionIds state
             let scopeLabel =
@@ -1796,8 +2654,9 @@ module ResourceChecking =
                     binding.Quantity
                     |> Option.map ResourceQuantity.ofSurface
                     |> Option.orElseWith (fun () ->
-                        match value with
-                        | Lambda _ -> inferLambdaBindingQuantity capturedBindings
+                        match value, delayedBody with
+                        | Lambda _, _
+                        | _, Some _ -> inferLambdaBindingQuantity capturedBindings
                         | _ -> None)
                     |> Option.orElseWith (fun () ->
                         movedLinearBinding
@@ -1812,17 +2671,24 @@ module ResourceChecking =
                 let checkDrop = declaredQuantity |> Option.exists ResourceQuantity.requiresUse
 
                 let localLambda =
-                    match value, bindingNames with
-                    | Lambda(parameters, lambdaBody), [ _ ] ->
+                    match value, delayedBody, bindingNames with
+                    | Lambda(parameters, lambdaBody), _, [ _ ] ->
                         Some
                             { Parameters = parameters
-                              Body = lambdaBody }
+                              Body = lambdaBody
+                              CapturedBindings = capturedBindings }
+                    | _, Some body, [ _ ] ->
+                        Some
+                            { Parameters = []
+                              Body = body
+                              CapturedBindings = capturedBindings }
                     | _ ->
                         None
 
                 let closureFactId, scopedState =
-                    match value with
-                    | Lambda _ ->
+                    match value, delayedBody with
+                    | Lambda _, _
+                    | _, Some _ ->
                         let closureName =
                             match bindingNames with
                             | [ name ] -> Some name
@@ -1838,7 +2704,7 @@ module ResourceChecking =
                     |> Option.map (fun (sourceBinding, sourcePath) ->
                         scopedState
                         |> addEventAtPlace
-                            "move"
+                            OwnershipUseKind.Move
                             (findBindingUseLocation document sourceBinding 1)
                             sourceBinding.Name
                             sourcePath
@@ -1850,7 +2716,11 @@ module ResourceChecking =
 
                 let scopedState =
                     let borrowRegion, nextState =
-                        introduceBorrowRegionForQuantity $"{currentScopeId scopedState}.let" declaredQuantity scopedState
+                        let introductionOrigin =
+                            bindPatternIntroductionOrigin document binding
+                            |> Option.orElseWith (fun () -> argumentLocation document value)
+
+                        introduceBorrowRegionForQuantity $"{currentScopeId scopedState}.let" declaredQuantity introductionOrigin scopedState
 
                     let sourcePlace, sourcePlaces, nextState =
                         if quantityBorrows declaredQuantity then
@@ -1885,7 +2755,9 @@ module ResourceChecking =
                     else
                         nextState
 
-                checkExpression projectionSummaries document signatures scopedState body
+                scopedState
+                |> noteValueDemandingNameUse document body
+                |> fun current -> checkExpression projectionSummaries document signatures current body
                 |> checkResultEscapeAtBoundary allowedRegions document body
                 |> checkScopeLinearDrops document) state
         | Lambda _ ->
@@ -1905,8 +2777,26 @@ module ResourceChecking =
 
                 let checkedState =
                     match scrutinee with
-                    | Name [ _ ] when supportsPatternOwnership ->
-                        checkExpression projectionSummaries document signatures state scrutinee
+                    | Name [ scrutineeName ] ->
+                        let current =
+                            match tryFindBinding scrutineeName state with
+                            | Some binding when binding.DeclaredQuantity = Some ResourceQuantity.zero ->
+                                addDiagnostic
+                                    erasedRuntimeUseCode
+                                    "A match scrutinee cannot use an erased quantity-0 value at runtime."
+                                    (argumentLocation document scrutinee)
+                                    []
+                                    document
+                                    state
+                            | _ ->
+                                state
+
+                        if supportsPatternOwnership then
+                            checkExpression projectionSummaries document signatures current scrutinee
+                        else
+                            current
+                            |> noteValueDemandingNameUse document scrutinee
+                            |> fun next -> checkExpression projectionSummaries document signatures next scrutinee
                     | _ ->
                         state
                         |> noteValueDemandingNameUse document scrutinee
@@ -1915,7 +2805,7 @@ module ResourceChecking =
                 if supportsPatternOwnership then
                     checkedState
                 else
-                    addDeferredFact "match-pattern-resource-checking" checkedState
+                    addDeferredFact OwnershipDeferredFact.MatchPatternResourceChecking checkedState
 
             match cases with
             | [] -> state
@@ -1947,6 +2837,16 @@ module ResourceChecking =
                     index + 1, caseClause)
                 |> List.fold (fun current (index, caseClause) ->
                     mergeBranchState current (checkCase index caseClause)) firstState
+        | RecordLiteral fields ->
+            fields
+            |> List.fold (fun current field ->
+                current
+                |> noteValueDemandingNameUse document field.Value
+                |> fun next -> checkExpression projectionSummaries document signatures next field.Value) state
+        | Seal(value, _) ->
+            state
+            |> noteValueDemandingNameUse document value
+            |> fun current -> checkExpression projectionSummaries document signatures current value
         | RecordUpdate(receiver, fields) ->
             let state = checkExpression projectionSummaries document signatures state receiver
 
@@ -2033,6 +2933,21 @@ module ResourceChecking =
                     state
             | None ->
                 state
+        | SafeNavigation(receiver, navigation) ->
+            let state =
+                state
+                |> noteValueDemandingNameUse document receiver
+                |> fun current -> checkExpression projectionSummaries document signatures current receiver
+
+            navigation.Arguments
+            |> List.fold (fun current argument ->
+                current
+                |> noteValueDemandingNameUse document argument
+                |> fun next -> checkExpression projectionSummaries document signatures next argument) state
+        | TagTest(receiver, _) ->
+            state
+            |> noteValueDemandingNameUse document receiver
+            |> fun current -> checkExpression projectionSummaries document signatures current receiver
         | Do statements ->
             checkDoStatementsInScope "do" projectionSummaries document signatures state statements
         | MonadicSplice inner
@@ -2047,6 +2962,12 @@ module ResourceChecking =
             |> fun current -> checkExpression projectionSummaries document signatures current left
             |> noteValueDemandingNameUse document right
             |> fun current -> checkExpression projectionSummaries document signatures current right
+        | Elvis(left, right) ->
+            state
+            |> noteValueDemandingNameUse document left
+            |> fun current -> checkExpression projectionSummaries document signatures current left
+            |> noteValueDemandingNameUse document right
+            |> fun current -> checkExpression projectionSummaries document signatures current right
         | PrefixedString(_, parts) ->
             parts
             |> List.fold (fun current part ->
@@ -2056,6 +2977,43 @@ module ResourceChecking =
                     current
                     |> noteValueDemandingNameUse document inner
                     |> fun next -> checkExpression projectionSummaries document signatures next inner) state
+        | Apply(Name [ calleeName ], [ argument ]) when String.Equals(calleeName, "force", StringComparison.Ordinal) ->
+            let state = checkExpression projectionSummaries document signatures state argument
+
+            match argument with
+            | Name [ name ] ->
+                match tryFindBinding name state with
+                | Some binding ->
+                    let state =
+                        match binding.DeclaredQuantity with
+                        | Some quantity when ResourceQuantity.requiresUse quantity ->
+                            consumeBinding document name state
+                        | Some quantity when ResourceQuantity.isBorrow quantity ->
+                            addNamedEvent OwnershipUseKind.Borrow (findUseLocation document name 1) name state
+                        | _ ->
+                            state
+
+                    match binding.LocalLambda with
+                    | Some lambdaValue -> checkLocalLambdaInvocation projectionSummaries document signatures state lambdaValue []
+                    | None -> state
+                | None ->
+                    state
+            | _ ->
+                state
+        | Apply(Name [ calleeName ], [ argument ]) when String.Equals(calleeName, "pure", StringComparison.Ordinal) ->
+            let carriesBorrow = expressionResultMayCarryBorrow state argument
+
+            if carriesBorrow then
+                state
+                |> checkExpression projectionSummaries document signatures <| argument
+                |> checkEscape document argument
+            else
+                let state =
+                    match argument with
+                    | Name [ name ] -> consumeBinding document name state
+                    | _ -> checkExpression projectionSummaries document signatures state argument
+
+                state
         | Apply(callee, arguments) ->
             let state = checkExpression projectionSummaries document signatures state callee
             let calleeName = tryCalleeName callee
@@ -2073,16 +3031,30 @@ module ResourceChecking =
                     | Lambda(parameters, body) ->
                         Some
                             { Parameters = parameters
-                              Body = body }
+                              Body = body
+                              CapturedBindings = capturedBindings state callee }
                     | _ ->
                         None
+
+            let state =
+                match calleeBinding, localLambda with
+                | None, Some lambdaValue ->
+                    lambdaValue.CapturedBindings
+                    |> List.fold (fun current binding ->
+                    addEvent OwnershipUseKind.Capture (findUseLocation document binding.Name 1) binding current) state
+                    |> fun current ->
+                        lambdaValue.CapturedBindings
+                        |> List.fold (fun next binding ->
+                            transferCapturedBindingIntoClosure document binding next) current
+                | _ ->
+                    state
 
             let state =
                 match calleeBinding with
                 | Some binding when binding.DeclaredQuantity |> Option.exists concreteQuantityCountsUse ->
                     consumeBinding document binding.Name state
                 | Some binding when quantityBorrows binding.DeclaredQuantity ->
-                    addNamedEvent "borrow" (findUseLocation document binding.Name 1) binding.Name state
+                    addNamedEvent OwnershipUseKind.Borrow (findUseLocation document binding.Name 1) binding.Name state
                 | _ ->
                     state
 
@@ -2094,6 +3066,16 @@ module ResourceChecking =
                     calleeName
                     |> Option.bind (fun name -> Map.tryFind name signatures)
                     |> Option.map (fun signature -> signature.ParameterQuantities)
+                    |> Option.defaultValue []
+
+            let parameterTypeTokens =
+                match localLambda with
+                | Some lambdaValue ->
+                    lambdaValue.Parameters |> List.map (fun parameter -> parameter.TypeTokens)
+                | None ->
+                    calleeName
+                    |> Option.bind (fun name -> Map.tryFind name signatures)
+                    |> Option.map (fun signature -> signature.ParameterTypeTokens)
                     |> Option.defaultValue []
 
             let parameterInout =
@@ -2112,6 +3094,13 @@ module ResourceChecking =
                     let quantity =
                         parameterQuantities
                         |> List.tryItem index
+
+                    let demandQuantity = demandedParameterQuantity quantity
+
+                    let demandedParameterTypeTokens =
+                        parameterTypeTokens
+                        |> List.tryItem index
+                        |> Option.flatten
 
                     let expectsInout =
                         parameterInout
@@ -2144,9 +3133,39 @@ module ResourceChecking =
                             current
 
                     let current =
-                        match quantity, inferredClosureQuantity current argument with
-                        | Some(Some demandQuantity), Some capability
+                        match demandQuantity, argument with
+                        | Some demandQuantity, Name [ name ] when ResourceQuantity.isInterval demandQuantity ->
+                            match tryFindBinding name current with
+                            | Some binding when binding.DeclaredQuantity |> Option.exists ResourceQuantity.isBorrow ->
+                                current
+                            | Some binding when binding.LocalLambda.IsSome || binding.ClosureFactId.IsSome ->
+                                current
+                            | Some binding ->
+                                let capability =
+                                    binding.DeclaredQuantity
+                                    |> Option.defaultValue ResourceQuantity.omega
+
+                                if ResourceQuantity.satisfies capability demandQuantity then
+                                    current
+                                else
+                                    addDiagnostic
+                                        linearOveruseCode
+                                        $"An argument available at quantity '{ResourceQuantity.toSurfaceText capability}' cannot satisfy parameter demand '{ResourceQuantity.toSurfaceText demandQuantity}'."
+                                        (argumentLocation document argument)
+                                        []
+                                        document
+                                        current
+                            | None ->
+                                current
+                        | _ ->
+                            current
+
+                    let current =
+                        match demandQuantity, inferredClosureQuantity current argument with
+                        | Some demandQuantity, Some capability
                             when not (ResourceQuantity.satisfies capability demandQuantity) ->
+                            let current = transferImmediateClosureArgumentCaptures document argument current
+
                             addDiagnostic
                                 linearOveruseCode
                                 $"An argument usable at quantity '{ResourceQuantity.toSurfaceText capability}' cannot satisfy parameter demand '{ResourceQuantity.toSurfaceText demandQuantity}'."
@@ -2157,26 +3176,79 @@ module ResourceChecking =
                         | _ ->
                             current
 
-                    let next =
-                        match quantity, argument with
-                        | Some quantity, Name [ name ] when quantity |> Option.exists concreteQuantityCountsUse ->
-                            consumeBinding document name current
-                        | Some quantity, InoutArgument(Name [ name ]) when quantity |> Option.exists concreteQuantityCountsUse ->
-                            consumeBinding document name current
-                        | Some quantity, Name [ name ] when quantityBorrows quantity ->
+                    let current =
+                        match demandedParameterTypeTokens |> Option.bind TypeSignatures.parseType,
+                              tryInferConservativeExpressionType signatures Map.empty argument with
+                        | Some demandedType, Some actualType
+                            when not (applicationBoundaryTypesCompatible demandedType actualType) ->
+                            addDiagnostic
+                                DiagnosticCode.TypeEqualityMismatch
+                                $"Argument type '{TypeSignatures.toText actualType}' does not match demanded parameter type '{TypeSignatures.toText demandedType}'."
+                                (argumentLocation document argument)
+                                []
+                                document
+                                current
+                        | _ ->
                             current
-                            |> addNamedEvent "borrow" (findUseLocation document name 1) name
+
+                    let next =
+                        match demandQuantity, argument with
+                        | Some demandQuantity, Lambda(parameters, body) when lowerBoundIsPositive (Some demandQuantity) ->
+                            checkImmediateLambdaDemand projectionSummaries document signatures current parameters body
+                        | Some demandQuantity, Name [ name ] when concreteQuantityCountsUse demandQuantity ->
+                            consumeBinding document name current
+                        | Some demandQuantity, InoutArgument inner when concreteQuantityCountsUse demandQuantity ->
+                            match tryExpressionPlace inner with
+                            | Some place ->
+                                let current = consumeBindingAtPlace document place current
+
+                                if expectsInout then
+                                    match tryFindBindingId place.Root current with
+                                    | Some bindingId ->
+                                        updateBinding bindingId (restoreConsumedPlace place) current
+                                    | None ->
+                                        current
+                                else
+                                    current
+                            | None ->
+                                checkExpression projectionSummaries document signatures current inner
+                        | Some demandQuantity, Name [ name ] when ResourceQuantity.isBorrow demandQuantity ->
+                            current
+                            |> addNonConsumingDemand document name
                             |> fun current -> checkExpression projectionSummaries document signatures current argument
-                        | Some quantity, _ when quantityBorrows quantity ->
-                            checkExpression projectionSummaries document signatures current argument
+                        | Some demandQuantity, _ when ResourceQuantity.isBorrow demandQuantity ->
+                            let current = checkExpression projectionSummaries document signatures current argument
+
+                            match tryBorrowablePlacesWithEnv Map.empty projectionSummaries current argument with
+                            | Some places ->
+                                places
+                                |> List.fold (fun state place -> addNonConsumingDemand document place.Root state) current
+                            | None ->
+                                current
                         | _ ->
                             let current =
-                                if expressionMayCarryEscapingBorrow argument then
+                                match argument with
+                                | Lambda _ when not (Set.isEmpty (capturedRegions current argument)) ->
+                                    checkEscape document argument current
+                                | Name [ name ] ->
+                                    match tryFindBinding name current with
+                                    | Some binding when (binding.LocalLambda.IsSome || binding.ClosureFactId.IsSome)
+                                                        && not (Set.isEmpty (bindingCapturedRegions binding)) ->
+                                        checkEscape document argument current
+                                    | _ ->
+                                        current
+                                | _ ->
+                                    current
+
+                            let current =
+                                if tryDelayedExpressionBody argument |> Option.isSome then
                                     checkEscape document argument current
                                 else
                                     current
 
-                            checkExpression projectionSummaries document signatures current argument
+                            current
+                            |> noteValueDemandingNameUse document argument
+                            |> fun next -> checkExpression projectionSummaries document signatures next argument
 
                     next, index + 1)
                 |> fst
@@ -2191,7 +3263,9 @@ module ResourceChecking =
         let allowedRegions = liveRegionIds state
 
         withScope scopeLabel (fun scopedState ->
-            checkExpression projectionSummaries document signatures scopedState expression
+            scopedState
+            |> noteValueDemandingNameUse document expression
+            |> fun current -> checkExpression projectionSummaries document signatures current expression
             |> checkResultEscapeAtBoundary allowedRegions document expression) state
 
     and private checkDoStatements projectionSummaries (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state statements =
@@ -2199,16 +3273,19 @@ module ResourceChecking =
             match remaining with
             | [] -> current
             | DoLet(binding, expression) :: rest ->
+                let delayedBody = tryDelayedExpressionBody expression
                 let movedLinearBinding = tryMovedLinearBinding expression current
 
                 let captured =
-                    match expression with
-                    | Lambda _ -> capturedRegions current expression
+                    match expression, delayedBody with
+                    | Lambda _, _
+                    | _, Some _ -> capturedRegions current expression
                     | _ -> Set.empty
 
                 let capturedBindings =
-                    match expression with
-                    | Lambda _ -> capturedBindings current expression
+                    match expression, delayedBody with
+                    | Lambda _, _
+                    | _, Some _ -> capturedBindings current expression
                     | _ -> []
 
                 let bindingNames = collectPatternNames binding.Pattern
@@ -2220,8 +3297,9 @@ module ResourceChecking =
                     |> List.filter isExactOneBinding
 
                 let currentAfterValue =
-                    match expression with
-                    | Lambda _ -> checkLambdaParameterEscape document expression current
+                    match expression, delayedBody with
+                    | Lambda _, _ -> checkLambdaParameterEscape document expression current
+                    | _, Some _ -> current
                     | _ -> checkExpression projectionSummaries document signatures current expression
 
                 let current =
@@ -2230,25 +3308,38 @@ module ResourceChecking =
                 let current =
                     capturedBindings
                     |> List.fold (fun state binding ->
-                        addEvent "capture" (findUseLocation document binding.Name 1) binding state) current
+                        addEvent OwnershipUseKind.Capture (findUseLocation document binding.Name 1) binding state) current
+
+                let current =
+                    capturedBindings
+                    |> List.fold (fun state binding ->
+                        transferCapturedBindingIntoClosure document binding state) current
 
                 let closureName =
-                    match expression, collectPatternNames binding.Pattern with
-                    | Lambda _, [ name ] -> Some name
+                    match expression, delayedBody, collectPatternNames binding.Pattern with
+                    | Lambda _, _, [ name ]
+                    | _, Some _, [ name ] -> Some name
                     | _ -> None
 
                 let localLambda =
-                    match expression, collectPatternNames binding.Pattern with
-                    | Lambda(parameters, body), [ _ ] ->
+                    match expression, delayedBody, collectPatternNames binding.Pattern with
+                    | Lambda(parameters, body), _, [ _ ] ->
                         Some
                             { Parameters = parameters
-                              Body = body }
+                              Body = body
+                              CapturedBindings = capturedBindings }
+                    | _, Some body, [ _ ] ->
+                        Some
+                            { Parameters = []
+                              Body = body
+                              CapturedBindings = capturedBindings }
                     | _ ->
                         None
 
                 let closureFactId, current =
-                    match expression with
-                    | Lambda _ ->
+                    match expression, delayedBody with
+                    | Lambda _, _
+                    | _, Some _ ->
                         let closureId, current = addClosureFact closureName capturedBindings captured current
                         Some closureId, current
                     | _ -> None, current
@@ -2257,8 +3348,9 @@ module ResourceChecking =
                     binding.Quantity
                     |> Option.map ResourceQuantity.ofSurface
                     |> Option.orElseWith (fun () ->
-                        match expression with
-                        | Lambda _ -> inferLambdaBindingQuantity capturedBindings
+                        match expression, delayedBody with
+                        | Lambda _, _
+                        | _, Some _ -> inferLambdaBindingQuantity capturedBindings
                         | _ -> None)
                     |> Option.orElseWith (fun () ->
                         movedLinearBinding
@@ -2275,7 +3367,7 @@ module ResourceChecking =
                     |> Option.map (fun (sourceBinding, sourcePath) ->
                         current
                         |> addEventAtPlace
-                            "move"
+                            OwnershipUseKind.Move
                             (findBindingUseLocation document sourceBinding 1)
                             sourceBinding.Name
                             sourcePath
@@ -2291,7 +3383,11 @@ module ResourceChecking =
                     |> List.choose (fun binding -> binding.Origin)
 
                 let borrowRegion, current =
-                    introduceBorrowRegionForQuantity $"{currentScopeId current}.let" declaredQuantity current
+                    let introductionOrigin =
+                        bindPatternIntroductionOrigin document binding
+                        |> Option.orElseWith (fun () -> argumentLocation document expression)
+
+                    introduceBorrowRegionForQuantity $"{currentScopeId current}.let" declaredQuantity introductionOrigin current
 
                 let sourcePlace, sourcePlaces, current =
                     if quantityBorrows declaredQuantity then
@@ -2324,13 +3420,112 @@ module ResourceChecking =
                         current
 
                 loop current rest
+            | DoLetQuestion(binding, expression, failure) :: rest ->
+                let current =
+                    current
+                    |> noteValueDemandingNameUse document expression
+                    |> fun next -> checkExpression projectionSummaries document signatures next expression
+
+                let current =
+                    match failure with
+                    | Some _ ->
+                        current
+                    | None when letQuestionPlainFailureDropsPositiveResidue document binding.Pattern ->
+                        addDiagnostic
+                            linearDropCode
+                            "Plain let? would discard a refutation residue carrying a positive lower-bound obligation; use an explicit else arm."
+                            (bindPatternIntroductionOrigin document binding |> Option.orElseWith (fun () -> argumentLocation document expression))
+                            []
+                            document
+                            current
+                    | None ->
+                        current
+
+                let successQuantity =
+                    binding.Quantity
+                    |> Option.map ResourceQuantity.ofSurface
+                    |> Option.orElseWith (fun () -> tryConstructorPatternQuantity document binding.Pattern)
+
+                let current =
+                    let borrowRegion, nextState =
+                        let introductionOrigin =
+                            bindPatternIntroductionOrigin document binding
+                            |> Option.orElseWith (fun () -> argumentLocation document expression)
+
+                        introduceBorrowRegionForQuantity $"{currentScopeId current}.letq" successQuantity introductionOrigin current
+
+                    addPatternBindings
+                        document
+                        binding
+                        successQuantity
+                        borrowRegion
+                        None
+                        Set.empty
+                        []
+                        (successQuantity |> Option.exists ResourceQuantity.requiresUse)
+                        None
+                        None
+                        nextState
+
+                let current =
+                    match failure with
+                    | None ->
+                        current
+                    | Some failure ->
+                        let diagnosticCount = current.Diagnostics.Length
+                        let eventCount = current.Events.Length
+                        let borrowRegionCount = current.BorrowRegions.Length
+                        let closureCount = current.Closures.Length
+                        let failureQuantity =
+                            failure.ResiduePattern.Quantity
+                            |> Option.map ResourceQuantity.ofSurface
+                            |> Option.orElseWith (fun () -> tryConstructorPatternQuantity document failure.ResiduePattern.Pattern)
+
+                        let failureState =
+                            withScope "letq_else" (fun scopedState ->
+                                let borrowRegion, scopedState =
+                                    introduceBorrowRegionForQuantity
+                                        $"{currentScopeId scopedState}.letq_else"
+                                        failureQuantity
+                                        (bindPatternIntroductionOrigin document failure.ResiduePattern)
+                                        scopedState
+
+                                let scopedState =
+                                    addPatternBindings
+                                        document
+                                        failure.ResiduePattern
+                                        failureQuantity
+                                        borrowRegion
+                                        None
+                                        Set.empty
+                                        []
+                                        (failureQuantity |> Option.exists ResourceQuantity.requiresUse)
+                                        None
+                                        None
+                                        scopedState
+
+                                checkDoStatements projectionSummaries document signatures scopedState failure.Body
+                                |> checkAllActiveLinearDrops document) current
+
+                        { current with
+                            Diagnostics = current.Diagnostics @ (failureState.Diagnostics |> List.skip diagnosticCount)
+                            Events = current.Events @ (failureState.Events |> List.skip eventCount)
+                            BorrowRegions = current.BorrowRegions @ (failureState.BorrowRegions |> List.skip borrowRegionCount)
+                            Closures = current.Closures @ (failureState.Closures |> List.skip closureCount)
+                            DeferredFacts = (current.DeferredFacts @ failureState.DeferredFacts) |> List.distinct |> List.sort }
+
+                loop current rest
             | DoBind(binding, expression) :: rest ->
                 let current = checkExpression projectionSummaries document signatures current expression
                 let declaredQuantity = binding.Quantity |> Option.map ResourceQuantity.ofSurface
                 let checkDrop = declaredQuantity |> Option.exists ResourceQuantity.requiresUse
 
                 let borrowRegion, current =
-                    introduceBorrowRegionForQuantity $"{currentScopeId current}.bind" declaredQuantity current
+                    let introductionOrigin =
+                        bindPatternIntroductionOrigin document binding
+                        |> Option.orElseWith (fun () -> argumentLocation document expression)
+
+                    introduceBorrowRegionForQuantity $"{currentScopeId current}.bind" declaredQuantity introductionOrigin current
 
                 let sourcePlace, sourcePlaces, current =
                     if quantityBorrows declaredQuantity then
@@ -2363,24 +3558,51 @@ module ResourceChecking =
                         current
 
                 loop current rest
-            | DoUsing(pattern, expression) :: rest ->
+            | DoUsing(binding, expression) :: rest ->
                 let current = checkExpression projectionSummaries document signatures current expression
+                let surfaceOrigin =
+                    bindPatternIntroductionOrigin document binding
+                    |> Option.orElseWith (fun () -> argumentLocation document expression)
 
                 let region, current =
-                    introduceBorrowRegion "using" None current
+                    introduceBorrowRegion "using" None surfaceOrigin current
 
                 let usingScopeId = $"{currentScopeId current}.using{current.NextUsingScopeId}"
                 let hiddenOwnedBinding = $"{usingScopeId}.owned"
+                let releaseObligationId = $"{usingScopeId}.release"
 
                 let current =
                     { current with
                         NextUsingScopeId = current.NextUsingScopeId + 1 }
-                    |> addUsingScopeFact usingScopeId hiddenOwnedBinding region
 
                 let current =
-                    collectPatternBindings pattern
+                    addBinding
+                        UsingOwnedBinding
+                        hiddenOwnedBinding
+                        (Some ResourceQuantity.one)
+                        None
+                        Set.empty
+                        []
+                        false
+                        None
+                        None
+                        (argumentLocation document expression)
+                        current
+
+                let current =
+                    match tryFindBindingId hiddenOwnedBinding current with
+                    | Some hiddenOwnedBindingId ->
+                        current
+                        |> addUsingObligation releaseObligationId usingScopeId hiddenOwnedBindingId hiddenOwnedBinding region.Id surfaceOrigin
+                        |> addUsingScopeFact usingScopeId surfaceOrigin hiddenOwnedBinding releaseObligationId region
+                    | None ->
+                        addUsingScopeFact usingScopeId surfaceOrigin hiddenOwnedBinding releaseObligationId region current
+
+                let current =
+                    collectPatternBindings binding.Pattern
                     |> List.fold (fun state (name, path) ->
                         addBindingWithPlace
+                            PatternBinding
                             (makePlace hiddenOwnedBinding path)
                             name
                             (Some(ResourceQuantity.Borrow None))
@@ -2390,24 +3612,49 @@ module ResourceChecking =
                             false
                             None
                             None
-                            (findBinderLocation document name)
+                            (bindPatternNameLocation document binding name)
                             state) current
 
                 loop current rest
             | DoVar(name, expression) :: rest ->
                 let current = checkExpression projectionSummaries document signatures current expression
-                let current = addBinding name None None Set.empty [] false None None (findBinderLocation document name) current
+                let current = addBinding LocalBinding name None None Set.empty [] false None None (findBinderLocation document name) current
                 loop current rest
             | DoAssign(_, expression) :: rest ->
                 let current = checkExpression projectionSummaries document signatures current expression
                 loop current rest
             | DoExpression expression :: rest ->
-                let current = checkExpression projectionSummaries document signatures current expression
+                let current =
+                    current
+                    |> noteValueDemandingNameUse document expression
+                    |> fun next -> checkExpression projectionSummaries document signatures next expression
+
                 loop current rest
+            | DoIf(condition, whenTrue, whenFalse) :: rest ->
+                let current =
+                    current
+                    |> noteValueDemandingNameUse document condition
+                    |> fun next -> checkExpression projectionSummaries document signatures next condition
+
+                let trueState = checkDoStatementsInScope "if_then" projectionSummaries document signatures current whenTrue
+
+                let falseState =
+                    if List.isEmpty whenFalse then
+                        current
+                    else
+                        checkDoStatementsInScope "if_else" projectionSummaries document signatures current whenFalse
+
+                loop (mergeBranchState trueState falseState) rest
+            | DoReturn expression :: _ ->
+                current
+                |> noteValueDemandingNameUse document expression
+                |> fun next -> checkExpression projectionSummaries document signatures next expression
+                |> checkResultEscapeAtBoundary Set.empty document expression
+                |> checkAllActiveLinearDrops document
             | DoWhile(condition, body) :: rest ->
                 let current =
                     checkExpression projectionSummaries document signatures current condition
-                    |> addDeferredFact "while-resource-fixed-point"
+                    |> addDeferredFact OwnershipDeferredFact.WhileResourceFixedPoint
 
                 let bodyState = checkDoStatementsInScope "while" projectionSummaries document signatures current body
                 let current = mergeBranchState current bodyState
@@ -2497,7 +3744,7 @@ module ResourceChecking =
 
         let state =
             match region with
-            | Some region -> addBorrowRegionFact region state
+            | Some region -> addBorrowRegionFact (findBinderLocation document parameter.Name) region state
             | None -> state
 
         let recordFieldDependencies =
@@ -2507,7 +3754,7 @@ module ResourceChecking =
             |> Option.defaultValue Map.empty
 
         let state =
-            addBinding parameter.Name quantity region Set.empty [] checkDrop None None (findBinderLocation document parameter.Name) state
+            addBinding ParameterBinding parameter.Name quantity region Set.empty [] checkDrop None None (findBinderLocation document parameter.Name) state
 
         match tryFindBindingId parameter.Name state with
         | Some bindingId ->
@@ -2528,6 +3775,29 @@ module ResourceChecking =
         match definition.Body with
         | Some body ->
             let signature = tryFindDefinitionSignature signatures document definition
+            let declaredReturnType = definitionReturnTypeTokens document definition |> Option.bind TypeSignatures.parseType
+            let allowedReturnRegions =
+                declaredReturnType
+                |> Option.map captureSetFromType
+                |> Option.defaultValue Set.empty
+
+            let localTypes =
+                definition.Parameters
+                |> List.mapi (fun parameterIndex parameter ->
+                    let signatureTypeTokens =
+                        signature
+                        |> Option.bind (fun functionSignature ->
+                            functionSignature.ParameterTypeTokens
+                            |> List.tryItem parameterIndex)
+                        |> Option.flatten
+
+                    parameter.Name,
+                    (parameter.TypeTokens
+                     |> Option.orElse signatureTypeTokens
+                     |> Option.bind TypeSignatures.parseType))
+                |> List.choose (fun (name, inferredType) ->
+                    inferredType |> Option.map (fun parsedType -> name, parsedType))
+                |> Map.ofList
 
             let initialState =
                 definition.Parameters
@@ -2539,10 +3809,27 @@ module ResourceChecking =
                 |> checkInoutThreadedFieldRequirements document signature definition
 
             match body with
-            | Lambda _ -> checkEscapingLambda document body initialState
+            | Lambda _ -> checkEscapingLambdaAgainst allowedReturnRegions document body initialState
             | _ ->
-                checkExpression projectionSummaries document signatures initialState body
-                |> checkResultEscapeAtBoundary Set.empty document body
+                initialState
+                |> noteValueDemandingNameUse document body
+                |> fun current -> checkExpression projectionSummaries document signatures current body
+                |> checkResultEscapeAtBoundary allowedReturnRegions document body
+                |> checkScopeLinearDrops document
+                |> fun checkedState ->
+                    match declaredReturnType, tryInferConservativeExpressionType signatures localTypes body with
+                    | Some expectedType, Some actualType
+                        when (typeContainsCaptureAnnotation expectedType || typeContainsCaptureAnnotation actualType)
+                             && not (TypeSignatures.definitionallyEqual actualType expectedType) ->
+                        addDiagnostic
+                            DiagnosticCode.TypeEqualityMismatch
+                            "The definition body does not match the declared result type."
+                            (argumentLocation document body)
+                            []
+                            document
+                            checkedState
+                    | _ ->
+                        checkedState
         | None ->
             emptyState scopeId
 
@@ -2613,7 +3900,17 @@ module ResourceChecking =
                     emptyState $"{document.Source.FilePath}.decl{index}")
 
         let diagnostics =
-            states |> List.collect (fun state -> state.Diagnostics)
+            states
+            |> List.collect (fun state -> state.Diagnostics)
+            |> List.distinctBy (fun diagnostic ->
+                diagnostic.Code,
+                diagnostic.Severity,
+                diagnostic.Message,
+                (diagnostic.Location
+                 |> Option.map (fun location -> location.FilePath, location.Span.Start, location.Span.Length)),
+                (diagnostic.RelatedLocations
+                 |> List.map (fun related ->
+                     related.Message, related.Location.FilePath, related.Location.Span.Start, related.Location.Span.Length)))
 
         diagnostics, factsForDocument document states
 

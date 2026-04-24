@@ -9,10 +9,50 @@ module internal KRuntimeLowering =
         |> List.map (fun token -> token.Text)
         |> String.concat " "
 
+    let private tryParseTypeText text =
+        let source = SourceText.From("__runtime_type__.kp", text)
+        let lexResult = Lexer.tokenize source
+
+        if not (List.isEmpty lexResult.Diagnostics) then
+            None
+        else
+            TypeSignatures.parseType lexResult.Tokens
+
+    let rec private eraseRuntimeTypeExpr typeExpr =
+        match typeExpr with
+        | TypeSignatures.TypeVariable name ->
+            TypeSignatures.TypeVariable name
+        | TypeSignatures.TypeName(name, arguments) ->
+            TypeSignatures.TypeName(name, arguments |> List.map eraseRuntimeTypeExpr)
+        | TypeSignatures.TypeArrow(_, parameterType, resultType) ->
+            TypeSignatures.TypeArrow(QuantityOmega, eraseRuntimeTypeExpr parameterType, eraseRuntimeTypeExpr resultType)
+        | TypeSignatures.TypeEquality(left, _) ->
+            eraseRuntimeTypeExpr left
+        | TypeSignatures.TypeCapture(inner, _) ->
+            eraseRuntimeTypeExpr inner
+        | TypeSignatures.TypeRecord fields ->
+            fields
+            |> List.choose (fun field ->
+                if field.Quantity = QuantityZero then
+                    None
+                else
+                    Some
+                        { field with
+                            Quantity = QuantityOmega
+                            Type = eraseRuntimeTypeExpr field.Type })
+            |> TypeSignatures.TypeRecord
+
+    let private eraseRuntimeTypeText (text: string) =
+        match tryParseTypeText text with
+        | Some parsed ->
+            parsed |> eraseRuntimeTypeExpr |> TypeSignatures.toText
+        | None ->
+            text
+
     let private normalizeTypeTokens (tokens: Token list) =
         tokens
         |> TypeSignatures.parseType
-        |> Option.map TypeSignatures.toText
+        |> Option.map (eraseRuntimeTypeExpr >> TypeSignatures.toText)
         |> Option.defaultValue (tokensText tokens)
 
     let private significantTokens (tokens: Token list) =
@@ -67,7 +107,7 @@ module internal KRuntimeLowering =
 
     let private lowerRuntimeParameter (parameter: KCoreParameter) : KRuntimeParameter =
         { Name = parameter.Name
-          TypeText = parameter.TypeText }
+          TypeText = parameter.TypeText |> Option.map eraseRuntimeTypeText }
 
     let rec private lowerKRuntimePattern pattern =
         match pattern with
@@ -79,6 +119,8 @@ module internal KRuntimeLowering =
             KRuntimeLiteralPattern literal
         | KCoreConstructorPattern(name, arguments) ->
             KRuntimeConstructorPattern(name, arguments |> List.map lowerKRuntimePattern)
+        | KCoreOrPattern alternatives ->
+            KRuntimeOrPattern(alternatives |> List.map lowerKRuntimePattern)
 
     let rec private lowerKRuntimeExitAction action =
         match action with
@@ -163,6 +205,87 @@ module internal KRuntimeLowering =
         not declaration.IsOpaque
         && isExportedVisibility moduleDump.ModuleAttributes declaration.Visibility
 
+    let private constructorFieldNames (constructor: DataConstructor) =
+        let significant =
+            constructor.Tokens
+            |> List.filter (fun token ->
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent
+                | EndOfFile -> false
+                | _ -> true)
+
+        let argumentTokens =
+            match significant with
+            | leftToken :: operatorToken :: rightToken :: rest
+                when leftToken.Kind = LeftParen && operatorToken.Kind = Operator && rightToken.Kind = RightParen ->
+                rest
+            | _ :: rest ->
+                rest
+            | [] ->
+                []
+
+        let takeAtom remaining =
+            match remaining with
+            | [] ->
+                [], []
+            | first :: _ when first.Kind = LeftParen ->
+                let tokenArray = remaining |> List.toArray
+                let current = ResizeArray<Token>()
+                let mutable depth = 0
+                let mutable index = 0
+                let mutable keepReading = true
+
+                while keepReading && index < tokenArray.Length do
+                    let token = tokenArray[index]
+                    index <- index + 1
+
+                    match token.Kind with
+                    | LeftParen ->
+                        depth <- depth + 1
+                        if depth > 1 then
+                            current.Add(token)
+                    | RightParen ->
+                        if depth > 1 then
+                            current.Add(token)
+
+                        depth <- depth - 1
+
+                        if depth = 0 then
+                            keepReading <- false
+                    | _ ->
+                        current.Add(token)
+
+                List.ofSeq current, List.ofArray tokenArray[index ..]
+            | first :: rest ->
+                [ first ], rest
+
+        let groups = ResizeArray<Token list>()
+        let mutable position = 0
+        let tokenArray = argumentTokens |> List.toArray
+
+        while position < tokenArray.Length do
+            let groupTokens, remaining = takeAtom (List.ofArray tokenArray[position ..])
+
+            if not (List.isEmpty groupTokens) then
+                groups.Add(groupTokens)
+
+            position <- tokenArray.Length - remaining.Length
+
+        groups
+        |> Seq.toList
+        |> List.map (fun groupTokens ->
+            match groupTokens |> List.tryFindIndex (fun token -> token.Kind = Colon) with
+            | Some colonIndex when colonIndex > 0 ->
+                match groupTokens |> List.take colonIndex with
+                | [ nameToken ] when Token.isName nameToken ->
+                    Some(SyntaxFacts.trimIdentifierQuotes nameToken.Text)
+                | _ ->
+                    None
+            | _ ->
+                None)
+
     let lowerKRuntimeModule (coreModule: KCoreModule) : KRuntimeModule =
         let moduleTraitArities =
             coreModule.Declarations
@@ -186,7 +309,7 @@ module internal KRuntimeLowering =
                     Some
                         { Name = binding.Name.Value
                           Parameters = binding.Parameters |> List.map lowerRuntimeParameter
-                          ReturnTypeText = binding.ReturnTypeText
+                          ReturnTypeText = binding.ReturnTypeText |> Option.map eraseRuntimeTypeText
                           Body = binding.Body |> Option.map lowerKRuntimeExpression
                           Intrinsic = false
                           Provenance = binding.Provenance }
@@ -208,31 +331,50 @@ module internal KRuntimeLowering =
                       IntroductionKind = "intrinsic" } })
 
         let dataTypes : KRuntimeDataType list =
-            coreModule.Declarations
-            |> List.choose (fun declaration ->
-                match declaration.Source with
-                | DataDeclarationNode dataDeclaration ->
-                    let constructors : KRuntimeConstructor list =
-                        dataDeclaration.Constructors
-                        |> List.map (fun constructor ->
-                            { Name = constructor.Name
-                              Arity = constructor.Arity
-                              TypeName = dataDeclaration.Name
-                              FieldTypeTexts =
-                                constructor
-                                |> TypeSignatures.constructorFieldTokenGroups
-                                |> List.map normalizeTypeTokens
-                              Provenance =
-                                { declaration.Provenance with
-                                    DeclarationName = Some constructor.Name
-                                    IntroductionKind = "constructor" } })
+            let sourceDataTypes : KRuntimeDataType list =
+                coreModule.Declarations
+                |> List.choose (fun declaration ->
+                    match declaration.Source with
+                    | DataDeclarationNode dataDeclaration ->
+                        let constructors : KRuntimeConstructor list =
+                            dataDeclaration.Constructors
+                            |> List.map (fun constructor ->
+                                { Name = constructor.Name
+                                  Arity = constructor.Arity
+                                  TypeName = dataDeclaration.Name
+                                  FieldNames = constructorFieldNames constructor
+                                  FieldTypeTexts =
+                                    constructor
+                                    |> TypeSignatures.constructorFieldTokenGroups
+                                    |> List.map normalizeTypeTokens
+                                  Provenance =
+                                    { declaration.Provenance with
+                                        DeclarationName = Some constructor.Name
+                                        IntroductionKind = "constructor" } })
 
-                    Some
-                        { Name = dataDeclaration.Name
-                          TypeParameters = TypeSignatures.collectLeadingTypeParameters dataDeclaration.HeaderTokens
-                          Constructors = constructors }
-                | _ ->
-                    None)
+                        Some
+                            { Name = dataDeclaration.Name
+                              TypeParameters = TypeSignatures.collectLeadingTypeParameters dataDeclaration.HeaderTokens
+                              Constructors = constructors }
+                    | _ ->
+                        None)
+
+            let syntheticDataTypes : KRuntimeDataType list =
+                coreModule.SyntheticDataTypes
+                |> List.map (fun dataType ->
+                    let constructor : KRuntimeConstructor =
+                        { Name = dataType.ConstructorName
+                          Arity = dataType.FieldNames.Length
+                          TypeName = dataType.Name
+                          FieldNames = dataType.FieldNames |> List.map Some
+                          FieldTypeTexts = dataType.FieldTypeTexts |> List.map eraseRuntimeTypeText
+                          Provenance = dataType.Provenance }
+
+                    { Name = dataType.Name
+                      TypeParameters = dataType.TypeParameters
+                      Constructors = [ constructor ] })
+
+            sourceDataTypes @ syntheticDataTypes
 
         let traits : KRuntimeTrait list =
             coreModule.Declarations
@@ -283,17 +425,28 @@ module internal KRuntimeLowering =
                     None)
 
         let constructors : KRuntimeConstructor list =
-            dataTypes
-            |> List.filter (fun dataType ->
-                coreModule.Declarations
-                |> List.exists (fun declaration ->
-                    match declaration.Source with
-                    | DataDeclarationNode dataDeclaration ->
-                        dataDeclaration.Name = dataType.Name
-                        && isExportedDataDeclaration coreModule dataDeclaration
-                    | _ ->
-                        false))
-            |> List.collect (fun dataType -> dataType.Constructors)
+            let exportedSourceConstructors =
+                dataTypes
+                |> List.filter (fun dataType ->
+                    coreModule.Declarations
+                    |> List.exists (fun declaration ->
+                        match declaration.Source with
+                        | DataDeclarationNode dataDeclaration ->
+                            dataDeclaration.Name = dataType.Name
+                            && isExportedDataDeclaration coreModule dataDeclaration
+                        | _ ->
+                            false))
+                |> List.collect (fun dataType -> dataType.Constructors)
+
+            let syntheticConstructors =
+                coreModule.SyntheticDataTypes
+                |> List.collect (fun dataType ->
+                    dataTypes
+                    |> List.tryFind (fun runtimeDataType -> runtimeDataType.Name = dataType.Name)
+                    |> Option.map (fun runtimeDataType -> runtimeDataType.Constructors)
+                    |> Option.defaultValue [])
+
+            exportedSourceConstructors @ syntheticConstructors
 
         let exports =
             coreModule.Declarations

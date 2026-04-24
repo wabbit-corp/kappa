@@ -81,11 +81,16 @@ module Compilation =
             else
                 parseBundledPrelude () :: userDocuments
 
+        let frontendModulesForValidation =
+            documents
+            |> List.map (buildKFrontIRModule Map.empty)
+
         let frontendDiagnostics =
             (documents |> List.collect (fun document -> document.Diagnostics))
             @ detectImportCycles documents
             @ validateImportSelections documents
             @ CompilationFrontend.validateReflEqualityDeclarations documents
+            @ SurfaceElaboration.validateSurfaceModules frontendModulesForValidation
             @ validateExpectDeclarations normalizedBackendProfile documents
 
         let resourceCheckResult: ResourceChecking.CheckResult =

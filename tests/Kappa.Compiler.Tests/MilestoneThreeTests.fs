@@ -81,6 +81,99 @@ let private usingReleaseThrowingProgram =
     ]
     |> String.concat "\n"
 
+let private inoutThreadingProgram =
+    [
+        "module main"
+        ""
+        "data File : Type ="
+        "    Handle Int"
+        ""
+        "step : (inout file : File) -> IO (1 file : File)"
+        "let step file ="
+        "    match file"
+        "      case Handle n -> pure (file = Handle (n + 1))"
+        ""
+        "let main : IO Int = do"
+        "    let file = Handle 1"
+        "    step ~file"
+        "    step ~file"
+        "    match file"
+        "      case Handle n -> pure n"
+    ]
+    |> String.concat "\n"
+
+let private inoutMonadicResidualProgram =
+    [
+        "module main"
+        ""
+        "data File : Type ="
+        "    Handle Int"
+        ""
+        "readStep : (inout file : File) -> IO (data : Int, 1 file : File)"
+        "let readStep file ="
+        "    match file"
+        "      case Handle n -> pure (data = 1, file = Handle (n + 1))"
+        ""
+        "let main : IO Int = do"
+        "    let file = Handle 1"
+        "    let (data = first) <- readStep ~file"
+        "    let (data = second) <- readStep ~file"
+        "    match file"
+        "      case Handle n -> pure (first + second + n)"
+    ]
+    |> String.concat "\n"
+
+let private inoutPureResidualProgram =
+    [
+        "module main"
+        ""
+        "data File : Type ="
+        "    Handle Int"
+        ""
+        "step : (inout file : File) -> (data : Int, 1 file : File)"
+        "let step file ="
+        "    match file"
+        "      case Handle n -> (data = 1, file = Handle (n + 1))"
+        ""
+        "let main : IO Int = do"
+        "    let file = Handle 1"
+        "    let (data = first) = step ~file"
+        "    let (data = second) = step ~file"
+        "    match file"
+        "      case Handle n -> pure (first + second + n)"
+    ]
+    |> String.concat "\n"
+
+let private inoutSelectorProjectionProgram =
+    [
+        "module main"
+        ""
+        "data Buffer : Type ="
+        "    Buffer Int"
+        ""
+        "type Pair = (left : Buffer, right : Buffer)"
+        ""
+        "bump : (inout buf : Buffer) -> IO (1 buf : Buffer)"
+        "let bump buf ="
+        "    match buf"
+        "      case Buffer n -> pure (buf = Buffer (n + 1))"
+        ""
+        "value : Buffer -> Int"
+        "let value buf ="
+        "    match buf"
+        "      case Buffer n -> n"
+        ""
+        "projection pick (place pair : Pair) (which : Bool) : Buffer ="
+        "    if which then yield pair.left else yield pair.right"
+        ""
+        "let main : IO Int = do"
+        "    let pair = (left = Buffer 1, right = Buffer 10)"
+        "    bump ~(pick pair True)"
+        "    bump ~(pick pair False)"
+        "    pure ((value pair.left) + (value pair.right))"
+    ]
+    |> String.concat "\n"
+
 [<Fact>]
 let ``interpreter executes using release after protected body`` () =
     let workspace =
@@ -98,6 +191,90 @@ let ``interpreter executes using release after protected body`` () =
     | Result.Ok value ->
         Assert.Equal("()", RuntimeValue.format value)
         Assert.Equal("chunkclosed", output)
+    | Result.Error issue ->
+        failwith issue.Message
+
+[<Fact>]
+let ``interpreter threads inout successor values across repeated calls`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m3-inout-threading-root"
+            [
+                "main.kp", inoutThreadingProgram
+            ]
+
+    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+
+    let result, output = executeWithCapturedOutput workspace "main.main"
+
+    Assert.True(String.IsNullOrWhiteSpace(output), output)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("3", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwith issue.Message
+
+[<Fact>]
+let ``interpreter threads inout successor values through monadic residual binds`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m3-inout-monadic-residual-root"
+            [
+                "main.kp", inoutMonadicResidualProgram
+            ]
+
+    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+
+    let result, output = executeWithCapturedOutput workspace "main.main"
+
+    Assert.True(String.IsNullOrWhiteSpace(output), output)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("5", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwith issue.Message
+
+[<Fact>]
+let ``interpreter threads inout successor values through pure residual binds`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m3-inout-pure-residual-root"
+            [
+                "main.kp", inoutPureResidualProgram
+            ]
+
+    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+
+    let result, output = executeWithCapturedOutput workspace "main.main"
+
+    Assert.True(String.IsNullOrWhiteSpace(output), output)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("5", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwith issue.Message
+
+[<Fact>]
+let ``interpreter threads inout successor values through selector projections`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m3-inout-selector-projection-root"
+            [
+                "main.kp", inoutSelectorProjectionProgram
+            ]
+
+    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+
+    let result, output = executeWithCapturedOutput workspace "main.main"
+
+    Assert.True(String.IsNullOrWhiteSpace(output), output)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("13", RuntimeValue.format value)
     | Result.Error issue ->
         failwith issue.Message
 

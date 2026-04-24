@@ -4,7 +4,9 @@ data Buffer : Type =
     Buffer
 
 consumeWhole : (1 r : (1 buf : Buffer, len : Nat)) -> Unit
-let consumeWhole r = ()
+let consumeWhole r =
+    let _ = r
+    in ()
 
 bad : (1 r : (1 buf : Buffer, len : Nat)) -> Unit
 let bad r =
