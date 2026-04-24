@@ -13095,13 +13095,16 @@ Vec.VCons { head = h, tail = t }
 ```
 
 Rules:
-* `C { ... }` is valid only if `C` resolves to a constructor whose explicit argument binders have names.
+* `C { ... }` is valid only if `C` resolves to:
+  * a constructor whose explicit argument binders have names; or
+  * an ordinary term value known to preserve constructor application metadata for such a constructor.
 * Each field label in `{ ... }` must correspond to a distinct explicit constructor argument name.
 * Field punning is permitted: a field label written without `= expr` is treated as `label = label`.
 * In such a punned field, `label` must resolve to a term in scope whose type matches the corresponding constructor
   field.
 * Duplicate labels are an error.
-* Missing required labels are an error.
+* A missing label is permitted iff the corresponding constructor parameter has a default.
+* A missing label whose corresponding constructor parameter has no default is an error.
 * Extra labels not present in the constructor's argument list are an error.
 * Field order is not semantically significant. Implementations elaborate the application in the constructor's argument
   order (or any dependency-respecting order if later arguments depend on earlier ones).
@@ -13111,21 +13114,57 @@ Rules:
   * otherwise, if the supplied argument checks against `T`, it is elaborated as `thunk expr` or `lazy expr`
     respectively.
 
-Elaboration sketch:
+Elaboration:
 
-If `C` has explicit parameters `(f1 : A1) -> (f2 : A2[f1]) -> ... -> R`, then:
+Let `C` have explicit named parameters, in constructor order:
 
+```text
+(f1 : A1 [= d1]) -> (f2 : A2[f1] [= d2]) -> ... -> R
 ```
-C { f1 = e1, f2 = e2, ... }
+
+For a named constructor application:
+
+```kappa
+C { fields... }
 ```
 
-elaborates to:
+elaboration proceeds in constructor-parameter order.
 
-```
-C e1 e2 ...
+For each explicit parameter `fi`:
+
+1. If the application supplies `fi = ei`, elaborate `ei` against `Ai` under the actual earlier arguments.
+2. Otherwise, if `fi` has default `di`, instantiate and elaborate `di` under the actual earlier arguments.
+3. Otherwise, the application is ill-formed because `fi` is missing.
+
+The application then elaborates to ordinary positional constructor application:
+
+```kappa
+C actual1 actual2 ...
 ```
 
 with implicit arguments resolved as usual (§7.3).
+
+Each supplied field expression and each used default expression is evaluated at most once according to the ordinary
+evaluation rules for constructor arguments.
+
+Field order remains semantically insignificant.
+
+Default insertion is performed after duplicate-label and extra-label checks, and before final positional constructor
+application.
+
+Punning counts as supplying the corresponding field explicitly. For example:
+
+```kappa
+User { name }
+```
+
+is treated as:
+
+```kappa
+User { name = name }
+```
+
+and therefore does not use a default for `name`.
 
 <!-- data_types.data_declarations.naming_diagnostics -->
 #### 11.1.1A Naming diagnostics for lowercase data and constructor names
