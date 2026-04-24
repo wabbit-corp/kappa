@@ -12393,18 +12393,19 @@ is the semantic source of rows for `for ... in ...` clauses.
 
 Built-in source obligations:
 
-* Implementations MUST provide standard `IntoQuery` instances for:
-  * `List a`,
-  * `Array a`,
-  * the built-in set type,
-  * map iteration as specified by §10.4,
-  * the canonical range result type of §10.2,
-  * and `Query a` itself.
+Implementations MUST provide standard `IntoQuery` instances for:
 
-* `IntoQuery (Query a)` MUST behave as identity on element streams.
+* `List a`;
+* `Array a`;
+* the built-in set type;
+* map iteration as specified by §10.4;
+* the canonical range result type of §10.2; and
+* `Query a` itself.
 
-* A conforming implementation MAY provide additional `IntoQuery` instances for implementation-defined sources, but those
-  additional instances MUST NOT change the semantics of the required built-in instances.
+`IntoQuery (Query a)` MUST behave as identity on element streams.
+
+A conforming implementation MAY provide additional `IntoQuery` instances for implementation-defined sources, but those
+additional instances MUST NOT change the semantics of the required built-in instances.
 
 <!-- collections.lowering.row_environment -->
 #### 10.10.2 Row environment
