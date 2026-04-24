@@ -12549,6 +12549,56 @@ Finalizers and release actions run in masked state.
 Portable source semantics expose only interruption. Arbitrary cross-fiber asynchronous exception injection is not part
 of the portable subset.
 
+<!-- core_semantics.runtime_model.scheduler_fairness_safe_points_timers -->
+#### 14.8.3A Scheduler fairness, yielding, safe points, and timers
+
+A conforming implementation MUST provide weak fairness among runnable fibers within one runtime agent.
+
+At minimum:
+
+* a fiber that remains continuously runnable across infinitely many scheduler decisions MUST eventually be scheduled;
+* `cede` returns the current fiber to runnable state and permits another runnable fiber to be chosen before that fiber
+  is resumed;
+* the implementation MUST behave as if long-running pure execution contains implementation-defined safe points at which:
+  * pending interruption may be observed, and
+  * scheduler fairness may be restored;
+* these safe points MAY be realized by asynchronous preemption, loop-backedge checks, reduction budgets, signal
+  checks, or another observationally equivalent mechanism;
+* `sleepFor` and `sleepUntil` park only the current fiber, not an entire runtime agent;
+* timer delivery is based on monotonic time rather than wall-clock time.
+
+A backend MUST ensure that blocking foreign work does not permanently monopolize scheduler resources required by
+unrelated runnable fibers.
+
+<!-- core_semantics.runtime_model.fiber_local_state_explicit_scopes_monitors_promises -->
+#### 14.8.3B Fiber-local state, explicit scopes, monitors, and promises
+
+Fiber-local state:
+
+* each fiber carries a logically private mapping from `FiberRef` cells to current values;
+* child-fiber creation copies the parent's current `FiberRef` values at fork time;
+* later parent and child updates are independent;
+* restoration performed by `locallyFiberRef` behaves as masked finalization.
+
+Explicit scopes:
+
+* `forkIn scope io` attaches the created child fiber to the explicit supervision scope `scope`;
+* `shutdownScope scope` interrupts all still-live fibers attached to `scope` and waits for their termination and
+  finalizers before returning;
+* `shutdownScope` is idempotent.
+
+Monitors:
+
+* a monitor is one-way observation of a target fiber's terminal `Exit`;
+* creating, awaiting, or dropping a monitor does not create parent/child supervision in either direction.
+
+Promises:
+
+* a promise is single-assignment;
+* the first successful `completePromise` fixes the promise's terminal `Exit`;
+* later completion attempts leave that stored `Exit` unchanged;
+* waiting on a completed promise returns immediately with the stored result.
+
 <!-- core_semantics.runtime_model.stm_runtime_obligations -->
 #### 14.8.4 STM runtime obligations
 
@@ -12565,6 +12615,55 @@ At minimum:
 
 A backend that lacks shared-memory parallel execution MAY still satisfy this section for a single runtime agent,
 provided it preserves the same observable semantics for fibers in that agent.
+
+<!-- core_semantics.runtime_model.memory_visibility_synchronization -->
+#### 14.8.4A Memory visibility and synchronization
+
+The portable inter-fiber memory-visibility guarantees of the runtime are defined by happens-before edges.
+
+At minimum, the following introduce happens-before:
+
+* evaluation that occurs in a parent fiber before `fork`, `forkDaemon`, or `forkIn` publishes inherited fiber-local
+  state to the child before the child's first step;
+* termination of a fiber happens-before any successful return from `await`, `join`, `interrupt`, `shutdownScope`, or
+  `awaitMonitor` that observes that termination;
+* the first successful `completePromise` on a promise happens-before every resumed or returning `awaitPromiseExit` or
+  `awaitPromise` that observes that completion;
+* successful `STM` commit happens-before any later transaction attempt that observes writes from that commit.
+
+Ordinary refs introduced by `var`, and ordinary mutable cells provided through `MonadRef (IO e)`, are not portable
+cross-fiber synchronization primitives by themselves.
+
+Consequently:
+
+* unsynchronized concurrent read/write or write/write races on such ordinary refs have no portable inter-fiber ordering
+  beyond the happens-before edges above;
+* portable cross-fiber coordination MUST use `await` / `join`, scopes / monitors, promises, interruption, `STM`, or a
+  backend-specific atomic facility documented outside the portable subset.
+
+<!-- core_semantics.runtime_model.runtime_tracing_diagnostics -->
+#### 14.8.4B Runtime tracing and diagnostics
+
+A conforming implementation MUST provide an implementation-defined debugging, profiling, tracing, dump, or equivalent
+runtime-observability facility.
+
+At minimum, that facility MUST be able to report, for each live fiber:
+
+* a stable fiber identity;
+* current supervision scope identity;
+* parent fiber identity when one exists;
+* fiber status (`running`, `runnable`, `parked`, `done`, or an observationally equivalent classification);
+* current masking state;
+* whether interruption is pending;
+* current wait reason when parked, if any;
+* any implementation-provided user label, if any; and
+* terminal `Exit` information for completed fibers retained by the facility.
+
+The facility MUST additionally be able to report scheduler-level counts of runnable and parked fibers per runtime
+agent.
+
+The exact API shape and output format are implementation-defined, but they MUST be deterministic for a fixed runtime
+state.
 
 <!-- core_semantics.runtime_model.captured_continuation_boundary -->
 #### 14.8.5 Captured continuation boundary
