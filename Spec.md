@@ -20,6 +20,12 @@ Kappa is a small, statically typed, dependently typed language. The primary desi
 - Default stance: **totality, purity, parametricity** are desirable and encouraged.
 - Non-strictness is represented by explicit suspension types and suspension terms, not by a distinct family of core
   arrow types. Surface non-strict binder syntax is only sugar over those suspension types.
+- Named semantic objects are first-class unless this specification explicitly says otherwise.
+  In particular, named types, type constructors, trait constructors, modules, effect labels, projections, and other
+  compile-time semantic objects may be rebound, stored in records or packages, passed as arguments, returned, sealed,
+  opened, and projected according to their elaborated types.
+  Contextual declaration kinds control name resolution and syntactic admissibility; they do not by themselves make the
+  underlying semantic object non-first-class.
 
 
 
