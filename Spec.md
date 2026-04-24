@@ -1530,9 +1530,9 @@ Receiver forms:
 
 * If the receiver denotes a module declaration or reified module value,
   `recv.name` selects the exported member `name` of that module.
-* If the receiver denotes a type or the type facet of a same-spelling
-  data family, `recv.name` selects a static member of that type. For
-  data types, constructors are static members.
+* If the receiver denotes a type, the type facet of a same-spelling data family, or a reified static-object term facet
+  whose elaborated value preserves the identity of a named type declaration, `recv.name` selects a static member of that
+  type. For data types, constructors are static members.
 * If the receiver denotes an effect label, `recv.name` selects an
   operation declared by the effect interface carried at that label in
   the current effect row.
@@ -1542,6 +1542,25 @@ Receiver forms:
   constructor `C` and `C` declares a named field `name`, `recv.name` is
   constructor-field projection.
 * Otherwise, fallback sugar of §2.8.4 may apply.
+
+Rebound type objects:
+
+If a reified type object is rebound or stored and later used as a dotted receiver, static-member lookup on that value
+must agree with lookup on the original type declaration whenever the reified value preserves the original type-object
+identity.
+
+Example:
+
+```kappa
+let O = Option
+let a = O.None
+let b = Option.None
+```
+
+`a` and `b` denote the same constructor value.
+
+If a value of type `Type u` is not known to preserve the identity of a named type declaration, static-member lookup on
+that value is ill-formed.
 
 <!-- modules.names.method_call_receiver_projection_sugar -->
 #### 2.8.4 Method-call and receiver-projection sugar
