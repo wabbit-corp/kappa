@@ -12407,6 +12407,34 @@ Implementations MUST provide standard `IntoQuery` instances for:
 A conforming implementation MAY provide additional `IntoQuery` instances for implementation-defined sources, but those
 additional instances MUST NOT change the semantics of the required built-in instances.
 
+<!-- collections.lowering.built_in_collection_obligations -->
+#### 10.10.1A Built-in collection obligations
+
+Implementations MUST provide standard collection behavior observationally equivalent to `FromComprehensionPlan` for:
+
+* omitted list comprehensions `[ ... ]`;
+* omitted set comprehensions `{| ... |}`;
+* omitted map comprehensions `{ ... }`;
+* `Query a` for element-stream comprehensions; and
+* `Array a` for element-stream comprehensions.
+
+Implementations MAY realize these collectors intrinsically rather than as ordinary user-visible instances, but their
+behavior MUST be observationally equivalent to such instances.
+
+For `Query a`:
+
+* only element-stream comprehensions are supported in v1;
+* `Query [ clauses..., yield valueExpr ]` returns the normalized `Query a`;
+* `Query {| ... |}` is ill-formed in v1;
+* `Query { ... }` is ill-formed in v1.
+
+For `Array a`:
+
+* `Array [ clauses..., yield valueExpr ]` collects yielded values in pipeline encounter order;
+* if the input pipeline is Ordered, the resulting array order is that encounter order;
+* if the input pipeline is Unordered, the resulting array order is deterministic in package mode under §10.3.2, but not
+  user-visible or specified.
+
 <!-- collections.lowering.row_environment -->
 #### 10.10.2 Row environment
 
