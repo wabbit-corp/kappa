@@ -3143,6 +3143,11 @@ Use restrictions:
   conservatively take this join to be the union of consumed footprints per root.
 * Consequently, a path may be considered unavailable after the expression even if it is consumed only on some dynamic
   branches.
+* A projector descriptor application under §7.1.3A may appear in the same positions as a fully applied projection call.
+* In those positions it elaborates through the same projector-elimination family, chosen by the surrounding demand as
+  specified in §7.1.3A.
+* No additional source restriction applies merely because the projector was obtained as an ordinary term value rather
+  than by directly naming the originating projection definition.
 
 Why ordinary source code need not write capture annotations everywhere:
 
@@ -6641,6 +6646,14 @@ argument.
   sense of §17.3.1.3.
 * Under `~`, the application elaborates as `OpenProjector proj pack`.
 * In a projection-section update, the application elaborates as `FillProjector proj pack newValue`.
+
+One-root normalization:
+
+* If `Roots` is a one-field closed record and the roots argument was supplied in the bare stable-place form rather than
+  as a singleton record literal, the application is still defined through the corresponding one-field internal place
+  pack.
+* Any rebuilt root pack produced later by `OpenProjector` or `FillProjector` is projected back to that unique field
+  when the surrounding surface construct expects the original root type rather than the internal pack type.
 
 Examples:
 
@@ -10642,19 +10655,15 @@ or the pure analogue `let pat = func ~x1 ... ~xk args`, elaboration proceeds as 
 2. Elaborate each marked argument as follows:
 
    * If the marked argument is a stable place, proceed exactly as in the stable-place case of this section.
-   * If the marked argument is a fully applied projection call, elaboration first constructs the projector descriptor
-     value `proj` and the internal place pack `pack` for that call, then elaborates the marked argument as
-     `OpenProjector proj pack`.
+   * If the marked argument is either:
+     * a fully applied projection call; or
+     * a projector descriptor application under §7.1.3A,
+     then elaboration first constructs the projector descriptor value `proj` and the internal place pack `pack` for
+     that marked argument, and elaborates it as `OpenProjector proj pack`.
    * The callee receives the `focus` component of the resulting zipper.
    * On return, the returned successor is written back by applying the zipper's linear `fill` component.
-   * If the zipper rebuilds a root pack containing more than one root field, the rebuilt pack is then scattered back to
-     the corresponding actual stable roots in declaration order.
-   * If the marked argument is a projector descriptor application under §7.1.3A, elaboration first constructs its
-     internal place pack and then elaborates the marked argument as `OpenProjector proj pack`.
-   * The callee receives the `focus` component of the resulting zipper.
-   * On return, the returned successor is written back by applying the zipper's linear `fill` component.
-   * If the zipper rebuilds a root pack containing more than one root field, the rebuilt pack is then scattered back to
-     the corresponding actual stable roots in declaration order.
+   * The rebuilt root pack is then scattered back to the corresponding actual stable roots in declaration order.
+     For a one-field root pack, this is just the unique field.
 3. Determine the returned record type `R`:
    * for `let pat <- ...`, the call must have type `m R`;
    * for `let pat = ...`, the call must have type `R`.
@@ -15177,9 +15186,12 @@ the actual `place` arguments:
   §8.8;
 * in a projection-section update, the call elaborates as `FillProjector proj pack newValue`.
 
-If the internal place pack contains more than one root field, the rebuilt root pack produced by `FillProjector` or by
-the `fill` component of `OpenProjector` is then scattered back to the corresponding actual stable roots in declaration
-order. This scattering is pure structural rebuilding only.
+The rebuilt root pack produced by `FillProjector` or by the `fill` component of `OpenProjector` is then scattered back
+to the corresponding actual stable roots in declaration order.
+
+For a one-field root pack, this scattering is just projection of the unique field.
+
+This scattering is pure structural rebuilding only.
 
 <!-- compiler.kcore.application_spines.projection_section_update_lowering -->
 ##### 17.3.1.3A Projection-section update lowering
@@ -15207,8 +15219,8 @@ Instead, elaboration proceeds as follows:
 6. If the resolved form is either a fully applied projection call or a projector descriptor application, elaborate it to
    its projector descriptor value `proj` and internal place pack `pack`, then elaborate the update as
    `FillProjector proj pack __new`.
-7. If the resulting root pack contains more than one root field, scatter the rebuilt fields back to the corresponding
-   actual stable roots in declaration order.
+7. Scatter the rebuilt root pack back to the corresponding actual stable roots in declaration order.
+   For a one-field root pack, this is just the unique field.
 
 Consequences:
 
