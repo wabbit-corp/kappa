@@ -19815,6 +19815,32 @@ Additional rules:
 * A bridge realization MUST NOT describe itself as precision-preserving for any member whose contract is `Conservative`
   or `Lossy` unless that member's Kappa type itself makes the conservatism or loss explicit.
 
+<!-- compiler.ffi.precision_preserving_kappa_to_kappa_bridges.bridge_visible_representation_obligations -->
+##### Bridge-visible representation obligations
+
+A Kappa declaration is bridge-visible when it is exported through a precision-preserving Kappa-to-Kappa bridge.
+
+Rules:
+
+* Every runtime-relevant bridge-visible parameter, result, captured value, callback argument, callback result, resource,
+  and package member MUST have a bridge representation contract.
+* A bridge representation contract MUST describe:
+  * the erased runtime representation crossing the bridge;
+  * any runtime representation evidence or table used to validate that representation;
+  * any marshalling, copying, pinning, handle wrapping, or identity preservation performed;
+  * ownership, borrowing, release, and callback lifetime behavior;
+  * how typed `IO e a`, `Exit e a`, and `Cause e` are represented when they cross the bridge; and
+  * how contract violation, linkage failure, runtime representation mismatch, interruption, and defect are reported.
+* Compile-time-only parameters, erased proofs, erased implicit evidence, quantities, regions, rows, labels, universes,
+  and constraints do not cross as runtime bridge arguments unless the exposed type contains an explicit runtime carrier
+  for them.
+* A bridge-visible type member, constraint member, region member, row member, label member, or erased proof member MUST
+  be supplied by the static Kappa interface or bridge contract skeleton. It MUST NOT be discovered from JNI, native ABI,
+  JVM reflection, or another runtime surface.
+* If no bridge representation contract can be generated or supplied for a bridge-visible declaration, the declaration is
+  not bridge-representable and the bridge export or import is ill-formed unless the user explicitly supplies an adapter
+  module with a representable surface.
+
 Borrow and region rules:
 
 * A direct borrowed parameter MAY cross a Kappa-to-Kappa bridge only when the bridge contract proves that the borrowed
