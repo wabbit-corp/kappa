@@ -17569,6 +17569,43 @@ When a standardized modal/coeffect extension is enabled and modality solving fai
 * the primary origin of each contributing obligation; and
 * any related origins used to explain the conflict.
 
+Positive lower-bound diagnostics:
+
+When compilation rejects a program because a positive lower-bound obligation is not satisfied, the diagnostic MUST
+identify:
+
+* the binder whose obligation was not satisfied;
+* the declared quantity of that binder;
+* the completion path or branch on which the lower bound was not met;
+* the inferred lower usage on that path;
+* the source construct that caused the path to leave the binder's scope;
+* and at least one source location where the binder could have been demanded on that path, when such a location is
+  obvious.
+
+For delayed uses, the diagnostic MUST distinguish:
+
+* use inside an uncalled closure;
+* use inside an unforced thunk;
+* use inside a lazy value;
+* use inside a deferred action;
+* use inside a higher-order argument whose callee may ignore it.
+
+Example diagnostic shape:
+
+```text
+Quantity error: `x` is declared `>=1`, but this branch may leave its scope
+without demanding it.
+
+Declared here:
+    let >=1 x = ...
+
+Escaping path:
+    return ()
+
+The only occurrence of `x` is inside closure `f`, but `f` is not demanded
+on this path.
+```
+
 Tooling queries over syntactically incomplete files are valid. Where possible, they MUST return partial results rather
 than failing wholesale merely because the surrounding file is incomplete.
 
