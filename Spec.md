@@ -8108,18 +8108,24 @@ Semantics:
 * `sleepFor d` suspends the current fiber for duration `d`, unless interrupted first.
 * `sleepUntil t` suspends the current fiber until instant `t`, unless interrupted first.
 * `sleepFor` and `sleepUntil` are interruptible and do not block an entire runtime agent merely by parking one fiber.
+* `sleepFor d` with a nonpositive duration returns immediately.
+* `sleepUntil t` returns immediately when `t` is not later than the current monotonic instant.
 
 `timeout`:
 
 * `timeout d io` runs `io` and a monotonic timer of duration `d`.
+* If `d` is nonpositive, `timeout d io` behaves as if the timer fires before the first ordinary step of `io`.
+  An implementation MAY therefore avoid starting `io` at all.
 * If `io` completes first:
   * success yields success,
   * typed failure yields typed failure,
   * interruption or defect propagates as the corresponding non-typed runtime cause.
 * If the timer fires first:
-  * the running computation is interrupted,
+  * the running computation is interrupted using interrupt tag `TimedOut`,
   * the combinator waits until that interrupted computation has terminated and all of its finalizers have run,
   * and the result is the typed failure `Fail Timeout`.
+* If completion of `io` and timer expiry become simultaneously observable with no source-level prior winner,
+  completion of `io` wins.
 
 `race`:
 
@@ -8128,8 +8134,9 @@ Semantics:
 * If `right` completes first with value `b`, the result is `Success (RightWins b)`.
 * If one side completes first with typed failure `e`, the result is `Failure (Fail e)` in the combined error type.
 * If one side completes first with interruption or defect, that non-typed runtime cause wins.
-* When either side wins, the losing side is interrupted.
+* When either side wins, the losing side is interrupted using interrupt tag `RaceLost`.
 * `race` completes only after the losing side has terminated and all of its finalizers have run.
+* If both sides become simultaneously observable as completed with no source-level prior winner, the left side wins.
 
 <!-- effects.monadic_core.fiber_local_state -->
 #### 8.1.3C Fiber-local state
