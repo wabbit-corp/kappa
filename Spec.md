@@ -587,6 +587,15 @@ Rules:
 
 * A bridge-supplied Kappa module has an ordinary effective module name.
   It need not live under `host.jvm`, `host.dotnet`, `host.native`, or `host.jvm.jni`.
+* Module discovery MUST resolve every effective module name to at most one selected provider within a compilation
+  session.
+* A source module, URL module, package dependency module, host binding module, and bridge-supplied Kappa module that
+  claim the same effective module name form a provider collision unless the build configuration explicitly selects or
+  aliases exactly one provider.
+* Two bridge provider artifacts that supply the same effective module name also form a provider collision unless the
+  build configuration explicitly selects or aliases exactly one provider.
+* A provider collision is a compile-time error. The diagnostic MUST identify all discovered providers and the mechanism
+  by which each provider was introduced.
 * The provider artifact MUST supply a Kappa module interface artifact for the imported module.
 * The importing artifact MUST typecheck against that Kappa module interface exactly as it would for an ordinary
   separately compiled Kappa module.
