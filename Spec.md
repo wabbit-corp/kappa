@@ -12889,6 +12889,11 @@ At minimum, that facility MUST be able to report, for each live fiber:
 The facility MUST additionally be able to report scheduler-level counts of runnable and parked fibers per runtime
 agent.
 
+The stable fiber identity reported by this facility MUST agree with the values observed through `fiberId` and
+`currentFiberId`.
+
+Any label installed through `setFiberLabel` or `locallyFiberLabel` MUST be the user label reported for that fiber.
+
 The exact API shape and output format are implementation-defined, but they MUST be deterministic for a fixed runtime
 state.
 
