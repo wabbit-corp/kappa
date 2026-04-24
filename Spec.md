@@ -7301,13 +7301,65 @@ let choose = longer
 let best = choose (x = title, y = subtitle)
 ```
 
-<!-- expressions.application.accessor_descriptor_application -->
-#### 7.1.3B Accessor descriptor application
+<!-- expressions.application.accessor_bundle_descriptor_application -->
+#### 7.1.3B Accessor-bundle descriptor application
 
-Accessor descriptor application is the application family for values of type `Getter`, `Opener`, `Setter`, or `Sinker`.
+A maximal application site is an **accessor-bundle descriptor application** iff, after ordinary elaboration of any
+earlier arguments, its callee elaborates to a structural record type containing one or more of the following fields for
+the same closed singleton `Roots` record type and focus type `T`:
 
-In v1, an accessor descriptor application is not automatically a place expression.
-It is admitted only by surface contexts that explicitly define elaboration for the relevant descriptor class.
+```text
+get  : Getter Roots T
+open : Opener Roots T
+set  : Setter Roots T
+sink : Sinker Roots T
+```
+
+and exactly one remaining explicit argument is present.
+
+The remaining explicit argument is called the roots argument.
+
+Roots-argument admissibility:
+
+* `Roots` must be a one-field closed record `(p : S,)`.
+* The roots argument may be either:
+  * a stable place expression `e` of type `S`; or
+  * a singleton closed record literal `(p = e,)` where `e` is a stable place expression of type `S`.
+* The roots argument is elaborated in place-pack mode, exactly as in §7.1.3A.
+* If the supplied expression fails to elaborate to a stable place, the accessor-bundle descriptor application is
+  ill-formed.
+
+Elaboration by surrounding demand:
+
+Let the callee elaborate to an accessor-bundle descriptor value `bundle`, and let `pack` be the internal place pack
+formed from the roots argument.
+
+* In an ordinary non-consuming value-demanding position, the bundle must contain field `get`.
+  The application elaborates as `ReadGetter bundle.get pack`.
+* In a borrow-demanding position, the bundle must contain field `get`.
+  The application elaborates as `BorrowGetter bundle.get pack as (ρ, x) in e`.
+* Under `~`, the bundle must contain field `open`.
+  The application elaborates as `OpenOpener bundle.open pack`.
+* In a projection-section update, the bundle must contain field `set`.
+  The application elaborates as `FillSetter bundle.set pack newValue`.
+* In an ordinary consuming value-demanding position, the bundle must contain field `sink`.
+  The application elaborates as `MoveSinker bundle.sink pack`.
+
+If the selected descriptor field is absent, the application is ill-formed.
+
+Examples:
+
+```kappa
+let d = degrees angle
+
+let dproj = degrees
+let d2 = dproj angle
+
+do
+    let () <- normalizeDegrees ~(degrees angle)
+
+let angle2 = angle.{ (.degrees) = 90.0 }
+```
 
 <!-- expressions.application.subsumption.spine_pipeline -->
 ##### 7.1.3.1 Application-spine elaboration pipeline
