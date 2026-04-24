@@ -16110,6 +16110,8 @@ Rules:
 * the backend MUST preserve Kappa source semantics for interruption, finalization, structured concurrency, and STM;
 * the backend MUST NOT silently weaken runtime semantics merely because the selected JavaScript host is single-agent,
   worker-based, or event-loop based.
+* when realizing Kappa fibers atop a single-agent JavaScript event loop, the backend MUST still preserve the
+  scheduler-fairness, timer, promise, and interruption-observation obligations of §§8.1 and 14.8 within that agent;
 
 If the selected JavaScript deployment target lacks one or more required runtime capabilities of §17.13, compilation is a
 hard error for programs that require those capabilities.
