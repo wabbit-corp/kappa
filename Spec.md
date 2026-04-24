@@ -1730,6 +1730,33 @@ Rules:
 * A reified static-object term facet does not create an additional ordinary declaration of kind `term` in the binding
   group. It is selected by the reified-static fallback rule below.
 
+Examples:
+
+```kappa
+-- Type constructors as values
+let F = Option
+let x : F Int = F.Some 1
+let n = F.None
+
+-- Constructor still wins for same-spelling data families
+data Person : Type =
+    Person (name : String)
+
+let p = Person "Ada"       -- constructor
+let PersonType = type Person
+
+-- Trait constructors as values
+let C = Eq
+let d : Dict (C Int) = ...
+
+-- Effect labels and operations as values
+scoped effect state : State Int
+
+let l = state
+let get = l.get
+let ops = (get = l.get, put = l.put)
+```
+
 
 
 <!-- lexical -->
