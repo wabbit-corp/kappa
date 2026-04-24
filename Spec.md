@@ -17037,22 +17037,148 @@ Meaning:
 * `Finite n` means the analyzed type has exactly `n` inhabitants.
 * `Unknown` means the implementation does not establish a stronger fact.
 
+Query purpose:
+
+An inhabitance summary is computed relative to an inhabitance purpose.
+
+```text
+InhabitancePurpose ::= SourceReachability
+                     | Completion
+                     | RuntimeShape
+                     | Optimization
+```
+
+The same source type may receive different summaries for different purposes.
+
+* `SourceReachability` summarizes inhabitants of the source-level type and is used for `match` reachability,
+  `impossible`, and `case impossible`.
+* `Completion` summarizes source-level inhabitants for diagnostics, hole suggestions, case-split generation, and editor
+  tooling.
+* `RuntimeShape` summarizes runtime-distinguishable representations after mandatory erasure under §14.4.
+* `Optimization` summarizes a type for backend-independent optimization and may use the same runtime erasure view as
+  `RuntimeShape`, subject to the restrictions below.
+
+A summary query is conceptually keyed by:
+
+* the normalized KCore type being analyzed;
+* the lexical KCore context in which that type is well-formed;
+* the active refinement facts available at the query site;
+* the current visibility, opacity, `unhide`, and `clarify` environment;
+* the selected `InhabitancePurpose`;
+* any implementation-defined finite-enumeration, arithmetic, normalization, or search bound used by optional
+  strengthening; and
+* the selected backend profile when the purpose is `RuntimeShape` or `Optimization`.
+
+A conforming implementation MAY compute the same result for several purposes, but it MUST NOT use a summary computed
+for `RuntimeShape` or `Optimization` to justify source-level acceptance of `impossible`, `case impossible`, or
+exhaustive pattern matching.
+
+Runtime-shape summaries:
+
+For `RuntimeShape` and `Optimization`, the analyzed type is interpreted after applying the mandatory erasure rules of
+§14.4 to compile-time-only constituents, quantity-`0` computational constituents, proof-only terms, erased indices,
+capture annotations, intrinsic compile-time values, and nominal-scope tokens.
+
+A `RuntimeShape` summary may identify that all remaining runtime representations are empty, singleton, or finite even
+when the original source type contains erased distinctions.
+
+A `RuntimeShape` result is not a source-level equality theorem. It MUST NOT be used by definitional equality, implicit
+resolution, coherence, source-level proof search, or source acceptance.
+
+Portable summary boundary:
+
+The portable `InhabitanceSummary` deliberately does not distinguish exact infinite cardinalities.
+
+An implementation MAY track exact or approximate infinite-cardinality information internally, but at the portable
+summary boundary any non-finite inhabited result that is not otherwise known to be `Contractible` is reported as
+`Unknown`.
+
+Rationale: `Empty`, `Contractible`, and exact small `Finite n` are sufficient for reachability, erasure,
+representation selection, and completion. Standardizing exact infinite-cardinality classes would constrain
+implementations while buying very little besides fresh opportunities for humans to argue about cardinal arithmetic.
+
 Required structural fragment:
 
-* The required fragment is the normalized closed first-order algebraic fragment of KCore.
-* At minimum, implementations MUST compute exact summaries for:
-  * `Void`, `Unit`, `Bool`, and any closed finite nullary-constructor data type;
-  * closed sums and closed variants, by exact addition of already summarized arms;
-  * closed nondependent products and nondependent records, by exact multiplication of already summarized components;
-  * closed dependent record telescopes are not part of the required exact fragment unless each later field summary is
-    determined structurally from earlier singleton refinements without leaving the required fragment; otherwise the
-    required result is `Unknown`;
-  * refined case fibers whose emptiness or singleton-ness already follows from ordinary branch refinement, definitional
-    equality, and index unification;
-  * runtime-relevant shapes obtained after erasing compile-time-only and quantity-`0` constituents when the query is
-    requested for representation selection.
-* For function types, recursive types, higher-rank polymorphism, open rows, opaque definitions outside the current
-  transparency environment, and any other unsupported shape, the required result is `Unknown`.
+The required fragment is the normalized first-order algebraic fragment of KCore, interpreted under the selected
+`InhabitancePurpose`.
+
+At minimum, implementations MUST compute exact summaries for the following cases.
+
+Base types:
+
+* `Void` summarizes to `Empty`.
+* `Unit` summarizes to `Contractible`.
+* `Bool` summarizes to `Finite 2`.
+* A closed finite nullary-constructor data type summarizes to `Finite n`, where `n` is the number of reachable
+  constructors after ordinary visibility, opacity, and index-refinement checks.
+
+Closed products and records:
+
+* A closed nondependent product or nondependent closed record summarizes by exact multiplication of component summaries.
+* Any `Empty` component makes the product or record `Empty`.
+* `Contractible` components contribute multiplicative factor `1`.
+* If any component is `Unknown`, and no component is `Empty`, the required result is `Unknown`.
+
+Closed sums and variants:
+
+* A closed sum, closed ordinary data type, or closed `Variant` row summarizes by exact addition of reachable arm
+  summaries.
+* `Empty` arms contribute additive factor `0`.
+* If every reachable arm is `Empty`, the result is `Empty`.
+* If any reachable arm is `Unknown`, and no exact result can be derived structurally, the required result is `Unknown`.
+
+Constructor-index refinement:
+
+For an indexed data type or GADT-style constructor family, a constructor arm is reachable only if the constructor's
+result indices can be unified with the demanded target type using ordinary definitional equality and index unification.
+
+If the required unification fails, that constructor arm contributes `Empty`.
+
+If the required unification succeeds, the constructor arm summary is the product of the summaries of its retained
+constructor fields under the branch-local index equalities and parameter refinements.
+
+For `RuntimeShape` and `Optimization`, compile-time-only fields, quantity-`0` fields, proof-only fields, and erased
+indices are removed before this product is computed.
+
+Equality types:
+
+For a propositional equality type `x = y`:
+
+* if `x` and `y` are definitionally equal, the required summary is `Contractible`;
+* if normalized closed constructor, literal, or nominal heads prove that `x` and `y` cannot be equal, the required
+  summary is `Empty`;
+* otherwise the required result is `Unknown`.
+
+The implementation MUST NOT assume uniqueness of arbitrary proof types merely because the type is proposition-shaped.
+This rule applies only to the built-in equality family and only in the cases listed above.
+
+Coherent constraint evidence:
+
+A concrete coherent constraint evidence type `C : Constraint` follows the proof-irrelevance and coherence rules of
+§5.1.3.
+
+Explicit `Dict C` values are ordinary runtime values. They summarize according to their explicit runtime representation,
+specialization, inlining, or dead-code erasure status, and otherwise the required result is `Unknown`.
+
+Dependent record telescopes:
+
+For a closed dependent record telescope, the required exact fragment includes the following singleton-dependent case.
+
+Process fields in canonical dependency-respecting order.
+
+* If a field type summarizes to `Empty`, the whole record summarizes to `Empty`.
+* If a field type summarizes to `Contractible`, extend the field context with its unique inhabitant and continue.
+* If a later field type depends on an earlier field whose summary is not `Contractible`, the required result is
+  `Unknown`, unless an implementation applies an optional strengthening rule below.
+
+This rule is intentionally weaker than full dependent sum cardinality. It is required, terminating, and sufficient for
+many erased-index and singleton-refinement optimizations.
+
+Open or unsupported shapes:
+
+For function types, recursive types, higher-rank polymorphism, open rows, opaque definitions outside the current
+transparency environment, dynamically represented values whose runtime representation is not statically known, foreign
+values, and any other unsupported shape, the required result is `Unknown`.
 
 Termination and conservatism:
 
@@ -17082,6 +17208,62 @@ Source-acceptance stability:
   required structural fragment.
 * Optional strengthening rules MAY affect diagnostics, completion, optimization, and code generation, but they MUST
   remain conservative.
+
+<!-- compiler.kcore.inhabitant_enumeration -->
+#### 17.3.6A Finite inhabitant enumeration
+
+Implementations MAY expose a finite-inhabitant enumeration query for tooling, diagnostics, completion, and optional
+optimization.
+
+```text
+EnumerationResult ::= NotEnumerable
+                    | Unique coreTerm
+                    | FiniteList nat (list coreTerm)
+```
+
+Meaning:
+
+* `NotEnumerable` means no finite enumeration was produced.
+* `Unique t` means `t` is the unique inhabitant produced for a `Contractible` summary.
+* `FiniteList n ts` means `ts` contains exactly `n` inhabitants of the analyzed type, in deterministic order.
+
+Relationship to `InhabitanceSummary`:
+
+* `Unique t` may be returned only when the corresponding summary is `Contractible`.
+* `FiniteList n ts` may be returned only when the corresponding summary is `Finite n`.
+* If `n` exceeds an implementation-defined enumeration threshold, the implementation MUST return `NotEnumerable`
+  rather than attempting an unbounded enumeration.
+* The threshold is implementation-defined, but it MUST be deterministic within an analysis session and MUST participate
+  in query invalidation or compiler fingerprinting whenever it can affect generated KBackendIR or target artifacts.
+
+Well-typedness:
+
+Every term returned by finite enumeration MUST be a well-typed KCore term at the analyzed type in the analyzed context.
+
+Enumeration order:
+
+When enumeration is provided, the order MUST be deterministic.
+
+At minimum, the following canonical order SHOULD be used when applicable:
+
+* `Bool`: `False`, then `True`;
+* `Unit`: the unique unit inhabitant;
+* records and products: lexicographic product order over fields in canonical record order;
+* ordinary data constructors: declaration order after canonical constructor identity resolution;
+* variants: canonical normalized row order, using the stable member identity order already used for `VarRow`
+  normalization.
+
+Source-acceptance restriction:
+
+Finite inhabitant enumeration MUST NOT by itself make an otherwise invalid source program valid.
+
+In particular:
+
+* an unsolved hole is not accepted merely because enumeration could suggest a filling term;
+* optional enumeration is not required for `impossible`;
+* optional enumeration is not required for `match` exhaustiveness.
+
+Tooling may use enumeration to propose edits, hole fillings, case splits, and completion candidates.
 
 <!-- compiler.kbackendir -->
 ### 17.4 KBackendIR
