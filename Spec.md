@@ -8697,6 +8697,56 @@ Special cases:
   variable is itself unrestricted. Capturing only unrestricted (`ω`) and/or erased (`0`) variables is sufficient for
   this case.
 
+Positive lower-bound capture:
+
+Uses of a captured variable inside a lambda body are delayed uses. Constructing the closure does not itself demand the
+captured variable.
+
+If a lambda body demands a free variable `x` with interval `[l_body, u_body]`, and the resulting closure value is itself
+used with interval `[l_closure, u_closure]`, then the induced demand on `x` is:
+
+```text
+[l_closure, u_closure] · [l_body, u_body]
+```
+
+using the interval multiplication rule of §5.1.5.
+
+Consequences:
+
+* A positive lower-bound obligation for `x` cannot be discharged merely by placing a use of `x` inside a closure.
+* Such an obligation is discharged only if the closure itself is demanded often enough before `x`'s obligation scope
+  closes.
+* Returning, storing, or otherwise escaping a closure whose only use of `x` is delayed does not discharge `x`'s positive
+  lower-bound obligation unless the surrounding type and quantity context itself imposes the required demand on the
+  closure value.
+
+Example:
+
+```kappa
+bad :
+    (>=1 x : Int) -> Unit
+let bad x =
+    let f = \() -> x
+    ()
+```
+
+Rejected: `x` is used only inside `f`, and `f` is never demanded.
+
+```kappa
+ok :
+    (>=1 x : Int) -> Int
+let ok x =
+    let f = \() -> x
+    f ()
+```
+
+Accepted: the call to `f` demands the closure once, which demands `x` once.
+
+A closure that captures a positive-lower-bound variable may be passed to a higher-order function only when the
+higher-order function's parameter quantity and semantic contract demand that closure sufficiently often. In particular,
+passing such a closure to a parameter annotated `ω` does not discharge the captured variable's positive lower-bound
+obligation, because an unrestricted callee may ignore the closure.
+
 <!-- expressions.lambdas.suspension_expressions_forcing -->
 #### 7.2.2 Suspension expressions and forcing
 
