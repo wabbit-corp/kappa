@@ -1608,25 +1608,25 @@ trait BridgeHandle (h : Type) =
         IO Error (BridgePackage sig)
 
 bindModule :
-    forall (h : Type) (r : Region) (@0 sig : Type).
-    (@H : BridgeHandle h) ->
+    forall (@0 sig : Type) (h : Type) (r : Region).
     (@B : BridgeBindable sig) ->
+    (@H : BridgeHandle h) ->
     (&[r] handle : h) ->
     String ->
     IO H.Error (sig captures (r))
 
-let bindModule @H @B handle name =
+let bindModule @B @H handle name =
     H.bindModuleWith B.bridgeContract handle name
 
 bindModuleOwned :
-    forall (h : Type) (@0 sig : Type).
-    (@H : BridgeHandle h) ->
+    forall (@0 sig : Type) (h : Type).
     (@B : BridgeBindable sig) ->
+    (@H : BridgeHandle h) ->
     (1 handle : h) ->
     String ->
     IO H.Error (BridgePackage sig)
 
-let bindModuleOwned @H @B handle name =
+let bindModuleOwned @B @H handle name =
     H.bindModuleOwnedWith B.bridgeContract handle name
 
 bridgePackageValue :
@@ -1678,10 +1678,13 @@ Rules:
   This is the standard escape hatch when a bridge-bound value must outlive the lexical borrow of the original handle.
 * `bridgePackageValue` borrows an owned bridge package and exposes its underlying package-like surface for the borrow
   duration.
-* `BridgePackage sig` MUST have a `Releasable` instance, or another explicitly documented owner lifecycle, when the
-  underlying package owns runtime resources.
-* If a `BridgePackage sig` has no `Releasable` instance, the implementation MUST document why release is unnecessary,
-  for example because the package is tied to process lifetime or to another explicit owner.
+* If a `BridgePackage sig` owns, retains, registers, pins, leases, keeps alive, or otherwise controls any runtime
+  resource, bridge connection, callback registration, host object, foreign object, process, interpreter, endpoint,
+  transport, native handle, or bridge capability, the implementation MUST provide a `Releasable` instance or another
+  specification-defined release operation with equivalent source-level behavior.
+* The release operation for an owned `BridgePackage sig` MUST specify whether release failure is impossible, an expected
+  typed failure, or a defect. It MUST NOT silently rely on host finalization to provide source-level resource release.
+* If `BridgePackage sig` does not own or retain any runtime resource, no `Releasable` instance is required.
 * A conforming implementation MAY implement `BridgePackage sig` as an ordinary Kappa library type, as a runtime
   primitive, or as another observationally equivalent resource wrapper.
 
