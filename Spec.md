@@ -987,6 +987,11 @@ WellFoundedRelation,
 MonadError, MonadFinally, MonadResource, MonadRef, Releasable
 ```
 
+`Hashable` is provided by `std.hash`, not by the implicit prelude.
+
+This is intentional. Ordinary equality-keyed APIs use `Eq`; hashing is an optional acceleration facility. Code that
+defines, derives, or explicitly requests hashing imports `std.hash`.
+
 Canonical declarations:
 
 ```kappa
@@ -15382,6 +15387,33 @@ only proof-carrying `Eq` participates in equality reflection (§7.3.3).
 
 In `std.prelude`, `Ord` refines `Eq`, not `Equiv`: any `Ord a` instance MUST also supply an `Eq a` instance for the same
 `a`, and its equality classes MUST agree with `(==)`.
+
+<!-- traits.hashable -->
+#### 12.1.X `Hashable` and equality-compatible runtime hashing
+
+The standard trait `std.hash.Hashable` is a runtime collection-acceleration trait.
+
+It is deliberately not a replacement for `Eq`.
+
+```kappa
+trait Eq a => Hashable (a : Type) =
+    hashInto :
+        (& value : a) -> (1 state : std.hash.HashState) -> std.hash.HashState
+```
+
+`Hashable a` refines `Eq a` because hash acceleration is meaningful only relative to equality classes.
+
+No separate `hashSound` member is required. Since `Eq a` reflects boolean equality into propositional equality, any pure
+hashing function automatically maps `Eq`-equal values to propositionally equal hash results.
+
+A compiler MUST NOT derive `x = y`, `(x == y) = True`, or any other equality evidence from equal hash codes.
+
+`Hashable` participates in ordinary instance resolution and coherence. It does not alter `Eq`, `Ord`, definitional
+equality, propositional equality, instance-head identity, Hard Hashes, Easy Hashes, or module-interface identity except
+in the ordinary way that any imported trait instance may affect typechecking of source that explicitly requests it.
+
+Libraries SHOULD name APIs that semantically require hashing with an explicit `Hashable` constraint. Standard
+equality-keyed APIs SHOULD require only `Eq` unless their observable contract genuinely exposes hash-specific behavior.
 
 Sugar:
 
