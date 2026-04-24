@@ -7237,6 +7237,24 @@ Typing:
   that obligation exactly once. This permits ergonomic linear state threading without requiring users to invent `x1`,
   `x2`, `x3`, ...
 
+Positive lower-bound scope exit:
+
+For any local binding whose bound variables carry interval quantities with positive lower bounds, every reachable
+completion path leaving the binding's body must satisfy those lower bounds.
+
+This applies equally to:
+
+* ordinary local `let`;
+* local pattern bindings;
+* local implicit bindings;
+* shadowing bindings used for state threading;
+* borrowed hidden-root introductions, except that borrowed binders themselves use the borrow escape rules rather than
+  interval lower-bound checking.
+
+A later shadowing binding may discharge an earlier positive lower-bound obligation only when the right-hand side of the
+shadowing binding demands the earlier binding sufficiently. Merely shadowing a positive-lower-bound name without
+demanding it is a compile-time error.
+
 Refutable form:
 
 A `let?` binding is a *refutable* binding. The form `let? pat = expr` matches `expr` against `pat`. If the match
