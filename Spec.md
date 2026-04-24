@@ -976,12 +976,23 @@ trait IntoQuery (src : Type) =
 
 trait FromComprehensionPlan (c : Type) =
     Item : Type
-    fromComprehensionPlan : ComprehensionPlan Item -> c
+    fromComprehensionPlan : ComprehensionPlan Item -> Syntax c
 
 trait FromComprehensionRaw (c : Type) =
     Item : Type
-    fromComprehensionRaw : RawComprehension Item -> c
+    fromComprehensionRaw : RawComprehension Item -> Syntax c
 ```
+
+The comprehension sink hooks `fromComprehensionPlan` and `fromComprehensionRaw` are elaboration-time hooks.
+
+They are not ordinary runtime conversion functions.
+
+When the compiler selects one of these hooks under §10.9, it evaluates that hook during elaboration under the same
+elaboration-time evaluator and restrictions as §5.8.6.
+
+The returned `Syntax c` is then elaborated at the original comprehension site, using the same lexical context,
+expected-type information, name-resolution, implicit-insertion, visibility, opacity, `unhide`, and `clarify` rules
+that would apply to an ordinary splice at that site.
 
 Primitive suspension types:
 
@@ -2445,6 +2456,7 @@ Compile-time values are:
   `EffRow`, `Label`, and `EffLabel`;
 * universe terms appearing in `Type u`;
 * inhabitants of the elaboration-time reflection types `CoreCtx`, `Symbol`, `Core Γ t`, and `CoreEq x y` of §5.8.5;
+* inhabitants of the comprehension reflection types `RawComprehension a` and `ComprehensionPlan a` of §5.8.5;
 * inhabitants of the elaboration-time action type `Elab a` and of the elaboration-time goal record `ElabGoal` of
   §5.8.7;
 * inhabitants of compile-time function spaces built entirely from such types and from `Type u`.
@@ -2466,8 +2478,9 @@ Runtime erasure is governed as follows:
 ##### 5.1.4.1 Compile-time bindings and fields
 
 A binder, record field, or package member is compile-time if its annotation elaborates to one of the intrinsic
-compile-time types of §5.1.3, to `Type u`, to one of the elaboration-time reflection types of §5.8.5, to `Elab a` or
-`ElabGoal` of §5.8.7, or to a compile-time function space built from such types.
+compile-time types of §5.1.3, to `Type u`, to one of the elaboration-time reflection types of §5.8.5, to
+`RawComprehension a` or `ComprehensionPlan a` of §5.8.5, to `Elab a` or `ElabGoal` of §5.8.7, or to a compile-time
+function space built from such types.
 
 Compile-time bindings and fields:
 
@@ -4973,15 +4986,35 @@ sufficient to observe, at minimum:
 * and any map-conflict clause.
 
 `ComprehensionPlan a` is a stable normalized compile-time reflection type.
-A conforming implementation MUST provide a stable public inspection API for `ComprehensionPlan`
-sufficient to observe, at minimum:
 
-* the normalized query pipeline,
-* the terminal collection kind:
+A conforming implementation MUST provide a stable public inspection API for `ComprehensionPlan`
+sufficient to observe, construct, and decompose, at minimum, normalized plan nodes equivalent to:
+
+* a singleton empty-row source;
+* source introduction from `IntoQuery.toQuery`;
+* row extension by an irrefutable generator;
+* refutable generator filtering / filter-map;
+* row-local `let`;
+* refutable row-local `let?`;
+* row filtering;
+* ordering;
+* paging (`skip`, `take`);
+* row deduplication (`distinct`);
+* keyed deduplication (`distinct by`);
+* inner join;
+* left join;
+* grouping;
+* final element projection;
+* final key/value projection;
+* terminal collection kind:
   * list-like element collection,
   * set-like element collection,
-  * or key/value collection,
-* and any map-conflict policy.
+  * or key/value collection;
+* and any terminal map-conflict policy.
+
+Two implementations MAY use different internal representations, but any public reflection API for
+`ComprehensionPlan` MUST be rich enough to recover the normalized semantics above without reparsing source text
+or inspecting compiler-private IR.
 
 `lowerComprehension` performs the normative lowering of §10.10.
 
@@ -11364,9 +11397,9 @@ Syntax (example):
 ```
 
 * `join pat in collection on condition`:
-
-    * Iterates over `collection` and matches each element against `pat`.
-    * For each `c` from the outer `for`, pairs `c` with elements where `condition` holds.
+  * iterates `collection`,
+  * matches each element against `pat`,
+  * and keeps pairings for which `condition` holds.
 
 Left join example (using group join + flattening):
 
@@ -11379,13 +11412,48 @@ Left join example (using group join + flattening):
 ]
 ```
 
-Desugaring (normative; the compiler is free to optimize):
-* `join pat in xs on cond` is sugar for: `for tmp in xs, let? pat = tmp, if cond` where `cond` is evaluated in the scope
-  where `pat` bindings are in scope.
+* `left join pat in collection on condition into name`:
+  * iterates `collection`,
+  * matches each element against `pat`,
+  * keeps the elements for which `condition` holds,
+  * and binds `name` to the first-class query of matching elements for the current outer row.
 
-* `left join pat in xs on cond into name` is sugar for binding `name` to the list of matching elements: `let name = [
-  for tmp in xs, let? pat = tmp, if cond, yield tmp ]` The bindings introduced by `pat` are not in scope after the `left
-  join`; only `name` is.
+Normative lowering:
+
+* `join pat in xs on cond` is observationally equivalent to:
+
+  ```kappa
+  for tmp in xs
+  let? pat = tmp
+  if cond
+  ```
+
+  where `cond` is evaluated in the scope where the bindings introduced by `pat` are in scope.
+
+* `left join pat in xs on cond into name` is observationally equivalent to introducing:
+
+  ```kappa
+  let name = Query [
+      for tmp in xs
+      let? pat = tmp
+      if cond
+      yield tmp
+  ]
+  ```
+
+  The bindings introduced by `pat` are not in scope after the `left join`; only `name` is.
+
+Type and scope rules:
+
+* In `join`, the bindings introduced by `pat` are in scope in later clauses exactly as for other successful row
+  extensions.
+* In `left join ... into name`, `name` is in scope in later clauses and has type `Query t`, where `t` is the item type
+  yielded by the normalized inner matching query.
+* The encounter order and ordered/unordered status of `name` are those of the matching inner query produced for the
+  current outer row.
+
+Implementations MAY lower joins to dedicated normalized join operators or to observationally equivalent combinations of
+normalized query operators, provided the semantics above are preserved.
 
 <!-- collections.carriers -->
 ### 10.9 Carrier prefixes, first-class queries, and custom sinks
@@ -11413,9 +11481,11 @@ Built-in defaults when the prefix is omitted:
 Carrier selection:
 
 1. If an instance `FromComprehensionRaw c` is available, the compiler constructs a `RawComprehension item` for the
-   comprehension and invokes `fromComprehensionRaw`.
+   comprehension, evaluates `fromComprehensionRaw` during elaboration, and elaborates the resulting `Syntax c` at the
+   original comprehension site.
 2. Otherwise, if an instance `FromComprehensionPlan c` is available, the compiler constructs the normalized
-   `ComprehensionPlan item` of §10.10 and invokes `fromComprehensionPlan`.
+   `ComprehensionPlan item` of §10.10, evaluates `fromComprehensionPlan` during elaboration, and elaborates the
+   resulting `Syntax c` at the original comprehension site.
 3. If both are available, `FromComprehensionRaw` is preferred.
 4. If neither is available, the comprehension is ill-formed.
 
