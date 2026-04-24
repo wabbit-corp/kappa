@@ -20413,6 +20413,18 @@ Floating-point restriction:
 * Such values MUST instead be adapted through an implementation-documented lossless representation, such as integer bit
   patterns or byte buffers, or else the interface MUST be marked backend-specific.
 
+General floating-point boundary rule:
+
+* Any foreign ABI, bridge, component interface, serialization protocol, or host adapter that fails to preserve Kappa's
+  raw-bit `Eq Float` / `Eq Double` semantics MUST NOT expose the affected values as ordinary `Float`, `Double`,
+  `std.ffi.F32`, or `std.ffi.F64` in a portable surface.
+* Such a boundary MUST instead use a lossless representation, such as integer bit patterns, byte buffers, an exact
+  adapter-specific wrapper, or another documented encoding that preserves all IEEE-754 payload bits relevant to Kappa
+  equality.
+* Alternatively, the surface MUST be marked backend-specific or Lossy under the boundary-contract rules of §17.7.4A.
+* A Lossy floating-point boundary MUST NOT be used to justify propositional equality, raw-bit equality, representation
+  identity, or round-trip identity.
+
 <!-- compiler.js -->
 ### 17.12 ECMAScript backend profile (`js`)
 
