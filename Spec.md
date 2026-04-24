@@ -10943,6 +10943,16 @@ Clause separators:
 * Within comprehensions, clauses may be separated by newlines or commas.
 * Commas are purely a separator (equivalent to a newline at the same layout nesting).
 
+Top-level clause-boundary rule:
+
+* Within a comprehension, a `NEWLINE` acts as a clause separator only when:
+  * the parser is at comprehension clause depth 0,
+  * the `NEWLINE` is not inside nested parentheses, brackets, braces, `{| |}`, strings, character literals, comments,
+    or quotes,
+  * and the preceding token does not place the parser in an ordinary continuation context under §3.4.
+
+Otherwise the `NEWLINE` is treated as part of the surrounding expression syntax rather than as a clause boundary.
+
 Example:
 
 ```kappa
@@ -11274,9 +11284,8 @@ Notes:
 
 `distinct` and `distinct by` operate on the current row environment at the clause site.
 
-* For `distinct`, the deduplication key is the record of all currently bound names in scope, with fields ordered by
-  Unicode scalar lexicographic order of the binder names.
-* For `distinct by keyExpr`, the deduplication key is `keyExpr` evaluated in that environment.
+* For `distinct`, the deduplication key is the current row record `Row(Γ)` of §10.10.2.
+* For `distinct by keyExpr`, the deduplication key is `keyExpr` evaluated in that same row environment.
 
 
 ```kappa
@@ -11284,8 +11293,7 @@ distinct
 distinct by keyExpr
 ```
 
-* `distinct` keeps unique rows based on the deduplication key being the full current row environment record. Two rows
-  are distinct iff their deduplication-key projections differ under `Eq`.
+* `distinct` keeps unique rows based on equality of `Row(Γ)` under the applicable `Eq` instance.
 * `distinct by keyExpr` keeps the first encountered row for each unique deduplication key `keyExpr`.
 * Requires an `Eq`-like trait for the value used to determine uniqueness. Hashing may be used as an optimization
   (implementation-defined).
