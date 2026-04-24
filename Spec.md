@@ -8082,6 +8082,58 @@ Semantics:
   * defect.
 * The restoration performed by `locallyFiberRef` behaves as a masked finalizer.
 
+<!-- effects.monadic_core.explicit_scopes_monitors -->
+#### 8.1.3D Explicit scopes and monitors
+
+In addition to the implicit lexical supervision scopes of `fork`, Kappa provides explicit runtime scopes and monitors:
+
+```kappa
+newScope :
+    UIO Scope
+
+forkIn :
+    forall (e : Type) (a : Type).
+    Scope -> IO e a -> UIO (Fiber e a)
+
+shutdownScope :
+    Scope -> UIO Unit
+
+monitor :
+    forall (e : Type) (a : Type).
+    Fiber e a -> UIO (Monitor e a)
+
+awaitMonitor :
+    forall (e : Type) (a : Type).
+    Monitor e a -> UIO (Exit e a)
+
+demonitor :
+    forall (e : Type) (a : Type).
+    Monitor e a -> UIO Unit
+```
+
+Semantics:
+
+* `newScope` creates an explicit supervision scope.
+* `forkIn scope io` creates a child fiber attached to `scope`.
+* `shutdownScope scope`:
+  * interrupts every still-live fiber attached to `scope`,
+  * waits until each such fiber has terminated and all of its finalizers have run,
+  * and is idempotent.
+* `shutdownScope` does not implicitly shut down fibers attached to unrelated scopes.
+* A monitor is one-way termination observation.
+* `monitor fiber` creates a monitor for `fiber`.
+* `awaitMonitor mon` waits until the monitored fiber terminates and returns its terminal `Exit`.
+* `demonitor mon` removes the observation handle.
+* Monitoring a fiber does not:
+  * make the monitored fiber a child of the monitoring fiber,
+  * cause termination of the monitored fiber when the monitor is dropped,
+  * or cause termination of the monitoring fiber when the monitored fiber fails.
+* If `awaitMonitor` is called after the monitored fiber has already terminated, it returns immediately with the
+  recorded terminal `Exit`.
+
+Restart strategies such as one-for-one, one-for-all, and rest-for-one are library-level constructions over `Scope`,
+`Monitor`, `Promise`, and ordinary `IO`. They are not part of the portable core source semantics.
+
 <!-- effects.monadic_core.interruption_masking -->
 #### 8.1.4 Interruption and masking
 
