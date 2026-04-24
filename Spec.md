@@ -11747,8 +11747,10 @@ Order propagation:
 * Refutable forms preserve orderedness the same way filtering does:
   * `for? pat in xs` preserves Ordered iff `xs` is iterated in a specified order and the incoming stream is Ordered.
   * `let? pat = e` preserves the current orderedness (it's row-local and either keeps or drops the row).
-* `join` / `left join` orderedness follows their normative desugaring in §10.8 (i.e. behaves like adding a `for tmp in
-  ...` plus filters).
+* `join` orderedness follows its normative semantics in §10.8, behaving like an added `for tmp in ...` plus refutable
+  matching and filtering.
+* `left join ... into name` preserves the orderedness of the outer pipeline. The bound `name : Query t` has the
+  orderedness of the matching inner query produced for that outer row.
 
 Order-sensitive clauses:
 
@@ -12222,25 +12224,32 @@ Carrier selection:
 
 1. If an instance `FromComprehensionRaw c` is available, the compiler constructs a `RawComprehension item` for the
    comprehension, evaluates `fromComprehensionRaw` during elaboration, and elaborates the resulting `Syntax c` at the
-   comprehension site.
+   original comprehension site.
+
 2. Otherwise, if an instance `FromComprehensionPlan c` is available, the compiler constructs the normalized
    `ComprehensionPlan item` of §10.10, evaluates `fromComprehensionPlan` during elaboration, and elaborates the
-   resulting `Syntax c` at the comprehension site.
+   resulting `Syntax c` at the original comprehension site.
+
 3. If both are available, `FromComprehensionRaw` is preferred.
+
 4. If neither is available, the comprehension is ill-formed.
+
+The associated type `Item` of the selected sink instance MUST be definitionally equal to the normalized yielded item
+type `item`.
 
 The selected hook is an elaboration-time hook and is subject to the restrictions of §5.8.6.
 
-The associated type `Item` of the selected sink instance determines the yielded item type of the normalized plan.
+The `Syntax c` returned by the hook is elaborated using the same lexical context, expected-type information,
+name-resolution, implicit-insertion, visibility, opacity, `unhide`, and `clarify` rules that would apply to an ordinary
+splice at the comprehension site.
 
 Examples:
 
-* `Array [ ... ]` may use `FromComprehensionPlan (Array a)`.
-* `Query [ ... ]` may use `FromComprehensionPlan (Query a)`.
+* `Array [ ... ]` uses candidate result type `Array item`.
+* `Query [ ... ]` uses candidate result type `Query item`.
 * `Map k v { ... }` may use `FromComprehensionPlan (Map k v)` with `Item = (key : k, value : v)`.
-* `Tensor (n, m) { ... }` is an illustrative example of a custom sink.
-  This section does not by itself standardize dense tensor semantics, index domains, shape inference, or tensor-specific
-  reduction behavior, or automatic application of non-unary tensor type families.
+* `Tensor (n, m) { ... }` is an illustrative custom-sink example only. This specification does not assign it portable
+  dense tensor semantics.
 
 Raw custom sinks are intended for query providers, relational backends, and other advanced carriers that need access to
 the original clause structure. Normalized sinks are intended for ordinary collection builders and backends that are
