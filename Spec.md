@@ -692,6 +692,7 @@ Unit, Void, Bool, Char, String, Int, Nat, Integer, Float, Double, Real, Bytes, O
 Query a, RawComprehension a, ComprehensionPlan a,
 Option a, Result e a, List a, Array a, Set a, Map k v,
 Res a r, Match a r, Dec p, Dict c,
+WellFounded, Acc,
 IO e a, UIO a, Fiber e a, FiberId, Exit e a, Cause e, InterruptTag, InterruptCause, DefectTag, DefectInfo,
 Scope, Monitor e a, FiberRef a, Promise e a,
 STM a, TVar a,
@@ -752,6 +753,7 @@ empty, (<|>), orElse,
 negate,
 absurd,
 subst, sym, trans, cong,
+measureRelation, lexRelation,
 floatEq,
 runPure,
 sandbox, unsandbox,
@@ -782,6 +784,7 @@ Functor, Applicative, Monad, Alternative,
 Foldable, Traversable, Filterable, FilterMap, Monoid, Iterator, InterpolatedMacro,
 IntoQuery, FromComprehensionPlan, FromComprehensionRaw,
 FromInteger, FromFloat, FromString,
+WellFoundedRelation,
 MonadError, MonadFinally, MonadResource, MonadRef, Releasable
 ```
 
@@ -820,6 +823,35 @@ data Dec (p : Type) : Type =
     No (p -> Void)
 
 Dict : Constraint -> Type
+
+WellFounded :
+    forall (a : Type).
+    (a -> a -> Type) -> Type
+
+Acc :
+    forall (a : Type).
+    (a -> a -> Type) -> a -> Type
+
+trait WellFoundedRelation (a : Type) =
+    rel : a -> a -> Type
+    wf  : WellFounded a rel
+
+measureRelation :
+    forall (a : Type) (b : Type).
+    WellFoundedRelation b ->
+    (a -> b) ->
+    a -> a -> Type
+
+lexRelation :
+    forall (a : Type) (b : Type).
+    WellFoundedRelation a ->
+    WellFoundedRelation b ->
+    WellFoundedRelation (a, b)
+
+instance WellFoundedRelation Nat
+
+instance (WellFoundedRelation a, WellFoundedRelation b)
+      => WellFoundedRelation (a, b)
 
 expect data IO (e : Type) (a : Type) : Type
 type UIO (a : Type) = IO Void a
@@ -1114,6 +1146,10 @@ Thus `&&` and `||` are ordinary terms. They are not special evaluation forms.
 * `absurd` is ex falso elimination from `Void`.
 * `Dec p` packages a decision procedure for proposition `p`, carrying either positive evidence `Yes p` or a refutation
   `No (p -> Void)`.
+
+`WellFounded`, `Acc`, `WellFoundedRelation`, `measureRelation`, and `lexRelation` are the standard erased
+well-founded-relation vocabulary used by termination checking. Their evidence is compile-time only; relation evidence
+does not require runtime representation unless explicitly reified by another carrier.
 
 `Res a r` is the standard prelude wrapper for threading a linear resource `r` alongside an ordinary value `a`.
 
@@ -6373,7 +6409,7 @@ recursive call strictly decreases the chosen structural parameter tuple under th
 <!-- declarations.totality.portable_well_founded_measures -->
 #### 6.4.2B Portable well-founded measures
 
-The portable user-visible measure forms of v1 are:
+Without an explicit relation or proof in the `decreases` clause, the portable user-visible measure forms of v1 are:
 
 * a term of type `Nat`; or
 * a tuple whose components are all of type `Nat`.
@@ -6381,8 +6417,10 @@ The portable user-visible measure forms of v1 are:
 A bare `Nat` measure is treated as a 1-tuple. Tuples are ordered lexicographically by the ordinary `<` relation on
 `Nat`.
 
-A recursive SCC is accepted by a measure-based termination argument only if every member of the SCC is checked against a
-visible measure of the same tuple arity and every recursive call strictly decreases that visible measure.
+A recursive SCC is accepted by this default measure-based termination argument only if every member of the SCC is checked
+against a visible measure of the same tuple arity and every recursive call strictly decreases that visible measure.
+
+General well-founded relation and proof-directed `decreases` forms are specified by §6.4.4.
 
 <!-- declarations.totality.recommended_inference_strategies -->
 #### 6.4.2C Recommended inference strategies
@@ -6430,22 +6468,54 @@ Any named function definition may optionally include exactly one `decreases` cla
 
 Forms:
 
-```kappa
-decreases e
-decreases structural x
+```text
+decreasesClause ::=
+    'decreases' decreasesSpec
+
+decreasesSpec ::=
+    termMeasure
+  | 'structural' structuralTarget
+  | termMeasure 'by' wfRelation
+  | termMeasure 'using' terminationProof
+  | 'sized' sizedTarget
+
+structuralTarget ::=
+    ident
+  | '(' ident (',' ident)+ ')'
+
+sizedTarget ::=
+    ident
+
+termMeasure ::=
+    expr
 ```
 
 Rules:
 
-* `decreases e` is well-formed only when `e` elaborates to `Nat` or to a tuple whose components are all `Nat`.
+* `decreases e` keeps the §6.4.2B behavior: `e` is well-formed only when it elaborates to `Nat` or to a tuple whose
+  components are all `Nat`.
 * `decreases structural x` is well-formed only when `x` names an explicit parameter of inductive type.
+* `decreases structural (x, y)` and the corresponding larger tuple form select a structural tuple under the
+  lexicographic lifting of `<ₛ`.
+* `decreases e by R` requires `R` to elaborate to a relation on the type of `e`. If `e : A`, then `R` must elaborate to
+  `A -> A -> Type`, and erased well-foundedness evidence `WellFounded A R` must be available.
+* `decreases e using proof` requires `proof` to elaborate to an erased proof that every recursive call decreases
+  according to the selected relation.
+* `decreases sized x` is reserved for a future sized-type extension and is ill-formed in portable v1 unless an
+  implementation explicitly enables that extension.
 * If any member of a recursive SCC has an explicit `decreases` clause, every member of that SCC MUST have one.
 * Within one recursive SCC, the explicit `decreases` clauses MUST all be of one kind:
   * all `decreases e` clauses, with the same visible tuple arity; or
-  * all `decreases structural x` clauses.
+  * all `decreases structural ...` clauses, with the same structural tuple arity; or
+  * all `decreases e by R` clauses, with definitionally equal measure types and relation types; or
+  * all `decreases e using proof` clauses, with the same selected relation scheme.
 * For a measure-based SCC, the explicit `decreases` clauses define the visible measure referenced by §6.4.2B.
 * For a structural SCC, the explicit `decreases structural x` clauses select the structural parameter(s) referenced by
   §6.4.2A.
+* For a relation-based SCC, `decreases e by R` defines the visible measure and the well-founded relation used by the
+  termination argument.
+* For a proof-directed SCC, `decreases e using proof` defines the visible measure and supplies the erased call-decrease
+  proof obligations checked by the termination checker.
 * The only hidden component permitted by portable v1 semantics is the canonical hidden phase component of §6.4.3.
 * If a `decreases` clause is present on a non-recursive definition, it has no effect.
 * `decreases` does not change runtime behavior. It constrains only the termination argument used by elaboration.
@@ -14599,9 +14669,36 @@ A module interface artifact MUST record at least:
 * enough metadata to reconstruct the reified-module view of §2.8.5, including the kind-tagged exported-member surface
   and the opaque-vs-transparent classification needed for local qualified access and module-value projection.
 
+Each recursive SCC that is accepted as total-certified MUST record a termination certificate in the module interface
+artifact.
+
+The certificate contains at least:
+
+* the SCC members by stable declaration identity;
+* the accepted strategy kind:
+  * `Structural`
+  * `SemanticStructural`
+  * `NatMeasure`
+  * `WellFoundedRelation`
+  * `SizeChange`
+  * `SizedType`
+  * `LinearLexicographic`
+  * `ExternalChecked`
+  * `AssertTotalUnverified`
+* the visible measure or structural target, if any;
+* any hidden phase assignment;
+* for each recursive call, the caller, callee, source origin, and decrease obligation;
+* whether the SCC is conversion-reducible;
+* a stable hash of any proof term or external certificate used;
+* the checker/certificate format version.
+
 For imported definitions, ordinary downstream compilation MUST use the recorded conversion-reducible status from the
 module interface artifact as the source of truth for δ-reduction eligibility. It MUST NOT require re-running
 termination inference on imported bodies in ordinary compilation mode.
+
+A downstream module may rely on conversion-reducible status only when the imported artifact records it. If the
+certificate is absent, malformed, unsupported, or produced under incompatible unsafe/debug settings, the definition is
+treated as opaque for definitional equality.
 
 An implementation MAY offer an explicit re-verification or paranoid mode that rechecks recorded certificates. If such a
 recheck is requested and disagrees with the recorded certification, compilation fails.
