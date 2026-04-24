@@ -20599,6 +20599,76 @@ This optimization is valid only if it preserves:
 If the clause instead duplicated `k`, stored it, or resumed it under multiple branches, the implementation would have
 to fall back to the ordinary resumption realization rules of §§14.8.5-14.8.9.
 
+<!-- appendix.boundary_roadmap -->
+## Appendix O. Boundary and graduality roadmap (non-normative)
+
+This appendix is non-normative.
+
+Kappa's long-term boundary story is intended to progress through the following layers.
+
+<!-- appendix.boundary_roadmap.explicit_typed_dynamics -->
+### O.1 Explicit typed dynamics
+
+The first layer is explicit dynamic values:
+
+```text
+Dyn
+DynRep a
+DynamicType a
+checkedCastWith
+checkedCast
+```
+
+This layer is already explicit and does not introduce ambient gradual typing.
+
+<!-- appendix.boundary_roadmap.boundary_contracts -->
+### O.2 Boundary contract layer
+
+The second layer is explicit contracts for foreign, dynamic, serialized, or otherwise imprecise values.
+
+Boundary contracts classify their checks as Exact, Conservative, or Lossy. Higher-order contracts install delayed
+monitors rather than performing only shallow one-shot checks.
+
+<!-- appendix.boundary_roadmap.runtime_bridge_capabilities -->
+### O.3 Runtime bridge capabilities
+
+The third layer is bridge handles as runtime capabilities.
+
+Foreign runtimes such as Python, Ruby, Perl, remote services, embedded interpreters, and subprocess protocols are
+selected by ordinary term-level code. They are not hidden behind static imports.
+
+<!-- appendix.boundary_roadmap.dependent_boundary_refinement -->
+### O.4 Dependent boundary refinement
+
+The fourth layer is dependent refinement at boundaries.
+
+A boundary may compute indices, validate refinements, preserve provenance, and produce dependent Kappa values such as:
+
+```kappa
+exists (n : Nat). Vec n Int
+Matrix rows cols Float
+JsonValue schema
+```
+
+<!-- appendix.boundary_roadmap.ambient_gradual_dependent_typing -->
+### O.5 Ambient gradual dependent typing
+
+A future Kappa revision may add ambient unknown types, unknown indices, gradual equality, consistency-based checking,
+and implicit cast insertion.
+
+Such an extension must specify:
+
+* the precision relation;
+* the consistency relation;
+* cast insertion rules;
+* higher-order cast semantics;
+* normalization behavior when imprecise terms occur in types;
+* interaction with propositional equality;
+* blame behavior; and
+* conservativity over the current explicit-dynamic fragment.
+
+Until then, Kappa's portable gradual story is explicit dynamic values plus explicit boundary contracts.
+
 <!-- appendices.test_harness -->
 ## Appendix T. Standard test harness
 
