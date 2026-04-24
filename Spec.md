@@ -11719,6 +11719,97 @@ Rules:
 * Rebinding, assignment, consuming use, or path-state invalidation discards any surviving fact whose stable subject is
   no longer available under §7.4.3.
 
+<!-- effects.do_blocks.positive_lower_bound_completion_checking -->
+#### 8.2.2B Positive lower-bound checking in do-item sequences
+
+A `do` block checks positive lower-bound obligations using the completion-indexed usage model of §5.1.5A.
+
+Sequential do-items:
+
+* Usage summaries of sequential do-items are added.
+* A later reachable do-item may discharge a positive lower-bound obligation introduced by an earlier do-item.
+* Once a source-level abrupt completion is produced, later do-items on that path are unreachable and do not contribute
+  usage.
+
+Abrupt control:
+
+Before elaborating a `return`, `break`, or `continue` item, the compiler checks that all positive lower-bound
+obligations for binders whose scopes are exited by that completion are already satisfied on that path, including any
+demands appearing in the returned expression itself.
+
+Examples:
+
+```kappa
+bad :
+    (>=1 x : Int) -> IO e Unit
+let bad x =
+    do
+        return ()
+```
+
+Rejected.
+
+```kappa
+ok :
+    (>=1 x : Int) -> IO e Int
+let ok x =
+    do
+        return x
+```
+
+Accepted: the returned expression demands `x`.
+
+Terminal `m Void` branches:
+
+A branch accepted as an expression of type `m Void` is terminal for normal-result typing, but it is not automatically
+allowed to discard positive-lower-bound obligations.
+
+Before such a branch may leave the scope of a `1` or `>=1` binding, the branch must satisfy that binding's lower-bound
+obligation, unless the branch is also proven unreachable.
+
+This rule prevents code from hiding a dropped relevant or linear value behind `empty`, `throwError`, or another
+no-normal-result computation.
+
+Example:
+
+```kappa
+bad :
+    (>=1 x : Token) -> IO Error Unit
+let bad x =
+    do
+        throwError NotReady
+```
+
+Rejected: the failure path leaves the scope without demanding `x`.
+
+```kappa
+ok :
+    (>=1 x : Token) -> IO Error Unit
+let ok x =
+    do
+        useToken x
+        throwError NotReady
+```
+
+Accepted if `useToken x` demands `x` sufficiently.
+
+Interaction with `defer` and `using`:
+
+A `defer` action does not discharge a positive lower-bound obligation of the surrounding scope merely by mentioning the
+variable inside the deferred action.
+
+A deferred action runs during scope unwinding, not at the source point where it is scheduled. Therefore a positive
+lower-bound obligation is discharged by `defer e` only when the specification of that deferred action explicitly models
+the demanded variable as consumed or demanded before the surrounding scope exits.
+
+For ordinary source checking, the safe rule is:
+
+* `defer e` may capture only variables whose capture is permitted by §7.2.1 and §5.1.6;
+* positive lower-bound obligations of the surrounding scope must still be satisfied by ordinary source demands before
+  the scope exits.
+
+`using` remains the preferred construct for resources whose cleanup must be guaranteed on every exit path.
+
 <!-- effects.do_blocks.labeled_do_blocks_labeled_control_flow -->
 #### 8.2.3 Labeled `do` blocks and labeled control flow
 
