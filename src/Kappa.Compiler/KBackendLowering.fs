@@ -229,9 +229,10 @@ module internal KBackendLowering =
           BindingInfos = bindingInfos
           ConstructorInfos = constructorInfos }
 
-    let lowerKBackendModules (backendProfile: string) (kRuntimeIR: KRuntimeModule list) =
+    let lowerKBackendModules (backendProfile: string) allowUnsafeConsume (kRuntimeIR: KRuntimeModule list) =
         let context = buildBackendLoweringContext kRuntimeIR
-        let availableRuntimeIntrinsics = Stdlib.runtimeIntrinsicTermNamesFor backendProfile Stdlib.PreludeModuleName
+        let availableRuntimeIntrinsics =
+            Stdlib.runtimeIntrinsicTermNamesForCompilation backendProfile allowUnsafeConsume Stdlib.PreludeModuleName
 
         let resolveQualifiedRuntimeModule (currentModule: KRuntimeModule) qualifierSegments =
             let qualifierText = SyntaxFacts.moduleNameToText qualifierSegments
@@ -567,6 +568,8 @@ module internal KBackendLowering =
                     Some BackendRepUnit
                 | "primitiveIntToString", _ ->
                     Some BackendRepString
+                | "unsafeConsume", _ ->
+                    Some BackendRepUnit
                 | "openFile", _ ->
                     Some(backendOpaqueRepresentation (Some "File"))
                 | ("primitiveReadData" | "readData"), _ ->

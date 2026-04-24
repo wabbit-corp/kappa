@@ -1145,6 +1145,13 @@ internal static class KappaRunner
                     1 => throw new RuntimeError($"Intrinsic 'printInt' expects an Int, but got {Format(builtin.Arguments[0])}."),
                     _ => throw new RuntimeError("Intrinsic 'printInt' received too many arguments.")
                 };
+            case "unsafeConsume":
+                return builtin.Arguments.Count switch
+                {
+                    0 => null,
+                    1 => UnitValue.Instance,
+                    _ => throw new RuntimeError("Intrinsic 'unsafeConsume' received too many arguments.")
+                };
             default:
                 if (BuiltinBinaryNames.Contains(builtin.Name))
                 {
@@ -1549,6 +1556,7 @@ internal static class KappaRunner
             "println" => new BuiltinValue("println"),
             "print" => new BuiltinValue("print"),
             "printInt" => new BuiltinValue("printInt"),
+            "unsafeConsume" => new BuiltinValue("unsafeConsume"),
             _ => throw new RuntimeError($"Intrinsic term '{name}' is not implemented for module '{moduleName}'.")
         };
     }

@@ -186,6 +186,7 @@ module Interpreter =
             | "printInt"
             | "printString"
             | "primitiveIntToString"
+            | "unsafeConsume"
             | "newRef"
             | "readRef"
             | "writeRef" when isPreludeModule ->
@@ -787,6 +788,12 @@ module Interpreter =
                 error $"Intrinsic 'primitiveIntToString' expects an Int, but got {RuntimeValue.format value}."
             | "primitiveIntToString", _ ->
                 error "Intrinsic 'primitiveIntToString' received too many arguments."
+            | "unsafeConsume", [ _ ] ->
+                ok (Some UnitValue)
+            | "unsafeConsume", arguments when List.length arguments < 1 ->
+                ok None
+            | "unsafeConsume", _ ->
+                error "Intrinsic 'unsafeConsume' received too many arguments."
             | "openFile", [ StringValue value ] ->
                 ok (Some(IOActionValue(fun () -> ok (StringValue($"<file:{value}>")))))
             | "openFile", arguments when List.length arguments < 1 ->

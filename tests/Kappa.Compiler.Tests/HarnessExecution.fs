@@ -47,7 +47,8 @@ let compileFixtureWorkspace (fixtureCase: KpFixtureCase) =
     let options =
         { CompilationOptions.create fixtureCase.Root with
             PackageMode = fixtureCase.Configuration.PackageMode
-            BackendProfile = fixtureCase.Configuration.BackendProfile }
+            BackendProfile = fixtureCase.Configuration.BackendProfile
+            AllowUnsafeConsume = fixtureCase.Configuration.AllowUnsafeConsume }
 
     Compilation.parse options [ fixtureCase.Root ]
 

@@ -1,5 +1,7 @@
 module main
 
+--! allow_unsafe_consume
+
 -- Source issues: rust#1243, rust#1399
 -- Spec: §5.1.5, §7.2.1
 data Token : Type =
@@ -7,7 +9,7 @@ data Token : Type =
 
 consume : (1 token : Token) -> Unit
 let consume token =
-    let _ = token
+    let _ = unsafeConsume token
     in ()
 
 runOnce : (1 f : Unit -> Unit) -> Unit

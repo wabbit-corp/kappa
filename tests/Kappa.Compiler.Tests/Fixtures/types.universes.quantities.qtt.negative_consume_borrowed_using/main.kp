@@ -1,10 +1,12 @@
 module main
 
+--! allow_unsafe_consume
+
 data File : Type =
     Handle Int
 
 let openFile name = pure (Handle 1)
-let consume (1 file : File) = let _ = file in ()
+let consume (1 file : File) = unsafeConsume file
 
 let main : IO Unit = do
     using file <- openFile "data.txt"
@@ -12,4 +14,4 @@ let main : IO Unit = do
 
 --! assertErrorCount 1
 --! assertDiagnosticCodes E_QTT_BORROW_CONSUME
---! assertDiagnosticAt main.kp error E_QTT_BORROW_CONSUME 11
+--! assertDiagnosticAt main.kp error E_QTT_BORROW_CONSUME 13

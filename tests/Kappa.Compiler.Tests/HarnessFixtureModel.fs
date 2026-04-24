@@ -25,6 +25,7 @@ type KpFixtureConfiguration =
     { Mode: KpFixtureMode
       PackageMode: bool
       BackendProfile: string
+      AllowUnsafeConsume: bool
       EntryPoint: string option
       RunArgs: string list
       StdinFile: string option
@@ -35,6 +36,7 @@ module KpFixtureConfiguration =
         { Mode = KpFixtureMode.Check
           PackageMode = true
           BackendProfile = "interpreter"
+          AllowUnsafeConsume = false
           EntryPoint = None
           RunArgs = []
           StdinFile = None

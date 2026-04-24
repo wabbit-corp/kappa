@@ -624,6 +624,14 @@ module internal ZigCcBackendEmit =
                           ValueExpression = resultValue }
                 | _ ->
                     return! Result.Error "zig intrinsic 'primitiveIntToString' expected exactly 1 argument."
+            | "unsafeConsume" ->
+                match argumentValues with
+                | [ _ ] ->
+                    return
+                        { Statements = argumentStatements
+                          ValueExpression = "kappa_unit()" }
+                | _ ->
+                    return! Result.Error "zig intrinsic 'unsafeConsume' expected exactly 1 argument."
             | "openFile" ->
                 match argumentValues with
                 | [ _ ] ->

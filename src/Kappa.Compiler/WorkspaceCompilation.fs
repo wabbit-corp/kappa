@@ -10,6 +10,7 @@ type WorkspaceCompilation =
       PackageMode: bool
       BackendProfile: string
       DeploymentMode: string
+      AllowUnsafeConsume: bool
       BackendIntrinsicIdentity: string
       BuildConfigurationIdentity: string
       AnalysisSessionIdentity: string

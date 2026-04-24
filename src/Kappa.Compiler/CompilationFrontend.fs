@@ -13,8 +13,9 @@ module internal CompilationFrontend =
           Constructors: Set<string>
           UnqualifiedBindings: Set<string> }
 
-    let parseBundledPrelude () =
-        let source = SourceText.From(Stdlib.BundledPreludeVirtualPath, Stdlib.loadBundledPreludeText ())
+    let parseBundledPrelude allowUnsafeConsume =
+        let source =
+            SourceText.From(Stdlib.BundledPreludeVirtualPath, Stdlib.loadBundledPreludeTextForOptions allowUnsafeConsume)
         let lexed = Lexer.tokenize source
         let parsed = Parser.parse source lexed.Tokens
 
@@ -438,13 +439,17 @@ module internal CompilationFrontend =
             | ExpectDeclarationNode declaration -> Some declaration
             | _ -> None)
 
-    let private collectIntrinsicTerms (backendProfile: string) (document: ParsedDocument) =
+    let private collectIntrinsicTerms (backendProfile: string) allowUnsafeConsume (document: ParsedDocument) =
         match document.ModuleName with
         | Some moduleName ->
             document.Syntax.Declarations
             |> List.choose (function
                 | ExpectDeclarationNode (ExpectTermDeclaration declaration)
-                    when Stdlib.intrinsicallySatisfiesExpect backendProfile moduleName (ExpectTermDeclaration declaration) ->
+                    when Stdlib.intrinsicallySatisfiesExpectForCompilation
+                            backendProfile
+                            allowUnsafeConsume
+                            moduleName
+                            (ExpectTermDeclaration declaration) ->
                     Some declaration.Name
                 | _ ->
                     None)
@@ -973,7 +978,7 @@ module internal CompilationFrontend =
 
         diagnostics.Items
 
-    let validateExpectDeclarations (backendProfile: string) (documents: ParsedDocument list) =
+    let validateExpectDeclarations (backendProfile: string) allowUnsafeConsume (documents: ParsedDocument list) =
         let diagnostics = DiagnosticBag()
 
         let documentsByModule =
@@ -994,7 +999,16 @@ module internal CompilationFrontend =
                 for declaration in collectExpectDeclarations document do
                     let satisfactionCount =
                         countOrdinarySatisfactions moduleDocuments declaration
-                        + if Stdlib.intrinsicallySatisfiesExpect backendProfile moduleName declaration then 1 else 0
+                        + if
+                              Stdlib.intrinsicallySatisfiesExpectForCompilation
+                                  backendProfile
+                                  allowUnsafeConsume
+                                  moduleName
+                                  declaration
+                          then
+                              1
+                          else
+                              0
 
                     if satisfactionCount = 0 then
                         diagnostics.AddError(

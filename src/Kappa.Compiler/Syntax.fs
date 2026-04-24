@@ -309,7 +309,13 @@ and SurfaceRecordLiteralField =
 and SurfaceRecordUpdateField =
     { Name: string
       IsImplicit: bool
+      IsExtension: bool
+      Path: SurfaceRecordUpdatePathSegment list
       Value: SurfaceExpression }
+
+and SurfaceRecordUpdatePathSegment =
+    { Name: string
+      IsImplicit: bool }
 
 and SurfacePattern =
     | WildcardPattern

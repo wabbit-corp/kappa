@@ -15,6 +15,7 @@ let createSource = HarnessWorkspace.createSource
 let lexAndParse = HarnessWorkspace.lexAndParse
 let compileInMemoryWorkspace = HarnessWorkspace.compileInMemoryWorkspace
 let compileInMemoryWorkspaceWithBackend = HarnessWorkspace.compileInMemoryWorkspaceWithBackend
+let compileInMemoryWorkspaceWithUnsafeConsume = HarnessWorkspace.compileInMemoryWorkspaceWithUnsafeConsume
 let evaluateInMemoryBinding = HarnessWorkspace.evaluateInMemoryBinding
 let discoverKpFixtureCases = HarnessFixtures.discoverKpFixtureCases
 

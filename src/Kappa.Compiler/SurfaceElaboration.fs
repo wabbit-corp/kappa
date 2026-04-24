@@ -33,10 +33,21 @@ module SurfaceElaboration =
           Parameters: string list
           Body: TypeExpr }
 
+    type private RecordSurfaceFieldInfo =
+        { Name: string
+          IsOpaque: bool
+          IsImplicit: bool
+          TypeTokens: Token list }
+
+    type private RecordSurfaceInfo =
+        { Fields: RecordSurfaceFieldInfo list
+          RowTail: string option }
+
     type private BindingSchemeInfo =
         { ModuleName: string
           Name: string
           Scheme: TypeScheme
+          TypeTokens: Token list
           ParameterLayouts: Parameter list option }
 
     type private ProjectionInfo =
@@ -48,6 +59,7 @@ module SurfaceElaboration =
 
     type private ModuleSurfaceInfo =
         { TypeAliases: Map<string, TypeAliasInfo>
+          RecordTypes: Map<string, RecordSurfaceInfo>
           BindingSchemes: Map<string, BindingSchemeInfo>
           Constructors: Map<string, BindingSchemeInfo>
           Projections: Map<string, ProjectionInfo>
@@ -62,6 +74,7 @@ module SurfaceElaboration =
     type private BindingLoweringEnvironment =
         { CurrentModuleName: string
           VisibleTypeAliases: Map<string, TypeAliasInfo>
+          VisibleRecordTypes: Map<string, RecordSurfaceInfo>
           VisibleBindings: Map<string, BindingSchemeInfo>
           VisibleConstructors: Map<string, BindingSchemeInfo>
           VisibleProjections: Map<string, ProjectionInfo>
@@ -251,6 +264,161 @@ module SurfaceElaboration =
                 None
         | _ ->
             None
+
+    let private splitTopLevelCommaGroups (tokens: Token list) =
+        let tokenArray = tokens |> List.toArray
+        let groups = ResizeArray<Token list>()
+        let current = ResizeArray<Token>()
+        let mutable depth = 0
+
+        for token in tokenArray do
+            match token.Kind with
+            | LeftParen
+            | LeftBracket
+            | LeftBrace
+            | LeftSetBrace ->
+                depth <- depth + 1
+                current.Add(token)
+            | RightParen
+            | RightBracket
+            | RightBrace
+            | RightSetBrace ->
+                depth <- max 0 (depth - 1)
+                current.Add(token)
+            | Comma when depth = 0 ->
+                groups.Add(List.ofSeq current)
+                current.Clear()
+            | _ ->
+                current.Add(token)
+
+        if current.Count > 0 then
+            groups.Add(List.ofSeq current)
+
+        groups |> Seq.toList
+
+    let private tryFindTopLevelToken predicate (tokens: Token list) =
+        let tokenArray = tokens |> List.toArray
+        let mutable depth = 0
+        let mutable index = 0
+        let mutable result = None
+
+        while index < tokenArray.Length && result.IsNone do
+            match tokenArray[index].Kind with
+            | LeftParen
+            | LeftBracket
+            | LeftBrace
+            | LeftSetBrace ->
+                depth <- depth + 1
+            | RightParen
+            | RightBracket
+            | RightBrace
+            | RightSetBrace ->
+                depth <- max 0 (depth - 1)
+            | _ when depth = 0 && predicate tokenArray[index] ->
+                result <- Some index
+            | _ ->
+                ()
+
+            index <- index + 1
+
+        result
+
+    let private stripOuterParens (tokens: Token list) =
+        let trimmed = significantTokens tokens
+
+        match trimmed with
+        | { Kind = LeftParen } :: rest when not (List.isEmpty rest) && (List.last rest).Kind = RightParen ->
+            Some(rest |> List.take (List.length rest - 1))
+        | _ ->
+            None
+
+    let private tryParseRecordSurfaceField (tokens: Token list) =
+        let tokens = significantTokens tokens
+
+        let isOpaque, afterOpaque =
+            match tokens with
+            | head :: rest when Token.isKeyword Keyword.Opaque head -> true, rest
+            | _ -> false, tokens
+
+        let isImplicit, afterImplicit =
+            match afterOpaque with
+            | { Kind = AtSign } :: rest -> true, rest
+            | _ -> false, afterOpaque
+
+        let afterQuantity =
+            match tryParseQuantityPrefix afterImplicit with
+            | Some(_, rest) -> rest
+            | None -> afterImplicit
+
+        let afterSuspension =
+            match afterQuantity with
+            | head :: rest when Token.isKeyword Keyword.Thunk head || Token.isKeyword Keyword.Lazy head -> rest
+            | _ -> afterQuantity
+
+        tryFindTopLevelToken (fun token -> token.Kind = Colon) afterSuspension
+        |> Option.bind (fun colonIndex ->
+            let tokenArray = afterSuspension |> List.toArray
+            let binderTokens = tokenArray[0 .. colonIndex - 1] |> Array.toList
+            let typeTokens = tokenArray[colonIndex + 1 ..] |> Array.toList
+
+            match binderTokens, typeTokens with
+            | [ nameToken ], _ when Token.isName nameToken && not (List.isEmpty typeTokens) ->
+                Some
+                    { Name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
+                      IsOpaque = isOpaque
+                      IsImplicit = isImplicit
+                      TypeTokens = typeTokens }
+            | _ ->
+                None)
+
+    let private tryParseRecordSurfaceInfo (tokens: Token list) =
+        stripOuterParens tokens
+        |> Option.bind (fun innerTokens ->
+            let fieldGroups = splitTopLevelCommaGroups innerTokens |> List.filter (List.isEmpty >> not)
+            let fields = ResizeArray<RecordSurfaceFieldInfo>()
+            let mutable rowTail = None
+            let mutable valid = true
+
+            for group in fieldGroups do
+                let fieldTokens, tailTokens =
+                    match tryFindTopLevelToken (fun token -> token.Kind = Operator && token.Text = "|") group with
+                    | Some pipeIndex ->
+                        let tokenArray = group |> List.toArray
+                        tokenArray[0 .. pipeIndex - 1] |> Array.toList,
+                        Some(tokenArray[pipeIndex + 1 ..] |> Array.toList)
+                    | None ->
+                        group, None
+
+                match tailTokens with
+                | Some tokens ->
+                    match significantTokens tokens with
+                    | [ rowToken ] when Token.isName rowToken ->
+                        rowTail <- Some(SyntaxFacts.trimIdentifierQuotes rowToken.Text)
+                    | _ ->
+                        valid <- false
+                | None ->
+                    ()
+
+                if not (List.isEmpty (significantTokens fieldTokens)) then
+                    match tryParseRecordSurfaceField fieldTokens with
+                    | Some field -> fields.Add(field)
+                    | None -> valid <- false
+
+            if valid && (fields.Count > 0 || rowTail.IsSome) then
+                Some
+                    { Fields = List.ofSeq fields
+                      RowTail = rowTail }
+            else
+                None)
+
+    let private recordSurfaceFieldNames (recordInfo: RecordSurfaceInfo) =
+        recordInfo.Fields |> List.map (fun field -> field.Name) |> Set.ofList
+
+    let private tokenText (tokens: Token list) =
+        tokens
+        |> significantTokens
+        |> List.map (fun token -> token.Text)
+        |> String.concat " "
 
     let private stripDelimitedParameterTokens tokens =
         match tokens with
@@ -516,6 +684,7 @@ module SurfaceElaboration =
                 { Forall = typeParameters
                   Constraints = []
                   Body = body }
+               TypeTokens = []
                ParameterLayouts = None })
 
     let private selectionImportsExportedName
@@ -551,6 +720,17 @@ module SurfaceElaboration =
                 | _ -> None)
             |> Map.ofList
 
+        let recordTypes =
+            frontendModule.Declarations
+            |> List.choose (function
+                | TypeAliasNode declaration ->
+                    declaration.BodyTokens
+                    |> Option.bind tryParseRecordSurfaceInfo
+                    |> Option.map (fun recordInfo -> declaration.Name, recordInfo)
+                | _ ->
+                    None)
+            |> Map.ofList
+
         let bindingSchemes =
             let bindingDefinitions =
                 frontendModule.Declarations
@@ -577,6 +757,7 @@ module SurfaceElaboration =
                         { ModuleName = moduleName
                           Name = declaration.Name
                           Scheme = scheme
+                          TypeTokens = declaration.TypeTokens
                           ParameterLayouts =
                             bindingDefinitions
                             |> Map.tryFind declaration.Name
@@ -589,6 +770,7 @@ module SurfaceElaboration =
                         { ModuleName = moduleName
                           Name = declaration.Name
                           Scheme = scheme
+                          TypeTokens = declaration.TypeTokens
                           ParameterLayouts = None })
                 | _ ->
                     None)
@@ -734,6 +916,7 @@ module SurfaceElaboration =
                     None)
 
         { TypeAliases = typeAliases
+          RecordTypes = recordTypes
           BindingSchemes = bindingSchemes
           Constructors = constructors
           Projections = projections
@@ -770,7 +953,8 @@ module SurfaceElaboration =
                 importedModule.Constructors.Keys |> Seq.toList,
                 importedModule.Projections.Keys |> Seq.toList,
                 importedModule.Traits.Keys |> Seq.toList,
-                importedModule.TypeAliases.Keys |> Seq.toList))
+                importedModule.TypeAliases.Keys |> Seq.toList,
+                importedModule.RecordTypes.Keys |> Seq.toList))
         |> Option.defaultValue []
 
     let private mergeVisibleBindings (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
@@ -872,6 +1056,26 @@ module SurfaceElaboration =
         preludeAliases
         |> Map.fold (fun state name info -> Map.add name info state) importedAliases
         |> fun state -> moduleAliases |> Map.fold (fun current name info -> Map.add name info current) state
+
+    let private mergeVisibleRecordTypes (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
+        let importedRecordTypes =
+            importedModuleInfos surfaceIndex moduleName
+            |> List.fold (fun state (spec, importedModule) ->
+                importedModule.RecordTypes
+                |> Map.fold (fun current name info ->
+                    if selectionImportsExportedName importedModule.ExportedTypes itemImportsTypeName spec.Selection name then
+                        Map.add name info current
+                    else
+                        current) state) Map.empty
+
+        let moduleRecordTypes =
+            surfaceIndex
+            |> Map.tryFind moduleName
+            |> Option.map (fun moduleInfo -> moduleInfo.RecordTypes)
+            |> Option.defaultValue Map.empty
+
+        moduleRecordTypes
+        |> Map.fold (fun state name info -> Map.add name info state) importedRecordTypes
 
     let private mergeVisibleTraits (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
         let importedTraits =
@@ -1534,6 +1738,7 @@ module SurfaceElaboration =
                         { ModuleName = traitInfo.ModuleName
                           Name = memberName
                           Scheme = overloadedScheme
+                          TypeTokens = []
                           ParameterLayouts = None }
 
                     tryPrepareVisibleBindingCall environment candidateCounter bindingInfo inferArgumentType arguments
@@ -1876,11 +2081,550 @@ module SurfaceElaboration =
             | "" -> segmentsText
             | _ -> $"{segmentsText} {argumentsText}"
 
+        let tryRecordInfoFromTypeName name =
+            environment.VisibleRecordTypes |> Map.tryFind name
+
+        let tryRecordInfoFromTypeExpr typeExpr =
+            match typeExpr with
+            | TypeName(nameSegments, []) ->
+                nameSegments
+                |> List.tryLast
+                |> Option.bind tryRecordInfoFromTypeName
+                |> Option.orElseWith (fun () ->
+                    match normalizeTypeAliases environment.VisibleTypeAliases typeExpr with
+                    | TypeRecord fields ->
+                        Some
+                            { Fields =
+                                fields
+                                |> List.map (fun field ->
+                                    { Name = field.Name
+                                      IsOpaque = false
+                                      IsImplicit = field.Quantity = QuantityZero
+                                      TypeTokens = [] })
+                              RowTail = None }
+                    | _ ->
+                        None)
+            | _ ->
+                match normalizeTypeAliases environment.VisibleTypeAliases typeExpr with
+                | TypeRecord fields ->
+                    Some
+                        { Fields =
+                            fields
+                            |> List.map (fun field ->
+                                { Name = field.Name
+                                  IsOpaque = false
+                                  IsImplicit = field.Quantity = QuantityZero
+                                  TypeTokens = [] })
+                          RowTail = None }
+                | _ ->
+                    None
+
+        let tryRecordInfoFromTypeTokens tokens =
+            tryParseRecordSurfaceInfo tokens
+            |> Option.orElseWith (fun () ->
+                match significantTokens tokens with
+                | [ nameToken ] when Token.isName nameToken ->
+                    tryRecordInfoFromTypeName (SyntaxFacts.trimIdentifierQuotes nameToken.Text)
+                | _ ->
+                    None)
+
+        let localRecordTypes =
+            definition.Parameters
+            |> List.choose (fun parameter ->
+                parameter.TypeTokens
+                |> Option.bind tryRecordInfoFromTypeTokens
+                |> Option.map (fun recordInfo -> parameter.Name, recordInfo))
+            |> Map.ofList
+
+        let tryRecordInfoForRoot locals root =
+            localRecordTypes
+            |> Map.tryFind root
+            |> Option.orElseWith (fun () ->
+                locals
+                |> Map.tryFind root
+                |> Option.bind tryRecordInfoFromTypeExpr)
+            |> Option.orElseWith (fun () ->
+                environment.VisibleBindings
+                |> Map.tryFind root
+                |> Option.bind (fun bindingInfo ->
+                    tryRecordInfoFromTypeExpr bindingInfo.Scheme.Body
+                    |> Option.orElseWith (fun () -> tryRecordInfoFromTypeTokens bindingInfo.TypeTokens)))
+
+        let tryRecordInfoForExpression locals expression =
+            match expression with
+            | Name(root :: _) -> tryRecordInfoForRoot locals root
+            | _ -> None
+
+        let fieldTypeReferences (recordInfo: RecordSurfaceInfo) (tokens: Token list) =
+            let fieldNames = recordSurfaceFieldNames recordInfo
+            let tokenArray = significantTokens tokens |> List.toArray
+            let references = ResizeArray<string>()
+
+            for index = 0 to tokenArray.Length - 1 do
+                let token = tokenArray[index]
+
+                if Token.isName token then
+                    let name = SyntaxFacts.trimIdentifierQuotes token.Text
+
+                    if String.Equals(name, "this", StringComparison.Ordinal)
+                       && index + 2 < tokenArray.Length
+                       && tokenArray[index + 1].Kind = Dot
+                       && Token.isName tokenArray[index + 2] then
+                        references.Add(SyntaxFacts.trimIdentifierQuotes tokenArray[index + 2].Text)
+                    elif Set.contains name fieldNames then
+                        references.Add(name)
+
+            references |> Seq.toList |> List.distinct
+
+        let expressionThisReferences expression =
+            let rec loop current =
+                seq {
+                    match current with
+                    | Name("this" :: fieldName :: _) ->
+                        yield fieldName
+                    | LocalLet(_, value, body) ->
+                        yield! loop value
+                        yield! loop body
+                    | Lambda(_, body) ->
+                        yield! loop body
+                    | IfThenElse(condition, whenTrue, whenFalse) ->
+                        yield! loop condition
+                        yield! loop whenTrue
+                        yield! loop whenFalse
+                    | Match(scrutinee, cases) ->
+                        yield! loop scrutinee
+                        for caseClause in cases do
+                            match caseClause.Guard with
+                            | Some guard -> yield! loop guard
+                            | None -> ()
+                            yield! loop caseClause.Body
+                    | RecordLiteral fields ->
+                        for field in fields do
+                            yield! loop field.Value
+                    | Seal(value, _) ->
+                        yield! loop value
+                    | RecordUpdate(receiver, fields) ->
+                        yield! loop receiver
+                        for field in fields do
+                            yield! loop field.Value
+                    | SafeNavigation(receiver, navigation) ->
+                        yield! loop receiver
+                        for argument in navigation.Arguments do
+                            yield! loop argument
+                    | TagTest(receiver, _) ->
+                        yield! loop receiver
+                    | Do statements ->
+                        for statement in statements do
+                            match statement with
+                            | DoLet(_, value)
+                            | DoBind(_, value)
+                            | DoUsing(_, value)
+                            | DoVar(_, value)
+                            | DoAssign(_, value)
+                            | DoExpression value
+                            | DoReturn value ->
+                                yield! loop value
+                            | DoLetQuestion(_, value, failure) ->
+                                yield! loop value
+                                match failure with
+                                | Some failure ->
+                                    for nested in failure.Body do
+                                        match nested with
+                                        | DoExpression expression -> yield! loop expression
+                                        | _ -> ()
+                                | None -> ()
+                            | DoIf(condition, _, _) ->
+                                yield! loop condition
+                            | DoWhile(condition, _) ->
+                                yield! loop condition
+                    | MonadicSplice inner
+                    | InoutArgument inner
+                    | Unary(_, inner) ->
+                        yield! loop inner
+                    | Apply(callee, arguments) ->
+                        yield! loop callee
+                        for argument in arguments do
+                            yield! loop argument
+                    | Binary(left, _, right)
+                    | Elvis(left, right) ->
+                        yield! loop left
+                        yield! loop right
+                    | PrefixedString(_, parts) ->
+                        for part in parts do
+                            match part with
+                            | StringInterpolation inner -> yield! loop inner
+                            | StringText _ -> ()
+                    | Literal _
+                    | Name _ ->
+                        ()
+                }
+
+            loop expression |> Seq.toList |> List.distinct
+
+        let hasCycle (edges: Map<string, Set<string>>) =
+            let rec visit visiting visited node =
+                if Set.contains node visiting then
+                    true
+                elif Set.contains node visited then
+                    false
+                else
+                    let nextVisiting = Set.add node visiting
+                    let dependencies = edges |> Map.tryFind node |> Option.defaultValue Set.empty
+
+                    dependencies
+                    |> Set.exists (visit nextVisiting (Set.add node visited))
+
+            edges |> Map.exists (fun node _ -> visit Set.empty Set.empty node)
+
+        let validateRecordSurfaceInfo (recordInfo: RecordSurfaceInfo) =
+            let duplicateDiagnostics =
+                recordInfo.Fields
+                |> List.countBy (fun field -> field.Name)
+                |> List.choose (fun (name, count) ->
+                    if count > 1 then
+                        Some(makeDiagnostic DiagnosticCode.RecordDuplicateField $"Record field '{name}' is declared more than once.")
+                    else
+                        None)
+
+            let fieldNames = recordSurfaceFieldNames recordInfo
+
+            let dependencyDiagnostics =
+                recordInfo.Fields
+                |> List.collect (fun field ->
+                    fieldTypeReferences recordInfo field.TypeTokens
+                    |> List.choose (fun referencedField ->
+                        if Set.contains referencedField fieldNames then
+                            None
+                        else
+                            Some(
+                                makeDiagnostic
+                                    DiagnosticCode.RecordDependencyInvalid
+                                    $"Record field '{field.Name}' depends on field '{referencedField}', which is not in the explicit record telescope."
+                            )))
+
+            duplicateDiagnostics @ dependencyDiagnostics
+
+        let pathKey (field: SurfaceRecordUpdateField) =
+            field.Path
+            |> List.map (fun segment -> if segment.IsImplicit then $"@{segment.Name}" else segment.Name)
+            |> String.concat "."
+
+        let isStrictPrefix left right =
+            List.length left < List.length right
+            && List.forall2
+                (fun (leftSegment: SurfaceRecordUpdatePathSegment) (rightSegment: SurfaceRecordUpdatePathSegment) ->
+                    leftSegment.IsImplicit = rightSegment.IsImplicit
+                    && String.Equals(leftSegment.Name, rightSegment.Name, StringComparison.Ordinal))
+                left
+                (right |> List.take (List.length left))
+
+        let hasLacksConstraint rowName labelName =
+            let parameterHasConstraint =
+                definition.Parameters
+                |> List.exists (fun parameter ->
+                    parameter.TypeTokens
+                    |> Option.map tokenText
+                    |> Option.exists (fun text -> String.Equals(text, $"LacksRec {rowName} {labelName}", StringComparison.Ordinal)))
+
+            let schemeHasConstraint =
+                scheme
+                |> Option.exists (fun scheme ->
+                    scheme.Constraints
+                    |> List.exists (fun constraintInfo ->
+                        String.Equals(constraintInfo.TraitName, "LacksRec", StringComparison.Ordinal)
+                        && match constraintInfo.Arguments with
+                           | [ TypeVariable row; TypeVariable label ] ->
+                               String.Equals(row, rowName, StringComparison.Ordinal)
+                               && String.Equals(label, labelName, StringComparison.Ordinal)
+                           | _ ->
+                               false))
+
+            parameterHasConstraint || schemeHasConstraint
+
+        let validateRecordPatch locals receiver fields =
+            let ordinaryFields = fields |> List.filter (fun field -> not field.IsExtension && field.Name <> "<missing>")
+            let extensionFields = fields |> List.filter (fun field -> field.IsExtension && field.Name <> "<missing>")
+
+            let duplicatePathDiagnostics =
+                ordinaryFields
+                |> List.countBy pathKey
+                |> List.choose (fun (path, count) ->
+                    if count > 1 then
+                        Some(makeDiagnostic DiagnosticCode.RecordPatchDuplicatePath $"Record patch updates path '{path}' more than once.")
+                    else
+                        None)
+
+            let prefixDiagnostics =
+                ordinaryFields
+                |> List.allPairs ordinaryFields
+                |> List.choose (fun (left, right) ->
+                    if isStrictPrefix left.Path right.Path then
+                        Some(
+                            makeDiagnostic
+                                DiagnosticCode.RecordPatchPrefixConflict
+                                $"Record patch path '{pathKey left}' is a strict prefix of '{pathKey right}'."
+                        )
+                    else
+                        None)
+                |> List.distinctBy (fun diagnostic -> diagnostic.Message)
+
+            let duplicateExtensionDiagnostics =
+                extensionFields
+                |> List.countBy (fun field -> field.Name)
+                |> List.choose (fun (name, count) ->
+                    if count > 1 then
+                        Some(makeDiagnostic DiagnosticCode.RowExtensionDuplicateLabel $"Row extension label '{name}' appears more than once.")
+                    else
+                        None)
+
+            let receiverRecordInfo = tryRecordInfoForExpression locals receiver
+
+            let extensionDiagnostics =
+                match receiverRecordInfo with
+                | Some recordInfo ->
+                    let explicitFields = recordSurfaceFieldNames recordInfo
+
+                    extensionFields
+                    |> List.choose (fun field ->
+                        if Set.contains field.Name explicitFields then
+                            Some(makeDiagnostic DiagnosticCode.RowExtensionExistingField $"Row extension label '{field.Name}' already exists in the receiver record.")
+                        else
+                            match recordInfo.RowTail with
+                            | Some rowName when not (hasLacksConstraint rowName field.Name) ->
+                                Some(
+                                    makeDiagnostic
+                                        DiagnosticCode.RowExtensionMissingLacksConstraint
+                                        $"Row extension label '{field.Name}' for row '{rowName}' requires a matching LacksRec constraint."
+                                )
+                            | _ ->
+                                None)
+                | None ->
+                    []
+
+            let unknownPathDiagnostics =
+                let rec validatePath (currentRecordInfo: RecordSurfaceInfo) (path: SurfaceRecordUpdatePathSegment list) =
+                    match path with
+                    | [] ->
+                        []
+                    | segment :: rest ->
+                        match currentRecordInfo.Fields |> List.tryFind (fun (field: RecordSurfaceFieldInfo) -> String.Equals(field.Name, segment.Name, StringComparison.Ordinal)) with
+                        | None ->
+                            [ makeDiagnostic DiagnosticCode.RecordPatchUnknownPath $"Record patch path contains unknown field '{segment.Name}'." ]
+                        | Some field when List.isEmpty rest ->
+                            []
+                        | Some field ->
+                            match tryRecordInfoFromTypeTokens field.TypeTokens with
+                            | Some nestedRecordInfo -> validatePath nestedRecordInfo rest
+                            | None ->
+                                [ makeDiagnostic DiagnosticCode.RecordPatchUnknownPath $"Record patch path continues through non-record field '{field.Name}'." ]
+
+                match receiverRecordInfo with
+                | Some recordInfo ->
+                    ordinaryFields |> List.collect (fun field -> validatePath recordInfo field.Path)
+                | None ->
+                    []
+
+            duplicatePathDiagnostics
+            @ prefixDiagnostics
+            @ duplicateExtensionDiagnostics
+            @ extensionDiagnostics
+            @ unknownPathDiagnostics
+
+        let validateRecordLiteral (fields: SurfaceRecordLiteralField list) =
+            let fieldNames = fields |> List.map (fun (field: SurfaceRecordLiteralField) -> field.Name) |> Set.ofList
+
+            let dependencyMap =
+                fields
+                |> List.map (fun (field: SurfaceRecordLiteralField) ->
+                    field.Name,
+                    expressionThisReferences field.Value
+                    |> List.filter (fun name -> Set.contains name fieldNames && not (String.Equals(name, field.Name, StringComparison.Ordinal)))
+                    |> Set.ofList)
+                |> Map.ofList
+
+            if hasCycle dependencyMap then
+                [ makeDiagnostic DiagnosticCode.RecordDependencyCycle "Record literal field dependencies must be acyclic." ]
+            else
+                []
+
+        let recordInfoHasOpaqueMembers (recordInfo: RecordSurfaceInfo) =
+            recordInfo.Fields |> List.exists (fun (field: RecordSurfaceFieldInfo) -> field.IsOpaque)
+
+        let compactTokenText tokens =
+            tokens
+            |> significantTokens
+            |> List.map (fun token -> token.Text)
+            |> String.concat ""
+
+        let fieldMentionsOpaqueMember (recordInfo: RecordSurfaceInfo) (field: RecordSurfaceFieldInfo) =
+            let opaqueNames =
+                recordInfo.Fields
+                |> List.filter (fun (item: RecordSurfaceFieldInfo) -> item.IsOpaque)
+                |> List.map (fun item -> item.Name)
+                |> Set.ofList
+
+            let compactFieldType = compactTokenText field.TypeTokens
+
+            (fieldTypeReferences recordInfo field.TypeTokens
+             |> List.exists (fun name -> Set.contains name opaqueNames))
+            || (opaqueNames
+                |> Set.exists (fun opaqueName -> compactFieldType.Contains($"this.{opaqueName}", StringComparison.Ordinal)))
+
+        let expectedTypeCompactText =
+            definition.ReturnTypeTokens
+            |> Option.map compactTokenText
+            |> Option.orElseWith (fun () ->
+                scheme
+                |> Option.map (fun scheme -> TypeSignatures.toText scheme.Body)
+                |> Option.map (fun text -> text.Replace(" ", "")))
+
+        let isTransparentCompileTimeField (field: RecordSurfaceFieldInfo) =
+            not field.IsOpaque
+            &&
+                match significantTokens field.TypeTokens with
+                | [ typeToken ] when Token.isName typeToken ->
+                    let typeName = SyntaxFacts.trimIdentifierQuotes typeToken.Text
+                    List.contains typeName [ "Type"; "Constraint"; "Quantity"; "Region"; "RecRow"; "Label" ]
+                | _ ->
+                    false
+
+        let expressionOpaqueUnfoldingDiagnostic locals expression =
+            let expectedText = expectedTypeCompactText |> Option.defaultValue ""
+
+            let checkRootMember root memberName =
+                tryRecordInfoForRoot locals root
+                |> Option.bind (fun recordInfo ->
+                    recordInfo.Fields
+                    |> List.tryFind (fun (field: RecordSurfaceFieldInfo) -> String.Equals(field.Name, memberName, StringComparison.Ordinal))
+                    |> Option.bind (fun field ->
+                        if fieldMentionsOpaqueMember recordInfo field then
+                            let opaqueNames =
+                                recordInfo.Fields
+                                |> List.filter (fun (item: RecordSurfaceFieldInfo) -> item.IsOpaque)
+                                |> List.map (fun item -> $"{root}.{item.Name}")
+
+                            if opaqueNames |> List.exists (fun opaqueName -> expectedText.Contains(opaqueName, StringComparison.Ordinal)) then
+                                None
+                            else
+                                Some(makeDiagnostic DiagnosticCode.SealOpaqueUnfolding $"Projection '{root}.{memberName}' would expose a member whose type depends on an opaque package member.")
+                        else
+                            None))
+
+            match expression with
+            | Name(root :: memberName :: _) ->
+                checkRootMember root memberName
+            | Apply(Name(root :: memberName :: _), _) ->
+                checkRootMember root memberName
+            | _ ->
+                None
+
+        let validateExpectedBody locals body =
+            let directSignatureLiteralDiagnostic =
+                match body, definition.ReturnTypeTokens |> Option.bind tryRecordInfoFromTypeTokens with
+                | RecordLiteral _, Some recordInfo when recordInfoHasOpaqueMembers recordInfo ->
+                    [ makeDiagnostic DiagnosticCode.SealDirectLiteralForSignature "A record literal cannot be checked directly against a signature type; use 'seal ... as ...'." ]
+                | _ ->
+                    []
+
+            let sealAscriptionDiagnostics =
+                let rec loop expression =
+                    match expression with
+                    | Seal(value, ascriptionTokens) ->
+                        let nested = loop value
+
+                        match tryParseRecordSurfaceInfo ascriptionTokens with
+                        | Some recordInfo when recordInfo.RowTail.IsSome ->
+                            makeDiagnostic DiagnosticCode.SealOpenRecordAscription "The ascribed type of 'seal' must be a closed record type." :: nested
+                        | _ ->
+                            nested
+                    | LocalLet(_, value, nestedBody) -> loop value @ loop nestedBody
+                    | Lambda(_, nestedBody) -> loop nestedBody
+                    | IfThenElse(condition, whenTrue, whenFalse) -> loop condition @ loop whenTrue @ loop whenFalse
+                    | Match(scrutinee, cases) ->
+                        loop scrutinee
+                        @ (cases
+                           |> List.collect (fun caseClause ->
+                               (caseClause.Guard |> Option.map loop |> Option.defaultValue [])
+                               @ loop caseClause.Body))
+                    | RecordLiteral fields -> fields |> List.collect (fun field -> loop field.Value)
+                    | RecordUpdate(receiver, fields) -> loop receiver @ (fields |> List.collect (fun field -> loop field.Value))
+                    | SafeNavigation(receiver, navigation) -> loop receiver @ (navigation.Arguments |> List.collect loop)
+                    | TagTest(receiver, _) -> loop receiver
+                    | MonadicSplice inner
+                    | InoutArgument inner
+                    | Unary(_, inner) -> loop inner
+                    | Apply(callee, arguments) -> loop callee @ (arguments |> List.collect loop)
+                    | Binary(left, _, right)
+                    | Elvis(left, right) -> loop left @ loop right
+                    | PrefixedString(_, parts) ->
+                        parts
+                        |> List.collect (function
+                            | StringInterpolation inner -> loop inner
+                            | StringText _ -> [])
+                    | Literal _
+                    | Name _
+                    | Do _ -> []
+
+                loop body
+
+            let opaqueUnfoldingDiagnostics =
+                expressionOpaqueUnfoldingDiagnostic locals body |> Option.toList
+
+            let projectionTypeMismatchDiagnostics =
+                match body, expectedTypeCompactText with
+                | Name(root :: memberName :: _), Some expectedText ->
+                    match tryRecordInfoForRoot locals root with
+                    | Some recordInfo ->
+                        match recordInfo.Fields |> List.tryFind (fun (field: RecordSurfaceFieldInfo) -> String.Equals(field.Name, memberName, StringComparison.Ordinal)) with
+                        | Some field ->
+                            if fieldMentionsOpaqueMember recordInfo field then
+                                []
+                            else
+                                let unstableDependencies =
+                                    fieldTypeReferences recordInfo field.TypeTokens
+                                    |> List.choose (fun dependencyName ->
+                                        recordInfo.Fields
+                                        |> List.tryFind (fun candidate -> String.Equals(candidate.Name, dependencyName, StringComparison.Ordinal))
+                                        |> Option.filter (isTransparentCompileTimeField >> not)
+                                        |> Option.map (fun _ -> dependencyName))
+
+                                if
+                                    unstableDependencies
+                                    |> List.exists (fun dependencyName -> expectedText.Contains($"{root}.{dependencyName}", StringComparison.Ordinal) |> not)
+                                then
+                                    [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch "Projected field type does not match the declared result type." ]
+                                else
+                                    []
+                        | None ->
+                            []
+                    | None ->
+                        []
+                | _ ->
+                    []
+
+            directSignatureLiteralDiagnostic
+            @ sealAscriptionDiagnostics
+            @ opaqueUnfoldingDiagnostics
+            @ projectionTypeMismatchDiagnostics
+
         let rec validateExpression locals expression =
             let recurse = validateExpression locals
 
             match expression with
-            | Literal _
+            | Literal _ ->
+                []
+            | Name(root :: fieldName :: _) ->
+                let missingFieldDiagnostics =
+                    match tryRecordInfoForRoot locals root with
+                    | Some recordInfo
+                        when recordInfo.Fields
+                             |> List.exists (fun (field: RecordSurfaceFieldInfo) -> String.Equals(field.Name, fieldName, StringComparison.Ordinal))
+                             |> not ->
+                        [ makeDiagnostic DiagnosticCode.RecordProjectionMissingField $"Record type has no field named '{fieldName}'." ]
+                    | _ ->
+                        []
+
+                missingFieldDiagnostics
             | Name _ ->
                 []
             | LocalLet(binding, value, body) ->
@@ -1913,11 +2657,13 @@ module SurfaceElaboration =
 
                 recurse scrutinee @ caseDiagnostics
             | RecordLiteral fields ->
-                fields |> List.collect (fun field -> recurse field.Value)
+                validateRecordLiteral fields @ (fields |> List.collect (fun field -> recurse field.Value))
             | Seal(value, _) ->
                 recurse value
             | RecordUpdate(receiver, fields) ->
-                recurse receiver @ (fields |> List.collect (fun field -> recurse field.Value))
+                recurse receiver
+                @ (fields |> List.collect (fun field -> recurse field.Value))
+                @ validateRecordPatch locals receiver fields
             | SafeNavigation(receiver, navigation) ->
                 let receiverDiagnostics = recurse receiver
                 let argumentDiagnostics = navigation.Arguments |> List.collect recurse
@@ -2045,9 +2791,19 @@ module SurfaceElaboration =
                 | DoReturn expression ->
                     validateExpression locals expression
 
-        match definition.Body with
-        | Some body -> validateExpression localTypes body
-        | None -> []
+        let parameterRecordDiagnostics =
+            definition.Parameters
+            |> List.collect (fun parameter ->
+                parameter.TypeTokens
+                |> Option.bind tryRecordInfoFromTypeTokens
+                |> Option.map validateRecordSurfaceInfo
+                |> Option.defaultValue [])
+
+        parameterRecordDiagnostics
+        @
+            match definition.Body with
+            | Some body -> validateExpression localTypes body @ validateExpectedBody localTypes body
+            | None -> []
 
     let validateSurfaceModules (frontendModules: KFrontIRModule list) =
         let surfaceIndex = buildSurfaceIndex frontendModules
@@ -2056,9 +2812,19 @@ module SurfaceElaboration =
         |> List.collect (fun frontendModule ->
             let moduleName = moduleNameText frontendModule.ModuleIdentity
 
+            let makeDiagnostic code message =
+                { Severity = DiagnosticSeverity.Error
+                  Code = code
+                  Stage = Some "KFrontIR"
+                  Phase = Some(KFrontIRPhase.phaseName CORE_LOWERING)
+                  Message = message
+                  Location = None
+                  RelatedLocations = [] }
+
             let environment =
                 { CurrentModuleName = moduleName
                   VisibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleName
+                  VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleName
                   VisibleBindings = mergeVisibleBindings surfaceIndex moduleName
                   VisibleConstructors = mergeVisibleConstructors surfaceIndex moduleName
                   VisibleProjections = mergeVisibleProjections surfaceIndex moduleName
@@ -2068,6 +2834,18 @@ module SurfaceElaboration =
 
             frontendModule.Declarations
             |> List.collect (function
+                | TypeAliasNode declaration ->
+                    declaration.BodyTokens
+                    |> Option.bind tryParseRecordSurfaceInfo
+                    |> Option.map (fun recordInfo ->
+                        recordInfo.Fields
+                        |> List.countBy (fun field -> field.Name)
+                        |> List.choose (fun (name, count) ->
+                            if count > 1 then
+                                Some(makeDiagnostic DiagnosticCode.RecordDuplicateField $"Record field '{name}' is declared more than once.")
+                            else
+                                None))
+                    |> Option.defaultValue []
                 | LetDeclaration definition ->
                     let scheme =
                         definition.Name
@@ -2511,6 +3289,10 @@ module SurfaceElaboration =
                         [
                             { Name = fieldName
                               IsImplicit = false
+                              IsExtension = false
+                              Path =
+                                  [ { Name = fieldName
+                                      IsImplicit = false } ]
                               Value = nestedValue }
                         ]
                     )
@@ -3325,9 +4107,44 @@ module SurfaceElaboration =
                         layout.Fields
                         |> List.map (fun field -> field.Name, freshSyntheticName $"__kappa_record_{field.Name}_")
 
+                    let receiverSegments =
+                        match receiver with
+                        | Name segments -> Some segments
+                        | _ -> None
+
+                    let ordinaryUpdateValue topLevelName (group: SurfaceRecordUpdateField list) =
+                        match group |> List.tryFind (fun field -> List.length field.Path = 1) with
+                        | Some directField ->
+                            directField.Value
+                        | None ->
+                            match receiverSegments with
+                            | Some segments ->
+                                let nestedFields =
+                                    group
+                                    |> List.choose (fun field ->
+                                        match field.Path with
+                                        | _ :: child :: rest ->
+                                            Some
+                                                { field with
+                                                    Name = child.Name
+                                                    IsImplicit = child.IsImplicit
+                                                    IsExtension = false
+                                                    Path = child :: rest }
+                                        | _ ->
+                                            None)
+
+                                RecordUpdate(Name(segments @ [ topLevelName ]), nestedFields)
+                            | None ->
+                                group
+                                |> List.tryHead
+                                |> Option.map (fun field -> field.Value)
+                                |> Option.defaultValue (Literal LiteralValue.Unit)
+
                     let updatedFields =
                         fields
-                        |> List.map (fun field -> field.Name, field.Value)
+                        |> List.filter (fun field -> not field.IsExtension)
+                        |> List.groupBy (fun field -> field.Name)
+                        |> List.map (fun (name, group) -> name, ordinaryUpdateValue name group)
                         |> Map.ofList
 
                     let pattern =
@@ -3726,6 +4543,7 @@ module SurfaceElaboration =
         let environment =
             { CurrentModuleName = moduleName
               VisibleTypeAliases = visibleTypeAliases
+              VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleName
               VisibleBindings = visibleBindings
               VisibleConstructors = mergeVisibleConstructors surfaceIndex moduleName
               VisibleProjections = visibleProjections
@@ -3807,7 +4625,7 @@ module SurfaceElaboration =
 
         memberBindings @ [ dictionaryBinding ]
 
-    let lowerKCoreModules (backendProfile: string) (frontendModules: KFrontIRModule list) =
+    let lowerKCoreModules (backendProfile: string) allowUnsafeConsume (frontendModules: KFrontIRModule list) =
         let surfaceIndex = buildSurfaceIndex frontendModules
 
         frontendModules
@@ -3819,6 +4637,7 @@ module SurfaceElaboration =
             let environment =
                 { CurrentModuleName = moduleName
                   VisibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleName
+                  VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleName
                   VisibleBindings = mergeVisibleBindings surfaceIndex moduleName
                   VisibleConstructors = mergeVisibleConstructors surfaceIndex moduleName
                   VisibleProjections = mergeVisibleProjections surfaceIndex moduleName
@@ -3868,7 +4687,11 @@ module SurfaceElaboration =
                     frontendModule.Declarations
                     |> List.choose (function
                         | ExpectDeclarationNode declaration
-                            when Stdlib.intrinsicallySatisfiesExpect backendProfile moduleNameSegments declaration ->
+                            when Stdlib.intrinsicallySatisfiesExpectForCompilation
+                                    backendProfile
+                                    allowUnsafeConsume
+                                    moduleNameSegments
+                                    declaration ->
                             match declaration with
                             | ExpectTermDeclaration termDeclaration -> Some termDeclaration.Name
                             | _ -> None

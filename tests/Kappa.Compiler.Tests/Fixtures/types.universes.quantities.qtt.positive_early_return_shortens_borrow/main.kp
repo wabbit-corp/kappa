@@ -1,5 +1,7 @@
 module main
 
+--! allow_unsafe_consume
+
 data A : Type =
     A
 
@@ -19,7 +21,7 @@ let peek x = None
 
 consume : (1 x : A) -> C_or_B
 let consume x =
-    let _ = x
+    let _ = unsafeConsume x
     in FromC
 
 use : B -> C_or_B

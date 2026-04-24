@@ -163,6 +163,7 @@ type KpFixtureDirective =
     | SetMode of KpFixtureMode * filePath: string * lineNumber: int
     | SetPackageMode of packageMode: bool * filePath: string * lineNumber: int
     | SetBackend of backendProfile: string * filePath: string * lineNumber: int
+    | SetAllowUnsafeConsume of filePath: string * lineNumber: int
     | SetEntry of entryPoint: string * filePath: string * lineNumber: int
     | SetRunArgs of runArgs: string list * filePath: string * lineNumber: int
     | SetStdinFile of relativePath: string * filePath: string * lineNumber: int
@@ -248,6 +249,10 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
                 invalidOp $"backend expects a backend profile name ({filePath}:{lineNumber})."
 
             Some(SetBackend(directiveBody.Trim(), filePath, lineNumber))
+        | "allowUnsafeConsume"
+        | "allow_unsafe_consume" ->
+            ensureNoArguments ()
+            Some(SetAllowUnsafeConsume(filePath, lineNumber))
         | "entry" ->
             if String.IsNullOrWhiteSpace(directiveBody) then
                 invalidOp $"entry expects a qualified binding name ({filePath}:{lineNumber})."
@@ -522,6 +527,7 @@ type private KpFixtureConfigurationAccumulator =
     { Mode: (KpFixtureMode * string * int) option
       PackageMode: (bool * string * int) option
       BackendProfile: (string * string * int) option
+      AllowUnsafeConsume: (bool * string * int) option
       EntryPoint: (string * string * int) option
       RunArgs: (string list * string * int) option
       StdinFile: (string * string * int) option
@@ -531,6 +537,7 @@ let private emptyFixtureConfigurationAccumulator =
     { Mode = None
       PackageMode = None
       BackendProfile = None
+      AllowUnsafeConsume = None
       EntryPoint = None
       RunArgs = None
       StdinFile = None
@@ -569,6 +576,13 @@ let buildFixtureConfiguration (directives: KpFixtureDirective list) =
                     { state with
                         BackendProfile =
                             mergeFixtureConfigurationValue "backend" state.BackendProfile (backendProfile, filePath, lineNumber) }
+                | SetAllowUnsafeConsume(filePath, lineNumber) ->
+                    { state with
+                        AllowUnsafeConsume =
+                            mergeFixtureConfigurationValue
+                                "allowUnsafeConsume"
+                                state.AllowUnsafeConsume
+                                (true, filePath, lineNumber) }
                 | SetEntry(entryPoint, filePath, lineNumber) ->
                     { state with
                         EntryPoint = mergeFixtureConfigurationValue "entry" state.EntryPoint (entryPoint, filePath, lineNumber) }
@@ -597,6 +611,10 @@ let buildFixtureConfiguration (directives: KpFixtureDirective list) =
                 accumulator.BackendProfile
                 |> Option.map (fun (value, _, _) -> value)
                 |> Option.defaultValue KpFixtureConfiguration.defaultValue.BackendProfile
+            AllowUnsafeConsume =
+                accumulator.AllowUnsafeConsume
+                |> Option.map (fun (value, _, _) -> value)
+                |> Option.defaultValue KpFixtureConfiguration.defaultValue.AllowUnsafeConsume
             EntryPoint = accumulator.EntryPoint |> Option.map (fun (value, _, _) -> value)
             RunArgs = accumulator.RunArgs |> Option.map (fun (value, _, _) -> value) |> Option.defaultValue []
             StdinFile = accumulator.StdinFile |> Option.map (fun (value, _, _) -> value)

@@ -1,5 +1,7 @@
 module main
 
+--! allow_unsafe_consume
+
 data Buffer : Type =
     Buffer
 
@@ -7,7 +9,7 @@ type Pair = (1 buf : Buffer)
 
 consumeWhole : (1 p : Pair) -> Unit
 let consumeWhole p =
-    let _ = p
+    let _ = unsafeConsume p
     in ()
 
 projection chooseBuf (place a : Pair) (place b : Pair) (which : Bool) : Buffer =

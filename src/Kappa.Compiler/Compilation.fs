@@ -32,6 +32,7 @@ module Compilation =
         deploymentMode
         backendIntrinsicIdentity
         elaborationAvailableIntrinsicTerms
+        allowUnsafeConsume
         =
         let elaborationTerms =
             elaborationAvailableIntrinsicTerms |> String.concat ","
@@ -39,11 +40,15 @@ module Compilation =
         let packageModeText =
             if packageMode then "true" else "false"
 
+        let allowUnsafeConsumeText =
+            if allowUnsafeConsume then "true" else "false"
+
         [
             $"packageMode={packageModeText}"
             $"backendProfile={backendProfile}"
             $"backendIntrinsicSet={backendIntrinsicIdentity}"
             $"deploymentMode={deploymentMode}"
+            $"allowUnsafeConsume={allowUnsafeConsumeText}"
             $"elaborationAvailableIntrinsicTerms=[{elaborationTerms}]"
         ]
         |> String.concat ";"
@@ -51,7 +56,8 @@ module Compilation =
     let parse (options: CompilationOptions) inputs =
         let normalizedBackendProfile = Stdlib.normalizeBackendProfile options.BackendProfile
         let deploymentMode = normalizeDeploymentMode normalizedBackendProfile options.DeploymentMode
-        let backendIntrinsicSet = Stdlib.intrinsicSetForBackendProfile normalizedBackendProfile
+        let backendIntrinsicSet =
+            Stdlib.intrinsicSetForCompilation normalizedBackendProfile options.AllowUnsafeConsume
         let backendIntrinsicIdentity = backendIntrinsicSet.Identity
 
         let elaborationAvailableIntrinsicTerms =
@@ -66,6 +72,7 @@ module Compilation =
                 deploymentMode
                 backendIntrinsicIdentity
                 elaborationAvailableIntrinsicTerms
+                options.AllowUnsafeConsume
 
         let analysisSessionIdentity =
             $"sourceRoot={options.SourceRoot};{buildConfigurationIdentity}"
@@ -79,7 +86,7 @@ module Compilation =
             if userDocuments |> List.exists (fun document -> document.ModuleName = Some Stdlib.PreludeModuleName) then
                 userDocuments
             else
-                parseBundledPrelude () :: userDocuments
+                parseBundledPrelude options.AllowUnsafeConsume :: userDocuments
 
         let frontendModulesForValidation =
             documents
@@ -91,7 +98,7 @@ module Compilation =
             @ validateImportSelections documents
             @ CompilationFrontend.validateReflEqualityDeclarations documents
             @ SurfaceElaboration.validateSurfaceModules frontendModulesForValidation
-            @ validateExpectDeclarations normalizedBackendProfile documents
+            @ validateExpectDeclarations normalizedBackendProfile options.AllowUnsafeConsume documents
 
         let resourceCheckResult: ResourceChecking.CheckResult =
             if frontendDiagnostics |> List.exists (fun diagnostic -> diagnostic.Severity = Error) then
@@ -110,7 +117,7 @@ module Compilation =
             frontendSnapshots[CORE_LOWERING].Modules
 
         let kCore =
-            SurfaceElaboration.lowerKCoreModules normalizedBackendProfile kFrontIR
+            SurfaceElaboration.lowerKCoreModules normalizedBackendProfile options.AllowUnsafeConsume kFrontIR
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
         let kRuntimeIR =
@@ -119,7 +126,7 @@ module Compilation =
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
         let kBackendIR =
-            KBackendLowering.lowerKBackendModules normalizedBackendProfile kRuntimeIR
+            KBackendLowering.lowerKBackendModules normalizedBackendProfile options.AllowUnsafeConsume kRuntimeIR
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
         let clrAssemblyIR =
@@ -131,6 +138,7 @@ module Compilation =
               PackageMode = options.PackageMode
               BackendProfile = normalizedBackendProfile
               DeploymentMode = deploymentMode
+              AllowUnsafeConsume = options.AllowUnsafeConsume
               BackendIntrinsicIdentity = backendIntrinsicIdentity
               BuildConfigurationIdentity = buildConfigurationIdentity
               AnalysisSessionIdentity = analysisSessionIdentity

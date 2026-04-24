@@ -1,5 +1,7 @@
 module main
 
+--! allow_unsafe_consume
+
 data A : Type =
     A
 
@@ -11,12 +13,12 @@ data C : Type =
 
 f : (1 x : A) -> B
 let f x =
-    let _ = x
+    let _ = unsafeConsume x
     in B
 
 g : (1 y : B) -> C
 let g y =
-    let _ = y
+    let _ = unsafeConsume y
     in C
 
 h : (1 x : A) -> C

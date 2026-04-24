@@ -1,5 +1,7 @@
 module main
 
+--! allow_unsafe_consume
+
 -- Source issue: granule#54
 -- Spec: §5.1.5
 data Token : Type =
@@ -7,12 +9,12 @@ data Token : Type =
 
 check : (1 token : Token) -> Bool
 let check token =
-    let _ = token
+    let _ = unsafeConsume token
     in True
 
 consume : (1 token : Token) -> Unit
 let consume token =
-    let _ = token
+    let _ = unsafeConsume token
     in ()
 
 bad : (1 token : Token) -> Unit

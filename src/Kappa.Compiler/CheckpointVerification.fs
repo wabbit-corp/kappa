@@ -130,8 +130,8 @@ module CheckpointVerification =
         | Url _ ->
             None
 
-    let private availableIntrinsicTerms backendProfile moduleName =
-        Stdlib.intrinsicTermNamesAvailableInModuleText backendProfile moduleName
+    let private availableIntrinsicTerms backendProfile allowUnsafeConsume moduleName =
+        Stdlib.intrinsicTermNamesAvailableInModuleTextForCompilation backendProfile allowUnsafeConsume moduleName
 
     let private verifyRuntimePattern checkpoint bindingLabel (pattern: KRuntimePattern) =
         let rec verify locals runtimePattern =
@@ -308,7 +308,7 @@ module CheckpointVerification =
                 for constructorName, _ in duplicateConstructors do
                     yield makeDiagnostic $"Checkpoint 'KRuntimeIR' requires unique constructor identities within module '{moduleDump.Name}', but '{constructorName}' was duplicated."
 
-                let supportedIntrinsics = availableIntrinsicTerms workspace.BackendProfile moduleDump.Name
+                let supportedIntrinsics = availableIntrinsicTerms workspace.BackendProfile workspace.AllowUnsafeConsume moduleDump.Name
 
                 for intrinsicName in moduleDump.IntrinsicTerms do
                     if not (supportedIntrinsics.Contains intrinsicName) then
@@ -388,7 +388,10 @@ module CheckpointVerification =
             |> Map.ofList
 
         let globallyAvailableIntrinsicTerms =
-            Stdlib.runtimeIntrinsicTermNamesFor workspace.BackendProfile Stdlib.PreludeModuleName
+            Stdlib.runtimeIntrinsicTermNamesForCompilation
+                workspace.BackendProfile
+                workspace.AllowUnsafeConsume
+                Stdlib.PreludeModuleName
 
         let functionNames (moduleDump: KBackendModule) =
             moduleDump.Functions
@@ -639,7 +642,7 @@ module CheckpointVerification =
                 for layoutName, _ in duplicateEnvironmentLayouts do
                     yield makeDiagnostic $"Checkpoint 'KBackendIR' requires unique environment-layout identities within module '{moduleDump.Name}', but '{layoutName}' was duplicated."
 
-                let supportedIntrinsics = availableIntrinsicTerms workspace.BackendProfile moduleDump.Name
+                let supportedIntrinsics = availableIntrinsicTerms workspace.BackendProfile workspace.AllowUnsafeConsume moduleDump.Name
 
                 for intrinsicName in moduleDump.IntrinsicTerms do
                     if not (supportedIntrinsics.Contains intrinsicName) then

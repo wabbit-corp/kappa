@@ -1376,6 +1376,22 @@ module ResourceChecking =
                     |> Option.exists ResourceQuantity.isExactOne)
                 |> Option.map (fun binding -> binding, place.Path))
 
+    let rec private patternCanDischargeMovedValue pattern =
+        match pattern with
+        | NamePattern _ ->
+            true
+        | ConstructorPattern _ ->
+            true
+        | OrPattern alternatives ->
+            not (List.isEmpty alternatives)
+            && (alternatives |> List.forall patternCanDischargeMovedValue)
+        | AnonymousRecordPattern fields ->
+            // Record patterns may omit fields, and omitted fields are discard positions under §5.1.5B.
+            false
+        | WildcardPattern
+        | LiteralPattern _ ->
+            false
+
     let private checkShadowedLinearBindings
         (document: ParsedDocument)
         (shadowedBindings: ResourceBinding list)
@@ -2603,7 +2619,11 @@ module ResourceChecking =
             state
         | LocalLet(binding, value, body) ->
             let delayedBody = tryDelayedExpressionBody value
-            let movedLinearBinding = tryMovedLinearBinding value state
+            let movedLinearBinding =
+                if patternCanDischargeMovedValue binding.Pattern then
+                    tryMovedLinearBinding value state
+                else
+                    None
             let captured =
                 match value, delayedBody with
                 | Lambda _, _
@@ -3274,7 +3294,11 @@ module ResourceChecking =
             | [] -> current
             | DoLet(binding, expression) :: rest ->
                 let delayedBody = tryDelayedExpressionBody expression
-                let movedLinearBinding = tryMovedLinearBinding expression current
+                let movedLinearBinding =
+                    if patternCanDischargeMovedValue binding.Pattern then
+                        tryMovedLinearBinding expression current
+                    else
+                        None
 
                 let captured =
                     match expression, delayedBody with

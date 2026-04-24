@@ -1,5 +1,7 @@
 module main
 
+--! allow_unsafe_consume
+
 data Resource : Type =
     Resource
 
@@ -8,7 +10,7 @@ let inspectOnly x = ()
 
 consume : (1 x : Resource) -> Unit
 let consume x =
-    let _ = x
+    let _ = unsafeConsume x
     in ()
 
 demo : (1 x : Resource) -> Unit

@@ -613,7 +613,7 @@ let ``KBackendIR dumps expose graph ids provenance and dump format metadata`` ()
 [<Fact>]
 let ``BODY_RESOLVE dump exposes M3 ownership facts`` () =
     let workspace =
-        compileInMemoryWorkspace
+        compileInMemoryWorkspaceWithUnsafeConsume
             "memory-m3-ownership-dump-root"
             [
                 "main.kp",
@@ -623,7 +623,7 @@ let ``BODY_RESOLVE dump exposes M3 ownership facts`` () =
                     "data File : Type ="
                     "    Handle Int"
                     ""
-                    "let consume (1 f : File) = ()"
+                    "let consume (1 f : File) = unsafeConsume f"
                     "let openFile name = pure (Handle 1)"
                     "let readData (& file : File) = pure \"chunk\""
                     ""
@@ -729,7 +729,7 @@ let ``BODY_RESOLVE dump exposes M3 ownership facts`` () =
 [<Fact>]
 let ``BODY_RESOLVE dump records linear move events`` () =
     let workspace =
-        compileInMemoryWorkspace
+        compileInMemoryWorkspaceWithUnsafeConsume
             "memory-m3-linear-move-event-root"
             [
                 "main.kp",
@@ -739,7 +739,7 @@ let ``BODY_RESOLVE dump records linear move events`` () =
                     "data File : Type ="
                     "    Handle Int"
                     ""
-                    "let consume (1 file : File) = ()"
+                    "let consume (1 file : File) = unsafeConsume file"
                     ""
                     "let main : IO Unit = do"
                     "    let 1 file = Handle 1"
@@ -1035,7 +1035,7 @@ let ``KRuntimeIR preserves using release schedules for backend lowering`` () =
 [<Fact>]
 let ``M3 overuse diagnostics expose primary and related origins`` () =
     let workspace =
-        compileInMemoryWorkspace
+        compileInMemoryWorkspaceWithUnsafeConsume
             "memory-m3-diagnostic-origin-root"
             [
                 "main.kp",
@@ -1045,7 +1045,7 @@ let ``M3 overuse diagnostics expose primary and related origins`` () =
                     "data File : Type ="
                     "    Handle Int"
                     ""
-                    "let consume (1 f : File) = ()"
+                    "let consume (1 f : File) = unsafeConsume f"
                     ""
                     "let main : IO Unit = do"
                     "    let 1 file = Handle 1"
@@ -1092,7 +1092,7 @@ let ``M3 overuse diagnostics expose primary and related origins`` () =
 [<Fact>]
 let ``M3 overuse diagnostic origins ignore names inside string literals`` () =
     let workspace =
-        compileInMemoryWorkspace
+        compileInMemoryWorkspaceWithUnsafeConsume
             "memory-m3-diagnostic-origin-string-root"
             [
                 "main.kp",
@@ -1102,7 +1102,7 @@ let ``M3 overuse diagnostic origins ignore names inside string literals`` () =
                     "data File : Type ="
                     "    Handle Int"
                     ""
-                    "let consume (1 f : File) = ()"
+                    "let consume (1 f : File) = unsafeConsume f"
                     ""
                     "let main : IO Unit = do"
                     "    let 1 file = Handle 1"

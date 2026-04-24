@@ -1,9 +1,11 @@
 module main
 
+--! allow_unsafe_consume
+
 data File : Type =
     Handle Int
 
-let consume (1 f : File) = let _ = f in ()
+let consume (1 f : File) = unsafeConsume f
 let borrow (& f : File) = ()
 let borrowScoped (&[s] f : File) = ()
 let erase (0 proof : Unit) = ()

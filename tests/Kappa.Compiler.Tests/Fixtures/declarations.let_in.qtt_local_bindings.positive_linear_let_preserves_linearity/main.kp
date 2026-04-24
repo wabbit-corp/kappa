@@ -1,5 +1,7 @@
 module main
 
+--! allow_unsafe_consume
+
 data File : Type =
     Handle Int
 
@@ -8,7 +10,7 @@ let forward x = x
 
 consume : (1 y : File) -> Int
 let consume y =
-    let _ = y
+    let _ = unsafeConsume y
     in 0
 
 h : (1 x : File) -> Int

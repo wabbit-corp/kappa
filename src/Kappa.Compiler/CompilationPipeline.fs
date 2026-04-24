@@ -27,6 +27,7 @@ type CompilationOptions =
       PackageMode: bool
       BackendProfile: string
       DeploymentMode: string
+      AllowUnsafeConsume: bool
       FileSystem: IFileSystem }
 
 module CompilationOptions =
@@ -35,6 +36,7 @@ module CompilationOptions =
           PackageMode = true
           BackendProfile = "interpreter"
           DeploymentMode = "default"
+          AllowUnsafeConsume = false
           FileSystem = fileSystem }
 
     let create sourceRoot =

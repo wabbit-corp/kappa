@@ -24,6 +24,20 @@ type DiagnosticCode =
     | SafeNavigationAmbiguous
     | SafeNavigationReceiverNotOption
     | ElvisReceiverNotOption
+    | RecordDuplicateField
+    | RecordDependencyCycle
+    | RecordDependencyInvalid
+    | RecordProjectionMissingField
+    | RecordPatchInvalidItem
+    | RecordPatchDuplicatePath
+    | RecordPatchPrefixConflict
+    | RecordPatchUnknownPath
+    | RowExtensionDuplicateLabel
+    | RowExtensionExistingField
+    | RowExtensionMissingLacksConstraint
+    | SealDirectLiteralForSignature
+    | SealOpenRecordAscription
+    | SealOpaqueUnfolding
     | TypeEqualityMismatch
     | UnexpectedIndentation
     | UnterminatedBacktickIdentifier
@@ -62,6 +76,20 @@ module DiagnosticCode =
         | SafeNavigationAmbiguous -> "E_SAFE_NAVIGATION_AMBIGUOUS"
         | SafeNavigationReceiverNotOption -> "E_SAFE_NAVIGATION_RECEIVER_NOT_OPTION"
         | ElvisReceiverNotOption -> "E_ELVIS_RECEIVER_NOT_OPTION"
+        | RecordDuplicateField -> "E_RECORD_DUPLICATE_FIELD"
+        | RecordDependencyCycle -> "E_RECORD_DEPENDENCY_CYCLE"
+        | RecordDependencyInvalid -> "E_RECORD_DEPENDENCY_INVALID"
+        | RecordProjectionMissingField -> "E_RECORD_PROJECTION_MISSING_FIELD"
+        | RecordPatchInvalidItem -> "E_RECORD_PATCH_INVALID_ITEM"
+        | RecordPatchDuplicatePath -> "E_RECORD_PATCH_DUPLICATE_PATH"
+        | RecordPatchPrefixConflict -> "E_RECORD_PATCH_PREFIX_CONFLICT"
+        | RecordPatchUnknownPath -> "E_RECORD_PATCH_UNKNOWN_PATH"
+        | RowExtensionDuplicateLabel -> "E_ROW_EXTENSION_DUPLICATE_LABEL"
+        | RowExtensionExistingField -> "E_ROW_EXTENSION_EXISTING_FIELD"
+        | RowExtensionMissingLacksConstraint -> "E_ROW_EXTENSION_MISSING_LACKS_CONSTRAINT"
+        | SealDirectLiteralForSignature -> "E_SEAL_DIRECT_LITERAL_FOR_SIGNATURE"
+        | SealOpenRecordAscription -> "E_SEAL_OPEN_RECORD_ASCRIPTION"
+        | SealOpaqueUnfolding -> "E_SEAL_OPAQUE_UNFOLDING"
         | TypeEqualityMismatch -> "E_TYPE_EQUALITY_MISMATCH"
         | UnexpectedIndentation -> "E_UNEXPECTED_INDENTATION"
         | UnterminatedBacktickIdentifier -> "E_UNTERMINATED_BACKTICK_IDENTIFIER"
@@ -99,6 +127,20 @@ module DiagnosticCode =
         | "E_SAFE_NAVIGATION_AMBIGUOUS" -> Some SafeNavigationAmbiguous
         | "E_SAFE_NAVIGATION_RECEIVER_NOT_OPTION" -> Some SafeNavigationReceiverNotOption
         | "E_ELVIS_RECEIVER_NOT_OPTION" -> Some ElvisReceiverNotOption
+        | "E_RECORD_DUPLICATE_FIELD" -> Some RecordDuplicateField
+        | "E_RECORD_DEPENDENCY_CYCLE" -> Some RecordDependencyCycle
+        | "E_RECORD_DEPENDENCY_INVALID" -> Some RecordDependencyInvalid
+        | "E_RECORD_PROJECTION_MISSING_FIELD" -> Some RecordProjectionMissingField
+        | "E_RECORD_PATCH_INVALID_ITEM" -> Some RecordPatchInvalidItem
+        | "E_RECORD_PATCH_DUPLICATE_PATH" -> Some RecordPatchDuplicatePath
+        | "E_RECORD_PATCH_PREFIX_CONFLICT" -> Some RecordPatchPrefixConflict
+        | "E_RECORD_PATCH_UNKNOWN_PATH" -> Some RecordPatchUnknownPath
+        | "E_ROW_EXTENSION_DUPLICATE_LABEL" -> Some RowExtensionDuplicateLabel
+        | "E_ROW_EXTENSION_EXISTING_FIELD" -> Some RowExtensionExistingField
+        | "E_ROW_EXTENSION_MISSING_LACKS_CONSTRAINT" -> Some RowExtensionMissingLacksConstraint
+        | "E_SEAL_DIRECT_LITERAL_FOR_SIGNATURE" -> Some SealDirectLiteralForSignature
+        | "E_SEAL_OPEN_RECORD_ASCRIPTION" -> Some SealOpenRecordAscription
+        | "E_SEAL_OPAQUE_UNFOLDING" -> Some SealOpaqueUnfolding
         | "E_TYPE_EQUALITY_MISMATCH" -> Some TypeEqualityMismatch
         | "E_UNEXPECTED_INDENTATION" -> Some UnexpectedIndentation
         | "E_UNTERMINATED_BACKTICK_IDENTIFIER" -> Some UnterminatedBacktickIdentifier

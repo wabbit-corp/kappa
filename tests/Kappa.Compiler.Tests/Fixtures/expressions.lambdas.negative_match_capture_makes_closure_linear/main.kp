@@ -1,5 +1,7 @@
 module main
 
+--! allow_unsafe_consume
+
 -- Source issue: rust#30745
 -- Spec: §5.1.5, §7.2.1, §7.5
 data Token : Type =
@@ -11,7 +13,7 @@ data MaybeToken : Type =
 
 consume : (1 token : Token) -> Unit
 let consume token =
-    let _ = token
+    let _ = unsafeConsume token
     in ()
 
 twice : (ω f : Unit -> Unit) -> Unit

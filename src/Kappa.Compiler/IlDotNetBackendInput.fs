@@ -648,6 +648,8 @@ module internal IlDotNetBackendInput =
             Some([ IlPrimitive IlInt64 ], unitIlType)
         | "primitiveIntToString", [ IlPrimitive IlInt64 ] ->
             Some([ IlPrimitive IlInt64 ], IlPrimitive IlString)
+        | "unsafeConsume", [ valueType ] ->
+            Some([ valueType ], unitIlType)
         | "pure", [ valueType ] ->
             Some([ valueType ], valueType)
         | ("primitiveReadData" | "readData"), [ fileType ] ->
@@ -807,4 +809,3 @@ module internal IlDotNetBackendInput =
                         $"IL backend could not infer concrete type arguments for constructor '{constructorInfo.Name}'."
                 else
                     Result.Ok resultType)
-

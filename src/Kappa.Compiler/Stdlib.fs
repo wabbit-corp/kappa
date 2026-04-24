@@ -52,7 +52,18 @@ module Stdlib =
     let ZigTargetCheckpointName = "zig.c"
     let ClrTargetCheckpointName = "dotnet.clr"
 
+    let UnsafeConsumeTermName = "unsafeConsume"
+
+    let private unsafeConsumePreludeText =
+        $"{Environment.NewLine}expect term {UnsafeConsumeTermName} : (1 x : a) -> Unit{Environment.NewLine}"
+
     let loadBundledPreludeText () = BundledPrelude.loadText ()
+
+    let loadBundledPreludeTextForOptions allowUnsafeConsume =
+        if allowUnsafeConsume then
+            BundledPrelude.loadText () + unsafeConsumePreludeText
+        else
+            BundledPrelude.loadText ()
 
     let shouldImplicitlyImportPrelude moduleName =
         moduleName <> Some PreludeModuleName
@@ -73,6 +84,12 @@ module Stdlib =
           ModuleLocalTermNames = IntrinsicCatalog.moduleLocalIntrinsicTermNames
           RuntimeTermNames = IntrinsicCatalog.runtimePreludeIntrinsicTermNames ()
           ElaborationAvailableTermNames = IntrinsicCatalog.elaborationAvailableIntrinsicTermNames () }
+
+    let private withUnsafeConsume (intrinsicSet: BackendIntrinsicSet) =
+        { intrinsicSet with
+            Identity = $"{intrinsicSet.Identity}+unsafe-consume"
+            PreludeTermNames = Set.add UnsafeConsumeTermName intrinsicSet.PreludeTermNames
+            RuntimeTermNames = Set.add UnsafeConsumeTermName intrinsicSet.RuntimeTermNames }
 
     let private emptyIntrinsicSet =
         { Identity = "none"
@@ -102,15 +119,35 @@ module Stdlib =
         | _ ->
             emptyIntrinsicSet
 
+    let intrinsicSetForCompilation backendProfile allowUnsafeConsume =
+        let intrinsicSet = intrinsicSetForBackendProfile backendProfile
+
+        if allowUnsafeConsume && intrinsicSet.Identity <> emptyIntrinsicSet.Identity then
+            withUnsafeConsume intrinsicSet
+        else
+            intrinsicSet
+
     let intrinsicTermNamesFor backendProfile moduleName =
         if moduleName = PreludeModuleName then
             (intrinsicSetForBackendProfile backendProfile).PreludeTermNames
         else
             Set.empty
 
+    let intrinsicTermNamesForCompilation backendProfile allowUnsafeConsume moduleName =
+        if moduleName = PreludeModuleName then
+            (intrinsicSetForCompilation backendProfile allowUnsafeConsume).PreludeTermNames
+        else
+            Set.empty
+
     let runtimeIntrinsicTermNamesFor backendProfile moduleName =
         if moduleName = PreludeModuleName then
             (intrinsicSetForBackendProfile backendProfile).RuntimeTermNames
+        else
+            Set.empty
+
+    let runtimeIntrinsicTermNamesForCompilation backendProfile allowUnsafeConsume moduleName =
+        if moduleName = PreludeModuleName then
+            (intrinsicSetForCompilation backendProfile allowUnsafeConsume).RuntimeTermNames
         else
             Set.empty
 
@@ -143,6 +180,22 @@ module Stdlib =
         else
             intrinsicSet.ModuleLocalTermNames
 
+    let intrinsicTermNamesAvailableInModuleForCompilation backendProfile allowUnsafeConsume moduleName =
+        let intrinsicSet = intrinsicSetForCompilation backendProfile allowUnsafeConsume
+
+        if moduleName = PreludeModuleName then
+            intrinsicSet.PreludeTermNames
+        else
+            intrinsicSet.ModuleLocalTermNames
+
+    let intrinsicTermNamesAvailableInModuleTextForCompilation backendProfile allowUnsafeConsume moduleName =
+        let intrinsicSet = intrinsicSetForCompilation backendProfile allowUnsafeConsume
+
+        if moduleName = PreludeModuleText then
+            intrinsicSet.PreludeTermNames
+        else
+            intrinsicSet.ModuleLocalTermNames
+
     let intrinsicallySatisfiesExpect backendProfile moduleName declaration =
         let intrinsicSet = intrinsicSetForBackendProfile backendProfile
 
@@ -153,4 +206,16 @@ module Stdlib =
             isPreludeExpectation moduleName && intrinsicSet.TraitNames.Contains(declaration.Name)
         | ExpectTermDeclaration declaration ->
             intrinsicTermNamesAvailableInModule backendProfile moduleName
+            |> Set.contains declaration.Name
+
+    let intrinsicallySatisfiesExpectForCompilation backendProfile allowUnsafeConsume moduleName declaration =
+        let intrinsicSet = intrinsicSetForCompilation backendProfile allowUnsafeConsume
+
+        match declaration with
+        | ExpectTypeDeclaration declaration ->
+            isPreludeExpectation moduleName && intrinsicSet.TypeNames.Contains(declaration.Name)
+        | ExpectTraitDeclaration declaration ->
+            isPreludeExpectation moduleName && intrinsicSet.TraitNames.Contains(declaration.Name)
+        | ExpectTermDeclaration declaration ->
+            intrinsicTermNamesAvailableInModuleForCompilation backendProfile allowUnsafeConsume moduleName
             |> Set.contains declaration.Name

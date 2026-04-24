@@ -461,7 +461,13 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
 
             result
 
-        if trimmed |> List.exists (fun token -> token.Kind = Equals) |> not then
+        let isRestPattern (fieldTokens: Token list) =
+            match fieldTokens with
+            | { Kind = Dot } :: { Kind = Dot } :: nameToken :: [] when this.IsNameToken(nameToken) -> true
+            | _ -> false
+
+        if trimmed |> List.exists (fun token -> token.Kind = Equals) |> not
+           && splitTopLevelCommas trimmed |> List.exists isRestPattern |> not then
             None
         else
             let fields =
@@ -489,14 +495,19 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                             { Name = "<missing>"
                               Pattern = WildcardPattern }
                     | None ->
-                        let errorSpan =
-                            match fieldTokens with
-                            | token :: _ -> token.Span
-                            | [] -> eofSpan
+                        match fieldTokens with
+                        | { Kind = Dot } :: { Kind = Dot } :: nameToken :: [] when this.IsNameToken(nameToken) ->
+                            { Name = "__kappa_record_rest"
+                              Pattern = NamePattern(SyntaxFacts.trimIdentifierQuotes nameToken.Text) }
+                        | _ ->
+                            let errorSpan =
+                                match fieldTokens with
+                                | token :: _ -> token.Span
+                                | [] -> eofSpan
 
-                        diagnostics.AddError(DiagnosticCode.ParseError, "Expected a record pattern field of the form 'name = pattern'.", source.GetLocation(errorSpan))
-                        { Name = "<missing>"
-                          Pattern = WildcardPattern })
+                            diagnostics.AddError(DiagnosticCode.ParseError, "Expected a record pattern field of the form 'name = pattern'.", source.GetLocation(errorSpan))
+                            { Name = "<missing>"
+                              Pattern = WildcardPattern })
 
             Some(AnonymousRecordPattern fields)
 
@@ -675,6 +686,7 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
         | InterpolatedStringStart
         | CharacterLiteral
         | LeftParen
+        | AtSign
         | Backslash -> true
         | Operator when FixityTable.tryFindPrefix token.Text fixities |> Option.isSome -> true
         | Keyword Keyword.If
@@ -2032,6 +2044,9 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
         this.SkipLayout()
 
         match this.Current.Kind with
+        | AtSign ->
+            this.Advance() |> ignore
+            this.ParsePrefixExpression()
         | Operator ->
             if this.Current.Text = "!" then
                 this.Advance() |> ignore
@@ -2187,20 +2202,121 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
                     | Dedent -> false
                     | _ -> true)
 
-            let isImplicit, remaining =
-                match trimmed with
-                | { Kind = AtSign } :: rest -> true, rest
-                | _ -> false, trimmed
+            let tokenArray = List.toArray trimmed
 
-            match remaining with
-            | nameToken :: equalsToken :: valueTokens when Token.isName nameToken && equalsToken.Kind = Equals ->
-                { Name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
-                  IsImplicit = isImplicit
-                  Value = this.ParseStandaloneExpression(valueTokens) }
-            | _ ->
-                diagnostics.AddError(DiagnosticCode.ParseError, "Expected a record update field of the form 'name = expr'.", source.GetLocation(this.Current.Span))
+            let tryFindPatchOperator () =
+                let mutable depth = 0
+                let mutable index = 0
+                let mutable result = None
+
+                while index < tokenArray.Length && result.IsNone do
+                    match tokenArray[index].Kind with
+                    | LeftParen
+                    | LeftBracket
+                    | LeftBrace
+                    | LeftSetBrace ->
+                        depth <- depth + 1
+                    | RightParen
+                    | RightBracket
+                    | RightBrace
+                    | RightSetBrace ->
+                        depth <- max 0 (depth - 1)
+                    | Colon when depth = 0 && index + 1 < tokenArray.Length && tokenArray[index + 1].Kind = Equals ->
+                        result <- Some(true, index, index + 2)
+                    | Equals when depth = 0 ->
+                        result <- Some(false, index, index + 1)
+                    | _ ->
+                        ()
+
+                    index <- index + 1
+
+                result
+
+            let parsePath (pathTokens: Token list) =
+                let segments = ResizeArray<SurfaceRecordUpdatePathSegment>()
+                let pathArray = List.toArray pathTokens
+                let mutable index = 0
+                let mutable valid = true
+                let mutable expectSegment = true
+
+                while index < pathArray.Length && valid do
+                    if expectSegment then
+                        let isImplicit, segmentIndex =
+                            if pathArray[index].Kind = AtSign then
+                                true, index + 1
+                            else
+                                false, index
+
+                        if segmentIndex < pathArray.Length && this.IsNameToken(pathArray[segmentIndex]) then
+                            segments.Add(
+                                { Name = SyntaxFacts.trimIdentifierQuotes pathArray[segmentIndex].Text
+                                  IsImplicit = isImplicit }
+                            )
+                            index <- segmentIndex + 1
+                            expectSegment <- false
+                        else
+                            valid <- false
+                    else if pathArray[index].Kind = Dot then
+                        index <- index + 1
+                        expectSegment <- true
+                    else
+                        valid <- false
+
+                if valid && not expectSegment && segments.Count > 0 then
+                    Some(List.ofSeq segments)
+                else
+                    None
+
+            match tryFindPatchOperator () with
+            | Some(isExtension, operatorStart, valueStart) ->
+                let pathTokens = tokenArray[0 .. operatorStart - 1] |> Array.toList
+                let valueTokens = tokenArray[valueStart ..] |> Array.toList
+
+                match parsePath pathTokens with
+                | Some [ segment ] when isExtension && not segment.IsImplicit ->
+                    { Name = segment.Name
+                      IsImplicit = false
+                      IsExtension = true
+                      Path = [ segment ]
+                      Value = this.ParseStandaloneExpression(valueTokens) }
+                | Some path when not isExtension ->
+                    let firstSegment = List.head path
+
+                    { Name = firstSegment.Name
+                      IsImplicit = firstSegment.IsImplicit
+                      IsExtension = false
+                      Path = path
+                      Value = this.ParseStandaloneExpression(valueTokens) }
+                | Some _ ->
+                    diagnostics.AddError(DiagnosticCode.RecordPatchInvalidItem, "Row-extension fields must be top-level labels of the form 'name := expr'.", source.GetLocation(tokenArray[operatorStart].Span))
+                    { Name = "<missing>"
+                      IsImplicit = false
+                      IsExtension = isExtension
+                      Path = []
+                      Value = Literal LiteralValue.Unit }
+                | None ->
+                    let errorSpan =
+                        match pathTokens with
+                        | token :: _ -> token.Span
+                        | [] -> tokenArray[operatorStart].Span
+
+                    diagnostics.AddError(DiagnosticCode.RecordPatchInvalidItem, "Expected a record patch path before '=' or ':='.", source.GetLocation(errorSpan))
+                    { Name = "<missing>"
+                      IsImplicit = false
+                      IsExtension = isExtension
+                      Path = []
+                      Value = Literal LiteralValue.Unit }
+            | None ->
+                let errorSpan =
+                    match trimmed with
+                    | token :: _ -> token.Span
+                    | [] -> this.Current.Span
+
+                diagnostics.AddError(DiagnosticCode.RecordPatchInvalidItem, "Expected a record patch item of the form 'path = expr' or 'name := expr'.", source.GetLocation(errorSpan))
                 { Name = "<missing>"
-                  IsImplicit = isImplicit
+                  IsImplicit = false
+                  IsExtension = false
+                  Path = []
                   Value = Literal LiteralValue.Unit }
 
         let mutable keepReadingPostfix = true

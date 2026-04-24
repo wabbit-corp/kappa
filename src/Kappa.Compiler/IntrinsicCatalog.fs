@@ -117,6 +117,7 @@ module internal IntrinsicCatalog =
         | "printInt"
         | "printString"
         | "primitiveIntToString"
+        | "unsafeConsume"
         | "openFile"
         | "primitiveReadData"
         | "readData"
@@ -146,6 +147,8 @@ module internal IntrinsicCatalog =
             Some BackendRepBoolean
         | "primitiveIntToString" ->
             Some BackendRepString
+        | "unsafeConsume" ->
+            Some BackendRepUnit
         | "openFile"
         | "primitiveReadData"
         | "readData"
@@ -174,6 +177,8 @@ module internal IntrinsicCatalog =
             Some BackendRepUnit
         | "primitiveIntToString" ->
             Some BackendRepString
+        | "unsafeConsume" ->
+            Some BackendRepUnit
         | "openFile" ->
             Some(BackendRepOpaque(Some "File"))
         | "primitiveReadData"

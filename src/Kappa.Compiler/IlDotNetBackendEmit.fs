@@ -799,6 +799,9 @@ module internal IlDotNetBackendEmit =
                         do! emitUnitValue il
                     | "primitiveIntToString", _ ->
                         il.Emit(OpCodes.Call, typeof<Convert>.GetMethod("ToString", [| typeof<int64> |]))
+                    | "unsafeConsume", _ ->
+                        il.Emit(OpCodes.Pop)
+                        do! emitUnitValue il
                     | "pure", _ ->
                         ()
                     | "openFile", resultType ->
