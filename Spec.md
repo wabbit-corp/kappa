@@ -19513,6 +19513,116 @@ Rules:
   mechanism of this subsection and does not participate in the static
   import graph, module interfaces, or module-dependency cycle checks.
 
+<!-- compiler.ffi.bridge_contract_formation -->
+#### 17.7.7A Bridge contract formation and bridge-bound package semantics
+
+A `BridgeContract sig` describes how a runtime bridge produces, validates, marshals, monitors, and diagnoses a value of
+type `sig`.
+
+A bridge contract is not merely a runtime type tag. It is the boundary specification for a foreign surface.
+
+<!-- compiler.ffi.bridge_contract_formation.contract_shape -->
+#### Contract shape
+
+Rules:
+
+* A `BridgeContract sig` MUST be sufficient to enforce the runtime bridge binding rules of §17.7.7 for values of type
+  `sig`.
+* If `sig` is a closed record, signature type, package-like surface, or another bridge-bindable surface, the contract
+  MUST describe every runtime-relevant exported member of that surface.
+* If `sig` contains function, callback, iterator, stream, object, receiver-method, or other higher-order members, the
+  contract MUST specify the higher-order monitoring required by §17.7.4B.
+* If such monitoring is unavailable, the contract MUST expose the member as `std.gradual.Dyn`, as an opaque bridge
+  object, or through a less precise member type.
+* If `sig` contains compile-time-only members, such as type members, constraint members, region members, row members,
+  labels, erased proofs, or opaque compile-time members, those members are supplied by the contract's static skeleton.
+* Runtime bridge lookup MUST NOT discover or synthesize compile-time-only members from the foreign runtime.
+* A bridge contract whose apparent result type would require runtime discovery of compile-time-only members is
+  ill-formed unless those members are represented by explicit runtime carriers in the exposed type.
+
+<!-- compiler.ffi.bridge_contract_formation.static_skeleton -->
+#### Static skeleton
+
+A bridge contract for a signature or package-like type may carry a static skeleton.
+
+The static skeleton determines the compile-time fields of the resulting package value.
+
+Rules:
+
+* The static skeleton is elaboration-time information.
+* It participates in ordinary typing, interface identity, hashing, and tooling exactly like any other elaboration-time
+  information that affects an exported surface.
+* It is erased at runtime unless preserved by explicit runtime carriers.
+* The static skeleton MUST be determined by Kappa source, generated Kappa source, a trusted binding summary, or another
+  implementation-documented build input.
+* It MUST NOT depend on hidden mutable runtime bridge state.
+
+Example:
+
+```kappa
+type Numpy : Type =
+    (opaque NDArray : Type -> Nat -> Type,
+     array :
+        forall (@0 a : Type).
+        (@_ : std.gradual.DynamicType a) ->
+        List a -> IO PyError (exists (n : Nat). this.NDArray a n))
+```
+
+A `BridgeContract Numpy` may statically choose the opaque Kappa type member `NDArray`. Runtime binding of `"numpy"`
+validates and wraps the runtime members such as `array`; it does not obtain the Kappa type member from Python.
+
+<!-- compiler.ffi.bridge_contract_formation.borrowed_owned_bridge_bound_values -->
+#### Borrowed and owned bridge-bound values
+
+Rules:
+
+* `std.bridge.bindModule` returns a borrowed bridge-bound value.
+  Its result type MUST carry `captures (r)` when the value depends on a borrowed bridge handle under region `r`.
+* Such a value MUST NOT escape the region of the borrowed handle.
+* `std.bridge.bindModuleOwned` returns an owned `BridgePackage sig`.
+* `BridgePackage sig` may outlive the original lexical borrow because it owns, retains, or otherwise safely manages the
+  required bridge capability.
+* Borrowing a `BridgePackage sig` with `bridgePackageValue` exposes `sig captures (r)` for the borrow duration.
+* Releasing a `BridgePackage sig` invalidates future bridge operations through values borrowed from that package.
+* A bridge implementation MUST prevent use-after-release either statically through regions and quantities, dynamically
+  through checked resource state, or by an observationally equivalent mechanism.
+
+<!-- compiler.ffi.bridge_contract_formation.provenance_diagnostics -->
+#### Provenance and diagnostics
+
+Rules:
+
+* Every value produced by a bridge contract SHOULD retain enough provenance to report useful bridge failures.
+* A bridge failure SHOULD identify:
+  * the bridge origin;
+  * the requested foreign surface name;
+  * the Kappa contract identity;
+  * the member path, if any;
+  * the boundary direction;
+  * the demanded Kappa type or contract fragment; and
+  * the observed foreign shape, when available.
+* A bridge failure caused by a contract violation SHOULD be convertible to `std.gradual.CastBlame` through
+  `std.bridge.bridgeFailureToCastBlame`.
+* Implementations MAY store richer provenance out of band, but diagnostic behavior MUST be deterministic for a fixed
+  program, build input, and runtime bridge transcript.
+
+<!-- compiler.ffi.bridge_contract_formation.bridge_transcripts -->
+#### Bridge transcripts
+
+A bridge implementation MAY record a bridge transcript.
+
+A bridge transcript is implementation-defined runtime evidence used for debugging, replay, testing, caching, or
+reproducibility.
+
+Rules:
+
+* A bridge transcript is not part of ordinary compile-time module identity unless an implementation explicitly promotes
+  it to a build input.
+* If promoted to a build input, the transcript participates in hashing, interface identity, and invalidation under the
+  ordinary query model.
+* A bridge transcript MUST NOT be required for ordinary dynamic bridge execution unless the selected bridge profile
+  documents replay or deterministic-execution requirements.
+
 <!-- compiler.ffi.precision_preserving_kappa_to_kappa_bridges -->
 #### 17.7.8 Precision-preserving Kappa-to-Kappa bridges
 
