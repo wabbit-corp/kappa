@@ -1409,6 +1409,19 @@ RawPtr,
 OpaqueHandle
 ```
 
+The module `std.ffi.c` MUST additionally provide the following C/native ABI spelling types when the selected backend
+profile exposes native ABI bindings:
+
+```text
+CChar, CSChar, CUChar,
+CShort, CUShort,
+CInt, CUInt,
+CLong, CULong,
+CLongLong, CULongLong,
+CSize, CPtrdiff,
+CBool
+```
+
 Rules:
 
 * `I8`..`I64` and `U8`..`U64` are exact-width two's-complement integer types.
@@ -1416,10 +1429,30 @@ Rules:
 * `F32` is IEEE-754 binary32.
 * `F64` is IEEE-754 binary64.
 * `F64` MAY be represented identically to `Double`, but remains the exact-ABI scalar name used by `std.ffi`.
+* The C/native ABI spelling types in `std.ffi.c` denote the corresponding type names of the selected native ABI.
+  Their size, signedness where implementation-defined by the C ABI, alignment, and calling-convention behavior are
+  determined by the pinned target ABI description used for the binding.
+* A host binding generated from C, C-compatible, POSIX, JNI, P/Invoke, or equivalent native ABI metadata SHOULD preserve
+  C/native ABI spelling types in its raw surface when that spelling is semantically relevant. It MUST NOT silently
+  replace `CLong`, `CSize`, `CBool`, or similar ABI spelling types with exact-width types unless the binding description
+  pins the selected ABI and records the normalization.
 * `RawPtr` denotes an untyped native address. The language core provides no implicit dereference or pointer arithmetic.
   Such operations, if exposed, are library- or backend-defined.
-* `OpaqueHandle` denotes an opaque foreign resource handle. Its concrete runtime representation is backend-specific.
+* `RawPtr` is nullable unless a refined overlay, trusted binding summary, or shim states otherwise. A raw native binding
+  that cannot prove non-nullability for a pointer-like parameter or result MUST expose that value as `Option RawPtr` or
+  as an equivalent explicitly nullable raw shape.
+* `OpaqueHandle` denotes an inert opaque foreign handle value. Its concrete runtime representation is backend-specific.
+* `OpaqueHandle` by itself carries no portable ownership, validity, nullability, release, thread-affinity, borrowing,
+  lifetime, aliasing, or finalization semantics.
+* An owning foreign resource MUST NOT be exposed as bare `OpaqueHandle` in a refined or portable surface. It MUST be
+  wrapped in a nominal Kappa type, `BridgePackage`, `Res`, or another specification-defined resource wrapper whose API
+  states the ownership, release, nullability, thread-affinity, and lifetime behavior.
+* A raw host binding MAY expose bare `OpaqueHandle` only as an explicitly raw value whose ownership and release behavior
+  is unknown or supplied out of band by a trusted binding summary.
 * The exact ABI meaning of these types is normative for raw native host bindings under §17.7.
+* Arithmetic, equality, ordering, conversion, and bitwise operations over `std.ffi` scalar types are library operations.
+  An implementation MAY provide ordinary numeric instances for these types, but any overflow, conversion, trapping, or
+  wrapping behavior exposed by those instances MUST be documented by that implementation or standard-library module.
 * `std.ffi` MAY additionally export implementation-defined adapter types and helper terms, provided the types above are
   available exactly as named.
 
