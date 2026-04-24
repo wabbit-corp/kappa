@@ -672,7 +672,9 @@ Query a, RawComprehension a, ComprehensionPlan a,
 Option a, Result e a, List a, Array a, Set a, Map k v,
 Res a r, Match a r, Dec p, Dict c,
 IO e a, UIO a, Fiber e a, Exit e a, Cause e, InterruptCause, DefectInfo,
+Scope, Monitor e a, FiberRef a, Promise e a,
 STM a, TVar a,
+Duration, Instant, TimeoutError, RaceResult a b,
 Regex, (=), Thunk a, Need a
 ```
 
@@ -696,6 +698,8 @@ Match.Hit, Match.Miss,
 Dec.Yes, Dec.No,
 Exit.Success, Exit.Failure,
 Cause.Fail, Cause.Interrupt, Cause.Defect, Cause.Both, Cause.Then,
+TimeoutError.Timeout,
+RaceResult.LeftWins, RaceResult.RightWins,
 (=).refl,
 SyntaxFragment.Lit, SyntaxFragment.Interp, SyntaxFragment.InterpFmt,
 Unit.Unit
@@ -723,7 +727,13 @@ floatEq,
 runPure,
 sandbox, unsandbox,
 fork, forkDaemon, await, join, interrupt, interruptFork,
+cede,
 poll, uninterruptible, mask, ensuring, acquireRelease,
+newScope, forkIn, shutdownScope,
+monitor, awaitMonitor, demonitor,
+newFiberRef, getFiberRef, setFiberRef, locallyFiberRef,
+newPromise, awaitPromiseExit, awaitPromise, completePromise,
+nowMonotonic, sleepFor, sleepUntil, timeout, race,
 atomically, newTVar, readTVar, writeTVar, retry, check,
 f, re, b, type,
 println, print
@@ -785,9 +795,15 @@ expect data IO (e : Type) (a : Type) : Type
 type UIO (a : Type) = IO Void a
 
 expect data Fiber (e : Type) (a : Type) : Type
+expect data Scope : Type
+expect data Monitor (e : Type) (a : Type) : Type
+expect data FiberRef (a : Type) : Type
+expect data Promise (e : Type) (a : Type) : Type
 
 expect data STM (a : Type) : Type
 expect data TVar (a : Type) : Type
+expect data Duration : Type
+expect data Instant : Type
 
 expect data InterruptCause : Type
 expect data DefectInfo : Type
@@ -803,6 +819,13 @@ data Cause (e : Type) : Type =
     Both (Cause e) (Cause e)
     Then (Cause e) (Cause e)
 
+data TimeoutError : Type =
+    Timeout
+
+data RaceResult (a : Type) (b : Type) : Type =
+    LeftWins a
+    RightWins b
+
 data (=) (@0 a : Type) (x : a) : a -> Type =
     refl : x = x
 
@@ -813,6 +836,80 @@ absurd :
 subst :
     forall (@0 a : Type) (@0 P : a -> Type) (@0 x : a) (@0 y : a).
     (@0 p : x = y) -> P x -> P y
+
+cede :
+    UIO Unit
+
+newScope :
+    UIO Scope
+
+forkIn :
+    forall (e : Type) (a : Type).
+    Scope -> IO e a -> UIO (Fiber e a)
+
+shutdownScope :
+    Scope -> UIO Unit
+
+monitor :
+    forall (e : Type) (a : Type).
+    Fiber e a -> UIO (Monitor e a)
+
+awaitMonitor :
+    forall (e : Type) (a : Type).
+    Monitor e a -> UIO (Exit e a)
+
+demonitor :
+    forall (e : Type) (a : Type).
+    Monitor e a -> UIO Unit
+
+newFiberRef :
+    forall (a : Type).
+    a -> UIO (FiberRef a)
+
+getFiberRef :
+    forall (a : Type).
+    FiberRef a -> UIO a
+
+setFiberRef :
+    forall (a : Type).
+    FiberRef a -> a -> UIO Unit
+
+locallyFiberRef :
+    forall (e : Type) (a : Type) (b : Type).
+    FiberRef a -> a -> IO e b -> IO e b
+
+newPromise :
+    forall (e : Type) (a : Type).
+    UIO (Promise e a)
+
+awaitPromiseExit :
+    forall (e : Type) (a : Type).
+    Promise e a -> UIO (Exit e a)
+
+awaitPromise :
+    forall (e : Type) (a : Type).
+    Promise e a -> IO e a
+
+completePromise :
+    forall (e : Type) (a : Type).
+    Promise e a -> Exit e a -> UIO Bool
+
+nowMonotonic :
+    UIO Instant
+
+sleepFor :
+    Duration -> UIO Unit
+
+sleepUntil :
+    Instant -> UIO Unit
+
+timeout :
+    forall (e : Type) (a : Type).
+    Duration -> IO e a -> IO (| TimeoutError | e |) a
+
+race :
+    forall (e : Type) (a : Type) (f : Type) (b : Type).
+    IO e a -> IO f b -> IO (| e | f |) (RaceResult a b)
 
 trait Alternative (f : Type -> Type) =
     empty : f a
@@ -897,6 +994,13 @@ Thus `&&` and `||` are ordinary terms. They are not special evaluation forms.
 * `STM a` is the standard software-transactional-memory computation type.
 * `TVar a` is the standard transactional variable type.
 * `Fiber e a` is the standard lightweight runtime thread handle.
+* `Scope` is the standard explicit supervision-scope handle.
+* `Monitor e a` is the standard one-way fiber-termination observation handle.
+* `FiberRef a` is the standard fiber-local dynamically scoped cell.
+* `Promise e a` is the standard one-shot completion cell carrying `Exit e a`.
+* `Instant` and `Duration` are the standard monotonic-time runtime types.
+* `TimeoutError` is the standard expected error used by `timeout`.
+* `RaceResult a b` is the standard result type returned by `race`.
 
 `Void`, `absurd`, and `Dec` are the standard proof-oriented prelude basics:
 
