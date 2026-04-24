@@ -3573,19 +3573,6 @@ Typing discipline:
 * Positive lower-bound obligations, including `1` and `>=1`, must be discharged before such a completion may leave the
   binder's scope, as specified in §5.1.5A.
 
-<!-- types.universes.quantities.lower_bound_completion -->
-##### 5.1.5A Positive lower-bound completion obligations
-
-A positive lower-bound obligation is an interval-quantity obligation whose lower bound is greater than `0`.
-
-Rules:
-
-* A completion path that leaves a binder's scope must have already accumulated enough demands to satisfy every positive
-  lower-bound obligation for binders whose scopes it exits.
-* This applies to ordinary fallthrough completion and to source-level completions such as `return`, `break`, `continue`,
-  and any other source form that leaves the binder's scope.
-* A completion path proven unreachable contributes no obligation.
-
 Borrow binders may optionally name a region variable already in scope:
 
 ```kappa
@@ -3655,6 +3642,141 @@ Typing rule (non-escape of borrowed parameters):
 The temporary borrow created by borrow introduction ends exactly when the demanding context finishes. At function
 application, this is exactly when the call returns. Consequently a callee may not store such a temporary anonymous
 borrow in its result; only explicitly scoped regions may cross that boundary.
+
+<!-- types.universes.quantities.positive_lower_bounds -->
+##### 5.1.5A Positive lower-bound obligations
+
+An interval quantity has a **positive lower bound** iff its lower endpoint is greater than zero.
+
+For the v1 surface quantities, the positive-lower-bound quantities are:
+
+```text
+1
+>=1
+```
+
+A positive lower-bound binder creates a **must-demand obligation**.
+
+Definitions:
+
+* A **runtime-relevant demand** is a use of a variable in an expression position whose demanded quantity is not `0`.
+* A demand through a parameter annotated `0` does not count toward a positive lower-bound obligation.
+* A demand through a borrowed parameter `&` does count as a runtime-relevant non-consuming demand.
+* A demand through an interval parameter counts according to the demanded interval of that parameter.
+* Uses appearing only in types, erased proofs, erased implicit arguments, erased indices, or other compile-time-only
+  positions do not count.
+
+Completion-indexed checking:
+
+For checking positive lower bounds, elaboration behaves as if every expression or do-item sequence produces a usage
+summary indexed by completion kind.
+
+The relevant completion kinds are:
+
+```text
+Normal
+Return L
+Break L
+Continue L
+Unreachable
+```
+
+Rules:
+
+* `Normal` represents ordinary completion.
+* `Return L`, `Break L`, and `Continue L` represent source-level abrupt completion.
+* `Unreachable` represents a path the compiler proves cannot execute, such as an accepted `impossible` branch.
+* Divergence is not itself a completion kind. A compiler may treat a path as unreachable only when it has a specified
+  proof or accepted analysis rule establishing that the path cannot complete.
+
+At the lexical boundary that closes the scope of a binder `x` declared with interval quantity `[l,u]`, every reachable
+completion path leaving that scope must have accumulated usage interval `[l',u']` for `x` such that:
+
+```text
+l <= l'
+u' <= u
+```
+
+For `x : >=1`, this means every reachable completion path that leaves the scope must demand `x` at least once.
+
+For `x : 1`, this means every reachable completion path that leaves the scope must demand `x` exactly once.
+
+A source-level abrupt completion may leave a scope only after all positive lower-bound obligations of that scope are
+satisfied on that completion path.
+
+Examples:
+
+```kappa
+bad :
+    (>=1 x : Int) -> Bool -> Int
+let bad x b =
+    if b then x else 0
+```
+
+Rejected: the `else` branch uses `x` zero times.
+
+```kappa
+ok :
+    (>=1 x : Int) -> Bool -> Int
+let ok x b =
+    if b then x else x + 1
+```
+
+Accepted: every normal branch uses `x` at least once.
+
+```kappa
+badReturn :
+    (>=1 x : Token) -> Bool -> IO e Unit
+let badReturn x b =
+    do
+        if b then
+            return ()
+        useToken x
+```
+
+Rejected: the `return` path leaves the scope of `x` without demanding `x`.
+
+```kappa
+okReturn :
+    (>=1 x : Token) -> Bool -> IO e Unit
+let okReturn x b =
+    do
+        if b then
+            useToken x
+            return ()
+        useToken x
+```
+
+Accepted, assuming `useToken` demands its argument at an interval whose lower bound is at least one.
+
+Droppability:
+
+A value is **droppable for positive-lower-bound checking** iff every runtime-relevant component being discarded has
+lower bound zero, or is borrowed.
+
+For the v1 surface quantities:
+
+```text
+droppable:      0, &, <=1, ω
+not droppable:  1, >=1
+```
+
+This droppability classification is used by refutable bindings, discarded branch residues, loop exits, and other
+constructs that may abandon values without binding them.
+
+Runtime failure, interruption, and defects:
+
+Positive lower-bound quantities are static source-level demand guarantees. They are not finalization guarantees.
+
+A runtime typed failure, interruption, defect, host failure, or process termination may prevent later source code from
+executing. Resource cleanup that must happen despite such runtime exits must be expressed through `using`, `defer`,
+`acquireRelease`, `MonadFinally`, or another protected-scope construct.
+
+Therefore:
+
+* `>=1` means "statically demanded at least once on every checked source-level completion path";
+* it does not mean "physically finalized exactly once under every possible runtime failure";
+* exclusive resource protocols should use `1` and protected scopes, not `>=1`.
 
 <!-- types.universes.quantities.are_ownership -->
 ##### 5.1.5.1 Quantities are ownership-only
