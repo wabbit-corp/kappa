@@ -5987,9 +5987,20 @@ Rules common to both forms:
 * A projection definition must carry its declared result type inline. There is no separate signature-only form for
   projections in v0.1.
 
-Descriptor value:
+Selector-form rules:
 
-Let the `place` binders of a projection definition, in declaration order, be:
+* Selector form is the form whose right-hand side is a `selectorProjectionBody`.
+* A selector-form projection may have one or more `place` binders.
+* Each `yield` operand must elaborate as a stable place expression rooted in one or more `place` binders of the current
+  projection definition, possibly through record projection, constructor-field projection, or nested fully applied calls
+  to other selector-form projection definitions.
+* Every dynamically reachable branch of a selector-form projection body must yield exactly one stable place.
+* Every yielded place must have the declared result type of the projection definition.
+* Selector expressions are evaluated left-to-right and exactly once per call.
+
+Selector descriptor value:
+
+Let the `place` binders of a selector-form projection definition, in declaration order, be:
 
 ```text
 (place p1 : S1) ... (place pn : Sn)
@@ -6012,7 +6023,7 @@ Then the declared name additionally denotes an ordinary term constant of type:
 
 with the evident simplification when `Δ` is empty.
 
-Consequences:
+Selector-form consequences:
 
 * `let foo = degrees` is well-formed and binds the projector descriptor value introduced by the declaration `degrees`.
 * A projector descriptor may be stored in a record or package, returned from a function, or passed as an ordinary
@@ -6023,7 +6034,93 @@ Consequences:
 * Once those ordinary binders are fully applied, the resulting `Projector Roots T` value may itself be used by the
   projector descriptor application rules of §7.1.3A.
 
-Elaboration of a fully applied projection call:
+Expanded-form rules:
+
+* Expanded form is the form whose right-hand side is an `expandedProjectionBody`.
+* An expanded-form projection MUST have exactly one `place` binder.
+* Each accessor clause kind `get`, `inout`, `set`, and `sink` may appear at most once.
+* At least one accessor clause must appear.
+* Let the unique `place` binder be:
+
+```text
+(place p : S)
+```
+
+Let `Roots` be the singleton closed record type:
+
+```text
+(p : S,)
+```
+
+Let the remaining ordinary binders of the declaration elaborate to the Pi telescope `Δ`.
+Let `T` be the declared result type of the projection.
+
+Accessor clause environments:
+
+* In a `get` clause, the place binder `p` is available as a borrowed value of type `& S`.
+  The clause body must elaborate to type `T`.
+* In an `inout` clause, the place binder `p` is available as an owned value of type `S` at quantity `1`.
+  The clause body must elaborate to type `Zipper S T T`.
+* In a `set (new_value : T) -> e` clause, the place binder `p` is available as an owned value of type `S` at quantity
+  `1`, and `new_value` is available at quantity `1`.
+  The clause body `e` must elaborate to type `S`.
+* In a `sink` clause, the place binder `p` is available as an owned value of type `S` at quantity `1`.
+  The clause body must elaborate to type `T`.
+
+Accessor descriptor fields:
+
+An expanded-form projection's term facet denotes an ordinary structural record value.
+
+The record contains one descriptor field for each directly provided or synthesized accessor capability:
+
+* `get : Getter Roots T`
+* `open : Opener Roots T`
+* `set : Setter Roots T`
+* `sink : Sinker Roots T`
+
+Descriptor-field synthesis:
+
+* A `get` clause directly provides the `get` descriptor field.
+* An `inout` clause directly provides the `open` descriptor field.
+* A `set` clause directly provides the `set` descriptor field.
+* A `sink` clause directly provides the `sink` descriptor field.
+* If both `get` and `set` are present and `inout` is absent, an `open` descriptor field is synthesized by reading the
+  focus with `get` and filling the root with `set`.
+* If `inout` is present and `set` is absent, a `set` descriptor field is synthesized by opening with `inout` and
+  applying the resulting zipper's `fill` component to the replacement.
+* No `get` descriptor is synthesized from `inout`, `set`, or `sink`.
+* No `sink` descriptor is synthesized.
+
+The declared name's term facet has type:
+
+```text
+Δ -> Bundle
+```
+
+where `Bundle` is the structural record type containing exactly the accessor descriptor fields produced by the rules
+above.
+
+Examples:
+
+```kappa
+projection degrees (place this : Angle) : Float =
+    get -> radiansToDegrees this.radians
+
+    set (new_value : Float) ->
+        this.{ radians = degreesToRadians new_value }
+```
+
+This declaration has term-facet type:
+
+```text
+(get : Getter (this : Angle,) Float,
+ open : Opener (this : Angle,) Float,
+ set : Setter (this : Angle,) Float)
+```
+
+The `open` field is synthesized from `get` and `set`.
+
+Elaboration of a fully applied selector-form projection call:
 
 * the ordinary non-`place` binders are applied in the ordinary way to obtain a projector descriptor value
   `proj : Projector Roots T`;
