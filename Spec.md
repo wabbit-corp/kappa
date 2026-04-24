@@ -14766,7 +14766,9 @@ After all non-yield clauses are lowered, the comprehension performs a final proj
 
 For list-like and set-like comprehensions:
 
-* `yield valueExpr` produces a normalized item stream `Query a`.
+* `yield valueExpr` produces a normalized item stream `Query a`;
+* terminal built-in set collection additionally requires an implicit `Eq a` instance;
+* terminal built-in list and array collection do not require `Eq a`.
 
 For map-like comprehensions:
 
@@ -14776,7 +14778,8 @@ For map-like comprehensions:
   Query (key : K, value : V)
   ```
 
-* terminal map collection requires an implicit `Eq K` instance;
+* terminal built-in map collection requires an implicit `Eq K` instance;
+* terminal built-in map collection does not require `Hashable K`;
 * any `on conflict` clause is recorded as terminal collection metadata.
 
 The final result of `lowerComprehension` is a `ComprehensionPlan item` carrying:
@@ -14836,6 +14839,35 @@ Within a comprehension, implementations MUST preserve the following evaluation-c
 * In `group by`:
   * `keyExpr` is evaluated exactly once per incoming row.
   * each aggregate `valueExpr` is evaluated exactly once per incoming row per aggregate field.
+
+Hash acceleration as-if rule:
+
+For any equality-keyed operation in this chapter, including:
+
+* `distinct`,
+* `distinct by`,
+* `group by`,
+* built-in set collection,
+* built-in map collection,
+* map conflict resolution,
+
+the observable semantics are defined by `Eq`, not by hashing.
+
+An implementation MAY use hashing only when the following as-if conditions hold:
+
+1. Removing the hash acceleration and replacing it with an `Eq`-only implementation would produce the same source-level
+   result.
+2. Hash-code equality is never used as proof of key equality.
+3. Hash collisions are resolved using the corresponding `Eq` instance.
+4. Any hash-derived cache inside a collection value is semantically invisible.
+5. Iteration order, representative choice, and conflict order obey the Ordered/Unordered rules of §10.3.2, not the
+   accident of hash-table bucket order.
+6. Package-mode determinism MUST NOT depend on worker count, hash-table iteration order, randomized hash seeds, address
+   layout, or backend-specific object identity unless that identity is already part of the specified `Eq` semantics for
+   the key type.
+
+If these conditions cannot be met, the implementation MUST use an `Eq`-only strategy or reject only the
+implementation-specific optimization, not the source program.
 
 <!-- data_types -->
 ## 11. Algebraic Data Types and Type Aliases
