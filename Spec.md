@@ -7956,6 +7956,38 @@ Semantics:
 `fork` is structured by default. Portable source semantics do not provide arbitrary cross-fiber asynchronous exception
 injection. Portable cross-fiber asynchronous failure is limited to interruption.
 
+<!-- effects.monadic_core.scheduler_fairness_yielding_preemption -->
+#### 8.1.3A Scheduler fairness, yielding, and preemption
+
+The standard scheduler-yield operation is:
+
+```kappa
+cede :
+    UIO Unit
+```
+
+Semantics:
+
+* `cede` yields the current fiber to the scheduler.
+* A conforming implementation MUST provide weak fairness among runnable fibers within the same runtime agent.
+* In particular, a fiber that remains continuously runnable across infinitely many scheduler decisions MUST NOT be
+  postponed forever.
+* A conforming implementation MUST therefore behave as if long-running pure execution contains implementation-defined
+  safe points at which:
+  * pending interruption may become observable, and
+  * scheduler fairness may be restored.
+* Such safe points MAY be realized by asynchronous preemption, loop-backedge checks, reduction budgets, signal checks,
+  or another observationally equivalent mechanism.
+* Outside masked regions, an implementation-defined safe point MAY also serve as an interruption point.
+* `cede` itself is always both a scheduler-yield point and an interruption point.
+
+Blocking foreign work:
+
+* A backend MUST ensure that blocking foreign work does not permanently monopolize the scheduler resources required by
+  unrelated runnable fibers.
+* A backend MAY realize this by offloading blocking work, compensating worker creation, host-runtime support, or
+  another observationally equivalent mechanism.
+
 <!-- effects.monadic_core.interruption_masking -->
 #### 8.1.4 Interruption and masking
 
