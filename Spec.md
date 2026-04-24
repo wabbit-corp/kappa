@@ -4580,6 +4580,43 @@ Rules:
 
 Here `projectionSection` is the section form of §7.1.1.1.
 
+Projection-section update:
+
+A projection-section update is a computed receiver-relative update:
+
+```kappa
+r.{ (.member args...) = rhs }
+```
+
+A record patch MAY contain more than one projection-section update.
+
+Each projection-section update is resolved by inserting the patch scrutinee as the receiver of the section body.
+
+After receiver insertion and ordinary resolution, the resolved form must denote one of:
+
+* a stable place rooted in the patch scrutinee;
+* a fully applied selector-form projection call whose yielded alternatives are rooted in the patch scrutinee;
+* a projector descriptor application under §7.1.3A whose roots argument is the patch scrutinee; or
+* an accessor-bundle descriptor application under §7.1.3B whose roots argument is the patch scrutinee and whose bundle
+  contains a `set` descriptor field.
+
+Conflict rules:
+
+* Two projection-section updates in the same record patch must be statically disjoint.
+* A projection-section update and an ordinary nested update path in the same record patch must be statically disjoint.
+* Disjointness is checked using the same footprint and dependency-closure rules used for computed place overlap in
+  §§5.1.7.2, 7.1.3A, and 7.1.3B.
+* If the compiler cannot prove disjointness, the record patch is ill-formed.
+* Ordinary update paths are still checked by ordinary dependent-record reconstruction; they are not rejected merely
+  because dependent fields mention each other.
+
+Elaboration order:
+
+* All ordinary update paths are recursively expanded as specified in this subsection.
+* Each projection-section update is lowered to its corresponding fill operation.
+* The resulting top-level repairs are merged only when their write footprints are pairwise disjoint.
+* The final result is checked against the original record type using the ordinary full-record reconstruction rule.
+
 Ordinary field update:
 
 Nested ordinary field update:
@@ -4683,6 +4720,8 @@ Consequences:
 A bare update item `name = rhs` is always an ordinary field update. A computed receiver-relative update must be written
 using a projection section, as in `(.name args...) = rhs`.
 
+Multiple computed receiver-relative updates are permitted when their write footprints are statically disjoint.
+
 Field references inside supplied ordinary update expressions:
 
 * `this` refers to the evolving updated record prefix in canonical dependency-respecting order, not to the original
@@ -4717,26 +4756,6 @@ Rules:
   in the corresponding explicit chained form above.
 * A conforming implementation MAY realize the mixed form directly, provided the resulting typing, dependency checking,
   path reconstitution, and definitional-equality behavior is the same as the chained elaboration above.
-
-Projection-section update:
-
-* A field of the form `(.member args...) = rhs` inside `lhs.{ ... }` is a projection-section update.
-* It is not an ordinary field update.
-* The section body is resolved exactly as if it had been written as a dotted form on the outer receiver `lhs`.
-* After receiver insertion and ordinary resolution, the resulting form must denote either:
-  * a stable place rooted in `lhs`;
-  * a fully applied selector-form projection call whose yielded alternatives are all rooted in the receiver inserted
-    for `lhs`;
-  * a projector descriptor application under §7.1.3A whose `Roots` type is a one-field closed record and whose roots
-    argument is the receiver inserted for `lhs`; or
-  * an accessor-bundle descriptor application under §7.1.3B whose `Roots` type is a one-field closed record, whose roots
-    argument is the receiver inserted for `lhs`, and whose bundle contains a `set` descriptor field.
-* The replacement expression `rhs` is checked against the selected type of that place, projection call, projector
-  descriptor application, or accessor-bundle descriptor application.
-* The whole update expression has the same type as `lhs`.
-* In v0.1, a projection-section update form may contain at most one `projectionUpdateField`.
-* In v0.1, a `projectionUpdateField` MUST NOT appear in the same `lhs.{ ... }` form as any ordinary update field or any
-  extension field.
 
 Source order:
 
