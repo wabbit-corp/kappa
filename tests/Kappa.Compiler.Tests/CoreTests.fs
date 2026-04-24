@@ -310,6 +310,174 @@ let ``interpreter resolves trait instances through transparent type aliases`` ()
         failwithf "Expected alias-based instance resolution to succeed, got %s" issue.Message
 
 [<Fact>]
+let ``interpreter resolves dependent implicit helpers as ordinary bindings`` () =
+    let mainSource =
+        [
+            "module main"
+            ""
+            "type Dict (c : Constraint) = c"
+            ""
+            "trait Score a ="
+            "    score : a -> Int"
+            ""
+            "instance Score Int ="
+            "    let score x = x"
+            ""
+            "resolve : (c : Constraint) -> (@v : c) -> Dict c"
+            "let resolve (c : Constraint) (@v : c) = v"
+            ""
+            "result : Int"
+            "let result ="
+            "    let"
+            "        dict = resolve (Score Int)"
+            "    in"
+            "        dict.score 42"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-ordinary-implicit-helper-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("42", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected ordinary helper-based dictionary resolution to succeed, got %s" issue.Message
+
+[<Fact>]
+let ``interpreter resolves ordinary implicit helpers across imported trait modules`` () =
+    let mainSource =
+        [
+            "module main"
+            ""
+            "import providers.score.(trait Score)"
+            ""
+            "type Dict (c : Constraint) = c"
+            ""
+            "resolve : (c : Constraint) -> (@v : c) -> Dict c"
+            "let resolve (c : Constraint) (@v : c) = v"
+            ""
+            "result : Int"
+            "let result ="
+            "    let"
+            "        dict = resolve (Score Int)"
+            "    in"
+            "        dict.score 42"
+        ]
+        |> String.concat "\n"
+
+    let scoreSource =
+        [
+            "module providers.score"
+            ""
+            "trait Score a ="
+            "    score : a -> Int"
+            ""
+            "instance Score Int ="
+            "    let score x = x"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-imported-implicit-helper-root"
+            "main.result"
+            [ "main.kp", mainSource
+              "providers/score.kp", scoreSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("42", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected imported helper-based dictionary resolution to succeed, got %s" issue.Message
+
+[<Fact>]
+let ``interpreter resolves bundled summon helper as an ordinary binding`` () =
+    let mainSource =
+        [
+            "module main"
+            ""
+            "trait Score a ="
+            "    score : a -> Int"
+            ""
+            "instance Score Int ="
+            "    let score x = x"
+            ""
+            "result : Int"
+            "let result ="
+            "    let"
+            "        dict = summon (Score Int)"
+            "    in"
+            "        dict.score 42"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-prelude-summon-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("42", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected bundled summon helper resolution to succeed, got %s" issue.Message
+
+[<Fact>]
+let ``interpreter resolves bundled summon helper across imported trait modules`` () =
+    let mainSource =
+        [
+            "module main"
+            ""
+            "import providers.score.(trait Score)"
+            ""
+            "result : Int"
+            "let result ="
+            "    let"
+            "        dict = summon (Score Int)"
+            "    in"
+            "        dict.score 42"
+        ]
+        |> String.concat "\n"
+
+    let scoreSource =
+        [
+            "module providers.score"
+            ""
+            "trait Score a ="
+            "    score : a -> Int"
+            ""
+            "instance Score Int ="
+            "    let score x = x"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-prelude-imported-summon-root"
+            "main.result"
+            [ "main.kp", mainSource
+              "providers/score.kp", scoreSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("42", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected imported bundled summon helper resolution to succeed, got %s" issue.Message
+
+[<Fact>]
 let ``interpreter evaluates the default inequality operator`` () =
     let mainSource =
         [

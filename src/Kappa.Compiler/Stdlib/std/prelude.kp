@@ -57,6 +57,12 @@ expect trait FromFloat a
 expect trait FromString a
 expect trait MonadError m e
 
+witness : (t : Type) -> (@v : t) -> t
+let witness (t : Type) (@v : t) = v
+
+summon : (c : Constraint) -> (@v : c) -> c
+let summon (c : Constraint) (@v : c) = v
+
 expect term pure : a -> IO a
 expect term (>>=) : IO a -> (a -> IO b) -> IO b
 expect term (>>) : IO a -> IO b -> IO b
