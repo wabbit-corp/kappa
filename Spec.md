@@ -671,7 +671,7 @@ Unit, Void, Bool, Char, String, Int, Nat, Integer, Float, Double, Real, Bytes, O
 Query a, RawComprehension a, ComprehensionPlan a,
 Option a, Result e a, List a, Array a, Set a, Map k v,
 Res a r, Match a r, Dec p, Dict c,
-IO e a, UIO a, Fiber e a, FiberId, Exit e a, Cause e, InterruptTag, InterruptCause, DefectInfo,
+IO e a, UIO a, Fiber e a, FiberId, Exit e a, Cause e, InterruptTag, InterruptCause, DefectTag, DefectInfo,
 Scope, Monitor e a, FiberRef a, Promise e a,
 STM a, TVar a,
 Duration, Instant, TimeoutError, RaceResult a b,
@@ -701,6 +701,11 @@ Cause.Fail, Cause.Interrupt, Cause.Defect, Cause.Both, Cause.Then,
 InterruptTag.Requested, InterruptTag.ScopeShutdown, InterruptTag.TimedOut,
 InterruptTag.RaceLost, InterruptTag.External, InterruptTag.Custom,
 InterruptCause.InterruptCause,
+DefectTag.Panic, DefectTag.AssertionFailed, DefectTag.ArithmeticFault,
+DefectTag.StackOverflow, DefectTag.OutOfMemory, DefectTag.HostFailure,
+DefectTag.ForeignContractViolation, DefectTag.UnhandledChildFailure,
+DefectTag.OtherDefect,
+DefectInfo.DefectInfo,
 TimeoutError.Timeout,
 RaceResult.LeftWins, RaceResult.RightWins,
 (=).refl,
@@ -731,7 +736,7 @@ runPure,
 sandbox, unsandbox,
 fork, forkDaemon, await, join, interrupt, interruptFork, interruptAs, interruptForkAs,
 fiberId, currentFiberId, getFiberLabel, setFiberLabel, locallyFiberLabel,
-cede,
+cede, blocking,
 poll, uninterruptible, mask, ensuring, acquireRelease,
 newScope, withScope, forkIn, shutdownScope,
 monitor, awaitMonitor, demonitor,
@@ -821,7 +826,19 @@ data InterruptTag : Type =
 data InterruptCause : Type =
     InterruptCause (tag : InterruptTag) (by : Option FiberId)
 
-expect data DefectInfo : Type
+data DefectTag : Type =
+    Panic
+    AssertionFailed
+    ArithmeticFault
+    StackOverflow
+    OutOfMemory
+    HostFailure
+    ForeignContractViolation
+    UnhandledChildFailure
+    OtherDefect String
+
+data DefectInfo : Type =
+    DefectInfo (tag : DefectTag) (message : Option String)
 
 data Exit (e : Type) (a : Type) : Type =
     Success a
@@ -879,6 +896,10 @@ interruptForkAs :
 
 cede :
     UIO Unit
+
+blocking :
+    forall (e : Type) (a : Type).
+    IO e a -> IO e a
 
 newScope :
     UIO Scope
@@ -1053,6 +1074,9 @@ Thus `&&` and `||` are ordinary terms. They are not special evaluation forms.
 * `InterruptTag` classifies the reason for runtime interruption.
 * `InterruptCause` is the standard structured interruption payload carried by `Cause.Interrupt`.
 * `InterruptTag.Custom s` is the standard library-extensible interruption tag for user-defined cancellation reasons.
+* `DefectTag` classifies the portable minimum defect vocabulary of the runtime.
+* `DefectInfo` carries the portable defect tag plus an optional diagnostic message.
+  Implementations MAY retain richer diagnostic data out of band.
 * `Scope` is the standard explicit supervision-scope handle.
 * `Monitor e a` is the standard one-way fiber-termination observation handle.
 * `FiberRef a` is the standard fiber-local dynamically scoped cell.
@@ -1060,6 +1084,8 @@ Thus `&&` and `||` are ordinary terms. They are not special evaluation forms.
 * `Instant` and `Duration` are the standard monotonic-time runtime types.
 * `TimeoutError` is the standard expected error used by `timeout`.
 * `RaceResult a b` is the standard result type returned by `race`.
+* `blocking` requests backend-supported blocking-lane execution for a computation without changing its observable
+  success, failure, interruption, or defect semantics.
 
 `Void`, `absurd`, and `Dec` are the standard proof-oriented prelude basics:
 
