@@ -5332,7 +5332,14 @@ sufficient to observe, at minimum:
   `distinct`, `distinct by`),
 * binder patterns and guards,
 * the yield form (element yield vs key/value yield),
-* and any map-conflict clause.
+* any map-conflict clause,
+* source-origin metadata for the comprehension as a whole, each clause, each binder pattern, each guard, each ordering
+  key, each aggregate declaration, each conflict clause, and the yield form.
+
+Source-origin metadata exposed through `RawComprehension` is used for diagnostics, tooling, provider-generated error
+messages, and source mapping. A conforming implementation MAY choose its concrete representation, but it MUST preserve
+enough information to report diagnostics against the original user-written comprehension rather than only against the
+expanded plan.
 
 `ComprehensionPlan a` is a stable normalized compile-time reflection type.
 
@@ -12541,7 +12548,9 @@ Required clause behavior:
 8. `group by ...`
 
    * lower to a normalized grouping operator, or to an observationally equivalent implementation,
-   * preserving the semantics of §10.7.
+   * require the key type to have an implicit `Eq` instance,
+   * replace the current row environment with a singleton row containing only the `into` binder,
+   * preserve the semantics and scoping rules of §10.7.
 
 9. `distinct`
 
@@ -12569,8 +12578,14 @@ For list-like and set-like comprehensions:
 
 For map-like comprehensions:
 
-* `yield keyExpr : valueExpr` produces a normalized item stream
-  `Query (key : k, value : v)`.
+* if `keyExpr : K` and `valueExpr : V`, then `yield keyExpr : valueExpr` produces a normalized item stream
+
+  ```kappa
+  Query (key : K, value : V)
+  ```
+
+* terminal map collection requires an implicit `Eq K` instance;
+* any `on conflict` clause is recorded as terminal collection metadata.
 
 The final result of `lowerComprehension` is a `ComprehensionPlan item` carrying:
 
