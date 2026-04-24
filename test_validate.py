@@ -130,6 +130,27 @@ def test_validate_markdown_sections_accepts_consecutive_numeric_headings(tmp_pat
     assert sections == {"1", "1.1", "1.2", "2"}
 
 
+def test_validate_markdown_sections_accepts_preface_zero_child_before_one(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "Guide.md"
+    lines = [
+        "<!-- runtime -->",
+        "## 1. Runtime",
+        "<!-- runtime.preface -->",
+        "### 1.1 Runtime model",
+        "<!-- runtime.preface.conformance_model -->",
+        "#### 1.1.0 Conformance model",
+        "<!-- runtime.preface.io -->",
+        "#### 1.1.1 IO semantics",
+    ]
+
+    problems, sections = validate.validate_markdown_sections(path, lines)
+
+    assert problems == []
+    assert sections == {"1", "1.1", "1.1.0", "1.1.1"}
+
+
 def test_validate_markdown_sections_reports_nonconsecutive_child_heading(tmp_path: Path) -> None:
     path = tmp_path / "Guide.md"
     lines = [

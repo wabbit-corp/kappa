@@ -360,9 +360,11 @@ def format_numeric_child(child: tuple[int, str]) -> str:
 def is_valid_next_numeric_child(
     previous: tuple[int, str] | None,
     current: tuple[int, str],
+    *,
+    allow_preface_zero: bool = False,
 ) -> bool:
     if previous is None:
-        return current == (1, "")
+        return current == (1, "") or (allow_preface_zero and current == (0, ""))
 
     previous_number, previous_suffix = previous
     current_number, current_suffix = current
@@ -407,7 +409,12 @@ def validate_numeric_heading(
         )
 
     previous = seen_numeric_children.get(parent)
-    if not is_valid_next_numeric_child(previous, current):
+    allow_preface_zero = bool(parent)
+    if not is_valid_next_numeric_child(
+        previous,
+        current,
+        allow_preface_zero=allow_preface_zero,
+    ):
         expected = expected_numeric_child(previous, current)
         scope = f"within section {parent_section}" if parent else "at the top level"
         problems.append(

@@ -12888,6 +12888,47 @@ represented explicitly.
 This section constrains backend implementations of `IO`, `handle`, and `deep handle`. The concrete representation is
 implementation-defined, but the observable behavior below is mandatory.
 
+<!-- core_semantics.runtime_model.conformance_model -->
+#### 14.8.0 Runtime-kernel conformance model
+
+A conforming implementation MUST preserve the observable behavior of the following abstract runtime state, or of an
+observationally equivalent state machine.
+
+A runtime state consists conceptually of:
+
+* runtime agents;
+* a fiber table;
+* runnable queues per agent;
+* supervision scopes;
+* timer registrations;
+* promise cells;
+* a TVar store together with parked transaction wait sets; and
+* implementation-defined storage for handler/resumption objects and exit-action stacks.
+
+Each live fiber state carries at least:
+
+* its current control segment or suspended continuation;
+* its current status;
+* its current supervision scope;
+* its current masking state;
+* its pending interruption request, if any;
+* its pending exit-action stack;
+* its current fiber-local-state map; and
+* its terminal `Exit`, once completed.
+
+Required transition families are:
+
+* ordinary step / suspend / wake;
+* interrupt request / interrupt delivery;
+* scope attachment / scope shutdown / scope exit;
+* timer fire;
+* promise completion / waiter wakeup;
+* STM read / write / retry / commit; and
+* handler capture / resume / abandon.
+
+This schema is normative only for observable behavior. Concrete backends MAY use host stacks, heap frames, copied stack
+segments, CPS, tasks, coroutines, or other representations, provided the externally visible behavior is the same.
+
 <!-- core_semantics.runtime_model.io_is_kappa_owned_runtime_semantics -->
 #### 14.8.1 `IO` is Kappa-owned runtime semantics
 
