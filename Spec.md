@@ -1043,6 +1043,87 @@ Rules:
 * This section introduces explicit dynamic values only. It does not by itself introduce an ambient unknown type,
   consistency-based subtyping, or implicit cast insertion among arbitrary non-`Dyn` types.
 
+<!-- modules.bridge -->
+### 2.7B Standard bridge-contract support module `std.bridge`
+
+Implementations MUST provide a standard module `std.bridge`.
+It is not implicitly imported.
+
+Types (type namespace):
+
+```text
+BridgeContract sig
+```
+
+Traits (constraint namespace, restricted to trait):
+
+```text
+BridgeBindable sig
+BridgeHandle h
+```
+
+Terms (term namespace):
+
+```text
+bindModule
+```
+
+Canonical declarations:
+
+```kappa
+expect data BridgeContract (@0 sig : Type) : Type
+
+trait BridgeBindable (sig : Type) =
+    bridgeContract : BridgeContract sig
+
+trait BridgeHandle (h : Type) =
+    Error : Type
+
+    bindModuleWith :
+        forall (r : Region) (@0 sig : Type).
+        BridgeContract sig ->
+        (&[r] this : h) ->
+        String ->
+        IO this.Error (sig captures (r))
+
+bindModule :
+    forall (h : Type) (r : Region) (@0 sig : Type).
+    (@H : BridgeHandle h) ->
+    (@B : BridgeBindable sig) ->
+    (&[r] handle : h) ->
+    String ->
+    IO H.Error (sig captures (r))
+
+let bindModule @H @B handle name =
+    H.bindModuleWith B.bridgeContract handle name
+```
+
+Rules:
+
+* `BridgeContract sig` is a runtime representation of the foreign
+  boundary contract for a value or package surface of type `sig`.
+* The type argument `sig` is compile-time only.
+  Runtime binding depends on the contract value, not on the erased type
+  argument alone.
+* `BridgeBindable sig` provides the contract used for runtime binding.
+* `bindModuleWith` binds a runtime bridge handle to a foreign module,
+  package, namespace, object, or another implementation-documented
+  bridge-visible surface selected by the supplied string.
+* A successful bind yields an ordinary Kappa value of type
+  `sig captures (r)`.
+* If `sig` is a signature type or another package-like surface, dotted
+  selection from the resulting value uses the ordinary package-member
+  rules of §2.8.3.
+* A failed bind MUST fail in the surrounding `IO`.
+  It MUST NOT silently fabricate a value of type `sig`.
+* A conforming implementation MAY provide `BridgeBindable` only for a
+  restricted class of record, signature, or other bridge-bindable
+  surfaces.
+* `BridgeHandle` does not itself specify how a handle is created or
+  released.
+  Bridge-specific modules provide startup/configuration APIs and SHOULD
+  also provide `Releasable` instances for their handle types.
+
 ---
 
 <!-- modules.names -->
@@ -1267,6 +1348,14 @@ Rules:
 * Ordinary qualified access and projection from a reified module value
   must agree: `M.x` and, after `let m = M`, `m.x` denote the same member
   whenever both are well-formed.
+
+Additional rule:
+
+* A bridge-bound foreign surface returned at runtime under §17.7.7 is not
+  a declaration of kind `module` merely because it supports dotted
+  member access.
+  It is an ordinary value, typically a package value, and dotted access
+  on it is governed by the ordinary receiver rules of §2.8.3.
 
 
 
@@ -14594,8 +14683,15 @@ Rules:
 1. mechanically generated raw host bindings in `host.<backend>....Raw`,
 2. refined overlay modules with explicit Kappa types and error mapping,
 3. portable facades built with `expect` plus backend-selected fragments.
+4. runtime bridge handles plus contract-checked bound package values when
+   user code must control startup, transport, environment, credentials,
+   sandboxing, or per-connection state.
 
 This keeps backend-specific metadata import ergonomic without making backend-specific surfaces part of the portable ABI.
+
+Python, Ruby, and Perl interop SHOULD normally use the runtime bridge
+lane of §17.7.7 unless the implementation provides a reproducible static
+binding-generation story that better fits the use case.
 
 <!-- compiler.ffi.bridge_based_interop_external_runtimes -->
 #### 17.7.6 Bridge-based interop and external runtimes
@@ -14616,6 +14712,84 @@ Rules:
   boundary-contract, and higher-order-boundary rules of §§17.7.3, 17.7.4, 17.7.4A, and 17.7.4B.
 * A process, IPC, RPC, or embedding bridge is not part of the portable foreign subset merely because its Kappa-facing
   API is expressed in ordinary Kappa syntax.
+
+<!-- compiler.ffi.dynamic_bridge_handles -->
+#### 17.7.7 Dynamic bridge handles and runtime-bound packages
+
+A conforming implementation MAY provide bridge libraries for foreign
+runtimes reached through process start, IPC, RPC, embedding adapters, or
+other message-based or hosted bridges.
+
+Dynamic bridge handles are the normative mechanism when user code must
+control bridge startup and policy explicitly.
+
+Examples (illustrative):
+
+```kappa
+type NumpySig : Type =
+    (array : List Int -> IO PyError PyArray)
+
+do
+    using py <- python.start cfg
+    let np <- std.bridge.bindModule @NumpySig py "numpy"
+    let xs <- np.array [0, 1, 2]
+```
+
+Rules:
+
+* A runtime bridge handle is an ordinary runtime value.
+  It is not a module declaration and is not introduced by `import`.
+* Creation of a runtime bridge handle is ordinary term-level code.
+  The policy for process creation, executable-path selection,
+  virtual-environment selection, transport, authentication,
+  environment variables, sandboxing, timeout policy, and teardown is
+  determined by the selected bridge library and by user code, not by the
+  static module system.
+* A runtime bridge bind performed through
+  `std.bridge.BridgeHandle.bindModuleWith`,
+  `std.bridge.bindModule`, or an observationally equivalent library API:
+  * does not add a module dependency edge,
+  * does not affect the import graph of §§2.2-2.3,
+  * does not create a lexical declaration of kind `module`, and
+  * does not contribute a source module interface artifact.
+* Instead, a successful bind yields an ordinary Kappa value.
+* If the requested surface type is a signature type or another
+  package-like surface, the resulting value is used through the ordinary
+  package-member rules of §2.8.3.
+  For example, if `np` is the result of a successful bind, then
+  `np.array` is ordinary package-member selection rather than qualified
+  module lookup.
+* A runtime bridge bind MUST be checked and enforced by an explicit
+  `BridgeContract sig` value or an observationally equivalent runtime
+  contract.
+  The erased type argument `sig` alone is never sufficient to determine
+  runtime validation.
+* Missing members, wrong arities, marshalling failures, representation
+  mismatches, contract violations, and later higher-order boundary
+  misuse MUST surface as bridge failure in the surrounding monad rather
+  than as silent fabrication of a value of the requested type.
+* When the returned value closes over a borrowed bridge handle
+  `(&[r] h : H)`, the returned value MUST carry capture annotation
+  `captures (r)` unless the implementation can prove an equivalent
+  explicit ownership scheme that prevents borrow escape.
+* Bridge-specific startup libraries SHOULD provide `Releasable` or
+  `MonadResource` support for their handle types so that bridge lifetime
+  is lexically controlled.
+* Runtime-created bridge handles and values obtained from them are not
+  part of the frontend query model or module-interface identity unless a
+  separate static facility explicitly records a corresponding schema,
+  transcript, or generator input as build input.
+* This subsection is orthogonal to static host-binding modules.
+  Static host-binding modules remain appropriate for build-time metadata
+  import; dynamic bridge handles are appropriate when user code must
+  choose connection startup and policy at runtime.
+* Implementations MAY additionally provide raw dynamic binding APIs that
+  expose `std.gradual.Dyn` or another documented dynamic surface when no
+  richer contract is requested.
+* An implementation MAY provide a surface sugar resembling a runtime
+  import only if that sugar elaborates to the ordinary bridge-handle
+  mechanism of this subsection and does not participate in the static
+  import graph, module interfaces, or module-dependency cycle checks.
 
 <!-- compiler.zig -->
 ### 17.8 Native backend profile (`zig`)
