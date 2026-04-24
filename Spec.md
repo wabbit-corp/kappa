@@ -16665,6 +16665,11 @@ At minimum, the canonical interface view MUST include:
 * the module identity;
 * for a host binding module, the pinned host-source identity, binding-generator identity, declared host scope kind, and
   any adapter mode fixed by the exported surface;
+* for a bridge-supplied Kappa module, the provider artifact identity, provider backend profile, module interface
+  identity, bridge contract identity, bridge generator identity, bridge realization mode, backend pair, and any
+  deployment prerequisites required to realize the bridge;
+* for an exported module intended to be bridge-supplied to another Kappa artifact, the canonical interface identity and
+  bridge-visible runtime contract metadata needed to generate or validate a precision-preserving Kappa-to-Kappa bridge;
 * exported binding groups by spelling and declaration kind;
 * importable fixity declarations;
 * visibility and opacity classification;
