@@ -3778,6 +3778,65 @@ Therefore:
 * it does not mean "physically finalized exactly once under every possible runtime failure";
 * exclusive resource protocols should use `1` and protected scopes, not `>=1`.
 
+<!-- types.universes.quantities.linear_discharge_discard_destructor_use -->
+##### 5.1.5B Linear discharge, discard, and destructor use
+
+A value available at quantity `1` is not discharged merely because it appears syntactically in an expression.
+
+A linear obligation is discharged only by one of the following:
+
+* transferring the value to a result, constructor field, record field, or other storage position that preserves the
+  ownership obligation;
+* passing the value to a parameter whose demanded quantity is `1`;
+* moving the value through a consuming projection, sinker, or `inout` operation specified elsewhere in this document;
+* pattern matching on a visible constructor and then discharging every runtime-relevant component introduced by that
+  constructor pattern; or
+* invoking a primitive, intrinsic, FFI, or ordinary function whose type explicitly consumes the value at quantity `1`.
+
+A wildcard pattern `_` is a discard pattern. It does not by itself consume, release, destroy, finalize, or otherwise
+discharge a linear obligation.
+
+Therefore the following is rejected for arbitrary `T`:
+
+```kappa
+let f : (1 t : T) -> Unit =
+    let _ = t
+    ()
+```
+
+The rejection is required because accepting this definition would provide a generic discard operation for all linear
+values.
+
+Discard positions include:
+
+* wildcard patterns;
+* omitted fields in record patterns;
+* bare record-rest discard `..`;
+* discarded results of non-final do-items;
+* discarded refutation residues in plain `let?`;
+* any other construct whose semantics ignores a value rather than transferring it to a consuming demand.
+
+A discard position is well-typed only when every runtime-relevant value discarded by that position is droppable.
+
+For v1, values carrying quantity `1` or `>=1` are not droppable by default. Values carrying `0`, `&`, `<=1`, or `ω` are
+droppable for this purpose, subject to the ordinary borrow-escape and capture rules.
+
+A type or module may expose an explicit destructor such as:
+
+```kappa
+destroyT : (1 t : T) -> Unit
+```
+
+or an effectful destructor such as:
+
+```kappa
+releaseT : (1 t : T) -> IO e Unit
+```
+
+Calling such a function is a consuming use. Defining such a function is allowed only by ordinary typechecking: its body
+must itself discharge the linear obligation by transfer, constructor decomposition, another destructor call, or a
+trusted primitive boundary.
+
 <!-- types.universes.quantities.are_ownership -->
 ##### 5.1.5.1 Quantities are ownership-only
 
