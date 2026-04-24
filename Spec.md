@@ -1976,6 +1976,202 @@ Implementation latitude:
 * An implementation MAY implement it as ordinary Kappa library code.
 * In either case, the observable semantics above are normative.
 
+<!-- modules.hash -->
+### 2.7E Standard runtime hashing support module `std.hash`
+
+Implementations MUST provide a standard module `std.hash`.
+
+`std.hash` is not implicitly imported by source files.
+
+The hashing facilities of this section are **runtime collection-acceleration facilities**. They are unrelated to the
+semantic hash system of §15, including Easy Hashes and Hard Hashes.
+
+Types:
+
+```text
+HashSeed
+HashState
+HashCode
+```
+
+Traits:
+
+```text
+Hashable
+```
+
+Terms:
+
+```text
+defaultHashSeed,
+newHashState,
+finishHashState,
+hashUnit,
+hashBool,
+hashChar,
+hashString,
+hashBytes,
+hashInt,
+hashInteger,
+hashFloatRaw,
+hashDoubleRaw,
+hashNatTag,
+hashField,
+hashWith
+```
+
+Canonical declarations:
+
+```kappa
+expect data HashSeed  : Type
+expect data HashState : Type
+expect data HashCode  : Type
+
+defaultHashSeed :
+    HashSeed
+
+newHashState :
+    HashSeed -> HashState
+
+finishHashState :
+    (1 state : HashState) -> HashCode
+
+hashUnit :
+    (1 state : HashState) -> HashState
+
+hashBool :
+    Bool -> (1 state : HashState) -> HashState
+
+hashChar :
+    Char -> (1 state : HashState) -> HashState
+
+hashString :
+    String -> (1 state : HashState) -> HashState
+
+hashBytes :
+    Bytes -> (1 state : HashState) -> HashState
+
+hashInt :
+    Int -> (1 state : HashState) -> HashState
+
+hashInteger :
+    Integer -> (1 state : HashState) -> HashState
+
+hashFloatRaw :
+    Float -> (1 state : HashState) -> HashState
+
+hashDoubleRaw :
+    Double -> (1 state : HashState) -> HashState
+
+hashNatTag :
+    Nat -> (1 state : HashState) -> HashState
+
+trait Eq a => Hashable (a : Type) =
+    hashInto :
+        (& value : a) -> (1 state : HashState) -> HashState
+
+hashField :
+    forall (a : Type).
+    (@_ : Hashable a) ->
+    (& value : a) ->
+    (1 state : HashState) ->
+    HashState
+
+let hashField @H value state =
+    H.hashInto value state
+
+hashWith :
+    forall (a : Type).
+    (@_ : Hashable a) ->
+    HashSeed ->
+    (& value : a) ->
+    HashCode
+
+let hashWith @H seed value =
+    finishHashState (H.hashInto value (newHashState seed))
+```
+
+Rules:
+
+* `Hashable a` is a performance trait, not an equality trait.
+* `Hashable a` refines `Eq a`.
+* `Hashable` evidence MUST NOT be required for the well-formedness of `Set a`, `Map k v`, `distinct`, `distinct by`,
+  `group by`, joins, or built-in set/map comprehensions unless this specification explicitly says otherwise.
+* The absence of `Hashable a` MUST NOT change the denotation of any portable program.
+* The presence of `Hashable a` MAY enable faster implementations of equality-keyed operations.
+* `hashInto` receives its value argument by shared borrow. Hashing a value MUST NOT consume that value.
+* `HashState` is a linear accumulator. A portable `hashInto` implementation must consume the incoming state exactly once
+  and return the resulting state exactly once.
+* `HashCode` is an opaque runtime value.
+* Portable source code MUST NOT rely on any numeric representation, ordering, serialization, printed form, or stable
+  cross-run identity of `HashCode`.
+* The standard module MUST NOT export `Eq HashCode`, `Ord HashCode`, `Show HashCode`, or a conversion from `HashCode`
+  to an ordinary numeric type as part of the portable minimum.
+* An implementation MAY provide implementation-defined debug or profiling operations for `HashCode`, but such operations
+  are outside portable semantics.
+* `HashSeed` is explicit so that hashing remains pure. For a fixed seed and fixed value, `hashWith seed value` is a pure
+  deterministic computation within one program execution.
+* Different implementations, backend profiles, compiler versions, process executions, or collection instances MAY use
+  different internal hash algorithms or seeds.
+* No portable program may observe such differences except through implementation-defined debug/profiling APIs.
+
+Consistency with `Eq`:
+
+Because `Eq a` is reflective decidable equality (§12.1), a pure function out of `a` automatically respects values proven
+equal by `Eq`.
+
+Therefore `Hashable` does not require a separate user-written law field.
+
+For any `Hashable a`, if `(x == y) = True`, then `x = y` by `Eq.eqSound`, and therefore:
+
+```kappa
+hashWith seed x = hashWith seed y
+```
+
+by ordinary congruence.
+
+Consequences:
+
+* A hash implementation may use hash-code inequality, under the same seed and same `Hashable` evidence, as a fast
+  rejection test before calling `(==)`.
+* A hash implementation MUST NOT use hash-code equality as proof that two keys are equal.
+* Any operation that needs to decide whether two keys are the same key MUST use `Eq`.
+* Hash collisions are ordinary and semantically invisible.
+
+Primitive hashing operations:
+
+* `hashFloatRaw` and `hashDoubleRaw` hash the same raw IEEE-754 bit representation used by the canonical `Eq Float` and
+  `Eq Double` instances.
+* In particular, their behavior follows raw-bit equality, not IEEE numeric equality.
+* `hashNatTag` is intended for constructor tags, tuple arity tags, record-field separators, variant member tags, and
+  other structural delimiters in derived or handwritten instances.
+* The exact mixing algorithm used by `HashState` is implementation-defined.
+* The mixing algorithm MUST be deterministic for a fixed implementation, backend profile, seed, and execution.
+* The mixing algorithm MUST NOT affect source-level equality, ordering, grouping, map conflict resolution, or
+  representative choice.
+
+Required instances:
+
+A conforming implementation MUST provide `Hashable` instances in `std.hash` for at least:
+
+```text
+Unit, Bool, Char, String, Bytes, Int, Integer, Float, Double, Ordering
+```
+
+and for the following type constructors whenever their element arguments are `Hashable`:
+
+```text
+Option a
+Result e a
+List a
+Array a
+```
+
+An implementation MAY provide additional `Hashable` instances for standard or backend-specific types.
+
+An implementation MUST NOT provide a portable `Hashable` instance for a type unless the instance hashes according to
+that type's portable `Eq` semantics.
+
 ---
 
 <!-- modules.names -->
