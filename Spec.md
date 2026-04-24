@@ -11316,16 +11316,18 @@ Rules:
   `do`-item rewrite site.
 * `~` may be applied only to:
   * a stable place as defined in §5.1.7.1;
-  * a parenthesized, fully applied projection call under §6.1.1; or
-  * a parenthesized projector descriptor application under §7.1.3A.
-* Parentheses are required around a projection call or projector descriptor application under `~`, for example
-  `~(focusedBuffer editor)` or `~(foo editor)`.
+  * a parenthesized, fully applied selector-form projection call under §6.1.1;
+  * a parenthesized projector descriptor application under §7.1.3A; or
+  * a parenthesized accessor-bundle descriptor application under §7.1.3B whose bundle contains an `open` descriptor
+    field.
+* Parentheses are required around a projection call, projector descriptor application, or accessor-bundle descriptor
+  application under `~`, for example `~(focusedBuffer editor)`, `~(foo editor)`, or `~(degrees angle)`.
 * If the source place is rooted at a `var`-bound name, elaboration first reads the current contents of that `Ref` into a
   fresh hidden temporary root and then proceeds on that temporary root.
 * A given stable place, or a given projection call occurrence, may appear in at most one `~` argument within a single
   application.
-* For a projection call or projector descriptor application, static disjointness checking uses the static footprint
-  summary of §5.1.7.2.
+* For a selector-form projection call or projector descriptor application, static disjointness checking uses the static
+  footprint summary of §5.1.7.2.
 * A `~place` argument is well-formed if and only if the compiler can statically resolve the callee at that application
   site to a Pi-telescope in which the corresponding explicit parameter:
   * has quantity `@1`,
@@ -11370,10 +11372,12 @@ or the pure analogue `let pat = func ~x1 ... ~xk args`, elaboration proceeds as 
 
    * If the marked argument is a stable place, proceed exactly as in the stable-place case of this section.
    * If the marked argument is either:
-     * a fully applied projection call; or
+     * a fully applied selector-form projection call; or
      * a projector descriptor application under §7.1.3A,
      then elaboration first constructs the projector descriptor value `proj` and the internal place pack `pack` for
      that marked argument, and elaborates it as `OpenProjector proj pack`.
+   * If the marked argument is an accessor-bundle descriptor application under §7.1.3B, elaboration first constructs its
+     internal place pack and then elaborates the marked argument as `OpenOpener bundle.open pack`.
    * The callee receives the `focus` component of the resulting zipper.
    * On return, the returned successor is written back by applying the zipper's linear `fill` component.
    * The rebuilt root pack is then scattered back to the corresponding actual stable roots in declaration order.
