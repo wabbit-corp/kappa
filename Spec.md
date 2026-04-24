@@ -12006,8 +12006,15 @@ order by desc expr
 order by (asc expr1, desc expr2, expr3)
 ```
 
-* Requires an `Ord`-like trait for the involved key types.
-* Applies sorting to the current carrier.
+Typing:
+
+* `order by expr` requires an implicit `Ord K` instance, where `expr : K`.
+* `order by asc expr` and `order by desc expr` likewise require `Ord K`.
+* `order by (dir1 expr1, ..., dirn exprn)` requires `Ord Ki` for every ordering key `expri : Ki`.
+
+Semantics:
+
+* `order by` applies stable sorting to the current query pipeline.
 
 Stability:
 * `order by` is a stable sort: elements that compare equal under the ordering keys preserve their relative order from
@@ -12017,7 +12024,7 @@ Tie behavior on unordered inputs:
 
 * Stability is with respect to the **current encounter order**.
 * If the current orderedness is Unordered (§10.3.2), then the relative order of elements with equal ordering keys is
-  unspecified.
+  deterministic in package mode under §10.3.2, but not user-visible or specified.
 
 Evaluation:
 * In `order by ...`, each ordering key expression is evaluated exactly once per row. Implementations may cache keys for
@@ -12046,24 +12053,29 @@ Notes:
 
 `distinct` and `distinct by` operate on the current row environment at the clause site.
 
-* For `distinct`, the deduplication key is the current row record `Row(Γ)` of §10.10.2.
-* For `distinct by keyExpr`, the deduplication key is `keyExpr` evaluated in that same row environment.
-
-
 ```kappa
 distinct
 distinct by keyExpr
 ```
 
-* `distinct` keeps unique rows based on equality of `Row(Γ)` under the applicable `Eq` instance.
-* `distinct by keyExpr` keeps the first encountered row for each unique deduplication key `keyExpr`.
-* Requires an `Eq`-like trait for the value used to determine uniqueness. Hashing may be used as an optimization
-  (implementation-defined).
+Typing:
+
+* `distinct` requires an implicit `Eq (Row(Γ))` instance, where `Row(Γ)` is the current row record of §10.10.2.
+* `distinct by keyExpr` requires an implicit `Eq K` instance, where `keyExpr : K`.
+
+Semantics:
+
+* `distinct` keeps the first encountered row for each unique current row record `Row(Γ)`.
+* `distinct by keyExpr` evaluates `keyExpr` exactly once per incoming row and keeps the first encountered row for each
+  unique key.
+* Hashing may be used as an optimization, but only when observationally equivalent to the corresponding `Eq` semantics.
 
 Representative choice:
 
-* `distinct` / `distinct by` preserves the **first encountered** representative in the current iteration order.
-* If the carrier's iteration order is unspecified, the chosen representative is unspecified as well.
+* If the input pipeline is Ordered, `distinct` / `distinct by` preserves the first encountered representative in that
+  order.
+* If the input pipeline is Unordered, the chosen representative is deterministic in package mode under §10.3.2, but not
+  user-visible or specified.
 
 <!-- collections.grouping -->
 ### 10.7 Grouping
