@@ -4904,6 +4904,12 @@ be deterministic with respect to its inputs and the macro input transcript. Non-
 elaboration is a compiler error. Implementations MUST detect and abort (e.g. via a deterministic step limit or
 equivalent) rather than hanging indefinitely.
 
+Successful completion of a macro or `Elab` action under the elaboration-time evaluator does not by itself establish
+termination certification for any definition and does not change δ-reduction eligibility under §14.3.
+
+If macro execution is aborted because an implementation-defined step, fuel, or resource limit is exceeded, that is a
+compile-time error. It MUST NOT be treated either as proof of non-termination or as proof of termination.
+
 These restrictions are enforced by the elaboration-time evaluator (§17.3.3).
 A macro or splice that violates them is a compile-time error.
 
