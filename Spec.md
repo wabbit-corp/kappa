@@ -7939,6 +7939,25 @@ Meaning:
 * `Both` represents parallel cause composition.
 * `Then` represents sequential cause composition, including unwinding and finalization sequencing.
 
+The portable core standardizes interruption metadata.
+
+`Cause.Interrupt c` carries a structured `InterruptCause` value rather than opaque backend-only interruption state.
+
+For `InterruptCause`:
+
+* `tag` classifies why the interruption occurred.
+* `by` records the initiating fiber when one is semantically known.
+* `InterruptTag.Custom s` permits library-defined interruption reasons without changing the core meaning of
+  interruption.
+
+Built-in runtime operations use the following standard interrupt tags:
+
+* direct `interrupt` / `interruptFork` use `Requested`;
+* scope shutdown, including implicit structured child shutdown on scope exit, uses `ScopeShutdown`;
+* `timeout` uses `TimedOut`;
+* interruption of the losing branch of `race` uses `RaceLost`;
+* host- or runtime-originated interruption not attributable to a specific Kappa fiber uses `External`.
+
 The standard runtime observation functions are:
 
 ```kappa
@@ -7957,6 +7976,8 @@ For the standard runtime carrier `IO e`:
 * Interruption and defects are not caught by `catchError`.
 * `sandbox` exposes the full `Cause e` in the typed error channel.
 * `unsandbox` reverses that exposure.
+* Sandboxed code MAY inspect `InterruptCause` to discriminate among standard interruption reasons or library-defined
+  `Custom` interruption tags.
 
 <!-- effects.monadic_core.fibers_structured_concurrency -->
 #### 8.1.3 Fibers and structured concurrency
