@@ -603,6 +603,15 @@ Rules:
   surface across the selected boundary.
 * In package mode, the provider artifact identity, module interface identity, bridge contract identity, bridge generator
   identity, backend pair, and bridge realization mode MUST be recorded in a lockfile or equivalent build artifact.
+* A static bridge-supplied Kappa module MAY depend on deployment-linked bridge capabilities, such as a loaded native
+  library, JVM runtime handle, generated JNI registration, or process-lifetime bridge table.
+* Such capabilities MUST be recorded in the bridge realization metadata, deployment prerequisites, or
+  lockfile-equivalent build artifact.
+* A static bridge-supplied module MUST NOT depend on hidden mutable runtime capability state whose identity is absent
+  from the bridge realization metadata.
+* If a bridge-supplied module depends on a runtime capability whose lifetime is shorter than the whole deployed
+  artifact, the exported surface MUST expose that lifetime through `captures (...)`, `BridgePackage`, an explicit
+  resource handle, or another ownership scheme that prevents escape.
 * A static bridge-supplied module contributes an ordinary module dependency edge to the module dependency graph of
   §§2.2-2.3.
 * A dynamic bridge bind performed through `std.bridge` remains value-level code and is governed by §17.7.7 instead of
