@@ -1608,6 +1608,9 @@ Rules:
 * A fixity declaration binds a precedence level (an integer; recommended range `0..100`), and a kind (infix, infix left,
   infix right, prefix, postfix) to one operator token.
 * Fixities are **block-scoped** and apply from the point of declaration onward.
+* A top-level fixity declaration for operator `op` is exported iff the name `op` is exported under §2.5. The exported
+  fixity for `op` is the fixity that is in scope at the end of the module, i.e. the last top-level fixity declaration
+  for `op`.
 * Exported fixity declarations are imported only together with the corresponding operator name. An unqualified fixity
   enters scope only if that operator itself is imported unqualified. Merely referencing a module interface, or importing
   unrelated names from that module, does not bring other unqualified operator fixities into scope. Imported fixities
@@ -2201,6 +2204,36 @@ compile-time types, not extra meta-level sorts.
 Terms of these intrinsic compile-time types may be used in ordinary explicit binders, record fields, package members,
 projections, existential witnesses, and local bindings wherever the surrounding surface form otherwise permits them.
 
+This permission is normative and unconditional subject only to the ordinary grammar and typing rules of the surrounding
+form.
+
+In particular, a record field, package member, local binding, or existential witness MAY have type:
+
+* `Universe`
+* `Quantity`
+* `Region`
+* `Constraint`
+* `RecRow`
+* `VarRow`
+* `EffRow`
+* `Label`
+* `EffLabel`
+
+The fact that such values are compile-time only affects erasure under §§5.1.4 and 14.4. It does not remove their
+ordinary first-class status for binding, projection, packaging, sealing, opening, equality, or storage inside records
+and packages.
+
+Examples of well-formed source types therefore include:
+
+```kappa
+(ρ : Region, thunk : ((Unit -> Int) captures (ρ)))
+(@ρ : Region, q : Quantity, u : Universe)
+exists (ρ : Region). ((Unit -> Int) captures (ρ))
+```
+
+Packaging or storing a compile-time value such as a `Region` does not by itself discharge any region-escape obligation.
+The ordinary skolem-escape rules of §5.1.6 still apply.
+
 This section does not by itself add arbitrary new surface constructors or eliminators for raw inhabitants of `Universe`,
 `Quantity`, or `Region`. Surface v0.1 provides only the forms explicitly specified elsewhere. KCore and elaboration,
 however, MAY carry such terms as ordinary compile-time bindable values.
@@ -2642,6 +2675,12 @@ If elaboration attempts any of the above, it produces a skolem-escape error nami
 that tried to escape it. This check is performed locally during elaboration of the enclosing block; no whole-program
 analysis is required, because `rho` is rigid and its scope is statically known.
 
+The same rule applies to first-class borrowed-view values of type `BorrowView ρ A`.
+
+Such a value may be stored in a record or package, returned from a function, or passed as an argument only when the
+resulting type continues to mention `ρ` explicitly, or when `ρ` itself is packaged as an explicit witness. Packaging
+does not discharge skolem escape.
+
 Downward-only closures:
 
 A closure that captures only `&` variables whose regions are still live in the current scope may be passed to
@@ -2864,7 +2903,8 @@ Static footprint summary:
   stable-place alternatives, regardless of which `place` binder each alternative is rooted in, after applying the
   dependency-closure rule of §5.1.7 to each alternative.
 * Borrow-overlap checks, disjointness checks, and `~` admissibility checks use this static footprint summary.
-* Runtime read / move / fill uses only the single yielded stable place selected by evaluation of the projection body.
+* Runtime projector elimination uses only the single yielded stable place selected by evaluation of the projection body,
+  together with the corresponding root-pack rebuild when a fill or open operation is requested.
 
 Use restrictions:
 
@@ -2872,11 +2912,13 @@ Use restrictions:
   * a borrow-demanding position under §5.1.5;
   * a `~` argument under §8.8; and
   * an ordinary value-demanding position.
-* In a non-consuming ordinary value-demanding position, the projection call elaborates branchwise as ordinary control
-  flow whose leaves use `ReadPlace` on the yielded stable place.
+* In a non-consuming ordinary value-demanding position, the projection call elaborates through the projector
+  elimination of §17.3.1.3 and behaves as `ReadProjector proj pack`.
 * A fully applied projection call may also appear in a consuming ordinary value-demanding position.
-* In that case, the projection call elaborates branchwise as ordinary control flow whose leaves use `MovePlace` on the
-  yielded stable place.
+* In that case, the projection call elaborates through the projector elimination of §17.3.1.3 and behaves as
+  `MoveProjector proj pack`.
+* In a borrow-demanding position, the call elaborates through `BorrowProjector proj pack`.
+* Under `~`, the call elaborates through `OpenProjector proj pack`.
 * The post-expression path state is the branchwise join of the leaf path states; in v0.1 a conforming implementation MAY
   conservatively take this join to be the union of consumed footprints per root.
 * Consequently, a path may be considered unavailable after the expression even if it is consumed only on some dynamic
@@ -2916,6 +2958,58 @@ makeGetter :
 The returned closure has ordinary function shape `Unit -> a`, but its value type additionally records that its hidden
 region environment may mention `s`. A caller may use or store that closure only where `s` is still live. At a call site,
 an explicit region variable such as `s` may be instantiated by a caller-local rigid region `rho`.
+
+<!-- types.universes.disjoint_path_borrowing_records.first_class_projector_descriptors_borrowed_views_opened_places -->
+##### 5.1.7.3 First-class projector descriptors, borrowed views, and opened places
+
+Kappa provides the following built-in type formers:
+
+```kappa
+Projector  : Type -> Type -> Type
+BorrowView : Region -> Type -> Type
+Zipper     : Type -> Type -> Type -> Type
+```
+
+Meaning:
+
+* `Projector roots focus` is a first-class pure descriptor of a place-selection computation whose place arguments have
+  shape `roots` and whose selected focus has type `focus`.
+* `BorrowView ρ A` is a first-class borrowed view of `A` valid under region `ρ`.
+* `Zipper whole focus replace` packages an opened owned focus together with a linear filler back to `whole`.
+
+Canonical declaration of `Zipper`:
+
+```kappa
+data Zipper (whole : Type) (focus : Type) (replace : Type) : Type =
+    Zipper (focus : focus) (1 fill : replace -> whole)
+```
+
+Kappa provides the following built-in operations:
+
+```kappa
+captureBorrow :
+    forall (ρ : Region) (A : Type).
+    (&[ρ] x : A) -> BorrowView ρ A
+
+withBorrowView :
+    forall (ρ : Region) (A : Type) (R : Type).
+    BorrowView ρ A -> (((&[ρ] x : A) -> R)) -> R
+
+composeProjector :
+    forall (roots : Type) (mid : Type) (focus : Type).
+    Projector roots mid -> Projector mid focus -> Projector roots focus
+```
+
+Rules:
+
+* `Projector`, `BorrowView`, and `Zipper` are ordinary first-class types.
+* Values of those types may be bound, stored in records, packaged, sealed, opened, returned, and projected exactly
+  like other values, subject to the ordinary quantity and escape rules.
+* `captureBorrow` does not extend the lifetime of a borrow. It merely reifies an already-valid borrowed view as an
+  ordinary value whose type explicitly mentions `ρ`.
+* `withBorrowView v k` checks `k` in a context where its parameter is an ordinary borrowed binder under `ρ`; it is the
+  elimination form for a first-class borrowed view.
+* `composeProjector` composes projector descriptors only. It does not itself read, move, borrow, or fill any place.
 
 <!-- types.functions -->
 ### 5.2 Function types
@@ -4135,6 +4229,13 @@ let p : exists (a : Type). Option a =
     as exists (a : Type). Option a
 ```
 
+```kappa
+let mkBorrowedGetter :
+    forall (ρ : Region).
+    (&[ρ] x : Box Int) ->
+    exists (ρ' : Region). (ρWitness : Region, get : BorrowView ρ' (Box Int))
+```
+
 For purposes of surface signature matching only, `seal e as exists (a1 : S1) ... (an : Sn). T` checks `e` against the
 anonymous existential surface view
 
@@ -4149,6 +4250,9 @@ with the ordinary dependency substitutions induced by the binder order.
 
 After checking, the witness field names `a1 ... an` are rewritten to the canonical internal witness labels
 `⟨wit1⟩ ... ⟨witn⟩`. Those source names do not survive as ordinary projection labels outside the seal.
+
+Existential binders may range over any type admitted by §5.1.3, including `Region`, `Quantity`, `Universe`, row types,
+and label types.
 
 Projection:
 
@@ -4479,6 +4583,55 @@ Syntax quotes are hygienic.
 * Spliced syntax preserves its own binding structure.
 * Generated binders are alpha-renamed as needed to avoid capture.
 
+<!-- types.macros.surface_syntax_inspection_and_origins -->
+#### 5.8.4.1 Surface syntax inspection and origins
+
+Surface macros need a stable way to analyze `Syntax` itself, not only elaborated `Core`.
+
+A conforming implementation MUST provide either:
+
+* quotation-pattern matching on `Syntax t`, or
+* an observationally equivalent stable public `Syntax` inspection API,
+
+sufficient to distinguish the surface constructs of v0.1 that may arise before semantic elaboration.
+
+At minimum, this coverage includes:
+
+* identifiers and operator names;
+* literals and prefixed-string fragments;
+* application spines;
+* lambdas, lets, `if`, and `match`;
+* explicit and implicit arguments;
+* type ascriptions;
+* records, packages, projections, and field punning;
+* variant injections and residual-row syntax;
+* quotes, splices, and nested macro syntax;
+* comprehensions before normalization; and
+* source / synthetic origin metadata.
+
+Implementations MUST additionally provide elaboration-time operations equivalent to:
+
+```kappa
+SyntaxOrigin : Type
+
+syntaxOrigin :
+    forall (@0 t : Type).
+    Syntax t -> SyntaxOrigin
+
+withSyntaxOrigin :
+    forall (@0 t : Type).
+    SyntaxOrigin -> Syntax t -> Syntax t
+```
+
+Normative meaning:
+
+* `syntaxOrigin s` returns the current origin information of `s`, corresponding to the source-origin / synthetic-origin
+  model of §17.2.1.
+* `withSyntaxOrigin o s` returns syntax observationally equal to `s` except that diagnostics, navigation, and rendered
+  output treat `o` as the nearest origin of the resulting syntax.
+* Surface syntax inspection MUST preserve hygiene and MUST NOT expose mutable parser internals, unstable node IDs, or
+  implementation-defined memory identities as part of the portable contract.
+
 <!-- types.macros.reflection_api -->
 #### 5.8.5 Reflection API
 
@@ -4772,6 +4925,21 @@ currentGoal :
 failElab :
     forall (@0 a : Type).
     String -> Elab a
+
+warnElab :
+    String -> Elab Unit
+
+asCoreGoal :
+    forall (@0 g : ElabGoal) (@0 t : Type).
+    Syntax t -> Elab (Core g.ctx t)
+
+withExpectedGoal :
+    forall (@0 g : ElabGoal) (@0 a : Type).
+    Core g.ctx Type -> Elab a -> Elab a
+
+ensureDefEqGoal :
+    forall (@0 g : ElabGoal) (@0 a : Type) (@0 b : Type).
+    Core g.ctx a -> Core g.ctx b -> Elab Unit
 ```
 
 Implementations MUST provide coherent evidence for `Functor Elab`, `Applicative Elab`, and `Monad Elab`.
@@ -4781,13 +4949,45 @@ Rules:
 * `Elab` actions run only during elaboration.
 * `currentGoal.ctx` is the lexical context that ordinary elaboration would use at the splice site.
 * `currentGoal.expected` is the expected type at the splice site when one is available; otherwise it is `None`.
-* `Elab` actions MAY use the reflection operations of §5.8.5, including `asCoreIn`, `inferType`, `whnf`, `normalize`,
-  `proveDefEq`, `defEq`, and `reifyCore`.
+* `warnElab` emits a deterministic elaboration-time warning associated with the current source or synthetic-origin chain.
+  Warnings emitted by `Elab` are diagnostics only; they do not affect typing, normalization, hashing, or interface
+  identity except through their recorded origins.
+* `asCoreGoal g s` elaborates `s` in the lexical context `g.ctx`. If `g.expected = Some T`, the implementation MUST use
+  the same expected-type-directed elaboration that ordinary source elaboration would use at that site.
+* `withExpectedGoal g T act` executes `act` with the same lexical context as `g` and with expected type overridden to
+  `Some T` for the dynamic extent of `act`.
+* `ensureDefEqGoal g x y` succeeds iff the ordinary elaborator judges `x` and `y` definitionally equal in `g.ctx`
+  under the current visibility / opacity environment; otherwise it fails with an elaboration-time error.
+* `Elab` actions MAY use the reflection operations of §5.8.5, including `asCoreIn`, `asCoreGoal`, `inferType`, `whnf`,
+  `normalize`, `proveDefEq`, `defEq`, and `reifyCore`.
 * `Elab` is subject to the same determinism, transcript, visibility, opacity, implicit-resolution, package-mode effect,
   and termination restrictions as other elaboration-time execution in §5.8.6.
 * `Elab` does not provide a second re-entry path into object code. It re-enters object-language code only by producing
   `Syntax` for `$(...)`.
 * `Elab` values are compile-time only, are erased, and MUST NOT be required at runtime or by `runCode`.
+
+<!-- types.macros.output_round_tripping -->
+#### 5.8.7.1 Output round-tripping
+
+A conforming implementation intended for editor, diagnostic, or interface-rendering use MUST provide an observationally
+equivalent registration mechanism for user-extensible output recovery.
+
+At minimum, the mechanism MUST support:
+
+* unexpanders, which attempt to reverse specific macro expansions or notation expansions by rewriting reified `Syntax`;
+* delaborators, which translate elaborated `Core` back into more user-written `Syntax` when ordinary reification would
+  otherwise expose compiler-generated structure.
+
+Rules:
+
+* output recovery affects only rendering;
+* it MUST NOT change typing, normalization, definitional equality, hashing, coherence, or separate-compilation
+  identity;
+* it MUST preserve hygiene and source / synthetic origin chains as far as the recovered surface form permits;
+* when output recovery is disabled or no recovery succeeds, the implementation MUST still render a faithful raw form
+  derived from ordinary `Syntax` or `Core`; and
+* canonical interface views, hovers, error messages, and proof states MAY consult these recovery hooks, but the
+  recovered form MUST remain observationally equivalent to the underlying elaborated term.
 
 <!-- types.staging -->
 ### 5.9 Staged code values
@@ -4905,6 +5105,18 @@ Implementations MUST prevent scope extrusion for `Code`.
 * Implementations MAY detect this statically or with a generation-time scope-extrusion check.
 * `closeCode` MUST succeed only for code values that satisfy this discipline, and `genlet` MUST NOT be usable to bypass
   it.
+
+<!-- types.staging.reserved_extension_lane_contextual_open_code -->
+#### 5.9.8 Reserved extension lane: contextual open code
+
+v0.1 standardizes closed / closable staged code through `Code`, `ClosedCode`, `closeCode`, `genlet`, and `runCode`.
+It does not standardize a user-visible contextual open-code calculus with explicit context variables.
+
+A future revision MAY add such a calculus, provided it preserves the scope-safety, staging, and separate-compilation
+invariants of this chapter.
+
+A conforming v0.1 implementation MUST NOT expose nonportable contextual-open-code features as if they were part of the
+portable `Code` contract.
 
 <!-- types.gradual -->
 ### 5.10 Dynamic values, runtime representations, and checked boundaries
@@ -5114,6 +5326,14 @@ Modifier rules:
 
 A projection definition names a pure computed place selector rooted in one or more place parameters.
 
+A projection definition contributes two same-spelling facets to the binding group of its declared name:
+
+* a **projection facet**, used by computed-place elaboration under §§2.8.4, 5.1.7.2, 5.5.5, 8.8, and 17.3.1.3; and
+* a **term facet**, denoting a first-class projector descriptor value.
+
+Ordinary unqualified term lookup selects the term facet.
+Receiver-projection sugar, computed-place elaboration, `~`, and projection-section update select the projection facet.
+
 Example:
 
 ```kappa
@@ -5170,19 +5390,52 @@ Rules:
     scoped borrow primitive of §17.3.1.2 rather than by consuming the selected place.
   * Concretely, any non-`yield` use of such a place is elaborated as if the implementation had introduced a fresh
     scoped borrow of that place for the dynamic extent of the containing selector expression.
-  * A consuming use of a `place` binder inside selector code is ill-formed.
+* A consuming use of a `place` binder inside selector code is ill-formed.
   * Therefore selector code may inspect candidate places in order to decide which place to `yield`, but it may not move
     from them while making that decision.
 * A projection definition must be fully applied at every use site. Partial application of a projection definition is
   ill-formed.
 
+Descriptor value:
+
+Let the `place` binders of a projection definition, in declaration order, be:
+
+```text
+(place p1 : S1) ... (place pn : Sn)
+```
+
+Let `Roots` be the closed record type:
+
+```text
+(p1 : S1, ..., pn : Sn)
+```
+
+Let the remaining ordinary binders of the declaration elaborate to the Pi telescope `Δ`.
+Let `T` be the declared result type of the projection.
+
+Then the declared name additionally denotes an ordinary term constant of type:
+
+```text
+Δ -> Projector Roots T
+```
+
+with the evident simplification when `Δ` is empty.
+
+Consequences:
+
+* `let foo = degrees` is well-formed and binds the projector descriptor value introduced by the declaration `degrees`.
+* A projector descriptor may be stored in a record or package, returned from a function, or passed as an ordinary
+  argument.
+* The descriptor value is pure and contains no live place or borrow by itself.
+* The full-application restriction applies to the projection facet. The ordinary term facet follows the ordinary
+  term-application rules over `Δ`.
+
 Elaboration of a fully applied projection call:
 
-* In a borrow-demanding position, the call denotes the dynamically selected yielded stable place for purposes of
-  temporary borrow introduction.
-* Under `~`, the call denotes the dynamically selected yielded stable place for purposes of move-and-restore rewriting.
-* In an ordinary value-demanding position, the call elaborates branchwise through `ReadPlace` or `MovePlace` according
-  to whether the surrounding demand is non-consuming or consuming (§5.1.7.2).
+* the ordinary non-`place` binders are applied in the ordinary way to obtain a projector descriptor value
+  `proj : Projector Roots T`;
+* the actual `place` arguments are assembled into an internal place pack having the record shape `Roots`; and
+* the surrounding demand then chooses the corresponding projector eliminator of §17.3.1.3.
 
 <!-- declarations.terms.irrefutable_patterns_let_bindings -->
 #### 6.1.2 Irrefutable patterns (for `let` bindings)
@@ -5659,6 +5912,12 @@ An `expect` declaration introduces a name and its type/signature, but does not p
 
 `expect` declarations are **top-level only**.
 
+Grammar:
+
+```text
+expectDecl ::= [public|private] 'expect' expectKind ...
+```
+
 Forms:
 
 ```kappa
@@ -5674,6 +5933,8 @@ expect term print   : (this : String) -> UIO Unit
 Rules:
 * expect may prefix a type, trait, or a term signature `(term name : Type)`.
 * An expect declaration contributes to name resolution as if it were an ordinary declaration.
+* Expect declarations participate in the module export rules in §2.5.4. In particular, under `@PrivateByDefault`, an
+  expect declaration is not exported unless marked `public`.
 * Each expected item must be satisfied exactly once by the compilation unit selected for the build, either by:
   * a matching ordinary definition in another source file fragment of the same module (implementation-defined), or
   * a backend intrinsic supplied by the selected backend profile (§17.6).
@@ -6142,6 +6403,30 @@ Step 1 above, via the borrow-introduction rule of §5.1.5.
 
 The expected-type-directed suspension insertion rule applies uniformly whether the callee was written with surface sugar
 such as `(thunk x : A)` / `(lazy x : A)` or with the explicit types `Thunk A` / `Need A`.
+
+<!-- expressions.application.equality_based_subsumption_automatic_transport_insertion -->
+#### 7.1.4 Equality-based subsumption (automatic transport insertion)
+
+When checking an expression `e` against an expected type `T`, if inference yields type `S` and `S` is not
+definitionally equal to `T`, the elaborator MAY attempt one equality-based transport insertion.
+
+Operationally:
+
+1. If `S` and `T` are syntactically the same up to replacing one subterm `u` with `v` in a type context `K[□]`, i.e.
+   `S = K[u]` and `T = K[v]`, continue. Otherwise this rule does not apply.
+2. Attempt to synthesize, via the implicit-resolution procedure of §7.3.3, an erased proof `p : u = v` or `p : v = u`.
+3. If successful, elaborate `e` by inserting a transport through `subst` with motive `P = \z -> K[z]`.
+   * If `p : u = v`, elaborate as `subst p e`.
+   * If `p : v = u`, elaborate as `subst (sym p) e`.
+
+Rules:
+
+* This rule performs at most one rewrite step. It does not recursively search for chains of equalities or for multiple
+  independently replaced subterms.
+* If no such proof is synthesized, expected-type checking fails as usual.
+* This is an elaboration rule only. It does not extend definitional equality.
+* At an application boundary, this rule may be attempted only after Steps 1-3 of §7.1.3.1 fail to accept the supplied
+  argument directly.
 
 
 <!-- expressions.lambdas -->
@@ -6664,6 +6949,32 @@ Rules:
   `||` or nested combinations.
 * A conforming implementation MAY share those bodies or lower them differently internally, provided branch-local
   refinement and runtime evaluation count are observationally equivalent to the equations above.
+
+Common success-body typing under `||`:
+
+Because `if a || b then t else f` is checked as `if a then t else if b then t else f`, the branch body `t` is
+typechecked separately under each success environment induced by `a` and `b`.
+
+Consequently, a constructor-field projection in `t` is well-formed when each success environment independently proves a
+constructor that declares that field, and the resulting type of the projection is definitionally equal in each such
+environment.
+
+Example:
+
+```kappa
+data Payload : Type =
+    IntBox (value : Int)
+    NatBox (value : Int)
+    Empty
+
+let readValue (p : Payload) : Int =
+    if p is IntBox || p is NatBox then p.value else 0
+```
+
+This is accepted because the `then` body is checked once under `HasCtor p IntBox` and once under `HasCtor p NatBox`,
+and `p.value` has type `Int` in both checks.
+
+No disjunctive constructor fact is introduced beyond the ordinary branchwise checking.
 
 <!-- expressions.conditionals.stable_aliases_transport_refinement_evidence -->
 #### 7.4.3 Stable aliases and transport of refinement evidence
@@ -7855,6 +8166,10 @@ Then the handler is well-typed iff:
 At source level, `k v` remains ordinary application syntax. Its KCore realization is resumption application under
 §17.3.1.5 rather than ordinary function application.
 
+The bound `k` is a captured resumption value, not a source-visible return arm or join continuation.
+Any join-point or multi-return realization applies only to finite local control surrounding that resumption, as
+constrained by §14.8.6A and §17.4.7A.
+
 The whole handler has type:
 
 ```kappa
@@ -7994,6 +8309,9 @@ Semantics:
 
 * On normal completion of a handled branch, the `return` clause `e_ret` is evaluated in the lexical context of the
   handler itself.
+* The bound `k` is a captured resumption value, not a source-visible return arm or join continuation.
+  Any join-point or multi-return realization applies only to finite local control surrounding that resumption, as
+  constrained by §14.8.6A and §17.4.7A.
 * Applying `k` resumes the suspended computation from the operation site and immediately reinstalls the same deep
   handler around that resumed computation.
 * `k` may be resumed only in ways permitted by its declared quantity `q`. If the clause returns without resuming a
@@ -8656,12 +8974,15 @@ Target resolution:
   * Compiler-generated closures introduced solely by desugaring of loops, comprehensions, or protected-resource
     elaboration of `using` are transparent to this resolution rule.
 
-* **Labeled `return@L e`** targets the construct labeled `L`:
+* **Labeled `return@L e`** targets the nearest enclosing construct named or labeled `L` within the current
+  user-written function or lambda body:
   * a named function or method whose name is `L`, or
   * a direct lambda definition whose inherited name is `L`, or
   * a lambda carrying the label `L` (§8.4.1).
-  * Resolution searches outward lexically from the use site. Lambda boundaries do not block labeled `return` to a lambda
-    labeled `L` or to a named function or method named `L`, provided `L` is in scope at the use site.
+  * Resolution searches outward lexically from the use site, but is confined to the current user-written function or
+    lambda body; it does not cross user-written lambda or local-function boundaries.
+  * Compiler-generated closures introduced solely by desugaring of loops, comprehensions, or protected-resource
+    elaboration of `using` are transparent to this rule.
   * If no construct with label `L` is found, it is a compile-time error.
 
 * `return` does not target `do` blocks, `if` / `match` branches, loops, or `try` expressions. Those constructs are
@@ -9033,8 +9354,9 @@ syntax but still distinguishes that frame for the unwinding model.
 <!-- effects.elaboration_model.completion_finite_local_control_protocol -->
 #### 8.7.1A `Completion` as a finite local control protocol
 
-`Completion(RetCtx, A)` is the source-level semantic representation of the finite abrupt-control alternatives in scope
-at the current elaboration point.
+`Completion(RetCtx, A)` is not a surface syntax form.
+It is the normative semantic control family for the finite abrupt-control alternatives in scope at the current
+elaboration point.
 
 Interpretation:
 
@@ -9552,12 +9874,13 @@ or the pure analogue `let pat = func ~x1 ... ~xk args`, elaboration proceeds as 
 2. Elaborate each marked argument as follows:
 
    * If the marked argument is a stable place, proceed exactly as in the stable-place case of this section.
-   * If the marked argument is a parenthesized fully applied projection call, first inline the projection body once at
-     that site by substituting the actual arguments for the formal parameters. Then elaborate the resulting ordinary
-     control flow branchwise. Each `yield` leaf must denote a stable place rooted in one of the projection's `place`
-     arguments.
-   * In each leaf branch, the argument actually passed to the callee is the value at that yielded stable place. In KCore
-     this behaves as `MovePlace` on that stable place, or an observationally equivalent internal form (§17.3.1.1).
+   * If the marked argument is a fully applied projection call, elaboration first constructs the projector descriptor
+     value `proj` and the internal place pack `pack` for that call, then elaborates the marked argument as
+     `OpenProjector proj pack`.
+   * The callee receives the `focus` component of the resulting zipper.
+   * On return, the returned successor is written back by applying the zipper's linear `fill` component.
+   * If the zipper rebuilds a root pack containing more than one root field, the rebuilt pack is then scattered back to
+     the corresponding actual stable roots in declaration order.
 3. Determine the returned record type `R`:
    * for `let pat <- ...`, the call must have type `m R`;
    * for `let pat = ...`, the call must have type `R`.
@@ -9566,17 +9889,21 @@ or the pure analogue `let pat = func ~x1 ... ~xk args`, elaboration proceeds as 
    removing those `inout` fields.
 5. Elaborate the returned `inout` fields through fresh temporaries `__p1_tmp ... __pk_tmp` so that write-back does not
    interfere with residual pattern matching.
-6. For each marked place `Pᵢ`, matched with formal parameter `pᵢ`, elaborate the returned field `__pᵢ_tmp` back through
-   that place:
+6. For each marked argument, matched with formal parameter `pᵢ`, elaborate the returned field `__pᵢ_tmp` back through
+   the corresponding write-back target:
 
-   * If `Pᵢ` is the whole place `x`, where `x` is an ordinary immutable local binding, rebind `x` from `__pᵢ_tmp`,
-     shadowing the previous binding exactly as in ordinary linear state threading.
-   * If `Pᵢ` is a proper subplace of an ordinary immutable local binding `x`, rebuild the root by filling `Pᵢ` with
-     `__pᵢ_tmp`, then rebind `x` to the rebuilt root.
-   * If `Pᵢ` originated from a `var`-bound root, rebuild the hidden temporary root by filling `Pᵢ` with `__pᵢ_tmp` and
-     then write the rebuilt root back to the corresponding `Ref`.
-   * In KCore this behaves as `FillPlace Pᵢ __pᵢ_tmp` together with ordinary rebinding or `writeRef`, or as an
-     observationally equivalent internal form (§17.3.1.1).
+   * If the marked argument elaborated as a stable place `Pᵢ`, and `Pᵢ` is the whole place `x`, where `x` is an
+     ordinary immutable local binding, rebind `x` from `__pᵢ_tmp`, shadowing the previous binding exactly as in
+     ordinary linear state threading.
+   * If the marked argument elaborated as a stable place `Pᵢ`, and `Pᵢ` is a proper subplace of an ordinary immutable
+     local binding `x`, rebuild the root by filling `Pᵢ` with `__pᵢ_tmp`, then rebind `x` to the rebuilt root.
+   * If the marked argument elaborated as a stable place `Pᵢ` originating from a `var`-bound root, rebuild the hidden
+     temporary root by filling `Pᵢ` with `__pᵢ_tmp` and then write the rebuilt root back to the corresponding `Ref`.
+   * In KCore these stable-place cases behave as `FillPlace Pᵢ __pᵢ_tmp` together with ordinary rebinding or
+     `writeRef`, or as an observationally equivalent internal form (§17.3.1.1).
+   * If the marked argument elaborated as `OpenProjector proj pack`, the restoration is the write-back performed by the
+     zipper fill obtained from `OpenProjector`. If that fill rebuilds a root pack containing more than one root field,
+     the rebuilt pack is then scattered back to the corresponding actual stable roots in declaration order.
    * Because place filling is observationally equivalent to nested record updates, it is subject to the dependent-record
      update rules of §5.5.5. If the typestate transition of the restored `inout` path invalidates the type of any
      omitted sibling field in the rebuilt record, the `inout` application is a compile-time error. The user must unpack
@@ -9584,9 +9911,6 @@ or the pure analogue `let pat = func ~x1 ... ~xk args`, elaboration proceeds as 
      sibling fields.
    * When several `~` arguments are present, these restorations occur left-to-right in the order of the marked
      arguments.
-   * If the marked argument originated from a projection call, write-back is performed branchwise using the same inlined
-     control-flow structure. In each leaf branch, the returned `inout` successor is restored through the yielded stable
-     place using the existing `FillPlace` rule for that stable place.
 7. Match the user-written pattern `pat` against the residual result:
    * The residual result is always treated as a record. There is no implicit coercion from a one-field residual record
      `(label : T)` to the payload type `T`.
@@ -11913,6 +12237,11 @@ Such a realization MUST preserve:
 * all `defer`, `using`, and exit-action obligations of the captured segment; and
 * the one-shot versus multi-shot behavior required by this chapter.
 
+When such a realization uses a join point or finite local control protocol, that protocol optimizes only the
+tail-resumptive transfer surrounding the resumption.
+The resumption value itself remains governed by §§14.8.5-14.8.9 and is not reclassified as a finite local control
+protocol of §17.4.7A.
+
 <!-- core_semantics.runtime_model.store_interaction -->
 #### 14.8.7 Store interaction
 
@@ -13098,6 +13427,15 @@ Such queries SHOULD support at least:
 * enumeration of inhabitants when the summary is `Contractible` or `Finite n` and `n` does not exceed an
   implementation-defined completion threshold;
 * completion candidate enumeration at a source position;
+* hole-goal queries that report the expected type, local explicit context, local implicit context, and outstanding
+  constraint goals for a named or anonymous hole;
+* deterministic case-split generation for a binder or hole at a source position;
+* missing-clause generation driven by current coverage and totality information;
+* hole refinement by a user-supplied candidate term, returning either a source-preserving edit or a precise rejection
+  diagnostic;
+* lemma extraction from a hole or local goal, returning a source-preserving proposed declaration;
+* proof / term search for a hole under the current local context, imported interfaces, and available semantic object
+  store, returning deterministic candidates or edits;
 * find-usages and rename keyed by declaration-symbol identity;
 * type-directed search across the current project, imported interfaces, and any available semantic object store;
 * lookup, navigation, and find-usages by semantic object identity after name resolution;
@@ -13387,9 +13725,11 @@ KCore retains all compile-time structure needed by the source semantics. In part
   for cleanup;
 * explicit application spines aligned with Pi telescopes;
 * primitive suspension type formers `Thunk` and `Need`, together with explicit suspension introduction and forcing;
-* explicit stable places, scoped place borrows, and pure read / move / fill operations over stable subpaths;
-* surface `projection` calls do not survive as distinct KCore forms; they elaborate to ordinary control flow whose
-  leaves use the existing stable-place machinery;
+* explicit stable places, scoped place borrows, first-class projector descriptors, first-class borrowed-view values, and
+  opened-place packages;
+* surface `projection` definitions lower to ordinary projector descriptor constants;
+* surface fully applied projection calls lower to projector eliminators plus ordinary control flow, rather than
+  disappearing into ad-hoc inlining alone;
 * explicit `seal` nodes, manifest compile-time members, opaque compile-time members, and package/member projections;
 * surface `exists` and `open ... as exists ...` do not survive as distinct KCore forms; they elaborate to ordinary
   `seal`, package projections, and local bindings over implementation-internal witness members (§5.5.11);
@@ -13511,6 +13851,7 @@ KCore additionally behaves as if it contains the following pure structural opera
 ReadPlace : Place -> Term
 MovePlace : Place -> Term
 FillPlace : Place -> Term -> Term
+OpenPlace : Place -> Term
 ```
 
 Meaning:
@@ -13520,6 +13861,10 @@ Meaning:
 * `FillPlace p v` yields a rebuilt value of the root type of `p` in which the addressed subplace is replaced by `v`.
   `FillPlace` is pure structural rebuilding; it does not mutate storage.
 * `FillPlace (PVar x) v` is observationally equivalent to `v`.
+* `OpenPlace p` yields a value of type `Zipper R A A` when `p` selects a subvalue of type `A` inside a root of type `R`.
+* `OpenPlace p` is observationally equivalent to:
+  * moving the selected path `p` to obtain the focused value; and
+  * packaging the corresponding write-back function that fills the same path.
 
 Typing:
 
@@ -13528,6 +13873,7 @@ Typing:
   dependent-record / constructor-field rules; its result type is `R`.
 * For record paths, the typing side conditions of `FillPlace` are the same as those of rebuilding the corresponding root
   by nested record updates under §5.5.5.
+* If `p` selects a subvalue of type `A` inside a root of type `R`, then `OpenPlace p : Zipper R A A`.
 
 Admissibility and path-state effects:
 
@@ -13536,6 +13882,9 @@ Admissibility and path-state effects:
   that node, the addressed path is marked consumed.
 * `FillPlace p v` is well-formed only when `p` is an admissible write-back target under the current path state; after
   elaboration of that node, the addressed path is restored.
+* `OpenPlace p` is well-formed only when `MovePlace p` would be well-formed.
+* After elaboration of that node, the addressed path is treated as consumed until the linear `fill` component of the
+  resulting zipper is used or discarded under an ordinary consuming context.
 * `ReadPlace` MUST NOT be used to observe a path in a way that would duplicate a linearly available subvalue.
   Non-consuming observation of such a path must instead elaborate through `WithBorrowPlace` or an observationally
   equivalent internal representation.
@@ -13579,41 +13928,67 @@ Surface borrow introduction, borrowed local bindings, borrowed `?.` aliases, and
 elaborate through this form or an observationally equivalent internal representation.
 
 <!-- compiler.kcore.application_spines.projection_lowering -->
-##### 17.3.1.3 Projection lowering
+<!-- compiler.kcore.application_spines.projector_elimination -->
+##### 17.3.1.3 Projector elimination
 
-A conforming implementation MUST behave as if a fully applied call to a `projection` definition (§6.1.1) does not
-survive as a distinct KCore form.
+A conforming implementation MUST behave as if KCore contains the following projector eliminators:
 
-Instead, after ordinary dependent substitution of actual arguments for formal parameters, the projection body is inlined
-at the use site and elaborated to ordinary KCore control flow whose leaves are stable-place operations or equivalent
-scoped place borrows:
+```text
+ReadProjector   proj pack
+MoveProjector   proj pack
+OpenProjector   proj pack
+FillProjector   proj pack v
+BorrowProjector proj pack as (ρ, x) in e
+```
 
-* in an ordinary non-consuming value-demanding position, each leaf `yield p` elaborates as `ReadPlace p`;
-* in an ordinary consuming value-demanding position, each leaf `yield p` elaborates as `MovePlace p`, and the
-  post-expression path state is joined as specified in §5.1.7.2;
-* in a borrow-demanding position, each leaf `yield p` elaborates through `WithBorrowPlace p` as defined in §17.3.1.2;
-* under `~`, each leaf `yield p` elaborates through the existing `MovePlace p` / `FillPlace p` rewrite of §8.8.
+where:
 
-The `ReadPlace` lowering for an ordinary non-consuming value-demanding projection use is admissible only when each
-selected leaf place satisfies the `ReadPlace` side conditions of §17.3.1.1; otherwise that use of the projection call is
-ill-typed in that context.
+* `proj : Projector Roots A`;
+* `pack` is an internal place pack whose record shape matches `Roots`; and
+* each field of `pack` is a stable place selecting a value of the corresponding field type of `Roots`.
 
-When elaborating selector expressions inside a `projection` body, non-`yield` occurrences of place-rooted terms are
-lowered through `WithBorrowPlace` rather than `ReadPlace`, unless an observationally equivalent internal representation
-is used.
+The internal place pack is not a surface runtime value. It is a KCore application artifact pairing a first-class
+projector descriptor with the actual stable places supplied to its `place` binders.
 
-Different leaves of the same projection call may target stable places rooted in different `place` arguments, provided
-each leaf satisfies the projection-definition rules of §6.1.1.
+Meaning:
 
-The selector expression of a projection call is evaluated exactly once per projection call occurrence. If the source
-projection body contains `if` or `match`, the elaborated KCore contains corresponding ordinary branching structure with
-the translated leaves above.
+* `ReadProjector proj pack` yields the selected focus as a non-consuming read.
+* `MoveProjector proj pack` yields the selected focus as a consuming move and updates path state exactly as if the
+  dynamically selected leaf place had been moved directly.
+* `OpenProjector proj pack` yields a `Zipper Roots A A` by opening the dynamically selected leaf place and packaging the
+  corresponding write-back hole in root-pack form.
+* `FillProjector proj pack v` rebuilds the root pack by filling the dynamically selected leaf place with `v`.
+* `BorrowProjector proj pack as (ρ, x) in e` behaves like `WithBorrowPlace` for the dynamically selected leaf place.
 
-Projection calls therefore add no new runtime reference type and no new KCore place primitive; they are a reusable
-surface abstraction over ordinary control flow plus the existing stable-place machinery.
+Typing and admissibility:
 
-An implementation MAY further lower this ordinary branching structure to an internal multi-return or join-point form as
-specified in §17.4.7A.
+* `ReadProjector` is admissible only when each possible yielded leaf of `proj` is admissible for `ReadPlace` under the
+  current path state.
+* `MoveProjector` and `OpenProjector` are admissible only when each possible yielded leaf of `proj` is admissible for
+  `MovePlace` under the current path state.
+* `FillProjector` is admissible only when the selected leaf is an admissible write-back target under the current path
+  state and `v` has the declared focus type.
+* `BorrowProjector` introduces a rigid region exactly as `WithBorrowPlace` does, and values mentioning that region obey
+  the same escape rules.
+
+Projection descriptors are pure values. Application of a projector descriptor does not mutate storage. All rebuilding is
+expressed through the returned root pack or zipper fill function.
+
+A fully applied surface projection call does not survive as a distinct KCore form.
+
+Instead, after ordinary dependent substitution of non-`place` arguments and construction of the internal place pack for
+the actual `place` arguments:
+
+* in an ordinary non-consuming value-demanding position, the call elaborates as `ReadProjector proj pack`;
+* in an ordinary consuming value-demanding position, the call elaborates as `MoveProjector proj pack`;
+* in a borrow-demanding position, the call elaborates as `BorrowProjector proj pack as (ρ, x) in e`;
+* under `~`, the call elaborates as `OpenProjector proj pack`, followed by the ordinary zipper-threading rewrite of
+  §8.8;
+* in a projection-section update, the call elaborates as `FillProjector proj pack newValue`.
+
+If the internal place pack contains more than one root field, the rebuilt root pack produced by `FillProjector` or by
+the `fill` component of `OpenProjector` is then scattered back to the corresponding actual stable roots in declaration
+order. This scattering is pure structural rebuilding only.
 
 <!-- compiler.kcore.application_spines.projection_section_update_lowering -->
 ##### 17.3.1.3A Projection-section update lowering
@@ -13636,15 +14011,17 @@ Instead, elaboration proceeds as follows:
    * a stable place rooted in `__root`, or
    * a fully applied projection call whose yielded stable-place alternatives are all rooted in `__root`.
 5. If the resolved form is a stable place `p`, elaborate as `FillPlace p __new`.
-6. If the resolved form is a fully applied projection call, inline and lower it exactly as in projection lowering,
-   except that each leaf `yield p` elaborates as `FillPlace p __new`.
+6. If the resolved form is a fully applied projection call, elaborate it to its projector descriptor value `proj` and
+   internal place pack `pack`, then elaborate the update as `FillProjector proj pack __new`.
+7. If the resulting root pack contains more than one root field, scatter the rebuilt fields back to the corresponding
+   actual stable roots in declaration order.
 
 Consequences:
 
 * `lhs` is evaluated exactly once.
 * `rhs` is evaluated exactly once.
 * No new runtime reference primitive is introduced.
-* Projection-section update is therefore surface sugar over existing place primitives and projection lowering.
+* Projection-section update is therefore surface sugar over existing place and projector primitives.
 
 <!-- compiler.kcore.application_spines.completion_kernel -->
 ##### 17.3.1.4 KCore completion and do-scope kernel
@@ -13924,7 +14301,7 @@ Introduction kinds are implementation-defined, but MUST distinguish at least:
 * borrow introduction;
 * record reordering;
 * place lowering / path restoration;
-* projection lowering;
+* projector elimination;
 * projection-section update lowering;
 * branch-refinement lowering;
 * completion-kernel lowering;
@@ -14269,7 +14646,8 @@ At or before publication of KBackendIR, the implementation MUST validate that:
 * every call, closure, and entrypoint has a fixed runtime arity and runtime calling convention;
 * handler, resumption, cleanup, and error-propagation structures satisfy the runtime obligations of Chapters 8, 9, and
   14;
-* any internal multi-return or join-point lowering of `Completion`, `Match`, or projection control satisfies §17.4.7A;
+* any internal multi-return or join-point lowering of `Completion`, `Match`, projection/projector-elimination control,
+  or implementation-generated boolean / constructor-refinement / case-split control satisfies §17.4.7A;
 * data, variant, and record layout choices are fixed consistently with §§14.5-14.6;
 * retained dictionaries and backend intrinsics have concrete runtime representations, or else compilation is rejected
   before target lowering;
@@ -14289,7 +14667,11 @@ At minimum it MUST represent:
 * basic blocks, control regions, or an observationally equivalent control graph;
 * control-flow edges or equivalent successor structure;
 * if internal multi-return or join-point lowering is used, the corresponding arm graph together with its mapping to
-  source-level `Completion` / `Match` alternatives;
+  the originating control alternatives, including:
+  * source-level `Completion` / `Match` alternatives when those are the source representation;
+  * projection yielded-leaf alternatives for projector-elimination control; and
+  * success / failure or case-split alternatives for implementation-generated boolean or constructor-refinement join
+    points;
 * values and def-use or binding-use relationships;
 * fiber handles, supervision scopes, TVars, STM journals, handler frames, resumption objects, cleanup scopes, and
   error-propagation structure;
@@ -14377,8 +14759,11 @@ Eligible protocols include at least:
 
 * completion-carrying control over `Completion(RetCtx, A)`;
 * residue-threading control over `Match a r`;
-* projection-lowering control whose leaves terminate in `ReadPlace`, `MovePlace`, `FillPlace`, or `WithBorrowPlace`;
-* implementation-generated boolean or constructor-refinement join points.
+* projection/projector-elimination control whose leaves terminate in the place or projector eliminators of
+  §§17.3.1.1 and 17.3.1.3;
+* implementation-generated boolean, constructor-refinement, or case-split join points, including lowering of ordinary
+  `if`, `match`, and union/data-constructor dispatch when no unnecessary intermediate boolean or tag value is
+  materialized;
 
 Rules:
 
@@ -14394,12 +14779,16 @@ Rules:
   subsection.
 * The lowering MUST NOT change the observability of `defer`, `using`, handler unwinding, resumption reuse, or error
   propagation.
-* If a lowered call forwards all still-live arms unchanged, the implementation MAY realize it as a tail transfer.
-* A lowered call that forwards only a strict subset of still-live arms unchanged is a super-tail transfer. An
-  implementation MAY realize such a transfer by dropping discarded dynamic control state before transfer, but only when
-  every discarded arm is unreachable or every unwind obligation associated with it has already been discharged.
-* A lowered call that both forwards one or more still-live arms and installs new local arm handlers is a semi-tail
-  transfer.
+* If a lowered transfer introduces no new local arm handlers and preserves every still-live caller arm by references to
+  existing caller arms, the implementation MAY realize it as a tail transfer.
+* If a lowered transfer introduces no new local arm handlers and preserves only a strict subset of the still-live caller
+  arms, the implementation MAY realize it as a super-tail transfer.
+  An implementation MAY realize such a transfer by dropping discarded dynamic control state before transfer, but only
+  when every discarded arm is unreachable or every unwind obligation associated with it has already been discharged.
+* A lowered transfer that installs one or more new local arm handlers while also preserving one or more caller arms is a
+  semi-tail transfer.
+* Permutation or duplication of preserved caller arms does not by itself disqualify a tail, super-tail, or semi-tail
+  realization, provided the observable control protocol remains that of the source semantics.
 * If a lowered protocol is used inside a multi-shot resumption, each reuse MUST still satisfy §§8.1.8.1 and 14.8:
   control state inside the captured segment is logically cloned per resumption application, while general heap state
   remains shared unless the program copies it explicitly.
