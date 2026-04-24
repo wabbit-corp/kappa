@@ -14197,7 +14197,16 @@ Semantics:
 * `distinct` keeps the first encountered row for each unique current row record `Row(Γ)`.
 * `distinct by keyExpr` evaluates `keyExpr` exactly once per incoming row and keeps the first encountered row for each
   unique key.
-* Hashing may be used as an optimization, but only when observationally equivalent to the corresponding `Eq` semantics.
+* The semantics of `distinct` and `distinct by` are defined only in terms of the corresponding `Eq` instance.
+* Implementations MAY accelerate deduplication with hashing, including `std.hash.Hashable` when suitable evidence is
+  available.
+* Such acceleration is permitted only as an as-if optimization:
+  * the chosen representatives must be exactly those selected by the `Eq` semantics above;
+  * hash-code equality MUST NOT be treated as key equality;
+  * hash collisions MUST be resolved using `Eq`;
+  * hash-code inequality MAY be used as a fast rejection only for values hashed under the same seed and same compatible
+    hashing evidence;
+  * absence of `Hashable` evidence MUST NOT make the program ill-formed.
 
 Representative choice:
 
@@ -14343,10 +14352,16 @@ Encounter order after grouping:
 
 * The output of `group by` has Unordered encounter order (§10.3.2) until another `order by` is applied.
 
-Implementation model (permitted):
+Implementation model:
 
-* Implementations may compute grouping via single-pass hash aggregation, then continue the pipeline on the grouped rows.
-  The exact strategy is not semantically observable except through the Unordered/Ordered rules above.
+* Implementations may compute grouping via single-pass hash aggregation, tree aggregation, sorting, linear partitioning,
+  or another observationally equivalent strategy.
+* Group membership is defined only by `Eq K`.
+* Hashing, including use of `std.hash.Hashable K`, is an optimization only.
+* Hash collisions MUST be resolved by `Eq K`.
+* Hash-code equality MUST NOT be treated as group-key equality.
+* Absence of `Hashable K` MUST NOT make `group by` ill-formed.
+* The exact strategy is not semantically observable except through the Ordered/Unordered rules above.
 
 <!-- collections.joins -->
 ### 10.8 Joins
@@ -14552,9 +14567,6 @@ Implementations MUST provide standard collection behavior observationally equiva
 Implementations MAY realize these collectors intrinsically rather than as ordinary user-visible instances, but their
 behavior MUST be observationally equivalent to such instances.
 
-For built-in set collection `{| clauses..., yield valueExpr |}`, if `valueExpr : A`, collection requires an implicit
-`Eq A` instance.
-
 For `Query a`:
 
 * only element-stream comprehensions are supported in v1;
@@ -14568,6 +14580,40 @@ For `Array a`:
 * if the input pipeline is Ordered, the resulting array order is that encounter order;
 * if the input pipeline is Unordered, the resulting array order is deterministic in package mode under §10.3.2, but not
   user-visible or specified.
+
+For omitted set comprehensions `{| ... |}`:
+
+* if `yield valueExpr : A`, terminal set collection requires an implicit `Eq A` instance;
+* duplicate elements are identified using `Eq A`;
+* if multiple yielded elements compare equal under `Eq A`, the resulting set contains one representative of that
+  equality class;
+* because built-in set iteration is Unordered (§10.3.2), the representative is not user-visible except through later
+  operations that explicitly expose elements;
+* in package mode, representative choice must nevertheless be deterministic for fixed inputs and fixed implementation
+  configuration.
+
+For omitted map comprehensions `{ ... }`:
+
+* if `yield keyExpr : valueExpr` has `keyExpr : K` and `valueExpr : V`, terminal map collection requires an implicit
+  `Eq K` instance;
+* duplicate keys are identified using `Eq K`;
+* the conflict policy of §10.5.1 determines the value associated with each equality class of keys;
+* if no conflict policy is written, the default remains `keep last` in encounter order;
+* if the key/value stream is Unordered, encounter-sensitive conflict policies follow the deterministic-but-unspecified
+  rule of §10.3.2.
+
+Equality-keyed acceleration:
+
+* Built-in set and map collectors MAY use `std.hash.Hashable` evidence for acceleration.
+* Such evidence is optional.
+* Built-in set and map collectors MUST remain well-formed and semantically correct when no `Hashable` evidence is
+  available.
+* If a collection value stores hash buckets or other hash-derived caches internally, those caches are semantically
+  invisible.
+* A cached hash structure may be reused only when it was built with a compatible implementation algorithm, seed, and
+  hashing evidence.
+* Otherwise the implementation must rebuild the cache, ignore it, or fall back to an `Eq`-only strategy.
+* No source-level operation may observe whether a cache existed, was reused, was rebuilt, or was discarded.
 
 <!-- collections.lowering.row_environment -->
 #### 10.10.2 Row environment
