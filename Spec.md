@@ -166,9 +166,10 @@ importSpec  ::= moduleRef
               | moduleRef '.(' importItem (',' importItem)* ')'
               | moduleRef '.*'
               | moduleRef '.*' 'except' '(' exceptItem (',' exceptItem)* ')'
-importItem  ::= { 'unhide' | 'clarify' }* [kindSelector] nameRef [ctorAll]
+importItem  ::= { 'unhide' | 'clarify' }* [kindSelector] nameRef [ctorAll] [itemAlias]
 kindSelector ::= 'term' | 'type' | 'trait' | 'ctor'
 ctorAll     ::= '(..)'
+itemAlias   ::= 'as' ident
 exceptItem  ::= [kindSelector] nameRef
 ```
 
@@ -193,6 +194,31 @@ Semantic disambiguation of bare dotted import forms:
   * `import A.B.C.* except (...)`
 * URL module references are never extended by dotted module-path continuation after the closing string literal, so:
   * `import "url".x` is always singleton-item import sugar for `import "url".(x)`.
+
+Selective import aliases:
+
+A selective import item may rename the imported binding group or selected declaration:
+
+```kappa
+import std.math.(sin as sine)
+import std.list.(type List as StdList)
+import std.eq.(trait Eq as Equal)
+import std.list.(ctor (::) as cons)
+```
+
+Rules:
+
+* An alias on an unqualified import item imports the selected binding group under the alias spelling.
+* An alias on a kind-qualified import item imports only the selected declaration kind under the alias spelling.
+* The imported declaration's semantic identity is unchanged.
+* Reified static-object facets, constructor metadata, projection/accessor descriptor identity, fixity metadata, and
+  other first-class semantic-object metadata are preserved under the alias.
+* `ctorAll` may not be combined with `itemAlias`.
+  Thus `import M.(type T(..) as U)` is ill-formed.
+  Import the type and constructors separately if aliases are desired.
+* `exceptItem` does not admit aliases.
+* The surface singleton form `import M.x` does not admit an alias.
+  To alias a singleton item, write `import M.(x as y)`.
 
 Constraints:
 
@@ -236,9 +262,10 @@ import std.person.(ctor Person)
 Grammar:
 
 ```text
-importItem   ::= { 'unhide' | 'clarify' }* [kindSelector] nameRef [ctorAll]
+importItem   ::= { 'unhide' | 'clarify' }* [kindSelector] nameRef [ctorAll] [itemAlias]
 kindSelector ::= 'term' | 'type' | 'trait' | 'ctor'
 ctorAll      ::= '(..)'
+itemAlias    ::= 'as' ident
 exceptItem   ::= [kindSelector] nameRef
 ```
 
@@ -258,6 +285,14 @@ Unqualified import of a spelling:
   its type facet and its same-spelling constructor facet (§2.8.2).
 * Distinct-spelling constructors are not imported unqualified by default.
   Use `ctor K` or `type T(..)`.
+
+Aliased import of a spelling:
+
+* `import M.(x as y)` imports the same declarations that `import M.(x)` would import, but under spelling `y`.
+* The original spelling `x` is not introduced by that import item.
+* If `x` denotes a same-spelling data family and the import is unqualified, the imported type and same-spelling
+  constructor facets remain paired under spelling `y`.
+* If a kind selector is present, only that selected kind is imported under the alias spelling.
 
 Reified static-object facets and imports:
 
@@ -305,8 +340,10 @@ import std.rope.(unhide clarify term normalizeWorker)
 An import item has the shape:
 
 ```
-importItem ::= { 'unhide' | 'clarify' }* [kindSelector] nameRef
+importItem ::= { 'unhide' | 'clarify' }* [kindSelector] nameRef [ctorAll] [itemAlias]
 kindSelector ::= 'term' | 'type' | 'trait' | 'ctor'
+ctorAll ::= '(..)'
+itemAlias ::= 'as' ident
 ```
 
 Rules:
@@ -501,6 +538,22 @@ Semantic disambiguation of bare dotted export forms:
 
 The `except` form uses the same `exceptItem` grammar as §2.3. In particular, `export M.(type T(..))` re-exports the type
 `T` together with all of its constructors.
+
+Export aliases:
+
+Export items use the same `itemAlias` grammar as import items.
+
+```kappa
+export std.math.(sin as sine)
+export std.list.(type List as StdList)
+```
+
+Rules:
+
+* An aliased export re-exports the selected declaration or binding group under the alias spelling.
+* The original spelling is not re-exported by that export item.
+* The declaration's semantic identity and metadata are preserved under the export alias.
+* `ctorAll` may not be combined with an export alias.
 
 The import/export rules for reified static-object term facets are identical. Re-exporting a declaration by its primary
 kind also re-exports its reified static-object term facet, if present.
