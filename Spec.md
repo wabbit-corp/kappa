@@ -11571,19 +11571,31 @@ Semantics:
 
 Typing and well-formedness:
 
-* The plain form requires `Alternative m` (or equivalent short-circuiting structure) for the enclosing monad.
-* The plain form is permitted only when every value discarded by refutation is droppable. The compiler MUST reject the
-  binding if it cannot prove this.
-* For this rule, values are droppable exactly when all discarded components carry only droppable quantities:
-  `0`, `&`, `<=1`, or `ω`. A discarded component with a positive owned lower-bound obligation, such as quantity `1` or
-  `>=1`, makes the plain form ill-formed.
+* The plain form requires `Alternative m` or an equivalent short-circuiting structure for the enclosing monad.
+* The plain form is permitted only when every value discarded by refutation is droppable under §5.1.5A.
+* For the v1 surface quantities, discarded components carrying `0`, `&`, `<=1`, or `ω` are droppable; discarded
+  components carrying `1` or `>=1` are not droppable.
+* This check is performed on the unmatched residue of `pat`, not merely on the matched branch.
 * For an open variant scrutinee of type `(| ... | r |)`, the plain form is permitted only when available row
-  constraints prove that every residual-row case in `r` is droppable. Because an unconstrained residual row may hide a
-  non-droppable owned case, the compiler MUST conservatively reject the plain form when such proof is unavailable.
-* This check is performed on the unmatched residue of `pat`, not merely on whether the matched branch contains linear
-  data. For example, matching `Option.Some` against `Option (1 File)` is permitted because the failure case `None`
-  carries no owned linear obligation, while matching `Ok` against `Result (1 File) (1 ErrorToken)` is rejected because
-  the failure case would discard `Err` carrying `ErrorToken`.
+  constraints prove that every residual-row case in `r` is droppable.
+* In the absence of such proof, the compiler MUST conservatively reject the plain form.
+
+Examples:
+
+```kappa
+-- Accepted: failure discards only None.
+let? Some x = maybeInt
+rest
+
+-- Rejected when the Err branch carries a positive lower-bound component.
+let? Ok x = resultWithLinearErr
+rest
+```
+
+In the `else` form, the failure residue is not discarded. It is matched against `residuePat`, and ordinary quantity
+checking applies to the failure branch. Therefore the failure branch may bind values carrying `1` or `>=1`, provided it
+demands them sufficiently before that branch exits.
+
 * In the `else` form, the pair of patterns `pat` and `residuePat` is checked as a disjoint, jointly exhaustive split of
   the scrutinee type, using the ordinary overlap and coverage rules of `match`.
 * The `else` form does not require `Alternative m` merely for refutation, because failure does not go through `empty`.
