@@ -3085,11 +3085,16 @@ underlying root and path. Projecting from the alias extends that same path rathe
 
 A place expression is either:
 
-* a stable place under §5.1.7.1; or
-* a fully applied call to a `projection` definition (§6.1.1).
+* a stable place under §5.1.7.1;
+* a fully applied call to a `projection` definition (§6.1.1); or
+* a projector descriptor application under §7.1.3A.
 
 A fully applied projection call is not a first-class runtime reference. It denotes a computed selection of one stable
 place rooted in one of the `place` parameters of the called projection definition.
+
+A projector descriptor application under §7.1.3A is likewise not a first-class runtime reference. It denotes the same
+kind of computed stable-place selection, but with the projector descriptor supplied as an ordinary term value and the
+actual roots supplied through the special roots-argument elaboration of §7.1.3A.
 
 After substituting actual arguments for formal parameters, each reachable `yield` in the projection body determines one
 yielded stable-place alternative. Every yielded alternative of a projection definition must be rooted in one of the
@@ -3104,6 +3109,10 @@ Static footprint summary:
 * Borrow-overlap checks, disjointness checks, and `~` admissibility checks use this static footprint summary.
 * Runtime projector elimination uses only the single yielded stable place selected by evaluation of the projection body,
   together with the corresponding root-pack rebuild when a fill or open operation is requested.
+
+For static overlap, disjointness, borrow introduction, and `~` admissibility, a projector descriptor application is
+treated exactly like the corresponding fully applied projection call obtained from the same projector descriptor and
+internal roots pack.
 
 Use restrictions:
 
