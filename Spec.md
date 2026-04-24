@@ -19098,6 +19098,15 @@ A foreign call that may suspend a host execution resource is classified as one o
 
 Additional classification rules:
 
+Default classification rule:
+
+* A raw native, C, POSIX, JNI, P/Invoke, or equivalent foreign call is `blocking` rather than `blocking-cancellable`
+  unless a trusted binding summary or shim explicitly upgrades it.
+* Host metadata alone is not sufficient to infer `blocking-cancellable`.
+* A timeout parameter accepted by a foreign function does not by itself make the call `blocking-cancellable`.
+  It may support a higher-level Kappa wrapper that retries, polls, or bounds waiting, but that wrapper is distinct from
+  cancellation of the in-flight call.
+
 * A call MAY be classified as `blocking-cancellable` only when the selected adapter mode, trusted binding summary, or
   shim names a specific cancellation mechanism for that call and states that invoking it is safe.
 * A backend MUST NOT classify a call as `blocking-cancellable` solely because the host platform exposes thread kill,
@@ -19110,11 +19119,14 @@ Rules:
 * If a fiber is interrupted while executing a `blocking` call, interruption becomes pending and is taken when the call
   returns.
 * If a fiber is interrupted while executing a `blocking-cancellable` call, the runtime MUST attempt the documented safe
-  cancellation mechanism exactly once and then obey ordinary interruption semantics.
-* If that cancellation attempt is unavailable, refused, races with normal completion, or otherwise does not promptly
-  end the call, interruption remains pending and is taken when the call returns.
-* A backend that cannot realize the required classification or its documented cancellation mechanism MUST reject that
-  foreign declaration or deployment rather than silently pretending to support it.
+  cancellation mechanism at most once.
+* The cancellation attempt is best-effort unless the trusted binding summary explicitly states that it is definitive.
+* If the cancellation attempt is unavailable, refused, races with normal completion, or otherwise does not promptly end
+  the call, interruption remains pending and is taken when the call returns.
+* A cancellation attempt MUST NOT use host thread termination, unsafe async signal injection, or equivalent forced
+  preemption unless the trusted binding summary proves that the specific binding is safe under that mechanism.
+* A backend that cannot realize the documented safe cancellation mechanism MUST reject that foreign declaration or
+  deployment rather than silently downgrading it.
 
 <!-- compiler.conformance -->
 ### 17.14 Backend conformance
