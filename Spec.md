@@ -11423,9 +11423,8 @@ Left join example (using group join + flattening):
 ```kappa
 [
     for c in customers
-    left join o in orders on o.customerId == c.id into customer_orders
-    for order in customer_orders.defaultIfEmpty(defaultOrder c)
-    yield (c.name, order.totalAmount)
+    left join o in orders on o.customerId == c.id into customerOrders
+    yield (customer = c, orders = customerOrders)
 ]
 ```
 
@@ -11515,8 +11514,9 @@ Examples:
 * `Array [ ... ]` may use `FromComprehensionPlan (Array a)`.
 * `Query [ ... ]` may use `FromComprehensionPlan (Query a)`.
 * `Map k v { ... }` may use `FromComprehensionPlan (Map k v)` with `Item = (key : k, value : v)`.
-* `Tensor (n, m) { ... }` may use `FromComprehensionPlan (Tensor (n, m) a)` with an implementation-defined
-  interpretation of the key/value items.
+* `Tensor (n, m) { ... }` is an illustrative example of a custom sink.
+  This section does not by itself standardize dense tensor semantics, index domains, shape inference, or tensor-specific
+  reduction behavior.
 
 Raw custom sinks are intended for query providers, relational backends, and other advanced carriers that need access to
 the original clause structure. Normalized sinks are intended for ordinary collection builders and backends that are
