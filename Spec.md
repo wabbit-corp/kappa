@@ -9930,6 +9930,26 @@ Compile-time-only captured values erased under §14.4 do not by themselves make 
 A conforming implementation MAY discharge this obligation via closure-capture checking plus region checking, or via an
 equivalent dedicated control-flow analysis, provided the accepted programs are the same.
 
+Ergonomic consequence:
+
+* One-shot resumptions are the ordinary effect-programming mode for code that may interact with owned resources,
+  borrowed views, mutable local state, `using`, or `defer`.
+* Multi-shot resumptions are intended for effects whose resumed continuation is duplicable, such as nondeterminism,
+  search, parser branching, backtracking over immutable state, and other explicitly unrestricted control patterns.
+* A library that declares an operation as multi-shot SHOULD document why repeated resumption is required.
+* A library that does not require repeated resumption SHOULD omit the resumption quantity and rely on the default
+  one-shot quantity `1`.
+
+Diagnostic requirement:
+
+When compilation rejects a multi-shot operation invocation because the captured suffix contains non-duplicable state,
+the diagnostic MUST identify:
+
+* the multi-shot operation being invoked;
+* the nearest handler boundary used for capture;
+* at least one live owned or borrowed value causing the rejection; and
+* whether the rejection is due to quantity-`1` capture, borrowed capture, or an outstanding exit-action obligation.
+
 <!-- effects.monadic_core.shallow_handlers -->
 #### 8.1.9 Shallow handlers
 
