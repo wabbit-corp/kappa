@@ -3807,6 +3807,36 @@ let f : (1 t : T) -> Unit =
 The rejection is required because accepting this definition would provide a generic discard operation for all linear
 values.
 
+Visible constructor decomposition is different from generic discard. If a visible constructor has no runtime-relevant
+payload, matching on that constructor consumes the outer value and introduces no component obligations to discharge.
+
+For example, a function may consume a visible nullary constructor and return `Unit`:
+
+```kappa
+data TokenSpent : Type =
+    TokenSpent
+
+forgetSpent : (1 t : TokenSpent) -> Unit
+let forgetSpent t =
+    match t
+    case TokenSpent ->
+        ()
+```
+
+This is not a generic discard operation. The constructor is visible, the type has no runtime-relevant payload, and the
+match consumes the outer value.
+
+By contrast, a wildcard pattern does not expose or discharge anything:
+
+```kappa
+bad : (1 t : T) -> Unit
+let bad t =
+    match t
+    case _ -> ()
+```
+
+This is rejected for arbitrary `T`.
+
 Discard positions include:
 
 * wildcard patterns;
@@ -11538,10 +11568,35 @@ Valid do-items inside `do`:
   ```
 
   * If `expr` is followed by a later reachable do-item, its value is discarded.
+  This discard is permitted only when the result value is droppable under the linear-discard rules of §5.1.5B.
+  If the result contains a non-droppable component, the program is rejected. The user must bind the result explicitly
+  and consume, release, return, or otherwise transfer that component.
   This requires `Monad m` for the enclosing block at that point. Desugaring sketch: `expr` in such a position behaves
-  like `expr >>= \_ -> pure ()`.
+  like `expr >>= \_ -> pure ()`, but only after the discard has passed the droppability check.
   * If normal execution reaches `expr` and no later do-item is reached, its value is the block's result and is not
     discarded.
+
+  Examples:
+
+  ```kappa
+  do
+      makeFileHandle
+      pure ()
+  ```
+
+  This is rejected unless `makeFileHandle` returns a droppable value.
+
+  ```kappa
+  do
+      let 1 h <- makeFileHandle
+      closeFile h
+  ```
+
+  ```kappa
+  do
+      using h <- makeFileHandle
+      use h
+  ```
 
 * **Resource-scoped bind (`using`)**:
     ```kappa
@@ -11758,7 +11813,7 @@ Rules:
 Typing:
 
 * A do-item that is followed by a later reachable do-item is sequenced for effects; if it produces a value, that value
-  is discarded.
+  is discarded only when it is droppable under §5.1.5B.
 * A do-item that is the last reached item on a normal path determines the block result on that path.
 * Abrupt-control items need not produce a normal result on paths where they are taken.
 
