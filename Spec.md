@@ -682,9 +682,9 @@ In addition to the ordinary exports listed below, implementations MUST provide t
 declarations referenced by §§5.3.1-5.3.2 (`Label`, `EffLabel`, `ContainsRec`, `LacksRec`, `ContainsVar`, `LacksVar`,
 `ContainsEff`, `LacksEff`, and `SplitEff`) whenever those names are user-nameable in source programs.
 
-Implementations MUST also provide the projector declarations referenced by §§5.1.7.3, 7.1.3A, 8.8, and 17.3.1.3
-(`Projector`, `BorrowView`, `Zipper`, `captureBorrow`, `withBorrowView`, and `composeProjector`) whenever those names
-are user-nameable in source programs.
+Implementations MUST also provide the projector and accessor declarations referenced by §§5.1.7.3, 7.1.3A, 7.1.3B,
+8.8, and 17.3.1.3 (`Projector`, `Getter`, `Opener`, `Setter`, `Sinker`, `BorrowView`, `Zipper`, `captureBorrow`,
+`withBorrowView`, and `composeProjector`) whenever those names are user-nameable in source programs.
 
 Types (type namespace):
 ```
@@ -1845,7 +1845,7 @@ forall, exists,
 captures, thunk, lazy, force,
 assertTerminates, assertReducible, assertTotal, decreases, structural, expect, instance, derive, effect, handle, deep,
 with, scoped, pattern,
-projection, place,
+projection, place, get, set, sink,
 infix, postfix, prefix, left, right,
 var, while, break, continue, using, inout,
 yield, for, for?, group, by, distinct, order, skip, take, top, join, left, asc, desc,
@@ -3481,15 +3481,33 @@ Kappa provides the following built-in type formers:
 
 ```kappa
 Projector  : Type -> Type -> Type
+
+Getter     : Type -> Type -> Type
+Opener     : Type -> Type -> Type
+Setter     : Type -> Type -> Type
+Sinker     : Type -> Type -> Type
+
 BorrowView : Region -> Type -> Type
 Zipper     : Type -> Type -> Type -> Type
 ```
 
 Meaning:
 
-* `Projector roots focus` is a first-class pure descriptor of a place-selection computation whose place arguments have
-  shape `roots` and whose selected focus has type `focus`.
+* `Projector roots focus` is a first-class pure descriptor of a stable-place selection computation whose place arguments
+  have shape `roots` and whose selected focus has type `focus`.
+
+* `Getter roots focus` is a first-class pure descriptor of read access from a roots place pack to a focus value.
+  It need not select a stable place.
+
+* `Opener roots focus` is a first-class pure descriptor of owned inout-style access from a roots place pack to a
+  `Zipper roots focus focus`.
+
+* `Setter roots focus` is a first-class pure descriptor of owned replacement of a focus value inside a roots place pack.
+
+* `Sinker roots focus` is a first-class pure descriptor of consuming extraction from a roots place pack to a focus value.
+
 * `BorrowView ρ A` is a first-class borrowed view of `A` valid under region `ρ`.
+
 * `Zipper whole focus replace` packages an opened owned focus together with a linear filler back to `whole`.
 
 Canonical declaration of `Zipper`:
@@ -3517,7 +3535,7 @@ composeProjector :
 
 Rules:
 
-* `Projector`, `BorrowView`, and `Zipper` are ordinary first-class types.
+* `Projector`, `Getter`, `Opener`, `Setter`, `Sinker`, `BorrowView`, and `Zipper` are ordinary first-class types.
 * Values of those types may be bound, stored in records, packaged, sealed, opened, returned, and projected exactly
   like other values, subject to the ordinary quantity and escape rules.
 * `captureBorrow` does not extend the lifetime of a borrow. It merely reifies an already-valid borrowed view as an
@@ -3525,6 +3543,13 @@ Rules:
 * `withBorrowView v k` checks `k` in a context where its parameter is an ordinary borrowed binder under `ρ`; it is the
   elimination form for a first-class borrowed view.
 * `composeProjector` composes projector descriptors only. It does not itself read, move, borrow, or fill any place.
+
+Accessor descriptors and projectors are distinct:
+
+* A `Projector roots focus` describes selection of an actual stable place.
+* A `Getter` / `Opener` / `Setter` / `Sinker` descriptor may describe computed access that is not itself a stable place.
+* Therefore accessor-bundle applications are not automatically place expressions under §5.1.7.2, although they may be
+  admitted by specific surface contexts such as ordinary read, borrow-demanding use, `~`, or projection-section update.
 
 <!-- types.functions -->
 ### 5.2 Function types
@@ -7163,6 +7188,14 @@ let d = g angle
 let choose = longer
 let best = choose (x = title, y = subtitle)
 ```
+
+<!-- expressions.application.accessor_descriptor_application -->
+#### 7.1.3B Accessor descriptor application
+
+Accessor descriptor application is the application family for values of type `Getter`, `Opener`, `Setter`, or `Sinker`.
+
+In v1, an accessor descriptor application is not automatically a place expression.
+It is admitted only by surface contexts that explicitly define elaboration for the relevant descriptor class.
 
 <!-- expressions.application.subsumption.spine_pipeline -->
 ##### 7.1.3.1 Application-spine elaboration pipeline
