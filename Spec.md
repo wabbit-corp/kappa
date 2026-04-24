@@ -12459,6 +12459,13 @@ Consequences:
 * `distinct by keyExpr` operates on keys computed from the current row environment.
 * `order by`, `group by`, `join`, and filters likewise operate on the current row environment.
 
+Terminology:
+
+* The term "current query pipeline" refers to the normalized `Query (Row(Γ))` being transformed before `yield`.
+* The term "carrier" is reserved for the final collection sink selected by §10.9.
+* Clause semantics before `yield` MUST NOT depend on the final carrier, except where this specification explicitly
+  delegates to `FromComprehensionRaw`.
+
 <!-- collections.lowering.initial_row_stream -->
 #### 10.10.2A Initial row stream
 
