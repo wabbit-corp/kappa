@@ -7676,7 +7676,7 @@ Rules:
 * This quantity governs how many times the handler may use the resumption continuation value supplied to handlers of
   that operation.
 * Because a resumption is captured control state rather than a borrowable place, there is no borrowed-resumption mode in
-  v0.1.
+  this specification.
 * Operation names declared inside an `effect` declaration do not contribute ordinary unqualified `term` declarations. They are
   selected via `label.op` (§2.8.3), and are additionally available within a handler for that label when handlers are
   specified.
@@ -7706,7 +7706,29 @@ Accordingly:
 * A multi-shot operation therefore permits multiple uses of the same resumption value `k`, while each individual
   application of `k` still consumes exactly one payload of the operation result type.
 
-There is no surface or KCore form in v0.1 for a borrowed resumption payload or a borrowed resumption value.
+There is no surface or KCore form in this specification for a borrowed resumption payload or a borrowed resumption
+value.
+
+<!-- effects.monadic_core.effect_labels.identity_and_handler_matching -->
+#### 8.1.7B Effect-label identity and handler matching
+
+Effect labels denote handler selectors.
+
+An operation occurrence `label.op args` is associated with the exact effect-label value `label` at that source site.
+
+A handler `handle label expr with ...` or `deep handle label expr with ...` intercepts only operations raised to that
+same effect-label value.
+
+Handler matching is by effect-label identity, not by source spelling and not merely by effect-interface name.
+
+Accordingly:
+
+* two distinct effect-label values may carry the same effect interface and still be handled independently;
+* the nearest dynamically enclosing matching handler for the exact effect-label value is selected at runtime; and
+* passing an `EffLabel` binder or package member to another function explicitly delegates authority to perform
+  operations at the handler for that label.
+
+This subsection defines surface semantics only. KCore realization is given by §17.3.1.5.
 
 <!-- effects.monadic_core.effect_application_linear_soundness -->
 #### 8.1.8 Effect application and linear soundness
@@ -7717,13 +7739,14 @@ Because Kappa enforces quantitative resource tracking, the capability of an effe
 multi-shot continuation is restricted by the linear environment at the operation site.
 
 When a computation invokes an effect operation `label.op args`, and the declared resumption quantity of `op` is `q`, the
-evaluation context from that operation site to the end of the nearest enclosing handler for `label` is reified by the
-compiler as a continuation value whose usage is checked against `q`.
+evaluation context from that operation site to the end of the nearest dynamically enclosing matching handler for that
+exact effect-label value is reified by the compiler as a captured resumption value whose permitted uses are constrained
+by `q`.
 
 Call-site capture rule:
 
 * The computation from the `op` call site to the end of the handled block MUST be valid when the reified continuation is
-  treated as a closure usable at quantity `q`.
+  treated as a captured resumption value permitted to be used according to `q`.
 * This check uses the ordinary closure-capture and borrow rules of §§5.1.5, 5.1.6, and 7.2.1.
 * In particular, if `q` permits more than one use of the continuation, such as `ω` or `>=1`, then the continuation MUST
   NOT capture any live variables with quantity `1` or `&` from the surrounding lexical environment.
@@ -7757,6 +7780,27 @@ Accordingly, multi-shot resumption duplicates captured control state, not the en
 
 If a pending exit action or captured local binding would carry live quantity-`1` or borrowed state in a way that makes
 such duplication unsound, the program is already rejected by the call-site capture rule of §8.1.8.
+
+<!-- effects.monadic_core.effect_application_linear_soundness.control_flow_linearity -->
+##### 8.1.8.2 Control-flow linearity of captured resumptions
+
+The call-site capture rule of §8.1.8 is a control-flow linearity obligation.
+
+It is distinct from ordinary binder-quantity satisfaction under §§5.1.5-5.1.7.
+
+Operationally:
+
+* the declared resumption quantity `q` determines how many times the resumption value may be used;
+* the compiler must additionally verify that the captured dynamic suffix is admissible for that many uses;
+* if `q` permits at most one use, the captured suffix may contain owned or borrowed state subject to the ordinary
+  quantity and region rules; and
+* if `q` permits more than one use, every runtime-relevant captured value in that suffix must be unrestricted and free
+  of borrow-lifetime obligations.
+
+Compile-time-only captured values erased under §14.4 do not by themselves make a multi-shot resumption ill-formed.
+
+A conforming implementation MAY discharge this obligation via closure-capture checking plus region checking, or via an
+equivalent dedicated control-flow analysis, provided the accepted programs are the same.
 
 <!-- effects.monadic_core.shallow_handlers -->
 #### 8.1.9 Shallow handlers
@@ -7804,6 +7848,9 @@ Then the handler is well-typed iff:
 * the resumption `k` has type `(1 _ : B) -> Eff <[label : E | r]> a`, where `B` is instantiated by the clause binders,
 * and the clause body `e` has type `m b`.
 
+At source level, `k v` remains ordinary application syntax. Its KCore realization is resumption application under
+§17.3.1.5 rather than ordinary function application.
+
 The whole handler has type:
 
 ```kappa
@@ -7819,7 +7866,9 @@ Semantics:
 * On an operation at the handled label, the matching operation clause is executed.
 * Applying `k` resumes the suspended computation from the operation site in the original unhandled carrier
   `Eff <[label : E | r]> a`.
-* `k` must be used according to its declared resumption quantity `q`.
+* `k` may be resumed only in ways permitted by its declared resumption quantity `q`. If the clause returns without
+  resuming a non-escaping `k`, the captured segment is abandoned according to §14.8.8A.
+* A bound resumption whose captured segment contains pending exit actions must not escape the clause; see §14.8.8A.
 * The current handler is not automatically reinstalled around `k`. To continue handling the same label after resumption,
   the handler body must explicitly handle the resumed computation again.
 * Operations at labels other than `label` propagate outward unchanged inside the resumed computation.
@@ -7943,7 +7992,9 @@ Semantics:
   handler itself.
 * Applying `k` resumes the suspended computation from the operation site and immediately reinstalls the same deep
   handler around that resumed computation.
-* `k` must still be used according to its declared quantity `q`.
+* `k` may be resumed only in ways permitted by its declared quantity `q`. If the clause returns without resuming a
+  non-escaping `k`, the captured segment is abandoned according to §14.8.8A.
+* A bound resumption whose captured segment contains pending exit actions must not escape the clause; see §14.8.8A.
 * Operations at labels other than `label` propagate outward unchanged.
 * If the deep resumption `k` is used more than once under its declared resumption quantity, each use behaves as a fresh
   application of the corresponding shallow resumption followed by fresh reinstallation of the same deep handler.
@@ -11811,7 +11862,7 @@ provided it preserves the same observable semantics for fibers in that agent.
 
 When evaluation of `handle label expr with ...` or `deep handle label expr with ...` intercepts an operation at the
 handled label, the captured continuation is the dynamic computation suffix from the operation site to the nearest
-enclosing matching handler for that label.
+dynamically enclosing matching handler for that exact effect-label value.
 
 The captured continuation includes:
 
@@ -11828,7 +11879,7 @@ It does not include:
 <!-- core_semantics.runtime_model.one_shot_multi_shot_realization -->
 #### 14.8.6 One-shot and multi-shot realization
 
-Let an operation declaration carry resumption quantity `q` under §8.1.7.
+Let an operation declaration carry resumption quantity `q` as interpreted by §8.1.7A.
 
 * If `q` permits at most one use of the resumption value, an implementation MAY represent the captured continuation
   destructively.
@@ -11838,6 +11889,25 @@ Let an operation declaration carry resumption quantity `q` under §8.1.7.
   defunctionalized state machines, or any equivalent strategy.
 
 The representation chosen is not observable except through the semantics fixed by this chapter.
+
+<!-- core_semantics.runtime_model.tail_resumptive_clauses -->
+#### 14.8.6A Tail-resumptive clauses
+
+A handler clause is tail-resumptive when every normal control-flow path:
+
+* performs exactly one resumption of the bound resumption value;
+* performs that resumption in tail position with respect to the clause body; and
+* neither stores, escapes, nor duplicates the resumption value before that tail resumption.
+
+A conforming implementation MAY realize a tail-resumptive clause without general resumption capture, using an
+observationally equivalent in-place transfer, skip-frame, join-point, or equivalent strategy.
+
+Such a realization MUST preserve:
+
+* exact effect-label matching;
+* the shallow versus deep difference in handler reinstallation;
+* all `defer`, `using`, and exit-action obligations of the captured segment; and
+* the one-shot versus multi-shot behavior required by this chapter.
 
 <!-- core_semantics.runtime_model.store_interaction -->
 #### 14.8.7 Store interaction
@@ -11868,6 +11938,28 @@ Therefore:
 
 If such copying would duplicate live linear or borrowed resources unsoundly, the call-site capture rule of §8.1.8
 rejects the program.
+
+<!-- core_semantics.runtime_model.abandonment_and_escape_of_unused_resumptions -->
+#### 14.8.8A Abandonment and escape of unused resumptions
+
+A handler clause may complete without resuming a bound resumption `k`.
+
+If `k` does not escape the operation clause, this abandons the captured continuation segment immediately.
+
+Abandonment semantics:
+
+* the captured `do`-scope frames of that segment are unwound exactly once;
+* their pending exit actions execute in the same masked LIFO order as ordinary scope exit; and
+* abandonment does not roll back general heap state or effects that occurred before the operation site.
+
+Escape restriction:
+
+* a resumption value whose captured segment contains pending exit actions MUST NOT escape the operation clause; and
+* if the implementation detects such an escape, compilation fails. A conforming implementation MAY conservatively reject
+  when it cannot prove that the captured segment is free of pending exit actions.
+
+For multi-shot resumptions, each logical clone of the captured segment carries its own pending exit-action obligations.
+Abandoning one clone does not discharge obligations of any other clone.
 
 <!-- core_semantics.runtime_model.deep_handler_reinstallation -->
 #### 14.8.9 Deep handler reinstallation
@@ -13618,6 +13710,9 @@ contains:
 ```text
 OpCall        : EffLabel -> OpSymbol -> ArgSpine -> Eff r_all B
 HandleShallow : EffLabel -> HandlerSpec(label, E, r_all, r, m, A, B) -> Eff r_all A -> m B
+
+Resumption : Type -> Type -> Type
+Resume     : Π (X : Type) (Y : Type). Resumption X Y -> (1 _ : X) -> Y
 ```
 
 where:
@@ -13627,7 +13722,7 @@ HandlerSpec(label, E, r_all, r, m, A, B) =
   { onReturn : A -> m B
   , onOp[op_i] :
         Π (x1 : A1) ... (xn : An).
-          (q_i k : (1 _ : B_i) -> Eff r_all A) ->
+          (q_i k : Resumption B_i (Eff r_all A)) ->
           m B
       for each declared operation
       q_i op_i : Π (x1 : A1) ... (xn : An). B_i
@@ -13641,14 +13736,14 @@ argument spine for that operation.
 Meaning:
 
 * `OpCall label op args` performs the resolved operation `op` at effect label `label`.
-* The nearest dynamically enclosing `HandleShallow` for the same `label` intercepts that `OpCall`.
-* In the matching operation clause, the bound continuation `k` is an ordinary KCore function value representing the
+* The nearest dynamically enclosing `HandleShallow` for that exact effect-label value intercepts that `OpCall`.
+* In the matching operation clause, the bound continuation `k` is a primitive KCore resumption object representing the
   captured computation suffix from the `OpCall` site to that handler boundary, exactly as constrained by §14.8.
-* Applying `k` to a resume payload resumes that captured suffix.
-* The quantity of `k` is the declared resumption quantity `q_i` of the intercepted operation and is checked by the
-  ordinary quantity rules.
-* The argument binder of `k` is always quantity `1`. Multi-shotness therefore reuses or duplicates the resumption value
-  `k`, not a single resume payload.
+* Applying `Resume k` to a resume payload resumes that captured suffix.
+* The resumption-use annotation of `k` is the declared resumption quantity `q_i` of the intercepted operation and is
+  enforced by §§8.1.7A, 8.1.7B, and 8.1.8 rather than by ordinary binder-quantity satisfaction alone.
+* The resume payload accepted by `Resume k` is always bound at quantity `1`. Multi-shotness therefore reuses or
+  duplicates the resumption value `k`, not a single resume payload.
 * `HandleShallow` handles only the selected label and eliminates into the single target carrier `m`. Operations at all
   other labels propagate outward unchanged inside resumed computations.
 * A `HandleShallow` return clause is applied only when the handled computation completes normally.
@@ -14282,7 +14377,7 @@ Rules:
 * The lowering MUST NOT expose first-class return points, first-class join continuations, or backend-local arm
   identities at source level.
 * A captured handler resumption of §§8.1.8-8.1.10 is not itself a finite local control protocol of this subsection.
-  It remains an ordinary captured continuation value governed by §§14.8.5-14.8.9 and §17.3.1.5.
+  It remains a captured resumption value governed by §§14.8.5-14.8.9 and §17.3.1.5.
   Only finite local control that occurs inside, around, or after such a resumption may be lowered under this
   subsection.
 * The lowering MUST NOT change the observability of `defer`, `using`, handler unwinding, resumption reuse, or error
