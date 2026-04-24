@@ -2587,6 +2587,22 @@ Constraint descriptors and coherent evidence are distinct:
 
 * A trait declaration `trait Tr ... = ...` introduces a trait constructor `Tr` whose fully applied applications are
   terms of type `Constraint`.
+* The trait constructor `Tr` also has a reified static-object term facet under §2.8.6.
+  If the trait header elaborates to telescope `Δ`, then the reified trait constructor has type:
+
+  ```text
+  Δ -> Constraint
+  ```
+
+  with the evident simplification when `Δ` is empty.
+
+  Examples:
+
+  ```kappa
+  let C = Eq          -- C : Type -> Constraint
+  let c = C Int       -- c : Constraint
+  let d : Dict (C Int) = ...
+  ```
 * A concrete constraint descriptor such as `Eq Int`, `Monad (IO e)`, or `ContainsRec r l T` is not coherent evidence
   by itself.
 * Concrete constraint descriptors may appear:
