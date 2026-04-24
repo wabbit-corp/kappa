@@ -614,6 +614,14 @@ Rules:
   resource handle, or another ownership scheme that prevents escape.
 * A static bridge-supplied module contributes an ordinary module dependency edge to the module dependency graph of
   §§2.2-2.3.
+* Static bridge-supplied module imports participate in the ordinary acyclic module dependency graph.
+* Bidirectional runtime interaction across a Kappa-to-Kappa bridge MUST be expressed through one of:
+  * a shared acyclic interface module imported by both sides;
+  * callback values passed through one direction of the bridge;
+  * runtime bridge handles and `std.bridge` package values; or
+  * another implementation-documented bridge-bundle mechanism that explicitly defines the interface knot.
+* Ordinary mutual static imports between provider artifacts remain ill-formed unless a later specification standardizes
+  mutually recursive bridge bundles.
 * A dynamic bridge bind performed through `std.bridge` remains value-level code and is governed by §17.7.7 instead of
   this subsection.
 * A bridge-supplied Kappa module MUST NOT silently degrade its exported surface to `std.gradual.Dyn`, opaque host types,
