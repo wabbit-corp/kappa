@@ -665,6 +665,10 @@ In addition to the ordinary exports listed below, implementations MUST provide t
 declarations referenced by §§5.3.1-5.3.2 (`Label`, `EffLabel`, `ContainsRec`, `LacksRec`, `ContainsVar`, `LacksVar`,
 `ContainsEff`, `LacksEff`, and `SplitEff`) whenever those names are user-nameable in source programs.
 
+Implementations MUST also provide the projector declarations referenced by §§5.1.7.2-5.1.7.3, 8.8, and 17.3.1.3
+(`Projector`, `BorrowView`, `Zipper`, `captureBorrow`, `withBorrowView`, and `composeProjector`) whenever those names
+are user-nameable in source programs.
+
 Types (type namespace):
 ```
 Unit, Void, Bool, Char, String, Int, Nat, Integer, Float, Double, Real, Bytes, Ordering, SyntaxFragment,
@@ -5648,8 +5652,10 @@ Consequences:
 * A projector descriptor may be stored in a record or package, returned from a function, or passed as an ordinary
   argument.
 * The descriptor value is pure and contains no live place or borrow by itself.
-* The full-application restriction applies to the projection facet. The ordinary term facet follows the ordinary
-  term-application rules over `Δ`.
+* The full-application restriction applies to the projection facet.
+* The ordinary term facet follows the ordinary term-application rules over `Δ`.
+* Once those ordinary binders are fully applied, the resulting `Projector Roots T` value may itself be used by the
+  computed-place elaboration rules of §5.1.7.2.
 
 Elaboration of a fully applied projection call:
 
