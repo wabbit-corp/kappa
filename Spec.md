@@ -542,6 +542,10 @@ import host.jvm.jni.JNIEnv as JNIEnv
 
 Rules:
 
+* The standardized subroot `host.jvm.jni` has priority over the general `host.jvm.<path>` managed-host-binding rule.
+  A module path beginning with `host.jvm.jni.` MUST be resolved as a JVM-specific JNI/Invocation-API binding scope, not
+  as an ordinary JVM package, class, or module-path scope, unless an implementation explicitly documents an escape hatch
+  for accessing a real managed package of that exact spelling under a different generated name.
 * `host.jvm.<path>` denotes a JVM managed-host-binding scope derived from classfiles, JARs, the module path, or
   equivalent JVM metadata.
 * `host.dotnet.<path>` denotes a CLR managed-host-binding scope derived from assembly metadata or equivalent CLR
