@@ -19329,6 +19329,24 @@ Rules:
   mode could not realize the binding.
 * Automatic adapter selection MUST NOT silently choose a less precise surface, weaker marshalling contract, weaker
   callback contract, weaker blocking classification, or weaker ownership contract.
+
+Native ABI identity:
+
+* A native-ABI binding realization MUST be associated with a pinned target ABI description.
+* The target ABI description MUST determine at least:
+  * pointer width;
+  * endianness when relevant to exposed layout;
+  * C/native ABI spelling type sizes and alignments;
+  * struct, union, and enum layout rules when such values are exposed;
+  * calling convention;
+  * symbol naming or lookup convention;
+  * variadic-call support, if any; and
+  * ownership or allocation conventions when supplied by the binding description.
+* If any exported raw or refined signature depends on one of these facts, the corresponding target ABI identity MUST
+  participate in the host-binding implementation identity and in package-mode reproducibility.
+* A binding generator MUST NOT infer portable layout-sensitive signatures from headers, metadata, or symbols without a
+  target ABI description.
+
 * If a selected adapter mode requires generated companion classes, generated interop declarations, registration tables,
   shim source, headers, native helper objects, or another auxiliary artifact, those artifacts are part of the binding
   realization under §§17.2.6 and 17.6.3.
