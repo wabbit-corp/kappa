@@ -19285,6 +19285,15 @@ Rules:
 * If multiple host members with the same source spelling are exported into one Kappa module, the implementation MUST
   assign deterministic exported spellings to those overloads. The unsuffixed base spelling MAY be used only when
   exactly one exported member of that source spelling remains after filtering and overlay application.
+* For every generated overload spelling, the module interface artifact MUST record:
+  * the original host member identity;
+  * the original host spelling;
+  * the generated Kappa spelling;
+  * the overload-disambiguation rule or ordinal used to produce that spelling;
+  * the selected adapter mode when relevant; and
+  * enough host signature information for diagnostics and tooling to identify the source member.
+* The deterministic spelling scheme MAY be implementation-defined, but it MUST be stable for a fixed host-source
+  identity, selected adapter mode, trusted binding summaries, overlay filters, and generator version.
 * A raw binding that requires variadics, layout-sensitive structures, callbacks, function pointers, or other ABI
   features that the selected backend profile cannot represent soundly under the selected adapter mode MUST be rejected or
   require an explicit shim or trusted binding summary rather than guessed.
@@ -19367,6 +19376,20 @@ Rules:
   not portable merely because they are expressible in Kappa syntax.
 * Every raw foreign declaration MUST carry foreign-call classification metadata as defined by §17.13:
   `nonblocking`, `blocking`, or `blocking-cancellable`.
+
+Foreign-call invocation routing:
+
+* Invoking a raw foreign declaration classified as `nonblocking` uses ordinary runtime execution.
+* Invoking a raw foreign declaration classified as `blocking` or `blocking-cancellable` requires backend capability
+  `rt-blocking`.
+* A raw foreign declaration classified as `blocking` or `blocking-cancellable` is executed through the backend's
+  blocking-work bridge as if wrapped by the source-level `blocking` combinator, unless the binding declaration or
+  trusted binding summary explicitly states that the declaration is already routed through an equivalent blocking lane.
+* A conforming implementation MUST NOT execute a classified blocking raw foreign call directly on a scheduler resource
+  in a way that can starve unrelated runnable fibers.
+* A refined overlay MAY expose a different source shape, including an explicit `blocking rawCall` wrapper, but the
+  resulting behavior MUST be observationally equivalent to the classification and routing rules above.
+
 * A raw foreign declaration MUST NOT be classified as `blocking-cancellable` unless the selected adapter mode, trusted
   binding summary, or shim names the cancellation mechanism and states that invoking it is safe for that binding.
 * A backend that lacks the runtime capability required by that classification, including `rt-blocking` when relevant,
