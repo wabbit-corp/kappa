@@ -19414,6 +19414,19 @@ Default callback-ingress semantics:
   binding contract explicitly states another mapping;
 * its initial user label is `None`, unless the implementation or binding contract documents a diagnostic label.
 
+Completion discipline:
+
+* A precise callback boundary contract MUST specify whether host callback invocation is synchronous, asynchronous, or
+  handle-returning.
+* For a synchronous callback, the host invocation waits for the callback fiber to complete, and the callback's
+  foreign-call classification MUST account for that wait.
+* For an asynchronous callback, the host invocation does not wait for callback completion. The exposed callback type MUST
+  make any lost result, monitored result, promise result, or fire-and-forget behavior explicit.
+* For a handle-returning callback, the boundary contract MUST specify the returned host handle or Kappa handle and how
+  success, typed failure, interruption, and defect become observable through that handle.
+* A precise callback whose host ABI requires an immediate return value MUST NOT be exposed as asynchronous unless the
+  boundary contract supplies a valid immediate value and separately specifies how later Kappa failure is reported.
+
 Outcome translation:
 
 * successful callback return is marshaled back to the host according to the boundary contract;
