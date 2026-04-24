@@ -21721,6 +21721,23 @@ In particular:
   obligations of this chapter;
 * no backend may use a target-platform limitation as justification for silently changing Kappa program meaning.
 
+Runtime hashing conformance:
+
+Runtime hash acceleration is an implementation technique.
+
+A backend MUST NOT let host hash-table behavior, host object hash codes, address-based hashes, randomized seeds,
+parallel iteration races, or platform collection iteration order alter Kappa source semantics.
+
+In particular:
+
+* backend hash tables may be used to implement `Set`, `Map`, `distinct`, `group by`, and related operations only under
+  the as-if rule of §10.10.6;
+* host object identity may be used in hashing only when object identity is already part of the key type's specified
+  `Eq` semantics;
+* if a host boundary cannot preserve the `Eq` semantics of a key type, it cannot justify hash-based collection behavior
+  for that key type;
+* hash-derived ordering is never a portable ordering.
+
 ---
 
 <!-- appendices.pipe_operators -->
