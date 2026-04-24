@@ -8187,6 +8187,10 @@ In addition to the implicit lexical supervision scopes of `fork`, Kappa provides
 newScope :
     UIO Scope
 
+withScope :
+    forall (e : Type) (a : Type).
+    (Scope -> IO e a) -> IO e a
+
 forkIn :
     forall (e : Type) (a : Type).
     Scope -> IO e a -> UIO (Fiber e a)
@@ -8210,11 +8214,18 @@ demonitor :
 Semantics:
 
 * `newScope` creates an explicit supervision scope.
+* `withScope use` creates a fresh explicit supervision scope, evaluates `use scope`, and on exit shuts down that scope
+  as if by `shutdownScope`.
+* The shutdown performed by `withScope` behaves as masked finalization attached to the dynamic extent of `use`.
+* `withScope` is the preferred structured constructor for explicit scopes.
+  `newScope` / `shutdownScope` are the low-level primitives.
 * `forkIn scope io` creates a child fiber attached to `scope`.
 * `shutdownScope scope`:
   * interrupts every still-live fiber attached to `scope`,
   * waits until each such fiber has terminated and all of its finalizers have run,
   * and is idempotent.
+* The interruption sent by `shutdownScope`, and by implicit structured child shutdown on supervision-scope exit, uses
+  interrupt tag `ScopeShutdown`.
 * `shutdownScope` does not implicitly shut down fibers attached to unrelated scopes.
 * A monitor is one-way termination observation.
 * `monitor fiber` creates a monitor for `fiber`.
