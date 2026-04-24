@@ -1843,7 +1843,8 @@ import, export, as, except,
 do, block, return, open,
 forall, exists,
 captures, thunk, lazy, force,
-assertTotal, decreases, structural, expect, instance, derive, effect, handle, deep, with, scoped, pattern,
+assertTerminates, assertReducible, assertTotal, decreases, structural, expect, instance, derive, effect, handle, deep,
+with, scoped, pattern,
 projection, place,
 infix, postfix, prefix, left, right,
 var, while, break, continue, using, inout,
@@ -5435,11 +5436,11 @@ evaluator.
   implicit-insertion, visibility, opacity, and definitional-equality rules as ordinary elaboration at the call site.
 
 **Termination checking.** Macro definitions are subject to the same termination checking rules as ordinary top-level
-definitions (§6.4), including the unsafe/debug `assertTotal` escape hatch of §16.4. The elaboration-time evaluator uses
-the same termination checker as the rest of the language. A macro accepted only via `assertTotal` is still required to
-be deterministic with respect to its inputs and the macro input transcript. Non-termination of a macro during
-elaboration is a compiler error. Implementations MUST detect and abort (e.g. via a deterministic step limit or
-equivalent) rather than hanging indefinitely.
+definitions (§6.4), including the unsafe/debug termination-assertion escapes of §16.4. The elaboration-time evaluator
+uses the same termination checker as the rest of the language. A macro accepted only via `assertTerminates`, legacy
+`assertTotal`, or `assertReducible` is still required to be deterministic with respect to its inputs and the macro input
+transcript. Non-termination of a macro during elaboration is a compiler error. Implementations MUST detect and abort
+(e.g. via a deterministic step limit or equivalent) rather than hanging indefinitely.
 
 Successful completion of a macro or `Elab` action under the elaboration-time evaluator does not by itself establish
 termination certification for any definition and does not change δ-reduction eligibility under §14.3.
@@ -6334,13 +6335,20 @@ Clarification:
 <!-- declarations.totality.termination_certified_definitions -->
 #### 6.4.1 Total-certified and conversion-reducible definitions
 
-A definition is **termination-certified**, and therefore **total-certified**, iff one of the following holds:
+A definition is **termination-certified** iff one of the following holds:
 
 1. the termination checker accepts it directly under §§6.4.2, 6.4.3, and 6.4.4; or
-2. it was admitted via `assertTotal`, and the implementation later separately verifies its termination and records it as
-   termination-certified.
+2. it was admitted via `assertTerminates` or legacy `assertTotal`, and the implementation later separately verifies its
+   termination and records it as termination-certified.
 
-A definition accepted solely via `assertTotal` is not total-certified or conversion-reducible by default.
+A definition is **total-certified** iff it is termination-certified, or it was admitted via `assertReducible` under
+§16.4 and is therefore treated as total-certified by unsafe assertion rather than by a checked termination certificate.
+
+A definition accepted solely via `assertTerminates` or legacy `assertTotal` is not total-certified or
+conversion-reducible by default.
+
+A definition accepted solely via `assertReducible` is outside the safe portable subset and outside reproducible
+package-mode semantics unless explicitly permitted by the build configuration.
 
 A definition has two independent status bits:
 
@@ -6362,6 +6370,7 @@ A definition is conversion-reducible iff one of the following holds:
    eliminator as in case 2.
 4. It is accepted by a termination certificate that explicitly marks the definition as conversion-safe and whose
    certificate checker validates a conversion-safe equation scheme.
+5. It is admitted by `assertReducible` under §16.4 in a build that explicitly permits that unsafe/debug escape.
 
 Definitions accepted only by general well-founded recursion, external ranking-function synthesis, SMT-backed proof, or
 user-supplied well-founded relation are total-certified but NOT conversion-reducible by default.
@@ -6665,16 +6674,28 @@ Such helpers are admissible only if either:
 
 Desugaring is not a loophole for smuggling uncertified recursion into conversion.
 
-<!-- declarations.totality.relationship_assert_total -->
-#### 6.4.6 Relationship to `assertTotal`
+<!-- declarations.totality.relationship_assertions -->
+#### 6.4.6 Relationship to termination assertion escapes
 
-`assertTotal` suppresses termination checking for acceptance only.
+`assertTerminates` suppresses termination checking for acceptance only.
+Legacy `assertTotal` is a compatibility spelling with the same semantics as `assertTerminates`.
 
-It does not, by itself:
+`assertTerminates` and legacy `assertTotal` do not, by themselves:
 
 * establish termination certification,
 * make a definition unfoldable for definitional equality,
 * or discharge any obligation created by §§6.4.2, 6.4.3, 6.4.4, and 6.4.5.
+
+`assertReducible` is an unsafe/debug escape that admits the definition as conversion-reducible without a checked
+termination certificate.
+
+Rules:
+
+* `assertReducible` is allowed only under the stronger unsafe/debug build gate of §16.4.
+* Programs using `assertReducible` are outside the safe portable subset and outside reproducible package-mode semantics
+  unless explicitly permitted by the build configuration.
+* An implementation MUST record the use of `assertReducible` in the module/interface artifact and MUST NOT treat it as a
+  checked termination certificate.
 
 Recursion policy:
 
@@ -13293,10 +13314,11 @@ Definitional equality is the smallest congruence containing the following reduct
 
 * β-reduction: `(\(x : A) -> e) v  ↦  e[x := v]`
 * δ-reduction: unfolding of transparent **conversion-reducible** definitions, including transparent type aliases, whose
-  bodies are available and not marked opaque at the use site. Definitions accepted solely via `assertTotal` (§16.4) do
-  not unfold for definitional equality unless the implementation has separately verified them and recorded them as
-  conversion-reducible. Outside the defining module, opaque definitions and opaque type aliases do not unfold unless the
-  importing module has explicitly clarified them (§2.5.2).
+  bodies are available and not marked opaque at the use site. Definitions accepted solely via `assertTerminates` or
+  legacy `assertTotal` (§16.4) do not unfold for definitional equality unless the implementation has separately verified
+  them and recorded them as conversion-reducible. Definitions accepted via `assertReducible` unfold only in
+  unsafe/debug builds that explicitly permit that non-portable escape. Outside the defining module, opaque definitions
+  and opaque type aliases do not unfold unless the importing module has explicitly clarified them (§2.5.2).
 * ι-reduction: reducing `match` on known constructors/literals.
 * η-equality (definitional):
     * Functions: `f ≡ (\(x : A) -> f x)` when `x` is not free in `f`.
@@ -14041,8 +14063,10 @@ It is computed by full normalization of the definition, including:
 
 * all Easy-Hash normalization steps,
 * complete δ-unfolding of transparent conversion-reducible definitions reachable from the definition being normalized,
-* unfolding of `assertTotal` definitions only when the implementation has separately verified them and recorded them as
-  conversion-reducible (§6.4.1, §16.4),
+* unfolding of `assertTerminates` or legacy `assertTotal` definitions only when the implementation has separately
+  verified them and recorded them as conversion-reducible (§6.4.1, §16.4),
+* unfolding of `assertReducible` definitions only in unsafe/debug builds that explicitly permit that non-portable escape
+  (§16.4),
 * respect for `opaque` and `private opaque` as defined from the perspective of the defining module: inside the defining
   module, local definitions are available normally (§2.5.2); when normalization reaches a definition imported from
   another module, it uses the transparency recorded in that imported definition's canonical artifact. A downstream
@@ -14232,6 +14256,8 @@ The safe portable subset of Kappa excludes:
 
 * `unhide`,
 * `clarify`,
+* `assertTerminates`,
+* `assertReducible`,
 * `assertTotal`,
 * the standard debug-introspection module `std.debug` of §16.6.
 
@@ -14256,21 +14282,23 @@ project file) specifies:
 ```text
 allow_unhiding            : Bool
 allow_clarify             : Bool
-allow_assert_total        : Bool
+allow_assert_terminates   : Bool
+allow_assert_reducible    : Bool
 allow_debug_introspection : Bool
 ```
 
 Defaults:
 
-* In package mode, all four default to `false`.
+* In package mode, all five default to `false`.
 * In script mode, implementations MAY default any or all of them to `true` for experimentation. Implementations SHOULD
   document the actual defaults they choose.
 
 Violations are compile-time errors. Diagnostics for such errors MUST identify both:
 
-* the offending `unhide` / `clarify` import item, `assertTotal` declaration, or `std.debug` import / use, and
-* the build setting (`allow_unhiding`, `allow_clarify`, `allow_assert_total`, or `allow_debug_introspection`) that
-  disallows it.
+* the offending `unhide` / `clarify` import item, `assertTerminates`, `assertReducible`, or legacy `assertTotal`
+  declaration, or `std.debug` import / use, and
+* the build setting (`allow_unhiding`, `allow_clarify`, `allow_assert_terminates`, `allow_assert_reducible`, or
+  `allow_debug_introspection`) that disallows it.
 
 <!-- unsafe_debug.visibility_escapes -->
 ### 16.3 `unhide` and `clarify`
@@ -14292,27 +14320,36 @@ Semantics:
   item (for example because separate compilation artifacts omit bodies or constructors), `unhide` / `clarify` is a
   compile-time error.
 
-<!-- unsafe_debug.assert_total -->
-### 16.4 `assertTotal`
+<!-- unsafe_debug.termination_assertions -->
+### 16.4 Termination assertion escapes
 
-`assertTotal` indicates that the programmer asserts a definition is total even if the compiler cannot prove it.
+Termination assertion escapes are unsafe/debug forms for trusted bootstrapping and experimentation.
 
 Syntax:
 
 ```kappa
-assertTotal let f : T = ...
+assertTerminates let f : T = ...
+assertReducible let f : T = ...
+assertTotal let f : T = ...   -- legacy compatibility spelling for assertTerminates
 ```
 
 Meaning:
 
-* `assertTotal` does not change runtime semantics.
-* `assertTotal` is a trust boundary: it admits code that the compiler cannot justify as terminating.
+* `assertTerminates` suppresses termination checking for acceptance only.
+* Legacy `assertTotal` has the same semantics as `assertTerminates`.
+* `assertTerminates` and legacy `assertTotal` never grant conversion-reducible status.
+* `assertReducible` admits the definition as conversion-reducible without a checked termination certificate.
+* These forms do not change runtime semantics.
+* These forms are trust boundaries: they admit code that the compiler cannot justify as terminating.
 
 Unfolding / definitional equality:
 
-* A definition accepted **solely** via `assertTotal` is **not** total-certified or conversion-reducible by default and
-  therefore does not unfold for definitional equality (§6.4.1, §14.3) unless the implementation separately verifies its
-  termination and records it as conversion-reducible.
+* A definition accepted **solely** via `assertTerminates` or legacy `assertTotal` is **not** total-certified or
+  conversion-reducible by default and therefore does not unfold for definitional equality (§6.4.1, §14.3) unless the
+  implementation separately verifies its termination and records it as conversion-reducible.
+* A definition accepted via `assertReducible` is treated as conversion-reducible only because the build explicitly
+  permits that unsafe assertion. It is outside the safe portable subset and outside reproducible package-mode semantics
+  unless explicitly permitted by the build configuration.
 
   "Records it" is normative: under separate compilation, the module/interface artifact must carry (at minimum) a stable
   bit indicating whether each transparent definition is conversion-reducible and therefore eligible for δ-reduction. If
@@ -14323,16 +14360,22 @@ Interaction with `decreases`:
 
 * An explicit `decreases` clause (§6.4.4) is the preferred fallback when inference under §6.4.2 is insufficient for a
   recursive definition.
-* If `assertTotal` is used anyway, the implementation MAY still attempt to verify termination (including using the
-  provided `decreases` measure). If verification succeeds, the definition may be recorded as total-certified and, only
-  when it satisfies §6.4.1's conversion-reducible criteria, as conversion-reducible; otherwise it remains ineligible for
-  unfolding in definitional equality.
+* If `assertTerminates` or legacy `assertTotal` is used anyway, the implementation MAY still attempt to verify
+  termination (including using the provided `decreases` measure). If verification succeeds, the definition may be
+  recorded as total-certified and, only when it satisfies §6.4.1's conversion-reducible criteria, as
+  conversion-reducible; otherwise it remains ineligible for unfolding in definitional equality.
+* If `assertReducible` is used, the implementation MUST record that conversion-reducible status was granted by unsafe
+  assertion rather than by a checked termination certificate.
 
 Gating:
 
-Code accepted solely via `assertTotal` is in the unsafe/debug surface:
+Code accepted solely via `assertTerminates`, legacy `assertTotal`, or `assertReducible` is in the unsafe/debug surface:
 
-* It is a compile-time error unless the build enables `allow_assert_total` (§16.2).
+* `assertTerminates` and legacy `assertTotal` are compile-time errors unless the build enables
+  `allow_assert_terminates` (§16.2).
+* `assertReducible` is a compile-time error unless the build enables `allow_assert_reducible` (§16.2).
+* Enabling `assertReducible` does not imply reproducible package-mode semantics. A package-mode build that admits
+  `assertReducible` MUST record that fact in package artifacts and hashes.
 
 <!-- unsafe_debug.backend_escapes -->
 ### 16.5 Backend-specific surface escapes
@@ -14782,18 +14825,18 @@ A module interface artifact MUST record at least:
   adapter-visible call-state-capture classification;
 * enough definitional content for exported transparent items to support downstream definitional equality;
 * for each exported transparent definition, whether it is total-certified and whether it is conversion-reducible, and, if
-  total-certified, the termination kind (`structural`, `well-founded`, `size-change`, `non-recursive`, or
-  `verified-assertTotal`), together with either:
+  total-certified, the termination kind (`structural`, `well-founded`, `size-change`, `non-recursive`,
+  `verified-assertTerminates`, or `assertReducible-unverified`), together with either:
   * the canonical visible `decreases` measure, or
   * an equivalent stable termination-certificate payload sufficient for downstream totality decisions, unfolding
     decisions, hashing, and reproducible separate compilation;
 * enough metadata to reconstruct the reified-module view of §2.8.5, including the kind-tagged exported-member surface
   and the opaque-vs-transparent classification needed for local qualified access and module-value projection.
 
-Each recursive SCC that is accepted as total-certified MUST record a termination certificate in the module interface
-artifact.
+Each recursive SCC that is accepted as total-certified MUST record a termination certificate or unsafe assertion record
+in the module interface artifact.
 
-The certificate contains at least:
+The certificate or unsafe assertion record contains at least:
 
 * the SCC members by stable declaration identity;
 * the accepted strategy kind:
@@ -14805,13 +14848,18 @@ The certificate contains at least:
   * `SizedType`
   * `LinearLexicographic`
   * `ExternalChecked`
-  * `AssertTotalUnverified`
+  * `AssertTerminatesUnverified`
+  * `AssertReducibleUnverified`
 * the visible measure or structural target, if any;
 * any hidden phase assignment;
 * for each recursive call, the caller, callee, source origin, and decrease obligation;
 * whether the SCC is conversion-reducible;
 * a stable hash of any proof term or external certificate used;
 * the checker/certificate format version.
+
+If the record contains `AssertReducibleUnverified`, it records an unsafe/debug assertion rather than a checked
+termination argument. Such a record is outside reproducible package-mode semantics unless explicitly permitted by the
+build configuration.
 
 For imported definitions, ordinary downstream compilation MUST use the recorded conversion-reducible status from the
 module interface artifact as the source of truth for δ-reduction eligibility. It MUST NOT require re-running
