@@ -16134,7 +16134,13 @@ Meaning:
   * fibers,
   * structured interruption,
   * masking,
+  * scheduler fairness and implementation-defined safe-point delivery,
+  * monotonic timers,
+  * promises,
+  * fiber-local state,
+  * explicit supervision scopes and monitors,
   * finalizers,
+  * the portable synchronization guarantees of §14.8.4A,
   * and single-agent STM semantics.
 
 * `rt-parallel`:
@@ -16150,6 +16156,9 @@ Capability rules:
 
 * A backend that lacks a required capability MUST reject the affected program or deployment mode rather than silently
   weakening semantics.
+* A backend advertising `rt-core` MUST satisfy the scheduler-fairness, timer, promise, scope/monitor,
+  fiber-local-state, and memory-visibility obligations of §§8.1 and 14.8. It MUST NOT expose only a syntactic surface
+  while silently weakening those runtime semantics.
 * Absence of `rt-parallel` does not make `fork` invalid. It means only that concurrency need not execute on more than
   one host execution resource simultaneously.
 * Absence of `rt-shared-stm` does not remove `STM` from the language. It restricts `STM` to a single runtime agent.
@@ -16166,6 +16175,9 @@ Recommended backend declarations:
 * `wasm-core`, `wasm-component`, and `js` MUST advertise `rt-core`.
   They MAY additionally advertise `rt-parallel`, `rt-shared-stm`, or `rt-blocking` only when the selected embedder or
   deployment configuration actually provides them.
+
+For the standard target families covered by this specification, `zig`, `jvm`, managed `dotnet`, `wasm-core`,
+`wasm-component`, and `js` SHOULD all support the full `rt-core` surface, including timers and promises.
 
 Foreign-call interruption classification:
 
