@@ -14076,6 +14076,44 @@ contains computational values together with any evidence or metadata that has be
 Lowering from KCore to KBackendIR occurs only after the erasure obligations of this section have been discharged
 (§17.4).
 
+<!-- core_semantics.inhabitant_driven_representation_elision -->
+#### 14.4.1 Inhabitant-driven representation elision
+
+After mandatory erasure, an implementation MAY choose a zero-sized or otherwise elided runtime representation for a
+runtime-relevant value when inhabitance analysis proves that no runtime observation can distinguish stored alternatives.
+
+This is a representation optimization only. It does not introduce new definitional equality, new propositional equality,
+new implicit evidence, or new source-level proof irrelevance.
+
+Permitted cases:
+
+An implementation MAY elide runtime storage for a value of type `T` when at least one of the following holds:
+
+* the `SourceReachability` inhabitance summary of `T` is `Contractible`;
+* the `RuntimeShape` summary of `T` is `Contractible`, and every source-level distinction between inhabitants of `T`
+  is carried only by constituents already erased under §14.4;
+* the value is a field, constructor argument, package member, handler argument, resumption argument, or closure-captured
+  value whose runtime representation is already erased by quantity, classifier, or erased-index rules.
+
+The implementation MUST preserve the behavior of every source-level elimination form that remains valid after erasure.
+
+Restrictions:
+
+* The implementation MUST NOT elide storage merely because a type is proposition-shaped or conventionally used as proof.
+* Ordinary inhabitants of `P : Type` are runtime-relevant when bound at a runtime quantity unless another rule of this
+  specification erases them or the type is proven contractible.
+* Explicit `Dict C`, `DynRep a`, `BridgeContract sig`, foreign handles, backend intrinsics, and any value whose runtime
+  representation is explicitly required by a library, ABI, dynamic boundary, bridge boundary, or backend profile MUST
+  retain whatever representation that boundary requires.
+* Inhabitant-driven elision MUST NOT change exported ABI layout, FFI layout, bridge contracts, dynamic casts, stable
+  variant tag identity, or externally specified calling conventions.
+
+Materialization:
+
+A compiler may materialize an elided value internally for diagnostics, debugging, reflection over KCore, or source
+mapping, provided that no runtime behavior depends on the materialized storage unless the value is explicitly reified by
+a source-visible carrier.
+
 <!-- core_semantics.variant_runtime -->
 ### 14.5 Union / variant runtime representation
 
