@@ -7898,9 +7898,10 @@ Active patterns are functions, so their scrutinee parameters obey the ordinary q
 ## 8. Effects, `do` Blocks, and Control Flow
 
 <!-- effects.monadic_core -->
-### 8.1 Monadic core
+### 8.1 Semantic computation interface
 
-Kappa uses a minimal monadic core at the semantic level. For a monad `m`, we assume:
+Kappa uses a small monadic semantic interface at the level of source desugaring and core equations. For a monad `m`, we
+assume:
 
 ```kappa
 pure  : forall a. a -> m a
@@ -7909,6 +7910,9 @@ pure  : forall a. a -> m a
 ```
 
 (Names may live in traits; here it's a conceptual interface.)
+
+This subsection is a statement about the abstract interface used by `do`, `try`, `using`, handlers, and related source
+semantics. It is not a claim that the full runtime footprint of `IO`, fibers, STM, timers, or handlers is minimal.
 
 <!-- effects.monadic_core.io_runtime_computations -->
 #### 8.1.1 `IO` and runtime computations
