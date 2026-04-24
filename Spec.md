@@ -10229,6 +10229,23 @@ Backend-local multi-return / join-point lowering is permitted by §17.4.7A but i
 Implementations MAY realize handlers using such operators internally, but those operators are not part of portable
 source syntax, module interfaces, or the portability contract of this specification.
 
+Rationale:
+
+Raw continuation operators are excluded from portable source syntax because they can bypass or obscure the invariants
+that Kappa requires for:
+
+* quantity-checked resource use;
+* borrow-lifetime non-escape;
+* `using` and `defer` unwinding;
+* interruption masking;
+* structured fiber scopes;
+* handler resumption quantities; and
+* backend capability profiles.
+
+Any implementation-defined raw continuation facility MUST therefore live behind an unsafe/debug or backend-specific
+extension boundary. Such a facility MUST NOT be used to justify portable source semantics, portable module interfaces,
+or portable conformance tests.
+
 <!-- effects.monadic_core.monad_finally -->
 #### 8.1.11 `MonadFinally`
 
@@ -14537,6 +14554,23 @@ represented explicitly.
 This section constrains backend implementations of `IO`, `handle`, and `deep handle`. The concrete representation is
 implementation-defined, but the observable behavior below is mandatory.
 
+Design boundary:
+
+The runtime model standardizes observable behavior, not one mandatory implementation architecture.
+
+In particular:
+
+* `IO`, fibers, interruption, STM, handlers, and resumptions are semantic entities of Kappa;
+* host threads, host tasks, garbage collectors, reference counters, stack-copying mechanisms, CPS transforms, arenas,
+  and event loops are implementation techniques;
+* low-level atomics are provided explicitly through `std.atomic` when backend capability `rt-atomics` is available;
+* persistent multi-shot resumption behavior is capability-gated by `rt-multishot-effects`;
+* service supervision policies are standardized in `std.supervisor` rather than as new source syntax;
+* raw undelimited or prompt-delimited continuation operators are intentionally excluded from the portable core.
+
+A backend may choose any representation strategy whose externally visible behavior satisfies this chapter.
+A backend that cannot satisfy a required capability MUST reject the affected program or deployment mode.
+
 <!-- core_semantics.runtime_model.conformance_model -->
 #### 14.8.0 Runtime-kernel conformance model
 
@@ -17975,6 +18009,11 @@ At or before publication of KBackendIR, the implementation MUST validate that:
   14;
 * scheduler, timer, promise, fiber-identity, fiber-label, and synchronization structures satisfy the runtime
   obligations of Chapters 8, 14, and 17;
+* uses of `std.atomic` are present only when the selected backend profile advertises `rt-atomics`;
+* reachable multi-shot resumption behavior is present only when the selected backend profile advertises
+  `rt-multishot-effects`;
+* if the selected backend lacks `rt-multishot-effects`, all reachable effect operation invocations must be one-shot,
+  abortive, or otherwise lowerable without persistent multi-shot resumption behavior;
 * any internal multi-return or join-point lowering of `Completion`, `Match`, projection/projector-elimination control,
   or implementation-generated boolean / constructor-refinement / case-split control satisfies §17.4.7A;
 * data, variant, and record layout choices are fixed consistently with §§14.5-14.6;
@@ -18007,6 +18046,8 @@ At minimum it MUST represent:
 * fiber handles, fiber identities, fiber-label state, supervision scopes, monitor handles, fiber-local-state cells,
   promise objects, timer registrations / timer queues, TVars, STM journals, handler frames, resumption objects,
   cleanup scopes, and error-propagation structure;
+* atomic operations and their memory orders;
+* multi-shot resumption sites and the backend capability witness justifying them;
 * selected runtime representation classes and calling-convention facts relevant to debugging; and
 * provenance links back to KCore.
 
@@ -19087,7 +19128,7 @@ Capability rules:
 
 Recommended backend declarations:
 
-* `zig`, `jvm`, and managed `dotnet` SHOULD advertise:
+* `zig` SHOULD advertise:
   * `rt-core`,
   * `rt-parallel`,
   * `rt-shared-stm`,
@@ -19095,18 +19136,28 @@ Recommended backend declarations:
   * `rt-atomics`,
   * `rt-multishot-effects`.
 
+* managed `jvm` and managed `dotnet` SHOULD advertise:
+  * `rt-core`,
+  * `rt-parallel`,
+  * `rt-shared-stm`,
+  * `rt-blocking`,
+  * `rt-atomics`,
+  * `rt-multishot-effects`.
+
+* native-AOT or restricted managed deployment modes MAY withhold `rt-multishot-effects` if they cannot satisfy
+  §§14.8.5, 14.8.6, 14.8.6A, 14.8.6B, 14.8.7, 14.8.8, and 14.8.8A for persistent multi-shot resumptions.
+
 * `wasm-core`, `wasm-component`, and `js` MUST advertise `rt-core`.
-  They MAY additionally advertise `rt-parallel`, `rt-shared-stm`, or `rt-blocking` only when the selected embedder or
-  deployment configuration actually provides them.
+  They MAY advertise:
+  * `rt-parallel`,
+  * `rt-shared-stm`,
+  * `rt-blocking`,
+  * `rt-atomics`,
+  * or `rt-multishot-effects`
+  only when the selected embedder or deployment configuration actually provides the required semantics.
 
-* `wasm-core`, `wasm-component`, and `js` MAY advertise `rt-atomics` only when the selected embedder or deployment
-  configuration provides compatible atomic memory operations.
-
-* `wasm-core`, `wasm-component`, and `js` MAY advertise `rt-multishot-effects` only when the selected deployment
-  configuration implements persistent multi-shot resumption behavior with the obligations of §14.8.6B.
-
-For the standard target families covered by this specification, `zig`, `jvm`, managed `dotnet`, `wasm-core`,
-`wasm-component`, and `js` SHOULD all support the full `rt-core` surface, including timers and promises.
+For the standard target families covered by this specification, every backend SHOULD support the full `rt-core` surface,
+including timers and promises.
 
 Foreign-call interruption classification:
 
