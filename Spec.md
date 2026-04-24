@@ -13104,6 +13104,44 @@ User { name, age }                    -- punning
 Vec.VCons { head = h, tail = t }
 ```
 
+```kappa
+data User : Type =
+    User {
+        name   : String,
+        active : Bool = True,
+        roles  : List Role = Nil
+    }
+
+let ada =
+    User { name = "Ada" }
+
+let inactive =
+    User { name = "Lin", active = False }
+
+let MkUser = User
+let grace = MkUser { name = "Grace" }
+
+data SizedVec (a : Type) : Type =
+    SizedVec {
+        n  : Nat,
+        xs : Vec n a = replicate n defaultElement
+    }
+
+let threeDefaults =
+    SizedVec { n = 3 }
+```
+
+Defaults are not inserted by positional application:
+
+```kappa
+data Conn : Type =
+    Conn { host : String, port : Int = 5432 }
+
+Conn { host = "db" }   -- valid, uses default port
+Conn "db"              -- valid partial application or ill-formed by ordinary application rules; never default-completed
+Conn "db" 5432         -- valid positional application
+```
+
 Rules:
 * `C { ... }` is valid only if `C` resolves to:
   * a constructor whose explicit argument binders have names; or
@@ -15420,6 +15458,16 @@ A module interface artifact MUST record at least:
     bodies;
 * the signatures of exported types, traits, constructors, associated static members, effect interfaces, and effect
   operations, insofar as those entities are available to downstream code;
+* for each exported constructor:
+  * the ordered list of explicit constructor parameters;
+  * each parameter's source name, if any;
+  * each parameter's quantity, implicitness, and suspension-sugar-expanded type;
+  * whether each parameter has a default;
+  * for each defaulted parameter, the elaborated default expression in the defining module's context;
+  * the dependency prefix of each defaulted parameter, i.e. which earlier constructor parameters are in scope for that
+    default; and
+  * whether the constructor value preserves named-constructor-application metadata when rebound, stored, imported, or
+    projected;
 * for each exported declaration, whether it has a reified static-object term facet under §2.8.6;
 * for each exported reified static-object term facet, its elaborated compile-time type;
 * for each exported reified type-object facet, the static-member table identity needed for downstream dotted static
@@ -15454,6 +15502,15 @@ A module interface artifact MUST record at least:
     decisions, hashing, and reproducible separate compilation;
 * enough metadata to reconstruct the reified-module view of §2.8.5, including the kind-tagged exported-member surface
   and the opaque-vs-transparent classification needed for local qualified access and module-value projection.
+
+An exported constructor default may reference private declarations of the defining module through its elaborated core
+term. This does not make those private declarations name-resolvable to importing modules.
+
+Using an exported default is permitted whenever the constructor itself is visible and the default metadata is present in
+the interface artifact.
+
+Clarification of an opaque data declaration controls constructor visibility as specified in §2.5.3; it does not change
+the elaboration of defaults for constructors that are not visible.
 
 Each recursive SCC that is accepted as total-certified MUST record a termination certificate or unsafe assertion record
 in the module interface artifact.
