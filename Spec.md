@@ -11924,24 +11924,72 @@ Rules:
 * `on conflict ...` MUST appear after the `yield` clause.
 * `on conflict ...` MUST be the final clause in the comprehension.
 
+Typing:
+
+Let the map yield form be:
+
+```kappa
+yield keyExpr : valueExpr
+```
+
+where:
+
+```text
+keyExpr   : K
+valueExpr : V
+```
+
+Then map collection requires an implicit `Eq K` instance.
+
+Policy typing:
+
+* `keep last` and `keep first` require no additional constraint beyond `Eq K`.
+
+* `combine using Wrapper` requires:
+
+  * `Wrapper` resolves to a constructor `Wrapper : V -> W`;
+  * `W` is a newtype-like wrapper: a data type with exactly one constructor and that constructor has exactly one field;
+  * an implicit `Monoid W` instance is available.
+
+* `combine with f` requires:
+
+  ```kappa
+  f : V -> V -> V
+  ```
+
 Semantics:
 
-* When multiple yielded pairs produce keys that are equal (by an `Eq`-like equality on keys), the conflict policy
-  determines the final value associated with that key.
+When multiple yielded pairs produce keys that are equal under `Eq K`, the conflict policy determines the final value
+associated with that key.
+
+For each key, let the encountered values for that key be:
+
+```text
+v0, v1, ..., vn
+```
+
+in the encounter order of the produced key/value stream.
 
 Policies:
 
-* `keep last`: the value from the last encountered pair wins.
-* `keep first`: the value from the first encountered pair wins.
-* `combine using Wrapper`: values are combined by wrapping them with `Wrapper` and folding using the implied monoid
-  (same wrapper-fold-unwrap mechanism as `group by`).
-* `combine with f`: values are combined by left-folding `f` over the encountered values for the key.
+* `keep last`: the result value is `vn`.
+* `keep first`: the result value is `v0`.
+* `combine with f`: the result value is `foldl1 f [v0, v1, ..., vn]`.
+  In particular, if there is exactly one value, the result is that value.
+* `combine using Wrapper`:
+  1. compute `wi = Wrapper vi` for each value;
+  2. compute `acc = foldl Monoid.append Monoid.empty [w0, w1, ..., wn]`;
+  3. unwrap `acc` by pattern matching on the single-constructor wrapper.
+
+A key with no encountered values is absent from the resulting map.
 
 Order note:
 
-* For `keep first`, `keep last`, `combine using`, and `combine with`, results may depend on encounter order. If
-  orderedness is Unordered at the point where pairs are produced, the outcome is unspecified with respect to ties
-  (§10.3.2).
+* `keep first`, `keep last`, `combine using`, and `combine with` depend on encounter order.
+* If the produced key/value stream is Unordered at the point where pairs are produced, the selected representative or
+  fold order is deterministic in package mode under §10.3.2, but not user-visible or specified.
+* Programs that require a particular conflict order must establish Ordered status before `yield`, for example by using
+  `order by`.
 
 <!-- collections.ordering -->
 ### 10.6 Ordering, paging, distinct
