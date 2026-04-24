@@ -1409,6 +1409,40 @@ Reified-static fallback in term-expression position:
 Receiver positions for dotted forms use §2.8.3 instead of this ordinary
 rule.
 
+<!-- modules.names.kind_qualified_name_expressions -->
+##### 2.8.1.1 Kind-qualified name expressions
+
+A kind-qualified name expression explicitly selects a declaration facet by kind and reifies it as a term expression.
+
+Grammar:
+
+```text
+kindQualifiedExpr ::= kindSelector nameRef
+kindSelector       ::= 'type' | 'trait' | 'effect-label' | 'module'
+```
+
+This grammar is active only in term-expression positions where the leading keyword is not syntactically expected to
+begin a declaration or another reserved form.
+
+Rules:
+
+* `type T` resolves `T` by ordinary lookup in type position and yields the reified static-object term facet of that type
+  declaration.
+* `trait C` resolves `C` by ordinary lookup in constraint position and yields the reified static-object term facet of
+  that trait declaration.
+* `effect-label l` resolves `l` by ordinary lookup in effect-label position and yields the reified static-object term
+  facet of that effect-label declaration.
+* `module M` resolves `M` by ordinary lookup in module position and yields the corresponding reified module value.
+* If the selected declaration kind has no reified static-object term facet, the expression is ill-formed.
+
+Examples:
+
+```kappa
+let C = trait Eq
+let T = type Person      -- type constructor, not Person.Person
+let L = effect-label state
+```
+
 <!-- modules.names.same_spelling_data_families_static_members -->
 #### 2.8.2 Same-spelling data families and static members
 
