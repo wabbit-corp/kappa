@@ -12104,56 +12104,111 @@ Aggregate field form:
 
 Well-formedness:
 
-* `Wrapper` must resolve to a constructor whose type is of the form `T -> W`, where `W` is a data type with exactly one
-  constructor and that constructor has exactly one field (a "newtype-like" wrapper). Otherwise `using Wrapper` is a
-  compile-time error.
-* `using Wrapper` is well-formed only if there is an in-scope instance `Monoid W`, where `W` is the result type of
-  `Wrapper`. Otherwise `using Wrapper` is a compile-time error.
-* The prelude provides `Monoid` instances for the standard wrappers used for aggregation, such as `Sum`, `Product`, and
-  `Concat`.
+Let:
 
-Rules:
+```text
+keyExpr : K
+```
 
-* `keyExpr` is evaluated on each incoming row to produce the group key.
-* The bound name `name` is a record containing:
+Then `group by keyExpr ...` requires an implicit `Eq K` instance.
 
-    * `key` (always present), and
-    * one field per aggregate declaration in the aggregation block.
+Aggregate field forms:
+
+* `field = valueExpr using Wrapper`
+* `field = valueExpr`
+
+For `field = valueExpr using Wrapper`:
+
+* Let `valueExpr : T`.
+* `Wrapper` must resolve to a constructor `Wrapper : T -> W`.
+* `W` must be a newtype-like wrapper: a data type with exactly one constructor and that constructor has exactly one
+  field.
+* An implicit `Monoid W` instance must be available.
+
+For `field = valueExpr`:
+
+* Let `valueExpr : T`.
+* An implicit `Monoid T` instance must be available.
+* This form is equivalent to aggregating the values directly using `Monoid T`.
+
+Otherwise the aggregate declaration is a compile-time error.
+
+Scoping:
+
+* Names bound before the `group by` clause are in scope while checking:
+  * `keyExpr`, and
+  * each aggregate `valueExpr`.
 * The aggregation block may not bind names; it contains only aggregate field declarations.
 * Aggregate fields may refer to names bound by earlier comprehension clauses.
-* Aggregate fields may not refer to other aggregate fields (compile-time error).
+* Aggregate fields may not refer to other aggregate fields.
+* After `group by keyExpr { ... } into name`, the current row environment is replaced by a singleton row environment
+  containing only `name`.
+* Names bound before the `group by` clause are not in scope in later clauses except through values captured into
+  `name`'s aggregate fields.
 
-`key` is special:
+The bound name:
 
+* The bound name `name` is a record containing:
+  * `key`, whose value is the group key; and
+  * one field per aggregate declaration in the aggregation block.
 * The group record always contains a field `key`.
 * Declaring an aggregate field named `key` is a compile-time error.
 
-Semantics (normative):
+Semantics:
 
-* Grouping partitions the incoming rows by the value of `keyExpr`.
+* Grouping partitions the incoming rows by `keyExpr` using `Eq K`.
+* `keyExpr` is evaluated exactly once per incoming row.
 * For each group key, aggregates are computed over the rows in that group.
 
 Aggregate semantics with `using`:
 
-* Let `valueExpr : T`.
-* Let `Wrapper` resolve to a constructor `Wrapper : T -> W`.
-* Let there be an implicit monoid instance for `W` (implementation-defined trait factoring, but conceptually: `empty :
-  W` and `append : W -> W -> W`).
+For an aggregate:
 
-Then the aggregate value is computed as:
+```kappa
+field = valueExpr using Wrapper
+```
 
-1. For each row in the group, compute `w = Wrapper (valueExpr)`.
-2. Fold the `w` values using the monoid: `acc = fold append empty ws`.
+with `Wrapper : T -> W` and `valueExpr : T`:
+
+1. For each row in the group, compute `w = Wrapper valueExpr`.
+
+2. Fold the `w` values in incoming encounter order:
+
+   ```text
+   acc = foldl Monoid.append Monoid.empty ws
+   ```
+
 3. Unwrap `acc` by pattern matching on the single-constructor wrapper.
+
+4. The unwrapped value becomes `name.field`.
 
 Aggregate semantics without `using`:
 
-* If `using Wrapper` is omitted and `valueExpr : T`, then the aggregate field is well-typed iff an implicit `Monoid T`
-  instance is available.
-* In that case, the result type of the aggregate field is exactly `T`.
-* The aggregate value is computed by evaluating `valueExpr` once per row in the group and folding `append` over those
-  per-row results starting from `empty`.
-* There is no implementation-defined default monoid for this case.
+For an aggregate:
+
+```kappa
+field = valueExpr
+```
+
+with `valueExpr : T` and `Monoid T`:
+
+1. For each row in the group, compute `v = valueExpr`.
+
+2. Fold the values in incoming encounter order:
+
+   ```text
+   acc = foldl Monoid.append Monoid.empty vs
+   ```
+
+3. The folded value becomes `name.field`.
+
+Fold order:
+
+* Within each group, aggregate values are folded in the incoming encounter order of rows assigned to that group.
+* If the incoming pipeline is Unordered, the within-group fold order is deterministic in package mode under §10.3.2,
+  but not user-visible or specified.
+* Programs that require a particular aggregate order must establish Ordered status before grouping, for example by using
+  `order by`.
 
 Encounter order after grouping:
 
