@@ -13782,31 +13782,40 @@ Required clause behavior:
    * evaluate `expr` at most once per incoming row,
    * typecheck subsequent clauses under the same positive constructor refinement as §7.4.1.
 
-7. `join ...` and `left join ...`
+7. `join ...`
 
-   * lower to normalized join operators, or to observationally equivalent combinations of `toQuery`, refutable
-     matching, and filtering,
-   * preserving the semantics of §10.8.
+   * lower to a normalized inner-join operator, or to an observationally equivalent combination of `toQuery`,
+     refutable matching, and filtering;
+   * extend the current row environment with the bindings introduced by the join pattern;
+   * preserve the semantics of §10.8.
 
-8. `group by ...`
+8. `left join ... into name`
+
+   * lower to a normalized group-left-join operator, or to an observationally equivalent row-local binding of
+     `name : Query t`;
+   * preserve the current outer row environment and extend it only with `name`;
+   * keep the join pattern bindings in scope only while checking the join condition and the inner matching query;
+   * preserve the semantics of §10.8.
+
+9. `group by ...`
 
    * lower to a normalized grouping operator, or to an observationally equivalent implementation,
    * require the key type to have an implicit `Eq` instance,
    * replace the current row environment with a singleton row containing only the `into` binder,
    * preserve the semantics and scoping rules of §10.7.
 
-9. `distinct`
+10. `distinct`
 
    * deduplicate on the current row record `Row(Γ)`,
    * preserving the first encountered representative.
 
-10. `distinct by keyExpr`
+11. `distinct by keyExpr`
 
     * evaluate `keyExpr` exactly once per row,
     * deduplicate by that key,
     * preserving the first encountered representative.
 
-11. `order by`, `skip`, and `take`
+12. `order by`, `skip`, and `take`
 
     * preserve the ordered/unordered rules of §10.3.2 and §10.6.
 
