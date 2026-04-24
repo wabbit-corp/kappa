@@ -391,8 +391,12 @@ Implementations MAY provide backend-specific host binding modules under the rese
 * `host.dotnet`
 * `host.native`
 
-A source-defined module whose effective module name is exactly one of those roots, or begins with one of those roots
-followed by `.`, is a compile-time error.
+Implementations targeting the JVM MAY additionally reserve the subroot `host.jvm.jni` for JVM-specific JNI and
+Invocation-API interop. Because that subroot lies under `host.jvm`, a source-defined module whose effective module name
+is exactly `host.jvm.jni` or begins with `host.jvm.jni.` is also a compile-time error.
+
+A source-defined module whose effective module name is exactly one of the reserved host roots above, or begins with one
+of those roots followed by `.`, is a compile-time error.
 
 A host binding module is an ordinary module for import, export, name resolution, hashing, interface browsing, and
 tooling, but it is supplied from host metadata or ABI descriptions rather than from user-written Kappa source text.
@@ -403,30 +407,30 @@ Examples:
 import host.jvm.java.util.ArrayList as JArrayList
 import host.dotnet.System.Text.StringBuilder as StringBuilder
 import host.native.sqlite3 as sqlite
+import host.jvm.jni.JNIEnv as JNIEnv
 ```
 
 Rules:
 
-* `host.jvm.<path>` denotes a JVM host-binding scope derived from classfiles, JARs, the module path, or equivalent JVM
+* `host.jvm.<path>` denotes a JVM managed-host-binding scope derived from classfiles, JARs, the module path, or
+  equivalent JVM metadata.
+* `host.dotnet.<path>` denotes a CLR managed-host-binding scope derived from assembly metadata or equivalent CLR
   metadata.
-* `host.dotnet.<path>` denotes a CLR host-binding scope derived from assembly metadata or equivalent CLR metadata.
-* `host.native.<path>` denotes a native host-binding scope derived from an implementation-documented ABI description,
-  such as headers, symbol lists, shim declarations, or another equivalent binding description.
-* A host binding module MAY denote a package/namespace, a type/class, a library/header set, or another
+* `host.native.<path>` denotes a native-ABI host-binding scope derived from an implementation-documented ABI
+  description, such as headers, module maps, symbol lists, shim declarations, definition files, or another equivalent
+  binding description.
+* `host.jvm.jni.<path>` denotes a JVM-specific native-interop scope for JNI or Invocation-API bindings.
+* A host binding module MAY denote a package/namespace, a type/class, a library/header set, a JNI namespace, or another
   implementation-documented host scope. The chosen scope kind MUST be recorded in the module interface artifact.
 * Host binding modules are backend-specific. A module that directly imports `host.jvm...` is valid only when compiled
-  for a backend profile that provides `host.jvm`, and similarly for `host.dotnet...` and `host.native...`.
+  for a backend profile that provides `host.jvm`, and similarly for `host.dotnet...`.
+* A module that directly imports `host.native...` is valid only when compiled for a backend profile that provides
+  `host.native`. Such a profile MAY be `zig`, `jvm`, `dotnet`, or another implementation-documented profile that
+  provides a native-ABI adapter realization under §17.7.
 * In package mode, every host binding module used by a build MUST be backed by a pinned host-source identity recorded in
   a lockfile or equivalent build artifact.
 * A conforming implementation MAY realize a host binding module as a generated source module, a generated module
   interface artifact, a virtual module, or another observationally equivalent representation.
-
-Additional rules:
-
-* This subsection defines host binding modules only for `host.jvm`, `host.dotnet`, and `host.native`.
-* Interop realized primarily through process, IPC, RPC, or embedding bridges such as CPython, Ruby, or Perl falls
-  under §17.7.6 rather than this subsection unless the implementation documents an observationally equivalent
-  host-metadata model.
 
 <!-- modules.exports -->
 ### 2.4 Exports (re-exporting imports)
@@ -12767,10 +12771,12 @@ A module interface artifact MUST record at least:
 * the hashes or equivalent identity data required by §15 for exported definitions, instances, and escaped local nominal
   families recorded by the interface artifact;
 * for a host binding module, the pinned host-source identity, binding-generator identity, host scope kind, and any
-  implementation-documented marshalling profile or trusted binding-summary identities required by §17.7;
+  implementation-documented adapter-mode identity, marshalling profile, deployment prerequisite, native-library
+  identity, or trusted binding-summary identities required by the exported surface under §17.7;
 * for an exported raw foreign binding, the binder metadata required for downstream application-site elaboration,
   including any receiver marker, overload-disambiguation spelling, nullability classification used to obtain the
-  exported signature, and any interface-visible foreign-call blocking classification;
+  exported signature, and any interface-visible foreign-call classification, calling-convention classification, or
+  adapter-visible call-state-capture classification;
 * enough definitional content for exported transparent items to support downstream definitional equality;
 * for each exported transparent recursive definition, whether it is termination-certified and, if so, the termination
   kind (`structural`, `well-founded`, `size-change`, or `verified-assertTotal`), together with either:
@@ -12819,7 +12825,8 @@ resolution, hashing, or separate-compilation semantics.
 At minimum, the canonical interface view MUST include:
 
 * the module identity;
-* for a host binding module, the pinned host-source identity, binding-generator identity, and declared host scope kind;
+* for a host binding module, the pinned host-source identity, binding-generator identity, declared host scope kind, and
+  any adapter mode fixed by the exported surface;
 * exported binding groups by spelling and declaration kind;
 * importable fixity declarations;
 * visibility and opacity classification;
@@ -12828,8 +12835,8 @@ At minimum, the canonical interface view MUST include:
   interface-visible classification relevant to use sites, such as pattern-head eligibility under §7.7;
   The canonical interface view MUST render any non-empty inferred `captures (...)` annotation explicitly, even if it was
   omitted in the original source.
-* deterministic overload-disambiguation spellings and interface-visible foreign-call classifications for exported raw
-  foreign bindings, when present;
+* deterministic overload-disambiguation spellings and any interface-visible foreign-call, calling-convention, or
+  adapter-mode classifications for exported raw foreign bindings, when present;
 * exported signatures of types, traits, constructors, associated static members, effect interfaces, and effect
   operations, insofar as those entities are available to downstream code;
 * exported instance heads and any interface-visible coherence metadata;
@@ -13140,9 +13147,10 @@ At minimum:
 * a change to a declaration header, explicit type, supertype, import/export surface, build flag, backend profile,
   backend intrinsic set, or dependency interface MUST invalidate dependent results from the earliest phase whose inputs
   changed;
-* a change to a pinned host-source identity, binding-generator version, trusted binding summary, host metadata input,
-  native ABI description, or shim artifact MUST invalidate any generated host-binding surface and all downstream phase
-  results that depended on it;
+* a change to a pinned host-source identity, binding-generator version, host metadata input, native ABI description,
+  selected adapter mode, marshalling profile, deployment prerequisite, generated companion artifact, trusted binding
+  summary, or shim artifact MUST invalidate any generated host-binding surface, adapter realization, and all
+  downstream phase results that depended on it;
 * a change to macro-observed external input MUST invalidate any expansion, cached query result, or downstream phase
   result that depended on that input.
 
@@ -13176,8 +13184,12 @@ queries exist:
 * compute module interface;
 * compute inhabitance summary for a KCore type, declaration result type, or pattern-refined case type;
 * resolve host binding module scope and compute its host-source identity;
-* build or load a raw host binding surface from host metadata or an ABI description, together with any trusted binding
-  summaries that affect its exported interface;
+* build or load a raw host binding surface from host metadata, a native ABI description, or a JVM-specific JNI binding
+  description, together with any trusted binding summaries that affect its exported interface;
+* select backend adapter mode and adapter-visible binding metadata for a raw `host.native` surface when the selected
+  backend profile provides one or more adapter realizations under §17.7;
+* build or load any generated companion fragments, registration tables, source-generated interop declarations, shim
+  artifacts, or equivalent adapter realizations required by the selected adapter mode or by a `host.jvm.jni` binding;
 * lower declaration or module to KCore;
 * evaluate elaboration-time expansion or normalization request;
 * lower declaration or module to KBackendIR;
@@ -14539,8 +14551,9 @@ Rules:
 <!-- compiler.intrinsics.host_binding_intrinsics -->
 #### 17.6.3 Host binding intrinsics
 
-A backend profile that provides `host.jvm`, `host.dotnet`, or `host.native` MAY satisfy exported declarations of those
-modules using backend intrinsics, generated companion fragments, or another observationally equivalent mechanism.
+A backend profile that provides `host.jvm`, `host.jvm.jni`, `host.dotnet`, or `host.native` MAY satisfy exported
+declarations of those modules using backend intrinsics, generated companion fragments, generated registration tables,
+generated native or managed shim artifacts, or another observationally equivalent mechanism.
 
 Rules:
 
@@ -14548,11 +14561,15 @@ Rules:
   * the pinned host-source identity,
   * the selected host member identity,
   * the binding-generator identity, and
-  * any implementation-documented marshalling, calling-convention, trusted binding-summary, or adapter mode that affects
-    semantics.
+  * any implementation-documented adapter mode, marshalling, calling-convention, deployment prerequisite,
+    trusted-binding-summary identity, or companion-artifact recipe that affects semantics.
 * Unless explicitly classified as elaboration-available under §17.6.1, a raw host binding intrinsic is runtime-only.
-* A backend MUST reject a host binding whose required calling convention, marshalling, blocking classification, trusted
-  summary contract, or runtime service it cannot realize under the selected backend profile or deployment mode.
+* A backend MAY generate hidden companion classes, source-generated interop declarations, registration tables, headers,
+  shim source, native helper objects, or other auxiliary artifacts needed to realize a host binding. Such artifacts are
+  part of the host-binding realization and need not be user-authored source code.
+* A backend MUST reject a host binding whose required adapter mode, calling convention, marshalling, callback bridge,
+  blocking classification, trusted summary contract, deployment prerequisite, or runtime service it cannot realize under
+  the selected backend profile or deployment mode.
 
 <!-- compiler.ffi -->
 ### 17.7 Foreign interop and portable foreign ABI
@@ -14591,8 +14608,8 @@ Kappa syntax. Portability requires an exported surface that also obeys the rules
 <!-- compiler.ffi.raw_host_binding_surfaces -->
 #### 17.7.2 Raw host binding surfaces
 
-A host binding module MAY expose a mechanically generated raw surface derived from host metadata or an
-implementation-documented ABI description.
+A host binding module MAY expose a mechanically generated raw surface derived from host metadata, a native ABI
+description, or another implementation-documented binding description.
 
 If an implementation provides a refined surface for host binding module `M`, the mechanically generated raw surface MUST
 remain available as submodule `M.Raw`.
@@ -14606,6 +14623,12 @@ Rules:
 * Imported native pointer-like values in raw native bindings SHOULD use `std.ffi.RawPtr` or an opaque handle type.
 * Imported native scalars whose ABI meaning is exact-width or pointer-width MUST use the corresponding `std.ffi` scalar
   types.
+* A raw `host.native` surface denotes the native ABI itself rather than a particular backend realization of that ABI.
+  Different backend profiles MAY realize the same raw `host.native` surface through different adapter modes under
+  §17.7.2.1 without changing its source-level spelling.
+* A raw `host.jvm.jni` surface is backend-specific to the `jvm` profile and MAY expose JNI reference types, interface
+  pointers, or registration surfaces using opaque exported types, `RawPtr`, `OpaqueHandle`, or another
+  implementation-documented equivalent representation.
 * When a host type has generic arity that the implementation can preserve soundly in the selected backend profile, the
   raw surface MAY expose it as an ordinary Kappa type constructor of the same arity. Otherwise the implementation MUST
   expose an erased raw surface rather than inventing unsupported phantom precision.
@@ -14617,6 +14640,45 @@ Rules:
 * If multiple host members with the same source spelling are exported into one Kappa module, the implementation MUST
   assign deterministic exported spellings to those overloads. The unsuffixed base spelling MAY be used only when
   exactly one exported member of that source spelling remains after filtering and overlay application.
+* A raw binding that requires variadics, layout-sensitive structures, callbacks, function pointers, or other ABI
+  features that the selected backend profile cannot represent soundly under the selected adapter mode MUST be rejected or
+  require an explicit shim or trusted binding summary rather than guessed.
+
+<!-- compiler.ffi.native_abi_adapter_modes -->
+#### 17.7.2.1 Native-ABI adapter modes
+
+A `host.native` surface is realized by a backend profile through an adapter mode.
+
+The standard adapter mode names are:
+
+* `native.direct`
+* `jvm.ffm`
+* `jvm.jna`
+* `jvm.jni-shim`
+* `dotnet.libraryimport`
+* `dotnet.dllimport`
+
+Rules:
+
+* `native.direct` is the direct native-code realization used by the `zig` profile or another native backend profile.
+* `jvm.ffm`, `jvm.jna`, and `jvm.jni-shim` are JVM realizations of ordinary native-ABI bindings.
+* `dotnet.libraryimport` and `dotnet.dllimport` are CLR realizations of ordinary native-ABI bindings.
+* Adapter-mode selection is implementation-documented. It MAY be chosen by build configuration, manifest data,
+  surface-sugar attributes, trusted binding summaries, or another equivalent mechanism.
+* If incompatible adapter modes are requested for the same binding by multiple selection mechanisms, compilation fails.
+* Adapter-mode selection is part of the effective build configuration and of the host-binding implementation identity
+  whenever it affects exported signatures, runtime semantics, or deployment requirements.
+* If a selected adapter mode requires generated companion classes, generated interop declarations, registration tables,
+  shim source, headers, native helper objects, or another auxiliary artifact, those artifacts are part of the binding
+  realization under §§17.2.6 and 17.6.3.
+* A selected adapter mode MAY additionally provide implementation-documented call-state capture facilities, such as
+  `errno` capture, last-error capture, or equivalent host status snapshots, but such facilities do not by themselves
+  determine a Kappa typed error channel.
+* Adapter modes do not by themselves justify a more precise Kappa type than that assigned by §§17.7.2-17.7.3. More
+  precise result typing, error typing, ownership, or callback semantics still require a refined overlay, trusted binding
+  summary, or shim.
+* A conforming implementation MAY expose ordinary source-level sugar to select adapter modes, provided that sugar
+  elaborates to the ordinary host-binding, binding-summary, and overlay mechanisms of this chapter.
 
 <!-- compiler.ffi.conservative_typing_minimal_effect_inference -->
 #### 17.7.3 Conservative typing and minimal effect inference
@@ -14630,17 +14692,18 @@ Rules:
   side-effect free under the selected backend profile.
 * If that condition is not met, the raw declaration MUST be placed in `UIO`.
 * A raw foreign declaration MUST NOT be assigned a non-`Void` typed error channel solely from bytecode, IL, metadata,
-  headers, or symbol information. Raw host failures, host exceptions, status codes, null sentinels, and similar host
-  conventions do not by themselves determine a Kappa error type.
+  headers, symbol information, declared host exception lists, status-code macros, last-error flags, or similar host
+  metadata. Raw host failures, host exceptions, status codes, null sentinels, and similar host conventions do not by
+  themselves determine a Kappa error type.
 * A more precise result type `IO e a` requires an explicit refined overlay or a trusted binding summary that names the
   error type and the translation contract.
 * For managed reference-typed parameters and results, the generated type is:
   * `T` only when host metadata proves non-nullability;
   * `Option T` when host metadata proves nullability; and
   * `Option T` when nullability is unknown.
-* For native raw bindings, out-parameters, status-code returns, sentinel returns, and other ABI-level conventions MAY be
-  exposed directly in the raw surface. Such shapes are backend-specific and are not portable merely because they are
-  expressible in Kappa syntax.
+* For native raw bindings, out-parameters, status-code returns, sentinel returns, adapter-captured call-state snapshots,
+  and other ABI-level conventions MAY be exposed directly in the raw surface. Such shapes are backend-specific and are
+  not portable merely because they are expressible in Kappa syntax.
 * Every raw foreign declaration MUST carry foreign-call classification metadata as defined by §17.13:
   `nonblocking`, `blocking`, or `blocking-cancellable`.
 * A backend that lacks the runtime capability required by that classification, including `rt-blocking` when relevant,
@@ -14669,13 +14732,16 @@ with the generator inputs of a host binding module.
 Rules:
 
 * A refined overlay MAY rename raw bindings, hide overload spellings, strengthen nullability, translate status codes,
-  catch and translate host exceptions, and expose more precise result types, including `IO e a`.
+  catch and translate host exceptions, consult adapter-captured call-state, and expose more precise result types,
+  including `IO e a`.
 * A refined overlay that exposes `IO e a` MUST make the error translation contract explicit, either:
   * by implementing the translation in Kappa source, or
   * by delegating to a shim or trusted binding summary whose documented contract provides that translation.
 * A trusted binding summary MAY refine raw typing only by adding facts not recoverable soundly from host metadata alone,
   such as purity classification, blocking classification, nullability, ownership or handle discipline, status-code
-  meaning, sentinel meaning, or exception-to-error translation.
+  meaning, sentinel meaning, exception-to-error translation, call-state capture, marshalling policy, string or struct
+  layout policy, callback ABI, thread-attachment policy, JNI reference discipline, arena or lifetime policy, or
+  deployment prerequisites.
 * A trusted binding summary that permits a raw declaration to be typed as pure MUST state that the underlying host
   operation is total, nonblocking, nonthrowing, and observably side-effect free under the selected backend profile.
 * A trusted binding summary that permits a declaration to be exposed as `IO e a` MUST name:
@@ -14684,6 +14750,8 @@ Rules:
   * the translation from those conditions to `e`, and
   * which remaining host failure modes, if any, remain defects or interruption-pending runtime failures rather than
     typed errors.
+* A trusted binding summary that exposes callback, handle, arena-lifetime, or thread-affinity behavior MUST name the
+  ownership, creation, release, and thread-affinity contract relevant to that binding.
 * The identity of every trusted binding summary that affects exported signatures or runtime semantics MUST be recorded in
   the effective build inputs, host binding implementation identity, and relevant interface artifacts.
 * A shim MAY be provided as Kappa source, as target-host source, as native source, or as another
@@ -14692,6 +14760,8 @@ Rules:
   identity, and tooling exactly like other modules and artifacts.
 * This specification does not require a distinct `foreign import` declaration form. An implementation MAY provide such a
   form as surface sugar only if it elaborates to the ordinary mechanisms of this section and preserves their semantics.
+  Such sugar MAY include precise foreign type declarations, adapter-mode selection, entry-point naming, library lookup,
+  marshalling directives, callback declarations, or JNI-specific policy annotations.
 
 <!-- compiler.ffi.boundary_contracts_blame -->
 #### 17.7.4A Boundary contracts, dependent checks, and blame
@@ -14764,25 +14834,28 @@ Rules:
 
 Rules:
 
-* A module that directly imports `host.jvm...`, `host.dotnet...`, or `host.native...` is backend-specific to the
-  corresponding host root.
+* A module that directly imports `host.jvm...`, `host.dotnet...`, `host.native...`, or `host.jvm.jni...` is backend-
+  specific to the corresponding provided host root.
+* `host.native...` remains backend-specific even when more than one backend profile provides a realization of the same
+  raw surface under different adapter modes.
 * Portable libraries SHOULD expose backend-neutral surfaces using `expect` declarations, selected module fragments, or
   other ordinary Kappa modules that delegate to host bindings only in backend-specific fragments.
 * A host binding module itself is not part of the portable subset unless the exported surface also satisfies the
   portable ABI restrictions of §17.7.1.
 * In particular, direct `std.ffi.RawPtr` use, direct borrowed foreign values, raw out-parameter conventions, runtime-
-  only host object types, and backend-specific blocking bridges are outside the portable subset unless wrapped by a
-  portable facade.
+  only host object types, JNI reference types, direct `JNIEnv`-style interfaces, and backend-specific blocking bridges
+  are outside the portable subset unless wrapped by a portable facade.
 
 **Design note:** The intended ergonomic layering is:
-1. mechanically generated raw host bindings in `host.<backend>....Raw`,
-2. refined overlay modules with explicit Kappa types and error mapping,
-3. portable facades built with `expect` plus backend-selected fragments.
-4. runtime bridge handles plus contract-checked bound package values when
-   user code must control startup, transport, environment, credentials,
-   sandboxing, or per-connection state.
 
-This keeps backend-specific metadata import ergonomic without making backend-specific surfaces part of the portable ABI.
+1. mechanically generated raw managed bindings in `host.jvm....Raw` and `host.dotnet....Raw`,
+2. mechanically generated raw native-ABI bindings in `host.native....Raw`, realized per backend by adapter mode,
+3. JVM-specific raw JNI bindings in `host.jvm.jni....Raw` when the user truly needs JNI rather than ordinary native ABI,
+4. refined overlay modules with explicit Kappa types and error mapping, and
+5. portable facades built with `expect` plus backend-selected fragments.
+
+This keeps direct managed-host import and direct native-ABI import ergonomic without making backend-specific surfaces
+part of the portable ABI.
 
 Python, Ruby, and Perl interop SHOULD normally use the runtime bridge
 lane of §17.7.7 unless the implementation provides a reproducible static
@@ -14922,15 +14995,20 @@ The `zig` profile MAY provide `host.native` modules.
 
 Rules:
 
+* The `zig` profile realizes `host.native` through the standard adapter mode `native.direct`, unless an
+  observationally equivalent implementation-documented native adapter mode is selected.
 * The host-source identity of a `host.native` module MUST include the ABI-description inputs used to generate its raw
-  surface, such as header digests, symbol-list digests, shim-source digests, target triple, calling convention, and the
-  identity of any linked native library required by the binding.
+  surface, such as header digests, module-map digests, symbol-list digests, definition-file digests, shim-source
+  digests, target triple, calling convention, and the identity of any linked native library required by the binding.
 * A raw `host.native` surface SHOULD use `std.ffi` exact-width scalars, `RawPtr`, and opaque handles for ABI-visible
   native values.
 * If the implementation cannot derive a sound raw surface from native metadata alone, it MAY require a user-provided
   shim or explicit binding description rather than guessing.
 * A conforming implementation MAY additionally require allowlisted headers, wrapper headers, module maps, or equivalent
   curated binding inputs rather than importing an unconstrained ambient native namespace.
+* The raw `host.native` surface used by the `zig` profile MAY also be reused by other backend profiles that provide
+  `host.native` through different adapter modes. Such reuse does not by itself make those bindings part of the portable
+  ABI.
 
 <!-- compiler.jvm -->
 ### 17.9 JVM backend profile
@@ -14940,7 +15018,9 @@ A conforming implementation MAY provide the `jvm` backend profile.
 Artifact kinds:
 
 * class files;
-* JARs or equivalent classfile bundles.
+* JARs or equivalent classfile bundles;
+* implementation-defined generated companion classes, registration tables, headers, shim sources, or native helper
+  artifacts required by selected `host.native` adapter modes or `host.jvm.jni` bindings.
 
 Rules:
 
@@ -14951,13 +15031,16 @@ Rules:
 * the backend MAY use JVM exceptions or `try/finally` as implementation techniques for Kappa abrupt control and cleanup,
   but the observable behavior MUST remain that of §§8.6-8.7 and §9;
 * the backend MAY rely on host garbage collection for ordinary heap objects, but source-level resource release remains
-  governed by Kappa semantics, not by host finalization behavior.
+  governed by Kappa semantics, not by host finalization behavior;
+* the backend MAY generate hidden companion classes, registration tables, headers, shim source, or native helper
+  artifacts needed to realize `host.native` or `host.jvm.jni` bindings; those artifacts are implementation details and
+  are not part of the portable Kappa ABI.
 
 A JVM adapter layer MAY additionally expose Java-friendly wrappers around portable Kappa exports, but those wrappers are
 not part of the portable Kappa ABI.
 
 <!-- compiler.jvm.host_binding_modules -->
-#### 17.9.1 JVM host binding modules
+#### 17.9.1 JVM managed host binding modules
 
 The `jvm` profile MAY provide `host.jvm` modules.
 
@@ -14971,6 +15054,40 @@ Rules:
 * Nullability MAY be inferred from implementation-documented JVM metadata. In the absence of proof of non-nullability,
   the raw surface MUST use the conservative rules of §17.7.3.
 
+<!-- compiler.jvm.native_interop_adapters_and_jni_modules -->
+#### 17.9.2 JVM native-ABI adapters and JNI modules
+
+The `jvm` profile MAY provide `host.native` modules realized through one or more of the standard adapter modes:
+
+* `jvm.ffm`
+* `jvm.jna`
+* `jvm.jni-shim`
+
+The `jvm` profile MAY additionally provide `host.jvm.jni` modules for JNI-specific interop.
+
+Rules:
+
+* `jvm.ffm` is the preferred native-ABI adapter mode for ordinary foreign libraries when the selected deployment mode
+  supports it.
+* `jvm.jna` is a compatibility native-ABI adapter mode for ordinary foreign libraries.
+* `jvm.jni-shim` is a native-ABI adapter mode in which the implementation MAY generate hidden Java declarations,
+  registration tables, headers, or native shim artifacts needed to realize a `host.native` binding. The user need not
+  author a manual Java bridge.
+* If more than one JVM native-ABI adapter mode is available and the build configuration does not choose one, the
+  implementation SHOULD prefer `jvm.ffm` over `jvm.jna` and `jvm.jni-shim`.
+* `host.jvm.jni` is reserved for JNI-specific and Invocation-API-specific bindings, including `JNIEnv`-mediated
+  operations, native-method registration, load/unload hooks, thread attach/detach, reference-management primitives, and
+  JVM embedding or startup APIs.
+* A raw `host.jvm.jni` surface SHOULD expose JNI reference-like values as opaque handles or equivalent
+  implementation-documented raw types unless a refined overlay intentionally bridges them to imported managed host
+  types.
+* A trusted binding summary or shim for a `jvm.ffm`, `jvm.jna`, `jvm.jni-shim`, or `host.jvm.jni` binding MAY specify
+  callback ABI, local-vs-global reference discipline, exception-checking conventions, thread-attachment requirements,
+  arena or lifetime policy, and any load-time or deployment-time prerequisites.
+* If the selected JVM deployment mode cannot realize the required native-access prerequisite, adapter mode, callback
+  bridge, thread-attachment policy, blocking classification, or generated companion artifact of the selected binding,
+  the implementation MUST reject that binding or deployment mode rather than silently weakening semantics.
+
 <!-- compiler.dotnet -->
 ### 17.10 CLR backend profile (`dotnet`)
 
@@ -14980,23 +15097,28 @@ Artifact kinds:
 
 * assemblies containing CIL and metadata;
 * implementation-defined publish outputs derived from such assemblies;
-* native outputs produced by optional Native AOT publish mode.
+* native outputs produced by optional Native AOT publish mode;
+* implementation-defined generated interop companion artifacts required by selected `host.native` adapter modes.
 
 Rules:
 
 * the backend MUST lower KBackendIR to CLR-compatible artifacts;
 * the ordinary managed form of this profile targets assemblies containing CIL and metadata;
-* the backend MAY additionally offer a Native AOT publish mode. Native AOT is a deployment mode of the `dotnet` profile,
-  not a separate Kappa semantic profile;
-* the backend MAY use CLR exceptions, delegates, runtime services, or host garbage collection as implementation
-  techniques, but the observable behavior MUST remain that of Kappa source semantics.
+* the backend MAY additionally offer a Native AOT publish mode. Native AOT is a deployment mode of the `dotnet`
+  profile, not a separate Kappa semantic profile;
+* the backend MAY use CLR exceptions, delegates, runtime services, source-generated interop declarations, or host
+  garbage collection as implementation techniques, but the observable behavior MUST remain that of Kappa source
+  semantics;
+* the backend MAY generate companion interop declarations, marshalling helpers, or equivalent auxiliary artifacts needed
+  to realize `host.native` bindings; those artifacts are implementation details and are not part of the portable Kappa
+  ABI.
 
 If a program or library depends on runtime features unavailable under the selected CLR deployment mode, such as a
 particular Native AOT mode, the implementation MUST reject that deployment with a compile-time or publish-time
 diagnostic rather than silently weakening semantics.
 
 <!-- compiler.dotnet.clr_host_binding_modules -->
-#### 17.10.1 CLR host binding modules
+#### 17.10.1 CLR managed host binding modules
 
 The `dotnet` profile MAY provide `host.dotnet` modules.
 
@@ -15012,8 +15134,32 @@ Rules:
 * In the absence of proof of non-nullability from CLR metadata, the raw surface MUST use the conservative rules of
   §17.7.3.
 * If the selected deployment mode, including any Native AOT mode, cannot realize the required marshalling or runtime
-  services for a given host binding, the implementation MUST reject that binding or deployment mode rather than silently
-  weakening semantics.
+  services for a given `host.dotnet` binding, the implementation MUST reject that binding or deployment mode rather than
+  silently weakening semantics.
+
+<!-- compiler.dotnet.native_interop_adapters -->
+#### 17.10.2 CLR native-ABI adapters
+
+The `dotnet` profile MAY provide `host.native` modules realized through one or more of the standard adapter modes:
+
+* `dotnet.libraryimport`
+* `dotnet.dllimport`
+
+Rules:
+
+* `dotnet.libraryimport` is the preferred native-ABI adapter mode for ordinary foreign libraries when the selected
+  deployment mode supports it.
+* `dotnet.dllimport` is a compatibility native-ABI adapter mode for ordinary foreign libraries.
+* If more than one CLR native-ABI adapter mode is available and the build configuration does not choose one, the
+  implementation SHOULD prefer `dotnet.libraryimport` over `dotnet.dllimport`.
+* The user need not author C# bridge code merely to make a `host.native` binding callable from Kappa. The
+  implementation MAY generate companion declarations, marshalling helpers, or equivalent auxiliary artifacts as needed.
+* A trusted binding summary or shim for a `dotnet.libraryimport` or `dotnet.dllimport` binding MAY specify entry-point
+  naming, charset, string or struct marshalling, last-error capture, custom marshaller use, callback ABI, ownership or
+  handle discipline, and any Native AOT or deployment-mode prerequisites.
+* If the selected CLR deployment mode, including any Native AOT mode, cannot realize the required adapter mode,
+  generated marshalling, callback bridge, last-error capture, custom marshaller contract, or runtime service, the
+  implementation MUST reject that binding or deployment mode rather than silently weakening semantics.
 
 <!-- compiler.wasm -->
 ### 17.11 WebAssembly backend profile (`wasm`)
