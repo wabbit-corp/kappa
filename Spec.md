@@ -8452,12 +8452,21 @@ acquireRelease :
 
 Semantics:
 
-* An interruption request becomes observable only at an interruption point.
-* Outside masked regions, every runtime suspension point and every explicit `poll` is an interruption point.
-* `uninterruptible body` suppresses interruption delivery while `body` executes. A pending interruption request is
-  re-checked when `body` leaves the uninterruptible region.
+* Each fiber carries at most one pending interruption request for portable source semantics.
+* If multiple interruption requests arrive before delivery, the first request determines the portable `InterruptCause`;
+  later requests MAY be recorded diagnostically but do not change the delivered portable cause.
+* An interruption request becomes observable only at an interruption point or at explicit `poll`.
+* Outside masked regions, every runtime suspension point is an interruption point.
+* `poll` is an explicit interruption checkpoint. If the current fiber has a pending interruption request, `poll`
+  delivers it immediately, including from within `mask` or `uninterruptible`. Otherwise `poll` returns `Unit`.
+* `uninterruptible body` suppresses interruption delivery while `body` executes, except that explicit `poll` may still
+  deliver an already pending interruption. A pending interruption request is otherwise re-checked when `body` leaves the
+  uninterruptible region.
 * `mask f` suppresses interruption while `f` executes. The `restore` function re-enables interruption for a selected
   subcomputation.
+* Once a pending interruption has been delivered to the current fiber, that pending request is consumed.
+  Code that recovers from `Cause.Interrupt` through `sandbox` or another explicit `Exit`-level observation continues
+  with no pending interruption unless a later request arrives.
 * Finalizers installed by `ensuring`, `acquireRelease`, `defer`, `using`, scope unwinding, and runtime cleanup run in
   masked state.
 * `acquireRelease acquire release use` provides a protected resource scope: the resource remains owned by the scope
