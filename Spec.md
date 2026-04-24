@@ -16187,6 +16187,8 @@ Rules:
   not portable merely because they are expressible in Kappa syntax.
 * Every raw foreign declaration MUST carry foreign-call classification metadata as defined by §17.13:
   `nonblocking`, `blocking`, or `blocking-cancellable`.
+* A raw foreign declaration MUST NOT be classified as `blocking-cancellable` unless the selected adapter mode, trusted
+  binding summary, or shim names the cancellation mechanism and states that invoking it is safe for that binding.
 * A backend that lacks the runtime capability required by that classification, including `rt-blocking` when relevant,
   MUST reject the declaration or deployment mode rather than silently weakening its behavior.
 
@@ -16221,8 +16223,8 @@ Rules:
 * A trusted binding summary MAY refine raw typing only by adding facts not recoverable soundly from host metadata alone,
   such as purity classification, blocking classification, nullability, ownership or handle discipline, status-code
   meaning, sentinel meaning, exception-to-error translation, call-state capture, marshalling policy, string or struct
-  layout policy, callback ABI, thread-attachment policy, JNI reference discipline, arena or lifetime policy, or
-  deployment prerequisites.
+  layout policy, callback ABI, thread-attachment policy, safe cancellation mechanism, JNI reference discipline, arena
+  or lifetime policy, or deployment prerequisites.
 * A trusted binding summary that permits a raw declaration to be typed as pure MUST state that the underlying host
   operation is total, nonblocking, nonthrowing, and observably side-effect free under the selected backend profile.
 * A trusted binding summary that permits a declaration to be exposed as `IO e a` MUST name:
@@ -16231,6 +16233,11 @@ Rules:
   * the translation from those conditions to `e`, and
   * which remaining host failure modes, if any, remain defects or interruption-pending runtime failures rather than
     typed errors.
+* A trusted binding summary that classifies a declaration as `blocking-cancellable` MUST name:
+  * the cancellation mechanism,
+  * the host conditions under which it may be invoked,
+  * whether invocation is best-effort or definitive, and
+  * which remaining failure modes still behave as ordinary blocking completion rather than successful cancellation.
 * A trusted binding summary that exposes callback, handle, arena-lifetime, or thread-affinity behavior MUST name the
   ownership, creation, release, and thread-affinity contract relevant to that binding.
 * The identity of every trusted binding summary that affects exported signatures or runtime semantics MUST be recorded in
