@@ -15161,6 +15161,10 @@ Typing and admissibility:
 Projection descriptors are pure values. Application of a projector descriptor does not mutate storage. All rebuilding is
 expressed through the returned root pack or zipper fill function.
 
+The same projector eliminators are used both for:
+* fully applied calls to named projection definitions; and
+* projector descriptor applications under §7.1.3A.
+
 A fully applied surface projection call does not survive as a distinct KCore form.
 
 Instead, after ordinary dependent substitution of non-`place` arguments and construction of the internal place pack for
