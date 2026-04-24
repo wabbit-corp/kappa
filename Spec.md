@@ -3433,20 +3433,44 @@ carrier such as `Dict`.
 A quantity denotes either a closed interval of permitted exact uses over `ℕ∞`, where `∞` is allowed as an upper bound,
 or the special borrow quantity `&`.
 
-Surface quantities in v0.1 are:
+Surface quantities in v1 are:
 
 ```text
-0      ≜ [0,0]     -- Erased (computationally irrelevant)
-1      ≜ [1,1]     -- Owned (exactly once, consumes the resource)
-&                  -- Borrowed (computationally relevant, non-consuming)
-ω      ≜ [0,∞]     -- Unrestricted (zero or more times)
-<=1    ≜ [0,1]     -- At most once
->=1    ≜ [1,∞]     -- At least once
+0      ≜ [0,0]     -- Erased; no runtime use is permitted
+1      ≜ [1,1]     -- Linear; exactly one runtime-relevant demand
+&                  -- Borrowed; non-consuming, region-scoped demand
+ω      ≜ [0,∞]     -- Unrestricted; zero or more runtime-relevant demands
+<=1    ≜ [0,1]     -- Affine; at most one runtime-relevant demand
+>=1    ≜ [1,∞]     -- Relevant/strict; at least one runtime-relevant demand
 ```
 
-Implementations may use arbitrary closed intervals internally during inference for interval quantities, but user-written
-quantity syntax in v0.1 is limited to the six forms above. The borrow quantity `&` is a distinct mode and is not itself
-an interval.
+`>=1` is a relevance quantity, not an ownership quantity.
+
+A binder declared at quantity `>=1` must be demanded at least once along every checked completion path that leaves the
+binder's scope, but may be demanded more than once.
+
+Consequences:
+
+* `>=1` may satisfy a demand for `1`, because an exactly-once use is one admissible use of a relevant binding.
+* `>=1` may satisfy a demand for `>=1`.
+* `>=1` does not satisfy a demand for `ω`, because an unrestricted callee may ignore its argument.
+* `>=1` does not satisfy a demand for `<=1`, because an affine callee may ignore its argument.
+* A `>=1` binding must not be used to model exclusive ownership. Exclusive ownership is expressed by `1`, by `using`,
+  by `inout`, or by a library protocol whose binders demand `1`.
+
+The informal names are:
+
+```text
+0      erased
+1      linear
+&      borrowed
+ω      unrestricted
+<=1    affine
+>=1    relevant
+```
+
+A value of a relevant binding may be copied, shared, or used more than once according to ordinary interval checking.
+The only extra guarantee of `>=1` over `ω` is non-ignorability.
 
 Quantity variables and polymorphism:
 
