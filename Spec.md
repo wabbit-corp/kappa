@@ -5776,6 +5776,16 @@ Normative rule:
 
 * A transparent definition may participate in definitional equality only if it is **termination-certified**.
 
+In this section, “definition” includes transparent term definitions, transparent type aliases, and any other
+transparent compile-time definitions whose bodies may be unfolded by δ-reduction.
+
+Clarification:
+
+* “total by default” in v1 applies to transparent definitions and elaboration-time computations that may affect
+  typechecking, not to all runtime computations.
+* Effectful runtime computations, including `while` and `for` inside `do`, may diverge.
+* Such runtime divergence MUST NOT by itself make any definition eligible for δ-reduction.
+
 <!-- declarations.totality.termination_certified_definitions -->
 #### 6.4.1 Termination-certified definitions
 
@@ -13161,6 +13171,13 @@ A module interface artifact MUST record at least:
 * enough metadata to reconstruct the reified-module view of §2.8.5, including the kind-tagged exported-member surface
   and the opaque-vs-transparent classification needed for local qualified access and module-value projection.
 
+For imported definitions, ordinary downstream compilation MUST use the recorded termination-certification status from the
+module interface artifact as the source of truth for δ-reduction eligibility. It MUST NOT require re-running
+termination inference on imported bodies in ordinary compilation mode.
+
+An implementation MAY offer an explicit re-verification or paranoid mode that rechecks recorded certificates. If such a
+recheck is requested and disagrees with the recorded certification, compilation fails.
+
 If an exported signature, exported compile-time member, or transparent definitional equation would mention a local
 nominal family that cannot be represented using the preceding interface-artifact data, the module is ill-formed for
 export and compilation fails in the defining module.
@@ -13215,6 +13232,8 @@ At minimum, the canonical interface view MUST include:
 * exported signatures of types, traits, constructors, associated static members, effect interfaces, and effect
   operations, insofar as those entities are available to downstream code;
 * exported instance heads and any interface-visible coherence metadata;
+* for each exported transparent recursive definition, whether it is termination-certified, its termination kind, and
+  any canonical visible `decreases` clause or equivalent stable certificate summary recorded by the interface artifact;
 * deterministic rendered names or references for any escaped local nominal families needed to explain exported types,
   compile-time members, or transparent definitional content, together with enough information to recover their family
   identities and captured-argument applications under §17.3.4.1;
