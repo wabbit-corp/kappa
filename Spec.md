@@ -15186,11 +15186,14 @@ Instead, elaboration proceeds as follows:
 3. Resolve `(.member args...)` exactly as a section body applied to `__root`, i.e. as the dotted form
    `__root.member args...`.
 4. Require the resolved form to denote either:
-   * a stable place rooted in `__root`, or
-   * a fully applied projection call whose yielded stable-place alternatives are all rooted in `__root`.
+   * a stable place rooted in `__root`;
+   * a fully applied projection call whose yielded stable-place alternatives are all rooted in `__root`; or
+   * a projector descriptor application under §7.1.3A whose `Roots` type is a one-field closed record and whose
+     roots argument is `__root`.
 5. If the resolved form is a stable place `p`, elaborate as `FillPlace p __new`.
-6. If the resolved form is a fully applied projection call, elaborate it to its projector descriptor value `proj` and
-   internal place pack `pack`, then elaborate the update as `FillProjector proj pack __new`.
+6. If the resolved form is either a fully applied projection call or a projector descriptor application, elaborate it to
+   its projector descriptor value `proj` and internal place pack `pack`, then elaborate the update as
+   `FillProjector proj pack __new`.
 7. If the resulting root pack contains more than one root field, scatter the rebuilt fields back to the corresponding
    actual stable roots in declaration order.
 
