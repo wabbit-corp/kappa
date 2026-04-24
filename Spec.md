@@ -12992,8 +12992,7 @@ Rules:
   `Defect (DefectInfo UnhandledChildFailure msg)`, where `msg` is implementation-defined diagnostic text describing the
   child exit.
 * If more than one attached child remains unacknowledged at scope exit, those unhandled-child defects are combined with
-  `Both` in child-creation order before later finalizer causes are appended by ordinary scope-exit unwinding under
-  §8.7.2.
+  `Both` in child-creation order before later finalizer causes are appended under §14.8.4C.
 
 Portable source semantics do not require immediate fail-fast interruption of a parent merely because an attached child
 has failed. Higher-level fail-fast task-group behavior is a library construction over `Scope`, `Promise`, `monitor`,
@@ -13185,6 +13184,37 @@ Any label installed through `setFiberLabel` or `locallyFiberLabel` MUST be the u
 
 The exact API shape and output format are implementation-defined, but they MUST be deterministic for a fixed runtime
 state.
+
+<!-- core_semantics.runtime_model.cause_composition_mandatory_cleanup_waits -->
+#### 14.8.4C Cause composition and mandatory cleanup waits
+
+When a computation or scope exits, the runtime distinguishes:
+
+* the primary cause produced by the body, if any;
+* child-shutdown causes produced during mandatory scope shutdown; and
+* finalizer causes produced by exit actions and release actions.
+
+Canonical composition:
+
+* If the body succeeds and cleanup produces no cause, the overall result is success.
+* If the body succeeds and cleanup produces cause `c_cleanup`, the overall result is `Failure c_cleanup`.
+* If the body fails with cause `c_body` and cleanup produces no further cause, the overall result is `Failure c_body`.
+* If the body fails with cause `c_body` and cleanup later produces `c_cleanup`, the overall result is
+  `Failure (Then c_body c_cleanup)`.
+
+Cleanup-cause construction:
+
+* Exit actions and release actions contribute sequentially in the masked LIFO execution order in which they run.
+* If several attached children fail during the same mandatory shutdown phase, their causes are combined with `Both` in
+  child-creation order before finalizer causes are appended.
+* A finalizer or release action that explicitly restores interruption and is itself interrupted contributes
+  `Interrupt ...` as its own cleanup cause. Remaining later finalizers still run.
+
+Mandatory cleanup waits:
+
+* Once `interrupt`, `shutdownScope`, scope exit, the loser-cleanup phase of `race`, or the timeout-cleanup phase of
+  `timeout` has begun waiting solely to ensure termination and finalizer completion of another fiber, that wait is
+  masked relative to the waiting fiber.
 
 <!-- core_semantics.runtime_model.captured_continuation_boundary -->
 #### 14.8.5 Captured continuation boundary
