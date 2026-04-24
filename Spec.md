@@ -9808,8 +9808,37 @@ Accordingly:
 There is no surface or KCore form in this specification for a borrowed resumption payload or a borrowed resumption
 value.
 
+<!-- effects.monadic_core.effect_declarations.oneshot_default_multishot_capability -->
+#### 8.1.7B One-shot default and multi-shot capability
+
+If an effect operation declaration omits an explicit resumption quantity, its resumption quantity defaults to `1`.
+
+Thus, operation declarations are one-shot by default.
+
+An operation is **multi-shot** iff its declared resumption quantity permits more than one use of the handler-bound
+resumption value, such as `ω` or `>=1`.
+
+Rules:
+
+* Multi-shot behavior is never inferred accidentally from an omitted annotation.
+* Source code that declares a multi-shot operation must do so explicitly.
+* Source code that invokes a multi-shot operation requires backend capability `rt-multishot-effects`.
+* A backend that does not advertise `rt-multishot-effects` MUST reject:
+  * any reachable multi-shot operation invocation, and
+  * any exported declaration whose implementation may invoke a multi-shot operation.
+* One-shot operations, abortive operations, shallow handlers, deep handlers, and tail-resumptive one-shot clauses do not
+  require `rt-multishot-effects`.
+
+Diagnostics:
+
+If a multi-shot operation is rejected because the backend lacks `rt-multishot-effects`, the diagnostic MUST identify:
+
+* the operation declaration;
+* the operation invocation or exported declaration that requires it; and
+* the selected backend profile.
+
 <!-- effects.monadic_core.effect_labels.identity_and_handler_matching -->
-#### 8.1.7B Effect-label identity and handler matching
+#### 8.1.7C Effect-label identity and handler matching
 
 Effect labels denote handler selectors.
 
@@ -17036,7 +17065,7 @@ Meaning:
   captured computation suffix from the `OpCall` site to that handler boundary, exactly as constrained by §14.8.
 * Applying `Resume k` to a resume payload resumes that captured suffix.
 * The resumption-use annotation of `k` is the declared resumption quantity `q_i` of the intercepted operation and is
-  enforced by §§8.1.7A, 8.1.7B, and 8.1.8 rather than by ordinary binder-quantity satisfaction alone.
+  enforced by §§8.1.7A, 8.1.7B, 8.1.7C, and 8.1.8 rather than by ordinary binder-quantity satisfaction alone.
 * The resume payload accepted by `Resume k` is always bound at quantity `1`. Multi-shotness therefore reuses or
   duplicates the resumption value `k`, not a single resume payload.
 * `HandleShallow` handles only the selected label and eliminates into the single target carrier `m`. Operations at all
@@ -18951,6 +18980,7 @@ The standard runtime capability names are:
 * `rt-shared-stm`
 * `rt-blocking`
 * `rt-atomics`
+* `rt-multishot-effects`
 
 Meaning:
 
@@ -18990,6 +19020,11 @@ Meaning:
   * read-modify-write operations,
   * and the memory-order semantics of §14.8.4A.
 
+* `rt-multishot-effects`:
+  * persistent multi-shot resumption behavior for effect operations whose resumption quantity permits more than one use;
+  * logical cloning of captured continuation segments;
+  * and the continuation storage/reclamation obligations of §14.8.6B.
+
 Capability rules:
 
 * A backend that lacks a required capability MUST reject the affected program or deployment mode rather than silently
@@ -19007,6 +19042,8 @@ Capability rules:
 * Absence of `rt-atomics` does not affect `STM`, ordinary refs, promises, scopes, monitors, or fibers.
 * A backend advertising `rt-atomics` MUST reject any `AtomicValue` instance it cannot implement with the required
   atomicity and memory-order semantics.
+* Absence of `rt-multishot-effects` does not disable effect handlers generally.
+  It disables only reachable source behavior that requires multi-shot resumptions.
 
 Recommended backend declarations:
 
@@ -19015,7 +19052,8 @@ Recommended backend declarations:
   * `rt-parallel`,
   * `rt-shared-stm`,
   * `rt-blocking`,
-  * `rt-atomics`.
+  * `rt-atomics`,
+  * `rt-multishot-effects`.
 
 * `wasm-core`, `wasm-component`, and `js` MUST advertise `rt-core`.
   They MAY additionally advertise `rt-parallel`, `rt-shared-stm`, or `rt-blocking` only when the selected embedder or
@@ -19023,6 +19061,9 @@ Recommended backend declarations:
 
 * `wasm-core`, `wasm-component`, and `js` MAY advertise `rt-atomics` only when the selected embedder or deployment
   configuration provides compatible atomic memory operations.
+
+* `wasm-core`, `wasm-component`, and `js` MAY advertise `rt-multishot-effects` only when the selected deployment
+  configuration implements persistent multi-shot resumption behavior with the obligations of §14.8.6B.
 
 For the standard target families covered by this specification, `zig`, `jvm`, managed `dotnet`, `wasm-core`,
 `wasm-component`, and `js` SHOULD all support the full `rt-core` surface, including timers and promises.
