@@ -1569,6 +1569,70 @@ Additional rule:
   It is an ordinary value, typically a package value, and dotted access
   on it is governed by the ordinary receiver rules of §2.8.3.
 
+<!-- modules.names.reified_static_object_facets -->
+#### 2.8.6 Reified static-object facets
+
+Some declaration kinds introduce both a contextual declaration facet and a reified static-object term facet.
+
+A **reified static-object term facet** is an ordinary compile-time term value corresponding to a declaration whose
+primary use is contextual.
+
+The following declarations introduce reified static-object term facets:
+
+* a `type` declaration, including a data type constructor, type alias, and effect-interface constructor;
+* a `trait` declaration;
+* an `effect-label` declaration;
+* a `projection` declaration, as specified separately in §6.1.1; and
+* a `module` declaration, as specified separately in §2.8.5.
+
+Type declarations:
+
+* If a type declaration has elaborated telescope
+
+  ```text
+  (x1 : A1) -> ... -> (xn : An) -> Type u
+  ```
+
+  then its reified term facet has that same compile-time function type.
+* A nullary type declaration has reified term facet of type `Type u`.
+* A type alias reifies as its alias body, subject to ordinary opacity and transparency rules.
+* A data declaration reifies as its type constructor, not as any constructor of that data type.
+* An effect declaration reifies as its effect-interface constructor.
+
+Trait declarations:
+
+* If a trait declaration has elaborated telescope
+
+  ```text
+  (x1 : A1) -> ... -> (xn : An) -> Constraint
+  ```
+
+  then its reified term facet has that same compile-time function type.
+* Thus a declaration `trait Eq (a : Type) = ...` introduces a reified term facet:
+
+  ```kappa
+  Eq : Type -> Constraint
+  ```
+
+Effect-label declarations:
+
+* If an effect-label declaration introduces label `l`, then its reified term facet has type:
+
+  ```kappa
+  l : EffLabel
+  ```
+
+Rules:
+
+* A reified static-object term facet is compile-time unless its elaborated type is explicitly reified by some ordinary
+  runtime carrier.
+* Reified static-object term facets may be rebound, stored in records or packages, passed as arguments, returned,
+  sealed, opened, and projected according to the ordinary rules for compile-time values (§§5.1.3 and 5.1.4.1).
+* Rebinding a static object preserves its semantic-object identity for downstream dotted lookup whenever that lookup is
+  otherwise well-formed.
+* A reified static-object term facet does not create an additional ordinary declaration of kind `term` in the binding
+  group. It is selected by the reified-static fallback rule below.
+
 
 
 <!-- lexical -->
