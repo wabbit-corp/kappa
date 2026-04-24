@@ -9329,6 +9329,57 @@ A stable-alias relation introduced by this section ceases to be available after 
 This section affects only flow typing and refinement transport. It does not change the place-identity rule of
 §5.1.7.1: an ordinary value binding remains not a place alias for borrowing or `inout`.
 
+<!-- expressions.conditionals.positive_lower_bound_checking -->
+#### 7.4.4 Positive lower-bound checking through conditionals
+
+A conditional checks positive lower-bound obligations branchwise.
+
+For:
+
+```kappa
+if cond then t else f
+```
+
+the usage summary of the conditional is the control-flow join of the usage summaries of the reachable branches.
+
+For an interval-bound variable `x`, if `t` uses `x` with interval `qt` and `f` uses `x` with interval `qf`, then the
+conditional uses `x` with:
+
+```text
+qt ⊔ qf
+```
+
+according to §5.1.5.
+
+Therefore a variable declared with quantity `>=1` must be demanded in every reachable branch.
+
+If branch refinement proves one branch unreachable, that branch contributes no usage requirement.
+
+If `cond` contains `&&`, `||`, or `not`, this rule applies after the recursive flow-sensitive lowering of §7.4.2.
+
+Examples:
+
+```kappa
+let f (>=1 x : Int) (b : Bool) : Int =
+    if b then x else x + 1
+```
+
+Accepted.
+
+```kappa
+let g (>=1 x : Int) (b : Bool) : Int =
+    if b then x else 0
+```
+
+Rejected.
+
+Post-dominating terminal branches:
+
+In a sequential `do` context, if one branch is terminal and the other branch continues to later do-items, a positive
+lower-bound obligation may be satisfied by the continuing branch together with the later do-items only for paths that
+actually continue.
+
+The terminal branch must independently satisfy any positive lower-bound obligations for binders whose scope it exits.
 
 <!-- expressions.match -->
 ### 7.5 `match` expressions
