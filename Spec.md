@@ -1463,34 +1463,60 @@ Rules:
   consistency-based subtyping, or implicit cast insertion among arbitrary non-`Dyn` types.
 
 <!-- modules.bridge -->
-### 2.7B Standard bridge-contract support module `std.bridge`
+### 2.7B Standard boundary and bridge support module `std.bridge`
 
 Implementations MUST provide a standard module `std.bridge`.
 It is not implicitly imported.
 
+`std.bridge` provides the portable vocabulary for runtime bridge capabilities, bridge-bound package values, boundary
+contracts, bridge provenance, and bridge failures.
+
 Types (type namespace):
 
 ```text
-BridgeContract sig
+BridgeOrigin,
+BoundaryDirection,
+BoundaryPrecision,
+BridgeFailure,
+BridgeContract sig,
+BridgePackage sig
 ```
 
 Traits (constraint namespace, restricted to trait):
 
 ```text
-BridgeBindable sig
+BridgeBindable sig,
 BridgeHandle h
 ```
 
 Terms (term namespace):
 
 ```text
-bindModule
+bindModule,
+bindModuleOwned,
+bridgePackageValue,
+bridgePackageOrigin,
+bridgeFailureToCastBlame
 ```
 
 Canonical declarations:
 
 ```kappa
+expect data BridgeOrigin : Type
+expect data BridgeFailure : Type
+
+data BoundaryDirection : Type =
+    IntoKappa
+    OutOfKappa
+    LaterUse
+
+data BoundaryPrecision : Type =
+    Exact
+    Conservative
+    Lossy
+
 expect data BridgeContract (@0 sig : Type) : Type
+expect data BridgePackage (@0 sig : Type) : Type
 
 trait BridgeBindable (sig : Type) =
     bridgeContract : BridgeContract sig
@@ -1498,12 +1524,25 @@ trait BridgeBindable (sig : Type) =
 trait BridgeHandle (h : Type) =
     Error : Type
 
+    bridgeOrigin :
+        (& this : h) -> UIO BridgeOrigin
+
+    bridgeFailure :
+        BridgeFailure -> Error
+
     bindModuleWith :
         forall (r : Region) (@0 sig : Type).
         BridgeContract sig ->
         (&[r] this : h) ->
         String ->
-        IO this.Error (sig captures (r))
+        IO Error (sig captures (r))
+
+    bindModuleOwnedWith :
+        forall (@0 sig : Type).
+        BridgeContract sig ->
+        (1 this : h) ->
+        String ->
+        IO Error (BridgePackage sig)
 
 bindModule :
     forall (h : Type) (r : Region) (@0 sig : Type).
@@ -1515,38 +1554,70 @@ bindModule :
 
 let bindModule @H @B handle name =
     H.bindModuleWith B.bridgeContract handle name
+
+bindModuleOwned :
+    forall (h : Type) (@0 sig : Type).
+    (@H : BridgeHandle h) ->
+    (@B : BridgeBindable sig) ->
+    (1 handle : h) ->
+    String ->
+    IO H.Error (BridgePackage sig)
+
+let bindModuleOwned @H @B handle name =
+    H.bindModuleOwnedWith B.bridgeContract handle name
+
+bridgePackageValue :
+    forall (r : Region) (@0 sig : Type).
+    (&[r] package : BridgePackage sig) ->
+    sig captures (r)
+
+bridgePackageOrigin :
+    forall (@0 sig : Type).
+    (& package : BridgePackage sig) -> UIO BridgeOrigin
+
+bridgeFailureToCastBlame :
+    BridgeFailure -> std.gradual.CastBlame
 ```
 
 Rules:
 
-* `BridgeContract sig` is a runtime representation of the foreign
-  boundary contract for a value or package surface of type `sig`.
+* `BridgeOrigin` is an opaque structured description of where a bridge value or bridge failure came from.
+* `BridgeOrigin` SHOULD identify, when available:
+  * the bridge runtime family;
+  * the runtime executable, library, process, endpoint, interpreter, or embedding identity;
+  * the bridge transport or embedding mode;
+  * the foreign module, namespace, object, service, or member being accessed;
+  * the contract identity;
+  * the source or synthetic origin of the Kappa boundary; and
+  * any implementation-documented bridge configuration relevant to diagnostics or reproducibility.
+* `BoundaryDirection` classifies whether a boundary failure occurred while accepting a value into Kappa, exporting a
+  value out of Kappa, or during later monitored higher-order use.
+* `BoundaryPrecision` classifies whether a boundary check is Exact, Conservative, or Lossy as defined in §1.1.
+* `BridgeFailure` is the standard bridge-level failure payload for missing members, wrong arity, marshalling failure,
+  contract violation, bridge-lifecycle failure, transport failure, and later higher-order boundary misuse.
+* `bridgeFailureToCastBlame` embeds bridge failures into the gradual blame vocabulary.
+* `BridgeContract sig` is a runtime representation of the boundary contract for a foreign value or package surface
+  exposed at type `sig`.
 * The type argument `sig` is compile-time only.
-  Runtime binding depends on the contract value, not on the erased type
-  argument alone.
-* `BridgeBindable sig` provides the contract used for runtime binding.
-* `bindModuleWith` binds a runtime bridge handle to a foreign module,
-  package, namespace, object, or another implementation-documented
-  bridge-visible surface selected by the supplied string.
-* A successful bind yields an ordinary Kappa value of type
-  `sig captures (r)`.
-* If `sig` is a signature type or another package-like surface, dotted
-  selection from the resulting value uses the ordinary package-member
-  rules of §2.8.3.
-* A failed bind MUST fail in the surrounding `IO`.
-  It MUST NOT silently fabricate a value of type `sig`.
-* A conforming implementation MAY provide `BridgeBindable` only for a
-  restricted class of record, signature, or other bridge-bindable
-  surfaces.
+  Runtime binding depends on the `BridgeContract sig` value, not on the erased type argument alone.
+* `BridgeBindable sig` provides the canonical contract for binding a surface of type `sig`.
 * For a Kappa-to-Kappa bridge under §17.7.8, an implementation SHOULD derive `BridgeContract sig` from the same
   canonical Kappa interface or signature data used for static bridge-supplied modules.
 * A derived Kappa-to-Kappa `BridgeContract sig` MUST preserve the precise Kappa surface of `sig`; it MUST NOT replace
   bridge-visible members with `Dyn`, opaque host values, raw pointers, serialized blobs, or weaker first-order
   approximations unless `sig` itself requests such a surface.
-* `BridgeHandle` does not itself specify how a handle is created or
-  released.
-  Bridge-specific modules provide startup/configuration APIs and SHOULD
-  also provide `Releasable` instances for their handle types.
+* `BridgeHandle h` classifies ordinary runtime values that authorize bridge operations.
+* `BridgeHandle.Error` is the expected-error type used by operations on that handle.
+* `BridgeHandle.bridgeFailure` injects standard bridge failures into the handle-specific error type.
+* `bindModule` borrows a bridge handle and returns a bridge-bound package value whose lifetime is captured by the
+  borrowed region.
+* `bindModuleOwned` consumes a bridge handle and returns an owned `BridgePackage sig`.
+  This is the standard escape hatch when a bridge-bound value must outlive the lexical borrow of the original handle.
+* `bridgePackageValue` borrows an owned bridge package and exposes its underlying package-like surface for the borrow
+  duration.
+* `BridgePackage sig` SHOULD have a `Releasable` instance when the underlying package owns runtime resources.
+* A conforming implementation MAY implement `BridgePackage sig` as an ordinary Kappa library type, as a runtime
+  primitive, or as another observationally equivalent resource wrapper.
 
 <!-- modules.atomic -->
 ### 2.7C Standard atomic support module `std.atomic`
