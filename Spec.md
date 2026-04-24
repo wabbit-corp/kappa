@@ -421,6 +421,13 @@ Rules:
 * A conforming implementation MAY realize a host binding module as a generated source module, a generated module
   interface artifact, a virtual module, or another observationally equivalent representation.
 
+Additional rules:
+
+* This subsection defines host binding modules only for `host.jvm`, `host.dotnet`, and `host.native`.
+* Interop realized primarily through process, IPC, RPC, or embedding bridges such as CPython, Ruby, or Perl falls
+  under §17.7.6 rather than this subsection unless the implementation documents an observationally equivalent
+  host-metadata model.
+
 <!-- modules.exports -->
 ### 2.4 Exports (re-exporting imports)
 
@@ -966,6 +973,75 @@ Rules:
 * The exact ABI meaning of these types is normative for raw native host bindings under §17.7.
 * `std.ffi` MAY additionally export implementation-defined adapter types and helper terms, provided the types above are
   available exactly as named.
+
+<!-- modules.gradual -->
+### 2.7A Standard gradual support module `std.gradual`
+
+Implementations MUST provide a standard module `std.gradual`. It is not implicitly imported.
+
+Types (type namespace):
+
+```text
+Dyn,
+DynRep a,
+CastBlame
+```
+
+Traits (constraint namespace, restricted to trait):
+
+```text
+DynamicType a
+```
+
+Terms (term namespace):
+
+```text
+toDynWith,
+checkedCastWith,
+sameDynRep,
+toDyn,
+checkedCast
+```
+
+Canonical declarations:
+
+```kappa
+expect data Dyn : Type
+expect data DynRep (@0 a : Type) : Type
+expect data CastBlame : Type
+
+trait DynamicType (a : Type) =
+    dynRep : DynRep a
+
+toDynWith :
+    forall (@0 a : Type).
+    DynRep a -> a -> Dyn
+
+checkedCastWith :
+    forall (@0 a : Type).
+    DynRep a -> Dyn -> Result CastBlame a
+
+sameDynRep :
+    forall (@0 a : Type) (@0 b : Type).
+    DynRep a -> DynRep b -> Dec (a = b)
+
+toDyn :
+    forall (@0 a : Type).
+    (@_ : DynamicType a) -> a -> Dyn
+
+checkedCast :
+    forall (@0 a : Type).
+    (@_ : DynamicType a) -> Dyn -> Result CastBlame a
+```
+
+Rules:
+
+* `Dyn` is the standard explicit dynamic-value type.
+* `DynRep a` is a runtime representation sufficient to validate values at type `a`.
+* `DynamicType a` is coherent evidence that such a runtime representation is available.
+* `toDyn` and `checkedCast` are convenience forms that obtain the representation from `DynamicType`.
+* This section introduces explicit dynamic values only. It does not by itself introduce an ambient unknown type,
+  consistency-based subtyping, or implicit cast insertion among arbitrary non-`Dyn` types.
 
 ---
 
@@ -4736,6 +4812,97 @@ Implementations MUST prevent scope extrusion for `Code`.
 * Implementations MAY detect this statically or with a generation-time scope-extrusion check.
 * `closeCode` MUST succeed only for code values that satisfy this discipline, and `genlet` MUST NOT be usable to bypass
   it.
+
+<!-- types.gradual -->
+### 5.10 Dynamic values, runtime representations, and checked boundaries
+
+Kappa v0.1 provides explicit dynamic values through `std.gradual`.
+
+This section is not an ambient gradual typing extension.
+
+<!-- types.gradual.runtime_representations_operational_meaning -->
+#### 5.10.1 Runtime representations and operational meaning
+
+Rules:
+
+* A value of type `DynRep a` is an ordinary runtime value. The type argument `a` is compile-time only, but the
+  representation value itself is not.
+* The type argument of `DynRep a` or `DynamicType a` is erased by classifier under §§5.1.4 and 14.4. Runtime checking
+  therefore depends on the value of the representation, not on the erased type argument.
+* A conforming implementation MUST behave as if a dynamic value stores both a runtime representation and a payload:
+
+  ```text
+  Dyn  ≃  exists (@0 a : Type). (rep : DynRep a, value : a)
+  ```
+
+* `toDynWith rep x` constructs such a package.
+* `checkedCastWith repTarget d` compares `repTarget` with the stored representation of `d` using `sameDynRep`.
+* If `sameDynRep repTarget repStored = Yes p`, `checkedCastWith` returns `Result.Ok` of the stored payload transported
+  along `p`.
+* If `sameDynRep repTarget repStored = No _`, `checkedCastWith` returns `Result.Err`.
+* The implicit evidence used by `toDyn` and `checkedCast` is runtime-relevant only through its `dynRep` member. A
+  conforming implementation MAY specialize or erase that evidence only after producing the required runtime
+  representation.
+
+<!-- types.gradual.dynamically_representable_types -->
+#### 5.10.2 Dynamically representable types
+
+A type `a` is dynamically representable iff a value of type `DynRep a` is available.
+
+Portable minimum:
+
+* Implementations SHOULD provide `DynamicType` instances at least for:
+  * `Unit`, `Bool`, `Char`, `String`, `Bytes`, `Int`, `Integer`, `Float`, `Double`, and any implementation-documented
+    primitive scalar types with first-order runtime representations;
+  * `Option a`, `Result e a`, `List a`, and `Array a` when their argument types are dynamically representable;
+  * closed record types whose field types are dynamically representable;
+  * closed variant / union types whose member types are dynamically representable;
+  * `std.ffi.OpaqueHandle`; and
+  * imported raw host reference types exposed as opaque raw-binding types.
+
+Portable exclusions:
+
+* The portable minimum does not require `DynamicType` for arbitrary function types, open-row records or variants, trait
+  constraints, `Dict` values, fibers, TVars, handlers, resumption values, or types whose runtime classification depends
+  on erased proofs, erased indices, anonymous regions, or other compile-time-only data.
+* A library or implementation MAY provide `DynRep` values for indexed, refined, or higher-order types only when it also
+  provides an explicit runtime witness scheme that justifies `sameDynRep` and `checkedCastWith` for those values.
+
+<!-- types.gradual.dynamic_values_compile_time_positions -->
+#### 5.10.3 Dynamic values in compile-time positions
+
+Rules:
+
+* `Dyn` values are ordinary runtime data.
+* A value of type `Dyn` MUST NOT be used in type position, universe position, quantity position, region position, row
+  position, label position, effect-label position, or trait / constraint position except through an explicit checked
+  boundary that produces an ordinary value at the demanded type.
+* `Dyn` does not participate in definitional equality with any non-`Dyn` type.
+* This section introduces no new convertibility rule between `Dyn` and non-`Dyn` types.
+
+<!-- types.gradual.checked_cast_failures_blame -->
+#### 5.10.4 Checked-cast failures and blame
+
+Rules:
+
+* `CastBlame` is opaque.
+* A failed `checkedCastWith` or `checkedCast` MUST identify at least the demanded target representation.
+* When boundary or source-origin information is available, an implementation SHOULD attach that information to the
+  `CastBlame` value.
+* A checked cast MUST NOT silently coerce a failed cast to a value of the demanded target type.
+
+<!-- types.gradual.future_ambient_graduality -->
+#### 5.10.5 Relationship to future ambient graduality
+
+Rules:
+
+* This section introduces only explicit dynamic values and checked boundaries.
+* It does not introduce a surface unknown type, implicit consistency-based coercions, or gradual equality.
+* Any future extension that does so MUST specify:
+  * the precision / consistency relation used by the static system;
+  * the runtime cast semantics for higher-order values;
+  * the compile-time normalization strategy used when imprecise terms occur in dependent indices or proofs; and
+  * the interaction with propositional equality.
 
 
 ---
@@ -14226,6 +14393,11 @@ Portable ABI rules:
 * borrow-like or resource-like foreign interfaces in the portable subset MUST be represented using owned values or
   opaque resource handles.
 
+Additional portable ABI rule:
+
+* `std.gradual.Dyn` and `std.gradual.DynRep` are not part of the portable subset unless the selected foreign-ABI adapter
+  documents a stable portable encoding for them.
+
 Opaque resource handles are ordinary runtime values from the perspective of KBackendIR. Their concrete representation is
 backend-specific.
 
@@ -14290,6 +14462,17 @@ Rules:
 * A backend that lacks the runtime capability required by that classification, including `rt-blocking` when relevant,
   MUST reject the declaration or deployment mode rather than silently weakening its behavior.
 
+Additional rules:
+
+* A raw foreign declaration MAY use `std.gradual.Dyn` for parameters or results when host metadata or bridge metadata
+  does not determine a sounder Kappa type and the selected backend can retain enough runtime information to support
+  later `checkedCast`, marshaling, or overlay validation.
+* A raw foreign declaration MUST NOT expose a precise Kappa function, callback, package, record, or dictionary surface
+  for a higher-order foreign value unless the selected backend/profile provides the higher-order monitoring required by
+  §17.7.4B.
+* If such higher-order monitoring is unavailable, the raw surface MUST expose the value as `std.gradual.Dyn`, as an
+  opaque imported host type, or as another less precise raw shape.
+
 <!-- compiler.ffi.precise_overlays_trusted_binding_summaries_shims -->
 #### 17.7.4 Precise overlays, trusted binding summaries, and shims
 
@@ -14326,6 +14509,72 @@ Rules:
 * This specification does not require a distinct `foreign import` declaration form. An implementation MAY provide such a
   form as surface sugar only if it elaborates to the ordinary mechanisms of this section and preserves their semantics.
 
+<!-- compiler.ffi.boundary_contracts_blame -->
+#### 17.7.4A Boundary contracts, dependent checks, and blame
+
+A refined overlay that exposes a type more precise than its raw foreign surface MUST do so through an explicit boundary
+contract.
+
+A boundary contract specifies, for each wrapped parameter or result:
+
+* the raw foreign shape being accepted or produced;
+* the exposed Kappa type;
+* any marshaling performed between the foreign representation and the Kappa representation;
+* the dynamic checks, if any, used to justify the exposed type; and
+* whether those checks are Exact or Conservative.
+
+Definitions:
+
+* Exact: the boundary check is sound and complete with respect to the exposed invariant.
+* Conservative: the boundary check is sound but not necessarily complete.
+
+Rules:
+
+* Unless an overlay or trusted binding summary explicitly states otherwise, a foreign boundary contract is Conservative.
+* A refined overlay MUST NOT claim a more precise dependent, indexed, or refinement type unless it also specifies how
+  the additional invariant is enforced at the boundary.
+* Boundary enforcement MAY be a checked identity on representation, or it MAY marshal the foreign representation into an
+  observationally equivalent Kappa value before validation.
+* A foreign boundary contract is not required to preserve raw representation identity. When representation-preserving
+  validation is impossible or inappropriate, marshaling is the normative mechanism.
+* For indexed or refinement-rich types, the contract MAY compute runtime indices, propagate them through subsequent
+  checks, and reject values that fail the demanded invariant.
+* A failed boundary contract MUST produce `CastBlame` or an observationally equivalent diagnostic payload that
+  identifies at least:
+  * the boundary identity or source origin when available;
+  * the direction of failure (`into Kappa`, `out of Kappa`, or `later higher-order use`); and
+  * the demanded exposed type.
+* A conforming implementation SHOULD preserve robust boundary behavior: after a foreign component has successfully
+  crossed a boundary claiming type `T`, later runtime type failures attributable solely to hidden wrapper mismatch
+  SHOULD not occur; subsequent failures SHOULD arise only from surrounding context misuse or from later explicit
+  boundary checks.
+
+<!-- compiler.ffi.higher_order_boundaries -->
+#### 17.7.4B Higher-order boundaries
+
+A higher-order boundary is a boundary whose correctness depends on later invocation, projection, callback interaction,
+or other delayed use rather than on one immediate value inspection.
+
+Examples include:
+
+* functions and callbacks;
+* callable objects;
+* iterators or streams that yield later values;
+* records or packages whose members are exposed as callable or stateful interfaces; and
+* imported objects whose methods are exposed through receiver-marked terms.
+
+Rules:
+
+* A one-shot head-shape test is not sufficient justification for exposing a precise Kappa higher-order type.
+* A conforming implementation that exposes a precise higher-order Kappa surface MUST enforce that surface with deep
+  boundary monitoring that checks arguments, results, and observable member uses at the time of invocation or
+  projection.
+* Such monitoring MUST NOT reject a higher-order value solely because some potential future use would fail.
+* An implementation that cannot provide such deep monitoring MUST expose the value as `std.gradual.Dyn`, as an opaque
+  imported host type, or through a less precise portable facade.
+* For the portable foreign ABI of §17.7.1, higher-order values remain outside the portable subset unless a later
+  subsection explicitly states otherwise.
+
 <!-- compiler.ffi.backend_specificity_portability_layering -->
 #### 17.7.5 Backend specificity and portability layering
 
@@ -14347,6 +14596,26 @@ Rules:
 3. portable facades built with `expect` plus backend-selected fragments.
 
 This keeps backend-specific metadata import ergonomic without making backend-specific surfaces part of the portable ABI.
+
+<!-- compiler.ffi.bridge_based_interop_external_runtimes -->
+#### 17.7.6 Bridge-based interop and external runtimes
+
+Interop realized primarily through process, IPC, RPC, or embedding bridges is not a host binding module unless the
+implementation documents an observationally equivalent host-metadata model.
+
+Examples include bridges centered on CPython, Ruby, Perl, remote services, subprocess protocols, or host embedding
+layers whose observable contract is mediated by serialization, callbacks, or message exchange rather than by direct host
+metadata.
+
+Rules:
+
+* Such interop MAY be exposed through ordinary modules, foreign-ABI adapters, refined overlays, trusted binding
+  summaries, or shims.
+* It need not use the reserved module roots `host.jvm`, `host.dotnet`, or `host.native`.
+* Any precision claim made by such a bridge is governed by the raw-surface conservatism, trusted-summary and overlay,
+  boundary-contract, and higher-order-boundary rules of §§17.7.3, 17.7.4, 17.7.4A, and 17.7.4B.
+* A process, IPC, RPC, or embedding bridge is not part of the portable foreign subset merely because its Kappa-facing
+  API is expressed in ordinary Kappa syntax.
 
 <!-- compiler.zig -->
 ### 17.8 Native backend profile (`zig`)
