@@ -671,7 +671,7 @@ Unit, Void, Bool, Char, String, Int, Nat, Integer, Float, Double, Real, Bytes, O
 Query a, RawComprehension a, ComprehensionPlan a,
 Option a, Result e a, List a, Array a, Set a, Map k v,
 Res a r, Match a r, Dec p, Dict c,
-IO e a, UIO a, Fiber e a, Exit e a, Cause e, InterruptCause, DefectInfo,
+IO e a, UIO a, Fiber e a, FiberId, Exit e a, Cause e, InterruptTag, InterruptCause, DefectInfo,
 Scope, Monitor e a, FiberRef a, Promise e a,
 STM a, TVar a,
 Duration, Instant, TimeoutError, RaceResult a b,
@@ -698,6 +698,9 @@ Match.Hit, Match.Miss,
 Dec.Yes, Dec.No,
 Exit.Success, Exit.Failure,
 Cause.Fail, Cause.Interrupt, Cause.Defect, Cause.Both, Cause.Then,
+InterruptTag.Requested, InterruptTag.ScopeShutdown, InterruptTag.TimedOut,
+InterruptTag.RaceLost, InterruptTag.External, InterruptTag.Custom,
+InterruptCause.InterruptCause,
 TimeoutError.Timeout,
 RaceResult.LeftWins, RaceResult.RightWins,
 (=).refl,
@@ -726,10 +729,11 @@ subst, sym, trans, cong,
 floatEq,
 runPure,
 sandbox, unsandbox,
-fork, forkDaemon, await, join, interrupt, interruptFork,
+fork, forkDaemon, await, join, interrupt, interruptFork, interruptAs, interruptForkAs,
+fiberId, currentFiberId, getFiberLabel, setFiberLabel, locallyFiberLabel,
 cede,
 poll, uninterruptible, mask, ensuring, acquireRelease,
-newScope, forkIn, shutdownScope,
+newScope, withScope, forkIn, shutdownScope,
 monitor, awaitMonitor, demonitor,
 newFiberRef, getFiberRef, setFiberRef, locallyFiberRef,
 newPromise, awaitPromiseExit, awaitPromise, completePromise,
@@ -795,6 +799,7 @@ expect data IO (e : Type) (a : Type) : Type
 type UIO (a : Type) = IO Void a
 
 expect data Fiber (e : Type) (a : Type) : Type
+expect data FiberId : Type
 expect data Scope : Type
 expect data Monitor (e : Type) (a : Type) : Type
 expect data FiberRef (a : Type) : Type
@@ -805,7 +810,17 @@ expect data TVar (a : Type) : Type
 expect data Duration : Type
 expect data Instant : Type
 
-expect data InterruptCause : Type
+data InterruptTag : Type =
+    Requested
+    ScopeShutdown
+    TimedOut
+    RaceLost
+    External
+    Custom String
+
+data InterruptCause : Type =
+    InterruptCause (tag : InterruptTag) (by : Option FiberId)
+
 expect data DefectInfo : Type
 
 data Exit (e : Type) (a : Type) : Type =
@@ -837,11 +852,40 @@ subst :
     forall (@0 a : Type) (@0 P : a -> Type) (@0 x : a) (@0 y : a).
     (@0 p : x = y) -> P x -> P y
 
+fiberId :
+    forall (e : Type) (a : Type).
+    Fiber e a -> UIO FiberId
+
+currentFiberId :
+    UIO FiberId
+
+getFiberLabel :
+    UIO (Option String)
+
+setFiberLabel :
+    Option String -> UIO Unit
+
+locallyFiberLabel :
+    forall (e : Type) (a : Type).
+    Option String -> IO e a -> IO e a
+
+interruptAs :
+    forall (e : Type) (a : Type).
+    InterruptCause -> Fiber e a -> UIO Unit
+
+interruptForkAs :
+    forall (e : Type) (a : Type).
+    InterruptCause -> Fiber e a -> UIO Unit
+
 cede :
     UIO Unit
 
 newScope :
     UIO Scope
+
+withScope :
+    forall (e : Type) (a : Type).
+    (Scope -> IO e a) -> IO e a
 
 forkIn :
     forall (e : Type) (a : Type).
@@ -994,6 +1038,10 @@ Thus `&&` and `||` are ordinary terms. They are not special evaluation forms.
 * `STM a` is the standard software-transactional-memory computation type.
 * `TVar a` is the standard transactional variable type.
 * `Fiber e a` is the standard lightweight runtime thread handle.
+* `FiberId` is the standard source-visible runtime fiber identity type.
+* `InterruptTag` classifies the reason for runtime interruption.
+* `InterruptCause` is the standard structured interruption payload carried by `Cause.Interrupt`.
+* `InterruptTag.Custom s` is the standard library-extensible interruption tag for user-defined cancellation reasons.
 * `Scope` is the standard explicit supervision-scope handle.
 * `Monitor e a` is the standard one-way fiber-termination observation handle.
 * `FiberRef a` is the standard fiber-local dynamically scoped cell.
