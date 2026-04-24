@@ -11055,6 +11055,15 @@ Order-sensitive clauses:
 When orderedness is Unordered, any semantics that would rely on relative order (for example, choosing between equal
 `order by` keys, or resolving "keep first/keep last" conflicts) is unspecified with respect to those ties.
 
+Determinism:
+
+* Unordered means that the language does not guarantee a particular user-visible encounter order.
+* Unordered does not, by itself, authorize nondeterministic behavior.
+* In package mode, for a fixed program, fixed inputs, and fixed implementation configuration, representative choice and
+  conflict resolution on unordered pipelines MUST still be deterministic.
+* Any truly random or statistically sampled behavior requires an explicit library or future language feature. It MUST
+  NOT arise solely from the unordered status of a pipeline.
+
 
 <!-- collections.clauses -->
 ### 10.4 `for` and `let` clauses
@@ -11490,12 +11499,14 @@ Carrier selection:
 
 1. If an instance `FromComprehensionRaw c` is available, the compiler constructs a `RawComprehension item` for the
    comprehension, evaluates `fromComprehensionRaw` during elaboration, and elaborates the resulting `Syntax c` at the
-   original comprehension site.
+   comprehension site.
 2. Otherwise, if an instance `FromComprehensionPlan c` is available, the compiler constructs the normalized
    `ComprehensionPlan item` of §10.10, evaluates `fromComprehensionPlan` during elaboration, and elaborates the
-   resulting `Syntax c` at the original comprehension site.
+   resulting `Syntax c` at the comprehension site.
 3. If both are available, `FromComprehensionRaw` is preferred.
 4. If neither is available, the comprehension is ill-formed.
+
+The selected hook is an elaboration-time hook and is subject to the restrictions of §5.8.6.
 
 The associated type `Item` of the selected sink instance determines the yielded item type of the normalized plan.
 
@@ -14115,9 +14126,14 @@ If a generated node corresponds to a user-written construct, the mapping from th
 MUST be retained for diagnostics and navigation.
 
 For comprehensions, KFrontIR MUST preserve the original clause structure, clause order, delimiter kind, and any
-custom-carrier prefix until `CORE_LOWERING`. Desugared pipeline nodes MAY be added, but the original comprehension node,
-or an observationally equivalent source-linked representation, MUST remain available for tooling and for construction
-of `RawComprehension` and `ComprehensionPlan`.
+custom-carrier prefix until `CORE_LOWERING`.
+
+Desugared or normalized pipeline nodes MAY be added, but:
+
+* the original comprehension node, or an observationally equivalent source-linked representation, MUST remain available
+  for tooling and for construction of `RawComprehension`; and
+* the normalized comprehension representation required to construct `ComprehensionPlan` MUST be recoverable without
+  reparsing source text.
 
 KFrontIR distinguishes source references from resolved semantic objects:
 
