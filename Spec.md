@@ -16317,6 +16317,32 @@ Rules:
 * For the portable foreign ABI of §17.7.1, higher-order values remain outside the portable subset unless a later
   subsection explicitly states otherwise.
 
+<!-- compiler.ffi.callback_ingress_runtime -->
+#### 17.7.4C Callback ingress into the Kappa runtime
+
+When a precise foreign surface exposes a Kappa function or callback to a host and the host later invokes that callback,
+the implementation MUST behave as if the host invocation enters Kappa through a fresh callback fiber.
+
+Default callback-ingress semantics:
+
+* the callback invocation executes in a fresh fiber;
+* that fiber is attached to the callback-registration scope, bridge-owned scope, or equivalent owner named by the
+  binding contract;
+* its initial masking state is interruptible;
+* its initial `FiberRef` values are a snapshot of the values visible when the callback was registered, unless the
+  binding contract explicitly states another mapping;
+* its initial user label is `None`, unless the implementation or binding contract documents a diagnostic label.
+
+Outcome translation:
+
+* successful callback return is marshaled back to the host according to the boundary contract;
+* if the callback terminates with `Failure (Fail e)`, `Failure (Interrupt i)`, or `Failure (Defect d)`, the boundary
+  contract MUST specify how that outcome is translated back to the host;
+* a precise callback surface whose contract does not specify that translation is ill-formed;
+* if only a dynamic or opaque callback surface is exposed instead, uncaught callback failure MUST surface as
+  host-visible bridge failure or as `Defect (DefectInfo ForeignContractViolation msg)`, not as silent fabrication of a
+  callback result.
+
 <!-- compiler.ffi.backend_specificity_portability_layering -->
 #### 17.7.5 Backend specificity and portability layering
 
