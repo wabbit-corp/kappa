@@ -5879,10 +5879,11 @@ Modifier rules:
 3. **Projection definition:**
 
    ```kappa
-   [public|private] projection name binders... : Type = projectionBody
+   [public|private] projection name binders... : Type = projectionRhs
    ```
 
-   A `projection` definition introduces a computed place selector. Its detailed rules are given in §6.1.1.
+   A `projection` definition introduces either a computed stable-place selector or a computed accessor bundle.
+   Its detailed rules are given in §6.1.1.
 
 4. **Pattern definition (active pattern):**
 
@@ -5900,15 +5901,27 @@ Modifier rules:
 <!-- declarations.terms.projection_definitions -->
 #### 6.1.1 Projection definitions
 
-A projection definition names a pure computed place selector rooted in one or more place parameters.
+A projection definition has one of two forms:
 
-A projection definition contributes two same-spelling facets to the binding group of its declared name:
+* **selector form**, which names a pure computed stable-place selector rooted in one or more place parameters; or
+* **expanded form**, which names a pure computed accessor bundle rooted in exactly one place parameter.
+
+Selector form is the existing `yield`-based form. Expanded form is used for computed read/update access that may not
+correspond to a stable stored place.
+
+A selector-form projection definition contributes two same-spelling facets to the binding group of its declared name:
 
 * a **projection facet**, used by computed-place elaboration under §§2.8.4, 5.1.7.2, 5.5.5, 8.8, and 17.3.1.3; and
-* a **term facet**, denoting a first-class projector descriptor value.
+* a **term facet**, denoting a first-class `Projector` descriptor value.
+
+An expanded-form projection definition contributes:
+
+* an **accessor facet**, used by accessor-bundle elaboration under §§2.8.4, 5.5.5, 7.1.3B, 8.8, and 17.3.1.3B; and
+* a **term facet**, denoting a first-class structural accessor-bundle descriptor record.
 
 Ordinary unqualified term lookup selects the term facet.
-Receiver-projection sugar, computed-place elaboration, `~`, and projection-section update select the projection facet.
+Receiver-projection sugar, computed-place elaboration, `~`, and projection-section update select the projection or
+accessor facet as appropriate.
 
 Example:
 
@@ -16037,6 +16050,15 @@ Consequences:
 * `rhs` is evaluated exactly once.
 * No new runtime reference primitive is introduced.
 * Projection-section update is therefore surface sugar over existing place and projector primitives.
+
+<!-- compiler.kcore.application_spines.accessor_bundle_lowering -->
+##### 17.3.1.3B Accessor-bundle lowering
+
+Accessor-bundle lowering is the KCore lowering family for expanded-form projection definitions and accessor descriptor
+applications under §7.1.3B.
+
+In v1, accessor-bundle lowering is used only by surface contexts that explicitly admit accessor facets or accessor
+descriptor applications.
 
 <!-- compiler.kcore.application_spines.completion_kernel -->
 ##### 17.3.1.4 KCore completion and do-scope kernel
