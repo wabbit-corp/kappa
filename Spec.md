@@ -12917,16 +12917,17 @@ Grammar addition (extends the existing constructor declaration):
 
 ```text
 constructorDecl ::= ident [ ctorBinder+ ]
+
 ctorBinder      ::= ident
-                  | '(' ident ':' type ')'
-                  | '(' quantity ident ':' type ')'
-                  | '(' 'thunk' ident ':' type ')'
-                  | '(' quantity 'thunk' ident ':' type ')'
-                  | '(' 'lazy' ident ':' type ')'
-                  | '(' quantity 'lazy' ident ':' type ')'
+                  | '(' ctorParam ')'
                   | '(' '@' binder_body ')'
                   | '{' fieldDecl (',' fieldDecl)* '}'
-fieldDecl       ::= [quantity] [ 'thunk' | 'lazy' ] ident ':' type
+
+ctorParam       ::= [quantity] [ 'thunk' | 'lazy' ] ident ':' type [ defaultClause ]
+
+fieldDecl       ::= [quantity] [ 'thunk' | 'lazy' ] ident ':' type [ defaultClause ]
+
+defaultClause   ::= '=' expr
 ```
 
 In a constructor declaration, the record-style binder form `{ f1 : T1, ..., fn : Tn }` is syntactic sugar for the
@@ -12941,6 +12942,17 @@ Constructor binders use the same suspension sugar as ordinary function binders a
 * `(lazy x : A)` is sugar for `(x : Need A)`.
 
 No distinct constructor-level evaluation strategy exists in the core.
+
+A `defaultClause` is permitted only on explicit named constructor parameters.
+
+Default clauses are not permitted on:
+
+* unannotated positional constructor parameters such as `Just a`;
+* implicit constructor binders written with `@`;
+* receiver-marked binders; or
+* `inout` binders.
+
+Receiver-marked binders and `inout` remain forbidden in constructor declarations.
 
 **Named parameters in GADT-style constructors.** When a constructor is declared using the full GADT form (`C : Π … →
 R`), any explicit binders that appear in the declared signature (e.g. `(head : a)`, `(tail : Vec n a)`) are treated as
