@@ -13610,6 +13610,8 @@ Examples:
 * `Array [ ... ]` uses candidate result type `Array item`.
 * `Query [ ... ]` uses candidate result type `Query item`.
 * `Map k v { ... }` may use `FromComprehensionPlan (Map k v)` with `Item = (key : k, value : v)`.
+* For a prefixed map sink `Map k v { ... }`, if the yield form has `keyExpr : K` and `valueExpr : V`, then `K` must
+  be definitionally equal to `k` and `V` must be definitionally equal to `v`.
 * `Tensor (n, m) { ... }` is an illustrative custom-sink example only. This specification does not assign it portable
   dense tensor semantics.
 
@@ -13693,6 +13695,9 @@ Before `yield`, a comprehension is elaborated as a pipeline over a current row e
 At any clause site, let `Γ` be the set of currently bound names in scope from preceding clauses.
 The corresponding row type `Row(Γ)` is the canonical record type whose fields are those names and whose field order is
 the canonical dependency-respecting record order of §14.6.
+
+Implicit assumptions introduced by filters, constructor tests, branch refinements, and implicit-resolution context are
+not fields of `Row(Γ)` unless explicitly bound by a preceding clause.
 
 All clause semantics before `yield` are defined in terms of transformations on `Query (Row(Γ))`.
 
