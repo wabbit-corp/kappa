@@ -27,6 +27,85 @@ Kappa is a small, statically typed, dependently typed language. The primary desi
   Contextual declaration kinds control name resolution and syntactic admissibility; they do not by themselves make the
   underlying semantic object non-first-class.
 
+<!-- design.boundary_honesty -->
+### 1.1 Boundary honesty and progressive precision
+
+Kappa programs may cross boundaries into dynamic values, foreign runtimes, host metadata, native ABIs, subprocesses, RPC
+services, generated code, macros, plugins, and other implementation-defined environments.
+
+The following principles govern all such boundaries.
+
+<!-- design.boundary_honesty.explicit_runtime_evidence -->
+#### Explicit runtime evidence
+
+Kappa does not pretend that erased compile-time information is available at runtime.
+
+If runtime code needs type information, representation information, boundary information, capability information, or
+proof-relevant evidence, that information MUST be carried by an explicit runtime value.
+
+Consequences:
+
+* an erased type argument alone is never sufficient to justify a runtime type check;
+* runtime checked casts use explicit representations such as `std.gradual.DynRep`;
+* runtime bridge binding uses explicit contracts such as `std.bridge.BridgeContract`;
+* foreign or dynamic values that claim precise Kappa types do so through explicit boundary contracts.
+
+<!-- design.boundary_honesty.runtime_capabilities_as_values -->
+#### Runtime capabilities as values
+
+A foreign runtime connection, process, interpreter, embedded runtime, remote service, native library handle, or
+equivalent authority is an ordinary runtime value.
+
+Such a value may be borrowed, consumed, stored, released, passed, captured, or hidden only according to the ordinary
+Kappa typing, quantity, borrowing, region, and resource rules.
+
+The static module system MUST NOT conceal runtime capabilities as ambient global state.
+
+<!-- design.boundary_honesty.static_imports_versus_runtime_binding -->
+#### Static imports versus runtime binding
+
+Static imports describe compile-time module dependencies.
+
+Runtime-selected foreign surfaces are term-level values obtained from runtime capabilities under explicit contracts.
+They are not lexical module declarations merely because they support dotted member access.
+
+<!-- design.boundary_honesty.boundary_contracts -->
+#### Boundary contracts
+
+A boundary contract is an explicit value or trusted summary describing how a foreign, dynamic, or imprecise surface is
+checked, marshalled, monitored, and reported as a Kappa value.
+
+A boundary contract may be:
+
+* Exact, when it is sound and complete for the claimed invariant;
+* Conservative, when it is sound but may reject valid foreign values; or
+* Lossy, when it intentionally forgets information while preserving the documented observational contract.
+
+Lossy contracts MUST NOT be used to justify propositional equality, representation identity, or invertible interop unless
+an additional explicit proof or exact contract supplies that justification.
+
+<!-- design.boundary_honesty.progressive_precision -->
+#### Progressive precision
+
+Kappa interop is a refinement pipeline.
+
+A foreign surface may be exposed first as raw dynamic data or opaque handles, then refined into checked Kappa types, and
+then further refined into dependent or verified APIs.
+
+The intended progression is:
+
+```text
+raw foreign value
+    -> Dyn / opaque raw handle / raw host binding
+    -> checked boundary contract
+    -> refined Kappa overlay
+    -> portable facade
+    -> dependent or verified API
+```
+
+A less precise boundary is acceptable when it is explicit. A precise boundary is acceptable only when the specification,
+implementation, or trusted summary states how that precision is enforced.
+
 
 
 ---
