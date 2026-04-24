@@ -8284,6 +8284,51 @@ Semantics:
 * `awaitPromiseExit` and `awaitPromise` are interruptible waits.
 * Completing a promise wakes all waiters observing that promise.
 
+<!-- effects.monadic_core.fiber_identity_labels -->
+#### 8.1.3F Fiber identity and labels
+
+Kappa provides portable source-visible fiber identity and diagnostic labels:
+
+```kappa
+fiberId :
+    forall (e : Type) (a : Type).
+    Fiber e a -> UIO FiberId
+
+currentFiberId :
+    UIO FiberId
+
+getFiberLabel :
+    UIO (Option String)
+
+setFiberLabel :
+    Option String -> UIO Unit
+
+locallyFiberLabel :
+    forall (e : Type) (a : Type).
+    Option String -> IO e a -> IO e a
+```
+
+Semantics:
+
+* Every created fiber has a unique `FiberId` within one program execution.
+* `fiberId fiber` returns that fiber's identity.
+* `currentFiberId` returns the identity of the current fiber.
+* A fiber label is diagnostic metadata associated with one fiber.
+* `getFiberLabel` reads the current fiber's label.
+* `setFiberLabel label` replaces the current fiber's label.
+  `None` clears the label.
+* `locallyFiberLabel label body` installs `label` for the dynamic extent of `body` and restores the previous label on:
+  * normal completion,
+  * typed failure,
+  * interruption, and
+  * defect.
+* The restoration performed by `locallyFiberLabel` behaves as masked finalization.
+* Fiber labels are not inherited implicitly by child fibers.
+  Child fibers begin unlabeled unless user code labels them explicitly.
+* Fiber labels do not affect typed success, typed failure, interruption, defects, scheduling fairness, or resource
+  semantics.
+  They exist only for designated observability facilities.
+
 <!-- effects.monadic_core.interruption_masking -->
 #### 8.1.4 Interruption and masking
 
