@@ -6148,6 +6148,32 @@ Implementations MUST prevent scope extrusion for `Code`.
 * `closeCode` MUST succeed only for code values that satisfy this discipline, and `genlet` MUST NOT be usable to bypass
   it.
 
+<!-- types.staging.dynamic_scope_check_discipline -->
+##### 5.9.7.1 Dynamic scope-check discipline
+
+If an implementation detects staged-code scope extrusion dynamically, the dynamic check MUST be sound in the presence of
+ordinary Kappa control effects, including exceptions, `try` / `finally`, shallow handlers, deep handlers, resumptions,
+`defer`, `using`, fibers, and any other control construct that may suspend, resume, duplicate, discard, or reorder a
+computation.
+
+A conforming implementation using dynamic checks MUST behave as if each generated code value carries abstract
+scope-check metadata sufficient to validate all future uses of that value, including:
+
+* escape from a quotation;
+* splicing into another quotation;
+* `genlet` insertion;
+* `closeCode`; and
+* `runCode` after successful closing.
+
+The implementation MUST NOT rely on an unprotected ambient stack of active quotations when such a stack could be
+captured or reinstated by a handler, resumption, fiber boundary, or other non-local control transfer. A stack-based
+implementation is conforming only when it is observationally equivalent to carrying explicit abstract scope-check
+metadata with each generated code value.
+
+A failed dynamic scope check is a deterministic stage error. The diagnostic MUST identify the escaped generated code
+value's nearest source or synthetic origin and the nearest quotation / splice / `genlet` operation whose scope was
+violated, when those origins are available.
+
 <!-- types.staging.reserved_extension_lane_contextual_open_code -->
 #### 5.9.8 Reserved extension lane: contextual open code
 
@@ -6159,6 +6185,11 @@ invariants of this chapter.
 
 A conforming v0.1 implementation MUST NOT expose nonportable contextual-open-code features as if they were part of the
 portable `Code` contract.
+
+Non-normative note: recent dependent layered modal systems justify a future calculus with typed contextual open code,
+recursive analysis of code, and tactic-like metaprograms. v1 intentionally does not standardize that calculus. The v1
+portable contract instead exposes closed / closable staged code plus inspectable `Syntax` and semantic `Core`
+reflection. This keeps the staging layer small while preserving a clear future extension path.
 
 <!-- types.gradual -->
 ### 5.10 Dynamic values, runtime representations, and checked boundaries
@@ -6212,8 +6243,21 @@ Portable exclusions:
 * The portable minimum does not require `DynamicType` for arbitrary function types, open-row records or variants, trait
   constraints, `Dict` values, fibers, TVars, handlers, resumption values, or types whose runtime classification depends
   on erased proofs, erased indices, anonymous regions, or other compile-time-only data.
+* The portable minimum does not require `DynamicType` for `Code t` or `ClosedCode t`.
 * A library or implementation MAY provide `DynRep` values for indexed, refined, or higher-order types only when it also
   provides an explicit runtime witness scheme that justifies `sameDynRep` and `checkedCastWith` for those values.
+
+If an implementation or library provides `DynamicType (Code t)` or `DynamicType (ClosedCode t)`, its runtime
+representation MUST preserve the staged-code scope-check metadata required by §5.9.7.1.
+
+In particular:
+
+* `toDyn` and `toDynWith` MUST NOT erase, weaken, or fabricate staged-code scope metadata;
+* `checkedCast` and `checkedCastWith` to `Code t` MUST restore only code values whose scope metadata is still valid;
+* `checkedCast` and `checkedCastWith` to `ClosedCode t` MUST additionally validate closedness exactly as `closeCode`
+  would at the cast boundary; and
+* a failed staged-code dynamic check after a successful cast remains a deterministic stage error, not undefined behavior
+  and not a host-runtime exception outside Kappa's diagnostic model.
 
 <!-- types.gradual.dynamic_values_compile_time_positions -->
 #### 5.10.3 Dynamic values in compile-time positions
