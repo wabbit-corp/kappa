@@ -1528,6 +1528,140 @@ Atomic arithmetic and bitwise operations:
 * Overflow behavior follows the ordinary backend-defined representation of `Int` only if `Int` is fixed-width for that
   backend. Otherwise, the operation MUST either be implemented exactly or be rejected for that backend profile.
 
+<!-- modules.supervisor -->
+### 2.7D Standard supervision support module `std.supervisor`
+
+Implementations MUST provide a standard module `std.supervisor`.
+It is not implicitly imported.
+
+The supervision module provides OTP-style service supervision as a standard-library layer over `Scope`, `Fiber`,
+`Monitor`, `Promise`, timers, and `IO`.
+
+Types:
+
+```text
+Supervisor e,
+ChildSpec e,
+SupervisorStrategy,
+RestartPolicy,
+RestartIntensity
+```
+
+Terms:
+
+```text
+childSpec,
+startSupervisor,
+withSupervisor,
+shutdownSupervisor,
+awaitSupervisor
+```
+
+Canonical declarations:
+
+```kappa
+expect data Supervisor (e : Type) : Type
+
+data SupervisorStrategy : Type =
+    OneForOne
+    OneForAll
+    RestForOne
+
+data RestartPolicy : Type =
+    Permanent
+    Transient
+    Temporary
+
+data RestartIntensity : Type =
+    RestartIntensity (maxRestarts : Nat) (within : Duration)
+
+data ChildSpec (e : Type) : Type =
+    ChildSpec
+        (label : String)
+        (restart : RestartPolicy)
+        (run : IO e Unit)
+
+childSpec :
+    forall (e : Type).
+    label : String ->
+    restart : RestartPolicy ->
+    run : IO e Unit ->
+    ChildSpec e
+
+startSupervisor :
+    forall (e : Type).
+    SupervisorStrategy ->
+    RestartIntensity ->
+    List (ChildSpec e) ->
+    UIO (Supervisor e)
+
+withSupervisor :
+    forall (e : Type) (a : Type).
+    SupervisorStrategy ->
+    RestartIntensity ->
+    List (ChildSpec e) ->
+    (Supervisor e -> IO e a) ->
+    IO e a
+
+shutdownSupervisor :
+    forall (e : Type).
+    Supervisor e -> UIO Unit
+
+awaitSupervisor :
+    forall (e : Type).
+    Supervisor e -> UIO (Exit e Unit)
+```
+
+Semantics:
+
+* `startSupervisor strategy intensity children` starts a supervisor fiber and returns a handle to it.
+* Child startup occurs in list order.
+* Each child runs in a fiber attached to the supervisor's internal scope.
+* Child labels are diagnostic labels. Implementations SHOULD use them as fiber labels for supervised child fibers.
+* `shutdownSupervisor sup` interrupts all live children, waits for their finalizers, terminates the supervisor, and is
+  idempotent.
+* `awaitSupervisor sup` returns the terminal `Exit` of the supervisor.
+* `withSupervisor strategy intensity children use` starts the supervisor, evaluates `use sup`, and shuts the supervisor
+  down as masked finalization when `use` exits.
+
+Restart policies:
+
+* `Permanent` children are restarted after any terminal exit other than supervisor-requested shutdown.
+* `Transient` children are restarted after typed failure, interruption not initiated by the supervisor, or defect.
+  They are not restarted after ordinary `Success Unit`.
+* `Temporary` children are never restarted and their terminal exit does not by itself terminate the supervisor.
+
+Restart strategies:
+
+* Under `OneForOne`, only the failed child is restarted.
+* Under `OneForAll`, all live children are interrupted, waited for, and then all restartable children are restarted in
+  original child-list order.
+* Under `RestForOne`, the failed child and every child after it in original child-list order are interrupted, waited for,
+  and then the restartable affected children are restarted in original child-list order.
+
+Restart intensity:
+
+* `RestartIntensity maxRestarts within` bounds restart attempts in a sliding monotonic-time window.
+* If the supervisor would exceed `maxRestarts` restarts within `within`, the supervisor terminates.
+* On such termination, it interrupts all live children, waits for their finalizers, and reports the cause that triggered
+  the failed restart attempt, combined with cleanup causes under §14.8.4C.
+* A zero `maxRestarts` means no restart attempts are permitted.
+* A nonpositive `within` duration means all restart attempts are considered to occur in the same window.
+
+Failure and cause behavior:
+
+* A child `Failure (Fail e)` that causes supervisor termination propagates as `Fail e`.
+* A child `Failure (Defect d)` that causes supervisor termination propagates as `Defect d`.
+* A child `Failure (Interrupt i)` caused by supervisor shutdown does not by itself make the supervisor fail.
+* Multiple child failures observed during one supervision action are combined using `Both` in child-list order.
+* Cleanup failures are appended using `Then` according to §14.8.4C.
+
+Implementation latitude:
+
+* An implementation MAY implement `std.supervisor` directly in runtime code.
+* An implementation MAY implement it as ordinary Kappa library code.
+* In either case, the observable semantics above are normative.
+
 ---
 
 <!-- modules.names -->
@@ -9303,9 +9437,11 @@ Note:
 The portable core runtime standardizes lexical supervision, explicit scopes, monitors, promises, timers, interruption,
 masking, and `STM`.
 
-Higher-level service supervision policies such as one-for-one, one-for-all, rest-for-one, restart intensity windows,
-child-start ordering, and reverse-order shutdown are intentionally specified as standard-library constructions over
-those primitives rather than as core source semantics.
+Higher-level service supervision policies such as one-for-one, one-for-all, rest-for-one, restart intensity windows, and
+child-start ordering are standardized in `std.supervisor`.
+
+They remain standard-library semantics rather than core source syntax, but their behavior is normative for conforming
+implementations.
 
 <!-- effects.monadic_core.one_shot_promises -->
 #### 8.1.3E One-shot promises
