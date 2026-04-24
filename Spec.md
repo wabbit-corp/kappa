@@ -8419,6 +8419,30 @@ Semantics:
   semantics.
   They exist only for designated observability facilities.
 
+<!-- effects.monadic_core.blocking_regions -->
+#### 8.1.3G Blocking regions
+
+Kappa provides a source-level blocking bridge:
+
+```kappa
+blocking :
+    forall (e : Type) (a : Type).
+    IO e a -> IO e a
+```
+
+Semantics:
+
+* `blocking body` executes `body` through the backend's blocking-work bridge.
+* `blocking` preserves the typed success, typed failure, interruption, and defect behavior of `body`.
+* `blocking` exists to prevent blocking work from monopolizing scheduler resources required by unrelated runnable fibers.
+* `blocking` does not by itself make an operation cancellable.
+  Cancellation of foreign calls inside `blocking body` still obeys the foreign-call classification rules of §17.13.
+* Using `blocking` requires backend capability `rt-blocking`.
+  A backend that lacks `rt-blocking` MUST reject a program or deployment mode that requires `blocking`.
+
+The recommended portable shape for a blocking foreign call is therefore `blocking rawCall` or `fork (blocking rawCall)`,
+not silent scheduler monopolization.
+
 <!-- effects.monadic_core.interruption_masking -->
 #### 8.1.4 Interruption and masking
 
