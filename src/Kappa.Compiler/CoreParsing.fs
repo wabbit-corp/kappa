@@ -1227,6 +1227,14 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
             match trimLineTokens lineTokens with
             | [] ->
                 None
+            | scopedToken :: effectToken :: nameToken :: rest
+                when Token.isName scopedToken
+                     && String.Equals(SyntaxFacts.trimIdentifierQuotes scopedToken.Text, "scoped", StringComparison.Ordinal)
+                     && Token.isName effectToken
+                     && String.Equals(SyntaxFacts.trimIdentifierQuotes effectToken.Text, "effect", StringComparison.Ordinal)
+                     && Token.isName nameToken
+                     && (rest |> List.exists (fun token -> token.Kind = Equals)) ->
+                Some(Choice2Of3(SyntaxFacts.trimIdentifierQuotes nameToken.Text))
             | letToken :: rest when Token.isKeyword Keyword.Let letToken ->
                 match tryFindTopLevelEquals rest with
                 | Some index ->
@@ -1236,7 +1244,10 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
 
                     let parsed =
                         match headerTokens with
-                        | nameToken :: restHeader when this.IsNameToken(nameToken) ->
+                        | nameToken :: restHeader
+                            when this.IsNameToken(nameToken)
+                                 && not (List.isEmpty restHeader)
+                                 && restHeader.Head.Kind <> Colon ->
                             parseNamedLocalBinding headerTokens valueTokens
                         | _ ->
                             let bindingTokens =
@@ -1246,7 +1257,7 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
                             this.ParseBindPatternFromTokens bindingTokens,
                             this.ParseStandaloneExpression(valueTokens)
 
-                    Some(None, Some parsed)
+                    Some(Choice1Of3 parsed)
                 | None ->
                     None
             | nameToken :: rest when this.IsNameToken(nameToken) ->
@@ -1254,11 +1265,25 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
                 | Some index ->
                     let tokenArray = List.toArray rest
                     let typeTokens = tokenArray[index + 1 ..] |> Array.toList
-                    Some(Some(SyntaxFacts.trimIdentifierQuotes nameToken.Text, typeTokens), None)
+                    Some(Choice3Of3(SyntaxFacts.trimIdentifierQuotes nameToken.Text, typeTokens))
                 | None ->
                     None
             | _ ->
                 None
+
+        let joinIndentedBodyLines (lines: Token list list) =
+            let syntheticNewline span =
+                { Kind = Newline
+                  Text = ""
+                  Span = span }
+
+            lines
+            |> List.mapi (fun index line ->
+                if index = 0 || List.isEmpty line then
+                    line
+                else
+                    syntheticNewline line.Head.Span :: line)
+            |> List.concat
 
         let buildNestedExpression items bodyTokens =
             let body = this.ParseStandaloneExpression(bodyTokens)
@@ -1267,8 +1292,10 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
             |> List.rev
             |> List.fold (fun (current: SurfaceExpression) lineTokens ->
                 match lineTokens with
-                | _, Some(binding, value) ->
+                | Choice1Of3(binding, value) ->
                     LocalLet(binding, value, current)
+                | Choice2Of3 name ->
+                    LocalScopedEffect(name, current)
                 | _ ->
                     current) body
 
@@ -1285,8 +1312,32 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
             if parsedItems |> List.forall Option.isSome then
                 buildNestedExpression (parsedItems |> List.choose id) (List.last lines)
             else
-                diagnostics.AddError(DiagnosticCode.ParseError, "Expected a sequence of local let items followed by a final expression in the block.", source.GetLocation(blockToken.Span))
-                Literal LiteralValue.Unit
+                let parsedLines =
+                    lines
+                    |> List.map (fun line -> line, parseBlockItem line)
+
+                let bindingLines, bodyLines =
+                    parsedLines |> List.takeWhile (snd >> Option.isSome),
+                    parsedLines |> List.skipWhile (snd >> Option.isSome)
+
+                let startsStructuredFinalExpression =
+                    match bodyLines with
+                    | (lineTokens, _) :: _ ->
+                        match trimLineTokens lineTokens with
+                        | head :: _ when Token.isKeyword Keyword.Match head || Token.isKeyword Keyword.If head ->
+                            true
+                        | _ ->
+                            false
+                    | [] ->
+                        false
+
+                if not (List.isEmpty bindingLines)
+                   && not (List.isEmpty bodyLines)
+                   && startsStructuredFinalExpression then
+                    buildNestedExpression (bindingLines |> List.choose snd) (bodyLines |> List.map fst |> joinIndentedBodyLines)
+                else
+                    diagnostics.AddError(DiagnosticCode.ParseError, "Expected a sequence of local let items followed by a final expression in the block.", source.GetLocation(blockToken.Span))
+                    Literal LiteralValue.Unit
 
     member private this.CollectIndentedLines() =
         let lines = ResizeArray<Token list>()
@@ -2224,6 +2275,55 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
         |> List.map parseField
         |> NamedApplicationBlock
 
+    member private this.ParseKindQualifiedName(selector: KindSelector, selectorDescription: string) =
+        this.Advance() |> ignore
+        this.SkipLayout()
+
+        if this.IsNameToken(this.Current) then
+            KindQualifiedName(selector, this.ParseQualifiedName())
+        else
+            diagnostics.AddError(
+                DiagnosticCode.ParseError,
+                $"Expected a name after '{selectorDescription}'.",
+                source.GetLocation(this.Current.Span)
+            )
+
+            KindQualifiedName(selector, [ "<missing>" ])
+
+    member private this.IsKindQualifiedSelectorStart() =
+        match this.Current.Kind with
+        | Keyword Keyword.Type
+        | Keyword Keyword.Trait
+        | Keyword Keyword.Module ->
+            this.IsNameToken(this.Peek(1))
+        | _ ->
+            false
+
+    member private this.IsEffectLabelSelectorStart() =
+        this.Current.Kind = Identifier
+        && String.Equals(this.Current.Text, "effect", StringComparison.Ordinal)
+        && this.Peek(1).Kind = Operator
+        && String.Equals(this.Peek(1).Text, "-", StringComparison.Ordinal)
+        && this.Peek(2).Kind = Identifier
+        && String.Equals(this.Peek(2).Text, "label", StringComparison.Ordinal)
+
+    member private this.ParseEffectLabelKindQualifiedName() =
+        this.Advance() |> ignore
+        this.Advance() |> ignore
+        this.Advance() |> ignore
+        this.SkipLayout()
+
+        if this.IsNameToken(this.Current) then
+            KindQualifiedName(EffectLabelKind, this.ParseQualifiedName())
+        else
+            diagnostics.AddError(
+                DiagnosticCode.ParseError,
+                "Expected a name after 'effect-label'.",
+                source.GetLocation(this.Current.Span)
+            )
+
+            KindQualifiedName(EffectLabelKind, [ "<missing>" ])
+
     member private this.ParsePrimaryExpression() =
         this.SkipLayout()
 
@@ -2236,6 +2336,14 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
             this.ParseIfExpression()
         | Keyword Keyword.Seal ->
             this.ParseSealExpression()
+        | Keyword Keyword.Type when this.IsKindQualifiedSelectorStart() ->
+            this.ParseKindQualifiedName(TypeKind, "type")
+        | Keyword Keyword.Trait when this.IsKindQualifiedSelectorStart() ->
+            this.ParseKindQualifiedName(TraitKind, "trait")
+        | Keyword Keyword.Module when this.IsKindQualifiedSelectorStart() ->
+            this.ParseKindQualifiedName(ModuleKind, "module")
+        | _ when this.IsEffectLabelSelectorStart() ->
+            this.ParseEffectLabelKindQualifiedName()
         | _ when Token.isName this.Current && String.Equals(SyntaxFacts.trimIdentifierQuotes this.Current.Text, "block", StringComparison.Ordinal) ->
             this.ParseBlockExpression()
         | Backslash ->
@@ -3565,14 +3673,36 @@ module CoreParsing =
             |> List.rev
 
         let parseSimpleLocalBindingLine lineTokens =
-            trimLineTokens lineTokens |> parseBindingLineTokens
+            trimLineTokens lineTokens |> parseBindingLineTokens |> Option.map Choice1Of2
 
         let parseSimpleLocalLetLine lineTokens =
             match trimLineTokens lineTokens with
             | letToken :: rest when Token.isKeyword Keyword.Let letToken ->
-                parseBindingLineTokens rest
+                parseBindingLineTokens rest |> Option.map Choice1Of2
+            | scopedToken :: effectToken :: nameToken :: rest
+                when Token.isName scopedToken
+                     && String.Equals(SyntaxFacts.trimIdentifierQuotes scopedToken.Text, "scoped", StringComparison.Ordinal)
+                     && Token.isName effectToken
+                     && String.Equals(SyntaxFacts.trimIdentifierQuotes effectToken.Text, "effect", StringComparison.Ordinal)
+                     && Token.isName nameToken
+                     && (rest |> List.exists (fun token -> token.Kind = Equals)) ->
+                Some(Choice2Of2(SyntaxFacts.trimIdentifierQuotes nameToken.Text))
             | _ ->
                 None
+
+        let joinIndentedBodyLines (lines: Token list list) =
+            let syntheticNewline span =
+                { Kind = Newline
+                  Text = ""
+                  Span = span }
+
+            lines
+            |> List.mapi (fun index line ->
+                if index = 0 || List.isEmpty line then
+                    line
+                else
+                    syntheticNewline line.Head.Span :: line)
+            |> List.concat
 
         let buildNestedExpression parseBindingLine bindingLines bodyTokens =
             let body : SurfaceExpression =
@@ -3583,15 +3713,26 @@ module CoreParsing =
             |> List.rev
             |> List.fold (fun (current: SurfaceExpression) lineTokens ->
                 match parseBindingLine lineTokens with
-                | Some(binding, value) -> LocalLet(binding, value, current)
+                | Some(Choice1Of2(binding, value)) -> LocalLet(binding, value, current)
+                | Some(Choice2Of2 name) -> LocalScopedEffect(name, current)
                 | None -> current) body
 
         let tryParseIndentedPureBlockSuite () =
             match splitIndentedLines tokens with
-            | Some lines
-                when List.length lines >= 2
-                     && (lines |> List.take (List.length lines - 1) |> List.forall (parseSimpleLocalLetLine >> Option.isSome)) ->
-                Some(buildNestedExpression parseSimpleLocalLetLine (lines |> List.take (List.length lines - 1)) (List.last lines))
+            | Some lines ->
+                let parsedLines =
+                    lines
+                    |> List.map (fun line -> line, parseSimpleLocalLetLine line)
+
+                let bindingLines, bodyLines =
+                    parsedLines |> List.takeWhile (snd >> Option.isSome),
+                    parsedLines |> List.skipWhile (snd >> Option.isSome)
+
+                match bindingLines, bodyLines with
+                | _ :: _, _ :: _ ->
+                    Some(buildNestedExpression parseSimpleLocalLetLine (bindingLines |> List.map fst) (bodyLines |> List.map fst |> joinIndentedBodyLines))
+                | _ ->
+                    None
             | _ ->
                 None
 

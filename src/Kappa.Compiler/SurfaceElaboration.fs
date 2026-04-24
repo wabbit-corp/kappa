@@ -3,6 +3,7 @@ namespace Kappa.Compiler
 open System
 open System.Security.Cryptography
 open System.Text
+open System.Threading
 
 // Elaborates resolved surface modules into KCore while preserving observability metadata.
 module SurfaceElaboration =
@@ -32,6 +33,22 @@ module SurfaceElaboration =
           Name: string
           Parameters: string list
           Body: TypeExpr }
+
+    type private TypeFacetInfo =
+        { ModuleName: string
+          Name: string
+          Scheme: TypeScheme }
+
+    type private StaticObjectKind =
+        | StaticTypeObject
+        | StaticTraitObject
+        | StaticEffectLabelObject
+        | StaticModuleObject
+
+    type private StaticObjectInfo =
+        { ObjectKind: StaticObjectKind
+          NameSegments: string list
+          Scheme: TypeScheme option }
 
     type private RecordSurfaceFieldInfo =
         { Name: string
@@ -63,6 +80,7 @@ module SurfaceElaboration =
 
     type private ModuleSurfaceInfo =
         { TypeAliases: Map<string, TypeAliasInfo>
+          TypeFacets: Map<string, TypeFacetInfo>
           RecordTypes: Map<string, RecordSurfaceInfo>
           BindingSchemes: Map<string, BindingSchemeInfo>
           Constructors: Map<string, BindingSchemeInfo>
@@ -78,6 +96,9 @@ module SurfaceElaboration =
     type private BindingLoweringEnvironment =
         { CurrentModuleName: string
           VisibleTypeAliases: Map<string, TypeAliasInfo>
+          VisibleTypeFacets: Map<string, TypeFacetInfo>
+          VisibleStaticObjects: Map<string, StaticObjectInfo>
+          VisibleModules: Set<string>
           VisibleRecordTypes: Map<string, RecordSurfaceInfo>
           VisibleBindings: Map<string, BindingSchemeInfo>
           VisibleConstructors: Map<string, BindingSchemeInfo>
@@ -580,6 +601,314 @@ module SurfaceElaboration =
                         StringComparison.Ordinal
                     ))
 
+    let private typeObjectType =
+        TypeName([ "Type" ], [])
+
+    let private constraintObjectType =
+        TypeName([ "Constraint" ], [])
+
+    let private effectLabelObjectType =
+        TypeName([ "EffLabel" ], [])
+
+    let private staticObjectTypeText (info: StaticObjectInfo) =
+        info.Scheme
+        |> Option.map (fun scheme -> TypeSignatures.toText scheme.Body)
+
+    let private traitFacetScheme (traitInfo: TraitInfo) =
+        let body =
+            traitInfo.TypeParameters
+            |> List.rev
+            |> List.fold (fun current _ -> TypeArrow(QuantityOmega, typeObjectType, current)) constraintObjectType
+
+        { Forall = []
+          Constraints = []
+          Body = body }
+
+    let private typeFacetStaticObject (typeFacetInfo: TypeFacetInfo) =
+        { ObjectKind = StaticTypeObject
+          NameSegments = [ typeFacetInfo.Name ]
+          Scheme = Some typeFacetInfo.Scheme }
+
+    let private scopedEffectTypeStaticObject name =
+        { ObjectKind = StaticTypeObject
+          NameSegments = [ name ]
+          Scheme =
+            Some
+                { Forall = []
+                  Constraints = []
+                  Body = typeObjectType } }
+
+    let private scopedEffectLabelStaticObject name =
+        { ObjectKind = StaticEffectLabelObject
+          NameSegments = [ name ]
+          Scheme =
+            Some
+                { Forall = []
+                  Constraints = []
+                  Body = effectLabelObjectType } }
+
+    let private traitStaticObject (traitInfo: TraitInfo) =
+        { ObjectKind = StaticTraitObject
+          NameSegments = [ traitInfo.Name ]
+          Scheme = Some(traitFacetScheme traitInfo) }
+
+    let private tryResolveVisibleTypeFacetInfo
+        (environment: BindingLoweringEnvironment)
+        nameSegments
+        =
+        match List.rev nameSegments with
+        | [] ->
+            None
+        | typeName :: reversedModuleSegments ->
+            environment.VisibleTypeFacets
+            |> Map.tryFind typeName
+            |> Option.filter (fun typeFacetInfo ->
+                match reversedModuleSegments with
+                | [] ->
+                    true
+                | _ ->
+                    String.Equals(
+                        typeFacetInfo.ModuleName,
+                        SyntaxFacts.moduleNameToText (List.rev reversedModuleSegments),
+                        StringComparison.Ordinal
+                    ))
+
+    let private tryResolveStaticObject
+        (environment: BindingLoweringEnvironment)
+        expression
+        =
+        match expression with
+        | KindQualifiedName(TypeKind, nameSegments) ->
+            tryResolveVisibleTypeFacetInfo environment nameSegments
+            |> Option.map typeFacetStaticObject
+        | KindQualifiedName(TraitKind, nameSegments) ->
+            match List.rev nameSegments with
+            | [] -> None
+            | traitName :: _ ->
+                environment.VisibleTraits
+                |> Map.tryFind traitName
+                |> Option.map traitStaticObject
+        | KindQualifiedName(EffectLabelKind, _) ->
+            None
+        | KindQualifiedName(ModuleKind, nameSegments) ->
+            let moduleName = SyntaxFacts.moduleNameToText nameSegments
+
+            if environment.VisibleModules.Contains moduleName then
+                Some
+                    { ObjectKind = StaticModuleObject
+                      NameSegments = nameSegments
+                      Scheme = None }
+            else
+                None
+        | Name [ root ]
+            when not (environment.VisibleBindings.ContainsKey root)
+                 && Option.isNone (tryResolveVisibleConstructorInfo environment [ root ]) ->
+            environment.VisibleStaticObjects
+            |> Map.tryFind root
+            |> Option.orElseWith (fun () ->
+                environment.VisibleTypeFacets
+                |> Map.tryFind root
+                |> Option.map typeFacetStaticObject)
+            |> Option.orElseWith (fun () ->
+                environment.VisibleTraits
+                |> Map.tryFind root
+                |> Option.map traitStaticObject)
+        | _ ->
+            None
+
+    let private scopedEffectNames = AsyncLocal<Set<string> option>()
+
+    let private currentScopedEffectNames () =
+        scopedEffectNames.Value |> Option.defaultValue Set.empty
+
+    let private withScopedEffectName name work =
+        let saved = currentScopedEffectNames ()
+        scopedEffectNames.Value <- Some(Set.add name saved)
+
+        try
+            work ()
+        finally
+            scopedEffectNames.Value <- Some saved
+
+    let private tryResolveScopedStaticObject
+        (environment: BindingLoweringEnvironment)
+        expression
+        =
+        let scopedEffectNames = currentScopedEffectNames ()
+
+        match expression with
+        | KindQualifiedName(TypeKind, [ name ]) when Set.contains name scopedEffectNames ->
+            Some(scopedEffectTypeStaticObject name)
+        | KindQualifiedName(EffectLabelKind, [ name ]) when Set.contains name scopedEffectNames ->
+            Some(scopedEffectLabelStaticObject name)
+        | _ ->
+            tryResolveStaticObject environment expression
+
+    let private kindSelectorText selector =
+        match selector with
+        | TypeKind -> "type"
+        | TraitKind -> "trait"
+        | EffectLabelKind -> "effect-label"
+        | ModuleKind -> "module"
+
+    let private staticObjectExpression (staticObject: StaticObjectInfo) =
+        let selector =
+            match staticObject.ObjectKind with
+            | StaticTypeObject -> TypeKind
+            | StaticTraitObject -> TraitKind
+            | StaticEffectLabelObject -> EffectLabelKind
+            | StaticModuleObject -> ModuleKind
+
+        KindQualifiedName(selector, staticObject.NameSegments)
+
+    let private rewriteStaticObjectAliasUse aliasName staticObject expression =
+        let aliasIsBoundByPattern pattern =
+            collectPatternNames pattern
+            |> List.exists (fun name -> String.Equals(name, aliasName, StringComparison.Ordinal))
+
+        let aliasIsBoundByParameters (parameters: Parameter list) =
+            parameters
+            |> List.exists (fun parameter -> String.Equals(parameter.Name, aliasName, StringComparison.Ordinal))
+
+        let aliasIsBoundByName name =
+            String.Equals(name, aliasName, StringComparison.Ordinal)
+
+        let rec rewrite current =
+            match current with
+            | Name [ root ] when aliasIsBoundByName root ->
+                staticObjectExpression staticObject
+            | Name(root :: path) when aliasIsBoundByName root ->
+                Name(staticObject.NameSegments @ path)
+            | Name _ ->
+                current
+            | LocalLet(binding, value, body) ->
+                let rewrittenValue = rewrite value
+
+                if aliasIsBoundByPattern binding.Pattern then
+                    LocalLet(binding, rewrittenValue, body)
+                else
+                    LocalLet(binding, rewrittenValue, rewrite body)
+            | LocalScopedEffect(name, body) ->
+                if aliasIsBoundByName name then
+                    LocalScopedEffect(name, body)
+                else
+                    LocalScopedEffect(name, rewrite body)
+            | Lambda(parameters, body) ->
+                if aliasIsBoundByParameters parameters then
+                    Lambda(parameters, body)
+                else
+                    Lambda(parameters, rewrite body)
+            | IfThenElse(condition, whenTrue, whenFalse) ->
+                IfThenElse(rewrite condition, rewrite whenTrue, rewrite whenFalse)
+            | Match(scrutinee, cases) ->
+                Match(
+                    rewrite scrutinee,
+                    cases
+                    |> List.map (fun caseClause ->
+                        if aliasIsBoundByPattern caseClause.Pattern then
+                            caseClause
+                        else
+                            { caseClause with
+                                Guard = caseClause.Guard |> Option.map rewrite
+                                Body = rewrite caseClause.Body })
+                )
+            | RecordLiteral fields ->
+                RecordLiteral(fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+            | Seal(value, ascriptionTokens) ->
+                Seal(rewrite value, ascriptionTokens)
+            | RecordUpdate(receiver, fields) ->
+                RecordUpdate(rewrite receiver, fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+            | SafeNavigation(receiver, navigation) ->
+                SafeNavigation(rewrite receiver, { navigation with Arguments = navigation.Arguments |> List.map rewrite })
+            | TagTest(receiver, constructorName) ->
+                TagTest(rewrite receiver, constructorName)
+            | Do statements ->
+                let rec rewriteStatements remaining =
+                    match remaining with
+                    | [] -> []
+                    | statement :: rest ->
+                        match statement with
+                        | DoLet(binding, value) ->
+                            let rewritten = DoLet(binding, rewrite value)
+                            if aliasIsBoundByPattern binding.Pattern then
+                                rewritten :: rest
+                            else
+                                rewritten :: rewriteStatements rest
+                        | DoLetQuestion(binding, value, failure) ->
+                            let rewrittenFailure =
+                                failure
+                                |> Option.map (fun failureClause ->
+                                    if aliasIsBoundByPattern failureClause.ResiduePattern.Pattern then
+                                        failureClause
+                                    else
+                                        { failureClause with Body = rewriteStatements failureClause.Body })
+
+                            let rewritten = DoLetQuestion(binding, rewrite value, rewrittenFailure)
+                            if aliasIsBoundByPattern binding.Pattern then
+                                rewritten :: rest
+                            else
+                                rewritten :: rewriteStatements rest
+                        | DoBind(binding, value) ->
+                            let rewritten = DoBind(binding, rewrite value)
+                            if aliasIsBoundByPattern binding.Pattern then
+                                rewritten :: rest
+                            else
+                                rewritten :: rewriteStatements rest
+                        | DoUsing(binding, value) ->
+                            let rewritten = DoUsing(binding, rewrite value)
+                            if aliasIsBoundByPattern binding.Pattern then
+                                rewritten :: rest
+                            else
+                                rewritten :: rewriteStatements rest
+                        | DoVar(name, value) ->
+                            let rewritten = DoVar(name, rewrite value)
+                            if aliasIsBoundByName name then
+                                rewritten :: rest
+                            else
+                                rewritten :: rewriteStatements rest
+                        | DoAssign(name, value) ->
+                            DoAssign(name, rewrite value) :: rewriteStatements rest
+                        | DoIf(condition, whenTrue, whenFalse) ->
+                            DoIf(condition |> rewrite, whenTrue |> rewriteStatements, whenFalse |> rewriteStatements)
+                            :: rewriteStatements rest
+                        | DoWhile(condition, body) ->
+                            DoWhile(rewrite condition, rewriteStatements body) :: rewriteStatements rest
+                        | DoReturn value ->
+                            DoReturn(rewrite value) :: rest
+                        | DoExpression value ->
+                            DoExpression(rewrite value) :: rewriteStatements rest
+
+                Do(rewriteStatements statements)
+            | MonadicSplice inner ->
+                MonadicSplice(rewrite inner)
+            | ExplicitImplicitArgument inner ->
+                ExplicitImplicitArgument(rewrite inner)
+            | NamedApplicationBlock fields ->
+                NamedApplicationBlock(fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+            | Apply(callee, arguments) ->
+                Apply(rewrite callee, arguments |> List.map rewrite)
+            | InoutArgument inner ->
+                InoutArgument(rewrite inner)
+            | Unary(operatorName, operand) ->
+                Unary(operatorName, rewrite operand)
+            | Binary(left, operatorName, right) ->
+                Binary(rewrite left, operatorName, rewrite right)
+            | Elvis(left, right) ->
+                Elvis(rewrite left, rewrite right)
+            | PrefixedString(prefix, parts) ->
+                PrefixedString(
+                    prefix,
+                    parts
+                    |> List.map (function
+                        | StringText _ as part -> part
+                        | StringInterpolation inner -> StringInterpolation(rewrite inner))
+                )
+            | Literal _
+            | KindQualifiedName _ ->
+                current
+
+        rewrite expression
+
     let private unitType =
         TypeName([ "Unit" ], [])
 
@@ -667,6 +996,101 @@ module SurfaceElaboration =
                   Parameters = TypeSignatures.collectLeadingTypeParameters declaration.HeaderTokens
                   Body = body })
 
+    let private splitHeaderKindTokens (tokens: Token list) =
+        let rec loop depth index =
+            if index >= tokens.Length then
+                tokens, []
+            else
+                match tokens[index].Kind with
+                | LeftParen
+                | LeftBracket
+                | LeftBrace
+                | LeftSetBrace ->
+                    loop (depth + 1) (index + 1)
+                | RightParen
+                | RightBracket
+                | RightBrace
+                | RightSetBrace ->
+                    loop (max 0 (depth - 1)) (index + 1)
+                | Colon when depth = 0 ->
+                    List.take index tokens, List.skip (index + 1) tokens
+                | _ ->
+                    loop depth (index + 1)
+
+        loop 0 0
+
+    let private findMatchingRightParen (tokens: Token list) =
+        let rec loop depth index =
+            if index >= tokens.Length then
+                None
+            else
+                match tokens[index].Kind with
+                | LeftParen ->
+                    loop (depth + 1) (index + 1)
+                | RightParen when depth = 1 ->
+                    Some index
+                | RightParen ->
+                    loop (max 0 (depth - 1)) (index + 1)
+                | _ ->
+                    loop depth (index + 1)
+
+        loop 0 0
+
+    let private parseBinderTypeOrDefault (binderTokens: Token list) =
+        let _, typeTokens = splitHeaderKindTokens binderTokens
+
+        match significantTokens typeTokens with
+        | [] -> typeObjectType
+        | tokens -> TypeSignatures.parseType tokens |> Option.defaultValue typeObjectType
+
+    let private typeFacetParameterTypes (tokens: Token list) =
+        let rec loop remaining acc =
+            match significantTokens remaining with
+            | [] ->
+                List.rev acc
+            | head :: rest when Token.isName head ->
+                loop rest (typeObjectType :: acc)
+            | { Kind = LeftParen } :: _ as current ->
+                match findMatchingRightParen current with
+                | Some rightParenIndex ->
+                    let binderTokens =
+                        current
+                        |> List.skip 1
+                        |> List.take (rightParenIndex - 1)
+
+                    let next =
+                        current |> List.skip (rightParenIndex + 1)
+
+                    loop next (parseBinderTypeOrDefault binderTokens :: acc)
+                | None ->
+                    List.rev acc
+            | _ :: rest ->
+                loop rest acc
+
+        loop tokens []
+
+    let private buildTypeFacetInfo moduleName name headerTokens =
+        let parameterTokens, kindTokens = splitHeaderKindTokens headerTokens
+
+        let resultType =
+            match significantTokens kindTokens with
+            | [] -> typeObjectType
+            | tokens -> TypeSignatures.parseType tokens |> Option.defaultValue typeObjectType
+
+        let body =
+            parameterTokens
+            |> typeFacetParameterTypes
+            |> List.rev
+            |> List.fold (fun current parameterType -> TypeArrow(QuantityOmega, parameterType, current)) resultType
+
+        name,
+        { ModuleName = moduleName
+          Name = name
+          Scheme =
+            { Forall = []
+              Constraints = []
+              Body = body } }
+
     let private isPrivateByDefault (frontendModule: KFrontIRModule) =
         frontendModule.ModuleAttributes
         |> List.exists (fun attributeName -> String.Equals(attributeName, "PrivateByDefault", StringComparison.Ordinal))
@@ -687,6 +1111,21 @@ module SurfaceElaboration =
         item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Trait
 
     let private itemImportsConstructorName (item: ImportItem) =
+        item.Namespace = Some ImportNamespace.Constructor
+
+    let private importedItemLocalName (item: ImportItem) =
+        item.Alias |> Option.defaultValue item.Name
+
+    let private itemExportsTermName (item: ImportItem) =
+        item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Term
+
+    let private itemExportsTypeName (item: ImportItem) =
+        item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Type
+
+    let private itemExportsTraitName (item: ImportItem) =
+        item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Trait
+
+    let private itemExportsConstructorName (item: ImportItem) =
         item.Namespace = Some ImportNamespace.Constructor
 
     let private tryParseConstructorScheme (dataDeclaration: DataDeclaration) (constructor: DataConstructor) =
@@ -710,7 +1149,7 @@ module SurfaceElaboration =
                TypeTokens = []
                ParameterLayouts = None })
 
-    let private selectionImportsExportedName
+    let private selectionImportedName
         (exportedNames: Set<string>)
         itemSelector
         (selection: ImportSelection)
@@ -720,17 +1159,23 @@ module SurfaceElaboration =
 
         match selection with
         | QualifiedOnly ->
-            false
+            None
         | Items items ->
-            exported
-            && (items
-                |> List.exists (fun item ->
+            if not exported then
+                None
+            else
+                items
+                |> List.tryFind (fun item ->
                     String.Equals(item.Name, name, StringComparison.Ordinal)
-                    && itemSelector item))
+                    && itemSelector item)
+                |> Option.map importedItemLocalName
         | All ->
-            exported
+            if exported then Some name else None
         | AllExcept excludedNames ->
-            exported && not (List.contains name excludedNames)
+            if exported && not (List.contains name excludedNames) then
+                Some name
+            else
+                None
 
     let private buildModuleSurfaceInfo (frontendModule: KFrontIRModule) =
         let moduleName = moduleNameText frontendModule.ModuleIdentity
@@ -741,6 +1186,19 @@ module SurfaceElaboration =
             |> List.choose (function
                 | TypeAliasNode declaration -> tryParseTypeAliasInfo moduleName declaration
                 | _ -> None)
+            |> Map.ofList
+
+        let typeFacets =
+            frontendModule.Declarations
+            |> List.choose (function
+                | DataDeclarationNode declaration ->
+                    buildTypeFacetInfo moduleName declaration.Name declaration.HeaderTokens
+                    |> Some
+                | TypeAliasNode declaration ->
+                    buildTypeFacetInfo moduleName declaration.Name declaration.HeaderTokens
+                    |> Some
+                | _ ->
+                    None)
             |> Map.ofList
 
         let recordTypes =
@@ -939,6 +1397,7 @@ module SurfaceElaboration =
                     None)
 
         { TypeAliases = typeAliases
+          TypeFacets = typeFacets
           RecordTypes = recordTypes
           BindingSchemes = bindingSchemes
           Constructors = constructors
@@ -952,10 +1411,98 @@ module SurfaceElaboration =
           ExportedTraits = exportedTraits }
 
     let private buildSurfaceIndex (frontendModules: KFrontIRModule list) =
-        frontendModules
-        |> List.map (fun moduleDump ->
-            moduleNameText moduleDump.ModuleIdentity, buildModuleSurfaceInfo moduleDump)
-        |> Map.ofList
+        let directIndex =
+            frontendModules
+            |> List.map (fun moduleDump ->
+                moduleNameText moduleDump.ModuleIdentity, buildModuleSurfaceInfo moduleDump)
+            |> Map.ofList
+
+        let moduleGroups =
+            frontendModules
+            |> List.groupBy (fun moduleDump -> moduleNameText moduleDump.ModuleIdentity)
+            |> Map.ofList
+
+        let addReexportedItem (importedModule: ModuleSurfaceInfo) (moduleInfo: ModuleSurfaceInfo) (item: ImportItem) =
+            let exportedName = item.Name
+            let localName = importedItemLocalName item
+            let exportsType = Set.contains exportedName importedModule.ExportedTypes && itemExportsTypeName item
+            let exportsTerm = Set.contains exportedName importedModule.ExportedTerms && itemExportsTermName item
+            let exportsTrait = Set.contains exportedName importedModule.ExportedTraits && itemExportsTraitName item
+            let exportsConstructor = Set.contains exportedName importedModule.ExportedConstructors && itemExportsConstructorName item
+            let exportsSameSpellingConstructor =
+                item.Namespace.IsNone
+                && Set.contains exportedName importedModule.ExportedTypes
+                && Set.contains exportedName importedModule.ExportedConstructors
+
+            { moduleInfo with
+                ExportedTerms =
+                    if exportsTerm then Set.add localName moduleInfo.ExportedTerms else moduleInfo.ExportedTerms
+                ExportedTypes =
+                    if exportsType then Set.add localName moduleInfo.ExportedTypes else moduleInfo.ExportedTypes
+                ExportedTraits =
+                    if exportsTrait then Set.add localName moduleInfo.ExportedTraits else moduleInfo.ExportedTraits
+                ExportedConstructors =
+                    moduleInfo.ExportedConstructors
+                    |> fun constructors ->
+                        if exportsConstructor || exportsSameSpellingConstructor then
+                            Set.add localName constructors
+                        else
+                            constructors }
+
+        let addWildcardReexports (importedModule: ModuleSurfaceInfo) (moduleInfo: ModuleSurfaceInfo) excludedNames =
+            let notExcluded name = not (List.contains name excludedNames)
+            let sameSpellingConstructors =
+                Set.intersect importedModule.ExportedConstructors importedModule.ExportedTypes
+                |> Set.filter notExcluded
+
+            { moduleInfo with
+                ExportedTerms = Set.union moduleInfo.ExportedTerms (Set.filter notExcluded importedModule.ExportedTerms)
+                ExportedTypes = Set.union moduleInfo.ExportedTypes (Set.filter notExcluded importedModule.ExportedTypes)
+                ExportedTraits = Set.union moduleInfo.ExportedTraits (Set.filter notExcluded importedModule.ExportedTraits)
+                ExportedConstructors = Set.union moduleInfo.ExportedConstructors sameSpellingConstructors }
+
+        let applyReexportSpec (surfaceIndex: Map<string, ModuleSurfaceInfo>) (moduleInfo: ModuleSurfaceInfo) (spec: ImportSpec) =
+            match spec.Source with
+            | Url _ ->
+                moduleInfo
+            | Dotted moduleSegments ->
+                let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
+
+                match Map.tryFind importedModuleName surfaceIndex with
+                | None ->
+                    moduleInfo
+                | Some importedModule ->
+                    match spec.Selection with
+                    | QualifiedOnly ->
+                        moduleInfo
+                    | Items items ->
+                        items |> List.fold (addReexportedItem importedModule) moduleInfo
+                    | All ->
+                        addWildcardReexports importedModule moduleInfo []
+                    | AllExcept excludedNames ->
+                        addWildcardReexports importedModule moduleInfo excludedNames
+
+        let rec saturate surfaceIndex =
+            let nextSurfaceIndex =
+                moduleGroups
+                |> Map.map (fun moduleName moduleDumps ->
+                    let directModuleInfo = Map.find moduleName directIndex
+
+                    moduleDumps
+                    |> List.collect (fun moduleDump ->
+                        moduleDump.Declarations
+                        |> List.choose (function
+                            | ImportDeclaration (true, specs) -> Some specs
+                            | _ -> None)
+                        |> List.concat)
+                    |> List.fold (applyReexportSpec surfaceIndex) directModuleInfo)
+
+            if nextSurfaceIndex = surfaceIndex then
+                surfaceIndex
+            else
+                saturate nextSurfaceIndex
+
+        saturate directIndex
 
     let private importedModuleInfos (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
         surfaceIndex
@@ -977,6 +1524,7 @@ module SurfaceElaboration =
                 importedModule.Projections.Keys |> Seq.toList,
                 importedModule.Traits.Keys |> Seq.toList,
                 importedModule.TypeAliases.Keys |> Seq.toList,
+                importedModule.TypeFacets.Keys |> Seq.toList,
                 importedModule.RecordTypes.Keys |> Seq.toList))
         |> Option.defaultValue []
 
@@ -986,10 +1534,9 @@ module SurfaceElaboration =
             |> List.fold (fun state (spec, importedModule) ->
                 importedModule.BindingSchemes
                 |> Map.fold (fun current name info ->
-                    if selectionImportsExportedName importedModule.ExportedTerms itemImportsTermName spec.Selection name then
-                        Map.add name info current
-                    else
-                        current) state) Map.empty
+                    match selectionImportedName importedModule.ExportedTerms itemImportsTermName spec.Selection name with
+                    | Some localName -> Map.add localName info current
+                    | None -> current) state) Map.empty
 
         let preludeBindings =
             surfaceIndex
@@ -1013,16 +1560,15 @@ module SurfaceElaboration =
             |> List.fold (fun state (spec, importedModule) ->
                 importedModule.Constructors
                 |> Map.fold (fun current name info ->
-                    if
-                        selectionImportsExportedName
+                    match
+                        selectionImportedName
                             importedModule.ExportedConstructors
                             itemImportsConstructorName
                             spec.Selection
                             name
-                    then
-                        Map.add name info current
-                    else
-                        current) state) Map.empty
+                    with
+                    | Some localName -> Map.add localName info current
+                    | None -> current) state) Map.empty
 
         let moduleConstructors =
             surfaceIndex
@@ -1039,10 +1585,9 @@ module SurfaceElaboration =
             |> List.fold (fun state (spec, importedModule) ->
                 importedModule.Projections
                 |> Map.fold (fun current name info ->
-                    if selectionImportsExportedName importedModule.ExportedTerms itemImportsTermName spec.Selection name then
-                        Map.add name info current
-                    else
-                        current) state) Map.empty
+                    match selectionImportedName importedModule.ExportedTerms itemImportsTermName spec.Selection name with
+                    | Some localName -> Map.add localName info current
+                    | None -> current) state) Map.empty
 
         let moduleProjections =
             surfaceIndex
@@ -1059,10 +1604,9 @@ module SurfaceElaboration =
             |> List.fold (fun state (spec, importedModule) ->
                 importedModule.TypeAliases
                 |> Map.fold (fun current name info ->
-                    if selectionImportsExportedName importedModule.ExportedTypes itemImportsTypeName spec.Selection name then
-                        Map.add name info current
-                    else
-                        current) state) Map.empty
+                    match selectionImportedName importedModule.ExportedTypes itemImportsTypeName spec.Selection name with
+                    | Some localName -> Map.add localName info current
+                    | None -> current) state) Map.empty
 
         let preludeAliases =
             surfaceIndex
@@ -1080,16 +1624,66 @@ module SurfaceElaboration =
         |> Map.fold (fun state name info -> Map.add name info state) importedAliases
         |> fun state -> moduleAliases |> Map.fold (fun current name info -> Map.add name info current) state
 
+    let private mergeVisibleTypeFacets (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
+        let importedFacets =
+            importedModuleInfos surfaceIndex moduleName
+            |> List.fold (fun state (spec, importedModule) ->
+                importedModule.TypeFacets
+                |> Map.fold (fun current name info ->
+                    match selectionImportedName importedModule.ExportedTypes itemImportsTypeName spec.Selection name with
+                    | Some localName -> Map.add localName info current
+                    | None -> current) state) Map.empty
+
+        let preludeFacets =
+            surfaceIndex
+            |> Map.tryFind Stdlib.PreludeModuleText
+            |> Option.map (fun moduleInfo -> moduleInfo.TypeFacets)
+            |> Option.defaultValue Map.empty
+
+        let moduleFacets =
+            surfaceIndex
+            |> Map.tryFind moduleName
+            |> Option.map (fun moduleInfo -> moduleInfo.TypeFacets)
+            |> Option.defaultValue Map.empty
+
+        preludeFacets
+        |> Map.fold (fun state name info -> Map.add name info state) importedFacets
+        |> fun state -> moduleFacets |> Map.fold (fun current name info -> Map.add name info current) state
+
+    let private mergeVisibleModules (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
+        let importedModules =
+            surfaceIndex
+            |> Map.tryFind moduleName
+            |> Option.map (fun moduleInfo ->
+                moduleInfo.Imports
+                |> List.choose (fun spec ->
+                    match spec.Source, spec.Alias, spec.Selection with
+                    | Dotted _, Some alias, QualifiedOnly
+                    | Url _, Some alias, QualifiedOnly ->
+                        Some alias
+                    | Dotted moduleSegments, None, QualifiedOnly ->
+                        let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
+
+                        if surfaceIndex.ContainsKey importedModuleName then
+                            Some importedModuleName
+                        else
+                            None
+                    | _ ->
+                        None))
+            |> Option.defaultValue []
+            |> Set.ofList
+
+        Set.add moduleName importedModules
+
     let private mergeVisibleRecordTypes (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
         let importedRecordTypes =
             importedModuleInfos surfaceIndex moduleName
             |> List.fold (fun state (spec, importedModule) ->
                 importedModule.RecordTypes
                 |> Map.fold (fun current name info ->
-                    if selectionImportsExportedName importedModule.ExportedTypes itemImportsTypeName spec.Selection name then
-                        Map.add name info current
-                    else
-                        current) state) Map.empty
+                    match selectionImportedName importedModule.ExportedTypes itemImportsTypeName spec.Selection name with
+                    | Some localName -> Map.add localName info current
+                    | None -> current) state) Map.empty
 
         let moduleRecordTypes =
             surfaceIndex
@@ -1106,10 +1700,9 @@ module SurfaceElaboration =
             |> List.fold (fun state (spec, importedModule) ->
                 importedModule.Traits
                 |> Map.fold (fun current name info ->
-                    if selectionImportsExportedName importedModule.ExportedTraits itemImportsTraitName spec.Selection name then
-                        Map.add name info current
-                    else
-                        current) state) Map.empty
+                    match selectionImportedName importedModule.ExportedTraits itemImportsTraitName spec.Selection name with
+                    | Some localName -> Map.add localName info current
+                    | None -> current) state) Map.empty
 
         let preludeTraits =
             surfaceIndex
@@ -1133,7 +1726,8 @@ module SurfaceElaboration =
             |> List.collect (fun (spec, importedModule) ->
                 importedModule.Instances
                 |> List.filter (fun instanceInfo ->
-                    selectionImportsExportedName importedModule.ExportedTraits itemImportsTraitName spec.Selection instanceInfo.TraitName))
+                    selectionImportedName importedModule.ExportedTraits itemImportsTraitName spec.Selection instanceInfo.TraitName
+                    |> Option.isSome))
 
         let moduleInstances =
             surfaceIndex
@@ -1142,6 +1736,26 @@ module SurfaceElaboration =
             |> Option.defaultValue []
 
         importedInstances @ moduleInstances
+
+    let private buildStaticObjectAliasesForModule
+        (environment: BindingLoweringEnvironment)
+        (declarations: TopLevelDeclaration list)
+        =
+        declarations
+        |> List.fold (fun aliases declaration ->
+            match declaration with
+            | LetDeclaration definition when definition.Name.IsSome && definition.Body.IsSome ->
+                let aliasEnvironment =
+                    { environment with
+                        VisibleStaticObjects = aliases }
+
+                match tryResolveStaticObject aliasEnvironment definition.Body.Value with
+                | Some staticObject ->
+                    Map.add definition.Name.Value staticObject aliases
+                | None ->
+                    aliases
+            | _ ->
+                aliases) Map.empty
 
     let private normalizeTypeAliases (aliases: Map<string, TypeAliasInfo>) =
         let rec loop visited typeExpr =
@@ -1278,6 +1892,26 @@ module SurfaceElaboration =
             true
         | _ ->
             false
+
+    let private isReifiedStaticObjectType
+        (aliases: Map<string, TypeAliasInfo>)
+        typeExpr
+        =
+        let rec loop current =
+            match normalizeTypeAliases aliases current with
+            | TypeName([ "Type" ], [])
+            | TypeName([ "Constraint" ], [])
+            | TypeName([ "Quantity" ], [])
+            | TypeName([ "Region" ], [])
+            | TypeName([ "RecRow" ], [])
+            | TypeName([ "Label" ], []) ->
+                true
+            | TypeArrow(_, _, resultType) ->
+                loop resultType
+            | _ ->
+                false
+
+        loop typeExpr
 
     let private tryUnifyVisibleTypes
         (aliases: Map<string, TypeAliasInfo>)
@@ -2022,6 +2656,56 @@ module SurfaceElaboration =
         | _ ->
             None
 
+    let private constructorResultBelongsToType
+        (environment: BindingLoweringEnvironment)
+        (typeObject: StaticObjectInfo)
+        (constructorInfo: BindingSchemeInfo)
+        =
+        match typeObject.ObjectKind, typeObject.NameSegments with
+        | StaticTypeObject, _ ->
+            let _, resultType = TypeSignatures.schemeParts constructorInfo.Scheme
+
+            match normalizeTypeAliases environment.VisibleTypeAliases resultType with
+            | TypeName(resultName, _) ->
+                match List.tryLast resultName, List.tryLast typeObject.NameSegments with
+                | Some resultTypeName, Some objectTypeName ->
+                    String.Equals(resultTypeName, objectTypeName, StringComparison.Ordinal)
+                | _ ->
+                    false
+            | _ ->
+                false
+        | _ ->
+            false
+
+    let private tryResolveStaticConstructor
+        (environment: BindingLoweringEnvironment)
+        receiverExpression
+        memberName
+        =
+        tryResolveStaticObject environment receiverExpression
+        |> Option.bind (fun typeObject ->
+            environment.VisibleConstructors
+            |> Map.tryFind memberName
+            |> Option.filter (constructorResultBelongsToType environment typeObject))
+
+    let private tryInferStaticConstructorCall
+        (environment: BindingLoweringEnvironment)
+        (freshCounter: int ref)
+        (inferArgumentType: SurfaceExpression -> TypeExpr option)
+        receiverExpression
+        memberName
+        arguments
+        =
+        tryResolveStaticConstructor environment receiverExpression memberName
+        |> Option.bind (fun constructorInfo ->
+            tryPrepareVisibleBindingCall
+                environment
+                freshCounter
+                constructorInfo
+                inferArgumentType
+                arguments
+            |> Option.map (fun preparedCall -> preparedCall.ResultType))
+
 
     let rec private inferValidationExpressionType
         (environment: BindingLoweringEnvironment)
@@ -2035,39 +2719,64 @@ module SurfaceElaboration =
         | Name [ "True" ]
         | Name [ "False" ] ->
             Some boolType
+        | KindQualifiedName _ ->
+            tryResolveScopedStaticObject environment expression
+            |> Option.bind (fun staticObject -> staticObject.Scheme)
+            |> Option.map (fun scheme -> scheme.Body)
         | Name(root :: path) ->
-            localTypes
-            |> Map.tryFind root
-            |> Option.orElseWith (fun () ->
-                environment.VisibleBindings
+            let ordinaryResolution =
+                localTypes
                 |> Map.tryFind root
-                |> Option.bind (fun bindingInfo ->
-                    if List.isEmpty path then
-                        tryPrepareVisibleBindingCall
-                            environment
-                            freshCounter
-                            bindingInfo
-                            (inferValidationExpressionType environment freshCounter localTypes)
-                            []
-                        |> Option.map (fun preparedCall -> preparedCall.ResultType)
-                        |> Option.orElseWith (fun () -> instantiateVisibleBindingResultType environment freshCounter root)
-                    else
-                        instantiateVisibleBindingResultType environment freshCounter root))
-            |> Option.orElseWith (fun () ->
-                environment.VisibleConstructors
-                |> Map.tryFind root
-                |> Option.bind (fun constructorInfo ->
-                    if List.isEmpty path then
-                        tryPrepareVisibleBindingCall
-                            environment
-                            freshCounter
-                            constructorInfo
-                            (inferValidationExpressionType environment freshCounter localTypes)
-                            []
-                        |> Option.map (fun preparedCall -> preparedCall.ResultType)
-                    else
-                        None))
-            |> Option.bind (fun rootType -> tryProjectVisibleRecordType environment.VisibleTypeAliases rootType path)
+                |> Option.orElseWith (fun () ->
+                    environment.VisibleBindings
+                    |> Map.tryFind root
+                    |> Option.bind (fun bindingInfo ->
+                        if List.isEmpty path then
+                            tryPrepareVisibleBindingCall
+                                environment
+                                freshCounter
+                                bindingInfo
+                                (inferValidationExpressionType environment freshCounter localTypes)
+                                []
+                            |> Option.map (fun preparedCall -> preparedCall.ResultType)
+                            |> Option.orElseWith (fun () -> instantiateVisibleBindingResultType environment freshCounter root)
+                        else
+                            instantiateVisibleBindingResultType environment freshCounter root))
+                |> Option.orElseWith (fun () ->
+                    environment.VisibleConstructors
+                    |> Map.tryFind root
+                    |> Option.bind (fun constructorInfo ->
+                        if List.isEmpty path then
+                            tryPrepareVisibleBindingCall
+                                environment
+                                freshCounter
+                                constructorInfo
+                                (inferValidationExpressionType environment freshCounter localTypes)
+                                []
+                            |> Option.map (fun preparedCall -> preparedCall.ResultType)
+                        else
+                            None))
+                |> Option.orElseWith (fun () ->
+                    tryResolveScopedStaticObject environment (Name [ root ])
+                    |> Option.bind (fun staticObject ->
+                        if List.isEmpty path then
+                            staticObject.Scheme |> Option.map (fun scheme -> scheme.Body)
+                        else
+                            None))
+                |> Option.bind (fun rootType -> tryProjectVisibleRecordType environment.VisibleTypeAliases rootType path)
+
+            match path with
+            | [ memberName ] ->
+                tryInferStaticConstructorCall
+                    environment
+                    freshCounter
+                    (inferValidationExpressionType environment freshCounter localTypes)
+                    (Name [ root ])
+                    memberName
+                    []
+                |> Option.orElse ordinaryResolution
+            | _ ->
+                ordinaryResolution
         | Name [] ->
             None
         | LocalLet(binding, value, body) ->
@@ -2081,7 +2790,17 @@ module SurfaceElaboration =
                 | None ->
                     localTypes
 
-            inferValidationExpressionType environment freshCounter nextLocals body
+            let bodyForInference =
+                match bindingNames, tryResolveScopedStaticObject environment value with
+                | [ aliasName ], Some staticObject ->
+                    rewriteStaticObjectAliasUse aliasName staticObject body
+                | _ ->
+                    body
+
+            inferValidationExpressionType environment freshCounter nextLocals bodyForInference
+        | LocalScopedEffect(name, body) ->
+            withScopedEffectName name (fun () ->
+                inferValidationExpressionType environment freshCounter localTypes body)
         | Lambda(parameters, body) ->
             let parameterTypes =
                 parameters
@@ -2168,6 +2887,14 @@ module SurfaceElaboration =
             None
         | InoutArgument inner ->
             inferValidationExpressionType environment freshCounter localTypes inner
+        | Apply(Name [ receiverName; memberName ], arguments) ->
+            tryInferStaticConstructorCall
+                environment
+                freshCounter
+                (inferValidationExpressionType environment freshCounter localTypes)
+                (Name [ receiverName ])
+                memberName
+                arguments
         | Apply(Name [ calleeName ], arguments) ->
             environment.VisibleBindings
             |> Map.tryFind calleeName
@@ -2616,6 +3343,8 @@ module SurfaceElaboration =
                     | LocalLet(_, value, body) ->
                         yield! loop value
                         yield! loop body
+                    | LocalScopedEffect(_, body) ->
+                        yield! loop body
                     | Lambda(_, body) ->
                         yield! loop body
                     | IfThenElse(condition, whenTrue, whenFalse) ->
@@ -2690,6 +3419,7 @@ module SurfaceElaboration =
                             | StringInterpolation inner -> yield! loop inner
                             | StringText _ -> ()
                     | Literal _
+                    | KindQualifiedName _
                     | Name _ ->
                         ()
                 }
@@ -2994,6 +3724,24 @@ module SurfaceElaboration =
                 None
 
         let validateExpectedBody locals body =
+            let dropDefinitionParameters typeExpr =
+                let rec loop remaining current =
+                    if remaining <= 0 then
+                        current
+                    else
+                        match current with
+                        | TypeArrow(_, _, resultType) -> loop (remaining - 1) resultType
+                        | _ -> current
+
+                loop definition.Parameters.Length typeExpr
+
+            let expectedBodyType =
+                definition.ReturnTypeTokens
+                |> Option.bind TypeSignatures.parseType
+                |> Option.orElseWith (fun () ->
+                    scheme
+                    |> Option.map (fun scheme -> dropDefinitionParameters scheme.Body))
+
             let directSignatureLiteralDiagnostic =
                 match body, definition.ReturnTypeTokens |> Option.bind tryRecordInfoFromTypeTokens with
                 | RecordLiteral _, Some recordInfo when recordInfoHasOpaqueMembers recordInfo ->
@@ -3013,6 +3761,7 @@ module SurfaceElaboration =
                         | _ ->
                             nested
                     | LocalLet(_, value, nestedBody) -> loop value @ loop nestedBody
+                    | LocalScopedEffect(_, nestedBody) -> loop nestedBody
                     | Lambda(_, nestedBody) -> loop nestedBody
                     | IfThenElse(condition, whenTrue, whenFalse) -> loop condition @ loop whenTrue @ loop whenFalse
                     | Match(scrutinee, cases) ->
@@ -3039,6 +3788,7 @@ module SurfaceElaboration =
                             | StringInterpolation inner -> loop inner
                             | StringText _ -> [])
                     | Literal _
+                    | KindQualifiedName _
                     | Name _
                     | Do _ -> []
 
@@ -3079,15 +3829,18 @@ module SurfaceElaboration =
                 | _ ->
                     []
 
-            let expectedUnionDiagnostics =
-                let expectedType =
-                    definition.ReturnTypeTokens
-                    |> Option.bind TypeSignatures.parseType
-                    |> Option.orElseWith (fun () -> scheme |> Option.map (fun scheme -> scheme.Body))
+            let staticObjectResultDiagnostics =
+                match expectedBodyType, inferValidationExpressionType environment freshCounter locals body with
+                | Some expectedType, Some actualType
+                    when isReifiedStaticObjectType environment.VisibleTypeAliases actualType
+                         && not (expectedTypeAccepts locals Map.empty expectedType actualType) ->
+                    expectedTypeDiagnostics locals Map.empty "Definition body" expectedType body
+                | _ ->
+                    []
 
-                match expectedType with
-                | Some expectedType
-                    when typeContainsUnion expectedType ->
+            let expectedUnionDiagnostics =
+                match expectedBodyType with
+                | Some expectedType when typeContainsUnion expectedType ->
                     expectedTypeDiagnostics locals Map.empty "Definition body" expectedType body
                 | _ ->
                     []
@@ -3096,6 +3849,7 @@ module SurfaceElaboration =
             @ sealAscriptionDiagnostics
             @ opaqueUnfoldingDiagnostics
             @ projectionTypeMismatchDiagnostics
+            @ staticObjectResultDiagnostics
             @ expectedUnionDiagnostics
 
         let applicationExpectedArgumentDiagnostics locals refinements (bindingInfo: BindingSchemeInfo) arguments =
@@ -3222,6 +3976,19 @@ module SurfaceElaboration =
             match expression with
             | Literal _ ->
                 []
+            | KindQualifiedName(kind, nameSegments) ->
+                match tryResolveScopedStaticObject environment expression with
+                | Some _ ->
+                    []
+                | None ->
+                    let kindText = kindSelectorText kind
+                    let nameText = SyntaxFacts.moduleNameToText nameSegments
+
+                    [
+                        makeDiagnostic
+                            DiagnosticCode.StaticObjectUnresolved
+                            $"No {kindText} static object named '{nameText}' is visible."
+                    ]
             | Name(root :: fieldName :: _) ->
                 let missingFieldDiagnostics =
                     match tryReceiverProjection environment locals root fieldName with
@@ -3267,6 +4034,11 @@ module SurfaceElaboration =
                             rewrite nestedValue,
                             if shadowsAlias then nestedBody else rewrite nestedBody
                         )
+                    | LocalScopedEffect(name, nestedBody) ->
+                        if String.Equals(name, aliasName, StringComparison.Ordinal) then
+                            expression
+                        else
+                            LocalScopedEffect(name, rewrite nestedBody)
                     | Lambda(parameters, nestedBody) ->
                         if parameters |> List.exists (fun parameter -> String.Equals(parameter.Name, aliasName, StringComparison.Ordinal)) then
                             expression
@@ -3318,6 +4090,7 @@ module SurfaceElaboration =
                                 | StringInterpolation inner -> StringInterpolation(rewrite inner))
                         )
                     | Literal _
+                    | KindQualifiedName _
                     | Name _ ->
                         expression
 
@@ -3333,6 +4106,8 @@ module SurfaceElaboration =
                         body
 
                 recurse value @ validateExpression nextLocals refinements bodyForValidation
+            | LocalScopedEffect(name, body) ->
+                withScopedEffectName name (fun () -> validateExpression locals refinements body)
             | Lambda(parameters, body) ->
                 let nextLocals =
                     parameters
@@ -3686,6 +4461,8 @@ module SurfaceElaboration =
                 markerDiagnostics @ recurse inner
             | LocalLet(_, value, body) ->
                 recurse value @ recurse body
+            | LocalScopedEffect(_, body) ->
+                recurse body
             | Lambda(_, body) ->
                 validateInoutPlacement false body
             | IfThenElse(condition, whenTrue, whenFalse) ->
@@ -3725,6 +4502,7 @@ module SurfaceElaboration =
                     | StringText _ -> []
                     | StringInterpolation inner -> recurse inner)
             | Literal _
+            | KindQualifiedName _
             | Name _ ->
                 []
 
@@ -3895,6 +4673,8 @@ module SurfaceElaboration =
                     | _ -> shadowedAliases
 
                 valueDiagnostics @ validateProjectionDescriptorApplications bodyAliases body
+            | LocalScopedEffect(_, body) ->
+                recurse body
             | Lambda(parameters, body) ->
                 let bodyAliases =
                     parameters
@@ -3937,6 +4717,7 @@ module SurfaceElaboration =
                     | StringText _ -> []
                     | StringInterpolation inner -> recurse inner)
             | Literal _
+            | KindQualifiedName _
             | Name _ ->
                 []
 
@@ -4023,9 +4804,12 @@ module SurfaceElaboration =
                   Location = None
                   RelatedLocations = [] }
 
-            let environment =
+            let baseEnvironment =
                 { CurrentModuleName = moduleName
                   VisibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleName
+                  VisibleTypeFacets = mergeVisibleTypeFacets surfaceIndex moduleName
+                  VisibleStaticObjects = Map.empty
+                  VisibleModules = mergeVisibleModules surfaceIndex moduleName
                   VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleName
                   VisibleBindings = mergeVisibleBindings surfaceIndex moduleName
                   VisibleConstructors = mergeVisibleConstructors surfaceIndex moduleName
@@ -4033,6 +4817,10 @@ module SurfaceElaboration =
                   VisibleTraits = mergeVisibleTraits surfaceIndex moduleName
                   VisibleInstances = visibleInstances surfaceIndex moduleName
                   ConstrainedMembers = Map.empty }
+
+            let environment =
+                { baseEnvironment with
+                    VisibleStaticObjects = buildStaticObjectAliasesForModule baseEnvironment frontendModule.Declarations }
 
             let validateProjectionDeclaration (declaration: ProjectionDeclaration) =
                 let placeBinders =
@@ -4200,45 +4988,12 @@ module SurfaceElaboration =
             | Name [ "True" ]
             | Name [ "False" ] ->
                 Some boolType
+            | KindQualifiedName _ ->
+                tryResolveScopedStaticObject environment expression
+                |> Option.bind (fun staticObject -> staticObject.Scheme)
+                |> Option.map (fun scheme -> scheme.Body)
             | Name(root :: path) ->
-                match path with
-                | [ memberName ] ->
-                    tryReceiverProjection environment localTypes root memberName
-                    |> Option.map (fun projectionInfo -> projectionInfo.ReturnType)
-                    |> Option.orElseWith (fun () ->
-                        localTypes
-                        |> Map.tryFind root
-                        |> Option.orElseWith (fun () ->
-                            environment.VisibleBindings
-                            |> Map.tryFind root
-                            |> Option.bind (fun bindingInfo ->
-                                if List.isEmpty path then
-                                    tryPrepareVisibleBindingCall
-                                        environment
-                                        freshCounter
-                                        bindingInfo
-                                        (inferExpressionType localTypes)
-                                        []
-                                    |> Option.map (fun preparedCall -> preparedCall.ResultType)
-                                    |> Option.orElseWith (fun () -> instantiateVisibleBindingResultType environment freshCounter root)
-                                else
-                                    None))
-                        |> Option.orElseWith (fun () ->
-                            environment.VisibleConstructors
-                            |> Map.tryFind root
-                            |> Option.bind (fun constructorInfo ->
-                                if List.isEmpty path then
-                                    tryPrepareVisibleBindingCall
-                                        environment
-                                        freshCounter
-                                        constructorInfo
-                                        (inferExpressionType localTypes)
-                                        []
-                                    |> Option.map (fun preparedCall -> preparedCall.ResultType)
-                                else
-                                    None))
-                        |> Option.bind (fun rootType -> tryProjectVisibleRecordType environment.VisibleTypeAliases rootType path))
-                | _ ->
+                let ordinaryResolution =
                     localTypes
                     |> Map.tryFind root
                     |> Option.orElseWith (fun () ->
@@ -4270,7 +5025,30 @@ module SurfaceElaboration =
                                 |> Option.map (fun preparedCall -> preparedCall.ResultType)
                             else
                                 None))
+                    |> Option.orElseWith (fun () ->
+                        tryResolveScopedStaticObject environment (Name [ root ])
+                        |> Option.bind (fun staticObject ->
+                            if List.isEmpty path then
+                                staticObject.Scheme |> Option.map (fun scheme -> scheme.Body)
+                            else
+                                None))
                     |> Option.bind (fun rootType -> tryProjectVisibleRecordType environment.VisibleTypeAliases rootType path)
+
+                match path with
+                | [ memberName ] ->
+                    tryReceiverProjection environment localTypes root memberName
+                    |> Option.map (fun projectionInfo -> projectionInfo.ReturnType)
+                    |> Option.orElseWith (fun () ->
+                        tryInferStaticConstructorCall
+                            environment
+                            freshCounter
+                            (inferExpressionType localTypes)
+                            (Name [ root ])
+                            memberName
+                            [])
+                    |> Option.orElse ordinaryResolution
+                | _ ->
+                    ordinaryResolution
             | Name [] ->
                 None
             | LocalLet(binding, value, body) ->
@@ -4283,7 +5061,16 @@ module SurfaceElaboration =
                         |> List.fold (fun state name -> Map.add name valueType state) localTypes
                     | None -> localTypes
 
-                inferExpressionType nextLocals body
+                let bodyForInference =
+                    match bindingNames, tryResolveScopedStaticObject environment value with
+                    | [ aliasName ], Some staticObject ->
+                        rewriteStaticObjectAliasUse aliasName staticObject body
+                    | _ ->
+                        body
+
+                inferExpressionType nextLocals bodyForInference
+            | LocalScopedEffect(name, body) ->
+                withScopedEffectName name (fun () -> inferExpressionType localTypes body)
             | Lambda(lambdaParameters, lambdaBody) ->
                 let parameterTypes =
                     lambdaParameters
@@ -4365,6 +5152,14 @@ module SurfaceElaboration =
                 None
             | InoutArgument inner ->
                 inferExpressionType localTypes inner
+            | Apply(Name [ receiverName; memberName ], arguments) ->
+                tryInferStaticConstructorCall
+                    environment
+                    freshCounter
+                    (inferExpressionType localTypes)
+                    (Name [ receiverName ])
+                    memberName
+                    arguments
             | Apply(Name [ calleeName ], arguments) ->
                 environment.VisibleBindings
                 |> Map.tryFind calleeName
@@ -4652,6 +5447,8 @@ module SurfaceElaboration =
                     current
                 | LocalLet(binding, value, body) ->
                     LocalLet(binding, loop value, loop body)
+                | LocalScopedEffect(name, body) ->
+                    LocalScopedEffect(name, loop body)
                 | Lambda(parameters, body) ->
                     Lambda(parameters, loop body)
                 | IfThenElse(condition, whenTrue, whenFalse) ->
@@ -4728,7 +5525,8 @@ module SurfaceElaboration =
                             | StringText text -> StringText text
                             | StringInterpolation inner -> StringInterpolation(loop inner))
                     )
-                | Literal _ ->
+                | Literal _
+                | KindQualifiedName _ ->
                     current
 
             loop expression
@@ -5285,6 +6083,19 @@ module SurfaceElaboration =
                 | None ->
                     KCoreWildcardPattern
 
+        and lowerStaticObject staticObject =
+            let kind =
+                match staticObject.ObjectKind with
+                | StaticTypeObject -> KCoreTypeObject
+                | StaticTraitObject -> KCoreTraitObject
+                | StaticEffectLabelObject -> KCoreEffectLabelObject
+                | StaticModuleObject -> KCoreModuleObject
+
+            KCoreStaticObject
+                { ObjectKind = kind
+                  Name = staticObject.NameSegments
+                  TypeText = staticObjectTypeText staticObject }
+
         and lowerExpression localTypes expression =
             let lowerArguments arguments =
                 arguments |> List.map (lowerExpression localTypes)
@@ -5298,6 +6109,10 @@ module SurfaceElaboration =
             match expression with
             | Literal literal ->
                 KCoreLiteral literal
+            | KindQualifiedName _ ->
+                tryResolveScopedStaticObject environment expression
+                |> Option.map lowerStaticObject
+                |> Option.defaultValue (KCoreLiteral LiteralValue.Unit)
             | Name [ bindingName ]
                 when not (Map.containsKey bindingName localTypes)
                      && environment.VisibleBindings.ContainsKey(bindingName) ->
@@ -5309,12 +6124,23 @@ module SurfaceElaboration =
                     KCoreApply(KCoreName [ bindingName ], lowerPreparedArguments preparedCall.Arguments)
                 | _ ->
                     KCoreName [ bindingName ]
-            | Name [ receiverName; memberName ] ->
-                match tryReceiverProjection environment localTypes receiverName memberName with
-                | Some _ ->
-                    KCoreApply(KCoreName [ memberName ], [ lowerExpression localTypes (Name [ receiverName ]) ])
+            | Name [ bindingName ]
+                when not (Map.containsKey bindingName localTypes) ->
+                match tryResolveScopedStaticObject environment expression with
+                | Some staticObject ->
+                    lowerStaticObject staticObject
                 | None ->
-                    KCoreName [ receiverName; memberName ]
+                    KCoreName [ bindingName ]
+            | Name [ receiverName; memberName ] ->
+                match tryResolveStaticConstructor environment (Name [ receiverName ]) memberName with
+                | Some _ ->
+                    KCoreName [ memberName ]
+                | None ->
+                    match tryReceiverProjection environment localTypes receiverName memberName with
+                    | Some _ ->
+                        KCoreApply(KCoreName [ memberName ], [ lowerExpression localTypes (Name [ receiverName ]) ])
+                    | None ->
+                        KCoreName [ receiverName; memberName ]
             | Name segments ->
                 KCoreName segments
             | LocalLet(binding, value, body) ->
@@ -5328,7 +6154,14 @@ module SurfaceElaboration =
                     | None -> localTypes
 
                 let loweredValue = lowerExpression localTypes value
-                let loweredBody = lowerExpression nextLocals body
+                let bodyForLowering =
+                    match bindingNames, tryResolveScopedStaticObject environment value with
+                    | [ aliasName ], Some staticObject ->
+                        rewriteStaticObjectAliasUse aliasName staticObject body
+                    | _ ->
+                        body
+
+                let loweredBody = lowerExpression nextLocals bodyForLowering
 
                 match bindingNames with
                 | [] ->
@@ -5347,6 +6180,8 @@ module SurfaceElaboration =
                         loweredValue,
                         KCoreLet(bindingName, KCoreName [ "__pattern" ], loweredBindings)
                     )
+            | LocalScopedEffect(name, body) ->
+                withScopedEffectName name (fun () -> lowerExpression localTypes body)
             | Lambda(lambdaParameters, lambdaBody) ->
                 let lambdaLocals =
                     lambdaParameters
@@ -5562,6 +6397,21 @@ module SurfaceElaboration =
                 KCoreLiteral LiteralValue.Unit
             | InoutArgument inner ->
                 lowerExpression localTypes inner
+            | Apply(Name [ receiverName; memberName ], arguments) ->
+                match tryResolveStaticConstructor environment (Name [ receiverName ]) memberName with
+                | Some _ ->
+                    KCoreApply(KCoreName [ memberName ], lowerArguments arguments)
+                | None ->
+                    match tryResolveTraitMemberProjection environment localTypes [ receiverName; memberName ] with
+                    | Some(traitInfo, resolvedMemberName, _, resolvedReceiverName) ->
+                        KCoreTraitCall(
+                            traitInfo.Name,
+                            resolvedMemberName,
+                            lowerExpression localTypes (Name [ resolvedReceiverName ]),
+                            lowerArguments arguments
+                        )
+                    | None ->
+                        KCoreApply(lowerExpression localTypes (Name [ receiverName; memberName ]), lowerArguments arguments)
             | Apply(Name nameSegments, arguments) ->
                 match tryResolveTraitMemberProjection environment localTypes nameSegments with
                 | Some(traitInfo, memberName, _, receiverName) ->
@@ -5800,6 +6650,8 @@ module SurfaceElaboration =
                 KCoreDictionaryValue(moduleName, instanceInfo.TraitName, instanceInfo.InstanceKey)
             | KCoreName _ ->
                 expression
+            | KCoreStaticObject _ ->
+                expression
             | KCoreLambda(parameters, body) ->
                 KCoreLambda(parameters, substituteSelfDictionary body)
             | KCoreIfThenElse(condition, whenTrue, whenFalse) ->
@@ -5874,11 +6726,15 @@ module SurfaceElaboration =
         let visibleBindings = mergeVisibleBindings surfaceIndex moduleName
         let visibleTraits = mergeVisibleTraits surfaceIndex moduleName
         let visibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleName
+        let visibleTypeFacets = mergeVisibleTypeFacets surfaceIndex moduleName
         let visibleProjections = mergeVisibleProjections surfaceIndex moduleName
 
         let environment =
             { CurrentModuleName = moduleName
               VisibleTypeAliases = visibleTypeAliases
+              VisibleTypeFacets = visibleTypeFacets
+              VisibleStaticObjects = Map.empty
+              VisibleModules = mergeVisibleModules surfaceIndex moduleName
               VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleName
               VisibleBindings = visibleBindings
               VisibleConstructors = mergeVisibleConstructors surfaceIndex moduleName
@@ -5976,9 +6832,12 @@ module SurfaceElaboration =
             let moduleInfo = surfaceIndex[moduleName]
             let recordLayouts = ref Map.empty
 
-            let environment =
+            let baseEnvironment =
                 { CurrentModuleName = moduleName
                   VisibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleName
+                  VisibleTypeFacets = mergeVisibleTypeFacets surfaceIndex moduleName
+                  VisibleStaticObjects = Map.empty
+                  VisibleModules = mergeVisibleModules surfaceIndex moduleName
                   VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleName
                   VisibleBindings = mergeVisibleBindings surfaceIndex moduleName
                   VisibleConstructors = mergeVisibleConstructors surfaceIndex moduleName
@@ -5986,6 +6845,10 @@ module SurfaceElaboration =
                   VisibleTraits = mergeVisibleTraits surfaceIndex moduleName
                   VisibleInstances = visibleInstances surfaceIndex moduleName
                   ConstrainedMembers = Map.empty }
+
+            let environment =
+                { baseEnvironment with
+                    VisibleStaticObjects = buildStaticObjectAliasesForModule baseEnvironment frontendModule.Declarations }
 
             let declarations =
                 frontendModule.Declarations

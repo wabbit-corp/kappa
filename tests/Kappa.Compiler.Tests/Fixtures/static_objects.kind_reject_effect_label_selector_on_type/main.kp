@@ -1,0 +1,7 @@
+@PrivateByDefault module main
+
+data Token : Type =
+    Token
+
+bad : EffLabel
+let bad = effect-label Token

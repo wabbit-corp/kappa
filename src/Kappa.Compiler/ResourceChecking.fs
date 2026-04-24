@@ -445,6 +445,7 @@ module ResourceChecking =
         seq {
             match expression with
             | Literal _ -> ()
+            | KindQualifiedName _ -> ()
             | Name(root :: _) -> yield root
             | Name [] -> ()
             | LocalLet(binding, value, body) ->
@@ -457,6 +458,8 @@ module ResourceChecking =
                 for name in expressionNames body do
                     if not (Set.contains name boundNames) then
                         yield name
+            | LocalScopedEffect(_, body) ->
+                yield! expressionNames body
             | Lambda(parameters, body) ->
                 let parameterNames =
                     parameters
@@ -1201,6 +1204,8 @@ module ResourceChecking =
                 |> List.fold (fun current name -> Map.remove name current) aliases
 
             LocalLet(binding, rewrite value, rewriteProjectionDescriptorApplications bodyAliases body)
+        | LocalScopedEffect(name, body) ->
+            LocalScopedEffect(name, rewrite body)
         | Lambda(parameters, body) ->
             let bodyAliases =
                 parameters
@@ -1314,6 +1319,7 @@ module ResourceChecking =
 
             PrefixedString(prefix, parts)
         | Literal _
+        | KindQualifiedName _
         | Name _ ->
             expression
 
@@ -2350,6 +2356,8 @@ module ResourceChecking =
                 valueCount
             else
                 valueCount + recurse body
+        | LocalScopedEffect(_, body) ->
+            recurse body
         | Lambda(parameters, body) ->
             if parameters |> List.exists (fun parameter -> String.Equals(parameter.Name, aliasName, StringComparison.Ordinal)) then
                 0
@@ -2391,6 +2399,7 @@ module ResourceChecking =
                 | StringInterpolation inner -> recurse inner
                 | StringText _ -> 0)
         | Literal _
+        | KindQualifiedName _
         | Name _ ->
             0
 
@@ -2757,6 +2766,8 @@ module ResourceChecking =
             not (Set.isEmpty (capturedRegions state expression))
         | LocalLet(_, _, body) ->
             expressionResultMayCarryBorrow state body
+        | LocalScopedEffect(_, body) ->
+            expressionResultMayCarryBorrow state body
         | IfThenElse(_, whenTrue, whenFalse) ->
             expressionResultMayCarryBorrow state whenTrue || expressionResultMayCarryBorrow state whenFalse
         | Match(_, cases) ->
@@ -2783,6 +2794,7 @@ module ResourceChecking =
         | Elvis _ ->
             not (Set.isEmpty (capturedRegions state expression))
         | Literal _
+        | KindQualifiedName _
         | Name _
         | RecordUpdate _
         | Apply _
@@ -2798,6 +2810,8 @@ module ResourceChecking =
         | Name [ name ] ->
             true
         | LocalLet(_, _, body) ->
+            expressionMayCarryEscapingBorrow body
+        | LocalScopedEffect(_, body) ->
             expressionMayCarryEscapingBorrow body
         | IfThenElse(_, whenTrue, whenFalse) ->
             expressionMayCarryEscapingBorrow whenTrue || expressionMayCarryEscapingBorrow whenFalse
@@ -2826,6 +2840,7 @@ module ResourceChecking =
         | NamedApplicationBlock fields ->
             fields |> List.exists (fun field -> expressionMayCarryEscapingBorrow field.Value)
         | Literal _
+        | KindQualifiedName _
         | Name _
         | RecordUpdate _
         | Apply _
@@ -2847,6 +2862,8 @@ module ResourceChecking =
             | _ ->
                 state
         | LocalLet(_, _, body) ->
+            checkResultEscapeAtBoundary allowedRegions document body state
+        | LocalScopedEffect(_, body) ->
             checkResultEscapeAtBoundary allowedRegions document body state
         | IfThenElse(_, whenTrue, whenFalse) ->
             state
@@ -2889,6 +2906,7 @@ module ResourceChecking =
         | Apply(Name [ "captureBorrow" ], [ _ ]) ->
             checkEscapeAgainstAllowed allowedRegions document expression state
         | Literal _
+        | KindQualifiedName _
         | Name _
         | Apply _
         | Binary _
@@ -3218,8 +3236,11 @@ module ResourceChecking =
     and private checkExpression projectionSummaries (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state expression =
         match expression with
         | Literal _
+        | KindQualifiedName _
         | Name [ _ ] ->
             state
+        | LocalScopedEffect(_, body) ->
+            checkExpression projectionSummaries document signatures state body
         | Name(root :: path) ->
             validatePlaceAccess
                 document

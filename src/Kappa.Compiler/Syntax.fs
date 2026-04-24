@@ -209,7 +209,8 @@ type ImportItemModifier =
 type ImportItem =
     { Modifiers: ImportItemModifier list
       Namespace: ImportNamespace option
-      Name: string }
+      Name: string
+      Alias: string option }
 
 type ImportSelection =
     | QualifiedOnly
@@ -272,10 +273,18 @@ type FixityDeclaration =
       Precedence: int
       OperatorName: string }
 
+type KindSelector =
+    | TypeKind
+    | TraitKind
+    | EffectLabelKind
+    | ModuleKind
+
 type SurfaceExpression =
     | Literal of LiteralValue
     | Name of string list
+    | KindQualifiedName of KindSelector * string list
     | LocalLet of binding: SurfaceBindPattern * value: SurfaceExpression * body: SurfaceExpression
+    | LocalScopedEffect of name: string * body: SurfaceExpression
     | Lambda of Parameter list * SurfaceExpression
     | IfThenElse of SurfaceExpression * SurfaceExpression * SurfaceExpression
     | Match of SurfaceExpression * SurfaceMatchCase list

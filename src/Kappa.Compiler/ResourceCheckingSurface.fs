@@ -28,6 +28,7 @@ module internal ResourceCheckingSurface =
         seq {
             match expression with
             | Literal _ -> ()
+            | KindQualifiedName _ -> ()
             | Name(root :: _) -> yield root
             | Name [] -> ()
             | LocalLet(binding, value, body) ->
@@ -40,6 +41,8 @@ module internal ResourceCheckingSurface =
                 for name in expressionNames body do
                     if not (Set.contains name boundNames) then
                         yield name
+            | LocalScopedEffect(_, body) ->
+                yield! expressionNames body
             | Lambda(parameters, body) ->
                 let parameterNames =
                     parameters

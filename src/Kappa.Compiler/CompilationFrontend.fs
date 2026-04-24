@@ -215,9 +215,14 @@ module internal CompilationFrontend =
             @ [ item.Namespace |> Option.map importNamespaceText |> Option.defaultValue ""
                 item.Name ]
 
-        parts
-        |> List.filter (String.IsNullOrWhiteSpace >> not)
-        |> String.concat " "
+        let baseText =
+            parts
+            |> List.filter (String.IsNullOrWhiteSpace >> not)
+            |> String.concat " "
+
+        match item.Alias with
+        | Some alias -> $"{baseText} as {alias}"
+        | None -> baseText
 
     let importSpecText (spec: ImportSpec) =
         let sourceText = moduleSpecifierText spec.Source
@@ -295,8 +300,19 @@ module internal CompilationFrontend =
             | Literal(LiteralValue.Character value) -> $"'{value}'"
             | Literal LiteralValue.Unit -> "()"
             | Name segments -> String.concat "." segments
+            | KindQualifiedName(kind, segments) ->
+                let kindText =
+                    match kind with
+                    | TypeKind -> "type"
+                    | TraitKind -> "trait"
+                    | EffectLabelKind -> "effect-label"
+                    | ModuleKind -> "module"
+
+                kindText + " " + String.concat "." segments
             | LocalLet(binding, value, body) ->
                 $"(let {renderBindPattern binding} {render value} {render body})"
+            | LocalScopedEffect(name, body) ->
+                $"(scoped-effect {name} {render body})"
             | Lambda(parameters, body) ->
                 let names = parameters |> List.map (fun parameter -> parameter.Name) |> String.concat " "
                 $"(lambda ({names}) {render body})"
@@ -521,6 +537,101 @@ module internal CompilationFrontend =
               Constructors = Set.empty
               UnqualifiedBindings = Set.empty }
 
+        let itemExportsTermName (item: ImportItem) =
+            item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Term
+
+        let itemExportsTypeName (item: ImportItem) =
+            item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Type
+
+        let itemExportsTraitName (item: ImportItem) =
+            item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Trait
+
+        let itemExportsConstructorName (item: ImportItem) =
+            item.Namespace = Some ImportNamespace.Constructor
+
+        let exportedItemLocalName (item: ImportItem) =
+            item.Alias |> Option.defaultValue item.Name
+
+        let addUnqualifiedBinding name inventory =
+            { inventory with
+                UnqualifiedBindings = Set.add name inventory.UnqualifiedBindings }
+
+        let addReexportedItem importedInventory inventory (item: ImportItem) =
+            let exportedName = item.Name
+            let localName = exportedItemLocalName item
+            let hasType = Set.contains exportedName importedInventory.Types
+            let hasTerm = Set.contains exportedName importedInventory.Terms
+            let hasTrait = Set.contains exportedName importedInventory.Traits
+            let hasConstructor = Set.contains exportedName importedInventory.Constructors
+            let hasSameSpellingConstructor = hasType && hasConstructor
+
+            let inventory =
+                if hasTerm && itemExportsTermName item then
+                    { inventory with Terms = Set.add localName inventory.Terms }
+                    |> addUnqualifiedBinding localName
+                else
+                    inventory
+
+            let inventory =
+                if hasType && itemExportsTypeName item then
+                    { inventory with Types = Set.add localName inventory.Types }
+                    |> addUnqualifiedBinding localName
+                else
+                    inventory
+
+            let inventory =
+                if hasTrait && itemExportsTraitName item then
+                    { inventory with Traits = Set.add localName inventory.Traits }
+                    |> addUnqualifiedBinding localName
+                else
+                    inventory
+
+            let inventory =
+                if hasConstructor && itemExportsConstructorName item then
+                    { inventory with Constructors = Set.add localName inventory.Constructors }
+                else
+                    inventory
+
+            if hasSameSpellingConstructor && item.Namespace.IsNone then
+                { inventory with Constructors = Set.add localName inventory.Constructors }
+                |> addUnqualifiedBinding localName
+            else
+                inventory
+
+        let addWildcardReexports importedInventory inventory excludedNames =
+            let notExcluded name = not (List.contains name excludedNames)
+            let sameSpellingConstructors =
+                Set.intersect importedInventory.Constructors importedInventory.UnqualifiedBindings
+                |> Set.filter notExcluded
+
+            { inventory with
+                Terms = Set.union inventory.Terms (Set.filter notExcluded importedInventory.Terms)
+                Types = Set.union inventory.Types (Set.filter notExcluded importedInventory.Types)
+                Traits = Set.union inventory.Traits (Set.filter notExcluded importedInventory.Traits)
+                Constructors = Set.union inventory.Constructors sameSpellingConstructors
+                UnqualifiedBindings = Set.union inventory.UnqualifiedBindings (Set.filter notExcluded importedInventory.UnqualifiedBindings) }
+
+        let applyReexportSpec inventories inventory (spec: ImportSpec) =
+            match spec.Source with
+            | Url _ ->
+                inventory
+            | Dotted moduleName ->
+                let importedModuleName = SyntaxFacts.moduleNameToText moduleName
+
+                match Map.tryFind importedModuleName inventories with
+                | None ->
+                    inventory
+                | Some importedInventory ->
+                    match spec.Selection with
+                    | QualifiedOnly ->
+                        inventory
+                    | Items items ->
+                        items |> List.fold (addReexportedItem importedInventory) inventory
+                    | All ->
+                        addWildcardReexports importedInventory inventory []
+                    | AllExcept excludedNames ->
+                        addWildcardReexports importedInventory inventory excludedNames
+
         let addDocument inventory (document: ParsedDocument) =
             document.Syntax.Declarations
             |> List.fold (fun current declaration ->
@@ -570,18 +681,22 @@ module internal CompilationFrontend =
                 | _ ->
                     current) inventory
 
-        documents
-        |> List.choose (fun document ->
+        let groupedDocuments =
+            documents
+            |> List.choose (fun document ->
             document.ModuleName
             |> Option.map (fun moduleName -> SyntaxFacts.moduleNameToText moduleName, document))
-        |> List.groupBy fst
-        |> List.map (fun (moduleNameText, entries) ->
-            let syntaxInventory =
-                entries
-                |> List.map snd
-                |> List.fold addDocument emptyInventory
+            |> List.groupBy fst
+            |> List.map (fun (moduleNameText, entries) -> moduleNameText, entries |> List.map snd)
+            |> Map.ofList
 
-            let inventory =
+        let syntaxInventories =
+            groupedDocuments
+            |> Map.map (fun moduleNameText moduleDocuments ->
+                let syntaxInventory =
+                    moduleDocuments
+                    |> List.fold addDocument emptyInventory
+
                 if String.Equals(moduleNameText, Stdlib.PreludeModuleText, StringComparison.Ordinal) then
                     let contract = IntrinsicCatalog.bundledPreludeExpectContract ()
 
@@ -596,10 +711,29 @@ module internal CompilationFrontend =
                             |> Set.union contract.TraitNames
                             |> Set.union (Set.ofList Stdlib.FixedPreludeConstructors) }
                 else
-                    syntaxInventory
+                    syntaxInventory)
 
-            moduleNameText, inventory)
-        |> Map.ofList
+        let rec saturate inventories =
+            let nextInventories =
+                groupedDocuments
+                |> Map.map (fun moduleNameText moduleDocuments ->
+                    let directInventory = Map.find moduleNameText syntaxInventories
+
+                    moduleDocuments
+                    |> List.collect (fun document ->
+                        document.Syntax.Declarations
+                        |> List.choose (function
+                            | ImportDeclaration (true, specs) -> Some specs
+                            | _ -> None)
+                        |> List.concat)
+                    |> List.fold (applyReexportSpec inventories) directInventory)
+
+            if nextInventories = inventories then
+                inventories
+            else
+                saturate nextInventories
+
+        saturate syntaxInventories
 
     let private importItemExists inventory (item: ImportItem) =
         match item.Namespace with
