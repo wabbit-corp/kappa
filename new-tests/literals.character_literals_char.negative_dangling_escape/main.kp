@@ -1,0 +1,9 @@
+module main
+
+-- Source issue: KT-461
+-- Spec: §4.4
+bad : Char
+let bad = '\'
+
+--! assertErrorCount 1
+--! assertDiagnosticMatch Char|character|escape|unterminated|backslash

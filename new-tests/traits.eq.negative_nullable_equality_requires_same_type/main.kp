@@ -1,0 +1,18 @@
+module main
+
+-- Source issues: KT-242, KT-246
+-- Spec: §12.1, §12.2
+data C : Type =
+    C
+
+data D : Type =
+    D
+
+badOptionalAndPlain : Bool
+let badOptionalAndPlain = Some 7 == 7
+
+badDifferentOptionalTypes : Bool
+let badDifferentOptionalTypes = Some C == Some D
+
+--! assertErrorCount 2
+--! assertDiagnosticMatch Eq|same type|Option|Int|C|D

@@ -1,0 +1,13 @@
+module main
+
+-- Source issue: KT-351
+-- Spec: §6.3.1, §8.7.5
+badLoopValue : UIO Unit
+let badLoopValue =
+    block
+        while True do
+            pure ()
+        pure ()
+
+--! assertErrorCount 1
+--! assertDiagnosticCodes E_PARSE

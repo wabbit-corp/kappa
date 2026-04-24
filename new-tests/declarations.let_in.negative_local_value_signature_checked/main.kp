@@ -1,0 +1,13 @@
+module main
+
+-- Source issue: KT-352
+-- Spec: §6.3.1, §7.2
+badLocalValue : Unit -> Unit
+let badLocalValue () =
+    block
+        f : Int -> Unit
+        let f = \() -> ()
+        ()
+
+--! assertErrorCount 1
+--! assertDiagnosticMatch Int|Unit|lambda|function

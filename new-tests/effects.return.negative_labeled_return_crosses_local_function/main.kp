@@ -1,0 +1,16 @@
+module main
+
+-- Source issue: KT-413
+-- Spec: §8.4, §8.4.1, §6.3.1
+outer : Unit -> IO Bool
+let outer () = do
+    inner : Unit -> IO Unit
+    let inner () = do
+        return@outer True
+        return ()
+
+    !(inner ())
+    return False
+
+--! assertErrorCount 1
+--! assertDiagnosticMatch return|local function|boundary|outer

@@ -1,0 +1,5 @@
+--! requires capability incremental
+--! requires capability pipelineTrace
+--! assertStepNoErrors 0
+--! assertStepNoErrors 1
+--! assertStepTraceCount 1 reuse interface >= 1

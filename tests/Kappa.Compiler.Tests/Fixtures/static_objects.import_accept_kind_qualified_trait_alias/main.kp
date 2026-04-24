@@ -1,0 +1,9 @@
+@PrivateByDefault module main
+
+import lib.classes.(trait Size as Sized)
+
+C : Type -> Constraint
+let C = trait Sized
+
+use : Dict (C String) -> Dict (Sized String)
+let use d = d

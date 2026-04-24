@@ -1,0 +1,6 @@
+@PrivateByDefault module main
+
+trait Marker (a : Type)
+
+useConstraintDescriptor : (C : Constraint) -> Dict C -> Dict C
+let useConstraintDescriptor C d = d

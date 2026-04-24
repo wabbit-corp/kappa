@@ -1,0 +1,10 @@
+module main
+
+-- Source tests: github-ziglang-zig/tests/test/c_abi/main.zig
+-- Spec: §2.7
+-- `std.ffi.c` is not part of the implicit prelude; native ABI spelling types must be imported.
+keepCInt : CInt -> CInt
+let keepCInt value = value
+
+--! assertErrorCount 1
+--! assertDiagnosticMatch CInt|scope|unknown|unresolved

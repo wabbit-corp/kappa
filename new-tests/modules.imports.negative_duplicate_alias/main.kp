@@ -1,0 +1,11 @@
+module main
+
+-- Source issue: KT-195
+-- Spec: §2.3.1, §2.8.1
+import left.one as dup
+import right.two as dup
+
+let result = 0
+
+--! assertErrorCount 1
+--! assertDiagnosticMatch import|duplicate|dup|ambig

@@ -1,0 +1,15 @@
+module main
+
+-- Source issue: ghc#366
+-- Spec: §7.5.1, §7.5.1A, §11.2
+data Tag (a : Type) : Type =
+    IsBool : Tag Bool
+    IsInt : Tag Int
+
+choose : Tag Bool -> Bool
+let choose x =
+    match x
+      case IsBool -> True
+
+--! assertNoErrors
+--! assertType choose Tag Bool -> Bool

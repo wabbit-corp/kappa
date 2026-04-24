@@ -1,0 +1,12 @@
+module main
+
+import std.prelude.(type Option)
+
+type Box a = (value : a)
+
+-- Source family: Kotlin safe-call issue family
+-- Spec: §7.1.1.2
+getValue x = x?.value
+
+--! assertErrorCount 1
+--! assertDiagnosticMatch Safe-navigation|result type|wrap or flatten|annotate

@@ -1,0 +1,10 @@
+module main
+
+-- Source issues: mojo#215, mojo#317, mojo#514
+-- Spec: §2.7B, §17.7.7A
+-- Bridge contracts are explicit runtime evidence, not ambient erased type information.
+keepContract : BridgeContract sig -> BridgeContract sig
+let keepContract contract = contract
+
+--! assertErrorCount 1
+--! assertDiagnosticMatch BridgeContract|scope|unknown|unresolved

@@ -1,0 +1,35 @@
+module main
+
+data Payload : Type =
+    Box (value : Int)
+    Empty
+
+-- Source issue: KT-368
+-- Spec: §7.4.1, §7.4.2, §7.5.1
+testThenBind : Payload -> Int
+let testThenBind p =
+    if p is Box, let Box value = p then
+        p.value + value
+    else 0
+
+bindThenTest : Payload -> Int
+let bindThenTest p =
+    if let Box value = p, p is Box then
+        p.value + value
+    else 0
+
+fromTestThenBind : Int
+let fromTestThenBind = testThenBind (Box 21)
+
+fromBindThenTest : Int
+let fromBindThenTest = bindThenTest (Box 21)
+
+fromEmpty : Int
+let fromEmpty = bindThenTest Empty
+
+--! assertNoErrors
+--! assertType testThenBind Payload -> Int
+--! assertType bindThenTest Payload -> Int
+--! assertEval fromTestThenBind 42
+--! assertEval fromBindThenTest 42
+--! assertEval fromEmpty 0

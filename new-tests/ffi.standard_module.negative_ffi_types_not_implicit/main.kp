@@ -1,0 +1,10 @@
+module main
+
+-- Source issues: zig#317, gleam#43
+-- Spec: §2.7
+-- `std.ffi` is not implicitly imported; raw boundary vocabulary must be requested explicitly.
+keepPtr : RawPtr -> RawPtr
+let keepPtr p = p
+
+--! assertErrorCount 1
+--! assertDiagnosticMatch RawPtr|scope|unknown|unresolved

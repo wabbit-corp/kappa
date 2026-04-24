@@ -1,0 +1,13 @@
+module lib
+
+data Box (a : Type) : Type =
+    Box (value : a)
+
+F : Type -> Type
+let F = type Box
+
+mk : Int -> F Int
+let mk n = F.Box n
+
+runtime : Int
+let runtime = 1

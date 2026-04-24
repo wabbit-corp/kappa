@@ -1,0 +1,16 @@
+module main
+
+-- Source issue: KT-411
+-- Spec: §8.4, §8.4.1, §7.2
+invoke : (Unit -> IO Int) -> IO Int
+let invoke action = action ()
+
+main : IO Int
+let main =
+    invoke (exit@\() -> do
+        return@exit 42)
+
+--! assertNoErrors
+--! assertType invoke (Unit -> IO Int) -> IO Int
+--! assertType main IO Int
+--! assertExecute main 42

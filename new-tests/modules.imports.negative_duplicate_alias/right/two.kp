@@ -1,0 +1,4 @@
+module right.two
+
+answer : Int
+let answer = 2

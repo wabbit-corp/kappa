@@ -1,0 +1,20 @@
+module main
+
+-- Source issue: lean4#793
+-- Spec: §5.5.1, §5.5.9, §5.8.2, §5.8.4
+packedType : Syntax Type
+let packedType = '{ (@a : Type, value : this.a) }
+
+type Packed = $(packedType)
+
+packed : Packed
+let packed = (@a = Int, value = 42)
+
+result : Int
+let result = packed.value
+
+--! assertNoErrors
+--! assertType packedType Syntax Type
+--! assertType packed Packed
+--! assertType result Int
+--! assertEval result 42

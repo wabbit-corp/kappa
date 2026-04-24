@@ -1,0 +1,10 @@
+@PrivateByDefault module main
+
+trait Pretty (a : Type) =
+    pretty : a -> String
+
+C : Type -> Constraint
+let C = trait Pretty
+
+use : Dict (C Int) -> Dict (Pretty Int)
+let use d = d

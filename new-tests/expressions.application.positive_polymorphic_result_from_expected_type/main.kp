@@ -1,0 +1,34 @@
+module main
+
+-- Source issue: KT-353
+-- Spec: §7.1.3.1, §7.2, §7.4.2
+data Seed : Type =
+
+gen : forall (a : Type). Seed -> a
+let gen seed =
+    match seed
+      case impossible
+
+unitFromFunctionResult : Seed -> Unit
+let unitFromFunctionResult seed = gen seed
+
+unitFromLambdaResult : Seed -> Unit -> Unit
+let unitFromLambdaResult seed =
+    \() -> gen seed
+
+unitFromBranchJoin : Seed -> Bool -> Unit
+let unitFromBranchJoin seed flag =
+    if flag then
+        gen seed
+    else
+        ()
+
+intFromLambdaResult : Seed -> Unit -> Int
+let intFromLambdaResult seed =
+    \() -> gen seed
+
+--! assertNoErrors
+--! assertType unitFromFunctionResult Seed -> Unit
+--! assertType unitFromLambdaResult Seed -> Unit -> Unit
+--! assertType unitFromBranchJoin Seed -> Bool -> Unit
+--! assertType intFromLambdaResult Seed -> Unit -> Int

@@ -1,0 +1,11 @@
+module main
+
+-- Source issue: KT-144
+-- Spec: §8.4, §8.4.1, §6.1
+bad : Unit -> (Unit -> IO Int)
+let bad () =
+    \() -> do
+        return 0
+
+--! assertErrorCount 1
+--! assertDiagnosticMatch return|lambda|label

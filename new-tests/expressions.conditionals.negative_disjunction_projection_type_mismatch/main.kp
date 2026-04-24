@@ -1,0 +1,15 @@
+module main
+
+data Payload : Type =
+    IntBox (value : Int)
+    TextBox (value : String)
+    Empty
+
+-- Source issue: KT-104
+-- Spec: §7.4.2, §2.8.3
+readValue : Payload -> Int
+let readValue p =
+    if p is IntBox || p is TextBox then p.value else 0
+
+--! assertErrorCount 1
+--! assertDiagnosticCodes E_TYPE_EQUALITY_MISMATCH

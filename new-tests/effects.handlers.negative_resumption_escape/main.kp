@@ -1,0 +1,30 @@
+module main
+
+-- Source issue: koka#649
+-- Spec: §8.1.8, §14.8.5, §17.3.1.7
+data Token : Type =
+    Token
+
+consume : (1 token : Token) -> Unit
+let consume token = ()
+
+runWithLinear : (1 token : Token) -> IO Unit
+let runWithLinear token = do
+    scoped effect Choice =
+        ω choose : Unit -> Unit
+
+    _ <-
+        handle Choice do
+            Choice.choose ()
+            consume token
+        with
+            case return x -> pure x
+            case choose () k -> pure ()
+
+    pure ()
+
+main : IO Unit
+let main = do
+    runWithLinear Token
+
+--! assertErrorCount 1

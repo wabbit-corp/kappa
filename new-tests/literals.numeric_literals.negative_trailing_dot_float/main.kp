@@ -1,0 +1,9 @@
+module main
+
+-- Source issue: KT-483
+-- Spec: §4.1.2, §4.1.6, §7.1.1
+bad : Float
+let bad = 1.
+
+--! assertErrorCount 1
+--! assertDiagnosticMatch numeric|literal|dot|member|parse

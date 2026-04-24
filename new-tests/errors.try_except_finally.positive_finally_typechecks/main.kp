@@ -1,0 +1,15 @@
+module main
+
+-- Source issue: KT-496
+-- Spec: §9.2
+data Problem : Type =
+    Problem
+
+withFinally : IO Problem Int
+let withFinally =
+    try
+        pure 1
+      finally -> pure ()
+
+--! assertNoErrors
+--! assertType withFinally IO Problem Int

@@ -1,0 +1,15 @@
+module main
+
+-- Source issue: KT-500
+-- Spec: §9.2
+data Problem : Type =
+    Missing
+
+userId : IO Problem Int
+let userId =
+    try
+        raise Missing
+      except Missing -> pure (-1)
+
+--! assertNoErrors
+--! assertType userId IO Problem Int

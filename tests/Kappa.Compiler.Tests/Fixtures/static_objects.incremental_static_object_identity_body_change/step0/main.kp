@@ -1,0 +1,6 @@
+@PrivateByDefault module main
+
+import lib.(type Box, F, mk, runtime)
+
+ok : F Int
+let ok = mk runtime

@@ -1,0 +1,4 @@
+module left.one
+
+answer : Int
+let answer = 1

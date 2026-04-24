@@ -1,0 +1,10 @@
+module main
+
+-- Source issues: mojo#122, gleam#1190
+-- Spec: §2.7A, §5.10
+-- Dynamic boundary vocabulary is explicit and is not imported through the prelude.
+keepDyn : Dyn -> Dyn
+let keepDyn value = value
+
+--! assertErrorCount 1
+--! assertDiagnosticMatch Dyn|scope|unknown|unresolved
