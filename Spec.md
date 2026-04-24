@@ -8042,6 +8042,46 @@ Semantics:
 * When either side wins, the losing side is interrupted.
 * `race` completes only after the losing side has terminated and all of its finalizers have run.
 
+<!-- effects.monadic_core.fiber_local_state -->
+#### 8.1.3C Fiber-local state
+
+Kappa provides fiber-local dynamically scoped state:
+
+```kappa
+newFiberRef :
+    forall (a : Type).
+    a -> UIO (FiberRef a)
+
+getFiberRef :
+    forall (a : Type).
+    FiberRef a -> UIO a
+
+setFiberRef :
+    forall (a : Type).
+    FiberRef a -> a -> UIO Unit
+
+locallyFiberRef :
+    forall (e : Type) (a : Type) (b : Type).
+    FiberRef a -> a -> IO e b -> IO e b
+```
+
+Semantics:
+
+* Each fiber carries a logically private mapping from `FiberRef` cells to current values.
+* `newFiberRef init` creates a new fiber-local cell with initial value `init`.
+* `getFiberRef ref` reads the current fiber's value for `ref`.
+* `setFiberRef ref value` updates only the current fiber's value for `ref`.
+* When a child fiber is created by `fork`, `forkDaemon`, or `forkIn`, the child inherits a snapshot copy of the parent
+  fiber's currently visible `FiberRef` values.
+* After fork, parent and child updates are independent.
+* `locallyFiberRef ref value body` installs `value` for the dynamic extent of `body` and restores the previous value
+  on:
+  * normal completion,
+  * typed failure,
+  * interruption, and
+  * defect.
+* The restoration performed by `locallyFiberRef` behaves as a masked finalizer.
+
 <!-- effects.monadic_core.interruption_masking -->
 #### 8.1.4 Interruption and masking
 
