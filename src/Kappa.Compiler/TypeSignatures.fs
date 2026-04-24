@@ -857,6 +857,16 @@ module TypeSignatures =
             substitution
             |> Map.tryFind name
             |> Option.defaultValue typeExpr
+        | TypeName([ name ], arguments) ->
+            let substitutedArguments = arguments |> List.map (applySubstitution substitution)
+
+            match substitution |> Map.tryFind name with
+            | Some(TypeName(replacementName, replacementArguments)) ->
+                TypeName(replacementName, replacementArguments @ substitutedArguments)
+            | Some replacement when List.isEmpty substitutedArguments ->
+                replacement
+            | _ ->
+                TypeName([ name ], substitutedArguments)
         | TypeName(name, arguments) ->
             TypeName(name, arguments |> List.map (applySubstitution substitution))
         | TypeArrow(quantity, parameterType, resultType) ->

@@ -196,7 +196,7 @@ let private fixtureImportedNamesForSelection importNamespace selection (inventor
                 | None -> inInventory item.Name
 
             if namespaceMatches && inInventory item.Name then
-                Some item.Name
+                Some(item.Alias |> Option.defaultValue item.Name)
             else
                 None)
         |> Set.ofList
@@ -465,9 +465,14 @@ let private importItemText (item: ImportItem) =
         @ [ item.Namespace |> Option.map importNamespaceText |> Option.defaultValue ""
             item.Name ]
 
-    parts
-    |> List.filter (String.IsNullOrWhiteSpace >> not)
-    |> String.concat " "
+    let baseText =
+        parts
+        |> List.filter (String.IsNullOrWhiteSpace >> not)
+        |> String.concat " "
+
+    match item.Alias with
+    | Some alias -> $"{baseText} as {alias}"
+    | None -> baseText
 
 let private importSpecText (spec: ImportSpec) =
     let sourceText = moduleSpecifierText spec.Source

@@ -123,7 +123,7 @@ module internal CompilationTrace =
                             (Some verification.KRuntimeIR)
                         traceStep
                             PipelineTraceEvent.LowerKBackendIR
-                            PipelineTraceSubject.KRuntimeIRUnit
+                            PipelineTraceSubject.Module
                             $"lower {label} to KBackendIR"
                             "KRuntimeIR"
                             "KBackendIR"

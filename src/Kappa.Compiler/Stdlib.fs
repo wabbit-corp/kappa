@@ -43,7 +43,8 @@ module Stdlib =
                 |> List.map (fun name ->
                     { Modifiers = []
                       Namespace = Some ImportNamespace.Constructor
-                      Name = name })
+                      Name = name
+                      Alias = None })
             ) }
 
     let BundledPreludeVirtualPath =

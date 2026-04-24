@@ -26,6 +26,7 @@ type KpFixtureConfiguration =
       PackageMode: bool
       BackendProfile: string
       AllowUnsafeConsume: bool
+      RequiredCapabilities: Set<string>
       EntryPoint: string option
       RunArgs: string list
       StdinFile: string option
@@ -37,6 +38,7 @@ module KpFixtureConfiguration =
           PackageMode = true
           BackendProfile = "interpreter"
           AllowUnsafeConsume = false
+          RequiredCapabilities = Set.empty
           EntryPoint = None
           RunArgs = []
           StdinFile = None

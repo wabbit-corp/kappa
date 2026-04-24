@@ -292,9 +292,18 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
             | _ ->
                 None
 
+        let name = this.ConsumeTermBindingName("Expected an imported name.")
+
+        let alias =
+            if this.TryConsumeKeyword(Keyword.As).IsSome then
+                Some(this.ConsumeName("Expected an alias after 'as'."))
+            else
+                None
+
         { Modifiers = List.ofSeq modifiers
           Namespace = importNamespace
-          Name = this.ConsumeTermBindingName("Expected an imported name.") }
+          Name = name
+          Alias = alias }
 
     member private this.ParseImportItems() =
         let items = ResizeArray<ImportItem>()
@@ -626,7 +635,6 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
                        Tokens = lineTokens
                        Arity = arity }: DataConstructor))
             else
-                diagnostics.AddError(DiagnosticCode.ParseError, "Expected '=' in the data declaration.", source.GetLocation(this.Current.Span))
                 []
 
         DataDeclarationNode

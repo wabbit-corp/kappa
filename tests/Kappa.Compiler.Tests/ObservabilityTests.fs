@@ -62,6 +62,7 @@ let rec private containsCoreSyntheticRecordApply expression =
             | KCoreStringInterpolation inner -> containsCoreSyntheticRecordApply inner)
     | KCoreLiteral _
     | KCoreName _
+    | KCoreStaticObject _
     | KCoreDictionaryValue _ ->
         false
 
@@ -154,7 +155,7 @@ let ``workspace exposes spec-shaped checkpoints and portable pipeline trace even
     Assert.Contains(("advancePhase", "module", "KFrontIR.MODAL_SOLVE", "KFrontIR.CHECKERS"), trace)
     Assert.Contains(("lowerKCore", "module", "KFrontIR.CORE_LOWERING", "KCore"), trace)
     Assert.Contains(("lowerKRuntimeIR", "KCoreUnit", "KCore", "KRuntimeIR"), trace)
-    Assert.Contains(("lowerKBackendIR", "KRuntimeIRUnit", "KRuntimeIR", "KBackendIR"), trace)
+    Assert.Contains(("lowerKBackendIR", "module", "KRuntimeIR", "KBackendIR"), trace)
 
 [<Fact>]
 let ``analysis session records effective build inputs for query identity`` () =

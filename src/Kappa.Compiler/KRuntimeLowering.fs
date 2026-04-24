@@ -135,6 +135,8 @@ module internal KRuntimeLowering =
         match expression with
         | KCoreLiteral literal ->
             KRuntimeLiteral literal
+        | KCoreStaticObject _ ->
+            KRuntimeLiteral LiteralValue.Unit
         | KCoreName segments ->
             KRuntimeName segments
         | KCoreLambda(parameters, body) ->
@@ -156,6 +158,8 @@ module internal KRuntimeLowering =
             )
         | KCoreExecute inner ->
             KRuntimeExecute(lowerKRuntimeExpression inner)
+        | KCoreLet(_, KCoreStaticObject _, body) ->
+            lowerKRuntimeExpression body
         | KCoreLet(bindingName, value, body) ->
             KRuntimeLet(bindingName, lowerKRuntimeExpression value, lowerKRuntimeExpression body)
         | KCoreDoScope(scopeLabel, body) ->
@@ -288,6 +292,11 @@ module internal KRuntimeLowering =
             | _ ->
                 None)
 
+    let private isCompileTimeOnlyBindingBody body =
+        match body with
+        | Some(KCoreStaticObject _) -> true
+        | _ -> false
+
     let lowerKRuntimeModule (coreModule: KCoreModule) : KRuntimeModule =
         let moduleTraitArities =
             coreModule.Declarations
@@ -307,7 +316,7 @@ module internal KRuntimeLowering =
             coreModule.Declarations
             |> List.choose (fun declaration ->
                 match declaration.Binding with
-                | Some binding when binding.Name.IsSome ->
+                | Some binding when binding.Name.IsSome && not (isCompileTimeOnlyBindingBody binding.Body) ->
                     Some
                         { Name = binding.Name.Value
                           Parameters = binding.Parameters |> List.map lowerRuntimeParameter

@@ -11,6 +11,17 @@ type KCoreParameter =
     { Name: string
       TypeText: string option }
 
+type KCoreStaticObjectKind =
+    | KCoreTypeObject
+    | KCoreTraitObject
+    | KCoreEffectLabelObject
+    | KCoreModuleObject
+
+type KCoreStaticObject =
+    { ObjectKind: KCoreStaticObjectKind
+      Name: string list
+      TypeText: string option }
+
 type KCoreExitAction =
     | KCoreDeferred of KCoreExpression
     | KCoreRelease of resourceTypeText: string option * release: KCoreExpression * resource: KCoreExpression
@@ -18,6 +29,7 @@ type KCoreExitAction =
 and KCoreExpression =
     | KCoreLiteral of LiteralValue
     | KCoreName of string list
+    | KCoreStaticObject of KCoreStaticObject
     | KCoreLambda of KCoreParameter list * KCoreExpression
     | KCoreIfThenElse of KCoreExpression * KCoreExpression * KCoreExpression
     | KCoreMatch of KCoreExpression * KCoreMatchCase list

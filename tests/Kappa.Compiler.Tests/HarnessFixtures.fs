@@ -80,6 +80,14 @@ let private parseFixtureRelation (filePath: string) lineNumber (value: string) =
     | other ->
         invalidOp $"Unsupported fixture relation '{other}' ({filePath}:{lineNumber})."
 
+let private parseFixtureCapability (filePath: string) lineNumber (value: string) =
+    match value.Trim() with
+    | "pipelineTrace"
+    | "incremental" as capability ->
+        capability
+    | other ->
+        invalidOp $"Unsupported fixture capability '{other}' ({filePath}:{lineNumber})."
+
 let private parseDirectiveHeader (filePath: string) lineNumber (lineText: string) =
     let trimmed = lineText.Trim()
 
@@ -164,6 +172,7 @@ type KpFixtureDirective =
     | SetPackageMode of packageMode: bool * filePath: string * lineNumber: int
     | SetBackend of backendProfile: string * filePath: string * lineNumber: int
     | SetAllowUnsafeConsume of filePath: string * lineNumber: int
+    | RequireCapability of capability: string * filePath: string * lineNumber: int
     | SetEntry of entryPoint: string * filePath: string * lineNumber: int
     | SetRunArgs of runArgs: string list * filePath: string * lineNumber: int
     | SetStdinFile of relativePath: string * filePath: string * lineNumber: int
@@ -253,6 +262,15 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
         | "allow_unsafe_consume" ->
             ensureNoArguments ()
             Some(SetAllowUnsafeConsume(filePath, lineNumber))
+        | "requires" ->
+            let tokens =
+                directiveBody.Split([| ' '; '\t' |], StringSplitOptions.RemoveEmptyEntries)
+
+            match tokens with
+            | [| "capability"; capability |] ->
+                Some(RequireCapability(parseFixtureCapability filePath lineNumber capability, filePath, lineNumber))
+            | _ ->
+                invalidOp $"requires expects 'capability <name>' ({filePath}:{lineNumber})."
         | "entry" ->
             if String.IsNullOrWhiteSpace(directiveBody) then
                 invalidOp $"entry expects a qualified binding name ({filePath}:{lineNumber})."
@@ -528,6 +546,7 @@ type private KpFixtureConfigurationAccumulator =
       PackageMode: (bool * string * int) option
       BackendProfile: (string * string * int) option
       AllowUnsafeConsume: (bool * string * int) option
+      RequiredCapabilities: Set<string>
       EntryPoint: (string * string * int) option
       RunArgs: (string list * string * int) option
       StdinFile: (string * string * int) option
@@ -538,6 +557,7 @@ let private emptyFixtureConfigurationAccumulator =
       PackageMode = None
       BackendProfile = None
       AllowUnsafeConsume = None
+      RequiredCapabilities = Set.empty
       EntryPoint = None
       RunArgs = None
       StdinFile = None
@@ -583,6 +603,9 @@ let buildFixtureConfiguration (directives: KpFixtureDirective list) =
                                 "allowUnsafeConsume"
                                 state.AllowUnsafeConsume
                                 (true, filePath, lineNumber) }
+                | RequireCapability(capability, _, _) ->
+                    { state with
+                        RequiredCapabilities = Set.add capability state.RequiredCapabilities }
                 | SetEntry(entryPoint, filePath, lineNumber) ->
                     { state with
                         EntryPoint = mergeFixtureConfigurationValue "entry" state.EntryPoint (entryPoint, filePath, lineNumber) }
@@ -615,6 +638,7 @@ let buildFixtureConfiguration (directives: KpFixtureDirective list) =
                 accumulator.AllowUnsafeConsume
                 |> Option.map (fun (value, _, _) -> value)
                 |> Option.defaultValue KpFixtureConfiguration.defaultValue.AllowUnsafeConsume
+            RequiredCapabilities = accumulator.RequiredCapabilities
             EntryPoint = accumulator.EntryPoint |> Option.map (fun (value, _, _) -> value)
             RunArgs = accumulator.RunArgs |> Option.map (fun (value, _, _) -> value) |> Option.defaultValue []
             StdinFile = accumulator.StdinFile |> Option.map (fun (value, _, _) -> value)

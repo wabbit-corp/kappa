@@ -19,6 +19,7 @@
     <Compile Include="FixtureTests.fs" />
     <Compile Include="Tests.fs" />
     <Compile Include="CoreTests.fs" />
+    <Compile Include="FuzzballInspiredTests.fs" />
     <Compile Include="ObservabilityTests.fs" />
     <Compile Include="BackendTests.fs" />
     <Compile Include="IlBackendTests.fs" />

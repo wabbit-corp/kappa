@@ -43,6 +43,17 @@ module internal IrText =
         | KCoreLiteral(LiteralValue.Character value) -> $"'{value}'"
         | KCoreLiteral LiteralValue.Unit -> "()"
         | KCoreName segments -> String.concat "." segments
+        | KCoreStaticObject staticObject ->
+            let kindText =
+                match staticObject.ObjectKind with
+                | KCoreTypeObject -> "type-object"
+                | KCoreTraitObject -> "trait-object"
+                | KCoreEffectLabelObject -> "effect-label-object"
+                | KCoreModuleObject -> "module-object"
+
+            let nameText = String.concat "." staticObject.Name
+            let typeText = staticObject.TypeText |> Option.defaultValue "_"
+            $"({kindText} {nameText} : {typeText})"
         | KCoreLambda(parameters, body) ->
             let names = parameters |> List.map (fun parameter -> parameter.Name) |> String.concat " "
             $"(lambda ({names}) {kcoreExpressionText body})"
