@@ -12782,6 +12782,50 @@ Promises:
 * later completion attempts leave that stored `Exit` unchanged;
 * waiting on a completed promise returns immediately with the stored result.
 
+<!-- core_semantics.runtime_model.fiber_identities_labels_reachability_gc -->
+#### 14.8.3C Fiber identities, labels, handle reachability, and GC non-observability
+
+Fiber identity and labels:
+
+* every created fiber has a unique `FiberId` within one program execution;
+* the identity reported by the runtime for a fiber MUST agree with the values returned by `fiberId` and
+  `currentFiberId`;
+* `setFiberLabel` and `locallyFiberLabel` mutate only the current fiber's diagnostic label;
+* child fibers do not inherit labels implicitly;
+* labels are diagnostic metadata only and do not alter source-level computation semantics other than through designated
+  observability facilities.
+
+Structured interrupt metadata:
+
+* direct `interrupt` / `interruptFork` use interrupt tag `Requested`;
+* `shutdownScope`, and implicit structured child shutdown on supervision-scope exit, use interrupt tag
+  `ScopeShutdown`;
+* `timeout` uses interrupt tag `TimedOut` for the interrupted computation;
+* interruption of the losing branch of `race` uses interrupt tag `RaceLost`;
+* host- or runtime-originated interruption not attributable to a specific Kappa fiber uses interrupt tag `External`;
+* when a definite initiating Kappa fiber exists, that fiber's `FiberId` MUST be recorded in the `by` field of the
+  resulting `InterruptCause`;
+* otherwise the `by` field is `None`.
+
+Timer and race winner selection:
+
+* if completion of `io` and timer expiry become simultaneously observable for `timeout` with no source-level prior
+  winner, completion of `io` wins;
+* if both branches of `race` become simultaneously observable as completed with no source-level prior winner, the left
+  branch wins.
+
+Handle reachability and host GC:
+
+* dropping the last reachable ordinary handle to a live `Fiber` MUST NOT interrupt, await, daemonize, or otherwise
+  alter that fiber;
+* dropping the last reachable ordinary handle to a live `Scope` MUST NOT shut down that scope;
+* dropping the last reachable ordinary handle to a `Promise`, `Monitor`, `TVar`, or `FiberRef` MUST NOT by itself
+  complete, detach, cancel, wake, or otherwise change the behavior of the underlying runtime entity;
+* host garbage collection and host finalizers MAY reclaim unreachable runtime storage only when doing so is
+  observationally equivalent to continued existence;
+* source-level interruption, shutdown, release, wakeup, and finalization semantics MUST NOT depend on prompt host-GC
+  finalization.
+
 <!-- core_semantics.runtime_model.stm_runtime_obligations -->
 #### 14.8.4 STM runtime obligations
 
