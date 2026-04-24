@@ -6283,7 +6283,7 @@ Kappa is total by default.
 
 Normative rule:
 
-* A transparent definition may participate in definitional equality only if it is **termination-certified**.
+* A transparent definition may participate in definitional equality only if it is **conversion-reducible**.
 
 In this section, “definition” includes transparent term definitions, transparent type aliases, and any other
 transparent compile-time definitions whose bodies may be unfolded by δ-reduction.
@@ -6296,15 +6296,42 @@ Clarification:
 * Such runtime divergence MUST NOT by itself make any definition eligible for δ-reduction.
 
 <!-- declarations.totality.termination_certified_definitions -->
-#### 6.4.1 Termination-certified definitions
+#### 6.4.1 Total-certified and conversion-reducible definitions
 
-A definition is **termination-certified** iff one of the following holds:
+A definition is **termination-certified**, and therefore **total-certified**, iff one of the following holds:
 
 1. the termination checker accepts it directly under §§6.4.2, 6.4.3, and 6.4.4; or
 2. it was admitted via `assertTotal`, and the implementation later separately verifies its termination and records it as
    termination-certified.
 
-A definition accepted solely via `assertTotal` is **not** termination-certified by default.
+A definition accepted solely via `assertTotal` is not total-certified or conversion-reducible by default.
+
+A definition has two independent status bits:
+
+1. **total-certified.**
+   The definition is accepted as denoting a total value.
+
+2. **conversion-reducible.**
+   The definition may be unfolded by δ-reduction during definitional equality.
+
+Every conversion-reducible definition MUST be total-certified.
+Not every total-certified definition is conversion-reducible.
+
+A definition is conversion-reducible iff one of the following holds:
+
+1. It is non-recursive and transparent.
+2. It is structurally recursive under §6.4.2A and its defining equations reduce by ordinary β/ι/δ reduction without
+   exposing well-founded proof terms.
+3. It is accepted by semantic structural descent where the recursive call can be compiled to the same structural
+   eliminator as in case 2.
+4. It is accepted by a termination certificate that explicitly marks the definition as conversion-safe and whose
+   certificate checker validates a conversion-safe equation scheme.
+
+Definitions accepted only by general well-founded recursion, external ranking-function synthesis, SMT-backed proof, or
+user-supplied well-founded relation are total-certified but NOT conversion-reducible by default.
+
+For such definitions, the implementation MUST generate propositional unfolding lemmas, but MUST NOT use those lemmas as
+definitional equality.
 
 <!-- declarations.totality.portable_conformance_boundary -->
 #### 6.4.2 Portable conformance boundary
@@ -13074,11 +13101,11 @@ Definitional equality (also called conversion) is the equality relation used by 
 Definitional equality is the smallest congruence containing the following reductions (subject to opacity rules):
 
 * β-reduction: `(\(x : A) -> e) v  ↦  e[x := v]`
-* δ-reduction: unfolding of transparent **termination-certified** definitions and transparent type aliases whose bodies
-  are available and not marked opaque at the use site. Definitions accepted solely via `assertTotal` (§16.4) do not
-  unfold for definitional equality unless the implementation has separately verified them and recorded them as
-  termination-certified. Outside the defining module, opaque definitions and opaque type aliases do not unfold unless
-  the importing module has explicitly clarified them (§2.5.2).
+* δ-reduction: unfolding of transparent **conversion-reducible** definitions, including transparent type aliases, whose
+  bodies are available and not marked opaque at the use site. Definitions accepted solely via `assertTotal` (§16.4) do
+  not unfold for definitional equality unless the implementation has separately verified them and recorded them as
+  conversion-reducible. Outside the defining module, opaque definitions and opaque type aliases do not unfold unless the
+  importing module has explicitly clarified them (§2.5.2).
 * ι-reduction: reducing `match` on known constructors/literals.
 * η-equality (definitional):
     * Functions: `f ≡ (\(x : A) -> f x)` when `x` is not free in `f`.
@@ -13822,9 +13849,9 @@ The Hard Hash is computed on demand and cached, keyed by Easy Hash.
 It is computed by full normalization of the definition, including:
 
 * all Easy-Hash normalization steps,
-* complete δ-unfolding of transparent definitions reachable from the definition being normalized,
+* complete δ-unfolding of transparent conversion-reducible definitions reachable from the definition being normalized,
 * unfolding of `assertTotal` definitions only when the implementation has separately verified them and recorded them as
-  termination-certified (§16.4),
+  conversion-reducible (§6.4.1, §16.4),
 * respect for `opaque` and `private opaque` as defined from the perspective of the defining module: inside the defining
   module, local definitions are available normally (§2.5.2); when normalization reaches a definition imported from
   another module, it uses the transparency recorded in that imported definition's canonical artifact. A downstream
@@ -14092,13 +14119,13 @@ Meaning:
 
 Unfolding / definitional equality:
 
-* A definition accepted **solely** via `assertTotal` is **not** termination-certified by default and therefore does not
-  unfold for definitional equality (§6.4.1, §14.3) unless the implementation separately verifies its termination and
-  records it as termination-certified.
+* A definition accepted **solely** via `assertTotal` is **not** total-certified or conversion-reducible by default and
+  therefore does not unfold for definitional equality (§6.4.1, §14.3) unless the implementation separately verifies its
+  termination and records it as conversion-reducible.
 
   "Records it" is normative: under separate compilation, the module/interface artifact must carry (at minimum) a stable
-  bit indicating whether each transparent definition is termination-certified and therefore eligible for δ-reduction. If
-  that bit is absent, the definition must be treated as not termination-certified for unfolding purposes, even if a body
+  bit indicating whether each transparent definition is conversion-reducible and therefore eligible for δ-reduction. If
+  that bit is absent, the definition must be treated as not conversion-reducible for unfolding purposes, even if a body
   is present.
 
 Interaction with `decreases`:
@@ -14106,8 +14133,9 @@ Interaction with `decreases`:
 * An explicit `decreases` clause (§6.4.4) is the preferred fallback when inference under §6.4.2 is insufficient for a
   recursive definition.
 * If `assertTotal` is used anyway, the implementation MAY still attempt to verify termination (including using the
-  provided `decreases` measure). If verification succeeds, the definition may be recorded as termination-certified;
-  otherwise it remains ineligible for unfolding in definitional equality.
+  provided `decreases` measure). If verification succeeds, the definition may be recorded as total-certified and, only
+  when it satisfies §6.4.1's conversion-reducible criteria, as conversion-reducible; otherwise it remains ineligible for
+  unfolding in definitional equality.
 
 Gating:
 
@@ -14562,15 +14590,16 @@ A module interface artifact MUST record at least:
   exported signature, and any interface-visible foreign-call classification, calling-convention classification, or
   adapter-visible call-state-capture classification;
 * enough definitional content for exported transparent items to support downstream definitional equality;
-* for each exported transparent recursive definition, whether it is termination-certified and, if so, the termination
-  kind (`structural`, `well-founded`, `size-change`, or `verified-assertTotal`), together with either:
+* for each exported transparent definition, whether it is total-certified and whether it is conversion-reducible, and, if
+  total-certified, the termination kind (`structural`, `well-founded`, `size-change`, `non-recursive`, or
+  `verified-assertTotal`), together with either:
   * the canonical visible `decreases` measure, or
-  * an equivalent stable termination-certificate payload sufficient for downstream unfolding decisions, hashing, and
-    reproducible separate compilation;
+  * an equivalent stable termination-certificate payload sufficient for downstream totality decisions, unfolding
+    decisions, hashing, and reproducible separate compilation;
 * enough metadata to reconstruct the reified-module view of §2.8.5, including the kind-tagged exported-member surface
   and the opaque-vs-transparent classification needed for local qualified access and module-value projection.
 
-For imported definitions, ordinary downstream compilation MUST use the recorded termination-certification status from the
+For imported definitions, ordinary downstream compilation MUST use the recorded conversion-reducible status from the
 module interface artifact as the source of truth for δ-reduction eligibility. It MUST NOT require re-running
 termination inference on imported bodies in ordinary compilation mode.
 
@@ -14631,8 +14660,9 @@ At minimum, the canonical interface view MUST include:
 * exported signatures of types, traits, constructors, associated static members, effect interfaces, and effect
   operations, insofar as those entities are available to downstream code;
 * exported instance heads and any interface-visible coherence metadata;
-* for each exported transparent recursive definition, whether it is termination-certified, its termination kind, and
-  any canonical visible `decreases` clause or equivalent stable certificate summary recorded by the interface artifact;
+* for each exported transparent definition, whether it is total-certified, whether it is conversion-reducible, its
+  termination kind when total-certified, and any canonical visible `decreases` clause or equivalent stable certificate
+  summary recorded by the interface artifact;
 * deterministic rendered names or references for any escaped local nominal families needed to explain exported types,
   compile-time members, or transparent definitional content, together with enough information to recover their family
   identities and captured-argument applications under §17.3.4.1;
