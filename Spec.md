@@ -7385,6 +7385,13 @@ Grammar:
 ```text
 applicationArg  ::= expr
                   | '@' expr
+                  | namedApplicationBlock
+
+namedApplicationBlock ::= '{' namedApplicationItem (',' namedApplicationItem)* [','] '}'
+
+namedApplicationItem  ::= ident '=' expr
+                        | ident
+
 applicationExpr ::= atom applicationArg*
 ```
 
@@ -7394,6 +7401,19 @@ callee has no remaining implicit binder at that application site, the applicatio
 
 A maximal application site is the head expression of an `applicationExpr` together with its ordered `applicationArg*`
 after any enclosing dotted-form resolution has determined the actual callee and any inserted receiver argument.
+
+A `namedApplicationBlock` is not an ordinary record or map expression.
+
+It is recognized only as an application argument immediately following a callee expression in an application site.
+
+Examples:
+
+```kappa
+resize { image = img, width = 1024, height = 768 }
+connect { host = "db", port = 5432 }
+```
+
+Bare `{ ... }` remains governed by the ordinary expression grammar, including map literals and map comprehensions.
 
 <!-- expressions.application.dotted_forms -->
 #### 7.1.1 Dotted forms (`.` / `?.`): qualification, static members, projection, method sugar
@@ -7815,6 +7835,83 @@ do
 
 let angle2 = angle.{ (.degrees) = 90.0 }
 ```
+
+<!-- expressions.application.named_function_application -->
+#### 7.1.3C Named function application
+
+A named function application supplies explicit named binders of a callable by label.
+
+A maximal application site may contain at most one `namedApplicationBlock`.
+If present, the `namedApplicationBlock` must be the final explicit argument form in that maximal application site.
+
+A named function application is well-formed only when the callee is known to preserve named-call metadata.
+
+A value is known to preserve named-call metadata when it is:
+
+* a named function declaration with explicit named binders;
+* a lambda expression whose explicit binders have names;
+* a constructor value preserving constructor application metadata under §11.1.1;
+* a local binding whose right-hand side is known to preserve the same named-call metadata;
+* a record or package field projection whose stored value is known to preserve the same named-call metadata; or
+* an imported or exported value whose module interface records that metadata.
+
+Elaboration:
+
+Let the callee's remaining explicit named binders, after all preceding ordinary positional and explicit-implicit
+application arguments have been processed, be:
+
+```text
+(f1 : A1) -> (f2 : A2[f1]) -> ... -> (fn : An[f1, ..., f(n-1)]) -> R
+```
+
+For a named function application:
+
+```kappa
+callee { fields... }
+```
+
+elaboration proceeds in binder order.
+
+For each explicit binder `fi`:
+
+1. If the application supplies `fi = ei`, elaborate `ei` against `Ai` under the actual earlier arguments.
+2. If the application supplies bare `fi`, treat it as `fi = fi` by ordinary term lookup at the use site.
+3. Otherwise, the application is ill-formed because `fi` is missing.
+
+The application then elaborates to ordinary positional application:
+
+```kappa
+callee actual1 actual2 ... actualn
+```
+
+with implicit arguments resolved as usual (§7.3).
+
+Rules:
+
+* Field order inside the named application block is semantically insignificant.
+* Duplicate supplied names are a compile-time error.
+* Extra supplied names are a compile-time error.
+* Missing explicit named binders are a compile-time error.
+* Ordinary function defaults do not exist in v0.1; named function application never inserts defaults.
+* Positional application never inserts defaults.
+* A named application block does not supply implicit binders. Use explicit implicit application `@arg` before the named
+  block when needed.
+* A named application block may not be partially applied. It supplies the whole remaining explicit named binder suffix.
+
+Examples:
+
+```kappa
+resize { image = img, width = 1024, height = 768 }
+
+let r = resize
+r { image = img, width = 1024, height = 768 }
+
+let width = 1024
+resize { image = img, width, height = 768 }
+```
+
+A callee with no preserved named-call metadata cannot be called with a named application block, even if its function
+type is otherwise compatible.
 
 <!-- expressions.application.subsumption.spine_pipeline -->
 ##### 7.1.3.1 Application-spine elaboration pipeline
@@ -13601,6 +13698,11 @@ application.
 <!-- data_types.data_declarations.constructor_application_named_arguments_c -->
 #### 11.1.1 Constructor application with named arguments (`C { ... }`)
 
+Named constructor application is the constructor-specific instance of named application (§7.1.3C).
+
+Constructor defaults are available only through named constructor application.
+Ordinary function named application does not use constructor-default rules.
+
 Constructors may be applied using a record-like named-argument syntax when their explicit parameters have names
 (declared via either of the forms in §11.1).
 
@@ -16060,6 +16162,15 @@ A module interface artifact MUST record at least:
     default; and
   * whether the constructor value preserves named-constructor-application metadata when rebound, stored, imported, or
     projected;
+* for each exported function, constructor, local-value export, record/package member export, or re-exported value that
+  preserves named-call metadata:
+  * the ordered explicit named binder telescope;
+  * each binder's source label;
+  * each binder's elaborated type after earlier binders;
+  * whether the metadata originates from a function, lambda, constructor, or descriptor value;
+  * for constructors, any default metadata required by §11.1.1; and
+  * enough identity metadata for rebinding, import aliases, export aliases, record/package storage, and field projection
+    to preserve named-call behavior downstream;
 * for each exported declaration, whether it has a reified static-object term facet under §2.8.6;
 * for each exported reified static-object term facet, its elaborated compile-time type;
 * for each exported reified type-object facet, the static-member table identity needed for downstream dotted static
