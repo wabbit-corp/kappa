@@ -12969,6 +12969,36 @@ of resources owned by that scope.
 If mandatory scope shutdown of one or more child fibers produces non-success runtime causes, those causes participate in
 the enclosing scope's sequential cause composition.
 
+<!-- core_semantics.runtime_model.attached_child_exits_acknowledgement -->
+#### 14.8.2A Attached child exits and acknowledgement
+
+An attached child fiber is part of its enclosing supervision scope's lifetime obligations.
+
+Definitions:
+
+* A child terminal exit is acknowledged when one of the following successfully observes that exit:
+  * `await child`,
+  * `join child`, or
+  * `awaitMonitor mon` for a monitor of that child.
+* Mere creation of a `Monitor` does not acknowledge the child exit.
+
+Rules:
+
+* An attached child that terminates with `Success _` introduces no further scope obligation.
+* An attached child that terminates with `Failure (Interrupt _)` introduces no unhandled-child defect when that
+  interruption was requested by explicit user interruption or by mandatory scope shutdown.
+* If an attached child terminates with `Failure (Fail e)` or `Failure (Defect d)` and that terminal exit remains
+  unacknowledged when the enclosing scope exits, the enclosing scope acquires cleanup cause
+  `Defect (DefectInfo UnhandledChildFailure msg)`, where `msg` is implementation-defined diagnostic text describing the
+  child exit.
+* If more than one attached child remains unacknowledged at scope exit, those unhandled-child defects are combined with
+  `Both` in child-creation order before later finalizer causes are appended by ordinary scope-exit unwinding under
+  §8.7.2.
+
+Portable source semantics do not require immediate fail-fast interruption of a parent merely because an attached child
+has failed. Higher-level fail-fast task-group behavior is a library construction over `Scope`, `Promise`, `monitor`,
+`interrupt`, and `Cause`.
+
 <!-- core_semantics.runtime_model.interruption_delivery_masks -->
 #### 14.8.3 Interruption delivery and masks
 
