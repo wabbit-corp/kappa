@@ -12189,7 +12189,28 @@ Carrier-prefix rule:
 
 * The optional prefix is parsed as a type expression.
 * Its free variables, if any, must already be in scope.
-* After ordinary type inference, the comprehension has some fully applied result type `c : Type`.
+* The prefix is elaborated in type position before sink selection.
+* Let the normalized yielded item type be `item`.
+
+A carrier prefix may elaborate in one of two standardized forms:
+
+1. Fully applied result type:
+
+   If the prefix elaborates to a type `c : Type`, then `c` is the candidate result type.
+
+2. Unary sink head:
+
+   If the prefix elaborates to a type constructor `F : Type -> Type`, then the candidate result type is `F item`.
+
+No other automatic prefix application is standardized in v1.
+
+Consequences:
+
+* `Array [ ... ]` elaborates using candidate result type `Array item`.
+* `Query [ ... ]` elaborates using candidate result type `Query item`.
+* `Map k v { ... }` is accepted only when `Map k v : Type` is already fully applied.
+* Indexed or multi-parameter sinks that are not unary after their written arguments must be written fully applied, or
+  must be handled by a carrier-specific raw hook whose prefix syntax is explicitly defined by that sink.
 
 Built-in defaults when the prefix is omitted:
 
@@ -12219,7 +12240,7 @@ Examples:
 * `Map k v { ... }` may use `FromComprehensionPlan (Map k v)` with `Item = (key : k, value : v)`.
 * `Tensor (n, m) { ... }` is an illustrative example of a custom sink.
   This section does not by itself standardize dense tensor semantics, index domains, shape inference, or tensor-specific
-  reduction behavior.
+  reduction behavior, or automatic application of non-unary tensor type families.
 
 Raw custom sinks are intended for query providers, relational backends, and other advanced carriers that need access to
 the original clause structure. Normalized sinks are intended for ordinary collection builders and backends that are
