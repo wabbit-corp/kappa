@@ -1637,7 +1637,10 @@ Rules:
   This is the standard escape hatch when a bridge-bound value must outlive the lexical borrow of the original handle.
 * `bridgePackageValue` borrows an owned bridge package and exposes its underlying package-like surface for the borrow
   duration.
-* `BridgePackage sig` SHOULD have a `Releasable` instance when the underlying package owns runtime resources.
+* `BridgePackage sig` MUST have a `Releasable` instance, or another explicitly documented owner lifecycle, when the
+  underlying package owns runtime resources.
+* If a `BridgePackage sig` has no `Releasable` instance, the implementation MUST document why release is unnecessary,
+  for example because the package is tied to process lifetime or to another explicit owner.
 * A conforming implementation MAY implement `BridgePackage sig` as an ordinary Kappa library type, as a runtime
   primitive, or as another observationally equivalent resource wrapper.
 
@@ -19373,6 +19376,17 @@ Rules:
   crossed a boundary claiming type `T`, later runtime type failures attributable solely to hidden wrapper mismatch
   SHOULD not occur; subsequent failures SHOULD arise only from surrounding context misuse or from later explicit
   boundary checks.
+
+Failure vocabulary:
+
+* In a bridge context, boundary-contract failure SHOULD be represented as `std.bridge.BridgeFailure` and injected into
+  the handle-specific expected-error type through `BridgeHandle.bridgeFailure`.
+* In a gradual-cast context, boundary-contract failure SHOULD be represented as `std.gradual.CastBlame`.
+* A bridge failure that corresponds to a gradual boundary violation MUST be convertible to `CastBlame` through
+  `std.bridge.bridgeFailureToCastBlame`.
+* An implementation MAY use an observationally equivalent diagnostic payload internally, but the source-visible behavior
+  MUST preserve the distinction between bridge lifecycle failure, ordinary expected typed failure, interruption, defect,
+  and gradual cast blame.
 
 Additional rules:
 
