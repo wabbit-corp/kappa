@@ -19779,6 +19779,22 @@ type `sig`.
 
 A bridge contract is not merely a runtime type tag. It is the boundary specification for a foreign surface.
 
+Construction boundary:
+
+* `BridgeContract sig` and `BridgeFailure` are opaque in the portable `std.bridge` API.
+* Portable code is not required to construct them directly.
+* A `BridgeContract sig` may be supplied by:
+  * generated Kappa source;
+  * a Kappa-to-Kappa bridge generator;
+  * a trusted binding summary;
+  * an implementation-documented contract-builder library;
+  * a bridge library whose implementation is trusted by the selected backend profile; or
+  * another implementation-documented build input or runtime bridge facility.
+* Any construction mechanism whose result affects exported signatures, runtime semantics, bridge identity, hashing, or
+  reproducibility MUST have its identity recorded in the corresponding build inputs, interface artifacts, bridge
+  contract identity, or runtime bridge transcript as appropriate.
+* A contract construction mechanism MUST NOT use the erased type argument `sig` alone as runtime evidence.
+
 <!-- compiler.ffi.bridge_contract_formation.contract_shape -->
 #### Contract shape
 
