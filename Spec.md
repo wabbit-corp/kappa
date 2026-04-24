@@ -7988,6 +7988,60 @@ Blocking foreign work:
 * A backend MAY realize this by offloading blocking work, compensating worker creation, host-runtime support, or
   another observationally equivalent mechanism.
 
+<!-- effects.monadic_core.time_timers_deadlines_racing -->
+#### 8.1.3B Time, timers, deadlines, and racing
+
+Kappa provides monotonic time and timer primitives:
+
+```kappa
+nowMonotonic :
+    UIO Instant
+
+sleepFor :
+    Duration -> UIO Unit
+
+sleepUntil :
+    Instant -> UIO Unit
+
+timeout :
+    forall (e : Type) (a : Type).
+    Duration -> IO e a -> IO (| TimeoutError | e |) a
+
+race :
+    forall (e : Type) (a : Type) (f : Type) (b : Type).
+    IO e a -> IO f b -> IO (| e | f |) (RaceResult a b)
+```
+
+Semantics:
+
+* `Instant` and `Duration` are monotonic runtime time values. They are not wall-clock calendar values.
+* `nowMonotonic` returns the current monotonic instant of the runtime agent.
+* `sleepFor d` suspends the current fiber for duration `d`, unless interrupted first.
+* `sleepUntil t` suspends the current fiber until instant `t`, unless interrupted first.
+* `sleepFor` and `sleepUntil` are interruptible and do not block an entire runtime agent merely by parking one fiber.
+
+`timeout`:
+
+* `timeout d io` runs `io` and a monotonic timer of duration `d`.
+* If `io` completes first:
+  * success yields success,
+  * typed failure yields typed failure,
+  * interruption or defect propagates as the corresponding non-typed runtime cause.
+* If the timer fires first:
+  * the running computation is interrupted,
+  * the combinator waits until that interrupted computation has terminated and all of its finalizers have run,
+  * and the result is the typed failure `Fail Timeout`.
+
+`race`:
+
+* `race left right` runs both computations concurrently.
+* If `left` completes first with value `a`, the result is `Success (LeftWins a)`.
+* If `right` completes first with value `b`, the result is `Success (RightWins b)`.
+* If one side completes first with typed failure `e`, the result is `Failure (Fail e)` in the combined error type.
+* If one side completes first with interruption or defect, that non-typed runtime cause wins.
+* When either side wins, the losing side is interrupted.
+* `race` completes only after the losing side has terminated and all of its finalizers have run.
+
 <!-- effects.monadic_core.interruption_masking -->
 #### 8.1.4 Interruption and masking
 
