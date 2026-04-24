@@ -8131,8 +8131,14 @@ Semantics:
 * If `awaitMonitor` is called after the monitored fiber has already terminated, it returns immediately with the
   recorded terminal `Exit`.
 
-Restart strategies such as one-for-one, one-for-all, and rest-for-one are library-level constructions over `Scope`,
-`Monitor`, `Promise`, and ordinary `IO`. They are not part of the portable core source semantics.
+Note:
+
+The portable core runtime standardizes lexical supervision, explicit scopes, monitors, promises, timers, interruption,
+masking, and `STM`.
+
+Higher-level service supervision policies such as one-for-one, one-for-all, rest-for-one, restart intensity windows,
+child-start ordering, and reverse-order shutdown are intentionally specified as standard-library constructions over
+those primitives rather than as core source semantics.
 
 <!-- effects.monadic_core.one_shot_promises -->
 #### 8.1.3E One-shot promises
