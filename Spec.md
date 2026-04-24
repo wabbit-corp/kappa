@@ -4542,10 +4542,20 @@ Syntax:
 
 ```text
 recordPatch ::= expr '.{' patchItem (',' patchItem)* '}'
-patchItem   ::= ordinaryUpdateField | projectionUpdateField | extensionField
-ordinaryUpdateField ::= [ '@' ] ident '=' expr
+
+patchItem   ::= ordinaryUpdateField
+              | projectionUpdateField
+              | extensionField
+
+ordinaryUpdateField ::= updatePath '=' expr
+
 projectionUpdateField ::= projectionSection '=' expr
+
 extensionField ::= ident ':=' expr
+
+updatePath ::= updatePathSegment ('.' updatePathSegment)*
+
+updatePathSegment ::= ['@'] ident
 ```
 
 Rules:
@@ -4557,27 +4567,89 @@ Rules:
   update/extension form.
 * If a record field is declared as an implicit field `@label : T`, it may be explicitly updated with surface syntax
   `@label = expr`.
-* Unlike record literals and constructor applications, field punning is not permitted in record patches. Every patch
-  item MUST provide an explicit right-hand side. Writing `r.{ x }` as shorthand for either `r.{ x = x }` or
-  `r.{ x := x }` is a compile-time error.
-* No label may appear more than once among the ordinary update fields and extension fields of one record patch.
+* Unlike record literals and constructor applications, field punning is not permitted in record patches.
+  Every patch item MUST provide an explicit right-hand side.
+  Writing `r.{ x }` as shorthand for either `r.{ x = x }` or `r.{ x := x }` is a compile-time error.
+* Extension fields are top-level only. The left-hand side of an `:=` item is always a single label.
+* Ordinary update fields may name nested record paths.
+* Each segment of an `updatePath` must resolve to an existing record field at the corresponding prefix type.
+* Constructor-field paths are not ordinary record update paths.
+* No two ordinary update paths in the same record patch may be exactly equal.
+* No ordinary update path may be a strict prefix of another ordinary update path in the same record patch.
+* No label may appear more than once among top-level extension fields of one record patch.
 
 Here `projectionSection` is the section form of §7.1.1.1.
 
 Ordinary field update:
+
+Nested ordinary field update:
+
+A nested ordinary update path:
+
+```kappa
+r.{ a.b.c = e }
+```
+
+is elaborated by recursively rebuilding the innermost updated record, then each containing record outward.
+
+Multiple ordinary update paths sharing a prefix are grouped into one recursive update at that prefix.
+
+Example:
+
+```kappa
+r.{ a.b = x, a.c = y }
+```
+
+elaborates as if written:
+
+```kappa
+r.{ a = r.a.{ b = x, c = y } }
+```
+
+and then the ordinary record-update rules apply recursively.
+
+For a path:
+
+```text
+p1.p2....pn = e
+```
+
+the right-hand side `e` is elaborated in the original source context of the whole record patch, not in a special nested
+scope.
+
+At each recursive update level:
+
+* omitted fields are copied from the corresponding original prefix projection;
+* copied omitted fields must be unconsumed;
+* dependent-field repair obligations are checked by ordinary record-literal typechecking;
+* expected-type-directed suspension insertion applies at the field position being updated.
+
+Consequences:
+
+```kappa
+user.{ address.city = "Paris" }
+```
+
+is equivalent to:
+
+```kappa
+user.{ address = user.address.{ city = "Paris" } }
+```
+
+subject to the ordinary dependency, consumption, and implicit-field repair rules of this section.
 
 Normative elaboration:
 
 Let the scrutinee have record type `R`, and let `R` have canonical dependency-respecting field order `(g1, g2, ..., gn)`
 as determined by §5.5.1.1.
 
-Then a pure ordinary update
+Then a record update whose ordinary update fields have first been expanded to top-level recursive updates:
 
 ```kappa
 r.{ f1 = e1, ..., fk = ek }
 ```
 
-elaborates to a full record literal in that canonical order:
+elaborates to a full record literal in canonical order:
 
 * if `gi` is explicitly updated, the elaborated literal uses the supplied expression for `gi`;
   implicit fields are updated with surface syntax `@gi = expr`,
