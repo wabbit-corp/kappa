@@ -31,7 +31,7 @@ module private SurfaceBinderParsing =
         || String.Equals(text, "omega", StringComparison.Ordinal)
 
     let private isQuantityVariableToken (token: Token) =
-        if not (Token.isName token) then
+        if token.Kind <> Identifier then
             false
         else
             let text = SyntaxFacts.trimIdentifierQuotes token.Text
@@ -64,6 +64,15 @@ module private SurfaceBinderParsing =
         | _ ->
             None
 
+    let private tryParseSuspensionMarker (tokens: Token list) =
+        match tokens with
+        | head :: rest when Token.isKeyword Keyword.Thunk head ->
+            Some({ head with Kind = Identifier; Text = "Thunk" }, rest)
+        | head :: rest when Token.isKeyword Keyword.Lazy head ->
+            Some({ head with Kind = Identifier; Text = "Need" }, rest)
+        | _ ->
+            None
+
     let parseParameterFromTokens (diagnostics: DiagnosticBag) (source: SourceText) eofSpan (tokens: Token list) =
         let unsupported span =
             diagnostics.AddError(DiagnosticCode.ParseError, "Unsupported parameter binder syntax.", source.GetLocation(span))
@@ -74,11 +83,16 @@ module private SurfaceBinderParsing =
                     Some QuantityOne, remaining
                 else
                     match explicitQuantity with
-                    | Some quantity -> Some quantity, remaining
-                    | None ->
-                        match tryParseQuantityPrefix remaining with
-                        | Some(quantity, rest) -> Some quantity, rest
-                        | None -> None, remaining
+                        | Some quantity -> Some quantity, remaining
+                        | None ->
+                            match tryParseQuantityPrefix remaining with
+                            | Some(quantity, rest) -> Some quantity, rest
+                            | None -> None, remaining
+
+            let suspensionTypeToken, bodyTokens =
+                match tryParseSuspensionMarker bodyTokens with
+                | Some(typeToken, rest) -> Some typeToken, rest
+                | None -> None, bodyTokens
 
             match bodyTokens with
             | [] ->
@@ -89,8 +103,9 @@ module private SurfaceBinderParsing =
 
                 let typeTokens =
                     match tail with
-                    | [] -> None
-                    | colon :: rest when colon.Kind = Colon -> Some rest
+                    | [] when suspensionTypeToken.IsNone -> None
+                    | colon :: rest when colon.Kind = Colon ->
+                        Some(suspensionTypeToken |> Option.map (fun typeToken -> typeToken :: rest) |> Option.defaultValue rest)
                     | _ ->
                         unsupported span
                         None
@@ -101,8 +116,9 @@ module private SurfaceBinderParsing =
 
                 let typeTokens =
                     match tail with
-                    | [] -> None
-                    | colon :: rest when colon.Kind = Colon -> Some rest
+                    | [] when suspensionTypeToken.IsNone -> None
+                    | colon :: rest when colon.Kind = Colon ->
+                        Some(suspensionTypeToken |> Option.map (fun typeToken -> typeToken :: rest) |> Option.defaultValue rest)
                     | _ ->
                         unsupported head.Span
                         None
@@ -183,9 +199,47 @@ module private SurfaceBinderParsing =
     let makeBindPattern pattern quantity patternTokens =
         { Pattern = pattern
           Quantity = quantity
+          IsImplicit = false
+          TypeTokens = None
           BinderSpans = collectBinderSpans pattern patternTokens }
 
+    let private stripOuterParens tokens =
+        match tokens with
+        | { Kind = LeftParen } :: rest ->
+            match List.rev rest with
+            | { Kind = RightParen } :: reversedInner -> Some(List.rev reversedInner)
+            | _ -> None
+        | _ ->
+            None
+
+    let private tryParseImplicitLocalBindPattern tokens =
+        let bodyTokens =
+            stripOuterParens tokens
+            |> Option.defaultValue tokens
+
+        match bodyTokens with
+        | { Kind = AtSign } :: rest ->
+            parseParameterFromTokens
+                (DiagnosticBag())
+                (SourceText.From("__implicit_local__.kp", ""))
+                (TextSpan.FromBounds(0, 0))
+                bodyTokens
+            |> Option.bind (fun parameter ->
+                parameter.TypeTokens
+                |> Option.map (fun typeTokens ->
+                    { Pattern = NamePattern parameter.Name
+                      Quantity = parameter.Quantity
+                      IsImplicit = true
+                      TypeTokens = Some typeTokens
+                      BinderSpans = collectBinderSpans (NamePattern parameter.Name) bodyTokens }))
+        | _ ->
+            None
+
     let parseBindPatternFromTokens (parsePattern: Token list -> SurfacePattern) (tokens: Token list) =
+        match tryParseImplicitLocalBindPattern tokens with
+        | Some binding ->
+            binding
+        | None ->
         match tryParseQuantityPrefix tokens with
         | Some(quantity, rest) ->
             let pattern = parsePattern rest
@@ -792,6 +846,33 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
 
         List.ofSeq innerTokens
 
+    member private this.CollectBracedTokens(errorMessage: string) =
+        let start = this.Current
+        this.Advance() |> ignore
+
+        let innerTokens = ResizeArray<Token>()
+        let mutable depth = 1
+
+        while depth > 0 && this.Current.Kind <> EndOfFile do
+            match this.Current.Kind with
+            | LeftBrace ->
+                depth <- depth + 1
+                innerTokens.Add(this.Advance())
+            | RightBrace ->
+                depth <- depth - 1
+
+                if depth > 0 then
+                    innerTokens.Add(this.Advance())
+                else
+                    this.Advance() |> ignore
+            | _ ->
+                innerTokens.Add(this.Advance())
+
+        if depth > 0 then
+            diagnostics.AddError(DiagnosticCode.ParseError, errorMessage, source.GetLocation(start.Span))
+
+        List.ofSeq innerTokens
+
     member private this.ParseQualifiedName() =
         this.SkipLayout()
 
@@ -1136,6 +1217,8 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
             let binding =
                 { Pattern = NamePattern bindingName
                   Quantity = None
+                  IsImplicit = false
+                  TypeTokens = None
                   BinderSpans = Map.ofList [ bindingName, [ bindingNameSpan ] ] }
 
             binding, value
@@ -1704,6 +1787,8 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
 
                 { Pattern = NamePattern name
                   Quantity = None
+                  IsImplicit = false
+                  TypeTokens = None
                   BinderSpans = Map.ofList [ name, [ nameToken.Span ] ] }
 
             DoBind(binding, this.ParseStandaloneExpression(rest))
@@ -1827,6 +1912,14 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
                 | Indent
                 | Dedent -> false
                 | _ -> true)
+
+        if
+            match trimmed with
+            | { Kind = Backslash } :: _ -> true
+            | _ -> false
+        then
+            None
+        else
 
         let splitTopLevelCommas (fieldTokens: Token list) =
             let tokenArray = List.toArray fieldTokens
@@ -1992,6 +2085,145 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
             |> RecordLiteral
             |> Some
 
+    member private this.ParseNamedApplicationBlockArgument() =
+        let tokens =
+            this.CollectBracedTokens("Expected '}' to close the named application block.")
+            |> List.filter (fun token ->
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent -> false
+                | _ -> true)
+
+        let splitTopLevelCommas (fieldTokens: Token list) =
+            let tokenArray = List.toArray fieldTokens
+            let items = ResizeArray<Token list>()
+            let current = ResizeArray<Token>()
+            let mutable depth = 0
+
+            for token in tokenArray do
+                match token.Kind with
+                | LeftParen
+                | LeftBracket
+                | LeftBrace
+                | LeftSetBrace ->
+                    depth <- depth + 1
+                    current.Add(token)
+                | RightParen
+                | RightBracket
+                | RightBrace
+                | RightSetBrace ->
+                    depth <- max 0 (depth - 1)
+                    current.Add(token)
+                | Comma when depth = 0 ->
+                    items.Add(List.ofSeq current)
+                    current.Clear()
+                | _ ->
+                    current.Add(token)
+
+            if current.Count > 0 then
+                items.Add(List.ofSeq current)
+
+            List.ofSeq items
+
+        let tryFindTopLevelEquals (fieldTokens: Token list) =
+            let tokenArray = List.toArray fieldTokens
+            let mutable depth = 0
+            let mutable index = 0
+            let mutable result = None
+
+            while index < tokenArray.Length && result.IsNone do
+                match tokenArray[index].Kind with
+                | LeftParen
+                | LeftBracket
+                | LeftBrace
+                | LeftSetBrace ->
+                    depth <- depth + 1
+                | RightParen
+                | RightBracket
+                | RightBrace
+                | RightSetBrace ->
+                    depth <- max 0 (depth - 1)
+                | Equals when depth = 0 ->
+                    result <- Some index
+                | _ ->
+                    ()
+
+                index <- index + 1
+
+            result
+
+        let parseField (fieldTokens: Token list) =
+            let trimmedField =
+                fieldTokens
+                |> List.filter (fun token ->
+                    match token.Kind with
+                    | Newline
+                    | Indent
+                    | Dedent -> false
+                    | _ -> true)
+
+            let isImplicit, remaining =
+                match trimmedField with
+                | { Kind = AtSign } :: rest -> true, rest
+                | _ -> false, trimmedField
+
+            match tryFindTopLevelEquals remaining with
+            | Some index ->
+                let tokenArray = List.toArray remaining
+                let labelTokens = tokenArray[0 .. index - 1] |> Array.toList
+                let valueTokens = tokenArray[index + 1 ..] |> Array.toList
+
+                match labelTokens with
+                | [ labelToken ] when this.IsNameToken(labelToken) ->
+                    { Name = SyntaxFacts.trimIdentifierQuotes labelToken.Text
+                      IsImplicit = isImplicit
+                      Value = this.ParseStandaloneExpression(valueTokens) }
+                | labelToken :: _ ->
+                    diagnostics.AddError(DiagnosticCode.ParseError, "Expected a named application field label.", source.GetLocation(labelToken.Span))
+                    { Name = "<missing>"
+                      IsImplicit = isImplicit
+                      Value = Literal LiteralValue.Unit }
+                | [] ->
+                    diagnostics.AddError(DiagnosticCode.ParseError, "Expected a named application field label.", source.GetLocation(eofSpan))
+                    { Name = "<missing>"
+                      IsImplicit = isImplicit
+                      Value = Literal LiteralValue.Unit }
+            | None ->
+                match remaining with
+                | [ labelToken ] when not isImplicit && this.IsNameToken(labelToken) ->
+                    let fieldName = SyntaxFacts.trimIdentifierQuotes labelToken.Text
+
+                    { Name = fieldName
+                      IsImplicit = false
+                      Value = Name [ fieldName ] }
+                | token :: _ ->
+                    diagnostics.AddError(
+                        DiagnosticCode.ParseError,
+                        "Expected a named application field of the form 'name = expr' or a punned field name.",
+                        source.GetLocation(token.Span)
+                    )
+
+                    { Name = "<missing>"
+                      IsImplicit = isImplicit
+                      Value = Literal LiteralValue.Unit }
+                | [] ->
+                    diagnostics.AddError(
+                        DiagnosticCode.ParseError,
+                        "Expected a named application field of the form 'name = expr' or a punned field name.",
+                        source.GetLocation(eofSpan)
+                    )
+
+                    { Name = "<missing>"
+                      IsImplicit = isImplicit
+                      Value = Literal LiteralValue.Unit }
+
+        tokens
+        |> splitTopLevelCommas
+        |> List.filter (List.isEmpty >> not)
+        |> List.map parseField
+        |> NamedApplicationBlock
+
     member private this.ParsePrimaryExpression() =
         this.SkipLayout()
 
@@ -2041,6 +2273,8 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
             match innerTokens with
             | [] ->
                 Literal Unit
+            | { Kind = Backslash } :: _ ->
+                this.ParseStandaloneExpression innerTokens
             | _ ->
                 match this.TryParseOperatorSection innerTokens with
                 | Some expression ->
@@ -2069,7 +2303,7 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
         match this.Current.Kind with
         | AtSign ->
             this.Advance() |> ignore
-            this.ParsePrefixExpression()
+            ExplicitImplicitArgument(this.ParsePrefixExpression())
         | Operator ->
             if this.Current.Text = "!" then
                 this.Advance() |> ignore
@@ -2092,6 +2326,8 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
 
     member private this.CanStartApplicationArgumentAfterHead(token: Token) =
         match token.Kind with
+        | LeftBrace ->
+            true
         | Operator ->
             if token.Text = "~" then
                 true
@@ -2119,13 +2355,22 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
                 this.SkipLayout()
 
                 if this.CanStartApplicationArgumentAfterHead(this.Current) then
-                    arguments.Add(this.ParsePrefixExpression())
+                    arguments.Add(this.ParseApplicationArgument())
                 else
                     keepReadingArguments <- false
 
             Some
                 { Segments = segments
                   Arguments = List.ofSeq arguments }
+
+    member private this.ParseApplicationArgument() =
+        this.SkipLayout()
+
+        match this.Current.Kind with
+        | LeftBrace ->
+            this.ParseNamedApplicationBlockArgument()
+        | _ ->
+            this.ParsePrefixExpression()
 
     member private this.ParseTagTestConstructor() =
         this.SkipLayout()
@@ -2150,7 +2395,7 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
             this.SkipLayout()
 
             if this.CanStartApplicationArgumentAfterHead(this.Current) then
-                arguments.Add(this.ParsePrefixExpression())
+                arguments.Add(this.ParseApplicationArgument())
             else
                 keepReadingArguments <- false
 

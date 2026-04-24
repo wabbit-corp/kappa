@@ -287,6 +287,8 @@ type SurfaceExpression =
     | Do of SurfaceDoStatement list
     | MonadicSplice of SurfaceExpression
     | Apply of SurfaceExpression * SurfaceExpression list
+    | ExplicitImplicitArgument of SurfaceExpression
+    | NamedApplicationBlock of fields: SurfaceRecordLiteralField list
     | InoutArgument of SurfaceExpression
     | Unary of operatorName: string * SurfaceExpression
     | Binary of SurfaceExpression * operatorName: string * SurfaceExpression
@@ -337,6 +339,8 @@ and SurfaceMatchCase =
 and SurfaceBindPattern =
     { Pattern: SurfacePattern
       Quantity: Quantity option
+      IsImplicit: bool
+      TypeTokens: Token list option
       BinderSpans: Map<string, TextSpan list> }
 
 and SurfaceDoStatement =

@@ -83,9 +83,13 @@ module internal ResourceCheckingSurface =
                 for statement in statements do
                     yield! doStatementNames statement
             | MonadicSplice inner
+            | ExplicitImplicitArgument inner
             | InoutArgument inner
             | Unary(_, inner) ->
                 yield! expressionNames inner
+            | NamedApplicationBlock fields ->
+                for field in fields do
+                    yield! expressionNames field.Value
             | Apply(callee, arguments) ->
                 yield! expressionNames callee
 

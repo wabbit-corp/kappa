@@ -500,9 +500,13 @@ module ResourceChecking =
                 for statement in statements do
                     yield! doStatementNames statement
             | MonadicSplice inner
+            | ExplicitImplicitArgument inner
             | InoutArgument inner
             | Unary(_, inner) ->
                 yield! expressionNames inner
+            | NamedApplicationBlock fields ->
+                for field in fields do
+                    yield! expressionNames field.Value
             | Apply(callee, arguments) ->
                 yield! expressionNames callee
 
@@ -785,6 +789,8 @@ module ResourceChecking =
             arguments |> List.exists typeContainsCaptureAnnotation
         | TypeSignatures.TypeRecord fields ->
             fields |> List.exists (fun field -> typeContainsCaptureAnnotation field.Type)
+        | TypeSignatures.TypeUnion members ->
+            members |> List.exists typeContainsCaptureAnnotation
         | TypeSignatures.TypeVariable _ ->
             false
 
@@ -825,6 +831,9 @@ module ResourceChecking =
                 | TypeSignatures.TypeRecord fields ->
                     for field in fields do
                         yield! loop visited field.Type
+                | TypeSignatures.TypeUnion members ->
+                    for memberType in members do
+                        yield! loop visited memberType
                 | TypeSignatures.TypeVariable _ ->
                     ()
             }
@@ -1284,6 +1293,10 @@ module ResourceChecking =
             Do(rewriteStatements aliases statements)
         | MonadicSplice inner ->
             MonadicSplice(rewrite inner)
+        | ExplicitImplicitArgument inner ->
+            ExplicitImplicitArgument(rewrite inner)
+        | NamedApplicationBlock fields ->
+            NamedApplicationBlock(fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
         | InoutArgument inner ->
             InoutArgument(rewrite inner)
         | Unary(operatorName, inner) ->
@@ -2363,9 +2376,12 @@ module ResourceChecking =
         | Do statements ->
             countProjectionDescriptorAliasUsesInStatements aliasName statements
         | MonadicSplice inner
+        | ExplicitImplicitArgument inner
         | InoutArgument inner
         | Unary(_, inner) ->
             recurse inner
+        | NamedApplicationBlock fields ->
+            fields |> List.sumBy (fun field -> recurse field.Value)
         | Binary(left, _, right)
         | Elvis(left, right) ->
             recurse left + recurse right
@@ -2757,9 +2773,12 @@ module ResourceChecking =
             | Some(DoReturn result) -> expressionResultMayCarryBorrow state result
             | _ -> false
         | MonadicSplice inner
+        | ExplicitImplicitArgument inner
         | InoutArgument inner
         | Unary(_, inner) ->
             expressionResultMayCarryBorrow state inner
+        | NamedApplicationBlock fields ->
+            fields |> List.exists (fun field -> expressionResultMayCarryBorrow state field.Value)
         | SafeNavigation _
         | Elvis _ ->
             not (Set.isEmpty (capturedRegions state expression))
@@ -2800,9 +2819,12 @@ module ResourceChecking =
         | Apply _ when tryDelayedExpressionBody expression |> Option.isSome ->
             true
         | MonadicSplice inner
+        | ExplicitImplicitArgument inner
         | InoutArgument inner
         | Unary(_, inner) ->
             expressionMayCarryEscapingBorrow inner
+        | NamedApplicationBlock fields ->
+            fields |> List.exists (fun field -> expressionMayCarryEscapingBorrow field.Value)
         | Literal _
         | Name _
         | RecordUpdate _
@@ -2854,9 +2876,14 @@ module ResourceChecking =
             | _ ->
                 state
         | MonadicSplice inner
+        | ExplicitImplicitArgument inner
         | InoutArgument inner
         | Unary(_, inner) ->
             checkResultEscapeAtBoundary allowedRegions document inner state
+        | NamedApplicationBlock fields ->
+            (state, fields)
+            ||> List.fold (fun current field ->
+                checkResultEscapeAtBoundary allowedRegions document field.Value current)
         | Apply _ when tryDelayedExpressionBody expression |> Option.isSome ->
             checkEscapeAgainstAllowed allowedRegions document expression state
         | Apply(Name [ "captureBorrow" ], [ _ ]) ->
@@ -3576,11 +3603,18 @@ module ResourceChecking =
         | Do statements ->
             checkDoStatementsInScope "do" projectionSummaries document signatures state statements
         | MonadicSplice inner
+        | ExplicitImplicitArgument inner
         | InoutArgument inner
         | Unary(_, inner) ->
             state
             |> noteValueDemandingNameUse document inner
             |> fun current -> checkExpression projectionSummaries document signatures current inner
+        | NamedApplicationBlock fields ->
+            fields
+            |> List.fold (fun current field ->
+                current
+                |> noteValueDemandingNameUse document field.Value
+                |> fun next -> checkExpression projectionSummaries document signatures next field.Value) state
         | Binary(left, _, right) ->
             state
             |> noteValueDemandingNameUse document left
@@ -3824,6 +3858,71 @@ module ResourceChecking =
                             document
                             current
                     else
+                        current) state
+
+            let state =
+                let indexedArguments = arguments |> List.mapi (fun index argument -> index, argument)
+
+                let demandedQuantityAt index =
+                    parameterQuantities
+                    |> List.tryItem index
+                    |> demandedParameterQuantity
+
+                let borrowArguments =
+                    indexedArguments
+                    |> List.choose (fun (index, argument) ->
+                        match demandedQuantityAt index with
+                        | Some demandQuantity when ResourceQuantity.isBorrow demandQuantity ->
+                            tryBorrowablePlacesWithEnv Map.empty projectionSummaries state argument
+                            |> Option.map (fun places -> index, argument, places)
+                        | _ ->
+                            None)
+
+                let consumingArgumentPlaces index argument =
+                    match demandedQuantityAt index with
+                    | Some demandQuantity when concreteQuantityCountsUse demandQuantity ->
+                        match argument with
+                        | Name(root :: path) ->
+                            Some [ makePlace root path ]
+                        | InoutArgument inner ->
+                            tryExpressionPlace inner |> Option.map List.singleton
+                        | _ ->
+                            tryBorrowablePlacesWithEnv Map.empty projectionSummaries state argument
+                    | _ ->
+                        None
+
+                indexedArguments
+                |> List.fold (fun current (consumeIndex, consumeArgument) ->
+                    match consumingArgumentPlaces consumeIndex consumeArgument with
+                    | Some consumedPlaces ->
+                        borrowArguments
+                        |> List.filter (fun (borrowIndex, _, _) -> borrowIndex < consumeIndex)
+                        |> List.fold (fun next (_, borrowArgument, borrowedPlaces) ->
+                            let overlaps =
+                                borrowedPlaces
+                                |> List.exists (fun borrowedPlace ->
+                                    consumedPlaces
+                                    |> List.exists (fun consumedPlace ->
+                                        String.Equals(borrowedPlace.Root, consumedPlace.Root, StringComparison.Ordinal)
+                                        && pathsOverlap borrowedPlace.Path consumedPlace.Path))
+
+                            if overlaps then
+                                addDiagnostic
+                                    borrowOverlapCode
+                                    "A temporary borrow introduced earlier in this application spine overlaps a later consuming argument."
+                                    (argumentLocation document consumeArgument)
+                                    [
+                                        match argumentLocation document borrowArgument with
+                                        | Some location ->
+                                            { Message = "Earlier borrowed argument in the same application spine."
+                                              Location = location }
+                                        | None -> ()
+                                    ]
+                                    document
+                                    next
+                            else
+                                next) current
+                    | None ->
                         current) state
 
             let state =

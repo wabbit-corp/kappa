@@ -1,0 +1,4 @@
+@PrivateByDefault module main
+
+bad : Bool
+let bad : Bool = True && 1

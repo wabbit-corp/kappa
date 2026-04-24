@@ -1,0 +1,10 @@
+@PrivateByDefault module main
+
+data Env : Type =
+    Env
+
+readEnv : (@ω env : Env) -> Int -> Int
+let readEnv (@ω env : Env) (x : Int) : Int = x
+
+bad : Int
+let bad : Int = readEnv 7

@@ -403,6 +403,17 @@ module internal CompilationFrontend =
                 $"(do {statementText})"
             | MonadicSplice inner ->
                 $"(! {render inner})"
+            | ExplicitImplicitArgument inner ->
+                $"(@ {render inner})"
+            | NamedApplicationBlock fields ->
+                let fieldText =
+                    fields
+                    |> List.map (fun field ->
+                        let prefix = if field.IsImplicit then "@" else ""
+                        $"{prefix}{field.Name} = {render field.Value}")
+                    |> String.concat ", "
+
+                $"{{{fieldText}}}"
             | Apply(callee, arguments) ->
                 let argumentText =
                     arguments

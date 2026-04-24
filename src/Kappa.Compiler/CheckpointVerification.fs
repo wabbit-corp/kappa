@@ -182,6 +182,8 @@ module CheckpointVerification =
             | TypeSignatures.TypeRecord fields ->
                 fields
                 |> List.exists (fun field -> field.Quantity <> QuantityOmega || loop field.Type)
+            | TypeSignatures.TypeUnion members ->
+                members |> List.exists loop
 
         match tryParseTypeText typeText with
         | Some parsed ->

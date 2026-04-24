@@ -1,0 +1,8 @@
+@PrivateByDefault module main
+
+useOnceValue : (1 fn : (x : Int) -> Int) -> Int
+let useOnceValue (1 fn : (x : Int) -> Int) : Int = fn 0
+
+ok : (1 y : Int) -> Int
+let ok (1 y : Int) : Int =
+    useOnceValue (\(1 x : Int) -> x + y)

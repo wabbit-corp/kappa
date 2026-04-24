@@ -37,6 +37,8 @@ let private mkParameter name quantity =
 let private mkBindPattern name quantity =
     { Pattern = NamePattern name
       Quantity = quantity
+      IsImplicit = false
+      TypeTokens = None
       BinderSpans = Map.empty }
 
 let private mkAnonymousRecordBindPattern quantity fields =
@@ -48,11 +50,15 @@ let private mkAnonymousRecordBindPattern quantity fields =
                   Pattern = NamePattern patternName })
         )
       Quantity = quantity
+      IsImplicit = false
+      TypeTokens = None
       BinderSpans = Map.empty }
 
 let private mkUsingPattern name =
     { Pattern = NamePattern name
       Quantity = Some(QuantityBorrow None)
+      IsImplicit = false
+      TypeTokens = None
       BinderSpans = Map.empty }
 
 let private mkLetDefinition name parameters body =

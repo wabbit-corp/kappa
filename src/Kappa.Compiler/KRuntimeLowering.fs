@@ -41,6 +41,8 @@ module internal KRuntimeLowering =
                             Quantity = QuantityOmega
                             Type = eraseRuntimeTypeExpr field.Type })
             |> TypeSignatures.TypeRecord
+        | TypeSignatures.TypeUnion members ->
+            TypeSignatures.TypeUnion(members |> List.map eraseRuntimeTypeExpr)
 
     let private eraseRuntimeTypeText (text: string) =
         match tryParseTypeText text with

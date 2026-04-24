@@ -1,0 +1,8 @@
+@PrivateByDefault module main
+
+useOmegaValue : (fn : (x : Int) -> Int) -> Int
+let useOmegaValue (fn : (x : Int) -> Int) : Int = fn 0
+
+bad : (1 y : Int) -> Int
+let bad (1 y : Int) : Int =
+    useOmegaValue (\(1 x : Int) -> x + y)

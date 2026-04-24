@@ -12,6 +12,7 @@ module TypeSignatures =
         | TypeEquality of TypeExpr * TypeExpr
         | TypeCapture of TypeExpr * string list
         | TypeRecord of RecordField list
+        | TypeUnion of TypeExpr list
 
     and RecordField =
         { Name: string
@@ -138,7 +139,7 @@ module TypeSignatures =
 
         member private _.TryParseQuantityPrefix(tokens: Token list) =
             let isQuantityVariableToken (token: Token) =
-                if not (Token.isName token) then
+                if token.Kind <> Identifier then
                     false
                 else
                     let text = SyntaxFacts.trimIdentifierQuotes token.Text
@@ -205,12 +206,29 @@ module TypeSignatures =
                     | { Kind = AtSign } :: rest -> rest
                     | _ -> binderTokens
 
-                let quantity, nameTokens =
-                    match this.TryParseQuantityPrefix binderTokens with
-                    | Some(quantity, rest) ->
-                        quantity, rest
-                    | None ->
-                        QuantityOmega, binderTokens
+                let isInout, binderTokens =
+                    match binderTokens with
+                    | head :: rest when Token.isKeyword Keyword.Inout head -> true, rest
+                    | _ -> false, binderTokens
+
+                let quantity, afterQuantity =
+                    if isInout then
+                        QuantityOne, binderTokens
+                    else
+                        match this.TryParseQuantityPrefix binderTokens with
+                        | Some(quantity, rest) ->
+                            quantity, rest
+                        | None ->
+                            QuantityOmega, binderTokens
+
+                let typeTokens, nameTokens =
+                    match afterQuantity with
+                    | head :: rest when Token.isKeyword Keyword.Thunk head ->
+                        { head with Kind = Identifier; Text = "Thunk" } :: typeTokens, rest
+                    | head :: rest when Token.isKeyword Keyword.Lazy head ->
+                        { head with Kind = Identifier; Text = "Need" } :: typeTokens, rest
+                    | _ ->
+                        typeTokens, afterQuantity
 
                 match nameTokens with
                 | [ nameToken ] when Token.isName nameToken ->
@@ -319,6 +337,69 @@ module TypeSignatures =
             else
                 None
 
+        member private this.SplitTopLevelPipeGroups(tokens: Token list) =
+            let groups = ResizeArray<Token list>()
+            let current = ResizeArray<Token>()
+            let mutable depth = 0
+
+            for token in tokens do
+                match token.Kind with
+                | LeftParen
+                | LeftBracket
+                | LeftBrace
+                | LeftSetBrace ->
+                    depth <- depth + 1
+                    current.Add(token)
+                | RightParen
+                | RightBracket
+                | RightBrace
+                | RightSetBrace ->
+                    depth <- max 0 (depth - 1)
+                    current.Add(token)
+                | Operator when depth = 0 && String.Equals(token.Text, "|", StringComparison.Ordinal) ->
+                    groups.Add(List.ofSeq current)
+                    current.Clear()
+                | _ ->
+                    current.Add(token)
+
+            groups.Add(List.ofSeq current)
+            List.ofSeq groups
+
+        member private this.TryParseUnionType(innerTokens: Token list) =
+            match innerTokens with
+            | first :: rest when first.Kind = Operator && String.Equals(first.Text, "|", StringComparison.Ordinal) ->
+                match List.rev rest with
+                | last :: reversedMembers when last.Kind = Operator && String.Equals(last.Text, "|", StringComparison.Ordinal) ->
+                    let memberTokens =
+                        reversedMembers
+                        |> List.rev
+                        |> this.SplitTopLevelPipeGroups
+                        |> List.map (fun group ->
+                            group
+                            |> List.filter (fun token ->
+                                match token.Kind with
+                                | Newline
+                                | Indent
+                                | Dedent
+                                | EndOfFile -> false
+                                | _ -> true))
+                        |> List.filter (List.isEmpty >> not)
+
+                    let members =
+                        memberTokens
+                        |> List.map (fun tokens ->
+                            let nested = Parser(tokens)
+                            nested.ParseCompleteType())
+
+                    if not (List.isEmpty members) && members |> List.forall Option.isSome then
+                        members |> List.choose id |> TypeUnion |> Some
+                    else
+                        None
+                | _ ->
+                    None
+            | _ ->
+                None
+
         member private this.ParseQualifiedName() =
             let parseOperatorName () =
                 match this.Current, this.Peek(1), this.Peek(2) with
@@ -368,7 +449,12 @@ module TypeSignatures =
                         position <- rightParenIndex + 1
                         Some recordType
                     | None ->
-                        None
+                        match this.TryParseUnionType innerTokens with
+                        | Some unionType ->
+                            position <- rightParenIndex + 1
+                            Some unionType
+                        | None ->
+                            None
                 | None ->
                     None
             | _ ->
@@ -786,6 +872,8 @@ module TypeSignatures =
                     { field with
                         Type = applySubstitution substitution field.Type })
             )
+        | TypeUnion members ->
+            TypeUnion(members |> List.map (applySubstitution substitution))
 
     let applyConstraintSubstitution substitution (constraintInfo: TraitConstraint) =
         { constraintInfo with
@@ -811,6 +899,8 @@ module TypeSignatures =
                 loop inner
             | TypeRecord fields ->
                 fields |> List.exists (fun field -> loop field.Type)
+            | TypeUnion members ->
+                members |> List.exists loop
 
         loop typeExpr
 
@@ -867,6 +957,19 @@ module TypeSignatures =
                             |> List.map (fun (leftField, rightField) -> leftField.Type, rightField.Type)
 
                         unify substitution (pendingFields @ rest)
+                    else
+                        None
+                | TypeUnion leftMembers, TypeUnion rightMembers ->
+                    let normalizeMembers members =
+                        members
+                        |> List.distinct
+                        |> List.sortBy (sprintf "%A")
+
+                    let normalizedLeftMembers = normalizeMembers leftMembers
+                    let normalizedRightMembers = normalizeMembers rightMembers
+
+                    if List.length normalizedLeftMembers = List.length normalizedRightMembers then
+                        unify substitution (List.zip normalizedLeftMembers normalizedRightMembers @ rest)
                     else
                         None
                 | _ ->
@@ -950,6 +1053,9 @@ module TypeSignatures =
             | TypeRecord nestedFields ->
                 nestedFields
                 |> List.fold (fun state field -> Set.union state (collectDependencies field.Type)) Set.empty
+            | TypeUnion members ->
+                members
+                |> List.fold (fun state memberType -> Set.union state (collectDependencies memberType)) Set.empty
 
         let fieldMap =
             fields
@@ -1007,6 +1113,13 @@ module TypeSignatures =
                         Type = canonicalize field.Type })
                 |> canonicalRecordFields
             )
+        | TypeUnion members ->
+            TypeUnion(
+                members
+                |> List.map canonicalize
+                |> List.distinct
+                |> List.sortBy (sprintf "%A")
+            )
 
     let definitionallyEqual left right =
         canonicalize left = canonicalize right
@@ -1035,6 +1148,7 @@ module TypeSignatures =
                 name
             | TypeCapture _
             | TypeRecord _
+            | TypeUnion _
             | TypeArrow _
             | TypeEquality _ ->
                 $"({toText current})"
@@ -1064,6 +1178,9 @@ module TypeSignatures =
                 |> String.concat ", "
 
             $"({fieldText})"
+        | TypeUnion members ->
+            let memberText = members |> List.map toText |> String.concat " | "
+            $"(| {memberText} |)"
         | _ ->
             renderAtom typeExpr
 
@@ -1086,6 +1203,9 @@ module TypeSignatures =
             | TypeRecord fields ->
                 fields
                 |> List.fold (fun state field -> Set.union state (loop bound field.Type)) Set.empty
+            | TypeUnion members ->
+                members
+                |> List.fold (fun state memberType -> Set.union state (loop bound memberType)) Set.empty
 
         loop Set.empty typeExpr
         |> Set.toList

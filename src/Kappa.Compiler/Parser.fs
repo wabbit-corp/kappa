@@ -871,8 +871,12 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
 
         let members =
             if this.TryConsume(Equals).IsSome then
-                this.ParseIndentedLines()
-                |> List.choose this.ParseInstanceMember
+                if this.Current.Kind = Newline && this.Peek(1).Kind <> Indent then
+                    this.Advance() |> ignore
+                    []
+                else
+                    this.ParseIndentedLines()
+                    |> List.choose this.ParseInstanceMember
             else
                 diagnostics.AddError(DiagnosticCode.ParseError, "Expected '=' in the instance declaration.", source.GetLocation(this.Current.Span))
                 []

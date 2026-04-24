@@ -382,6 +382,8 @@ let private resolveFixtureTypeExpr
                     { field with
                         Type = loop field.Type })
             )
+        | TypeSignatures.TypeUnion members ->
+            TypeSignatures.TypeUnion(members |> List.map loop)
 
     loop typeExpr
 
