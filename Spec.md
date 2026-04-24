@@ -19553,6 +19553,15 @@ Rules:
 When a precise foreign surface exposes a Kappa function or callback to a host and the host later invokes that callback,
 the implementation MUST behave as if the host invocation enters Kappa through a fresh callback fiber.
 
+Callback ABI kinds:
+
+* A callback boundary is **synchronous** when the host invocation expects a callback result before the host call
+  continues.
+* A callback boundary is **asynchronous** when the host invocation does not wait for the Kappa callback result, or when
+  completion is reported through a separate host mechanism.
+* The binding contract, trusted binding summary, bridge contract, or shim MUST classify every precise callback boundary
+  as synchronous or asynchronous.
+
 Default callback-ingress semantics:
 
 * the callback invocation executes in a fresh fiber;
@@ -19563,18 +19572,36 @@ Default callback-ingress semantics:
   binding contract explicitly states another mapping;
 * its initial user label is `None`, unless the implementation or binding contract documents a diagnostic label.
 
-Completion discipline:
+Synchronous callback semantics:
 
-* A precise callback boundary contract MUST specify whether host callback invocation is synchronous, asynchronous, or
-  handle-returning.
-* For a synchronous callback, the host invocation waits for the callback fiber to complete, and the callback's
-  foreign-call classification MUST account for that wait.
-* For an asynchronous callback, the host invocation does not wait for callback completion. The exposed callback type MUST
-  make any lost result, monitored result, promise result, or fire-and-forget behavior explicit.
-* For a handle-returning callback, the boundary contract MUST specify the returned host handle or Kappa handle and how
-  success, typed failure, interruption, and defect become observable through that handle.
-* A precise callback whose host ABI requires an immediate return value MUST NOT be exposed as asynchronous unless the
-  boundary contract supplies a valid immediate value and separately specifies how later Kappa failure is reported.
+* For a synchronous callback boundary, the host invocation waits until the callback fiber reaches a terminal `Exit e a`.
+* The terminal `Exit` is translated back to the host according to the boundary contract before the host invocation
+  returns.
+* If the host callback ABI cannot represent some Kappa terminal outcome, the boundary contract MUST specify whether that
+  outcome becomes a host-visible bridge failure, a host exception, a defect, an interruption-pending result, or another
+  documented host result.
+* A precise synchronous callback surface whose contract does not specify terminal-outcome translation is ill-formed.
+
+Asynchronous callback semantics:
+
+* For an asynchronous callback boundary, the boundary contract MUST specify:
+  * which scope owns the callback fiber;
+  * whether completion is ignored, observed through a monitor, delivered through a host callback, stored in a promise,
+    translated to host failure, or reported through another mechanism;
+  * how typed failure, interruption, and defect are handled; and
+  * whether callback fibers may outlive the dynamic host invocation that triggered them.
+* A precise asynchronous callback surface whose contract does not specify completion handling is ill-formed.
+
+Registration lifetime:
+
+* The callback-registration scope, bridge-owned scope, or equivalent owner named by the contract owns the authority to
+  enter Kappa through that callback.
+* If that owner has been released, shut down, invalidated, or otherwise ended, later host callback invocation MUST NOT
+  enter Kappa through a dangling callback.
+* Such an invocation MUST fail according to the boundary contract, for example as a host-visible bridge failure,
+  documented host callback failure, or `Defect (DefectInfo ForeignContractViolation msg)`.
+* A callback boundary MUST prevent use-after-release either statically through regions and quantities, dynamically
+  through checked registration state, or by an observationally equivalent mechanism.
 
 Outcome translation:
 
