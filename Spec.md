@@ -15724,7 +15724,8 @@ Portable ABI rules:
   erased and are not ABI-visible;
 * resumption values, handler frames, cleanup frames, local nominal declarations, and anonymous borrow regions are not
   portable ABI values;
-* fiber handles and TVars are not portable ABI values;
+* fiber handles, fiber ids, supervision scopes, monitor handles, promises, fiber-local-state cells, and TVars are not
+  portable ABI values;
 * direct borrowed parameters and direct borrowed results are not part of the portable subset;
 * borrow-like or resource-like foreign interfaces in the portable subset MUST be represented using owned values or
   opaque resource handles.
