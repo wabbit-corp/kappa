@@ -229,8 +229,22 @@ internal sealed class ImportItem
 {
     public ImportNamespaceKind Namespace { get; }
     public string Name { get; }
+    public bool IncludeConstructors { get; }
 
-    public ImportItem(ImportNamespaceKind @namespace, string name)
+    public ImportItem(ImportNamespaceKind @namespace, string name, bool includeConstructors)
+    {
+        Namespace = @namespace;
+        Name = name;
+        IncludeConstructors = includeConstructors;
+    }
+}
+
+internal sealed class ExceptItem
+{
+    public ImportNamespaceKind Namespace { get; }
+    public string Name { get; }
+
+    public ExceptItem(ImportNamespaceKind @namespace, string name)
     {
         Namespace = @namespace;
         Name = name;
@@ -249,19 +263,19 @@ internal sealed class ImportSelection
 {
     public ImportSelectionKind Kind { get; }
     public ImportItem[] Items { get; }
-    public string[] ExcludedNames { get; }
+    public ExceptItem[] ExcludedItems { get; }
 
-    private ImportSelection(ImportSelectionKind kind, ImportItem[] items, string[] excludedNames)
+    private ImportSelection(ImportSelectionKind kind, ImportItem[] items, ExceptItem[] excludedItems)
     {
         Kind = kind;
         Items = items;
-        ExcludedNames = excludedNames;
+        ExcludedItems = excludedItems;
     }
 
-    public static ImportSelection QualifiedOnly() => new(ImportSelectionKind.QualifiedOnly, Array.Empty<ImportItem>(), Array.Empty<string>());
-    public static ImportSelection FromItems(params ImportItem[] items) => new(ImportSelectionKind.Items, items, Array.Empty<string>());
-    public static ImportSelection All() => new(ImportSelectionKind.All, Array.Empty<ImportItem>(), Array.Empty<string>());
-    public static ImportSelection AllExcept(params string[] excludedNames) => new(ImportSelectionKind.AllExcept, Array.Empty<ImportItem>(), excludedNames);
+    public static ImportSelection QualifiedOnly() => new(ImportSelectionKind.QualifiedOnly, Array.Empty<ImportItem>(), Array.Empty<ExceptItem>());
+    public static ImportSelection FromItems(params ImportItem[] items) => new(ImportSelectionKind.Items, items, Array.Empty<ExceptItem>());
+    public static ImportSelection All() => new(ImportSelectionKind.All, Array.Empty<ImportItem>(), Array.Empty<ExceptItem>());
+    public static ImportSelection AllExcept(params ExceptItem[] excludedItems) => new(ImportSelectionKind.AllExcept, Array.Empty<ImportItem>(), excludedItems);
 }
 
 internal sealed class ModuleSpecifier
@@ -1291,6 +1305,19 @@ internal static class KappaRunner
         return item.Namespace == ImportNamespaceKind.Constructor;
     }
 
+    private static bool ItemImportsConstructorsOfType(ImportItem item, string typeName)
+    {
+        return item.IncludeConstructors
+            && item.Namespace == ImportNamespaceKind.Type
+            && string.Equals(item.Name, typeName, StringComparison.Ordinal);
+    }
+
+    private static bool ExceptMatches(ExceptItem item, ImportNamespaceKind @namespace, string name)
+    {
+        return string.Equals(item.Name, name, StringComparison.Ordinal)
+            && (item.Namespace == ImportNamespaceKind.None || item.Namespace == @namespace);
+    }
+
     private static bool SelectionImportsTermName(RuntimeModule importedModule, ImportSelection selection, string name)
     {
         var exportsTerm =
@@ -1302,7 +1329,7 @@ internal static class KappaRunner
             ImportSelectionKind.QualifiedOnly => false,
             ImportSelectionKind.Items => selection.Items.Any(item => string.Equals(item.Name, name, StringComparison.Ordinal) && ItemImportsTermName(item)),
             ImportSelectionKind.All => exportsTerm && importedModule.Exports.Contains(name),
-            ImportSelectionKind.AllExcept => !selection.ExcludedNames.Contains(name, StringComparer.Ordinal) && exportsTerm && importedModule.Exports.Contains(name),
+            ImportSelectionKind.AllExcept => !selection.ExcludedItems.Any(item => ExceptMatches(item, ImportNamespaceKind.Term, name)) && exportsTerm && importedModule.Exports.Contains(name),
             _ => false
         };
     }
@@ -1316,7 +1343,9 @@ internal static class KappaRunner
         return selection.Kind switch
         {
             ImportSelectionKind.QualifiedOnly => false,
-            ImportSelectionKind.Items => exportsConstructor && selection.Items.Any(item => string.Equals(item.Name, name, StringComparison.Ordinal) && ItemImportsConstructorName(item)),
+            ImportSelectionKind.Items => exportsConstructor && selection.Items.Any(item =>
+                (string.Equals(item.Name, name, StringComparison.Ordinal) && ItemImportsConstructorName(item))
+                || ItemImportsConstructorsOfType(item, importedModule.Constructors[name].TypeName)),
             ImportSelectionKind.All => false,
             ImportSelectionKind.AllExcept => false,
             _ => false
