@@ -1429,7 +1429,7 @@ module TypeSignatures =
 
         loop Set.empty typeExpr
 
-    let private canonicalRecordFields (fields: RecordField list) =
+    let private recordFieldDependencyMap (fields: RecordField list) =
         let fieldNames =
             fields
             |> List.map (fun (field: RecordField) -> field.Name)
@@ -1484,6 +1484,64 @@ module TypeSignatures =
             |> List.map (fun (field: RecordField) ->
                 field.Name, (collectDependencies field.Type |> Set.remove field.Name))
             |> Map.ofList
+
+        fieldMap, dependencyMap
+
+    let private hasDependencyCycle (dependencyMap: Map<string, Set<string>>) =
+        let rec visit visiting visited node =
+            if Set.contains node visiting then
+                true
+            elif Set.contains node visited then
+                false
+            else
+                let nextVisiting = Set.add node visiting
+                let nextVisited = Set.add node visited
+
+                dependencyMap[node]
+                |> Set.exists (visit nextVisiting nextVisited)
+
+        dependencyMap
+        |> Map.exists (fun node _ -> visit Set.empty Set.empty node)
+
+    let rec hasCyclicRecordDependencies typeExpr =
+        let rec loop current =
+            match current with
+            | TypeVariable _
+            | TypeLevelLiteral _
+            | TypeUniverse None
+            | TypeIntrinsic _ ->
+                false
+            | TypeUniverse(Some universeExpr) ->
+                loop universeExpr
+            | TypeName(_, arguments) ->
+                arguments |> List.exists loop
+            | TypeApply(callee, arguments) ->
+                loop callee || (arguments |> List.exists loop)
+            | TypeLambda(_, parameterSort, body) ->
+                loop parameterSort || loop body
+            | TypeDelay inner
+            | TypeMemo inner
+            | TypeForce inner ->
+                loop inner
+            | TypeProject(target, _) ->
+                loop target
+            | TypeArrow(_, parameterType, resultType) ->
+                loop parameterType || loop resultType
+            | TypeEquality(left, right) ->
+                loop left || loop right
+            | TypeCapture(inner, _) ->
+                loop inner
+            | TypeRecord fields ->
+                let _, dependencyMap = recordFieldDependencyMap fields
+                hasDependencyCycle dependencyMap || (fields |> List.exists (fun field -> loop field.Type))
+            | TypeUnion members ->
+                members |> List.exists loop
+
+        loop typeExpr
+
+    let private canonicalRecordFields (fields: RecordField list) =
+        let fieldMap, dependencyMap = recordFieldDependencyMap fields
+        let fieldNames = fieldMap |> Map.keys |> Set.ofSeq
 
         let rec loop remaining resolved ordered =
             if Set.isEmpty remaining then
@@ -1693,7 +1751,8 @@ module TypeSignatures =
     let private canonicalize = normalizeWithContext builtinDefinitionContext
 
     let definitionallyEqualIn context left right =
-        normalizeWithContext context left = normalizeWithContext context right
+        not (hasCyclicRecordDependencies left || hasCyclicRecordDependencies right)
+        && normalizeWithContext context left = normalizeWithContext context right
 
     let definitionallyEqual left right =
         definitionallyEqualIn builtinDefinitionContext left right

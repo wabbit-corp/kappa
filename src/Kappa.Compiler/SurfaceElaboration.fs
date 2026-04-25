@@ -4908,7 +4908,24 @@ module SurfaceElaboration =
                                     $"Record field '{field.Name}' depends on field '{referencedField}', which is not in the explicit record telescope."
                             )))
 
-            duplicateDiagnostics @ dependencyDiagnostics
+            let cycleDiagnostics =
+                let dependencyMap =
+                    recordInfo.Fields
+                    |> List.map (fun field ->
+                        field.Name,
+                        fieldTypeReferences recordInfo field.TypeTokens
+                        |> List.filter (fun referencedField ->
+                            Set.contains referencedField fieldNames
+                            && not (String.Equals(referencedField, field.Name, StringComparison.Ordinal)))
+                        |> Set.ofList)
+                    |> Map.ofList
+
+                if hasCycle dependencyMap then
+                    [ makeDiagnostic DiagnosticCode.RecordDependencyCycle "Record type field dependencies must be acyclic." ]
+                else
+                    []
+
+            duplicateDiagnostics @ dependencyDiagnostics @ cycleDiagnostics
 
         let pathKey (field: SurfaceRecordUpdateField) =
             field.Path
@@ -7378,13 +7395,36 @@ module SurfaceElaboration =
                         declaration.BodyTokens
                         |> Option.bind tryParseRecordSurfaceInfo
                         |> Option.map (fun recordInfo ->
-                            recordInfo.Fields
-                            |> List.countBy (fun field -> field.Name)
-                            |> List.choose (fun (name, count) ->
-                                if count > 1 then
-                                    Some(makeDiagnostic DiagnosticCode.RecordDuplicateField $"Record field '{name}' is declared more than once.")
+                            let duplicateDiagnostics =
+                                recordInfo.Fields
+                                |> List.countBy (fun field -> field.Name)
+                                |> List.choose (fun (name, count) ->
+                                    if count > 1 then
+                                        Some(makeDiagnostic DiagnosticCode.RecordDuplicateField $"Record field '{name}' is declared more than once.")
+                                    else
+                                        None)
+
+                            let cycleDiagnostics =
+                                let parsedFields =
+                                    recordInfo.Fields
+                                    |> List.map (fun field ->
+                                        parseType field.TypeTokens
+                                        |> Option.map (fun parsedType ->
+                                            { Name = field.Name
+                                              Quantity = QuantityOmega
+                                              Type = parsedType }))
+
+                                if parsedFields |> List.forall Option.isSome then
+                                    let typeExpr = TypeRecord(parsedFields |> List.choose id)
+
+                                    if hasCyclicRecordDependencies typeExpr then
+                                        [ makeDiagnostic DiagnosticCode.RecordDependencyCycle "Record type field dependencies must be acyclic." ]
+                                    else
+                                        []
                                 else
-                                    None))
+                                    []
+
+                            duplicateDiagnostics @ cycleDiagnostics)
                         |> Option.defaultValue []
                     | LetDeclaration definition ->
                         let scheme =

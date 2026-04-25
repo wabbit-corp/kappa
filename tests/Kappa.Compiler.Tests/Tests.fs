@@ -1165,6 +1165,20 @@ let ``type signatures definitional equality reduces beta delta eta suspension an
     Assert.True(TypeSignatures.definitionallyEqualIn context (TypeSignatures.TypeRecord []) (TypeSignatures.TypeName([ "Unit" ], [])))
 
 [<Fact>]
+let ``type signatures refuse definitional equality for cyclic record telescopes`` () =
+    let cyclicRecord =
+        TypeSignatures.TypeRecord(
+            [ { Name = "x"
+                Quantity = QuantityOmega
+                Type = TypeSignatures.TypeProject(TypeSignatures.TypeVariable "this", "y") }
+              { Name = "y"
+                Quantity = QuantityOmega
+                Type = TypeSignatures.TypeProject(TypeSignatures.TypeVariable "this", "x") } ]
+        )
+
+    Assert.False(TypeSignatures.definitionallyEqual cyclicRecord cyclicRecord)
+
+[<Fact>]
 let ``type signatures unfold only conversion reducible transparent definitions`` () =
     let intType = TypeSignatures.TypeName([ "Int" ], [])
 
