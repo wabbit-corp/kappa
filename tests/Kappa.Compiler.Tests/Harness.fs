@@ -364,6 +364,26 @@ let private resolveFixtureTypeExpr
     =
     let rec loop current =
         match current with
+        | TypeSignatures.TypeLevelLiteral _ ->
+            current
+        | TypeSignatures.TypeUniverse None ->
+            current
+        | TypeSignatures.TypeUniverse(Some universeExpr) ->
+            TypeSignatures.TypeUniverse(Some(loop universeExpr))
+        | TypeSignatures.TypeIntrinsic _ ->
+            current
+        | TypeSignatures.TypeApply(callee, arguments) ->
+            TypeSignatures.TypeApply(loop callee, arguments |> List.map loop)
+        | TypeSignatures.TypeLambda(parameterName, parameterSort, body) ->
+            TypeSignatures.TypeLambda(parameterName, loop parameterSort, loop body)
+        | TypeSignatures.TypeDelay inner ->
+            TypeSignatures.TypeDelay(loop inner)
+        | TypeSignatures.TypeMemo inner ->
+            TypeSignatures.TypeMemo(loop inner)
+        | TypeSignatures.TypeForce inner ->
+            TypeSignatures.TypeForce(loop inner)
+        | TypeSignatures.TypeProject(target, fieldName) ->
+            TypeSignatures.TypeProject(loop target, fieldName)
         | TypeSignatures.TypeVariable _ ->
             current
         | TypeSignatures.TypeName([ name ], arguments) ->

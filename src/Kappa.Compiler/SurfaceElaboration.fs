@@ -603,6 +603,7 @@ module SurfaceElaboration =
                 || (parameter.TypeTokens
                     |> Option.bind TypeSignatures.parseType
                     |> Option.exists (function
+                        | TypeUniverse None -> true
                         | TypeName([ "Type" ], []) -> true
                         | _ -> false)))
 
@@ -631,13 +632,13 @@ module SurfaceElaboration =
                     ))
 
     let private typeObjectType =
-        TypeName([ "Type" ], [])
+        TypeUniverse None
 
     let private constraintObjectType =
-        TypeName([ "Constraint" ], [])
+        TypeIntrinsic ConstraintClassifier
 
     let private effectLabelObjectType =
-        TypeName([ "EffLabel" ], [])
+        TypeIntrinsic EffLabelClassifier
 
     let private staticObjectTypeText (info: StaticObjectInfo) =
         info.Scheme
@@ -2460,6 +2461,26 @@ module SurfaceElaboration =
     let private normalizeTypeAliases (aliases: Map<string, TypeAliasInfo>) =
         let rec loop visited typeExpr =
             match typeExpr with
+            | TypeLevelLiteral _ ->
+                typeExpr
+            | TypeUniverse None ->
+                typeExpr
+            | TypeUniverse(Some universeExpr) ->
+                TypeUniverse(Some(loop visited universeExpr))
+            | TypeIntrinsic _ ->
+                typeExpr
+            | TypeApply(callee, arguments) ->
+                TypeApply(loop visited callee, arguments |> List.map (loop visited))
+            | TypeLambda(parameterName, parameterSort, body) ->
+                TypeLambda(parameterName, loop visited parameterSort, loop visited body)
+            | TypeDelay inner ->
+                TypeDelay(loop visited inner)
+            | TypeMemo inner ->
+                TypeMemo(loop visited inner)
+            | TypeForce inner ->
+                TypeForce(loop visited inner)
+            | TypeProject(target, fieldName) ->
+                TypeProject(loop visited target, fieldName)
             | TypeVariable _ ->
                 typeExpr
             | TypeArrow(quantity, parameterType, resultType) ->
@@ -2507,6 +2528,26 @@ module SurfaceElaboration =
 
     let rec private eraseSyntheticRecordTypeExpr typeExpr =
         match typeExpr with
+        | TypeLevelLiteral _ ->
+            typeExpr
+        | TypeUniverse None ->
+            typeExpr
+        | TypeUniverse(Some universeExpr) ->
+            TypeUniverse(Some(eraseSyntheticRecordTypeExpr universeExpr))
+        | TypeIntrinsic _ ->
+            typeExpr
+        | TypeApply(callee, arguments) ->
+            TypeApply(eraseSyntheticRecordTypeExpr callee, arguments |> List.map eraseSyntheticRecordTypeExpr)
+        | TypeLambda(parameterName, parameterSort, body) ->
+            TypeLambda(parameterName, eraseSyntheticRecordTypeExpr parameterSort, eraseSyntheticRecordTypeExpr body)
+        | TypeDelay inner ->
+            TypeDelay(eraseSyntheticRecordTypeExpr inner)
+        | TypeMemo inner ->
+            TypeMemo(eraseSyntheticRecordTypeExpr inner)
+        | TypeForce inner ->
+            TypeForce(eraseSyntheticRecordTypeExpr inner)
+        | TypeProject(target, fieldName) ->
+            TypeProject(eraseSyntheticRecordTypeExpr target, fieldName)
         | TypeVariable name ->
             TypeVariable name
         | TypeName(name, arguments) ->
@@ -2583,12 +2624,25 @@ module SurfaceElaboration =
         parameterType
         =
         match normalizeTypeAliases aliases parameterType with
+        | TypeUniverse _
+        | TypeIntrinsic UniverseClassifier
+        | TypeIntrinsic ConstraintClassifier
+        | TypeIntrinsic QuantityClassifier
+        | TypeIntrinsic RegionClassifier
+        | TypeIntrinsic RecRowClassifier
+        | TypeIntrinsic VarRowClassifier
+        | TypeIntrinsic EffRowClassifier
+        | TypeIntrinsic LabelClassifier
+        | TypeIntrinsic EffLabelClassifier
         | TypeName([ "Type" ], [])
         | TypeName([ "Constraint" ], [])
         | TypeName([ "Quantity" ], [])
         | TypeName([ "Region" ], [])
         | TypeName([ "RecRow" ], [])
-        | TypeName([ "Label" ], []) ->
+        | TypeName([ "VarRow" ], [])
+        | TypeName([ "EffRow" ], [])
+        | TypeName([ "Label" ], [])
+        | TypeName([ "EffLabel" ], []) ->
             true
         | _ ->
             false
@@ -2599,12 +2653,25 @@ module SurfaceElaboration =
         =
         let rec loop current =
             match normalizeTypeAliases aliases current with
+            | TypeUniverse _
+            | TypeIntrinsic UniverseClassifier
+            | TypeIntrinsic ConstraintClassifier
+            | TypeIntrinsic QuantityClassifier
+            | TypeIntrinsic RegionClassifier
+            | TypeIntrinsic RecRowClassifier
+            | TypeIntrinsic VarRowClassifier
+            | TypeIntrinsic EffRowClassifier
+            | TypeIntrinsic LabelClassifier
+            | TypeIntrinsic EffLabelClassifier
             | TypeName([ "Type" ], [])
             | TypeName([ "Constraint" ], [])
             | TypeName([ "Quantity" ], [])
             | TypeName([ "Region" ], [])
             | TypeName([ "RecRow" ], [])
-            | TypeName([ "Label" ], []) ->
+            | TypeName([ "VarRow" ], [])
+            | TypeName([ "EffRow" ], [])
+            | TypeName([ "Label" ], [])
+            | TypeName([ "EffLabel" ], []) ->
                 true
             | TypeArrow(_, _, resultType) ->
                 loop resultType
@@ -2628,6 +2695,26 @@ module SurfaceElaboration =
         =
         let rec loop current =
             match normalizeTypeAliases environment.VisibleTypeAliases current with
+            | TypeLevelLiteral _ ->
+                current
+            | TypeUniverse None ->
+                current
+            | TypeUniverse(Some universeExpr) ->
+                TypeUniverse(Some(loop universeExpr))
+            | TypeIntrinsic _ ->
+                current
+            | TypeApply(callee, arguments) ->
+                TypeApply(loop callee, arguments |> List.map loop)
+            | TypeLambda(parameterName, parameterSort, body) ->
+                TypeLambda(parameterName, loop parameterSort, loop body)
+            | TypeDelay inner ->
+                TypeDelay(loop inner)
+            | TypeMemo inner ->
+                TypeMemo(loop inner)
+            | TypeForce inner ->
+                TypeForce(loop inner)
+            | TypeProject(target, fieldName) ->
+                TypeProject(loop target, fieldName)
             | TypeName([ name ], arguments) when environment.VisibleTypeFacets.ContainsKey(name) ->
                 let typeFacet = environment.VisibleTypeFacets[name]
                 let qualifiedName =
@@ -4441,6 +4528,26 @@ module SurfaceElaboration =
 
         let rec typeContainsLocalTermVariable locals typeExpr =
             match typeExpr with
+            | TypeLevelLiteral _ ->
+                false
+            | TypeUniverse None ->
+                false
+            | TypeUniverse(Some universeExpr) ->
+                typeContainsLocalTermVariable locals universeExpr
+            | TypeIntrinsic _ ->
+                false
+            | TypeApply(callee, arguments) ->
+                typeContainsLocalTermVariable locals callee
+                || (arguments |> List.exists (typeContainsLocalTermVariable locals))
+            | TypeLambda(_, parameterSort, body) ->
+                typeContainsLocalTermVariable locals parameterSort
+                || typeContainsLocalTermVariable locals body
+            | TypeDelay inner
+            | TypeMemo inner
+            | TypeForce inner ->
+                typeContainsLocalTermVariable locals inner
+            | TypeProject(target, _) ->
+                typeContainsLocalTermVariable locals target
             | TypeVariable name ->
                 Map.containsKey name locals
             | TypeName(_, arguments) ->
@@ -4460,6 +4567,24 @@ module SurfaceElaboration =
 
         let rec typeContainsSuspension typeExpr =
             match normalizeTypeAliases environment.VisibleTypeAliases typeExpr with
+            | TypeDelay _
+            | TypeMemo _
+            | TypeForce _ ->
+                true
+            | TypeLevelLiteral _ ->
+                false
+            | TypeUniverse None ->
+                false
+            | TypeUniverse(Some universeExpr) ->
+                typeContainsSuspension universeExpr
+            | TypeIntrinsic _ ->
+                false
+            | TypeApply(callee, arguments) ->
+                typeContainsSuspension callee || (arguments |> List.exists typeContainsSuspension)
+            | TypeLambda(_, parameterSort, body) ->
+                typeContainsSuspension parameterSort || typeContainsSuspension body
+            | TypeProject(target, _) ->
+                typeContainsSuspension target
             | TypeName(([ "Thunk" ] | [ "std"; "prelude"; "Thunk" ] | [ "Need" ] | [ "std"; "prelude"; "Need" ]), _) ->
                 true
             | TypeName(_, arguments) ->
@@ -4479,6 +4604,24 @@ module SurfaceElaboration =
 
         let rec typeContainsUnion typeExpr =
             match normalizeTypeAliases environment.VisibleTypeAliases typeExpr with
+            | TypeLevelLiteral _ ->
+                false
+            | TypeUniverse None ->
+                false
+            | TypeUniverse(Some universeExpr) ->
+                typeContainsUnion universeExpr
+            | TypeIntrinsic _ ->
+                false
+            | TypeApply(callee, arguments) ->
+                typeContainsUnion callee || (arguments |> List.exists typeContainsUnion)
+            | TypeLambda(_, parameterSort, body) ->
+                typeContainsUnion parameterSort || typeContainsUnion body
+            | TypeDelay inner
+            | TypeMemo inner
+            | TypeForce inner ->
+                typeContainsUnion inner
+            | TypeProject(target, _) ->
+                typeContainsUnion target
             | TypeUnion _ ->
                 true
             | TypeName(_, arguments) ->
@@ -6613,6 +6756,28 @@ module SurfaceElaboration =
                 let rec referencedTypeNames typeExpr =
                     seq {
                         match typeExpr with
+                        | TypeLevelLiteral _ ->
+                            ()
+                        | TypeUniverse None ->
+                            ()
+                        | TypeUniverse(Some universeExpr) ->
+                            yield! referencedTypeNames universeExpr
+                        | TypeIntrinsic _ ->
+                            ()
+                        | TypeApply(callee, arguments) ->
+                            yield! referencedTypeNames callee
+
+                            for argument in arguments do
+                                yield! referencedTypeNames argument
+                        | TypeLambda(_, parameterSort, body) ->
+                            yield! referencedTypeNames parameterSort
+                            yield! referencedTypeNames body
+                        | TypeDelay inner
+                        | TypeMemo inner
+                        | TypeForce inner ->
+                            yield! referencedTypeNames inner
+                        | TypeProject(target, _) ->
+                            yield! referencedTypeNames target
                         | TypeName(name, arguments) ->
                             match name with
                             | [ localName ] -> yield localName
@@ -6679,6 +6844,8 @@ module SurfaceElaboration =
                     constructor
                     |> TypeSignatures.constructorFieldTypes
                     |> List.exists (function
+                        | TypeUniverse _ -> true
+                        | TypeIntrinsic UniverseClassifier -> true
                         | TypeName([ "Type" ], _) -> true
                         | _ -> false)
 

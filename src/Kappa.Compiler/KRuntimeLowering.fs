@@ -20,6 +20,26 @@ module internal KRuntimeLowering =
 
     let rec private eraseRuntimeTypeExpr typeExpr =
         match typeExpr with
+        | TypeSignatures.TypeLevelLiteral _ ->
+            typeExpr
+        | TypeSignatures.TypeUniverse None ->
+            typeExpr
+        | TypeSignatures.TypeUniverse(Some universeExpr) ->
+            TypeSignatures.TypeUniverse(Some(eraseRuntimeTypeExpr universeExpr))
+        | TypeSignatures.TypeIntrinsic _ ->
+            typeExpr
+        | TypeSignatures.TypeApply(callee, arguments) ->
+            TypeSignatures.TypeApply(eraseRuntimeTypeExpr callee, arguments |> List.map eraseRuntimeTypeExpr)
+        | TypeSignatures.TypeLambda(parameterName, parameterSort, body) ->
+            TypeSignatures.TypeLambda(parameterName, eraseRuntimeTypeExpr parameterSort, eraseRuntimeTypeExpr body)
+        | TypeSignatures.TypeDelay inner ->
+            TypeSignatures.TypeDelay(eraseRuntimeTypeExpr inner)
+        | TypeSignatures.TypeMemo inner ->
+            TypeSignatures.TypeMemo(eraseRuntimeTypeExpr inner)
+        | TypeSignatures.TypeForce inner ->
+            TypeSignatures.TypeForce(eraseRuntimeTypeExpr inner)
+        | TypeSignatures.TypeProject(target, fieldName) ->
+            TypeSignatures.TypeProject(eraseRuntimeTypeExpr target, fieldName)
         | TypeSignatures.TypeVariable name ->
             TypeSignatures.TypeVariable name
         | TypeSignatures.TypeName(name, arguments) ->

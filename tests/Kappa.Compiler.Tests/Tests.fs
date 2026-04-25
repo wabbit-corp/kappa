@@ -623,6 +623,23 @@ let ``type signatures normalize built in optional postfix`` () =
     Assert.True(TypeSignatures.definitionallyEqual optionalInt preludeOptionInt)
 
 [<Fact>]
+let ``type signatures parse intrinsic compile-time classifiers and primitive universes`` () =
+    Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.UniverseClassifier, parseTypeText "Universe")
+    Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.QuantityClassifier, parseTypeText "Quantity")
+    Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.RegionClassifier, parseTypeText "Region")
+    Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.ConstraintClassifier, parseTypeText "Constraint")
+    Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.RecRowClassifier, parseTypeText "RecRow")
+    Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.VarRowClassifier, parseTypeText "VarRow")
+    Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.EffRowClassifier, parseTypeText "EffRow")
+    Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.LabelClassifier, parseTypeText "Label")
+    Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.EffLabelClassifier, parseTypeText "EffLabel")
+    Assert.Equal(TypeSignatures.TypeUniverse None, parseTypeText "Type")
+    Assert.Equal(TypeSignatures.TypeUniverse None, parseTypeText "*")
+    Assert.Equal(TypeSignatures.TypeUniverse(Some(TypeSignatures.TypeLevelLiteral 0)), parseTypeText "Type0")
+    Assert.Equal(TypeSignatures.TypeUniverse(Some(TypeSignatures.TypeLevelLiteral 2)), parseTypeText "Type2")
+    Assert.Equal(TypeSignatures.TypeUniverse(Some(TypeSignatures.TypeVariable "u")), parseTypeText "Type u")
+
+[<Fact>]
 let ``parser gives built in safe navigation and elvis their spec precedence`` () =
     let source = createSource "__safe_navigation_precedence__.kp" "a?.b ?: fallback"
     let lexed = Lexer.tokenize source
@@ -727,23 +744,23 @@ let ``type signature schemes parse typed forall binders and captures`` () =
         (fun (binder: TypeSignatures.ForallBinder) ->
             Assert.Equal("q", binder.Name)
             Assert.Equal(QuantityZero, binder.Quantity)
-            Assert.Equal(TypeSignatures.TypeName([ "Quantity" ], []), binder.Sort)),
+            Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.QuantityClassifier, binder.Sort)),
         (fun (binder: TypeSignatures.ForallBinder) ->
             Assert.Equal("r", binder.Name)
             Assert.Equal(QuantityZero, binder.Quantity)
-            Assert.Equal(TypeSignatures.TypeName([ "EffRow" ], []), binder.Sort)),
+            Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.EffRowClassifier, binder.Sort)),
         (fun (binder: TypeSignatures.ForallBinder) ->
             Assert.Equal("s", binder.Name)
             Assert.Equal(QuantityZero, binder.Quantity)
-            Assert.Equal(TypeSignatures.TypeName([ "Region" ], []), binder.Sort)),
+            Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.RegionClassifier, binder.Sort)),
         (fun (binder: TypeSignatures.ForallBinder) ->
             Assert.Equal("u", binder.Name)
             Assert.Equal(QuantityZero, binder.Quantity)
-            Assert.Equal(TypeSignatures.TypeName([ "Universe" ], []), binder.Sort)),
+            Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.UniverseClassifier, binder.Sort)),
         (fun (binder: TypeSignatures.ForallBinder) ->
             Assert.Equal("a", binder.Name)
             Assert.Equal(QuantityZero, binder.Quantity)
-            Assert.Equal(TypeSignatures.TypeName([ "Type" ], [ TypeSignatures.TypeVariable "u" ]), binder.Sort))
+            Assert.Equal(TypeSignatures.TypeUniverse(Some(TypeSignatures.TypeVariable "u")), binder.Sort))
     )
 
 [<Fact>]
@@ -762,11 +779,53 @@ let ``type signature schemes preserve dependent forall telescope structure under
         instantiated.Forall,
         (fun (binder: TypeSignatures.ForallBinder) ->
             Assert.Equal("t0", binder.Name)
-            Assert.Equal(TypeSignatures.TypeName([ "Universe" ], []), binder.Sort)),
+            Assert.Equal(TypeSignatures.TypeIntrinsic TypeSignatures.UniverseClassifier, binder.Sort)),
         (fun (binder: TypeSignatures.ForallBinder) ->
             Assert.Equal("t1", binder.Name)
-            Assert.Equal(TypeSignatures.TypeName([ "Type" ], [ TypeSignatures.TypeVariable "t0" ]), binder.Sort))
+            Assert.Equal(TypeSignatures.TypeUniverse(Some(TypeSignatures.TypeVariable "t0")), binder.Sort))
     )
+
+[<Fact>]
+let ``type signatures definitional equality reduces beta delta eta suspension and record projection forms`` () =
+    let intType = TypeSignatures.TypeName([ "Int" ], [])
+    let boolType = TypeSignatures.TypeName([ "Bool" ], [])
+
+    let context =
+        TypeSignatures.emptyDefinitionContext
+        |> TypeSignatures.addTransparentDefinition [ "Id" ] [ "a" ] (TypeSignatures.TypeVariable "a")
+        |> TypeSignatures.addTransparentDefinition [ "AliasInt" ] [] intType
+
+    let betaRedex =
+        TypeSignatures.TypeApply(
+            TypeSignatures.TypeLambda("x", TypeSignatures.TypeUniverse None, TypeSignatures.TypeVariable "x"),
+            [ intType ]
+        )
+
+    let etaExpanded =
+        TypeSignatures.TypeLambda(
+            "x",
+            TypeSignatures.TypeUniverse None,
+            TypeSignatures.TypeApply(TypeSignatures.TypeVariable "f", [ TypeSignatures.TypeVariable "x" ])
+        )
+
+    let projectedRecord =
+        TypeSignatures.TypeProject(
+            TypeSignatures.TypeRecord(
+                [ { Name = "value"
+                    Quantity = QuantityOmega
+                    Type = boolType } ]
+            ),
+            "value"
+        )
+
+    Assert.True(TypeSignatures.definitionallyEqualIn context betaRedex intType)
+    Assert.True(TypeSignatures.definitionallyEqualIn context (TypeSignatures.TypeName([ "Id" ], [ intType ])) intType)
+    Assert.True(TypeSignatures.definitionallyEqualIn context (TypeSignatures.TypeName([ "AliasInt" ], [])) intType)
+    Assert.True(TypeSignatures.definitionallyEqualIn context (TypeSignatures.TypeVariable "f") etaExpanded)
+    Assert.True(TypeSignatures.definitionallyEqualIn context (TypeSignatures.TypeForce(TypeSignatures.TypeDelay intType)) intType)
+    Assert.True(TypeSignatures.definitionallyEqualIn context (TypeSignatures.TypeForce(TypeSignatures.TypeMemo intType)) intType)
+    Assert.True(TypeSignatures.definitionallyEqualIn context projectedRecord boolType)
+    Assert.True(TypeSignatures.definitionallyEqualIn context (TypeSignatures.TypeRecord []) (TypeSignatures.TypeName([ "Unit" ], [])))
 
 [<Fact>]
 let ``compilation injects bundled std prelude and satisfies its intrinsic expects`` () =

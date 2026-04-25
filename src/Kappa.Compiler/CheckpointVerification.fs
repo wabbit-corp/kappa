@@ -161,6 +161,24 @@ module CheckpointVerification =
     let private runtimeTypeLeaksErasureMetadata (typeText: string) =
         let rec loop typeExpr =
             match typeExpr with
+            | TypeSignatures.TypeLevelLiteral _ ->
+                false
+            | TypeSignatures.TypeUniverse None ->
+                true
+            | TypeSignatures.TypeUniverse(Some _) ->
+                true
+            | TypeSignatures.TypeIntrinsic _ ->
+                true
+            | TypeSignatures.TypeApply(callee, arguments) ->
+                loop callee || (arguments |> List.exists loop)
+            | TypeSignatures.TypeLambda(_, parameterSort, body) ->
+                loop parameterSort || loop body
+            | TypeSignatures.TypeDelay inner
+            | TypeSignatures.TypeMemo inner
+            | TypeSignatures.TypeForce inner ->
+                true
+            | TypeSignatures.TypeProject(target, _) ->
+                loop target
             | TypeSignatures.TypeVariable _ ->
                 false
             | TypeSignatures.TypeName(name, arguments) ->

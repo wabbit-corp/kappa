@@ -5,9 +5,29 @@ open System.Collections.Generic
 
 // Parses and reasons about textual type signatures used across compiler stages.
 module TypeSignatures =
+    type IntrinsicClassifier =
+        | UniverseClassifier
+        | QuantityClassifier
+        | RegionClassifier
+        | ConstraintClassifier
+        | RecRowClassifier
+        | VarRowClassifier
+        | EffRowClassifier
+        | LabelClassifier
+        | EffLabelClassifier
+
     type TypeExpr =
         | TypeName of string list * TypeExpr list
         | TypeVariable of string
+        | TypeLevelLiteral of int
+        | TypeUniverse of TypeExpr option
+        | TypeIntrinsic of IntrinsicClassifier
+        | TypeApply of TypeExpr * TypeExpr list
+        | TypeLambda of string * TypeExpr * TypeExpr
+        | TypeDelay of TypeExpr
+        | TypeMemo of TypeExpr
+        | TypeForce of TypeExpr
+        | TypeProject of TypeExpr * string
         | TypeArrow of Quantity * TypeExpr * TypeExpr
         | TypeEquality of TypeExpr * TypeExpr
         | TypeCapture of TypeExpr * string list
@@ -32,6 +52,67 @@ module TypeSignatures =
         { Forall: ForallBinder list
           Constraints: TraitConstraint list
           Body: TypeExpr }
+
+    type TypeDefinition =
+        { ParameterNames: string list
+          DefinitionBody: TypeExpr
+          Transparent: bool
+          ConversionReducible: bool }
+
+    type DefinitionContext = Map<string, TypeDefinition>
+
+    let emptyDefinitionContext : DefinitionContext = Map.empty
+
+    let private collapsedName (segments: string list) =
+        SyntaxFacts.moduleNameToText segments
+
+    let private unitTypeExpr =
+        TypeName([ "Unit" ], [])
+
+    let private optionTypeExpr inner =
+        TypeName([ "std"; "prelude"; "Option" ], [ inner ])
+
+    let private intrinsicClassifierName classifier =
+        match classifier with
+        | UniverseClassifier -> "Universe"
+        | QuantityClassifier -> "Quantity"
+        | RegionClassifier -> "Region"
+        | ConstraintClassifier -> "Constraint"
+        | RecRowClassifier -> "RecRow"
+        | VarRowClassifier -> "VarRow"
+        | EffRowClassifier -> "EffRow"
+        | LabelClassifier -> "Label"
+        | EffLabelClassifier -> "EffLabel"
+
+    let private tryIntrinsicClassifier name =
+        match name with
+        | [ "Universe" ] -> Some UniverseClassifier
+        | [ "Quantity" ] -> Some QuantityClassifier
+        | [ "Region" ] -> Some RegionClassifier
+        | [ "Constraint" ] -> Some ConstraintClassifier
+        | [ "RecRow" ] -> Some RecRowClassifier
+        | [ "VarRow" ] -> Some VarRowClassifier
+        | [ "EffRow" ] -> Some EffRowClassifier
+        | [ "Label" ] -> Some LabelClassifier
+        | [ "EffLabel" ] -> Some EffLabelClassifier
+        | _ -> None
+
+    let addDefinition name definition (context: DefinitionContext) =
+        context |> Map.add (collapsedName name) definition
+
+    let addTransparentDefinition name parameters body context =
+        addDefinition
+            name
+            { ParameterNames = parameters
+              DefinitionBody = body
+              Transparent = true
+              ConversionReducible = true }
+            context
+
+    let private builtinDefinitionContext =
+        emptyDefinitionContext
+        |> addTransparentDefinition [ "Float" ] [] (TypeName([ "Double" ], []))
+        |> addTransparentDefinition [ "std"; "prelude"; "Float" ] [] (TypeName([ "std"; "prelude"; "Double" ], []))
 
     type private Parser(tokens: Token list) =
         let tokenArray =
@@ -485,11 +566,14 @@ module TypeSignatures =
 
         member private this.ParseGroupedOrAtomicType() =
             match this.Current with
+            | Some { Kind = Operator; Text = "*" } ->
+                this.Advance() |> ignore
+                Some(TypeUniverse None)
             | Some { Kind = LeftParen } ->
                 this.Advance() |> ignore
 
                 if this.MatchKind RightParen then
-                    Some(TypeName([ "Unit" ], []))
+                    Some unitTypeExpr
                 else
                     match this.ParseType() with
                     | Some inner when this.MatchKind RightParen -> Some inner
@@ -500,10 +584,27 @@ module TypeSignatures =
                     let terminalSegment = name |> List.last
                     let collapsedName = SyntaxFacts.moduleNameToText name
 
-                    if terminalSegment.Length > 0 && Char.IsLower(terminalSegment[0]) then
-                        TypeVariable collapsedName
-                    else
-                        TypeName(name, []))
+                    match tryIntrinsicClassifier name with
+                    | Some classifier ->
+                        TypeIntrinsic classifier
+                    | None when name = [ "Type" ] ->
+                        TypeUniverse None
+                    | None when name.Length = 1 && terminalSegment.StartsWith("Type", StringComparison.Ordinal) ->
+                        let suffix = terminalSegment.Substring("Type".Length)
+
+                        match Int32.TryParse suffix with
+                        | true, level ->
+                            TypeUniverse(Some(TypeLevelLiteral level))
+                        | false, _ ->
+                            if terminalSegment.Length > 0 && Char.IsLower(terminalSegment[0]) then
+                                TypeVariable collapsedName
+                            else
+                                TypeName(name, [])
+                    | None ->
+                        if terminalSegment.Length > 0 && Char.IsLower(terminalSegment[0]) then
+                            TypeVariable collapsedName
+                        else
+                            TypeName(name, []))
 
         member private this.CanStartAtom() =
             match this.Current with
@@ -519,7 +620,7 @@ module TypeSignatures =
                 let mutable parsed = head
 
                 while this.MatchOperator("?") do
-                    parsed <- TypeName([ "std"; "prelude"; "Option" ], [ parsed ])
+                    parsed <- optionTypeExpr parsed
 
                 Some parsed
 
@@ -578,6 +679,10 @@ module TypeSignatures =
                     | None -> parsed
 
                 match head with
+                | TypeUniverse None when arguments.Count = 1 ->
+                    TypeUniverse(Some arguments[0])
+                    |> withCaptures
+                    |> Some
                 | TypeName(name, existingArguments) ->
                     TypeName(name, existingArguments @ List.ofSeq arguments)
                     |> withCaptures
@@ -585,7 +690,9 @@ module TypeSignatures =
                 | _ when arguments.Count = 0 ->
                     head |> withCaptures |> Some
                 | _ ->
-                    None
+                    TypeApply(head, List.ofSeq arguments)
+                    |> withCaptures
+                    |> Some
 
         member private this.ParseArrow() =
             match this.TryParseBinderArrow() with
@@ -636,7 +743,7 @@ module TypeSignatures =
                             binders.Add(
                                 { Name = SyntaxFacts.trimIdentifierQuotes token.Text
                                   Quantity = QuantityZero
-                                  Sort = TypeName([ "Type" ], []) }
+                                  Sort = TypeUniverse None }
                             )
                             this.Advance() |> ignore
                         | Some { Kind = LeftParen } ->
@@ -956,6 +1063,36 @@ module TypeSignatures =
             substitution
             |> Map.tryFind name
             |> Option.defaultValue typeExpr
+        | TypeLevelLiteral _ ->
+            typeExpr
+        | TypeUniverse None ->
+            typeExpr
+        | TypeUniverse(Some universeExpr) ->
+            TypeUniverse(Some(applySubstitution substitution universeExpr))
+        | TypeIntrinsic _ ->
+            typeExpr
+        | TypeApply(callee, arguments) ->
+            TypeApply(
+                applySubstitution substitution callee,
+                arguments |> List.map (applySubstitution substitution)
+            )
+        | TypeLambda(parameterName, parameterSort, body) ->
+            let nestedSubstitution =
+                substitution |> Map.remove parameterName
+
+            TypeLambda(
+                parameterName,
+                applySubstitution substitution parameterSort,
+                applySubstitution nestedSubstitution body
+            )
+        | TypeDelay inner ->
+            TypeDelay(applySubstitution substitution inner)
+        | TypeMemo inner ->
+            TypeMemo(applySubstitution substitution inner)
+        | TypeForce inner ->
+            TypeForce(applySubstitution substitution inner)
+        | TypeProject(target, fieldName) ->
+            TypeProject(applySubstitution substitution target, fieldName)
         | TypeName([ name ], arguments) ->
             let substitutedArguments = arguments |> List.map (applySubstitution substitution)
 
@@ -1003,6 +1140,25 @@ module TypeSignatures =
             match current with
             | TypeVariable currentName ->
                 String.Equals(currentName, name, StringComparison.Ordinal)
+            | TypeLevelLiteral _ ->
+                false
+            | TypeUniverse None ->
+                false
+            | TypeUniverse(Some universeExpr) ->
+                loop universeExpr
+            | TypeIntrinsic _ ->
+                false
+            | TypeApply(callee, arguments) ->
+                loop callee || arguments |> List.exists loop
+            | TypeLambda(parameterName, parameterSort, body) ->
+                loop parameterSort
+                || (if String.Equals(parameterName, name, StringComparison.Ordinal) then false else loop body)
+            | TypeDelay inner
+            | TypeMemo inner
+            | TypeForce inner ->
+                loop inner
+            | TypeProject(target, _) ->
+                loop target
             | TypeName(_, arguments) ->
                 arguments |> List.exists loop
             | TypeArrow(_, parameterType, resultType) ->
@@ -1030,6 +1186,18 @@ module TypeSignatures =
                 match normalizedLeft, normalizedRight with
                 | TypeVariable leftName, TypeVariable rightName when String.Equals(leftName, rightName, StringComparison.Ordinal) ->
                     unify substitution rest
+                | TypeLevelLiteral leftLevel, TypeLevelLiteral rightLevel when leftLevel = rightLevel ->
+                    unify substitution rest
+                | TypeUniverse leftUniverse, TypeUniverse rightUniverse ->
+                    match leftUniverse, rightUniverse with
+                    | None, None ->
+                        unify substitution rest
+                    | Some leftExpr, Some rightExpr ->
+                        unify substitution ((leftExpr, rightExpr) :: rest)
+                    | _ ->
+                        None
+                | TypeIntrinsic leftClassifier, TypeIntrinsic rightClassifier when leftClassifier = rightClassifier ->
+                    unify substitution rest
                 | TypeVariable leftName, _ ->
                     if occurs leftName normalizedRight then
                         None
@@ -1043,6 +1211,21 @@ module TypeSignatures =
                 | TypeName(leftName, leftArguments), TypeName(rightName, rightArguments)
                     when leftName = rightName && List.length leftArguments = List.length rightArguments ->
                     unify substitution (List.zip leftArguments rightArguments @ rest)
+                | TypeApply(leftCallee, leftArguments), TypeApply(rightCallee, rightArguments)
+                    when List.length leftArguments = List.length rightArguments ->
+                    unify substitution ((leftCallee, rightCallee) :: List.zip leftArguments rightArguments @ rest)
+                | TypeLambda(leftName, leftSort, leftBody), TypeLambda(rightName, rightSort, rightBody) ->
+                    let alignedRightBody =
+                        applySubstitution (Map.ofList [ rightName, TypeVariable leftName ]) rightBody
+
+                    unify substitution ((leftSort, rightSort) :: (leftBody, alignedRightBody) :: rest)
+                | TypeDelay leftInner, TypeDelay rightInner
+                | TypeMemo leftInner, TypeMemo rightInner
+                | TypeForce leftInner, TypeForce rightInner ->
+                    unify substitution ((leftInner, rightInner) :: rest)
+                | TypeProject(leftTarget, leftField), TypeProject(rightTarget, rightField)
+                    when String.Equals(leftField, rightField, StringComparison.Ordinal) ->
+                    unify substitution ((leftTarget, rightTarget) :: rest)
                 | TypeArrow(leftQuantity, leftParameter, leftResult), TypeArrow(rightQuantity, rightParameter, rightResult)
                     when leftQuantity = rightQuantity ->
                     unify substitution ((leftParameter, rightParameter) :: (leftResult, rightResult) :: rest)
@@ -1152,7 +1335,7 @@ module TypeSignatures =
         |> List.map (fun name ->
             { Name = name
               Quantity = QuantityZero
-              Sort = TypeName([ "Type" ], []) })
+              Sort = TypeUniverse None })
 
     let private tryFieldDependencyReference (fieldNames: Set<string>) (referenceName: string) =
         let direct =
@@ -1173,6 +1356,47 @@ module TypeSignatures =
             else
                 None)
 
+    let rec private collectFreeTypeVariableSet typeExpr =
+        let rec loop bound current =
+            match current with
+            | TypeVariable name when not (Set.contains name bound) ->
+                Set.singleton name
+            | TypeVariable _
+            | TypeLevelLiteral _
+            | TypeUniverse None
+            | TypeIntrinsic _ ->
+                Set.empty
+            | TypeUniverse(Some universeExpr) ->
+                loop bound universeExpr
+            | TypeName(_, arguments) ->
+                arguments
+                |> List.fold (fun state argument -> Set.union state (loop bound argument)) Set.empty
+            | TypeApply(callee, arguments) ->
+                arguments
+                |> List.fold (fun state argument -> Set.union state (loop bound argument)) (loop bound callee)
+            | TypeLambda(parameterName, parameterSort, body) ->
+                Set.union (loop bound parameterSort) (loop (Set.add parameterName bound) body)
+            | TypeDelay inner
+            | TypeMemo inner
+            | TypeForce inner ->
+                loop bound inner
+            | TypeProject(target, _) ->
+                loop bound target
+            | TypeArrow(_, parameterType, resultType) ->
+                Set.union (loop bound parameterType) (loop bound resultType)
+            | TypeEquality(left, right) ->
+                Set.union (loop bound left) (loop bound right)
+            | TypeCapture(inner, _) ->
+                loop bound inner
+            | TypeRecord fields ->
+                fields
+                |> List.fold (fun state field -> Set.union state (loop bound field.Type)) Set.empty
+            | TypeUnion members ->
+                members
+                |> List.fold (fun state memberType -> Set.union state (loop bound memberType)) Set.empty
+
+        loop Set.empty typeExpr
+
     let private canonicalRecordFields (fields: RecordField list) =
         let fieldNames =
             fields
@@ -1183,9 +1407,28 @@ module TypeSignatures =
             match typeExpr with
             | TypeVariable name ->
                 tryFieldDependencyReference fieldNames name |> Option.toList |> Set.ofList
+            | TypeLevelLiteral _
+            | TypeUniverse None
+            | TypeIntrinsic _ ->
+                Set.empty
+            | TypeUniverse(Some universeExpr) ->
+                collectDependencies universeExpr
             | TypeName(_, arguments) ->
                 arguments
                 |> List.fold (fun state argument -> Set.union state (collectDependencies argument)) Set.empty
+            | TypeApply(callee, arguments) ->
+                arguments
+                |> List.fold (fun state argument -> Set.union state (collectDependencies argument)) (collectDependencies callee)
+            | TypeLambda(parameterName, parameterSort, body) ->
+                Set.remove parameterName (Set.union (collectDependencies parameterSort) (collectDependencies body))
+            | TypeDelay inner
+            | TypeMemo inner
+            | TypeForce inner ->
+                collectDependencies inner
+            | TypeProject(target, fieldName) ->
+                Set.union
+                    (collectDependencies target)
+                    (tryFieldDependencyReference fieldNames fieldName |> Option.toList |> Set.ofList)
             | TypeArrow(_, parameterType, resultType) ->
                 Set.union (collectDependencies parameterType) (collectDependencies resultType)
             | TypeEquality(left, right) ->
@@ -1235,36 +1478,193 @@ module TypeSignatures =
 
         loop fieldNames Set.empty []
 
-    let rec private canonicalize typeExpr =
+    let rec private tryEtaContractFunction typeExpr =
         match typeExpr with
-        | TypeVariable _ ->
-            typeExpr
-        | TypeName(name, arguments) ->
-            TypeName(name, arguments |> List.map canonicalize)
-        | TypeArrow(quantity, parameterType, resultType) ->
-            TypeArrow(quantity, canonicalize parameterType, canonicalize resultType)
-        | TypeEquality(left, right) ->
-            TypeEquality(canonicalize left, canonicalize right)
-        | TypeCapture(inner, captures) ->
-            TypeCapture(canonicalize inner, canonicalCaptureSet captures)
-        | TypeRecord fields ->
-            TypeRecord(
+        | TypeLambda(parameterName, parameterSort, TypeApply(callee, [ TypeVariable appliedName ]))
+            when String.Equals(parameterName, appliedName, StringComparison.Ordinal)
+                 && not (Set.contains parameterName (collectFreeTypeVariableSet callee)) ->
+            Some(callee, parameterSort)
+        | _ ->
+            None
+
+    let rec private tryEtaContractRecord typeExpr =
+        match typeExpr with
+        | TypeRecord fields when not (List.isEmpty fields) ->
+            let normalizedFields = canonicalRecordFields fields
+
+            let projectedTargets =
+                normalizedFields
+                |> List.map (fun field ->
+                    match field.Type with
+                    | TypeProject(target, fieldName)
+                        when String.Equals(field.Name, fieldName, StringComparison.Ordinal) ->
+                        Some target
+                    | _ ->
+                        None)
+
+            if projectedTargets |> List.forall Option.isSome then
+                let targets = projectedTargets |> List.choose id
+
+                match targets with
+                | first :: rest when rest |> List.forall ((=) first) ->
+                    Some first
+                | _ ->
+                    None
+            else
+                None
+        | _ ->
+            None
+
+    let rec private normalizeWithContext (context: DefinitionContext) typeExpr =
+        let normalize = normalizeWithContext context
+
+        let normalizeTypeName name arguments =
+            let normalizedArguments = arguments |> List.map normalize
+
+            let normalizeLegacyIntrinsicTypeName () =
+                match name, normalizedArguments with
+                | [ "Type" ], [] ->
+                    Some(TypeUniverse None)
+                | [ "Type" ], [ universeExpr ] ->
+                    Some(TypeUniverse(Some universeExpr))
+                | _ ->
+                    match name with
+                    | [ intrinsicName ] when List.isEmpty normalizedArguments ->
+                        tryIntrinsicClassifier [ intrinsicName ] |> Option.map TypeIntrinsic
+                    | _ ->
+                        None
+
+            match normalizeLegacyIntrinsicTypeName () with
+            | Some normalizedLegacy ->
+                normalizedLegacy
+            | None ->
+                match context |> Map.tryFind (collapsedName name) with
+                | Some definition when definition.Transparent && definition.ConversionReducible ->
+                    if List.length normalizedArguments >= List.length definition.ParameterNames then
+                        let appliedParameters, remainingArguments =
+                            normalizedArguments |> List.splitAt (List.length definition.ParameterNames)
+
+                        let substitutedBody =
+                            List.zip definition.ParameterNames appliedParameters
+                            |> List.fold (fun body (parameterName, argumentValue) ->
+                                applySubstitution (Map.ofList [ parameterName, argumentValue ]) body) definition.DefinitionBody
+                            |> normalize
+
+                        match remainingArguments with
+                        | [] ->
+                            substitutedBody
+                        | extra ->
+                            normalize (TypeApply(substitutedBody, extra))
+                    else
+                        TypeName(name, normalizedArguments)
+                | _ ->
+                    TypeName(name, normalizedArguments)
+
+        let canonicalizeRecord fields =
+            let normalizedFields =
                 fields
                 |> List.map (fun (field: RecordField) ->
                     { field with
-                        Type = canonicalize field.Type })
+                        Type = normalize field.Type })
                 |> canonicalRecordFields
-            )
-        | TypeUnion members ->
-            TypeUnion(
-                members
-                |> List.map canonicalize
-                |> List.distinct
-                |> List.sortBy (sprintf "%A")
-            )
+
+            match normalizedFields with
+            | [] ->
+                unitTypeExpr
+            | _ ->
+                TypeRecord normalizedFields
+
+        let rec normalizeOne current =
+            match current with
+            | TypeVariable _
+            | TypeLevelLiteral _
+            | TypeIntrinsic _ ->
+                current
+            | TypeUniverse None ->
+                TypeUniverse None
+            | TypeUniverse(Some universeExpr) ->
+                TypeUniverse(Some(normalize universeExpr))
+            | TypeName(name, arguments) ->
+                normalizeTypeName name arguments
+            | TypeApply(callee, arguments) ->
+                let normalizedCallee = normalize callee
+                let normalizedArguments = arguments |> List.map normalize
+
+                match normalizedCallee, normalizedArguments with
+                | TypeLambda(parameterName, _, body), argument :: remaining ->
+                    let reduced =
+                        body
+                        |> applySubstitution (Map.ofList [ parameterName, argument ])
+
+                    match remaining with
+                    | [] -> normalize reduced
+                    | _ -> normalize (TypeApply(reduced, remaining))
+                | TypeName(name, existingArguments), _ ->
+                    normalizeTypeName name (existingArguments @ normalizedArguments)
+                | _, [] ->
+                    normalizedCallee
+                | _ ->
+                    TypeApply(normalizedCallee, normalizedArguments)
+            | TypeLambda(parameterName, parameterSort, body) ->
+                let normalized =
+                    TypeLambda(parameterName, normalize parameterSort, normalize body)
+
+                match tryEtaContractFunction normalized with
+                | Some(contracted, _) ->
+                    normalize contracted
+                | None ->
+                    normalized
+            | TypeDelay inner ->
+                TypeDelay(normalize inner)
+            | TypeMemo inner ->
+                TypeMemo(normalize inner)
+            | TypeForce inner ->
+                match normalize inner with
+                | TypeDelay delayed
+                | TypeMemo delayed ->
+                    normalize delayed
+                | normalizedInner ->
+                    TypeForce normalizedInner
+            | TypeProject(target, fieldName) ->
+                match normalize target with
+                | TypeRecord fields ->
+                    fields
+                    |> List.tryFind (fun field -> String.Equals(field.Name, fieldName, StringComparison.Ordinal))
+                    |> Option.map (fun field -> normalize field.Type)
+                    |> Option.defaultValue (TypeProject(TypeRecord fields, fieldName))
+                | normalizedTarget ->
+                    TypeProject(normalizedTarget, fieldName)
+            | TypeArrow(quantity, parameterType, resultType) ->
+                TypeArrow(quantity, normalize parameterType, normalize resultType)
+            | TypeEquality(left, right) ->
+                TypeEquality(normalize left, normalize right)
+            | TypeCapture(inner, captures) ->
+                TypeCapture(normalize inner, canonicalCaptureSet captures)
+            | TypeRecord fields ->
+                let normalized = canonicalizeRecord fields
+
+                match tryEtaContractRecord normalized with
+                | Some(contracted) ->
+                    normalize contracted
+                | None ->
+                    normalized
+            | TypeUnion members ->
+                TypeUnion(
+                    members
+                    |> List.map normalize
+                    |> List.distinct
+                    |> List.sortBy (sprintf "%A")
+                )
+
+        normalizeOne typeExpr
+
+    let private canonicalize = normalizeWithContext builtinDefinitionContext
+
+    let definitionallyEqualIn context left right =
+        normalizeWithContext context left = normalizeWithContext context right
 
     let definitionallyEqual left right =
-        canonicalize left = canonicalize right
+        definitionallyEqualIn builtinDefinitionContext left right
 
     let private canonicalizeScheme (scheme: TypeScheme) =
         let substitution, canonicalBinders =
@@ -1298,6 +1698,16 @@ module TypeSignatures =
     let rec toText typeExpr =
         let rec renderAtom current =
             match current with
+            | TypeLevelLiteral level ->
+                string level
+            | TypeUniverse None ->
+                "Type"
+            | TypeUniverse(Some(TypeLevelLiteral level)) ->
+                $"Type{level}"
+            | TypeUniverse(Some universeExpr) ->
+                $"Type {renderAtom universeExpr}"
+            | TypeIntrinsic classifier ->
+                intrinsicClassifierName classifier
             | TypeName(name, []) ->
                 SyntaxFacts.moduleNameToText name
             | TypeName(name, arguments) ->
@@ -1305,6 +1715,19 @@ module TypeSignatures =
                 $"{SyntaxFacts.moduleNameToText name} {argumentText}"
             | TypeVariable name ->
                 name
+            | TypeApply(callee, arguments) ->
+                let argumentText = arguments |> List.map renderAtom |> String.concat " "
+                $"{renderAtom callee} {argumentText}"
+            | TypeLambda(parameterName, parameterSort, body) ->
+                $"(\\({parameterName} : {toText parameterSort}) -> {toText body})"
+            | TypeDelay inner ->
+                $"(thunk {toText inner})"
+            | TypeMemo inner ->
+                $"(lazy {toText inner})"
+            | TypeForce inner ->
+                $"(force {toText inner})"
+            | TypeProject(target, fieldName) ->
+                $"{renderAtom target}.{fieldName}"
             | TypeCapture _
             | TypeRecord _
             | TypeUnion _
@@ -1341,31 +1764,9 @@ module TypeSignatures =
             let memberText = members |> List.map toText |> String.concat " | "
             $"(| {memberText} |)"
         | _ ->
-            renderAtom typeExpr
+            renderAtom (canonicalize typeExpr)
 
     let collectFreeTypeVariables typeExpr =
-        let rec loop bound current =
-            match current with
-            | TypeVariable name when not (Set.contains name bound) ->
-                Set.singleton name
-            | TypeVariable _ ->
-                Set.empty
-            | TypeName(_, arguments) ->
-                arguments
-                |> List.fold (fun state argument -> Set.union state (loop bound argument)) Set.empty
-            | TypeArrow(_, parameterType, resultType) ->
-                Set.union (loop bound parameterType) (loop bound resultType)
-            | TypeEquality(left, right) ->
-                Set.union (loop bound left) (loop bound right)
-            | TypeCapture(inner, _) ->
-                loop bound inner
-            | TypeRecord fields ->
-                fields
-                |> List.fold (fun state field -> Set.union state (loop bound field.Type)) Set.empty
-            | TypeUnion members ->
-                members
-                |> List.fold (fun state memberType -> Set.union state (loop bound memberType)) Set.empty
-
-        loop Set.empty typeExpr
+        collectFreeTypeVariableSet typeExpr
         |> Set.toList
         |> List.sort

@@ -797,6 +797,16 @@ module ResourceChecking =
         match typeExpr with
         | TypeSignatures.TypeCapture _ ->
             true
+        | TypeSignatures.TypeApply(callee, arguments) ->
+            typeContainsCaptureAnnotation callee || (arguments |> List.exists typeContainsCaptureAnnotation)
+        | TypeSignatures.TypeLambda(_, parameterSort, body) ->
+            typeContainsCaptureAnnotation parameterSort || typeContainsCaptureAnnotation body
+        | TypeSignatures.TypeDelay inner
+        | TypeSignatures.TypeMemo inner
+        | TypeSignatures.TypeForce inner ->
+            typeContainsCaptureAnnotation inner
+        | TypeSignatures.TypeProject(target, _) ->
+            typeContainsCaptureAnnotation target
         | TypeSignatures.TypeArrow(_, parameterType, resultType) ->
             typeContainsCaptureAnnotation parameterType || typeContainsCaptureAnnotation resultType
         | TypeSignatures.TypeEquality(left, right) ->
@@ -807,6 +817,9 @@ module ResourceChecking =
             fields |> List.exists (fun field -> typeContainsCaptureAnnotation field.Type)
         | TypeSignatures.TypeUnion members ->
             members |> List.exists typeContainsCaptureAnnotation
+        | TypeSignatures.TypeLevelLiteral _
+        | TypeSignatures.TypeUniverse _
+        | TypeSignatures.TypeIntrinsic _
         | TypeSignatures.TypeVariable _ ->
             false
 
@@ -817,6 +830,20 @@ module ResourceChecking =
                 | TypeSignatures.TypeCapture(inner, captures) ->
                     yield! captures
                     yield! loop visited inner
+                | TypeSignatures.TypeApply(callee, arguments) ->
+                    yield! loop visited callee
+
+                    for argument in arguments do
+                        yield! loop visited argument
+                | TypeSignatures.TypeLambda(_, parameterSort, body) ->
+                    yield! loop visited parameterSort
+                    yield! loop visited body
+                | TypeSignatures.TypeDelay inner
+                | TypeSignatures.TypeMemo inner
+                | TypeSignatures.TypeForce inner ->
+                    yield! loop visited inner
+                | TypeSignatures.TypeProject(target, _) ->
+                    yield! loop visited target
                 | TypeSignatures.TypeArrow(_, parameterType, resultType) ->
                     yield! loop visited parameterType
                     yield! loop visited resultType
@@ -850,6 +877,9 @@ module ResourceChecking =
                 | TypeSignatures.TypeUnion members ->
                     for memberType in members do
                         yield! loop visited memberType
+                | TypeSignatures.TypeLevelLiteral _
+                | TypeSignatures.TypeUniverse _
+                | TypeSignatures.TypeIntrinsic _
                 | TypeSignatures.TypeVariable _ ->
                     ()
             }
