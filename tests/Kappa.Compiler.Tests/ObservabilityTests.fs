@@ -1786,6 +1786,81 @@ let ``source compilation surfaces backend verification call arity failures as di
     Assert.Contains("recursive but has no preceding signature declaration", diagnosticsText workspace.Diagnostics)
 
 [<Fact>]
+let ``source compilation surfaces malformed constructor pattern arity mismatches as diagnostics`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-compile-constructor-pattern-arity-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    ""
+                    "type I0 = (I1 : Int)"
+                    "type I1 = (left : Int, right : Int)"
+                    "type I2 = (1 i1 : I0, I3 : Int)"
+                    "type I2 = (left : Int, right : Int)"
+                    "type I1 = (1 I1 : I0, I1 : Int)"
+                    "type I2 = (left : Int, right : Int)"
+                    "type I2 = (left : Int, right : Int)"
+                    "type I2 = (left : Int, right : Int)"
+                    "type I2 = (left : Int, right : Int)"
+                    "type I2 = (1 I1 : I0, I2 : Int)"
+                    "type I3 = (1 I3 : I1, I3 : Int)"
+                    "type I3 = (1 I1 : Int, i4 : Int)"
+                    "type I3 = (1 I1 : I0, I4 : Int)"
+                    "type I3 = (1 I1 : I0)"
+                    ""
+                    "data I7 : Type ="
+                    "    I8 (1 I7 : I1)"
+                    ""
+                    "data I11 : Type ="
+                    "    I13 (1 i2 : I1)"
+                    ""
+                    "data I11 : Type ="
+                    "    I6 (1 I9 : I10)"
+                    ""
+                    "data I11 : Type ="
+                    "    I11 (1 i2 : I0)"
+                    ""
+                    "data I3 : Type ="
+                    "    I13 (1 i2 : I7)"
+                    ""
+                    "data I11 : Type ="
+                    "    I11 (1 i1 : I0)"
+                    ""
+                    "data I8 : Type ="
+                    "    I8 (1 I7 : I0)"
+                    ""
+                    "data I11 : Type ="
+                    "    I13 (1 I0 : I0)"
+                    ""
+                    "data I11 : Type ="
+                    "    I1 this.left"
+                    ""
+                    "I13 I3 (I3 this : I7) : Int ="
+                    "    i1 this.left"
+                    ""
+                    "I13 i1 (I3 this : I0) : Int ="
+                    "    I1 this.right"
+                    ""
+                    "i1 i1 (I3 this : I3) : Int ="
+                    "    i1 this.i0"
+                    ""
+                    "I3 : (I3 I3 : Int) -> (i4 : I2) -> I4"
+                    "let i4 (1 i4 : I1) : Int = i4"
+                    ""
+                    "i4 : (1 i4 : I0) -> Int"
+                    "let i1 i1 ="
+                    "    match I3"
+                    "        case I1 I3 -> I3 I3"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected malformed constructor pattern lowering to surface diagnostics instead of crashing.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.DuplicateDeclaration)
+
+[<Fact>]
 let ``backend verification rejects missing backend modules`` () =
     let workspace =
         compileInMemoryWorkspace

@@ -701,18 +701,24 @@ module internal KBackendLowering =
                         match resolvedName with
                         | BackendConstructorName(moduleName, typeName, constructorName, tag, _, _) ->
                             let constructorInfo = context.ConstructorInfos[moduleName, constructorName]
+                            let expectedArity = List.length constructorInfo.FieldRepresentations
+                            let actualArity = List.length argumentPatterns
 
-                            ((Result.Ok([], Map.empty)), List.zip argumentPatterns constructorInfo.FieldRepresentations)
-                            ||> List.fold (fun state (argumentPattern, fieldRepresentation) ->
-                                state
-                                |> Result.bind (fun (patterns, discoveredLocals) ->
-                                    lowerPattern locals fieldRepresentation argumentPattern
-                                    |> Result.map (fun (loweredPattern, patternLocals) ->
-                                        loweredPattern :: patterns,
-                                        Map.fold (fun mapState key value -> Map.add key value mapState) discoveredLocals patternLocals)))
-                            |> Result.map (fun (patterns, discoveredLocals) ->
-                                BackendConstructorPattern(moduleName, typeName, constructorName, tag, List.rev patterns),
-                                discoveredLocals)
+                            if expectedArity <> actualArity then
+                                Result.Error
+                                    $"Pattern '{constructorText}' expected {expectedArity} constructor argument(s), but received {actualArity}."
+                            else
+                                ((Result.Ok([], Map.empty)), List.zip argumentPatterns constructorInfo.FieldRepresentations)
+                                ||> List.fold (fun state (argumentPattern, fieldRepresentation) ->
+                                    state
+                                    |> Result.bind (fun (patterns, discoveredLocals) ->
+                                        lowerPattern locals fieldRepresentation argumentPattern
+                                        |> Result.map (fun (loweredPattern, patternLocals) ->
+                                            loweredPattern :: patterns,
+                                            Map.fold (fun mapState key value -> Map.add key value mapState) discoveredLocals patternLocals)))
+                                |> Result.map (fun (patterns, discoveredLocals) ->
+                                    BackendConstructorPattern(moduleName, typeName, constructorName, tag, List.rev patterns),
+                                    discoveredLocals)
                         | _ ->
                             Result.Error $"Pattern '{constructorText}' does not resolve to a constructor.")
 
