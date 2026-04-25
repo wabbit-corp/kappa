@@ -40,6 +40,25 @@ let private parseExpressionWithFixities (fixities: FixityTable) (fileName: strin
     let parsed = CoreParsing.parseExpression fixities source diagnostics lexed.Tokens
     parsed, diagnostics.Items
 
+let private parseDocumentWithFixities (fixities: FixityTable) (fileName: string) (text: string) =
+    let source = createSource fileName text
+    let lexed = Lexer.tokenize source
+    Assert.Empty(lexed.Diagnostics)
+    Parser.parseWithInitialFixities fixities source lexed.Tokens
+
+let private tryFindDocument moduleName (workspace: WorkspaceCompilation) =
+    workspace.Documents
+    |> List.tryFind (fun document ->
+        match document.ModuleName with
+        | Some segments -> SyntaxFacts.moduleNameToText segments = moduleName
+        | None -> false)
+
+let private tryFindLetDeclaration declarationName (document: ParsedDocument) =
+    document.Syntax.Declarations
+    |> List.tryPick (function
+        | LetDeclaration declaration when declaration.Name = Some declarationName -> Some declaration
+        | _ -> None)
+
 let private assertSurfaceIntegerLiteral (expectedValue: int) expectedText expression =
     match expression with
     | NumericLiteral(SurfaceIntegerLiteral(value, sourceText, None)) ->
@@ -1350,6 +1369,98 @@ let ``operator section hygiene does not capture user written names`` () =
         Assert.Equal("42", RuntimeValue.format value)
     | Result.Error issue ->
         failwithf "Expected hygienic operator section evaluation to succeed, got %s" issue.Message
+
+[<Fact>]
+let ``top level fixity declarations apply only from their declaration onward`` () =
+    let parsed =
+        parseDocumentWithFixities
+            (Parser.bootstrapFixities ())
+            "__fixity_scope_declaration_order__.kp"
+            (String.concat
+                "\n"
+                [ "module main"
+                  "let before = 1 %% 2"
+                  "infix left 65 (%%)"
+                  "let (%%) x y = x"
+                  "let after = 1 %% 2" ])
+
+    Assert.NotEmpty(parsed.Diagnostics)
+
+    let beforeDeclaration =
+        parsed.Syntax.Declarations
+        |> List.choose (function
+            | LetDeclaration declaration when declaration.Name = Some "before" -> Some declaration
+            | _ -> None)
+        |> List.exactlyOne
+
+    let afterDeclaration =
+        parsed.Syntax.Declarations
+        |> List.choose (function
+            | LetDeclaration declaration when declaration.Name = Some "after" -> Some declaration
+            | _ -> None)
+        |> List.exactlyOne
+
+    match beforeDeclaration.Body with
+    | Some(Binary _) ->
+        failwith "Expected the pre-fixity declaration expression to remain unparsed as an infix application."
+    | _ ->
+        ()
+
+    match afterDeclaration.Body with
+    | Some(Binary(left, "%%", right)) ->
+        assertSurfaceIntegerLiteral 1 "1" left
+        assertSurfaceIntegerLiteral 2 "2" right
+    | other ->
+        failwithf "Expected the post-fixity declaration expression to parse as an infix application, got %A" other
+
+[<Fact>]
+let ``imported fixities apply only from the import declaration onward`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-import-fixity-scope-root"
+            [ "ops.kp",
+              String.concat
+                  "\n"
+                  [ "module ops"
+                    "infix left 65 (%%)"
+                    "let (%%) x y = x" ]
+              "main.kp",
+              String.concat
+                  "\n"
+                  [ "module main"
+                    "let before = 1 %% 2"
+                    "import ops.((%%))"
+                    "let after = 1 %% 2" ] ]
+
+    let mainDocument =
+        tryFindDocument "main" workspace
+        |> Option.defaultWith (fun () -> failwith "Expected a main module document.")
+
+    Assert.True(
+        mainDocument.Diagnostics |> List.exists (fun diagnostic -> diagnostic.Code = DiagnosticCode.ParseError),
+        sprintf "Expected an early parse error before the import brought the fixity into scope, got %A" mainDocument.Diagnostics
+    )
+
+    let beforeDeclaration =
+        tryFindLetDeclaration "before" mainDocument
+        |> Option.defaultWith (fun () -> failwith "Expected to find the 'before' declaration.")
+
+    let afterDeclaration =
+        tryFindLetDeclaration "after" mainDocument
+        |> Option.defaultWith (fun () -> failwith "Expected to find the 'after' declaration.")
+
+    match beforeDeclaration.Body with
+    | Some(Binary _) ->
+        failwith "Expected the pre-import expression to remain outside the imported fixity scope."
+    | _ ->
+        ()
+
+    match afterDeclaration.Body with
+    | Some(Binary(left, "%%", right)) ->
+        assertSurfaceIntegerLiteral 1 "1" left
+        assertSurfaceIntegerLiteral 2 "2" right
+    | other ->
+        failwithf "Expected the post-import expression to parse with the imported fixity in scope, got %A" other
 
 [<Fact>]
 let ``bootstrap fixity table matches spec defaults for core reserved and prelude operators`` () =

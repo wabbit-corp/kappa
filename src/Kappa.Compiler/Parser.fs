@@ -12,7 +12,13 @@ type private ModifierState =
       IsOpaque: bool
       TotalityAssertion: TotalityAssertion option }
 
-type private TokenParser(tokens: Token list, source: SourceText, initialFixities: FixityTable) =
+type private TokenParser
+    (
+        tokens: Token list,
+        source: SourceText,
+        initialFixities: FixityTable,
+        resolveImportedFixities: ImportSpec list -> FixityDeclaration list
+    ) =
     let tokenArray = List.toArray tokens
     let diagnostics = DiagnosticBag()
     let mutable fixities = initialFixities
@@ -1321,7 +1327,12 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
         while this.TryConsume(Comma).IsSome do
             specs.Add(this.ParseImportSpec())
 
-        ImportDeclaration(isExport, List.ofSeq specs)
+        let parsedSpecs = List.ofSeq specs
+
+        for declaration in resolveImportedFixities parsedSpecs do
+            fixities <- FixityTable.add declaration fixities
+
+        ImportDeclaration(isExport, parsedSpecs)
 
     member private this.ParseUnknownDeclaration() =
         UnknownDeclaration(this.CollectUntilTopLevelBoundary())
@@ -1421,12 +1432,15 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
 
 // Parses tokens into documents and maintains the bootstrap/user fixity environment.
 module Parser =
-    let parseWithInitialFixities initialFixities source tokens =
-        let parser = TokenParser(tokens, source, initialFixities)
+    let parseWithImportedFixityResolver initialFixities resolveImportedFixities source tokens =
+        let parser = TokenParser(tokens, source, initialFixities, resolveImportedFixities)
         let syntax, diagnostics = parser.ParseCompilationUnit()
 
         { Syntax = syntax
           Diagnostics = diagnostics }
+
+    let parseWithInitialFixities initialFixities source tokens =
+        parseWithImportedFixityResolver initialFixities (fun _ -> []) source tokens
 
     let private bundledPreludeBootstrapFixities =
         let splitLeadingFixities declarations =

@@ -120,9 +120,15 @@ module internal CompilationFrontend =
         { document with
             Diagnostics = document.Diagnostics @ validateModuleName options document }
 
-    let private reparseDocumentWithFixities (options: CompilationOptions) initialFixities (document: ParsedDocument) =
+    let private reparseDocumentWithImportedFixityResolver
+        (options: CompilationOptions)
+        initialFixities
+        resolveImportedFixities
+        (document: ParsedDocument)
+        =
         let lexed = Lexer.tokenize document.Source
-        let parsed = Parser.parseWithInitialFixities initialFixities document.Source lexed.Tokens
+        let parsed =
+            Parser.parseWithImportedFixityResolver initialFixities resolveImportedFixities document.Source lexed.Tokens
 
         let reparsed =
             { document with
@@ -1279,6 +1285,29 @@ module internal CompilationFrontend =
             Set.contains name inventory.UnqualifiedBindings
             && not (excludedByExcept ImportNamespace.Term excludedItems)
 
+    let private resolveImportedFixitiesForSpecs
+        (exportInventories: Map<string, ModuleExportInventory>)
+        (moduleFixityInventory: Map<string, FixityDeclaration list>)
+        (specs: ImportSpec list)
+        =
+        specs
+        |> List.collect (fun spec ->
+            let resolvedSpec =
+                match resolveQualifiedOnlyImportSpec exportInventories spec with
+                | ResolvedImportSpec resolvedSpec -> resolvedSpec
+                | AmbiguousBareImport _
+                | UnresolvedBareImport _ -> spec
+
+            let moduleNameText = moduleSpecifierIdentityText resolvedSpec.Source
+
+            match Map.tryFind moduleNameText exportInventories, Map.tryFind moduleNameText moduleFixityInventory with
+            | Some inventory, Some fixities ->
+                fixities
+                |> List.filter (fun declaration ->
+                    selectionImportsFixityName inventory resolvedSpec.Selection declaration.OperatorName)
+            | _ ->
+                [])
+
     let reparseDocumentsWithImportedFixities (options: CompilationOptions) (documents: ParsedDocument list) =
         let baseFixities = Parser.bootstrapFixities ()
         let exportInventories = buildModuleExportInventory documents
@@ -1286,33 +1315,10 @@ module internal CompilationFrontend =
 
         documents
         |> List.map (fun document ->
-            let importedFixities =
-                document.Syntax.Declarations
-                |> List.collect (function
-                    | ImportDeclaration (_, specs) -> specs
-                    | _ -> [])
-                |> List.collect (fun spec ->
-                    let resolvedSpec =
-                        match resolveQualifiedOnlyImportSpec exportInventories spec with
-                        | ResolvedImportSpec resolvedSpec -> resolvedSpec
-                        | AmbiguousBareImport _
-                        | UnresolvedBareImport _ -> spec
+            let resolveImportedFixities specs =
+                resolveImportedFixitiesForSpecs exportInventories moduleFixityInventory specs
 
-                    let moduleNameText = moduleSpecifierIdentityText resolvedSpec.Source
-
-                    match Map.tryFind moduleNameText exportInventories, Map.tryFind moduleNameText moduleFixityInventory with
-                    | Some inventory, Some fixities ->
-                        fixities
-                        |> List.filter (fun declaration ->
-                            selectionImportsFixityName inventory resolvedSpec.Selection declaration.OperatorName)
-                    | _ ->
-                        [])
-
-            let initialFixities =
-                importedFixities
-                |> List.fold (fun table declaration -> FixityTable.add declaration table) baseFixities
-
-            reparseDocumentWithFixities options initialFixities document)
+            reparseDocumentWithImportedFixityResolver options baseFixities resolveImportedFixities document)
 
     let declarationKindText (declaration: TopLevelDeclaration) =
         match declaration with
