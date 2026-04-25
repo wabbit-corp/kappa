@@ -159,6 +159,7 @@ let private declarationLabel declaration =
     | ProjectionDeclarationNode _ -> "projection"
     | DataDeclarationNode _ -> "data"
     | TypeAliasNode _ -> "type"
+    | EffectDeclarationNode _ -> "effect"
     | TraitDeclarationNode _ -> "trait"
     | InstanceDeclarationNode _ -> "instance"
     | UnknownDeclaration _ -> "unknown"
@@ -212,6 +213,8 @@ let private printAst (document: ParsedDocument) =
             printfn "  data %s (%d constructor line(s))" declaration.Name declaration.Constructors.Length
         | TypeAliasNode declaration ->
             printfn "  type %s" declaration.Name
+        | EffectDeclarationNode declaration ->
+            printfn "  effect %s (%d operation line(s))" declaration.Name declaration.Operations.Length
         | TraitDeclarationNode declaration ->
             printfn "  trait %s (%d member line(s))" declaration.Name declaration.Members.Length
         | InstanceDeclarationNode declaration ->

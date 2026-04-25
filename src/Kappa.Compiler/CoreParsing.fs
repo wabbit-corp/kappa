@@ -14,7 +14,7 @@ type private LocalPureBlockItem =
     | LocalPureBinding of SurfaceBindPattern * SurfaceExpression
     | LocalPureSignature of BindingSignature
     | LocalPureTypeAlias of TypeAlias
-    | LocalPureScopedEffect of string
+    | LocalPureScopedEffect of EffectDeclaration
 
 // Parses shared binder forms used by both surface syntax and type/signature parsing.
 module private SurfaceBinderParsing =
@@ -341,6 +341,159 @@ module private SurfaceBinderParsing =
         match pattern with
         | NamePattern name -> Some name
         | _ -> None
+
+module private SurfaceEffectParsing =
+    let isContextualKeyword text (token: Token) =
+        token.Kind = Identifier
+        && String.Equals(SyntaxFacts.trimIdentifierQuotes token.Text, text, StringComparison.Ordinal)
+
+    let splitNestedIndentedLines (tokens: Token list) =
+        let lines = ResizeArray<Token list>()
+        let tokenArray = List.toArray tokens
+        let mutable position = 0
+
+        let current () =
+            if position < tokenArray.Length then
+                tokenArray[position]
+            else
+                { Kind = EndOfFile
+                  Text = ""
+                  Span =
+                    if Array.isEmpty tokenArray then
+                        TextSpan.FromBounds(0, 0)
+                    else
+                        tokenArray[tokenArray.Length - 1].Span }
+
+        let advance () =
+            let token = current ()
+
+            if position < tokenArray.Length then
+                position <- position + 1
+
+            token
+
+        let flushLine (currentLine: ResizeArray<Token>) =
+            if currentLine.Count > 0 then
+                lines.Add(List.ofSeq currentLine)
+                currentLine.Clear()
+
+        if position < tokenArray.Length && (current ()).Kind = Newline && position + 1 < tokenArray.Length && tokenArray[position + 1].Kind = Indent then
+            advance () |> ignore
+            advance () |> ignore
+
+            let currentLine = ResizeArray<Token>()
+            let mutable nestedIndents = 0
+
+            while not ((current ()).Kind = Dedent && nestedIndents = 0) && (current ()).Kind <> EndOfFile do
+                match (current ()).Kind with
+                | Newline when nestedIndents = 0 && position + 1 < tokenArray.Length && tokenArray[position + 1].Kind = Indent ->
+                    currentLine.Add(advance ())
+                    nestedIndents <- nestedIndents + 1
+                    currentLine.Add(advance ())
+                | Newline when nestedIndents = 0 ->
+                    flushLine currentLine
+                    advance () |> ignore
+                | Indent ->
+                    nestedIndents <- nestedIndents + 1
+                    currentLine.Add(advance ())
+                | Dedent when nestedIndents > 0 ->
+                    nestedIndents <- nestedIndents - 1
+                    currentLine.Add(advance ())
+
+                    if nestedIndents = 0 then
+                        flushLine currentLine
+                | _ ->
+                    currentLine.Add(advance ())
+
+            flushLine currentLine
+            lines |> Seq.toList |> List.filter (List.isEmpty >> not)
+        else
+            []
+
+    let tryParseQuantityPrefix (tokens: Token list) =
+        match tokens with
+        | { Kind = IntegerLiteral; Text = "0" } :: rest ->
+            Some(QuantityZero, rest)
+        | { Kind = IntegerLiteral; Text = "1" } :: rest ->
+            Some(QuantityOne, rest)
+        | { Kind = Operator; Text = "&" } :: { Kind = LeftBracket } :: regionToken :: { Kind = RightBracket } :: rest
+            when Token.isName regionToken ->
+            Some(QuantityBorrow(Some(SyntaxFacts.trimIdentifierQuotes regionToken.Text)), rest)
+        | { Kind = Operator; Text = "&" } :: rest ->
+            Some(QuantityBorrow None, rest)
+        | { Kind = Operator; Text = "<=" } :: { Kind = IntegerLiteral; Text = "1" } :: rest ->
+            Some(QuantityAtMostOne, rest)
+        | { Kind = Operator; Text = ">=" } :: { Kind = IntegerLiteral; Text = "1" } :: rest ->
+            Some(QuantityAtLeastOne, rest)
+        | head :: rest when Token.isName head && String.Equals(SyntaxFacts.trimIdentifierQuotes head.Text, "omega", StringComparison.Ordinal) ->
+            Some(QuantityOmega, rest)
+        | head :: rest when Token.isName head && String.Equals(SyntaxFacts.trimIdentifierQuotes head.Text, "\u03c9", StringComparison.Ordinal) ->
+            Some(QuantityOmega, rest)
+        | _ ->
+            None
+
+    let parseOperationLine (lineTokens: Token list) =
+        let significantTokens =
+            lineTokens
+            |> List.filter (fun token ->
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent
+                | EndOfFile -> false
+                | _ -> true)
+
+        let quantity, remainingTokens =
+            match tryParseQuantityPrefix significantTokens with
+            | Some(quantity, rest) -> Some quantity, rest
+            | None -> None, significantTokens
+
+        match remainingTokens with
+        | nameToken :: colonToken :: signatureTokens when Token.isName nameToken && colonToken.Kind = Colon ->
+            Some
+                { Name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
+                  ResumptionQuantity = quantity
+                  SignatureTokens = signatureTokens }
+        | _ ->
+            None
+
+    let parseScopedEffectDeclaration (lineTokens: Token list) =
+        let trimLineTokens lineTokens =
+            let isLeadingLayoutToken token =
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent -> true
+                | _ -> false
+
+            lineTokens
+            |> List.skipWhile isLeadingLayoutToken
+            |> List.rev
+            |> List.skipWhile (fun token -> token.Kind = Newline)
+            |> List.rev
+
+        match trimLineTokens lineTokens with
+        | scopedToken :: effectToken :: nameToken :: rest
+            when isContextualKeyword "scoped" scopedToken
+                 && isContextualKeyword "effect" effectToken
+                 && Token.isName nameToken ->
+            let name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
+            let bodyTokens =
+                match rest with
+                | equalsToken :: bodyTokens when equalsToken.Kind = Equals -> bodyTokens
+                | _ -> []
+
+            let operations =
+                splitNestedIndentedLines bodyTokens
+                |> List.choose parseOperationLine
+
+            Some
+                { Visibility = None
+                  Name = name
+                  HeaderTokens = []
+                  Operations = operations }
+        | _ ->
+            None
 
 type private PatternParser(tokens: Token list, source: SourceText, diagnostics: DiagnosticBag, fixities: FixityTable) =
     let eofSpan =
@@ -1548,14 +1701,8 @@ type private ExpressionParser
             match trimLineTokens lineTokens with
             | [] ->
                 None
-            | scopedToken :: effectToken :: nameToken :: rest
-                when Token.isName scopedToken
-                     && String.Equals(SyntaxFacts.trimIdentifierQuotes scopedToken.Text, "scoped", StringComparison.Ordinal)
-                     && Token.isName effectToken
-                     && String.Equals(SyntaxFacts.trimIdentifierQuotes effectToken.Text, "effect", StringComparison.Ordinal)
-                     && Token.isName nameToken
-                     && (rest |> List.exists (fun token -> token.Kind = Equals)) ->
-                Some(LocalPureScopedEffect(SyntaxFacts.trimIdentifierQuotes nameToken.Text))
+            | _ when SurfaceEffectParsing.parseScopedEffectDeclaration lineTokens |> Option.isSome ->
+                SurfaceEffectParsing.parseScopedEffectDeclaration lineTokens |> Option.map LocalPureScopedEffect
             | typeToken :: _ as tokens when Token.isKeyword Keyword.Type typeToken ->
                 parseLocalTypeAlias tokens |> Option.map LocalPureTypeAlias
             | letToken :: rest when Token.isKeyword Keyword.Let letToken ->
@@ -1628,8 +1775,8 @@ type private ExpressionParser
                     LocalSignature(declaration, current)
                 | LocalPureTypeAlias declaration ->
                     LocalTypeAlias(declaration, current)
-                | LocalPureScopedEffect name ->
-                    LocalScopedEffect(name, current)) body
+                | LocalPureScopedEffect declaration ->
+                    LocalScopedEffect(declaration, current)) body
 
         match lines with
         | [] ->
@@ -3195,6 +3342,235 @@ type private ExpressionParser
 
             KindQualifiedName(EffectLabelKind, [ "<missing>" ])
 
+    member private this.IsContextualIdentifier(text: string) =
+        this.Current.Kind = Identifier
+        && String.Equals(SyntaxFacts.trimIdentifierQuotes(this.Current.Text), text, StringComparison.Ordinal)
+
+    member private this.IsHandleExpressionStart() =
+        this.IsContextualIdentifier("handle")
+        || (this.IsContextualIdentifier("deep")
+            && this.Peek(1).Kind = Identifier
+            && String.Equals(SyntaxFacts.trimIdentifierQuotes(this.Peek(1).Text), "handle", StringComparison.Ordinal))
+
+    member private this.CollectUntilTopLevelWith() =
+        let tokens = ResizeArray<Token>()
+        let mutable depth = 0
+
+        while this.Current.Kind <> EndOfFile
+              && not (
+                  depth = 0
+                  && this.Current.Kind = Identifier
+                  && String.Equals(SyntaxFacts.trimIdentifierQuotes this.Current.Text, "with", StringComparison.Ordinal)
+              ) do
+            match this.Current.Kind with
+            | LeftParen
+            | LeftBracket
+            | LeftEffectRow
+            | LeftBrace
+            | LeftSetBrace ->
+                depth <- depth + 1
+            | RightParen
+            | RightBracket
+            | RightEffectRow
+            | RightBrace
+            | RightSetBrace ->
+                depth <- max 0 (depth - 1)
+            | _ ->
+                ()
+
+            tokens.Add(this.Advance())
+
+        List.ofSeq tokens
+
+    member private this.SplitAtomicGroups(tokens: Token list) =
+        let takeAtom remaining =
+            match remaining with
+            | [] ->
+                [], []
+            | first :: _ when first.Kind = LeftParen ->
+                let tokenArray = remaining |> List.toArray
+                let mutable depth = 0
+                let mutable index = 0
+                let mutable keepReading = true
+
+                while keepReading && index < tokenArray.Length do
+                    match tokenArray[index].Kind with
+                    | LeftParen ->
+                        depth <- depth + 1
+                    | RightParen ->
+                        depth <- depth - 1
+
+                        if depth = 0 then
+                            keepReading <- false
+                    | _ ->
+                        ()
+
+                    index <- index + 1
+
+                List.ofArray tokenArray[0 .. index - 1], List.ofArray tokenArray[index ..]
+            | first :: _ when first.Kind = LeftBrace ->
+                let tokenArray = remaining |> List.toArray
+                let mutable depth = 0
+                let mutable index = 0
+                let mutable keepReading = true
+
+                while keepReading && index < tokenArray.Length do
+                    match tokenArray[index].Kind with
+                    | LeftBrace ->
+                        depth <- depth + 1
+                    | RightBrace ->
+                        depth <- depth - 1
+
+                        if depth = 0 then
+                            keepReading <- false
+                    | _ ->
+                        ()
+
+                    index <- index + 1
+
+                List.ofArray tokenArray[0 .. index - 1], List.ofArray tokenArray[index ..]
+            | first :: rest ->
+                [ first ], rest
+
+        let rec loop remaining groups =
+            match remaining with
+            | [] -> List.rev groups
+            | _ ->
+                let groupTokens, rest = takeAtom remaining
+                loop rest (groupTokens :: groups)
+
+        loop tokens []
+
+    member private this.ParseEffectHandlerClause(lineTokens: Token list) =
+        let significantTokens =
+            lineTokens
+            |> List.filter (fun token ->
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent
+                | EndOfFile -> false
+                | _ -> true)
+
+        match significantTokens with
+        | caseToken :: rest when Token.isKeyword Keyword.Case caseToken ->
+            let tokenArray = rest |> List.toArray
+            let mutable depth = 0
+            let mutable splitIndex = -1
+            let mutable index = 0
+
+            while index < tokenArray.Length && splitIndex < 0 do
+                match tokenArray[index].Kind with
+                | LeftParen
+                | LeftBracket
+                | LeftEffectRow
+                | LeftBrace
+                | LeftSetBrace ->
+                    depth <- depth + 1
+                | RightParen
+                | RightBracket
+                | RightEffectRow
+                | RightBrace
+                | RightSetBrace ->
+                    depth <- max 0 (depth - 1)
+                | Arrow when depth = 0 ->
+                    splitIndex <- index
+                | _ ->
+                    ()
+
+                index <- index + 1
+
+            if splitIndex < 0 then
+                diagnostics.AddError(DiagnosticCode.ParseError, "Expected '->' in the handler clause.", source.GetLocation(caseToken.Span))
+                { OperationName = "<missing>"
+                  ArgumentTokens = []
+                  ResumptionName = None
+                  Body = Literal LiteralValue.Unit }
+            else
+                let headerTokens = tokenArray[0 .. splitIndex - 1] |> Array.toList
+                let bodyTokens = tokenArray[splitIndex + 1 ..] |> Array.toList
+
+                match headerTokens with
+                | operationToken :: clauseTokens when Token.isName operationToken || Token.isKeyword Keyword.Return operationToken ->
+                    let operationName =
+                        if Token.isKeyword Keyword.Return operationToken then
+                            "return"
+                        else
+                            SyntaxFacts.trimIdentifierQuotes operationToken.Text
+
+                    let argumentGroups = this.SplitAtomicGroups clauseTokens
+
+                    let argumentTokens, resumptionName =
+                        if String.Equals(operationName, "return", StringComparison.Ordinal) then
+                            argumentGroups, None
+                        else
+                            match List.rev argumentGroups with
+                            | [ ] -> [], None
+                            | lastGroup :: reversedArguments ->
+                                let resumptionName =
+                                    match lastGroup with
+                                    | [ nameToken ] when this.IsNameToken(nameToken) ->
+                                        Some(SyntaxFacts.trimIdentifierQuotes nameToken.Text)
+                                    | _ ->
+                                        None
+
+                                List.rev reversedArguments, resumptionName
+
+                    { OperationName = operationName
+                      ArgumentTokens = argumentTokens
+                      ResumptionName = resumptionName
+                      Body = this.ParseStandaloneExpression(bodyTokens) }
+                | _ ->
+                    diagnostics.AddError(DiagnosticCode.ParseError, "Expected a handler clause head after 'case'.", source.GetLocation(caseToken.Span))
+                    { OperationName = "<missing>"
+                      ArgumentTokens = []
+                      ResumptionName = None
+                      Body = Literal LiteralValue.Unit }
+        | token :: _ ->
+            diagnostics.AddError(DiagnosticCode.ParseError, "Expected a handler clause starting with 'case'.", source.GetLocation(token.Span))
+            { OperationName = "<missing>"
+              ArgumentTokens = []
+              ResumptionName = None
+              Body = Literal LiteralValue.Unit }
+        | [] ->
+            diagnostics.AddError(DiagnosticCode.ParseError, "Expected a handler clause.", source.GetLocation(this.Current.Span))
+            { OperationName = "<missing>"
+              ArgumentTokens = []
+              ResumptionName = None
+              Body = Literal LiteralValue.Unit }
+
+    member private this.ParseHandleExpression() =
+        let isDeep =
+            if this.IsContextualIdentifier("deep") then
+                this.Advance() |> ignore
+                true
+            else
+                false
+
+        this.Advance() |> ignore
+        let label = this.ParsePrefixExpression()
+        let bodyTokens = this.CollectUntilTopLevelWith()
+
+        if not (this.IsContextualIdentifier("with")) then
+            diagnostics.AddError(DiagnosticCode.ParseError, "Expected 'with' in the handler expression.", source.GetLocation(this.Current.Span))
+
+        this.Advance() |> ignore
+        let handledBody = this.ParseStandaloneExpression(bodyTokens)
+        let clauses = this.CollectIndentedLines() |> List.filter (List.isEmpty >> not) |> List.map this.ParseEffectHandlerClause
+        let returnClauses = clauses |> List.filter (fun clause -> String.Equals(clause.OperationName, "return", StringComparison.Ordinal))
+        let operationClauses = clauses |> List.filter (fun clause -> not (String.Equals(clause.OperationName, "return", StringComparison.Ordinal)))
+        let returnClause =
+            match returnClauses with
+            | clause :: _ -> clause
+            | [] ->
+                diagnostics.AddError(DiagnosticCode.ParseError, "Expected a 'case return ...' clause in the handler.", source.GetLocation(this.Current.Span))
+                { OperationName = "return"
+                  ArgumentTokens = []
+                  ResumptionName = None
+                  Body = Literal LiteralValue.Unit }
+
+        Handle(isDeep, label, handledBody, returnClause, operationClauses)
+
     member private this.ParsePrimaryExpression() =
         this.SkipLayout()
 
@@ -3214,6 +3590,8 @@ type private ExpressionParser
             this.ParseIfExpression()
         | Keyword Keyword.Seal ->
             this.ParseSealExpression()
+        | _ when this.IsHandleExpressionStart() ->
+            this.ParseHandleExpression()
         | Keyword Keyword.Type when this.IsKindQualifiedSelectorStart() ->
             this.ParseKindQualifiedName(TypeKind, "type")
         | Keyword Keyword.Trait when this.IsKindQualifiedSelectorStart() ->
@@ -4670,14 +5048,8 @@ module CoreParsing =
             match trimLineTokens lineTokens with
             | letToken :: rest when Token.isKeyword Keyword.Let letToken ->
                 parseBindingLineTokens rest |> Option.map Choice1Of2
-            | scopedToken :: effectToken :: nameToken :: rest
-                when Token.isName scopedToken
-                     && String.Equals(SyntaxFacts.trimIdentifierQuotes scopedToken.Text, "scoped", StringComparison.Ordinal)
-                     && Token.isName effectToken
-                     && String.Equals(SyntaxFacts.trimIdentifierQuotes effectToken.Text, "effect", StringComparison.Ordinal)
-                     && Token.isName nameToken
-                     && (rest |> List.exists (fun token -> token.Kind = Equals)) ->
-                Some(Choice2Of2(SyntaxFacts.trimIdentifierQuotes nameToken.Text))
+            | _ when SurfaceEffectParsing.parseScopedEffectDeclaration lineTokens |> Option.isSome ->
+                SurfaceEffectParsing.parseScopedEffectDeclaration lineTokens |> Option.map Choice2Of2
             | _ ->
                 None
 
@@ -4705,7 +5077,7 @@ module CoreParsing =
             |> List.fold (fun (current: SurfaceExpression) lineTokens ->
                 match parseBindingLine lineTokens with
                 | Some(Choice1Of2(binding, value)) -> LocalLet(binding, value, current)
-                | Some(Choice2Of2 name) -> LocalScopedEffect(name, current)
+                | Some(Choice2Of2 declaration) -> LocalScopedEffect(declaration, current)
                 | None -> current) body
 
         let tryParseIndentedPureBlockSuite () =

@@ -507,6 +507,13 @@ module ResourceChecking =
                 yield! expressionNames body
             | LocalScopedEffect(_, body) ->
                 yield! expressionNames body
+            | Handle(_, label, body, returnClause, operationClauses) ->
+                yield! expressionNames label
+                yield! expressionNames body
+                yield! expressionNames returnClause.Body
+
+                for clause in operationClauses do
+                    yield! expressionNames clause.Body
             | Lambda(parameters, body) ->
                 let parameterNames =
                     parameters
@@ -1639,8 +1646,20 @@ module ResourceChecking =
             LocalSignature(declaration, rewriteProjectionDescriptorApplications (Map.remove declaration.Name aliases) body)
         | LocalTypeAlias(declaration, body) ->
             LocalTypeAlias(declaration, rewrite body)
-        | LocalScopedEffect(name, body) ->
-            LocalScopedEffect(name, rewrite body)
+        | LocalScopedEffect(declaration, body) ->
+            LocalScopedEffect(declaration, rewrite body)
+        | Handle(isDeep, label, body, returnClause, operationClauses) ->
+            let rewriteClause (clause: SurfaceEffectHandlerClause) =
+                { clause with
+                    Body = rewrite clause.Body }
+
+            Handle(
+                isDeep,
+                rewrite label,
+                rewrite body,
+                rewriteClause returnClause,
+                operationClauses |> List.map rewriteClause
+            )
         | Lambda(parameters, body) ->
             let bodyAliases =
                 parameters
@@ -2852,6 +2871,11 @@ module ResourceChecking =
         | CodeQuote inner
         | CodeSplice inner ->
             recurse inner
+        | Handle(_, label, body, returnClause, operationClauses) ->
+            recurse label
+            + recurse body
+            + recurse returnClause.Body
+            + (operationClauses |> List.sumBy (fun clause -> recurse clause.Body))
         | Apply(callee, arguments) ->
             recurse callee + (arguments |> List.sumBy recurse)
         | LocalLet(binding, value, body) ->
@@ -3539,6 +3563,11 @@ module ResourceChecking =
         | CodeQuote inner
         | CodeSplice inner ->
             expressionResultMayCarryBorrow state inner
+        | Handle(_, label, body, returnClause, operationClauses) ->
+            expressionResultMayCarryBorrow state label
+            || expressionResultMayCarryBorrow state body
+            || expressionResultMayCarryBorrow state returnClause.Body
+            || (operationClauses |> List.exists (fun clause -> expressionResultMayCarryBorrow state clause.Body))
         | Name [ name ] ->
             match tryFindBinding name state with
             | Some binding ->
@@ -3605,6 +3634,11 @@ module ResourceChecking =
         | CodeQuote inner
         | CodeSplice inner ->
             expressionMayCarryEscapingBorrow inner
+        | Handle(_, label, body, returnClause, operationClauses) ->
+            expressionMayCarryEscapingBorrow label
+            || expressionMayCarryEscapingBorrow body
+            || expressionMayCarryEscapingBorrow returnClause.Body
+            || (operationClauses |> List.exists (fun clause -> expressionMayCarryEscapingBorrow clause.Body))
         | Lambda _ ->
             true
         | Name [ name ] ->
@@ -3664,6 +3698,17 @@ module ResourceChecking =
         | CodeQuote inner
         | CodeSplice inner ->
             checkResultEscapeAtBoundary allowedRegions document inner state
+        | Handle(_, label, body, returnClause, operationClauses) ->
+            let nextState =
+                state
+                |> checkResultEscapeAtBoundary allowedRegions document label
+                |> checkResultEscapeAtBoundary allowedRegions document body
+                |> checkResultEscapeAtBoundary allowedRegions document returnClause.Body
+
+            operationClauses
+            |> List.fold
+                (fun clauseState clause -> checkResultEscapeAtBoundary allowedRegions document clause.Body clauseState)
+                nextState
         | Lambda _ ->
             checkEscapeAgainstAllowed allowedRegions document expression state
         | Name [ name ] ->
@@ -4158,6 +4203,18 @@ module ResourceChecking =
         | TopLevelSyntaxSplice inner
         | CodeSplice inner ->
             checkExpression projectionSummaries document signatures localTypes state inner
+        | Handle(_, label, body, returnClause, operationClauses) ->
+            let nextState =
+                state
+                |> checkExpression projectionSummaries document signatures localTypes <| label
+                |> checkExpression projectionSummaries document signatures localTypes <| body
+                |> checkExpression projectionSummaries document signatures localTypes <| returnClause.Body
+
+            operationClauses
+            |> List.fold
+                (fun clauseState clause ->
+                    checkExpression projectionSummaries document signatures localTypes clauseState clause.Body)
+                nextState
         | Literal _
         | NumericLiteral _
         | KindQualifiedName _
@@ -5694,6 +5751,11 @@ module ResourceChecking =
                         containsEscapingAbruptControl body
                     | LocalScopedEffect(_, body) ->
                         containsEscapingAbruptControl body
+                    | Handle(_, label, body, returnClause, operationClauses) ->
+                        containsEscapingAbruptControl label
+                        || containsEscapingAbruptControl body
+                        || containsEscapingAbruptControl returnClause.Body
+                        || (operationClauses |> List.exists (fun clause -> containsEscapingAbruptControl clause.Body))
                     | IfThenElse(condition, whenTrue, whenFalse) ->
                         containsEscapingAbruptControl condition
                         || containsEscapingAbruptControl whenTrue

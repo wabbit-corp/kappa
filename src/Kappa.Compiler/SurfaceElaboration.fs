@@ -839,19 +839,25 @@ module SurfaceElaboration =
         | _ ->
             tryResolveStaticObject environment expression
 
-    let private scopedEffectNames = AsyncLocal<Set<string> option>()
+    let private scopedEffects = AsyncLocal<Map<string, EffectDeclaration> option>()
+
+    let private currentScopedEffects () =
+        scopedEffects.Value |> Option.defaultValue Map.empty
 
     let private currentScopedEffectNames () =
-        scopedEffectNames.Value |> Option.defaultValue Set.empty
+        currentScopedEffects () |> Map.keys |> Set.ofSeq
 
-    let private withScopedEffectName name work =
-        let saved = currentScopedEffectNames ()
-        scopedEffectNames.Value <- Some(Set.add name saved)
+    let private tryFindScopedEffectDeclaration name =
+        currentScopedEffects () |> Map.tryFind name
+
+    let private withScopedEffectDeclaration (declaration: EffectDeclaration) work =
+        let saved = currentScopedEffects ()
+        scopedEffects.Value <- Some(Map.add declaration.Name declaration saved)
 
         try
             work ()
         finally
-            scopedEffectNames.Value <- Some saved
+            scopedEffects.Value <- Some saved
 
     let private tryResolveScopedStaticObject
         (environment: BindingLoweringEnvironment)
@@ -928,11 +934,23 @@ module SurfaceElaboration =
                     LocalSignature(declaration, rewrite body)
             | LocalTypeAlias(declaration, body) ->
                 LocalTypeAlias(declaration, rewrite body)
-            | LocalScopedEffect(name, body) ->
-                if aliasIsBoundByName name then
-                    LocalScopedEffect(name, body)
+            | LocalScopedEffect(declaration, body) ->
+                if aliasIsBoundByName declaration.Name then
+                    LocalScopedEffect(declaration, body)
                 else
-                    LocalScopedEffect(name, rewrite body)
+                    LocalScopedEffect(declaration, rewrite body)
+            | Handle(isDeep, label, body, returnClause, operationClauses) ->
+                let rewriteClause (clause: SurfaceEffectHandlerClause) =
+                    { clause with
+                        Body = rewrite clause.Body }
+
+                Handle(
+                    isDeep,
+                    rewrite label,
+                    rewrite body,
+                    rewriteClause returnClause,
+                    operationClauses |> List.map rewriteClause
+                )
             | Lambda(parameters, body) ->
                 if aliasIsBoundByParameters parameters then
                     Lambda(parameters, body)
@@ -1092,6 +1110,18 @@ module SurfaceElaboration =
                 CodeQuote(rewrite inner)
             | CodeSplice inner ->
                 CodeSplice(rewrite inner)
+            | Handle(isDeep, label, body, returnClause, operationClauses) ->
+                let rewriteClause (clause: SurfaceEffectHandlerClause) =
+                    { clause with
+                        Body = rewrite clause.Body }
+
+                Handle(
+                    isDeep,
+                    rewrite label,
+                    rewrite body,
+                    rewriteClause returnClause,
+                    operationClauses |> List.map rewriteClause
+                )
             | Apply(Name [ name ], arguments) when String.Equals(name, aliasName, StringComparison.Ordinal) ->
                 match tryReorder arguments with
                 | Some reorderedArguments ->
@@ -1113,11 +1143,11 @@ module SurfaceElaboration =
                     LocalSignature(declaration, rewrite body)
             | LocalTypeAlias(declaration, body) ->
                 LocalTypeAlias(declaration, rewrite body)
-            | LocalScopedEffect(name, body) ->
-                if String.Equals(name, aliasName, StringComparison.Ordinal) then
+            | LocalScopedEffect(declaration, body) ->
+                if String.Equals(declaration.Name, aliasName, StringComparison.Ordinal) then
                     current
                 else
-                    LocalScopedEffect(name, rewrite body)
+                    LocalScopedEffect(declaration, rewrite body)
             | Lambda(parameters, body) ->
                 if parameters |> List.exists (fun parameter -> String.Equals(parameter.Name, aliasName, StringComparison.Ordinal)) then
                     current
@@ -1191,6 +1221,18 @@ module SurfaceElaboration =
                 CodeQuote(rewrite inner)
             | CodeSplice inner ->
                 CodeSplice(rewrite inner)
+            | Handle(isDeep, label, body, returnClause, operationClauses) ->
+                let rewriteClause (clause: SurfaceEffectHandlerClause) =
+                    { clause with
+                        Body = rewrite clause.Body }
+
+                Handle(
+                    isDeep,
+                    rewrite label,
+                    rewrite body,
+                    rewriteClause returnClause,
+                    operationClauses |> List.map rewriteClause
+                )
             | Apply(Name [ name ], arguments) when String.Equals(name, aliasName, StringComparison.Ordinal) ->
                 Apply(Name [ targetName ], arguments |> List.map rewrite)
             | Apply(callee, arguments) ->
@@ -1208,11 +1250,11 @@ module SurfaceElaboration =
                     LocalSignature(declaration, rewrite body)
             | LocalTypeAlias(declaration, body) ->
                 LocalTypeAlias(declaration, rewrite body)
-            | LocalScopedEffect(name, body) ->
-                if String.Equals(name, aliasName, StringComparison.Ordinal) then
+            | LocalScopedEffect(declaration, body) ->
+                if String.Equals(declaration.Name, aliasName, StringComparison.Ordinal) then
                     current
                 else
-                    LocalScopedEffect(name, rewrite body)
+                    LocalScopedEffect(declaration, rewrite body)
             | Lambda(parameters, body) ->
                 if parameters |> List.exists (fun parameter -> String.Equals(parameter.Name, aliasName, StringComparison.Ordinal)) then
                     current
@@ -1333,6 +1375,18 @@ module SurfaceElaboration =
                 CodeQuote(rewrite activeAliases inner)
             | CodeSplice inner ->
                 CodeSplice(rewrite activeAliases inner)
+            | Handle(isDeep, label, body, returnClause, operationClauses) ->
+                let rewriteClause (clause: SurfaceEffectHandlerClause) =
+                    { clause with
+                        Body = rewrite activeAliases clause.Body }
+
+                Handle(
+                    isDeep,
+                    rewrite activeAliases label,
+                    rewrite activeAliases body,
+                    rewriteClause returnClause,
+                    operationClauses |> List.map rewriteClause
+                )
             | LocalLet(binding, value, body) ->
                 let rewrittenValue = rewrite activeAliases value
                 let shadowedNames = collectPatternNames binding.Pattern |> Set.ofList
@@ -1343,9 +1397,9 @@ module SurfaceElaboration =
                 LocalSignature(declaration, rewrite (withoutShadowedAliases (Set.singleton declaration.Name) activeAliases) body)
             | LocalTypeAlias(declaration, body) ->
                 LocalTypeAlias(declaration, rewrite activeAliases body)
-            | LocalScopedEffect(name, body) ->
-                let bodyAliases = withoutShadowedAliases (Set.singleton name) activeAliases
-                LocalScopedEffect(name, rewrite bodyAliases body)
+            | LocalScopedEffect(declaration, body) ->
+                let bodyAliases = withoutShadowedAliases (Set.singleton declaration.Name) activeAliases
+                LocalScopedEffect(declaration, rewrite bodyAliases body)
             | Lambda(parameters, body) ->
                 let shadowedNames = parameters |> List.map (fun parameter -> parameter.Name) |> Set.ofList
                 Lambda(parameters, rewrite (withoutShadowedAliases shadowedNames activeAliases) body)
@@ -4276,9 +4330,11 @@ module SurfaceElaboration =
                     body
 
             inferValidationExpressionType environment freshCounter nextLocals bodyForInference
-        | LocalScopedEffect(name, body) ->
-            withScopedEffectName name (fun () ->
+        | LocalScopedEffect(declaration, body) ->
+            withScopedEffectDeclaration declaration (fun () ->
                 inferValidationExpressionType environment freshCounter localTypes body)
+        | Handle(_, _, _, returnClause, _) ->
+            inferValidationExpressionType environment freshCounter localTypes returnClause.Body
         | Lambda(parameters, body) ->
             let parameterTypes =
                 parameters
@@ -5335,6 +5391,13 @@ module SurfaceElaboration =
                         yield! loop body
                     | LocalScopedEffect(_, body) ->
                         yield! loop body
+                    | Handle(_, label, body, returnClause, operationClauses) ->
+                        yield! loop label
+                        yield! loop body
+                        yield! loop returnClause.Body
+
+                        for clause in operationClauses do
+                            yield! loop clause.Body
                     | Lambda(_, body) ->
                         yield! loop body
                     | IfThenElse(condition, whenTrue, whenFalse) ->
@@ -5777,6 +5840,11 @@ module SurfaceElaboration =
                     | LocalSignature(_, nestedBody) -> loop nestedBody
                     | LocalTypeAlias(_, nestedBody) -> loop nestedBody
                     | LocalScopedEffect(_, nestedBody) -> loop nestedBody
+                    | Handle(_, label, nestedBody, returnClause, operationClauses) ->
+                        loop label
+                        @ loop nestedBody
+                        @ loop returnClause.Body
+                        @ (operationClauses |> List.collect (fun clause -> loop clause.Body))
                     | Lambda(_, nestedBody) -> loop nestedBody
                     | SyntaxQuote inner
                     | SyntaxSplice inner
@@ -6024,6 +6092,145 @@ module SurfaceElaboration =
         let rec validateExpression locals refinements lexicalNames expression =
             let recurse = validateExpression locals refinements lexicalNames
 
+            let simpleClauseBinderName (tokens: Token list) =
+                match tokens |> List.filter (fun token -> token.Kind <> Newline && token.Kind <> Indent && token.Kind <> Dedent) with
+                | [ token ] when Token.isName token ->
+                    Some(SyntaxFacts.trimIdentifierQuotes token.Text)
+                | _ ->
+                    None
+
+            let clauseBoundNames (clause: SurfaceEffectHandlerClause) =
+                let argumentNames =
+                    clause.ArgumentTokens
+                    |> List.choose simpleClauseBinderName
+
+                match clause.ResumptionName with
+                | Some name -> name :: argumentNames
+                | None -> argumentNames
+                |> Set.ofList
+
+            let rec expressionReferencesName target shadowed current =
+                let recurseName = expressionReferencesName target shadowed
+
+                match current with
+                | Name [ name ] ->
+                    String.Equals(name, target, StringComparison.Ordinal)
+                    && not (Set.contains name shadowed)
+                | SyntaxQuote inner
+                | SyntaxSplice inner
+                | TopLevelSyntaxSplice inner
+                | CodeQuote inner
+                | CodeSplice inner
+                | MonadicSplice inner
+                | ExplicitImplicitArgument inner
+                | InoutArgument inner
+                | Unary(_, inner) ->
+                    recurseName inner
+                | LocalLet(binding, value, body) ->
+                    recurseName value
+                    || expressionReferencesName target (Set.union shadowed (collectPatternNames binding.Pattern |> Set.ofList)) body
+                | LocalSignature(declaration, body) ->
+                    if String.Equals(declaration.Name, target, StringComparison.Ordinal) then
+                        recurseName body
+                    else
+                        expressionReferencesName target (Set.add declaration.Name shadowed) body
+                | LocalTypeAlias(_, body) ->
+                    recurseName body
+                | LocalScopedEffect(declaration, body) ->
+                    if String.Equals(declaration.Name, target, StringComparison.Ordinal) then
+                        false
+                    else
+                        recurseName body
+                | Lambda(parameters, body) ->
+                    let shadowedParameters =
+                        parameters |> List.map (fun parameter -> parameter.Name) |> Set.ofList |> Set.union shadowed
+
+                    expressionReferencesName target shadowedParameters body
+                | Handle(_, label, body, returnClause, operationClauses) ->
+                    recurseName label
+                    || recurseName body
+                    || expressionReferencesName target (Set.union shadowed (clauseBoundNames returnClause)) returnClause.Body
+                    || (operationClauses
+                        |> List.exists (fun clause ->
+                            expressionReferencesName target (Set.union shadowed (clauseBoundNames clause)) clause.Body))
+                | IfThenElse(condition, whenTrue, whenFalse) ->
+                    recurseName condition || recurseName whenTrue || recurseName whenFalse
+                | Match(scrutinee, cases) ->
+                    recurseName scrutinee
+                    || (cases
+                        |> List.exists (fun caseClause ->
+                            let caseShadowed = Set.union shadowed (collectPatternNames caseClause.Pattern |> Set.ofList)
+                            let guardUses =
+                                caseClause.Guard
+                                |> Option.exists (expressionReferencesName target caseShadowed)
+
+                            guardUses || expressionReferencesName target caseShadowed caseClause.Body))
+                | RecordLiteral fields ->
+                    fields |> List.exists (fun field -> recurseName field.Value)
+                | Seal(value, _) ->
+                    recurseName value
+                | RecordUpdate(receiver, fields) ->
+                    recurseName receiver || (fields |> List.exists (fun field -> recurseName field.Value))
+                | MemberAccess(receiver, _, arguments) ->
+                    recurseName receiver || (arguments |> List.exists recurseName)
+                | SafeNavigation(receiver, navigation) ->
+                    recurseName receiver || (navigation.Arguments |> List.exists recurseName)
+                | TagTest(receiver, _) ->
+                    recurseName receiver
+                | Do statements ->
+                    statements
+                    |> List.exists (function
+                        | DoLet(binding, value)
+                        | DoBind(binding, value)
+                        | DoUsing(binding, value) ->
+                            recurseName value
+                            || expressionReferencesName target (Set.union shadowed (collectPatternNames binding.Pattern |> Set.ofList)) (Literal LiteralValue.Unit)
+                        | DoLetQuestion(binding, value, failure) ->
+                            recurseName value
+                            || (failure
+                                |> Option.exists (fun failure ->
+                                    let failureShadowed =
+                                        Set.union shadowed (collectPatternNames failure.ResiduePattern.Pattern |> Set.ofList)
+
+                                    failure.Body
+                                    |> List.exists (function
+                                        | DoExpression inner
+                                        | DoReturn inner
+                                        | DoDefer inner
+                                        | DoVar(_, inner)
+                                        | DoAssign(_, inner) -> expressionReferencesName target failureShadowed inner
+                                        | _ -> false)))
+                            || expressionReferencesName target (Set.union shadowed (collectPatternNames binding.Pattern |> Set.ofList)) (Literal LiteralValue.Unit)
+                        | DoVar(_, value)
+                        | DoAssign(_, value)
+                        | DoDefer value
+                        | DoExpression value
+                        | DoReturn value -> recurseName value
+                        | DoIf(condition, whenTrue, whenFalse) ->
+                            recurseName condition
+                            || (whenTrue |> List.exists (function DoExpression inner | DoReturn inner -> recurseName inner | _ -> false))
+                            || (whenFalse |> List.exists (function DoExpression inner | DoReturn inner -> recurseName inner | _ -> false))
+                        | DoWhile(condition, body) ->
+                            recurseName condition
+                            || (body |> List.exists (function DoExpression inner | DoReturn inner -> recurseName inner | _ -> false)))
+                | Apply(callee, arguments) ->
+                    recurseName callee || (arguments |> List.exists recurseName)
+                | NamedApplicationBlock fields ->
+                    fields |> List.exists (fun field -> recurseName field.Value)
+                | Binary(left, _, right)
+                | Elvis(left, right) ->
+                    recurseName left || recurseName right
+                | PrefixedString(_, parts) ->
+                    parts
+                    |> List.exists (function
+                        | StringText _ -> false
+                        | StringInterpolation(inner, _) -> recurseName inner)
+                | Literal _
+                | NumericLiteral _
+                | KindQualifiedName _
+                | Name _ ->
+                    false
+
             match expression with
             | SyntaxQuote inner
             | SyntaxSplice inner
@@ -6031,6 +6238,46 @@ module SurfaceElaboration =
             | CodeQuote inner
             | CodeSplice inner ->
                 recurse inner
+            | Handle(_, label, body, returnClause, operationClauses) ->
+                let handlerDiagnostics =
+                    match label with
+                    | Name [ effectName ] ->
+                        match tryFindScopedEffectDeclaration effectName with
+                        | Some declaration ->
+                            operationClauses
+                            |> List.collect (fun clause ->
+                                match
+                                    declaration.Operations
+                                    |> List.tryFind (fun operation -> String.Equals(operation.Name, clause.OperationName, StringComparison.Ordinal))
+                                with
+                                | Some operation ->
+                                    match operation.ResumptionQuantity, clause.ResumptionName with
+                                    | Some QuantityZero, _
+                                    | Some QuantityAtMostOne, _
+                                    | None, _ ->
+                                        []
+                                    | Some _, Some resumptionName
+                                        when not (expressionReferencesName resumptionName Set.empty clause.Body) ->
+                                        [
+                                            makeDiagnostic
+                                                DiagnosticCode.QttLinearDrop
+                                                $"Handler clause for operation '{clause.OperationName}' must use relevant resumption '{resumptionName}'."
+                                        ]
+                                    | Some _, _ ->
+                                        []
+                                | None ->
+                                    []
+                                )
+                        | None ->
+                            []
+                    | _ ->
+                        []
+
+                recurse label
+                @ recurse body
+                @ recurse returnClause.Body
+                @ (operationClauses |> List.collect (fun clause -> recurse clause.Body))
+                @ handlerDiagnostics
             | Literal _ ->
                 []
             | NumericLiteral _ ->
@@ -6098,6 +6345,18 @@ module SurfaceElaboration =
                         CodeQuote(rewrite inner)
                     | CodeSplice inner ->
                         CodeSplice(rewrite inner)
+                    | Handle(isDeep, label, body, returnClause, operationClauses) ->
+                        let rewriteClause (clause: SurfaceEffectHandlerClause) =
+                            { clause with
+                                Body = rewrite clause.Body }
+
+                        Handle(
+                            isDeep,
+                            rewrite label,
+                            rewrite body,
+                            rewriteClause returnClause,
+                            operationClauses |> List.map rewriteClause
+                        )
                     | Apply(Name [ name ], arguments) when String.Equals(name, aliasName, StringComparison.Ordinal) ->
                         Apply(Name [ targetName ], arguments |> List.map rewrite)
                     | Apply(callee, arguments) ->
@@ -6119,11 +6378,11 @@ module SurfaceElaboration =
                             LocalSignature(declaration, rewrite nestedBody)
                     | LocalTypeAlias(declaration, nestedBody) ->
                         LocalTypeAlias(declaration, rewrite nestedBody)
-                    | LocalScopedEffect(name, nestedBody) ->
-                        if String.Equals(name, aliasName, StringComparison.Ordinal) then
+                    | LocalScopedEffect(declaration, nestedBody) ->
+                        if String.Equals(declaration.Name, aliasName, StringComparison.Ordinal) then
                             expression
                         else
-                            LocalScopedEffect(name, rewrite nestedBody)
+                            LocalScopedEffect(declaration, rewrite nestedBody)
                     | Lambda(parameters, nestedBody) ->
                         if parameters |> List.exists (fun parameter -> String.Equals(parameter.Name, aliasName, StringComparison.Ordinal)) then
                             expression
@@ -6209,8 +6468,9 @@ module SurfaceElaboration =
                 validateExpression locals refinements (Set.add declaration.Name lexicalNames) body
             | LocalTypeAlias(declaration, body) ->
                 validateExpression locals refinements (Set.add declaration.Name lexicalNames) body
-            | LocalScopedEffect(name, body) ->
-                withScopedEffectName name (fun () -> validateExpression locals refinements (Set.add name lexicalNames) body)
+            | LocalScopedEffect(declaration, body) ->
+                withScopedEffectDeclaration declaration (fun () ->
+                    validateExpression locals refinements (Set.add declaration.Name lexicalNames) body)
             | Lambda(parameters, body) ->
                 let nextLocals =
                     parameters
@@ -6699,6 +6959,11 @@ module SurfaceElaboration =
             | CodeQuote inner
             | CodeSplice inner ->
                 recurse inner
+            | Handle(_, label, body, returnClause, operationClauses) ->
+                recurse label
+                @ recurse body
+                @ recurse returnClause.Body
+                @ (operationClauses |> List.collect (fun clause -> recurse clause.Body))
             | LocalLet(_, value, body) ->
                 recurse value @ recurse body
             | LocalSignature(_, body) ->
@@ -6905,6 +7170,11 @@ module SurfaceElaboration =
             | CodeQuote inner
             | CodeSplice inner ->
                 recurse inner
+            | Handle(_, label, body, returnClause, operationClauses) ->
+                recurse label
+                @ recurse body
+                @ recurse returnClause.Body
+                @ (operationClauses |> List.collect (fun clause -> recurse clause.Body))
             | Apply(Name [ aliasName ], [ rootsArgument ]) ->
                 let nested = validateProjectionDescriptorApplications aliases rootsArgument
 
@@ -7119,6 +7389,11 @@ module SurfaceElaboration =
                 | CodeQuote inner
                 | CodeSplice inner ->
                     recurse inner
+                | Handle(_, label, body, returnClause, operationClauses) ->
+                    recurse label
+                    @ recurse body
+                    @ recurse returnClause.Body
+                    @ (operationClauses |> List.collect (fun clause -> recurse clause.Body))
                 | Apply(Name [ calleeName ], arguments) ->
                     let bindingDiagnostics =
                         environment.VisibleBindings
@@ -7832,6 +8107,11 @@ module SurfaceElaboration =
                     | CodeQuote inner
                     | CodeSplice inner ->
                         references inner
+                    | Handle(_, label, body, returnClause, operationClauses) ->
+                        references label
+                        || references body
+                        || references returnClause.Body
+                        || (operationClauses |> List.exists (fun clause -> references clause.Body))
                     | Apply(callee, arguments) ->
                         references callee || (arguments |> List.exists references)
                     | LocalLet(binding, value, body) ->
@@ -7983,6 +8263,13 @@ module SurfaceElaboration =
                         validateExpression body
                     | LocalTypeAlias(_, body) ->
                         validateExpression body
+                    | LocalScopedEffect(_, body) ->
+                        validateExpression body
+                    | Handle(_, label, body, returnClause, operationClauses) ->
+                        validateExpression label
+                        @ validateExpression body
+                        @ validateExpression returnClause.Body
+                        @ (operationClauses |> List.collect (fun clause -> validateExpression clause.Body))
                     | Lambda(_, body) ->
                         validateExpression body
                     | IfThenElse(condition, whenTrue, whenFalse) ->
@@ -8025,8 +8312,6 @@ module SurfaceElaboration =
                         |> List.collect (function
                             | StringText _ -> []
                             | StringInterpolation(inner, _) -> validateExpression inner)
-                    | LocalScopedEffect(_, body) ->
-                        validateExpression body
                     | Literal _
                     | NumericLiteral _
                     | KindQualifiedName _
@@ -8388,6 +8673,18 @@ module SurfaceElaboration =
                     CodeQuote(substitute inner)
                 | CodeSplice inner ->
                     CodeSplice(substitute inner)
+                | Handle(isDeep, label, body, returnClause, operationClauses) ->
+                    let substituteClause (clause: SurfaceEffectHandlerClause) =
+                        { clause with
+                            Body = substitute clause.Body }
+
+                    Handle(
+                        isDeep,
+                        substitute label,
+                        substitute body,
+                        substituteClause returnClause,
+                        operationClauses |> List.map substituteClause
+                    )
                 | LocalLet(binding, value, body) ->
                     LocalLet(substituteBinding binding, substitute value, substitute body)
                 | LocalSignature(declaration, body) ->
@@ -8399,8 +8696,8 @@ module SurfaceElaboration =
                             BodyTokens = declaration.BodyTokens |> Option.map substituteTypeTokens },
                         substitute body
                     )
-                | LocalScopedEffect(name, body) ->
-                    LocalScopedEffect(name, substitute body)
+                | LocalScopedEffect(declaration, body) ->
+                    LocalScopedEffect(declaration, substitute body)
                 | Lambda(parameters, body) ->
                     Lambda(parameters |> List.map substituteParameter, substitute body)
                 | IfThenElse(condition, whenTrue, whenFalse) ->
@@ -8525,6 +8822,18 @@ module SurfaceElaboration =
                 CodeQuote(normalizeLocalDeclarations inner)
             | CodeSplice inner ->
                 CodeSplice(normalizeLocalDeclarations inner)
+            | Handle(isDeep, label, body, returnClause, operationClauses) ->
+                let normalizeClause (clause: SurfaceEffectHandlerClause) =
+                    { clause with
+                        Body = normalizeLocalDeclarations clause.Body }
+
+                Handle(
+                    isDeep,
+                    normalizeLocalDeclarations label,
+                    normalizeLocalDeclarations body,
+                    normalizeClause returnClause,
+                    operationClauses |> List.map normalizeClause
+                )
             | LocalTypeAlias(declaration, body) ->
                 match tryParseTypeAliasInfo environment.CurrentModuleName declaration with
                 | Some(_, aliasInfo) when List.isEmpty aliasInfo.Parameters ->
@@ -8540,8 +8849,8 @@ module SurfaceElaboration =
                 LocalSignature(declaration, normalizeLocalDeclarations body)
             | LocalLet(binding, value, body) ->
                 LocalLet(binding, normalizeLocalDeclarations value, normalizeLocalDeclarations body)
-            | LocalScopedEffect(name, body) ->
-                LocalScopedEffect(name, normalizeLocalDeclarations body)
+            | LocalScopedEffect(declaration, body) ->
+                LocalScopedEffect(declaration, normalizeLocalDeclarations body)
             | Lambda(parameters, body) ->
                 Lambda(parameters, normalizeLocalDeclarations body)
             | IfThenElse(condition, whenTrue, whenFalse) ->
@@ -8770,8 +9079,10 @@ module SurfaceElaboration =
                         body
 
                 inferExpressionType nextLocals bodyForInference
-            | LocalScopedEffect(name, body) ->
-                withScopedEffectName name (fun () -> inferExpressionType localTypes body)
+            | LocalScopedEffect(declaration, body) ->
+                withScopedEffectDeclaration declaration (fun () -> inferExpressionType localTypes body)
+            | Handle(_, _, _, returnClause, _) ->
+                inferExpressionType localTypes returnClause.Body
             | Lambda(lambdaParameters, lambdaBody) ->
                 let parameterTypes =
                     lambdaParameters
@@ -9214,14 +9525,26 @@ module SurfaceElaboration =
                     CodeQuote(loop inner)
                 | CodeSplice inner ->
                     CodeSplice(loop inner)
+                | Handle(isDeep, label, body, returnClause, operationClauses) ->
+                    let loopClause (clause: SurfaceEffectHandlerClause) =
+                        { clause with
+                            Body = loop clause.Body }
+
+                    Handle(
+                        isDeep,
+                        loop label,
+                        loop body,
+                        loopClause returnClause,
+                        operationClauses |> List.map loopClause
+                    )
                 | LocalLet(binding, value, body) ->
                     LocalLet(binding, loop value, loop body)
                 | LocalSignature(declaration, body) ->
                     LocalSignature(declaration, loop body)
                 | LocalTypeAlias(declaration, body) ->
                     LocalTypeAlias(declaration, loop body)
-                | LocalScopedEffect(name, body) ->
-                    LocalScopedEffect(name, loop body)
+                | LocalScopedEffect(declaration, body) ->
+                    LocalScopedEffect(declaration, loop body)
                 | Lambda(parameters, body) ->
                     Lambda(parameters, loop body)
                 | IfThenElse(condition, whenTrue, whenFalse) ->
@@ -10345,6 +10668,8 @@ module SurfaceElaboration =
                 KCoreCodeQuote(lowerExpressionWithExpectedType localTypes None inner)
             | CodeSplice inner ->
                 KCoreCodeSplice(lowerExpressionWithExpectedType localTypes None inner)
+            | Handle(_, _, _, returnClause, _) ->
+                lowerExpressionWithExpectedType localTypes expectedType returnClause.Body
             | KindQualifiedName _ ->
                 tryResolveScopedStaticObject environment expression
                 |> Option.map lowerStaticObject
@@ -10434,8 +10759,8 @@ module SurfaceElaboration =
                     binding
                     loweredValue
                     (fun loweredLocals -> lowerExpression loweredLocals bodyForLowering)
-            | LocalScopedEffect(name, body) ->
-                withScopedEffectName name (fun () -> lowerExpressionWithExpectedType localTypes expectedType body)
+            | LocalScopedEffect(declaration, body) ->
+                withScopedEffectDeclaration declaration (fun () -> lowerExpressionWithExpectedType localTypes expectedType body)
             | Lambda(lambdaParameters, lambdaBody) ->
                 let lambdaLocals =
                     lambdaParameters

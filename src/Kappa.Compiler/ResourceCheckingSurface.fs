@@ -75,6 +75,13 @@ module internal ResourceCheckingSurface =
                 yield! expressionNames body
             | LocalScopedEffect(_, body) ->
                 yield! expressionNames body
+            | Handle(_, label, body, returnClause, operationClauses) ->
+                yield! expressionNames label
+                yield! expressionNames body
+                yield! expressionNames returnClause.Body
+
+                for clause in operationClauses do
+                    yield! expressionNames clause.Body
             | Lambda(parameters, body) ->
                 let parameterNames =
                     parameters

@@ -227,6 +227,73 @@ let ``parser captures import selectors and declaration kinds`` () =
         failwithf "Unexpected top-level declarations: %A" other
 
 [<Fact>]
+let ``parser captures effect declarations and handler expressions`` () =
+    let sourceText =
+        [
+            "module demo.effects"
+            "effect State (s : Type) ="
+            "    1 get : Unit -> s"
+            "    1 put : s -> Unit"
+            "let handled ="
+            "    block"
+            "        scoped effect Ask ="
+            "            ask : Unit -> Bool"
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let b <- Ask.ask ()"
+            "                if b then 1 else 0"
+            "        handle Ask comp with"
+            "            case return x -> pure x"
+            "            case ask _ k -> k True"
+            "let deepHandled ="
+            "    deep handle Ask comp with"
+            "        case return x -> pure x"
+            "        case ask _ k -> k False"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "demo/effects.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Empty(parsed.Diagnostics)
+
+    match parsed.Syntax.Declarations with
+    | [ EffectDeclarationNode effectDeclaration
+        LetDeclaration { Name = Some "handled"; Body = Some handledBody }
+        LetDeclaration { Name = Some "deepHandled"; Body = Some(Handle(true, Name [ "Ask" ], Name [ "comp" ], deepReturnClause, [ deepOpClause ])) } ] ->
+        let localEffect, returnClause, opClause =
+            match handledBody with
+            | LocalScopedEffect(
+                localEffect,
+                LocalLet(
+                    { Pattern = NamePattern "comp" },
+                    Do _,
+                    Handle(false, Name [ "Ask" ], Name [ "comp" ], returnClause, [ opClause ])
+                )
+              ) ->
+                localEffect, returnClause, opClause
+            | other ->
+                failwithf "Unexpected handled expression shape: %A" other
+
+        Assert.Equal("State", effectDeclaration.Name)
+        Assert.Equal<string list>([ "("; "s"; ":"; "Type"; ")" ], effectDeclaration.HeaderTokens |> List.map (fun token -> token.Text))
+        Assert.Equal<string list>([ "get"; "put" ], effectDeclaration.Operations |> List.map (fun operation -> operation.Name))
+        Assert.Equal(Some QuantityOne, effectDeclaration.Operations[0].ResumptionQuantity)
+        Assert.Equal("Ask", localEffect.Name)
+        Assert.Equal<string list>([ "ask" ], localEffect.Operations |> List.map (fun operation -> operation.Name))
+        Assert.Equal("return", returnClause.OperationName)
+        Assert.Equal(None, returnClause.ResumptionName)
+        Assert.Equal("ask", opClause.OperationName)
+        Assert.Equal(Some "k", opClause.ResumptionName)
+        Assert.Equal("return", deepReturnClause.OperationName)
+        Assert.Equal("ask", deepOpClause.OperationName)
+    | other ->
+        failwithf "Unexpected declarations for effect/handler test: %A" other
+
+[<Fact>]
 let ``parser captures constructor-bundle import items and kind-qualified wildcard exclusions`` () =
     let sourceText =
         [

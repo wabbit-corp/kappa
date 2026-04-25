@@ -207,6 +207,20 @@ module internal CompilationMetadata =
                 $"expect=term;type={tokensText expected.TypeTokens}"
             | SignatureDeclaration signature ->
                 $"signatureType={tokensText signature.TypeTokens}"
+            | EffectDeclarationNode declaration ->
+                let operations =
+                    declaration.Operations
+                    |> List.map (fun operation ->
+                        let quantityText =
+                            operation.ResumptionQuantity
+                            |> Option.map Quantity.toSurfaceText
+                            |> Option.map (fun quantity -> quantity + " ")
+                            |> Option.defaultValue ""
+
+                        $"{quantityText}{operation.Name}:{tokensText operation.SignatureTokens}")
+                    |> String.concat ","
+
+                $"header={tokensText declaration.HeaderTokens};ops=[{operations}]"
             | LetDeclaration definition ->
                 let parameters =
                     definition.Parameters

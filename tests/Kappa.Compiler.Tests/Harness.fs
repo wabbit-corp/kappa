@@ -481,6 +481,7 @@ let private declarationKindText declaration =
     | ProjectionDeclarationNode _ -> "projection"
     | DataDeclarationNode _ -> "data"
     | TypeAliasNode _ -> "type"
+    | EffectDeclarationNode _ -> "effect"
     | TraitDeclarationNode _ -> "trait"
     | InstanceDeclarationNode _ -> "instance"
     | UnknownDeclaration _ -> "unknown"
@@ -593,6 +594,8 @@ let private declarationDescriptorText declaration =
         joinParts [ visibilityText declaration.Visibility; (if declaration.IsOpaque then "opaque" else ""); "data"; declaration.Name ]
     | TypeAliasNode declaration ->
         joinParts [ visibilityText declaration.Visibility; (if declaration.IsOpaque then "opaque" else ""); "type"; declaration.Name ]
+    | EffectDeclarationNode declaration ->
+        joinParts [ visibilityText declaration.Visibility; "effect"; declaration.Name ]
     | TraitDeclarationNode declaration ->
         joinParts [ visibilityText declaration.Visibility; "trait"; declaration.Name ]
     | InstanceDeclarationNode declaration ->

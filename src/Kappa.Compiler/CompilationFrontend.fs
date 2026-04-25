@@ -460,8 +460,8 @@ module internal CompilationFrontend =
                 let headerText = declaration.HeaderTokens |> List.map (fun token -> token.Text) |> String.concat " "
                 let bodyTypeText = declaration.BodyTokens |> Option.defaultValue [] |> List.map (fun token -> token.Text) |> String.concat " "
                 $"(local-type {declaration.Name} {headerText} = {bodyTypeText} {render body})"
-            | LocalScopedEffect(name, body) ->
-                $"(scoped-effect {name} {render body})"
+            | LocalScopedEffect(declaration, body) ->
+                $"(scoped-effect {declaration.Name} {render body})"
             | Lambda(parameters, body) ->
                 let names =
                     parameters
@@ -470,6 +470,23 @@ module internal CompilationFrontend =
                 $"(lambda ({names}) {render body})"
             | IfThenElse(condition, whenTrue, whenFalse) ->
                 $"(if {render condition} {render whenTrue} {render whenFalse})"
+            | Handle(isDeep, label, body, returnClause, operationClauses) ->
+                let renderClause (clause: SurfaceEffectHandlerClause) =
+                    let argumentText =
+                        clause.ArgumentTokens
+                        |> List.map (List.map (fun token -> token.Text) >> String.concat " ")
+                        |> String.concat " "
+
+                    let resumeText =
+                        clause.ResumptionName
+                        |> Option.map (fun name -> $" resume {name}")
+                        |> Option.defaultValue ""
+
+                    $"({clause.OperationName} {argumentText}{resumeText} => {render clause.Body})"
+
+                let keyword = if isDeep then "deep-handle" else "handle"
+                let clauseText = operationClauses |> List.map renderClause |> String.concat " "
+                $"({keyword} {render label} {render body} return {renderClause returnClause} {clauseText})"
             | Match(scrutinee, cases) ->
                 let caseText =
                     cases
@@ -1344,6 +1361,7 @@ module internal CompilationFrontend =
         | ProjectionDeclarationNode _ -> "projection"
         | DataDeclarationNode _ -> "data"
         | TypeAliasNode _ -> "type"
+        | EffectDeclarationNode _ -> "effect"
         | TraitDeclarationNode _ -> "trait"
         | InstanceDeclarationNode _ -> "instance"
         | UnknownDeclaration _ -> "unknown"
@@ -1355,6 +1373,7 @@ module internal CompilationFrontend =
         | ProjectionDeclarationNode declaration -> Some declaration.Name
         | DataDeclarationNode declaration -> Some declaration.Name
         | TypeAliasNode declaration -> Some declaration.Name
+        | EffectDeclarationNode declaration -> Some declaration.Name
         | TraitDeclarationNode declaration -> Some declaration.Name
         | InstanceDeclarationNode declaration -> Some declaration.TraitName
         | ExpectDeclarationNode (ExpectTypeDeclaration declaration) -> Some declaration.Name
@@ -1371,6 +1390,7 @@ module internal CompilationFrontend =
         | ProjectionDeclarationNode _ -> false
         | DataDeclarationNode declaration -> declaration.IsOpaque
         | TypeAliasNode declaration -> declaration.IsOpaque
+        | EffectDeclarationNode _
         | TraitDeclarationNode _
         | InstanceDeclarationNode _
         | ExpectDeclarationNode _
@@ -1385,6 +1405,7 @@ module internal CompilationFrontend =
         | ProjectionDeclarationNode declaration -> visibilityText declaration.Visibility
         | DataDeclarationNode declaration -> visibilityText declaration.Visibility
         | TypeAliasNode declaration -> visibilityText declaration.Visibility
+        | EffectDeclarationNode declaration -> visibilityText declaration.Visibility
         | TraitDeclarationNode declaration -> visibilityText declaration.Visibility
         | InstanceDeclarationNode _
         | ExpectDeclarationNode _
@@ -1461,6 +1482,22 @@ module internal CompilationFrontend =
             let visibilityPrefix = defaultArg (visibilityText declaration.Visibility) ""
             let opaquePrefix = if declaration.IsOpaque then "opaque " else ""
             $"{visibilityPrefix} {opaquePrefix}type {declaration.Name} = {bodyText}".Trim()
+        | EffectDeclarationNode declaration ->
+            let visibilityPrefix = defaultArg (visibilityText declaration.Visibility) ""
+            let headerText = tokensText declaration.HeaderTokens
+            let operations =
+                declaration.Operations
+                |> List.map (fun operation ->
+                    let quantityText =
+                        operation.ResumptionQuantity
+                        |> Option.map Quantity.toSurfaceText
+                        |> Option.map (fun quantity -> quantity + " ")
+                        |> Option.defaultValue ""
+
+                    $"{quantityText}{operation.Name} : {tokensText operation.SignatureTokens}".Trim())
+                |> String.concat " | "
+
+            $"{visibilityPrefix} effect {declaration.Name} {headerText} = {operations}".Trim()
         | TraitDeclarationNode declaration ->
             let members =
                 declaration.Members

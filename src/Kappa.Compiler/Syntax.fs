@@ -325,6 +325,17 @@ type TypeAlias =
       HeaderTokens: Token list
       BodyTokens: Token list option }
 
+type EffectOperation =
+    { Name: string
+      ResumptionQuantity: Quantity option
+      SignatureTokens: Token list }
+
+type EffectDeclaration =
+    { Visibility: Visibility option
+      Name: string
+      HeaderTokens: Token list
+      Operations: EffectOperation list }
+
 type SurfaceExpression =
     | Literal of LiteralValue
     | NumericLiteral of SurfaceNumericLiteral
@@ -338,9 +349,10 @@ type SurfaceExpression =
     | LocalLet of binding: SurfaceBindPattern * value: SurfaceExpression * body: SurfaceExpression
     | LocalSignature of declaration: BindingSignature * body: SurfaceExpression
     | LocalTypeAlias of declaration: TypeAlias * body: SurfaceExpression
-    | LocalScopedEffect of name: string * body: SurfaceExpression
+    | LocalScopedEffect of declaration: EffectDeclaration * body: SurfaceExpression
     | Lambda of Parameter list * SurfaceExpression
     | IfThenElse of SurfaceExpression * SurfaceExpression * SurfaceExpression
+    | Handle of isDeep: bool * label: SurfaceExpression * body: SurfaceExpression * returnClause: SurfaceEffectHandlerClause * operationClauses: SurfaceEffectHandlerClause list
     | Match of SurfaceExpression * SurfaceMatchCase list
     | RecordLiteral of fields: SurfaceRecordLiteralField list
     | Seal of value: SurfaceExpression * ascriptionTokens: Token list
@@ -358,6 +370,12 @@ type SurfaceExpression =
     | Binary of SurfaceExpression * operatorName: string * SurfaceExpression
     | Elvis of SurfaceExpression * SurfaceExpression
     | PrefixedString of prefix: string * parts: SurfaceInterpolatedStringPart list
+
+and SurfaceEffectHandlerClause =
+    { OperationName: string
+      ArgumentTokens: Token list list
+      ResumptionName: string option
+      Body: SurfaceExpression }
 
 and SurfaceInterpolatedStringPart =
     | StringText of string
@@ -550,6 +568,7 @@ type TopLevelDeclaration =
     | LetDeclaration of LetDefinition
     | DataDeclarationNode of DataDeclaration
     | TypeAliasNode of TypeAlias
+    | EffectDeclarationNode of EffectDeclaration
     | ProjectionDeclarationNode of ProjectionDeclaration
     | TraitDeclarationNode of TraitDeclaration
     | InstanceDeclarationNode of InstanceDeclaration

@@ -1230,6 +1230,88 @@ type private TokenParser
               HeaderTokens = List.ofSeq headerTokens
               Members = members }
 
+    member private _.IsContextualEffectToken(token: Token) =
+        token.Kind = Identifier
+        && String.Equals(SyntaxFacts.trimIdentifierQuotes token.Text, "effect", StringComparison.Ordinal)
+
+    member private _.TryParseEffectQuantityPrefix(tokens: Token list) =
+        match tokens with
+        | { Kind = IntegerLiteral; Text = "0" } :: rest ->
+            Some(QuantityZero, rest)
+        | { Kind = IntegerLiteral; Text = "1" } :: rest ->
+            Some(QuantityOne, rest)
+        | { Kind = Operator; Text = "&" } :: { Kind = LeftBracket } :: regionToken :: { Kind = RightBracket } :: rest
+            when Token.isName regionToken ->
+            Some(QuantityBorrow(Some(SyntaxFacts.trimIdentifierQuotes regionToken.Text)), rest)
+        | { Kind = Operator; Text = "&" } :: rest ->
+            Some(QuantityBorrow None, rest)
+        | { Kind = Operator; Text = "<=" } :: { Kind = IntegerLiteral; Text = "1" } :: rest ->
+            Some(QuantityAtMostOne, rest)
+        | { Kind = Operator; Text = ">=" } :: { Kind = IntegerLiteral; Text = "1" } :: rest ->
+            Some(QuantityAtLeastOne, rest)
+        | head :: rest when Token.isName head && String.Equals(SyntaxFacts.trimIdentifierQuotes head.Text, "omega", StringComparison.Ordinal) ->
+            Some(QuantityOmega, rest)
+        | head :: rest when Token.isName head && String.Equals(SyntaxFacts.trimIdentifierQuotes head.Text, "\u03c9", StringComparison.Ordinal) ->
+            Some(QuantityOmega, rest)
+        | _ ->
+            None
+
+    member private this.ParseEffectOperation(lineTokens: Token list) =
+        let significantTokens = this.SignificantTokens lineTokens
+        let quantity, remainingTokens =
+            match this.TryParseEffectQuantityPrefix significantTokens with
+            | Some(quantity, rest) -> Some quantity, rest
+            | None -> None, significantTokens
+
+        match remainingTokens with
+        | nameToken :: colonToken :: signatureTokens when Token.isName nameToken && colonToken.Kind = Colon ->
+            { Name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
+              ResumptionQuantity = quantity
+              SignatureTokens = signatureTokens }
+        | nameToken :: _ ->
+            diagnostics.AddError(
+                DiagnosticCode.ParseError,
+                "Expected an effect operation signature of the form 'op : ...'.",
+                source.GetLocation(nameToken.Span)
+            )
+
+            { Name = "<missing>"
+              ResumptionQuantity = quantity
+              SignatureTokens = [] }
+        | [] ->
+            diagnostics.AddError(
+                DiagnosticCode.ParseError,
+                "Expected an effect operation signature.",
+                source.GetLocation(this.Current.Span)
+            )
+
+            { Name = "<missing>"
+              ResumptionQuantity = quantity
+              SignatureTokens = [] }
+
+    member private this.ParseEffectDeclaration(modifiers: ModifierState) =
+        this.Advance() |> ignore
+        let name = this.ConsumeName("Expected an effect name.")
+        let headerTokens = ResizeArray<Token>()
+
+        while this.Current.Kind <> Equals
+              && this.Current.Kind <> Newline
+              && this.Current.Kind <> EndOfFile do
+            headerTokens.Add(this.Advance())
+
+        let operations =
+            if this.TryConsume(Equals).IsSome then
+                this.ParseIndentedLines() |> List.map this.ParseEffectOperation
+            else
+                diagnostics.AddError(DiagnosticCode.ParseError, "Expected '=' in the effect declaration.", source.GetLocation(this.Current.Span))
+                []
+
+        EffectDeclarationNode
+            { Visibility = modifiers.Visibility
+              Name = name
+              HeaderTokens = List.ofSeq headerTokens
+              Operations = operations }
+
     member private this.ParseInstanceMember(lineTokens: Token list) : LetDefinition option =
         match lineTokens with
         | letToken :: rest when Token.isKeyword Keyword.Let letToken ->
@@ -1457,6 +1539,11 @@ type private TokenParser
                 diagnostics.AddError(DiagnosticCode.ParseError, "Totality assertions do not apply to data declarations.", source.GetLocation(this.Current.Span))
 
             this.ParseDataDeclaration(modifiers)
+        | Identifier when this.IsContextualEffectToken(this.Current) ->
+            if modifiers.IsOpaque || modifiers.TotalityAssertion.IsSome then
+                diagnostics.AddError(DiagnosticCode.ParseError, "Opacity and totality assertions do not apply to effect declarations.", source.GetLocation(this.Current.Span))
+
+            this.ParseEffectDeclaration(modifiers)
         | Keyword Keyword.Type ->
             if modifiers.TotalityAssertion.IsSome then
                 diagnostics.AddError(DiagnosticCode.ParseError, "Totality assertions currently apply only to term declarations.", source.GetLocation(this.Current.Span))
