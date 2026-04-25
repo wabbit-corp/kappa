@@ -543,7 +543,7 @@ module internal KBackendLowering =
                                         (Some fallbackResultRepresentation)
 
                                 Result.Ok(finalConvention, fallbackResultRepresentation, Some directCall, remainingArguments)
-                            | _ ->
+                            | _, false when List.length loweredArguments = bindingInfo.Arity ->
                                 Result.Ok(
                                     makeCallingConvention
                                         bindingInfo.Arity
@@ -553,20 +553,25 @@ module internal KBackendLowering =
                                     None,
                                     loweredArguments
                                 )
+                            | _ ->
+                                Result.Error
+                                    $"Runtime call target '{moduleName}.{bindingName}' expects {bindingInfo.Arity} arguments but received {List.length loweredArguments}."
                         | None when availableRuntimeIntrinsics.Contains bindingName && moduleName = Stdlib.PreludeModuleText ->
+                            let intrinsicArity = IntrinsicCatalog.intrinsicRuntimeArity bindingName
                             let resultRepresentation =
                                 IntrinsicCatalog.intrinsicResultRepresentation bindingName
                                 |> Option.defaultValue fallbackResultRepresentation
 
-                            Result.Ok(
-                                makeCallingConvention
-                                    (IntrinsicCatalog.intrinsicRuntimeArity bindingName)
-                                    argumentRepresentations
-                                    (Some resultRepresentation),
-                                resultRepresentation,
-                                None,
-                                loweredArguments
-                            )
+                            if List.length loweredArguments = intrinsicArity then
+                                Result.Ok(
+                                    makeCallingConvention intrinsicArity argumentRepresentations (Some resultRepresentation),
+                                    resultRepresentation,
+                                    None,
+                                    loweredArguments
+                                )
+                            else
+                                Result.Error
+                                    $"Runtime intrinsic '{moduleName}.{bindingName}' expects {intrinsicArity} arguments but received {List.length loweredArguments}."
                         | None ->
                             Result.Error $"Could not lower runtime call target '{moduleName}.{bindingName}' to KBackendIR."
 
