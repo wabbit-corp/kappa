@@ -22,6 +22,12 @@ type DiagnosticCode =
     | StaticObjectUnresolved
     | ActivePatternInvalid
     | ProjectionDefinitionUnsupported
+    | DuplicateDeclaration
+    | DuplicatePatternBinder
+    | NameUnresolved
+    | RecursiveTypeAlias
+    | MalformedConstructorDeclaration
+    | RecursionRequiresSignature
     | OrPatternBinderMismatch
     | SafeNavigationAmbiguous
     | SafeNavigationReceiverNotOption
@@ -76,6 +82,12 @@ module DiagnosticCode =
         | StaticObjectUnresolved -> "E_STATIC_OBJECT_UNRESOLVED"
         | ActivePatternInvalid -> "E_ACTIVE_PATTERN_INVALID"
         | ProjectionDefinitionUnsupported -> "E_PROJECTION_DEFINITION_UNSUPPORTED"
+        | DuplicateDeclaration -> "E_DUPLICATE_DECLARATION"
+        | DuplicatePatternBinder -> "E_DUPLICATE_PATTERN_BINDER"
+        | NameUnresolved -> "E_NAME_UNRESOLVED"
+        | RecursiveTypeAlias -> "E_RECURSIVE_TYPE_ALIAS"
+        | MalformedConstructorDeclaration -> "E_MALFORMED_CONSTRUCTOR_DECLARATION"
+        | RecursionRequiresSignature -> "E_RECURSION_REQUIRES_SIGNATURE"
         | OrPatternBinderMismatch -> "E_OR_PATTERN_BINDER_MISMATCH"
         | SafeNavigationAmbiguous -> "E_SAFE_NAVIGATION_AMBIGUOUS"
         | SafeNavigationReceiverNotOption -> "E_SAFE_NAVIGATION_RECEIVER_NOT_OPTION"
@@ -129,6 +141,12 @@ module DiagnosticCode =
         | "E_STATIC_OBJECT_UNRESOLVED" -> Some StaticObjectUnresolved
         | "E_ACTIVE_PATTERN_INVALID" -> Some ActivePatternInvalid
         | "E_PROJECTION_DEFINITION_UNSUPPORTED" -> Some ProjectionDefinitionUnsupported
+        | "E_DUPLICATE_DECLARATION" -> Some DuplicateDeclaration
+        | "E_DUPLICATE_PATTERN_BINDER" -> Some DuplicatePatternBinder
+        | "E_NAME_UNRESOLVED" -> Some NameUnresolved
+        | "E_RECURSIVE_TYPE_ALIAS" -> Some RecursiveTypeAlias
+        | "E_MALFORMED_CONSTRUCTOR_DECLARATION" -> Some MalformedConstructorDeclaration
+        | "E_RECURSION_REQUIRES_SIGNATURE" -> Some RecursionRequiresSignature
         | "E_OR_PATTERN_BINDER_MISMATCH" -> Some OrPatternBinderMismatch
         | "E_SAFE_NAVIGATION_AMBIGUOUS" -> Some SafeNavigationAmbiguous
         | "E_SAFE_NAVIGATION_RECEIVER_NOT_OPTION" -> Some SafeNavigationReceiverNotOption

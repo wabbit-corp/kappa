@@ -1726,9 +1726,9 @@ let ``source compilation surfaces missing imported runtime modules as diagnostic
                 |> String.concat "\n"
             ]
 
-    Assert.True(workspace.HasErrors, "Expected missing imported runtime module to become a compile diagnostic.")
-    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
-    Assert.Contains("imported runtime module 'missing.mod'", diagnosticsText workspace.Diagnostics)
+    Assert.True(workspace.HasErrors, "Expected missing imported module to become a frontend compile diagnostic.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.ModuleNameUnresolved)
+    Assert.Contains("Imported module 'missing.mod' was not found", diagnosticsText workspace.Diagnostics)
 
 [<Fact>]
 let ``source compilation surfaces backend lowering failures as diagnostics`` () =
@@ -1745,9 +1745,9 @@ let ``source compilation surfaces backend lowering failures as diagnostics`` () 
                 |> String.concat "\n"
             ]
 
-    Assert.True(workspace.HasErrors, "Expected unresolved backend lowering to become a compile diagnostic.")
-    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
-    Assert.Contains("Could not lower runtime binding 'main.I0' to KBackendIR", diagnosticsText workspace.Diagnostics)
+    Assert.True(workspace.HasErrors, "Expected unresolved top-level alias to become a frontend compile diagnostic.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.NameUnresolved)
+    Assert.Contains("Name 'I1' is not in scope", diagnosticsText workspace.Diagnostics)
 
 [<Fact>]
 let ``source compilation surfaces backend verification call arity failures as diagnostics`` () =
@@ -1764,9 +1764,9 @@ let ``source compilation surfaces backend verification call arity failures as di
                 |> String.concat "\n"
             ]
 
-    Assert.True(workspace.HasErrors, "Expected malformed backend calling convention to become a compile diagnostic.")
-    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
-    Assert.Contains("argument count matching the calling convention arity", diagnosticsText workspace.Diagnostics)
+    Assert.True(workspace.HasErrors, "Expected unsigned recursion to become a frontend compile diagnostic.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.RecursionRequiresSignature)
+    Assert.Contains("recursive but has no preceding signature declaration", diagnosticsText workspace.Diagnostics)
 
 [<Fact>]
 let ``backend verification rejects missing backend modules`` () =

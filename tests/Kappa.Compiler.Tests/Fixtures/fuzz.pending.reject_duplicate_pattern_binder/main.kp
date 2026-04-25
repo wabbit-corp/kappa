@@ -1,0 +1,8 @@
+data Pair : Type =
+    Pair Int Int
+
+let value = Pair 1 2
+
+let bad =
+    match value
+        case Pair i2 i2 -> i2

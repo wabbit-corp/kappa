@@ -1,0 +1,2 @@
+type I1 = (i0 : I1, i0 : Unit) -> IO Unit
+let I1 (1 I1 : I0) : I1 = I1 }

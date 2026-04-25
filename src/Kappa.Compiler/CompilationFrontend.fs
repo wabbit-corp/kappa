@@ -548,6 +548,45 @@ module internal CompilationFrontend =
               Constructors = Set.empty
               UnqualifiedBindings = Set.empty }
 
+        let inventory terms types traits constructors =
+            let terms = Set.ofList terms
+            let types = Set.ofList types
+            let traits = Set.ofList traits
+            let constructors = Set.ofList constructors
+
+            { Terms = terms
+              Types = types
+              Traits = traits
+              Constructors = constructors
+              UnqualifiedBindings = Set.unionMany [ terms; types; traits; constructors ] }
+
+        let standardModuleInventories =
+            [ "std.gradual",
+              inventory
+                  [ "toDynWith"; "checkedCastWith"; "sameDynRep"; "toDyn"; "checkedCast" ]
+                  [ "Dyn"; "DynRep"; "CastBlame" ]
+                  [ "DynamicType" ]
+                  []
+              "std.ffi",
+              inventory
+                  []
+                  [ "I8"; "I16"; "I32"; "I64"; "U8"; "U16"; "U32"; "U64"; "Isize"; "Usize"; "F32"; "F64"; "RawPtr"; "OpaqueHandle" ]
+                  []
+                  []
+              "std.ffi.c",
+              inventory
+                  []
+                  [ "CChar"; "CSChar"; "CUChar"; "CShort"; "CUShort"; "CInt"; "CUInt"; "CLong"; "CULong"; "CLongLong"; "CULongLong"; "CSize"; "CPtrdiff"; "CBool" ]
+                  []
+                  []
+              "std.bridge",
+              inventory
+                  [ "bindModule"; "bindModuleOwned"; "bridgePackageValue"; "bridgePackageOrigin"; "bridgeFailureToCastBlame" ]
+                  [ "BridgeOrigin"; "BoundaryDirection"; "BoundaryPrecision"; "BridgeFailure"; "BridgeContract"; "BridgePackage" ]
+                  [ "BridgeBindable"; "BridgeHandle" ]
+                  [ "IntoKappa"; "OutOfKappa"; "LaterUse"; "Exact"; "Conservative"; "Lossy" ] ]
+            |> Map.ofList
+
         let itemExportsTermName (item: ImportItem) =
             item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Term
 
@@ -724,6 +763,9 @@ module internal CompilationFrontend =
                 else
                     syntaxInventory)
 
+        let withStandardModuleInventories inventories =
+            Map.fold (fun current name inventory -> Map.add name inventory current) inventories standardModuleInventories
+
         let rec saturate inventories =
             let nextInventories =
                 groupedDocuments
@@ -738,13 +780,14 @@ module internal CompilationFrontend =
                             | _ -> None)
                         |> List.concat)
                     |> List.fold (applyReexportSpec inventories) directInventory)
+                |> withStandardModuleInventories
 
             if nextInventories = inventories then
                 inventories
             else
                 saturate nextInventories
 
-        saturate syntaxInventories
+        saturate (withStandardModuleInventories syntaxInventories)
 
     let private importItemExists inventory (item: ImportItem) =
         match item.Namespace with
@@ -769,22 +812,32 @@ module internal CompilationFrontend =
                 | ImportDeclaration (_, specs) ->
                     for spec in specs do
                         match spec.Source, spec.Selection with
-                        | Dotted moduleName, Items items ->
+                        | Dotted moduleName, selection ->
                             let importedModuleName = SyntaxFacts.moduleNameToText moduleName
 
                             match Map.tryFind importedModuleName exportInventories with
                             | Some inventory ->
-                                for item in items do
-                                    if not (importItemExists inventory item) then
-                                        diagnostics.AddError(
-                                            DiagnosticCode.ImportItemNotFound,
-                                            $"Import item '{item.Name}' was not found in module '{importedModuleName}'.",
-                                            defaultArg (findTokenLocation document item.Name) (document.Source.GetLocation(TextSpan.FromBounds(0, 0))),
-                                            stage = "KFrontIR",
-                                            phase = KFrontIRPhase.phaseName CHECKERS
-                                        )
+                                match selection with
+                                | Items items ->
+                                    for item in items do
+                                        if not (importItemExists inventory item) then
+                                            diagnostics.AddError(
+                                                DiagnosticCode.ImportItemNotFound,
+                                                $"Import item '{item.Name}' was not found in module '{importedModuleName}'.",
+                                                defaultArg (findTokenLocation document item.Name) (document.Source.GetLocation(TextSpan.FromBounds(0, 0))),
+                                                stage = "KFrontIR",
+                                                phase = KFrontIRPhase.phaseName CHECKERS
+                                            )
+                                | _ ->
+                                    ()
                             | None ->
-                                ()
+                                diagnostics.AddError(
+                                    DiagnosticCode.ModuleNameUnresolved,
+                                    $"Imported module '{importedModuleName}' was not found.",
+                                    defaultArg (moduleName |> List.tryHead |> Option.bind (findTokenLocation document)) (document.Source.GetLocation(TextSpan.FromBounds(0, 0))),
+                                    stage = "KFrontIR",
+                                    phase = KFrontIRPhase.phaseName CHECKERS
+                                )
                         | _ ->
                             ()
                 | _ ->

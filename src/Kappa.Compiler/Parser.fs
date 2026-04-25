@@ -113,8 +113,13 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
                 | Dedent -> false
                 | _ -> true)
 
-        let name, argumentTokens =
+        let constructorTokens =
             match significantTokens with
+            | { Kind = Operator; Text = "|" } :: rest -> rest
+            | tokens -> tokens
+
+        let name, argumentTokens =
+            match constructorTokens with
             | leftToken :: operatorToken :: rightToken :: rest
                 when leftToken.Kind = LeftParen && operatorToken.Kind = Operator && rightToken.Kind = RightParen ->
                 operatorToken.Text, rest
