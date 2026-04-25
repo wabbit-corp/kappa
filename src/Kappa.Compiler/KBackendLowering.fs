@@ -229,6 +229,15 @@ module internal KBackendLowering =
           BindingInfos = bindingInfos
           ConstructorInfos = constructorInfos }
 
+    let private loweringDiagnostic (_runtimeModule: KRuntimeModule) (_binding: KRuntimeBinding option) message =
+        { Severity = Error
+          Code = DiagnosticCode.CheckpointVerification
+          Stage = Some "KBackendIR"
+          Phase = None
+          Message = message
+          Location = None
+          RelatedLocations = [] }
+
     let lowerKBackendModules (backendProfile: string) allowUnsafeConsume (kRuntimeIR: KRuntimeModule list) =
         let context = buildBackendLoweringContext kRuntimeIR
         let availableRuntimeIntrinsics =
@@ -507,13 +516,43 @@ module internal KBackendLowering =
                                 bindingInfo.ReturnRepresentation
                                 |> Option.defaultValue fallbackResultRepresentation
 
-                            Result.Ok(
-                                makeCallingConvention
-                                    bindingInfo.Arity
-                                    argumentRepresentations
-                                    (Some resultRepresentation),
-                                resultRepresentation
-                            )
+                            match resultRepresentation, List.length loweredArguments > bindingInfo.Arity with
+                            | (BackendRepClosure _ | BackendRepOpaque(Some "Function")), true ->
+                                let directArguments = loweredArguments |> List.take bindingInfo.Arity
+                                let directArgumentRepresentations = argumentRepresentations |> List.take bindingInfo.Arity
+                                let remainingArguments = loweredArguments |> List.skip bindingInfo.Arity
+                                let remainingArgumentRepresentations = argumentRepresentations |> List.skip bindingInfo.Arity
+                                let directConvention =
+                                    makeCallingConvention
+                                        bindingInfo.Arity
+                                        directArgumentRepresentations
+                                        (Some resultRepresentation)
+
+                                let directCall =
+                                    BackendCall(
+                                        BackendName resolvedName,
+                                        directArguments,
+                                        directConvention,
+                                        resultRepresentation
+                                    )
+
+                                let finalConvention =
+                                    makeCallingConvention
+                                        (List.length remainingArguments)
+                                        remainingArgumentRepresentations
+                                        (Some fallbackResultRepresentation)
+
+                                Result.Ok(finalConvention, fallbackResultRepresentation, Some directCall, remainingArguments)
+                            | _ ->
+                                Result.Ok(
+                                    makeCallingConvention
+                                        bindingInfo.Arity
+                                        argumentRepresentations
+                                        (Some resultRepresentation),
+                                    resultRepresentation,
+                                    None,
+                                    loweredArguments
+                                )
                         | None when availableRuntimeIntrinsics.Contains bindingName && moduleName = Stdlib.PreludeModuleText ->
                             let resultRepresentation =
                                 IntrinsicCatalog.intrinsicResultRepresentation bindingName
@@ -524,14 +563,19 @@ module internal KBackendLowering =
                                     (IntrinsicCatalog.intrinsicRuntimeArity bindingName)
                                     argumentRepresentations
                                     (Some resultRepresentation),
-                                resultRepresentation
+                                resultRepresentation,
+                                None,
+                                loweredArguments
                             )
                         | None ->
                             Result.Error $"Could not lower runtime call target '{moduleName}.{bindingName}' to KBackendIR."
 
                     conventionResult
-                    |> Result.map (fun (convention, resultRepresentation) ->
-                        BackendCall(BackendName resolvedName, loweredArguments, convention, resultRepresentation), resultRepresentation)
+                    |> Result.map (fun (convention, resultRepresentation, receiver, callArguments) ->
+                        let callee =
+                            receiver |> Option.defaultValue (BackendName resolvedName)
+
+                        BackendCall(callee, callArguments, convention, resultRepresentation), resultRepresentation)
                 | BackendLocalName _ ->
                     let convention =
                         makeCallingConvention
@@ -1095,10 +1139,11 @@ module internal KBackendLowering =
                   EnvironmentLayouts = environmentLayouts |> Seq.toList
                   Functions = backendFunctions })
 
-        kRuntimeIR
-        |> List.choose (fun runtimeModule ->
+        (([], []), kRuntimeIR)
+        ||> List.fold (fun (modules, diagnostics) runtimeModule ->
             match lowerModule runtimeModule with
             | Result.Ok backendModule ->
-                Some backendModule
-            | Result.Error _ ->
-                None)
+                backendModule :: modules, diagnostics
+            | Result.Error issue ->
+                modules, diagnostics @ [ loweringDiagnostic runtimeModule None issue ])
+        |> fun (modules, diagnostics) -> List.rev modules, diagnostics

@@ -32,7 +32,8 @@ let private mkParameter name quantity =
       TypeTokens = None
       Quantity = quantity
       IsImplicit = false
-      IsInout = false }
+      IsInout = false
+      IsReceiver = false }
 
 let private mkBindPattern name quantity =
     { Pattern = NamePattern name
@@ -64,6 +65,7 @@ let private mkUsingPattern name =
 let private mkLetDefinition name parameters body =
     { Visibility = None
       IsOpaque = false
+      IsPattern = false
       Name = Some name
       Parameters = parameters
       HeaderTokens = []

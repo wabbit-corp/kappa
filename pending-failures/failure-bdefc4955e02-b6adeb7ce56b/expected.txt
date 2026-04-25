@@ -1,0 +1,1 @@
+error: Checkpoint 'KRuntimeIR' requires unique constructor identities within module 'main', but 'I1' was duplicated.

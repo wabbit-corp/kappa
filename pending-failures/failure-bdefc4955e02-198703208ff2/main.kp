@@ -1,0 +1,2 @@
+let I0 (>=1 I0 : Int) : Int = I0
+let I0 = "s"

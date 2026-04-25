@@ -352,6 +352,17 @@ module internal CompilationFrontend =
                     |> String.concat ", "
 
                 $"(update {render receiver} {{{fieldText}}})"
+            | MemberAccess(receiver, segments, arguments) ->
+                let pathText = String.concat "." segments
+                let argumentText =
+                    arguments
+                    |> List.map render
+                    |> String.concat " "
+
+                if String.IsNullOrWhiteSpace argumentText then
+                    $"{render receiver}.{pathText}"
+                else
+                    $"{render receiver}.{pathText} {argumentText}"
             | SafeNavigation(receiver, navigation) ->
                 let argumentText =
                     navigation.Arguments

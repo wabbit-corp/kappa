@@ -214,6 +214,19 @@ def source_files(roots: Iterable[Path], include_suite: bool) -> list[Path]:
     return sorted(set(path.resolve() for path in files))
 
 
+def load_weighted_sample_records(path: Path) -> list[dict]:
+    records: list[dict] = []
+
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+
+            records.append(json.loads(line))
+
+    return records
+
+
 def is_identifier_start(char: str) -> bool:
     return char == "_" or char.isalpha()
 
@@ -662,6 +675,38 @@ def load_normalized_corpus(files: list[Path], keyword_codes: dict[str, str]) -> 
     return CHUNK_SEPARATOR.join(dict.fromkeys(chunks)) + CHUNK_SEPARATOR
 
 
+def weighted_repeat_count(weight: float) -> int:
+    return max(1, min(8, math.ceil(weight)))
+
+
+def load_weighted_corpus(records: list[dict], keyword_codes: dict[str, str], raw_source: bool) -> tuple[str, dict]:
+    chunks: list[str] = []
+    summary = {
+        "record_count": len(records),
+        "expanded_chunk_count": 0,
+        "max_weight": 0.0,
+    }
+
+    for record in records:
+        text = str(record["text"])
+        weight = float(record.get("weight", 1.0))
+        repeat = weighted_repeat_count(weight)
+
+        if raw_source:
+            chunk = text.replace("\r\n", "\n").strip()
+        else:
+            chunk = normalize_source(text, keyword_codes)
+
+        if not chunk:
+            continue
+
+        chunks.extend([chunk] * repeat)
+        summary["expanded_chunk_count"] += repeat
+        summary["max_weight"] = max(summary["max_weight"], weight)
+
+    return CHUNK_SEPARATOR.join(chunks) + CHUNK_SEPARATOR, summary
+
+
 def decode_keywords(text: str, code_to_keyword: dict[str, str]) -> str:
     return KEYWORD_CODE_PATTERN.sub(lambda match: code_to_keyword.get(match.group(0), match.group(0)), text)
 
@@ -751,6 +796,7 @@ def main() -> None:
     parser.add_argument("--checkpoint", default=None)
     parser.add_argument("--raw-source", action="store_true")
     parser.add_argument("--roots", nargs="*", default=["tests/Kappa.Compiler.Tests/Fixtures", "new-tests"])
+    parser.add_argument("--weighted-samples", default=None)
     parser.add_argument("--include-suite", action="store_true")
     parser.add_argument("--out-dir", default="artifacts/fuzzball-kappa")
     parser.add_argument("--model", choices=["lstm", "gru"], default="lstm")
@@ -811,11 +857,26 @@ def main() -> None:
         )
         return
 
+    weighted_summary = None
+    files: list[Path] = []
     roots = [Path(root) if Path(root).is_absolute() else repo_root / root for root in args.roots]
-    files = source_files(roots, include_suite=args.include_suite)
-    raw_sources = [path.read_text(encoding="utf-8") for path in files]
-    keyword_codes = {} if args.raw_source else build_keyword_codes(raw_sources)
-    corpus = load_corpus(files) if args.raw_source else load_normalized_corpus(files, keyword_codes)
+
+    if args.weighted_samples is not None:
+        weighted_samples_path = Path(args.weighted_samples)
+
+        if not weighted_samples_path.is_absolute():
+            weighted_samples_path = repo_root / weighted_samples_path
+
+        records = load_weighted_sample_records(weighted_samples_path)
+        raw_sources = [str(record["text"]) for record in records]
+        keyword_codes = {} if args.raw_source else build_keyword_codes(raw_sources)
+        corpus, weighted_summary = load_weighted_corpus(records, keyword_codes, args.raw_source)
+    else:
+        files = source_files(roots, include_suite=args.include_suite)
+        raw_sources = [path.read_text(encoding="utf-8") for path in files]
+        keyword_codes = {} if args.raw_source else build_keyword_codes(raw_sources)
+        corpus = load_corpus(files) if args.raw_source else load_normalized_corpus(files, keyword_codes)
+
     corpus_hash = hashlib.sha256(corpus.encode("utf-8")).hexdigest()
 
     (out_dir / "corpus.txt").write_text(corpus, encoding="utf-8")
@@ -837,7 +898,8 @@ def main() -> None:
     losses: list[float] = []
     report_every = max(1, args.steps // 12)
 
-    print(f"files={len(files)} chars={len(corpus)} vocab={len(vocab)} sha256={corpus_hash[:12]} device={device}")
+    source_count = weighted_summary["record_count"] if weighted_summary is not None else len(files)
+    print(f"files={source_count} chars={len(corpus)} vocab={len(vocab)} sha256={corpus_hash[:12]} device={device}")
 
     for step in range(1, args.steps + 1):
         model.train()
@@ -860,7 +922,12 @@ def main() -> None:
     metadata = {
         "config": asdict(config),
         "source_roots": [str(root.relative_to(repo_root) if root.is_relative_to(repo_root) else root) for root in roots],
-        "file_count": len(files),
+        "weighted_samples": (
+            str(weighted_samples_path.relative_to(repo_root) if weighted_samples_path.is_relative_to(repo_root) else weighted_samples_path)
+            if args.weighted_samples is not None
+            else None
+        ),
+        "file_count": source_count,
         "corpus_chars": len(corpus),
         "corpus_sha256": corpus_hash,
         "seed": args.seed,
@@ -872,6 +939,7 @@ def main() -> None:
         "final_loss": losses[-1],
         "normalized": not args.raw_source,
         "keyword_count": len(keyword_codes),
+        "weighted_summary": weighted_summary,
     }
 
     torch.save(

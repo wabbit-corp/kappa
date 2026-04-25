@@ -17,7 +17,16 @@ module private SurfaceBinderParsing =
           TypeTokens = typeTokens
           Quantity = quantity
           IsImplicit = isImplicit
-          IsInout = isInout }
+          IsInout = isInout
+          IsReceiver = false }
+
+    let private makeReceiverParameter name typeTokens quantity =
+        { Name = name
+          TypeTokens = typeTokens
+          Quantity = quantity
+          IsImplicit = false
+          IsInout = false
+          IsReceiver = true }
 
     // Wildcard binders elaborate to fresh internal names that cannot be referenced from source.
     let wildcardParameterName (span: TextSpan) =
@@ -35,7 +44,9 @@ module private SurfaceBinderParsing =
             false
         else
             let text = SyntaxFacts.trimIdentifierQuotes token.Text
-            not (String.IsNullOrEmpty text) && not (Char.IsUpper text[0])
+            not (String.IsNullOrEmpty text)
+            && not (Char.IsUpper text[0])
+            && not (String.Equals(text, "this", StringComparison.Ordinal))
 
     let tryParseQuantityPrefix (tokens: Token list) =
         match tokens with
@@ -98,6 +109,21 @@ module private SurfaceBinderParsing =
             | [] ->
                 diagnostics.AddError(DiagnosticCode.ParseError, "Expected a parameter binder.", source.GetLocation(eofSpan))
                 None
+            | thisToken :: colon :: typeTokens
+                when (not isImplicit)
+                     && (not isInout)
+                     && Token.isName thisToken
+                     && String.Equals(SyntaxFacts.trimIdentifierQuotes thisToken.Text, "this", StringComparison.Ordinal)
+                     && colon.Kind = Colon ->
+                Some(makeReceiverParameter "this" (Some typeTokens) quantity)
+            | thisToken :: nameToken :: colon :: typeTokens
+                when (not isImplicit)
+                     && (not isInout)
+                     && Token.isName thisToken
+                     && String.Equals(SyntaxFacts.trimIdentifierQuotes thisToken.Text, "this", StringComparison.Ordinal)
+                     && Token.isName nameToken
+                     && colon.Kind = Colon ->
+                Some(makeReceiverParameter (SyntaxFacts.trimIdentifierQuotes nameToken.Text) (Some typeTokens) quantity)
             | { Kind = Underscore; Span = span } :: tail ->
                 let name = wildcardParameterName span
 
@@ -236,16 +262,36 @@ module private SurfaceBinderParsing =
             None
 
     let parseBindPatternFromTokens (parsePattern: Token list -> SurfacePattern) (tokens: Token list) =
+        let rec normalizeBinderPattern pattern =
+            match pattern with
+            | ConstructorPattern([ name ], []) ->
+                NamePattern name
+            | ConstructorPattern(name, arguments) ->
+                ConstructorPattern(name, arguments |> List.map normalizeBinderPattern)
+            | OrPattern alternatives ->
+                OrPattern(alternatives |> List.map normalizeBinderPattern)
+            | AnonymousRecordPattern fields ->
+                AnonymousRecordPattern(
+                    fields
+                    |> List.map (fun field ->
+                        { field with
+                            Pattern = normalizeBinderPattern field.Pattern })
+                )
+            | WildcardPattern
+            | NamePattern _
+            | LiteralPattern _ ->
+                pattern
+
         match tryParseImplicitLocalBindPattern tokens with
         | Some binding ->
             binding
         | None ->
         match tryParseQuantityPrefix tokens with
         | Some(quantity, rest) ->
-            let pattern = parsePattern rest
+            let pattern = parsePattern rest |> normalizeBinderPattern
             makeBindPattern pattern (Some quantity) rest
         | None ->
-            let pattern = parsePattern tokens
+            let pattern = parsePattern tokens |> normalizeBinderPattern
             makeBindPattern pattern None tokens
 
     let trySingleName pattern =
@@ -800,12 +846,69 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
             body
         )
 
+    member private _.MakeOperatorFunction operatorName =
+        let leftName = "__sectionLeft"
+        let rightName = "__sectionRight"
+
+        Lambda(
+            [ SurfaceBinderParsing.makeParameter leftName None None false false
+              SurfaceBinderParsing.makeParameter rightName None None false false ],
+            Binary(Name [ leftName ], operatorName, Name [ rightName ])
+        )
+
+    member private _.MakeReceiverSection body =
+        let parameterName = "__receiverSection"
+
+        Lambda(
+            [ SurfaceBinderParsing.makeParameter parameterName None None false false ],
+            body
+        )
+
+    member private this.SplitReceiverSectionArgumentTokens(tokens: Token list) =
+        let rec takeBalanced closing remaining current depth =
+            match remaining with
+            | [] ->
+                List.rev current, []
+            | token :: rest ->
+                let nextDepth =
+                    match token.Kind with
+                    | LeftParen
+                    | LeftBrace
+                    | LeftBracket
+                    | LeftSetBrace -> depth + 1
+                    | kind when kind = closing -> depth - 1
+                    | _ -> depth
+
+                let nextCurrent = token :: current
+
+                if nextDepth = 0 then
+                    List.rev nextCurrent, rest
+                else
+                    takeBalanced closing rest nextCurrent nextDepth
+
+        let rec loop remaining =
+            match remaining with
+            | [] ->
+                []
+            | token :: rest ->
+                let chunk, tail =
+                    match token.Kind with
+                    | LeftParen -> takeBalanced RightParen rest [ token ] 1
+                    | LeftBrace -> takeBalanced RightBrace rest [ token ] 1
+                    | LeftBracket -> takeBalanced RightBracket rest [ token ] 1
+                    | LeftSetBrace -> takeBalanced RightSetBrace rest [ token ] 1
+                    | _ -> [ token ], rest
+
+                chunk :: loop tail
+
+        loop tokens
+
     member private this.TryParseOperatorSection(tokens: Token list) =
         match tokens with
         | [] ->
             None
         | [ operatorToken ] when operatorToken.Kind = Operator ->
-            Some(Name [ operatorToken.Text ])
+            Some(this.MakeOperatorFunction operatorToken.Text)
         | operatorToken :: operandTokens when operatorToken.Kind = Operator ->
             this.TryParseStandaloneExpression operandTokens
             |> Option.map (fun operand ->
@@ -818,6 +921,37 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
                     this.MakeOperatorSection(Binary(left, operatorToken.Text, Name [ "__sectionArg" ])))
             | _ ->
                 None
+
+    member private this.TryParseReceiverSection(tokens: Token list) =
+        let rec collectPath path remaining =
+            match remaining with
+            | { Kind = Dot } :: memberToken :: rest when this.IsNameToken(memberToken) ->
+                collectPath (path @ [ SyntaxFacts.trimIdentifierQuotes memberToken.Text ]) rest
+            | _ ->
+                path, remaining
+
+        match tokens with
+        | { Kind = Dot } :: memberToken :: rest when this.IsNameToken(memberToken) ->
+            let path, argumentTokens =
+                collectPath [ SyntaxFacts.trimIdentifierQuotes memberToken.Text ] rest
+
+            let arguments =
+                argumentTokens
+                |> this.SplitReceiverSectionArgumentTokens
+                |> List.map this.TryParseStandaloneExpression
+
+            if arguments |> List.forall Option.isSome then
+                let receiverMember = Name("__receiverSection" :: path)
+                let body =
+                    match arguments |> List.choose id with
+                    | [] -> receiverMember
+                    | parsedArguments -> Apply(receiverMember, parsedArguments)
+
+                Some(this.MakeReceiverSection body)
+            else
+                None
+        | _ ->
+            None
 
     member private this.CollectParenthesizedTokens() =
         let start = this.Current
@@ -1419,6 +1553,31 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
             diagnostics.AddError(DiagnosticCode.ParseError, "Expected '->' in the case clause.", source.GetLocation(this.Current.Span))
             List.ofSeq tokens
 
+    member private this.CollectCurrentIndentedExpressionTokens() =
+        let tokens = ResizeArray<Token>()
+
+        if this.Current.Kind = Indent then
+            this.Advance() |> ignore
+            let mutable nestedIndents = 0
+
+            while not (this.Current.Kind = Dedent && nestedIndents = 0) && this.Current.Kind <> EndOfFile do
+                match this.Current.Kind with
+                | Indent ->
+                    nestedIndents <- nestedIndents + 1
+                    tokens.Add(this.Advance())
+                | Dedent when nestedIndents > 0 ->
+                    nestedIndents <- nestedIndents - 1
+                    tokens.Add(this.Advance())
+                | _ ->
+                    tokens.Add(this.Advance())
+
+            if this.Current.Kind = Dedent then
+                this.Advance() |> ignore
+            else
+                diagnostics.AddError(DiagnosticCode.ParseError, "Expected the indented expression to dedent.", source.GetLocation(this.Current.Span))
+
+        List.ofSeq tokens
+
     member private this.ParseMatchExpression() =
         this.ExpectKeyword(Keyword.Match, "Expected 'match'.") |> ignore
         let scrutineeTokens = ResizeArray<Token>()
@@ -1513,6 +1672,8 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
                             this.Advance() |> ignore
 
                         Literal LiteralValue.Unit
+                    | [] when this.Current.Kind = Indent ->
+                        this.ParseStandaloneExpression(this.CollectCurrentIndentedExpressionTokens())
                     | [] when this.Current.Kind = Dedent && not (Token.isKeyword Keyword.Case (this.Peek(1))) ->
                         diagnostics.AddError(
                             DiagnosticCode.UnexpectedIndentation,
@@ -1540,6 +1701,9 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
                       Guard = guard
                       Body = body }
                 )
+
+                while this.Current.Kind = Newline do
+                    this.Advance() |> ignore
             | None ->
                 diagnostics.AddError(DiagnosticCode.ParseError, "Expected '->' in the case clause.", source.GetLocation(this.Current.Span))
 
@@ -2328,6 +2492,9 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
         this.SkipLayout()
 
         match this.Current.Kind with
+        | Keyword Keyword.Match when this.Peek(1).Kind = Dot ->
+            let segments = this.ParseQualifiedName()
+            Name segments
         | Keyword Keyword.Match ->
             this.ParseMatchExpression()
         | Keyword Keyword.Do ->
@@ -2384,20 +2551,24 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
             | { Kind = Backslash } :: _ ->
                 this.ParseStandaloneExpression innerTokens
             | _ ->
-                match this.TryParseOperatorSection innerTokens with
+                match this.TryParseReceiverSection innerTokens with
                 | Some expression ->
                     expression
                 | None ->
-                    match this.TryParseRecordLiteral innerTokens with
+                    match this.TryParseOperatorSection innerTokens with
                     | Some expression ->
                         expression
                     | None ->
-                        match this.TryParseStandaloneExpression innerTokens with
+                        match this.TryParseRecordLiteral innerTokens with
                         | Some expression ->
                             expression
                         | None ->
-                            diagnostics.AddError(DiagnosticCode.ParseError, "Expected an expression inside parentheses.", source.GetLocation(this.Current.Span))
-                            Literal Unit
+                            match this.TryParseStandaloneExpression innerTokens with
+                            | Some expression ->
+                                expression
+                            | None ->
+                                diagnostics.AddError(DiagnosticCode.ParseError, "Expected an expression inside parentheses.", source.GetLocation(this.Current.Span))
+                                Literal Unit
         | _ when this.IsNameToken(this.Current) ->
             let segments = this.ParseQualifiedName()
             Name segments
@@ -2413,7 +2584,11 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
             this.Advance() |> ignore
             ExplicitImplicitArgument(this.ParsePrefixExpression())
         | Operator ->
-            if this.Current.Text = "!" then
+            if this.Current.Text = "'" && this.Peek(1).Kind = LeftBrace then
+                this.Advance() |> ignore
+                let innerTokens = this.CollectBracedTokens("Expected '}' to close the syntax quote.")
+                this.ParseStandaloneExpression innerTokens
+            elif this.Current.Text = "!" then
                 this.Advance() |> ignore
                 // Splice should bind tightly to the next atomic/application form without
                 // swallowing surrounding infix operators in the enclosing expression.
@@ -2437,7 +2612,9 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
         | LeftBrace ->
             true
         | Operator ->
-            if token.Text = "~" then
+            if token.Text = "'" then
+                true
+            elif token.Text = "~" then
                 true
             else
                 match FixityTable.tryFindPrefix token.Text fixities with
@@ -2736,6 +2913,23 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
                     |> List.map parseRecordUpdateField
 
                 expression <- RecordUpdate(expression, fields)
+            elif this.Current.Kind = Dot && this.IsNameToken(this.Peek(1)) then
+                this.Advance() |> ignore
+                let memberToken = this.Advance()
+                let memberName = SyntaxFacts.trimIdentifierQuotes memberToken.Text
+
+                let memberArguments = ResizeArray<SurfaceExpression>()
+                let mutable keepReadingMemberArguments = true
+
+                while keepReadingMemberArguments do
+                    this.SkipLayout()
+
+                    if this.CanStartApplicationArgumentAfterHead(this.Current) then
+                        memberArguments.Add(this.ParseApplicationArgument())
+                    else
+                        keepReadingMemberArguments <- false
+
+                expression <- MemberAccess(expression, [ memberName ], List.ofSeq memberArguments)
             elif this.Current.Kind = Operator && this.Current.Text = "?." then
                 let safeNavigationToken = this.Advance()
 
@@ -3464,10 +3658,30 @@ module CoreParsing =
         (diagnostics: DiagnosticBag)
         (tokens: Token list)
         : SurfaceExpression option =
-        match tryParseIndentedLocalLetSequence fixities source diagnostics tokens with
-        | Some expression ->
-            Some expression
-        | None ->
+        let significantTokens = trimLeadingLayout tokens
+
+        let startsIndentedLetSequence =
+            match significantTokens with
+            | letToken :: _ when Token.isKeyword Keyword.Let letToken ->
+                true
+            | scopedToken :: effectToken :: nameToken :: _
+                when Token.isName scopedToken
+                     && String.Equals(SyntaxFacts.trimIdentifierQuotes scopedToken.Text, "scoped", StringComparison.Ordinal)
+                     && Token.isName effectToken
+                     && String.Equals(SyntaxFacts.trimIdentifierQuotes effectToken.Text, "effect", StringComparison.Ordinal)
+                     && Token.isName nameToken ->
+                true
+            | _ ->
+                false
+
+        if startsIndentedLetSequence then
+            match tryParseIndentedLocalLetSequence fixities source diagnostics tokens with
+            | Some expression ->
+                Some expression
+            | None ->
+                let parser = ExpressionParser(tokens, source, diagnostics, fixities)
+                parser.Parse()
+        else
             let parser = ExpressionParser(tokens, source, diagnostics, fixities)
             parser.Parse()
 

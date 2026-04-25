@@ -1,0 +1,15 @@
+{
+  "cluster_key": "da39a3ee5e6b4b0d3255bfef95601890afd80709:compile",
+  "count": 4,
+  "trace_hash": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+  "trace_step_count": 0,
+  "kinds": {
+    "timeout": 4
+  },
+  "terminal_signatures": {
+    "compile": 4
+  },
+  "representative_case": "timeout-202170d7ed5f3469533422d6d63845797b6def5e",
+  "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-timeouts/timeout-202170d7ed5f3469533422d6d63845797b6def5e",
+  "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-timeouts/timeout-202170d7ed5f3469533422d6d63845797b6def5e"
+}

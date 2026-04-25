@@ -1,0 +1,14 @@
+@PrivateByDefault module main
+
+
+data Env : Type =
+    Env (bias : Int)
+
+addBias : (@ω env : Env) -> Int -> Int
+let addBias (@ω env : Env) (x : Int) : Int =
+    match env
+    case Env bias -> x + bias
+
+bad : (@ω left : Env) -> (@ω right : Env) -> Int
+let bad (@ω left : Env) (@ω right : Env) : Int =
+    addBias 0

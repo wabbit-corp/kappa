@@ -1,0 +1,16 @@
+@PrivateByDefault module main
+
+
+data Buf : Type =
+    Buf (n : Int)
+
+pattern MaybeTake (1 b : Buf) : Option Int =
+    match b
+    case Buf n -> if n > 0 then Some n else None
+
+bad : Option Int
+let bad : Option Int =
+    do
+        let 1 b = Buf 1
+        let? MaybeTake (n) = b
+        Some n

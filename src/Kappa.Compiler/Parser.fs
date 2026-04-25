@@ -171,6 +171,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
         | Keyword Keyword.Public
         | Keyword Keyword.Private
         | Keyword Keyword.Opaque -> true
+        | Identifier when String.Equals(token.Text, "pattern", StringComparison.Ordinal) -> true
         | Identifier
         | Keyword _ ->
             match nextToken with
@@ -511,7 +512,13 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
 
     member private this.ParseLetDeclaration(modifiers: ModifierState) =
         this.ExpectKeyword(Keyword.Let, "Expected 'let'.") |> ignore
+        this.ParseFunctionLikeDeclaration(modifiers, false, "let")
 
+    member private this.ParsePatternDeclaration(modifiers: ModifierState) =
+        this.Advance() |> ignore
+        this.ParseFunctionLikeDeclaration(modifiers, true, "pattern")
+
+    member private this.ParseFunctionLikeDeclaration(modifiers: ModifierState, isPattern: bool, keywordText: string) =
         let headerTokens = ResizeArray<Token>()
 
         let name = this.TryConsumeTermBindingName()
@@ -525,7 +532,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
             if this.TryConsume(Equals).IsSome then
                 this.CollectUntilTopLevelBoundary()
             else
-                diagnostics.AddError(DiagnosticCode.ParseError, "Expected '=' in the let declaration.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(DiagnosticCode.ParseError, $"Expected '=' in the {keywordText} declaration.", source.GetLocation(this.Current.Span))
                 []
 
         let parsedHeader = CoreParsing.parseLetHeader source diagnostics (List.ofSeq headerTokens)
@@ -534,6 +541,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
         LetDeclaration
             { Visibility = modifiers.Visibility
               IsOpaque = modifiers.IsOpaque
+              IsPattern = isPattern
               Name = name
               Parameters = parsedHeader.Parameters
               HeaderTokens = List.ofSeq headerTokens
@@ -703,7 +711,6 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
                        DefaultDefinition = defaultDefinition
                        Tokens = lineTokens }: TraitMember))
             else
-                diagnostics.AddError(DiagnosticCode.ParseError, "Expected '=' in the trait declaration.", source.GetLocation(this.Current.Span))
                 []
 
         TraitDeclarationNode
@@ -777,6 +784,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
             Some
                 { Visibility = None
                   IsOpaque = false
+                  IsPattern = false
                   Name = name
                   Parameters = parsedHeader.Parameters
                   HeaderTokens = List.ofSeq headerTokens
@@ -922,6 +930,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
         | Keyword Keyword.Prefix
         | Keyword Keyword.Postfix -> this.ParseFixityDeclaration()
         | Keyword Keyword.Let -> this.ParseLetDeclaration(modifiers)
+        | Identifier when String.Equals(this.Current.Text, "pattern", StringComparison.Ordinal) -> this.ParsePatternDeclaration(modifiers)
         | Keyword Keyword.Data -> this.ParseDataDeclaration(modifiers)
         | Keyword Keyword.Type -> this.ParseTypeAlias(modifiers)
         | Keyword Keyword.Trait -> this.ParseTraitDeclaration(modifiers)

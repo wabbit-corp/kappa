@@ -1,0 +1,15 @@
+{
+  "cluster_key": "bdefc4955e02cb86af5cece32d5c59fa026e9272:error: Checkpoint 'KBackendIR' requires function 'main.I0' to have a calling convention arity matching its parameter count.",
+  "count": 1,
+  "trace_hash": "bdefc4955e02cb86af5cece32d5c59fa026e9272",
+  "trace_step_count": 18,
+  "kinds": {
+    "failure": 1
+  },
+  "terminal_signatures": {
+    "error: Checkpoint 'KBackendIR' requires function 'main.I0' to have a calling convention arity matching its parameter count.": 1
+  },
+  "representative_case": "failure-a6e3365afb89a8bfa8a51f4ea8cb32fd69948630",
+  "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-a6e3365afb89a8bfa8a51f4ea8cb32fd69948630",
+  "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-a6e3365afb89a8bfa8a51f4ea8cb32fd69948630"
+}

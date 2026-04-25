@@ -1,0 +1,5 @@
+data I11 : Type =
+    I11 (1 I1 : I1, i5 : Int)
+    I9 (1 I0 : I7)
+let i1 (1 I0 : I1) : I9 = I9 I0
+let i1 (1 i1 : I4) : I11 = I11 i1

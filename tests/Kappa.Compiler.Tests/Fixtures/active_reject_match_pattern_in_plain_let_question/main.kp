@@ -1,0 +1,16 @@
+@PrivateByDefault module main
+
+
+data Buf : Type =
+    Buf (n : Int)
+
+pattern TakePositive (1 b : Buf) : Match Int Buf =
+    match b
+    case Buf n -> if n > 0 then Match.Hit n else Match.Miss (Buf n)
+
+bad : Option Int
+let bad : Option Int =
+    do
+        let 1 b = Buf 1
+        let? TakePositive (n) = b
+        Some n

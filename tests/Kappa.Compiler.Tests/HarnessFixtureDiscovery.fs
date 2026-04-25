@@ -16,35 +16,40 @@ let discoverKpFixtureCases () =
         Directory.EnumerateDirectories(fixturesRoot)
         |> Seq.sort
         |> Seq.choose (fun caseDirectory ->
-            let sourceFiles =
-                Directory.EnumerateFiles(caseDirectory, "*.kp", SearchOption.AllDirectories)
-                |> Seq.sort
-                |> Seq.toList
+            let incrementalDirectiveFilePath = Path.Combine(caseDirectory, "incremental.ktest")
 
-            if List.isEmpty sourceFiles then
+            if File.Exists(incrementalDirectiveFilePath) then
                 None
             else
-                let suiteDirectiveFilePath = Path.Combine(caseDirectory, "suite.ktest")
+                let sourceFiles =
+                    Directory.EnumerateFiles(caseDirectory, "*.kp", SearchOption.AllDirectories)
+                    |> Seq.sort
+                    |> Seq.toList
 
-                let directives =
-                    (if File.Exists(suiteDirectiveFilePath) then
-                         loadFixtureDirectives KpFixtureDirectiveSource.SuiteDirectiveFile suiteDirectiveFilePath
-                     else
-                         [])
-                    @ (sourceFiles |> List.collect (loadFixtureDirectives KpFixtureDirectiveSource.KpSourceFile))
+                if List.isEmpty sourceFiles then
+                    None
+                else
+                    let suiteDirectiveFilePath = Path.Combine(caseDirectory, "suite.ktest")
 
-                let configuration = buildFixtureConfiguration directives
+                    let directives =
+                        (if File.Exists(suiteDirectiveFilePath) then
+                             loadFixtureDirectives KpFixtureDirectiveSource.SuiteDirectiveFile suiteDirectiveFilePath
+                         else
+                             [])
+                        @ (sourceFiles |> List.collect (loadFixtureDirectives KpFixtureDirectiveSource.KpSourceFile))
 
-                let assertions =
-                    directives
-                    |> List.choose (function
-                        | AssertionDirective assertion -> Some assertion
-                        | _ -> None)
+                    let configuration = buildFixtureConfiguration directives
 
-                Some
-                    { Name = Path.GetFileName(caseDirectory)
-                      Root = caseDirectory
-                      SourceFiles = sourceFiles
-                      Configuration = configuration
-                      Assertions = assertions })
+                    let assertions =
+                        directives
+                        |> List.choose (function
+                            | AssertionDirective assertion -> Some assertion
+                            | _ -> None)
+
+                    Some
+                        { Name = Path.GetFileName(caseDirectory)
+                          Root = caseDirectory
+                          SourceFiles = sourceFiles
+                          Configuration = configuration
+                          Assertions = assertions })
         |> Seq.toList

@@ -1,0 +1,3 @@
+data I9 : Type =
+    I7 (1 I0 : I1)
+    I7 (1 I1 : I9)

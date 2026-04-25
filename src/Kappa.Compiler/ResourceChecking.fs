@@ -492,6 +492,11 @@ module ResourceChecking =
 
                 for field in fields do
                     yield! expressionNames field.Value
+            | MemberAccess(receiver, _, arguments) ->
+                yield! expressionNames receiver
+
+                for argument in arguments do
+                    yield! expressionNames argument
             | SafeNavigation(receiver, navigation) ->
                 yield! expressionNames receiver
 
@@ -1227,6 +1232,8 @@ module ResourceChecking =
             Seal(rewrite value, ascriptionTokens)
         | RecordUpdate(receiver, fields) ->
             RecordUpdate(receiver |> rewrite, fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+        | MemberAccess(receiver, segments, arguments) ->
+            MemberAccess(receiver |> rewrite, segments, arguments |> List.map rewrite)
         | SafeNavigation(receiver, navigation) ->
             SafeNavigation(receiver |> rewrite, { navigation with Arguments = navigation.Arguments |> List.map rewrite })
         | TagTest(receiver, constructorName) ->
@@ -1997,6 +2004,16 @@ module ResourceChecking =
         constructorFieldGroups constructor
         |> List.map (fun tokens -> stripFieldQuantityPrefix tokens |> fst)
 
+    let private tryFindConstructorFieldQuantities (document: ParsedDocument) constructorName =
+        document.Syntax.Declarations
+        |> List.tryPick (function
+            | DataDeclarationNode declaration ->
+                declaration.Constructors
+                |> List.tryFind (fun constructor -> String.Equals(constructor.Name, constructorName, StringComparison.Ordinal))
+                |> Option.map constructorFieldQuantities
+            | _ ->
+                None)
+
     let private constructorHasPositiveOwnedField constructor =
         constructorFieldQuantities constructor
         |> List.exists (function
@@ -2377,6 +2394,8 @@ module ResourceChecking =
             recurse value
         | RecordUpdate(receiver, fields) ->
             recurse receiver + (fields |> List.sumBy (fun field -> recurse field.Value))
+        | MemberAccess(receiver, _, arguments) ->
+            recurse receiver + (arguments |> List.sumBy recurse)
         | SafeNavigation(receiver, navigation) ->
             recurse receiver + (navigation.Arguments |> List.sumBy recurse)
         | TagTest(receiver, _) ->
@@ -2534,34 +2553,191 @@ module ResourceChecking =
         | None ->
             state
         | Some scrutineeBinding ->
+            let tryFindActivePattern headName =
+                document.Syntax.Declarations
+                |> List.tryPick (function
+                    | LetDeclaration definition
+                        when definition.IsPattern
+                             && (definition.Name
+                                 |> Option.exists (fun name -> String.Equals(name, headName, StringComparison.Ordinal))) ->
+                        Some definition
+                    | _ ->
+                        None)
+
+            let activeParameterQuantity (parameter: Parameter) =
+                if parameter.IsInout then
+                    Some ResourceQuantity.one
+                else
+                    parameter.Quantity |> Option.map ResourceQuantity.ofSurface
+
+            let explicitParameters (definition: LetDefinition) =
+                definition.Parameters
+                |> List.filter (fun parameter -> not parameter.IsImplicit)
+
+            let activePatternScrutineeQuantity definition =
+                explicitParameters definition
+                |> List.tryLast
+                |> Option.bind activeParameterQuantity
+
+            let activePatternSubpattern definition arguments =
+                let patternArgumentCount = max 0 ((explicitParameters definition |> List.length) - 1)
+                arguments |> List.skip patternArgumentCount |> List.tryHead
+
+            let addViewPatternBindings rootQuantity borrowRegion pattern current =
+                let rec bindNested defaultQuantity currentPattern currentState =
+                    match currentPattern with
+                    | NamePattern name ->
+                        let checkDrop = defaultQuantity |> Option.exists ResourceQuantity.requiresUse
+
+                        addBindingWithPlace
+                            PatternBinding
+                            (ResourcePlace.root name)
+                            name
+                            defaultQuantity
+                            borrowRegion
+                            Set.empty
+                            []
+                            checkDrop
+                            None
+                            None
+                            (findBinderLocation document name)
+                            currentState
+                    | ConstructorPattern(segments, arguments) ->
+                        let fieldQuantities =
+                            segments
+                            |> List.tryLast
+                            |> Option.bind (tryFindConstructorFieldQuantities document)
+
+                        arguments
+                        |> List.indexed
+                        |> List.fold (fun nestedState (index, argument) ->
+                            let fieldQuantity =
+                                fieldQuantities
+                                |> Option.bind (List.tryItem index)
+                                |> Option.map (Option.defaultValue ResourceQuantity.omega)
+                                |> Option.orElse defaultQuantity
+
+                            bindNested fieldQuantity argument nestedState) currentState
+                    | AnonymousRecordPattern fields ->
+                        fields
+                        |> List.fold (fun nestedState field -> bindNested defaultQuantity field.Pattern nestedState) currentState
+                    | OrPattern alternatives ->
+                        alternatives
+                        |> List.tryHead
+                        |> Option.map (fun alternative -> bindNested defaultQuantity alternative currentState)
+                        |> Option.defaultValue currentState
+                    | WildcardPattern
+                    | LiteralPattern _ ->
+                        currentState
+
+                bindNested rootQuantity pattern current
+
             let patternBindings = collectPatternBindings pattern
 
-            let state =
-                match scrutineeBinding.DeclaredQuantity with
-                | _ when quantityBorrows scrutineeBinding.DeclaredQuantity ->
-                    addNamedEvent OwnershipUseKind.Borrow (findUseLocation document scrutineeName 1) scrutineeBinding.Name state
+            let constructorFieldQuantitiesForPattern =
+                match pattern with
+                | ConstructorPattern(segments, _) ->
+                    match List.tryLast segments with
+                    | Some constructorName -> tryFindConstructorFieldQuantities document constructorName
+                    | None ->
+                        None
                 | _ ->
-                    state
+                    None
 
-            let checkDrop =
-                scrutineeBinding.DeclaredQuantity
-                |> Option.exists ResourceQuantity.requiresUse
+            let activePatternState =
+                match pattern with
+                | ConstructorPattern(segments, arguments) ->
+                    segments
+                    |> List.tryLast
+                    |> Option.bind tryFindActivePattern
+                    |> Option.bind (fun definition ->
+                        activePatternSubpattern definition arguments
+                        |> Option.map (fun subpattern -> definition, subpattern))
+                    |> Option.map (fun (definition, subpattern) ->
+                        let scrutineeQuantity = activePatternScrutineeQuantity definition
 
-            patternBindings
-            |> List.fold (fun current (name, path) ->
-                addBindingWithPlace
-                    PatternBinding
-                    (makePlace scrutineeBinding.Place.Root (scrutineeBinding.Place.Path @ path))
-                    name
+                        let current =
+                            match scrutineeQuantity with
+                            | Some quantity when ResourceQuantity.requiresUse quantity ->
+                                consumeBinding document scrutineeName state
+                            | Some quantity when ResourceQuantity.isBorrow quantity ->
+                                addNamedEvent OwnershipUseKind.Borrow (findUseLocation document scrutineeName 1) scrutineeBinding.Name state
+                            | _ ->
+                                state
+
+                        let payloadQuantity, borrowRegion =
+                            match scrutineeQuantity with
+                            | Some quantity when ResourceQuantity.isBorrow quantity ->
+                                Some quantity, scrutineeBinding.BorrowRegion
+                            | _ ->
+                                Some ResourceQuantity.omega, None
+
+                        addViewPatternBindings payloadQuantity borrowRegion subpattern current)
+                | _ ->
+                    None
+
+            match activePatternState with
+            | Some activeState ->
+                activeState
+            | None ->
+
+                let constructorFieldQuantity (path: string list) =
+                    match constructorFieldQuantitiesForPattern, path with
+                    | Some quantities, fieldSegment :: _ when fieldSegment.StartsWith("#", StringComparison.Ordinal) ->
+                        match Int32.TryParse(fieldSegment.Substring(1): string) with
+                        | true, fieldIndex ->
+                            quantities
+                            |> List.tryItem fieldIndex
+                            |> Option.map (Option.defaultValue ResourceQuantity.omega)
+                        | _ ->
+                            None
+                    | _ ->
+                        None
+
+                let state =
+                    match scrutineeBinding.DeclaredQuantity with
+                    | _ when quantityBorrows scrutineeBinding.DeclaredQuantity ->
+                        addNamedEvent OwnershipUseKind.Borrow (findUseLocation document scrutineeName 1) scrutineeBinding.Name state
+                    | Some quantity
+                        when ResourceQuantity.requiresUse quantity
+                             && not (List.isEmpty patternBindings)
+                             && (constructorFieldQuantitiesForPattern
+                                 |> Option.exists (List.forall (function | Some fieldQuantity -> not (ResourceQuantity.requiresUse fieldQuantity) | None -> true))) ->
+                        match tryFindBindingId scrutineeName state with
+                        | Some bindingId ->
+                            updateBinding bindingId (fun binding -> { binding with UseMinimum = max binding.UseMinimum 1 }) state
+                        | None ->
+                            state
+                    | _ ->
+                        state
+
+                let checkDrop =
                     scrutineeBinding.DeclaredQuantity
-                    scrutineeBinding.BorrowRegion
-                    (bindingCapturedRegions scrutineeBinding)
-                    (bindingCapturedOrigins scrutineeBinding)
-                    checkDrop
-                    None
-                    None
-                    (findBinderLocation document name)
-                    current) state
+                    |> Option.exists ResourceQuantity.requiresUse
+
+                patternBindings
+                |> List.fold (fun current (name, path) ->
+                    let bindingQuantity =
+                        constructorFieldQuantity path
+                        |> Option.orElse scrutineeBinding.DeclaredQuantity
+
+                    let checkDrop =
+                        bindingQuantity
+                        |> Option.exists ResourceQuantity.requiresUse
+
+                    addBindingWithPlace
+                        PatternBinding
+                        (makePlace scrutineeBinding.Place.Root (scrutineeBinding.Place.Path @ path))
+                        name
+                        bindingQuantity
+                        scrutineeBinding.BorrowRegion
+                        (bindingCapturedRegions scrutineeBinding)
+                        (bindingCapturedOrigins scrutineeBinding)
+                        checkDrop
+                        None
+                        None
+                        (findBinderLocation document name)
+                        current) state
 
     let rec private patternBoundNameCount pattern =
         match pattern with
@@ -2791,12 +2967,14 @@ module ResourceChecking =
         | NamedApplicationBlock fields ->
             fields |> List.exists (fun field -> expressionResultMayCarryBorrow state field.Value)
         | SafeNavigation _
+        | MemberAccess _
         | Elvis _ ->
             not (Set.isEmpty (capturedRegions state expression))
         | Literal _
         | KindQualifiedName _
         | Name _
         | RecordUpdate _
+        | MemberAccess _
         | Apply _
         | Binary _
         | TagTest _
@@ -2843,6 +3021,7 @@ module ResourceChecking =
         | KindQualifiedName _
         | Name _
         | RecordUpdate _
+        | MemberAccess _
         | Apply _
         | Binary _
         | Elvis _
@@ -2882,6 +3061,7 @@ module ResourceChecking =
         | TagTest(receiver, _) ->
             checkResultEscapeAtBoundary allowedRegions document receiver state
         | SafeNavigation _
+        | MemberAccess _
         | Elvis _ ->
             checkEscapeAgainstAllowed allowedRegions document expression state
         | Do statements ->
@@ -2911,6 +3091,7 @@ module ResourceChecking =
         | Apply _
         | Binary _
         | RecordUpdate _
+        | MemberAccess _
         | PrefixedString _ ->
             state
 
@@ -3102,6 +3283,44 @@ module ResourceChecking =
             Some ResourceQuantity.one
         else
             parameter.Quantity |> Option.map ResourceQuantity.ofSurface
+
+    let private tryBuildReceiverMethodArgumentsForDocument
+        (document: ParsedDocument)
+        receiverExpression
+        memberName
+        arguments
+        =
+        document.Syntax.Declarations
+        |> List.tryPick (function
+            | LetDeclaration definition
+                when definition.Name
+                     |> Option.exists (fun name -> String.Equals(name, memberName, StringComparison.Ordinal)) ->
+                let receiverParameters =
+                    definition.Parameters
+                    |> List.mapi (fun index parameter -> index, parameter)
+                    |> List.filter (fun (_, parameter) -> parameter.IsReceiver)
+
+                match receiverParameters with
+                | [ receiverIndex, receiverParameter ]
+                    when receiverParameter
+                         |> parameterQuantity
+                         |> Option.exists (fun quantity -> ResourceQuantity.requiresUse quantity || ResourceQuantity.isBorrow quantity) ->
+                    let precedingExplicitCount =
+                        definition.Parameters
+                        |> List.take receiverIndex
+                        |> List.filter (fun parameter -> not parameter.IsImplicit)
+                        |> List.length
+
+                    if List.length arguments >= precedingExplicitCount then
+                        let precedingArguments = arguments |> List.take precedingExplicitCount
+                        let followingArguments = arguments |> List.skip precedingExplicitCount
+                        Some(precedingArguments @ [ receiverExpression ] @ followingArguments)
+                    else
+                        None
+                | _ ->
+                    None
+            | _ ->
+                None)
 
     let private addLambdaExecutionParameterBinding (document: ParsedDocument) (parameter: Parameter) current =
         let quantity = parameterQuantity parameter
@@ -3606,6 +3825,32 @@ module ResourceChecking =
                     state
             | None ->
                 state
+        | MemberAccess(receiver, segments, arguments) ->
+            let state =
+                state
+                |> noteValueDemandingNameUse document receiver
+                |> fun current -> checkExpression projectionSummaries document signatures current receiver
+
+            let state =
+                match receiver, segments with
+                | Name [ receiverName ], [ memberName ] ->
+                    document.Syntax.Declarations
+                    |> List.tryPick (function
+                        | LetDeclaration definition when definition.Name = Some memberName ->
+                            definition.Parameters
+                            |> List.tryFind (fun parameter -> parameter.IsReceiver && parameter.Quantity = Some QuantityOne)
+                        | _ ->
+                            None)
+                    |> Option.map (fun _ -> consumeBinding document receiverName state)
+                    |> Option.defaultValue state
+                | _ ->
+                    state
+
+            arguments
+            |> List.fold (fun current argument ->
+                current
+                |> noteValueDemandingNameUse document argument
+                |> fun next -> checkExpression projectionSummaries document signatures next argument) state
         | SafeNavigation(receiver, navigation) ->
             let state =
                 state
@@ -3755,6 +4000,13 @@ module ResourceChecking =
                     current
                     |> noteValueDemandingNameUse document argument
                     |> fun next -> checkExpression projectionSummaries document signatures next argument) state
+        | Apply(Name [ receiverName; memberName ], arguments)
+            when tryBuildReceiverMethodArgumentsForDocument document (Name [ receiverName ]) memberName arguments |> Option.isSome ->
+            let receiverArguments =
+                tryBuildReceiverMethodArgumentsForDocument document (Name [ receiverName ]) memberName arguments
+                |> Option.defaultValue arguments
+
+            checkExpression projectionSummaries document signatures state (Apply(Name [ memberName ], receiverArguments))
         | Apply(callee, arguments) ->
             let state = checkExpression projectionSummaries document signatures state callee
             let state =
@@ -4755,6 +5007,9 @@ module ResourceChecking =
         scopeId
         (definition: LetDefinition)
         =
+        if definition.IsPattern then
+            emptyState scopeId
+        else
         match definition.Body with
         | Some body ->
             let signature = tryFindDefinitionSignature signatures document definition

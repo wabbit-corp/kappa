@@ -107,11 +107,11 @@ module Compilation =
             else
                 ResourceChecking.checkDocumentsWithFacts documents
 
-        let diagnostics =
+        let sourceDiagnostics =
             frontendDiagnostics @ resourceCheckResult.Diagnostics
 
         let frontendSnapshots =
-            CompilationSnapshots.buildFrontendSnapshots resourceCheckResult.OwnershipFactsByFile diagnostics documents
+            CompilationSnapshots.buildFrontendSnapshots resourceCheckResult.OwnershipFactsByFile sourceDiagnostics documents
 
         let kFrontIR =
             frontendSnapshots[CORE_LOWERING].Modules
@@ -125,13 +125,30 @@ module Compilation =
             |> List.map KRuntimeLowering.lowerKRuntimeModule
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
-        let kBackendIR =
+        let kBackendIR, backendLoweringDiagnostics =
             KBackendLowering.lowerKBackendModules normalizedBackendProfile options.AllowUnsafeConsume kRuntimeIR
+
+        let kBackendIR =
+            kBackendIR
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
         let clrAssemblyIR =
             ClrAssemblyLowering.lowerModules kRuntimeIR kBackendIR
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
+
+        let requiresBackendImplementation =
+            Stdlib.targetCheckpointNamesFor normalizedBackendProfile
+            |> List.isEmpty
+            |> not
+
+        let backendDiagnostics =
+            if requiresBackendImplementation && not (sourceDiagnostics |> List.exists (fun diagnostic -> diagnostic.Severity = Error)) then
+                backendLoweringDiagnostics
+            else
+                []
+
+        let provisionalDiagnostics =
+            sourceDiagnostics @ backendDiagnostics
 
         let workspaceWithoutTrace =
             { SourceRoot = options.SourceRoot
@@ -150,8 +167,21 @@ module Compilation =
               KRuntimeIR = kRuntimeIR
               KBackendIR = kBackendIR
               ClrAssemblyIR = clrAssemblyIR
-              Diagnostics = diagnostics
+              Diagnostics = provisionalDiagnostics
               PipelineTrace = [] }
+
+        let implementationDiagnostics =
+            if
+                not requiresBackendImplementation
+                || workspaceWithoutTrace.Diagnostics |> List.exists (fun diagnostic -> diagnostic.Severity = Error)
+            then
+                []
+            else
+                CheckpointVerification.verifyCheckpoint workspaceWithoutTrace "KBackendIR"
+
+        let workspaceWithoutTrace =
+            { workspaceWithoutTrace with
+                Diagnostics = workspaceWithoutTrace.Diagnostics @ implementationDiagnostics }
 
         let checkerSnapshot = frontendSnapshots[CHECKERS]
 

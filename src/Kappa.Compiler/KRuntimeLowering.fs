@@ -297,6 +297,43 @@ module internal KRuntimeLowering =
         | Some(KCoreStaticObject _) -> true
         | _ -> false
 
+    let private tryEtaExpandClosureBinding
+        returnTypeText
+        body
+        : (KRuntimeParameter list * string option * KRuntimeExpression option) option =
+        let rec flattenArrows typeExpr =
+            match typeExpr with
+            | TypeSignatures.TypeArrow(_, parameterType, resultType) ->
+                let parameterTypes, finalResult = flattenArrows resultType
+                parameterType :: parameterTypes, finalResult
+            | other ->
+                [], other
+
+        match returnTypeText, body with
+        | Some returnTypeText, Some(KRuntimeClosure(parameterNames, closureBody)) ->
+            tryParseTypeText returnTypeText
+            |> Option.bind (fun returnType ->
+                let parameterTypes, resultType = flattenArrows returnType
+
+                if List.length parameterNames = List.length parameterTypes then
+                    let etaParameters : KRuntimeParameter list =
+                        parameterNames
+                        |> List.zip parameterTypes
+                        |> List.map (fun (parameterType, parameterName) ->
+                            ({ Name = parameterName
+                               TypeText = Some(TypeSignatures.toText parameterType |> eraseRuntimeTypeText) }
+                             : KRuntimeParameter))
+
+                    Some(
+                        etaParameters,
+                        Some(TypeSignatures.toText resultType |> eraseRuntimeTypeText),
+                        Some closureBody
+                    )
+                else
+                    None)
+        | _ ->
+            None
+
     let lowerKRuntimeModule (coreModule: KCoreModule) : KRuntimeModule =
         let moduleTraitArities =
             coreModule.Declarations
@@ -317,11 +354,22 @@ module internal KRuntimeLowering =
             |> List.choose (fun declaration ->
                 match declaration.Binding with
                 | Some binding when binding.Name.IsSome && not (isCompileTimeOnlyBindingBody binding.Body) ->
+                    let loweredBody = binding.Body |> Option.map lowerKRuntimeExpression
+                    let loweredParameters = binding.Parameters |> List.map lowerRuntimeParameter
+                    let loweredReturnType = binding.ReturnTypeText |> Option.map eraseRuntimeTypeText
+                    let parameters, returnType, body =
+                        match loweredParameters with
+                        | [] ->
+                            tryEtaExpandClosureBinding binding.ReturnTypeText loweredBody
+                            |> Option.defaultValue (loweredParameters, loweredReturnType, loweredBody)
+                        | _ ->
+                            loweredParameters, loweredReturnType, loweredBody
+
                     Some
                         { Name = binding.Name.Value
-                          Parameters = binding.Parameters |> List.map lowerRuntimeParameter
-                          ReturnTypeText = binding.ReturnTypeText |> Option.map eraseRuntimeTypeText
-                          Body = binding.Body |> Option.map lowerKRuntimeExpression
+                          Parameters = parameters
+                          ReturnTypeText = returnType
+                          Body = body
                           Intrinsic = false
                           Provenance = binding.Provenance }
                 | _ ->
@@ -436,28 +484,8 @@ module internal KRuntimeLowering =
                     None)
 
         let constructors : KRuntimeConstructor list =
-            let exportedSourceConstructors =
-                dataTypes
-                |> List.filter (fun dataType ->
-                    coreModule.Declarations
-                    |> List.exists (fun declaration ->
-                        match declaration.Source with
-                        | DataDeclarationNode dataDeclaration ->
-                            dataDeclaration.Name = dataType.Name
-                            && isExportedDataDeclaration coreModule dataDeclaration
-                        | _ ->
-                            false))
-                |> List.collect (fun dataType -> dataType.Constructors)
-
-            let syntheticConstructors =
-                coreModule.SyntheticDataTypes
-                |> List.collect (fun dataType ->
-                    dataTypes
-                    |> List.tryFind (fun runtimeDataType -> runtimeDataType.Name = dataType.Name)
-                    |> Option.map (fun runtimeDataType -> runtimeDataType.Constructors)
-                    |> Option.defaultValue [])
-
-            exportedSourceConstructors @ syntheticConstructors
+            dataTypes
+            |> List.collect (fun dataType -> dataType.Constructors)
 
         let exports =
             coreModule.Declarations

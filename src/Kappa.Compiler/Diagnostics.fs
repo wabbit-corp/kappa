@@ -20,6 +20,7 @@ type DiagnosticCode =
     | ModuleNameUnresolved
     | ModulePathMismatch
     | StaticObjectUnresolved
+    | ActivePatternInvalid
     | ProjectionDefinitionUnsupported
     | OrPatternBinderMismatch
     | SafeNavigationAmbiguous
@@ -73,6 +74,7 @@ module DiagnosticCode =
         | ModuleNameUnresolved -> "E_MODULE_NAME_UNRESOLVED"
         | ModulePathMismatch -> "E_MODULE_PATH_MISMATCH"
         | StaticObjectUnresolved -> "E_STATIC_OBJECT_UNRESOLVED"
+        | ActivePatternInvalid -> "E_ACTIVE_PATTERN_INVALID"
         | ProjectionDefinitionUnsupported -> "E_PROJECTION_DEFINITION_UNSUPPORTED"
         | OrPatternBinderMismatch -> "E_OR_PATTERN_BINDER_MISMATCH"
         | SafeNavigationAmbiguous -> "E_SAFE_NAVIGATION_AMBIGUOUS"
@@ -125,6 +127,7 @@ module DiagnosticCode =
         | "E_MODULE_NAME_UNRESOLVED" -> Some ModuleNameUnresolved
         | "E_MODULE_PATH_MISMATCH" -> Some ModulePathMismatch
         | "E_STATIC_OBJECT_UNRESOLVED" -> Some StaticObjectUnresolved
+        | "E_ACTIVE_PATTERN_INVALID" -> Some ActivePatternInvalid
         | "E_PROJECTION_DEFINITION_UNSUPPORTED" -> Some ProjectionDefinitionUnsupported
         | "E_OR_PATTERN_BINDER_MISMATCH" -> Some OrPatternBinderMismatch
         | "E_SAFE_NAVIGATION_AMBIGUOUS" -> Some SafeNavigationAmbiguous

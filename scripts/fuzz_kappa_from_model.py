@@ -12,19 +12,18 @@ import argparse
 import hashlib
 import json
 import random
-import shutil
-import subprocess
-import tempfile
 import time
 from pathlib import Path
 
 import torch
 
+from kappa_fuzz_lib import (
+    bucket_for_kind,
+    current_git_commit,
+    repo_root_from_script,
+    run_cli_source,
+)
 from train_kappa_fuzzball import CharRnn, ModelConfig, decode, decode_keywords, normalize_source
-
-
-def repo_root_from_script() -> Path:
-    return Path(__file__).resolve().parents[1]
 
 
 def load_checkpoint(path: Path) -> tuple[CharRnn, dict]:
@@ -69,44 +68,6 @@ def remap_identifiers(text: str, rng: random.Random, max_ids: int) -> str:
     return re.sub(r"\bi\d+\b", replace, text)
 
 
-def classify_result(returncode: int, stdout: str, stderr: str, timed_out: bool) -> str:
-    if timed_out:
-        return "timeout"
-
-    lowered = f"{stdout}\n{stderr}".lower()
-
-    if "unhandled exception" in lowered or "system." in stderr.lower() or "stack trace" in lowered:
-        return "crash"
-
-    if returncode < 0:
-        return "crash"
-
-    if returncode == 0:
-        return "ok"
-
-    if "\nDiagnostics\n" in stdout or "\nDiagnostics\r\n" in stdout:
-        return "diagnostic"
-
-    return "failure"
-
-
-def run_cli(cli_path: Path, repo_root: Path, temp_root: Path, source_path: Path, extra_args: list[str], timeout_seconds: float) -> tuple[int, str, str, bool]:
-    timed_out = False
-
-    try:
-        result = subprocess.run(
-            [str(cli_path), "--source-root", str(temp_root), *extra_args, str(source_path)],
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
-        )
-        return result.returncode, result.stdout, result.stderr, timed_out
-    except subprocess.TimeoutExpired as ex:
-        timed_out = True
-        return -1, ex.stdout or "", ex.stderr or "", timed_out
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", default="artifacts/fuzzball-kappa/kappa-char-lstm.pt")
@@ -144,6 +105,7 @@ def main() -> None:
         (out_dir / name).mkdir(parents=True, exist_ok=True)
 
     model, checkpoint = load_checkpoint(checkpoint_path)
+    compiler_commit = current_git_commit(repo_root)
     vocab = checkpoint["vocab"]
     char_to_id = checkpoint["char_to_id"]
     keyword_codes = checkpoint.get("keyword_codes", {})
@@ -158,6 +120,26 @@ def main() -> None:
     saved_diagnostics = 0
     saved_successes = 0
 
+    (out_dir / "run.json").write_text(
+        json.dumps(
+            {
+                "compiler_commit": compiler_commit,
+                "checkpoint": str(checkpoint_path),
+                "cli": str(cli_path),
+                "count": args.count,
+                "sample_length": args.sample_length,
+                "temperature": args.temperature,
+                "prime": args.prime,
+                "seed": args.seed,
+                "timeout_seconds": args.timeout_seconds,
+                "max_ids": args.max_ids,
+                "verify_clean_checkpoint": args.verify_clean_checkpoint,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
     for index in range(1, args.count + 1):
         ids = model.sample(
             prime_ids=prime_ids,
@@ -171,46 +153,31 @@ def main() -> None:
 
         digest = hashlib.sha1(decoded.encode("utf-8")).hexdigest()
         started_at = time.time()
-
-        with tempfile.TemporaryDirectory(prefix="kappa-fuzz-") as temp_dir:
-            temp_root = Path(temp_dir)
-            source_path = temp_root / "main.kp"
-            source_path.write_text(decoded + "\n", encoding="utf-8")
-
-            returncode, stdout, stderr, timed_out = run_cli(
-                cli_path,
-                repo_root,
-                temp_root,
-                source_path,
-                [],
-                args.timeout_seconds,
-            )
-
-        kind = classify_result(returncode, stdout, stderr, timed_out)
+        stage = "compile"
+        run = run_cli_source(
+            cli_path,
+            repo_root,
+            decoded,
+            stage=stage,
+            timeout_seconds=args.timeout_seconds,
+        )
+        kind = run.kind
 
         if kind == "ok":
             for checkpoint in args.verify_clean_checkpoint:
-                with tempfile.TemporaryDirectory(prefix="kappa-fuzz-verify-") as temp_dir:
-                    temp_root = Path(temp_dir)
-                    source_path = temp_root / "main.kp"
-                    source_path.write_text(decoded + "\n", encoding="utf-8")
-                    verify_returncode, verify_stdout, verify_stderr, verify_timed_out = run_cli(
-                        cli_path,
-                        repo_root,
-                        temp_root,
-                        source_path,
-                        ["--verify", checkpoint],
-                        args.timeout_seconds,
-                    )
-
-                verify_kind = classify_result(verify_returncode, verify_stdout, verify_stderr, verify_timed_out)
-
+                verify_stage = f"verify:{checkpoint}"
+                verify_run = run_cli_source(
+                    cli_path,
+                    repo_root,
+                    decoded,
+                    stage=verify_stage,
+                    timeout_seconds=args.timeout_seconds,
+                )
+                verify_kind = verify_run.kind
                 if verify_kind in {"crash", "timeout", "failure"}:
                     kind = verify_kind
-                    stdout = verify_stdout
-                    stderr = verify_stderr
-                    returncode = verify_returncode
-                    timed_out = verify_timed_out
+                    run = verify_run
+                    stage = verify_stage
                     break
 
         stats[kind] += 1
@@ -220,21 +187,21 @@ def main() -> None:
 
         if kind == "crash":
             should_save = True
-            target_dir = out_dir / "crashes"
+            target_dir = out_dir / bucket_for_kind(kind)
         elif kind == "timeout":
             should_save = True
-            target_dir = out_dir / "timeouts"
+            target_dir = out_dir / bucket_for_kind(kind)
         elif kind == "failure":
             should_save = True
-            target_dir = out_dir / "failures"
+            target_dir = out_dir / bucket_for_kind(kind)
         elif kind == "diagnostic" and saved_diagnostics < args.keep_diagnostics:
             should_save = True
             saved_diagnostics += 1
-            target_dir = out_dir / "diagnostics"
+            target_dir = out_dir / bucket_for_kind(kind)
         elif kind == "ok" and saved_successes < args.keep_successes:
             should_save = True
             saved_successes += 1
-            target_dir = out_dir / "successes"
+            target_dir = out_dir / bucket_for_kind(kind)
 
         elapsed_ms = int((time.time() - started_at) * 1000.0)
 
@@ -243,18 +210,26 @@ def main() -> None:
             case_dir.mkdir(parents=True, exist_ok=True)
             (case_dir / "main.kp").write_text(decoded + "\n", encoding="utf-8")
             (case_dir / "main.encoded.kp").write_text(encoded + "\n", encoding="utf-8")
-            (case_dir / "stdout.txt").write_text(stdout, encoding="utf-8")
-            (case_dir / "stderr.txt").write_text(stderr, encoding="utf-8")
+            (case_dir / "stdout.txt").write_text(run.stdout, encoding="utf-8")
+            (case_dir / "stderr.txt").write_text(run.stderr, encoding="utf-8")
             (case_dir / "meta.json").write_text(
                 json.dumps(
                     {
                         "kind": kind,
                         "sha1": digest,
-                        "returncode": returncode,
-                        "timed_out": timed_out,
+                        "returncode": run.returncode,
+                        "timed_out": run.timed_out,
                         "elapsed_ms": elapsed_ms,
                         "index": index,
                         "temperature": args.temperature,
+                        "compiler_commit": compiler_commit,
+                        "checkpoint": str(checkpoint_path),
+                        "cli": str(cli_path),
+                        "stage": stage,
+                        "prime": args.prime,
+                        "sample_length": args.sample_length,
+                        "seed": args.seed,
+                        "verify_clean_checkpoint": args.verify_clean_checkpoint,
                     },
                     indent=2,
                 ),

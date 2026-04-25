@@ -1,0 +1,503 @@
+{
+  "promoted": 31,
+  "clusters": 31,
+  "pending_dir": "/Users/wabbit/ws/kappa/pending-failures",
+  "entries": [
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-a655acfbec65-e2dbed3c7e5e",
+      "cluster_key": "a655acfbec652f93dfb02a6453324e5274423af5:error: Checkpoint 'KBackendIR' requires a backend module for runtime module 'main'.",
+      "count": 300,
+      "trace_hash": "a655acfbec652f93dfb02a6453324e5274423af5",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 300
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KBackendIR' requires a backend module for runtime module 'main'.": 300
+      },
+      "representative_case": "failure-04ba37cdab012648b4a5654e41c8054696e94602",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-04ba37cdab012648b4a5654e41c8054696e94602",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-04ba37cdab012648b4a5654e41c8054696e94602"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/crash-da39a3ee5e6b-d1f7f494834a",
+      "cluster_key": "da39a3ee5e6b4b0d3255bfef95601890afd80709:Stack overflow.",
+      "count": 64,
+      "trace_hash": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+      "trace_step_count": 0,
+      "kinds": {
+        "crash": 64
+      },
+      "terminal_signatures": {
+        "Stack overflow.": 64
+      },
+      "representative_case": "crash-0fd37ac9b760b95bc425db7a7de39cc80d2c9b5f",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-crashes/crash-0fd37ac9b760b95bc425db7a7de39cc80d2c9b5f",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-crashes/crash-0fd37ac9b760b95bc425db7a7de39cc80d2c9b5f"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-a655acfbec65-55da12103cdb",
+      "cluster_key": "a655acfbec652f93dfb02a6453324e5274423af5:error: Checkpoint 'KBackendIR' requires calls in 'main.I0' to have an argument count matching the calling convention arity.",
+      "count": 37,
+      "trace_hash": "a655acfbec652f93dfb02a6453324e5274423af5",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 37
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KBackendIR' requires calls in 'main.I0' to have an argument count matching the calling convention arity.": 37
+      },
+      "representative_case": "failure-1ca9c09313c56703f95b7f1509988fa7a225c363",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-1ca9c09313c56703f95b7f1509988fa7a225c363",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-1ca9c09313c56703f95b7f1509988fa7a225c363"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-a655acfbec65-896dbc586373",
+      "cluster_key": "a655acfbec652f93dfb02a6453324e5274423af5:error: Checkpoint 'KBackendIR' requires calls in 'main.I1' to have an argument count matching the calling convention arity.",
+      "count": 16,
+      "trace_hash": "a655acfbec652f93dfb02a6453324e5274423af5",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 16
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KBackendIR' requires calls in 'main.I1' to have an argument count matching the calling convention arity.": 16
+      },
+      "representative_case": "failure-7bbe08f0aa6fecc1273b4cc81aa70e5ae097f509",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-7bbe08f0aa6fecc1273b4cc81aa70e5ae097f509",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-7bbe08f0aa6fecc1273b4cc81aa70e5ae097f509"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-a655acfbec65-e36364d4892e",
+      "cluster_key": "a655acfbec652f93dfb02a6453324e5274423af5:error: Checkpoint 'KBackendIR' requires calls in 'main.i0' to have an argument count matching the calling convention arity.",
+      "count": 13,
+      "trace_hash": "a655acfbec652f93dfb02a6453324e5274423af5",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 13
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KBackendIR' requires calls in 'main.i0' to have an argument count matching the calling convention arity.": 13
+      },
+      "representative_case": "failure-18e94dce4cba1ea46a3f3ee220496940b3d4ae96",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-18e94dce4cba1ea46a3f3ee220496940b3d4ae96",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-18e94dce4cba1ea46a3f3ee220496940b3d4ae96"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-a655acfbec65-a173e5cdc5f3",
+      "cluster_key": "a655acfbec652f93dfb02a6453324e5274423af5:error: Checkpoint 'KBackendIR' requires calls in 'main.i1' to have an argument count matching the calling convention arity.",
+      "count": 10,
+      "trace_hash": "a655acfbec652f93dfb02a6453324e5274423af5",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 10
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KBackendIR' requires calls in 'main.i1' to have an argument count matching the calling convention arity.": 10
+      },
+      "representative_case": "failure-0c294cae6d7a42c5c02a3e7e5f1c1d206994e662",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-0c294cae6d7a42c5c02a3e7e5f1c1d206994e662",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-0c294cae6d7a42c5c02a3e7e5f1c1d206994e662"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-bdefc4955e02-f6318a383ce1",
+      "cluster_key": "bdefc4955e02cb86af5cece32d5c59fa026e9272:error: Checkpoint 'KRuntimeIR' requires unique constructor identities within module 'main', but 'I9' was duplicated.",
+      "count": 8,
+      "trace_hash": "bdefc4955e02cb86af5cece32d5c59fa026e9272",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 8
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KRuntimeIR' requires unique constructor identities within module 'main', but 'I9' was duplicated.": 8
+      },
+      "representative_case": "failure-8724faeb84ef084f77d63f524c204b3622a8b8e9",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-8724faeb84ef084f77d63f524c204b3622a8b8e9",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-8724faeb84ef084f77d63f524c204b3622a8b8e9"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-bdefc4955e02-bab35c7b675d",
+      "cluster_key": "bdefc4955e02cb86af5cece32d5c59fa026e9272:error: Checkpoint 'KRuntimeIR' requires unique constructor identities within module 'main', but 'I13' was duplicated.",
+      "count": 7,
+      "trace_hash": "bdefc4955e02cb86af5cece32d5c59fa026e9272",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 7
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KRuntimeIR' requires unique constructor identities within module 'main', but 'I13' was duplicated.": 7
+      },
+      "representative_case": "failure-378f08a61dce5cc27a2507b8869152ecfde53c26",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-378f08a61dce5cc27a2507b8869152ecfde53c26",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-378f08a61dce5cc27a2507b8869152ecfde53c26"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-a655acfbec65-81d0b9347d76",
+      "cluster_key": "a655acfbec652f93dfb02a6453324e5274423af5:error: Checkpoint 'KBackendIR' requires calls in 'main.I2' to have an argument count matching the calling convention arity.",
+      "count": 4,
+      "trace_hash": "a655acfbec652f93dfb02a6453324e5274423af5",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 4
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KBackendIR' requires calls in 'main.I2' to have an argument count matching the calling convention arity.": 4
+      },
+      "representative_case": "failure-48e353c665ad05834ecddea10119d58242ca6504",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-48e353c665ad05834ecddea10119d58242ca6504",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-48e353c665ad05834ecddea10119d58242ca6504"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-bdefc4955e02-a9476f676828",
+      "cluster_key": "bdefc4955e02cb86af5cece32d5c59fa026e9272:error: Checkpoint 'KBackendIR' requires unique function identities within module 'main', but 'I0' was duplicated.",
+      "count": 4,
+      "trace_hash": "bdefc4955e02cb86af5cece32d5c59fa026e9272",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 4
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KBackendIR' requires unique function identities within module 'main', but 'I0' was duplicated.": 4
+      },
+      "representative_case": "failure-015776da2939c52af69d542ea6aa2af4f1c5200d",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-015776da2939c52af69d542ea6aa2af4f1c5200d",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-015776da2939c52af69d542ea6aa2af4f1c5200d"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/timeout-da39a3ee5e6b-36d0981b3375",
+      "cluster_key": "da39a3ee5e6b4b0d3255bfef95601890afd80709:compile",
+      "count": 4,
+      "trace_hash": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+      "trace_step_count": 0,
+      "kinds": {
+        "timeout": 4
+      },
+      "terminal_signatures": {
+        "compile": 4
+      },
+      "representative_case": "timeout-202170d7ed5f3469533422d6d63845797b6def5e",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-timeouts/timeout-202170d7ed5f3469533422d6d63845797b6def5e",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-timeouts/timeout-202170d7ed5f3469533422d6d63845797b6def5e"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-a655acfbec65-d509a3b3f3bb",
+      "cluster_key": "a655acfbec652f93dfb02a6453324e5274423af5:error: Checkpoint 'KBackendIR' requires calls in 'main.i2' to have an argument count matching the calling convention arity.",
+      "count": 3,
+      "trace_hash": "a655acfbec652f93dfb02a6453324e5274423af5",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 3
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KBackendIR' requires calls in 'main.i2' to have an argument count matching the calling convention arity.": 3
+      },
+      "representative_case": "failure-03a74c0250ba987dcdb49de0b026a671191fd761",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-03a74c0250ba987dcdb49de0b026a671191fd761",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-03a74c0250ba987dcdb49de0b026a671191fd761"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-bdefc4955e02-e18ba2da7426",
+      "cluster_key": "bdefc4955e02cb86af5cece32d5c59fa026e9272:error: Checkpoint 'KRuntimeIR' requires unique constructor identities within module 'main', but 'I11' was duplicated.",
+      "count": 3,
+      "trace_hash": "bdefc4955e02cb86af5cece32d5c59fa026e9272",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 3
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KRuntimeIR' requires unique constructor identities within module 'main', but 'I11' was duplicated.": 3
+      },
+      "representative_case": "failure-ae449ab003fb34b75c99345fd9dd5a03081ca8f0",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-ae449ab003fb34b75c99345fd9dd5a03081ca8f0",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-ae449ab003fb34b75c99345fd9dd5a03081ca8f0"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-bdefc4955e02-f922796f29ba",
+      "cluster_key": "bdefc4955e02cb86af5cece32d5c59fa026e9272:error: Checkpoint 'KBackendIR' requires function 'main.i0' to have a calling convention arity matching its parameter count.",
+      "count": 2,
+      "trace_hash": "bdefc4955e02cb86af5cece32d5c59fa026e9272",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 2
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KBackendIR' requires function 'main.i0' to have a calling convention arity matching its parameter count.": 2
+      },
+      "representative_case": "failure-b8bb446fa8132dc6e543f54f3c31c0ba04753383",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-b8bb446fa8132dc6e543f54f3c31c0ba04753383",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-b8bb446fa8132dc6e543f54f3c31c0ba04753383"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-bdefc4955e02-62dd1d09c0d6",
+      "cluster_key": "bdefc4955e02cb86af5cece32d5c59fa026e9272:error: Checkpoint 'KBackendIR' requires imported backend module 'I0.I0' to be present for module 'main'.",
+      "count": 2,
+      "trace_hash": "bdefc4955e02cb86af5cece32d5c59fa026e9272",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 2
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KBackendIR' requires imported backend module 'I0.I0' to be present for module 'main'.": 2
+      },
+      "representative_case": "failure-1f745bc84c3f488b362b21c660bcb6844d0d60a7",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-1f745bc84c3f488b362b21c660bcb6844d0d60a7",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-1f745bc84c3f488b362b21c660bcb6844d0d60a7"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-bdefc4955e02-d93013a231bc",
+      "cluster_key": "bdefc4955e02cb86af5cece32d5c59fa026e9272:error: Checkpoint 'KBackendIR' requires unique function identities within module 'main', but 'i0' was duplicated.",
+      "count": 2,
+      "trace_hash": "bdefc4955e02cb86af5cece32d5c59fa026e9272",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 2
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KBackendIR' requires unique function identities within module 'main', but 'i0' was duplicated.": 2
+      },
+      "representative_case": "failure-4481bf32ebdd36498e98e83a449d27954c8ee881",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-4481bf32ebdd36498e98e83a449d27954c8ee881",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-4481bf32ebdd36498e98e83a449d27954c8ee881"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-bdefc4955e02-b6adeb7ce56b",
+      "cluster_key": "bdefc4955e02cb86af5cece32d5c59fa026e9272:error: Checkpoint 'KRuntimeIR' requires unique constructor identities within module 'main', but 'I1' was duplicated.",
+      "count": 2,
+      "trace_hash": "bdefc4955e02cb86af5cece32d5c59fa026e9272",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 2
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KRuntimeIR' requires unique constructor identities within module 'main', but 'I1' was duplicated.": 2
+      },
+      "representative_case": "failure-21f3ce58f66e1c701fae5229a78212fe41a39a2e",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-21f3ce58f66e1c701fae5229a78212fe41a39a2e",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-21f3ce58f66e1c701fae5229a78212fe41a39a2e"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/crash-da39a3ee5e6b-939814ae0ee3",
+      "cluster_key": "da39a3ee5e6b4b0d3255bfef95601890afd80709:Unhandled exception. System.ArgumentException: The lists had different lengths.",
+      "count": 2,
+      "trace_hash": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+      "trace_step_count": 0,
+      "kinds": {
+        "crash": 2
+      },
+      "terminal_signatures": {
+        "Unhandled exception. System.ArgumentException: The lists had different lengths.": 2
+      },
+      "representative_case": "crash-3f02860020f3db32b0954235ee98d8c167baabb6",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-crashes/crash-3f02860020f3db32b0954235ee98d8c167baabb6",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-crashes/crash-3f02860020f3db32b0954235ee98d8c167baabb6"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-a655acfbec65-34a7c07b1615",
+      "cluster_key": "a655acfbec652f93dfb02a6453324e5274423af5:error: Checkpoint 'KBackendIR' requires calls in 'main.i3' to have an argument count matching the calling convention arity.",
+      "count": 1,
+      "trace_hash": "a655acfbec652f93dfb02a6453324e5274423af5",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KBackendIR' requires calls in 'main.i3' to have an argument count matching the calling convention arity.": 1
+      },
+      "representative_case": "failure-0c3ee95f62278855bce2fc371858ad41db3908a6",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-0c3ee95f62278855bce2fc371858ad41db3908a6",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-0c3ee95f62278855bce2fc371858ad41db3908a6"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-a655acfbec65-d379311c7480",
+      "cluster_key": "a655acfbec652f93dfb02a6453324e5274423af5:error: Checkpoint 'KBackendIR' requires pre-erasure runtime metadata to be removed before backend lowering, but constructor field 'main.I4[3]' still exposes 'Type'.",
+      "count": 1,
+      "trace_hash": "a655acfbec652f93dfb02a6453324e5274423af5",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KBackendIR' requires pre-erasure runtime metadata to be removed before backend lowering, but constructor field 'main.I4[3]' still exposes 'Type'.": 1
+      },
+      "representative_case": "failure-3c04f8de679c3246207853d6eca0ec54f11141b3",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-3c04f8de679c3246207853d6eca0ec54f11141b3",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-3c04f8de679c3246207853d6eca0ec54f11141b3"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-a655acfbec65-af07058b091f",
+      "cluster_key": "a655acfbec652f93dfb02a6453324e5274423af5:error: Checkpoint 'KBackendIR' requires pre-erasure runtime metadata to be removed before backend lowering, but constructor field 'main.let[3]' still exposes 'Type'.",
+      "count": 1,
+      "trace_hash": "a655acfbec652f93dfb02a6453324e5274423af5",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KBackendIR' requires pre-erasure runtime metadata to be removed before backend lowering, but constructor field 'main.let[3]' still exposes 'Type'.": 1
+      },
+      "representative_case": "failure-53f40840402fdf9489f26fafff1ccb0ad6d62eed",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-53f40840402fdf9489f26fafff1ccb0ad6d62eed",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-53f40840402fdf9489f26fafff1ccb0ad6d62eed"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-bdefc4955e02-55da12103cdb",
+      "cluster_key": "bdefc4955e02cb86af5cece32d5c59fa026e9272:error: Checkpoint 'KBackendIR' requires calls in 'main.I0' to have an argument count matching the calling convention arity.",
+      "count": 1,
+      "trace_hash": "bdefc4955e02cb86af5cece32d5c59fa026e9272",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KBackendIR' requires calls in 'main.I0' to have an argument count matching the calling convention arity.": 1
+      },
+      "representative_case": "failure-15ada45fc9183475c149912332280e93508f010f",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-15ada45fc9183475c149912332280e93508f010f",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-15ada45fc9183475c149912332280e93508f010f"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-bdefc4955e02-198703208ff2",
+      "cluster_key": "bdefc4955e02cb86af5cece32d5c59fa026e9272:error: Checkpoint 'KBackendIR' requires function 'main.I0' to have a calling convention arity matching its parameter count.",
+      "count": 1,
+      "trace_hash": "bdefc4955e02cb86af5cece32d5c59fa026e9272",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KBackendIR' requires function 'main.I0' to have a calling convention arity matching its parameter count.": 1
+      },
+      "representative_case": "failure-a6e3365afb89a8bfa8a51f4ea8cb32fd69948630",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-a6e3365afb89a8bfa8a51f4ea8cb32fd69948630",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-a6e3365afb89a8bfa8a51f4ea8cb32fd69948630"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-bdefc4955e02-54b89316ced1",
+      "cluster_key": "bdefc4955e02cb86af5cece32d5c59fa026e9272:error: Checkpoint 'KBackendIR' requires function 'main.I1' to have a calling convention arity matching its parameter count.",
+      "count": 1,
+      "trace_hash": "bdefc4955e02cb86af5cece32d5c59fa026e9272",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KBackendIR' requires function 'main.I1' to have a calling convention arity matching its parameter count.": 1
+      },
+      "representative_case": "failure-11ccc93473c2a7a3a883523ec2b20e538b4adcea",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-11ccc93473c2a7a3a883523ec2b20e538b4adcea",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-11ccc93473c2a7a3a883523ec2b20e538b4adcea"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-bdefc4955e02-0948fe34aca7",
+      "cluster_key": "bdefc4955e02cb86af5cece32d5c59fa026e9272:error: Checkpoint 'KBackendIR' requires function 'main.i1' to have a calling convention arity matching its parameter count.",
+      "count": 1,
+      "trace_hash": "bdefc4955e02cb86af5cece32d5c59fa026e9272",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KBackendIR' requires function 'main.i1' to have a calling convention arity matching its parameter count.": 1
+      },
+      "representative_case": "failure-cfb9e2fe1620c2f7f43cd7a75c383b29ec292739",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-cfb9e2fe1620c2f7f43cd7a75c383b29ec292739",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-cfb9e2fe1620c2f7f43cd7a75c383b29ec292739"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-bdefc4955e02-439d09ac2365",
+      "cluster_key": "bdefc4955e02cb86af5cece32d5c59fa026e9272:error: Checkpoint 'KBackendIR' requires imported backend module 'I0.i0' to be present for module 'main'.",
+      "count": 1,
+      "trace_hash": "bdefc4955e02cb86af5cece32d5c59fa026e9272",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KBackendIR' requires imported backend module 'I0.i0' to be present for module 'main'.": 1
+      },
+      "representative_case": "failure-d1f7362ec5e9a98046de1fb54782f71cdb4613d7",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-d1f7362ec5e9a98046de1fb54782f71cdb4613d7",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-d1f7362ec5e9a98046de1fb54782f71cdb4613d7"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-bdefc4955e02-4ea43ecf4f4e",
+      "cluster_key": "bdefc4955e02cb86af5cece32d5c59fa026e9272:error: Checkpoint 'KBackendIR' requires imported backend module 'i0.i0' to be present for module 'main'.",
+      "count": 1,
+      "trace_hash": "bdefc4955e02cb86af5cece32d5c59fa026e9272",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KBackendIR' requires imported backend module 'i0.i0' to be present for module 'main'.": 1
+      },
+      "representative_case": "failure-a52e6adf766822cebde7548140290983f6f3b8aa",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-a52e6adf766822cebde7548140290983f6f3b8aa",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-a52e6adf766822cebde7548140290983f6f3b8aa"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-bdefc4955e02-5cc3a87c301f",
+      "cluster_key": "bdefc4955e02cb86af5cece32d5c59fa026e9272:error: Checkpoint 'KBackendIR' requires unique function identities within module 'main', but 'I1' was duplicated.",
+      "count": 1,
+      "trace_hash": "bdefc4955e02cb86af5cece32d5c59fa026e9272",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KBackendIR' requires unique function identities within module 'main', but 'I1' was duplicated.": 1
+      },
+      "representative_case": "failure-d670e439c4607bd85498009595ccf7286170395d",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-d670e439c4607bd85498009595ccf7286170395d",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-d670e439c4607bd85498009595ccf7286170395d"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-bdefc4955e02-833d7cdfd47f",
+      "cluster_key": "bdefc4955e02cb86af5cece32d5c59fa026e9272:error: Checkpoint 'KBackendIR' requires unique function identities within module 'main', but 'i1' was duplicated.",
+      "count": 1,
+      "trace_hash": "bdefc4955e02cb86af5cece32d5c59fa026e9272",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KBackendIR' requires unique function identities within module 'main', but 'i1' was duplicated.": 1
+      },
+      "representative_case": "failure-f528c967be7989a664ad22b815b7036ef76d8bf1",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-f528c967be7989a664ad22b815b7036ef76d8bf1",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-f528c967be7989a664ad22b815b7036ef76d8bf1"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-bdefc4955e02-1efaee00d556",
+      "cluster_key": "bdefc4955e02cb86af5cece32d5c59fa026e9272:error: Checkpoint 'KRuntimeIR' requires unique constructor identities within module 'main', but 'I6' was duplicated.",
+      "count": 1,
+      "trace_hash": "bdefc4955e02cb86af5cece32d5c59fa026e9272",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KRuntimeIR' requires unique constructor identities within module 'main', but 'I6' was duplicated.": 1
+      },
+      "representative_case": "failure-7f7e16a70679ceb7a6270f27cb5394ef258d0b99",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-7f7e16a70679ceb7a6270f27cb5394ef258d0b99",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-7f7e16a70679ceb7a6270f27cb5394ef258d0b99"
+    },
+    {
+      "destination": "/Users/wabbit/ws/kappa/pending-failures/failure-bdefc4955e02-75890f48a5df",
+      "cluster_key": "bdefc4955e02cb86af5cece32d5c59fa026e9272:error: Checkpoint 'KRuntimeIR' requires unique constructor identities within module 'main', but 'I7' was duplicated.",
+      "count": 1,
+      "trace_hash": "bdefc4955e02cb86af5cece32d5c59fa026e9272",
+      "trace_step_count": 18,
+      "kinds": {
+        "failure": 1
+      },
+      "terminal_signatures": {
+        "error: Checkpoint 'KRuntimeIR' requires unique constructor identities within module 'main', but 'I7' was duplicated.": 1
+      },
+      "representative_case": "failure-069f8f5fe851d99df5e0bcc6ec0c1df8673df8da",
+      "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-069f8f5fe851d99df5e0bcc6ec0c1df8673df8da",
+      "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-069f8f5fe851d99df5e0bcc6ec0c1df8673df8da"
+    }
+  ]
+}

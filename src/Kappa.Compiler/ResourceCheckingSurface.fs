@@ -75,6 +75,11 @@ module internal ResourceCheckingSurface =
 
                 for field in fields do
                     yield! expressionNames field.Value
+            | MemberAccess(receiver, _, arguments) ->
+                yield! expressionNames receiver
+
+                for argument in arguments do
+                    yield! expressionNames argument
             | SafeNavigation(receiver, navigation) ->
                 yield! expressionNames receiver
 

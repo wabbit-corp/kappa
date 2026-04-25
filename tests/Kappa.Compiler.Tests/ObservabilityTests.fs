@@ -1711,6 +1711,64 @@ let ``zig target checkpoint verification is available`` () =
     Assert.Empty(Compilation.verifyCheckpoint workspace "zig.c")
 
 [<Fact>]
+let ``source compilation surfaces missing imported runtime modules as diagnostics`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-compile-missing-runtime-import-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "import missing.mod"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected missing imported runtime module to become a compile diagnostic.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
+    Assert.Contains("imported runtime module 'missing.mod'", diagnosticsText workspace.Diagnostics)
+
+[<Fact>]
+let ``source compilation surfaces backend lowering failures as diagnostics`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-compile-backend-lowering-failure-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let I0 = I1"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected unresolved backend lowering to become a compile diagnostic.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
+    Assert.Contains("Could not lower runtime binding 'main.I0' to KBackendIR", diagnosticsText workspace.Diagnostics)
+
+[<Fact>]
+let ``source compilation surfaces backend verification call arity failures as diagnostics`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-compile-backend-arity-failure-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let I1 = I1 1"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected malformed backend calling convention to become a compile diagnostic.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
+    Assert.Contains("argument count matching the calling convention arity", diagnosticsText workspace.Diagnostics)
+
+[<Fact>]
 let ``backend verification rejects missing backend modules`` () =
     let workspace =
         compileInMemoryWorkspace

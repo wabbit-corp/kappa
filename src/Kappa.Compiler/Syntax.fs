@@ -256,7 +256,8 @@ type Parameter =
       TypeTokens: Token list option
       Quantity: Quantity option
       IsImplicit: bool
-      IsInout: bool }
+      IsInout: bool
+      IsReceiver: bool }
 
 type FixityAssociativity =
     | NonAssociative
@@ -291,6 +292,7 @@ type SurfaceExpression =
     | RecordLiteral of fields: SurfaceRecordLiteralField list
     | Seal of value: SurfaceExpression * ascriptionTokens: Token list
     | RecordUpdate of receiver: SurfaceExpression * fields: SurfaceRecordUpdateField list
+    | MemberAccess of receiver: SurfaceExpression * segments: string list * arguments: SurfaceExpression list
     | SafeNavigation of receiver: SurfaceExpression * navigation: SurfaceSafeNavigationMember
     | TagTest of receiver: SurfaceExpression * constructorName: string list
     | Do of SurfaceDoStatement list
@@ -397,6 +399,7 @@ type ExpectDeclaration =
 type LetDefinition =
     { Visibility: Visibility option
       IsOpaque: bool
+      IsPattern: bool
       Name: string option
       Parameters: Parameter list
       HeaderTokens: Token list

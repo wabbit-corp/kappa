@@ -1,0 +1,1 @@
+error: Checkpoint 'KBackendIR' requires pre-erasure runtime metadata to be removed before backend lowering, but constructor field 'main.let[3]' still exposes 'Type'.

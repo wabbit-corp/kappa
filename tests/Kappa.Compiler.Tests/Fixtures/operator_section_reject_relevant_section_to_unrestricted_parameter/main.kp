@@ -1,0 +1,9 @@
+@PrivateByDefault module main
+
+
+ignoreFunction : (ω f : Int -> Int) -> Unit
+let ignoreFunction (ω f : Int -> Int) : Unit = ()
+
+bad : (>=1 x : Int) -> Unit
+let bad (>=1 x : Int) : Unit =
+    ignoreFunction (+ x)

@@ -1,0 +1,15 @@
+{
+  "cluster_key": "bdefc4955e02cb86af5cece32d5c59fa026e9272:error: Checkpoint 'KBackendIR' requires imported backend module 'I0.I0' to be present for module 'main'.",
+  "count": 2,
+  "trace_hash": "bdefc4955e02cb86af5cece32d5c59fa026e9272",
+  "trace_step_count": 18,
+  "kinds": {
+    "failure": 2
+  },
+  "terminal_signatures": {
+    "error: Checkpoint 'KBackendIR' requires imported backend module 'I0.I0' to be present for module 'main'.": 2
+  },
+  "representative_case": "failure-1f745bc84c3f488b362b21c660bcb6844d0d60a7",
+  "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-1f745bc84c3f488b362b21c660bcb6844d0d60a7",
+  "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-weighted-current/fuzz-run-20260425-004852-89e8e716/minimized-failures/failure-1f745bc84c3f488b362b21c660bcb6844d0d60a7"
+}

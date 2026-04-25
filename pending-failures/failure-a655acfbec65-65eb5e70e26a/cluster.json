@@ -1,0 +1,15 @@
+{
+  "cluster_key": "a655acfbec652f93dfb02a6453324e5274423af5:error: Checkpoint 'KBackendIR' requires calls in 'main.I3' to have an argument count matching the calling convention arity.",
+  "count": 1,
+  "trace_hash": "a655acfbec652f93dfb02a6453324e5274423af5",
+  "trace_step_count": 18,
+  "kinds": {
+    "failure": 1
+  },
+  "terminal_signatures": {
+    "error: Checkpoint 'KBackendIR' requires calls in 'main.I3' to have an argument count matching the calling convention arity.": 1
+  },
+  "representative_case": "failure-b6556a1fe622eb954fde38ce049e18b3740c8926",
+  "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-recycled/fuzz-run-long/minimized-failures/failure-b6556a1fe622eb954fde38ce049e18b3740c8926",
+  "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-recycled/fuzz-run-long/minimized-failures/failure-b6556a1fe622eb954fde38ce049e18b3740c8926"
+}

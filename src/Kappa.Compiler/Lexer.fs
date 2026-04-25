@@ -432,13 +432,17 @@ module Lexer =
                                 "Unterminated string literal."
                                 DiagnosticCode.UnterminatedStringLiteral
                     | '\'' ->
-                        currentIndex <-
-                            emitQuotedLiteral
-                                CharacterLiteral
-                                currentIndex
-                                '\''
-                                "Unterminated character literal."
-                                DiagnosticCode.UnterminatedCharacterLiteral
+                        if currentIndex + 1 < lineText.Length && lineText[currentIndex + 1] = '{' then
+                            emit Operator "'" currentIndex
+                            currentIndex <- currentIndex + 1
+                        else
+                            currentIndex <-
+                                emitQuotedLiteral
+                                    CharacterLiteral
+                                    currentIndex
+                                    '\''
+                                    "Unterminated character literal."
+                                    DiagnosticCode.UnterminatedCharacterLiteral
                     | '`' ->
                         currentIndex <- scanBacktickOrPrefixedString currentIndex
                     | _ when Char.IsDigit(current) ->
@@ -558,13 +562,17 @@ module Lexer =
                             "Unterminated string literal."
                             DiagnosticCode.UnterminatedStringLiteral
                 | '\'' ->
-                    index <-
-                        emitQuotedLiteral
-                            CharacterLiteral
-                            index
-                            '\''
-                            "Unterminated character literal."
-                            DiagnosticCode.UnterminatedCharacterLiteral
+                    if index + 1 < lineText.Length && lineText[index + 1] = '{' then
+                        emit Operator "'" index
+                        index <- index + 1
+                    else
+                        index <-
+                            emitQuotedLiteral
+                                CharacterLiteral
+                                index
+                                '\''
+                                "Unterminated character literal."
+                                DiagnosticCode.UnterminatedCharacterLiteral
                 | '`' ->
                     index <- scanBacktickOrPrefixedString index
                 | _ when Char.IsDigit(current) ->
