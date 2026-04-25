@@ -131,31 +131,50 @@ module Interpreter =
     let private buildContextWithOutput (output: RuntimeOutput) (workspace: WorkspaceCompilation) =
         let moduleRuntimes =
             workspace.KRuntimeIR
-            |> List.map (fun backendModule ->
+            |> List.groupBy (fun backendModule -> backendModule.Name)
+            |> List.map (fun (moduleName, fragments) ->
                 let constructors =
-                    backendModule.Constructors
-                    |> List.map (fun constructor ->
-                        constructor.Name,
-                        { Name = constructor.Name
-                          QualifiedName = $"{backendModule.Name}.{constructor.Name}"
-                          Arity = constructor.Arity
-                          TypeName = constructor.TypeName
-                          FieldNames = constructor.FieldNames })
+                    fragments
+                    |> List.collect (fun backendModule ->
+                        backendModule.Constructors
+                        |> List.map (fun constructor ->
+                            constructor.Name,
+                            { Name = constructor.Name
+                              QualifiedName = $"{backendModule.Name}.{constructor.Name}"
+                              Arity = constructor.Arity
+                              TypeName = constructor.TypeName
+                              FieldNames = constructor.FieldNames }))
                     |> Map.ofList
 
                 let definitions =
-                    backendModule.Bindings
-                    |> List.filter (fun binding -> not binding.Intrinsic)
-                    |> List.map (fun binding -> binding.Name, binding)
+                    fragments
+                    |> List.collect (fun backendModule ->
+                        backendModule.Bindings
+                        |> List.filter (fun binding -> not binding.Intrinsic)
+                        |> List.map (fun binding -> binding.Name, binding))
                     |> Map.ofList
 
-                backendModule.Name,
-                { Name = backendModule.Name
+                let intrinsicTerms =
+                    fragments
+                    |> List.collect (fun backendModule -> backendModule.IntrinsicTerms)
+                    |> Set.ofList
+
+                let exports =
+                    fragments
+                    |> List.collect (fun backendModule -> backendModule.Exports)
+                    |> Set.ofList
+
+                let imports =
+                    fragments
+                    |> List.collect (fun backendModule -> backendModule.Imports)
+
+                moduleName,
+                { Name = moduleName
                   Definitions = definitions
                   Constructors = constructors
-                  IntrinsicTerms = backendModule.IntrinsicTerms |> Set.ofList
-                  Exports = backendModule.Exports |> Set.ofList
-                  Imports = backendModule.Imports
+                  IntrinsicTerms = intrinsicTerms
+                  Exports = exports
+                  Imports = imports
                   Values = Dictionary<string, Lazy<Result<RuntimeValue, EvaluationError>>>() })
             |> Map.ofList
 
@@ -343,13 +362,26 @@ module Interpreter =
                     | value ->
                         ok value)
             | KRuntimeLet (bindingName, valueExpression, bodyExpression) ->
-                evaluateExpression scope valueExpression
-                |> Result.bind (fun value ->
-                    let nextScope =
+                match valueExpression with
+                | KRuntimeClosure(parameters, body) ->
+                    let rec closureValue =
+                        FunctionValue
+                            { Parameters = parameters
+                              Body = body
+                              Scope = nextScope }
+                    and nextScope =
                         { scope with
-                            Locals = scope.Locals.Add(bindingName, value) }
+                            Locals = scope.Locals.Add(bindingName, closureValue) }
 
-                    evaluateExpression nextScope bodyExpression)
+                    evaluateExpression nextScope bodyExpression
+                | _ ->
+                    evaluateExpression scope valueExpression
+                    |> Result.bind (fun value ->
+                        let nextScope =
+                            { scope with
+                                Locals = scope.Locals.Add(bindingName, value) }
+
+                        evaluateExpression nextScope bodyExpression)
             | KRuntimeDoScope (_, bodyExpression) ->
                 evaluateExpression scope bodyExpression
             | KRuntimeScheduleExit (_, action, bodyExpression) ->

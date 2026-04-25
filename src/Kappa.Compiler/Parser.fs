@@ -154,6 +154,173 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
 
         name, arity
 
+    member private _.SplitTopLevelCommaGroups(tokens: Token list) =
+        let groups = ResizeArray<Token list>()
+        let tokenArray = tokens |> List.toArray
+        let mutable parenDepth = 0
+        let mutable braceDepth = 0
+        let mutable bracketDepth = 0
+        let mutable setBraceDepth = 0
+        let mutable groupStart = 0
+
+        for index = 0 to tokenArray.Length - 1 do
+            match tokenArray[index].Kind with
+            | LeftParen -> parenDepth <- parenDepth + 1
+            | RightParen -> parenDepth <- max 0 (parenDepth - 1)
+            | LeftBrace -> braceDepth <- braceDepth + 1
+            | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
+            | LeftBracket -> bracketDepth <- bracketDepth + 1
+            | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
+            | LeftSetBrace -> setBraceDepth <- setBraceDepth + 1
+            | RightSetBrace -> setBraceDepth <- max 0 (setBraceDepth - 1)
+            | Comma when parenDepth = 0 && braceDepth = 0 && bracketDepth = 0 && setBraceDepth = 0 ->
+                groups.Add(tokenArray[groupStart .. index - 1] |> Array.toList)
+                groupStart <- index + 1
+            | _ ->
+                ()
+
+        if groupStart <= tokenArray.Length then
+            groups.Add(tokenArray[groupStart ..] |> Array.toList)
+
+        groups
+        |> Seq.toList
+        |> List.filter (List.isEmpty >> not)
+
+    member private _.TryFindLastTopLevelEquals(tokens: Token list) =
+        let tokenArray = tokens |> List.toArray
+        let mutable parenDepth = 0
+        let mutable braceDepth = 0
+        let mutable bracketDepth = 0
+        let mutable setBraceDepth = 0
+        let mutable splitIndex = None
+
+        for index = 0 to tokenArray.Length - 1 do
+            match tokenArray[index].Kind with
+            | LeftParen -> parenDepth <- parenDepth + 1
+            | RightParen -> parenDepth <- max 0 (parenDepth - 1)
+            | LeftBrace -> braceDepth <- braceDepth + 1
+            | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
+            | LeftBracket -> bracketDepth <- bracketDepth + 1
+            | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
+            | LeftSetBrace -> setBraceDepth <- setBraceDepth + 1
+            | RightSetBrace -> setBraceDepth <- max 0 (setBraceDepth - 1)
+            | Equals
+                when parenDepth = 0
+                     && braceDepth = 0
+                     && bracketDepth = 0
+                     && setBraceDepth = 0
+                     && not (
+                         index + 1 < tokenArray.Length
+                         && tokenArray[index + 1].Kind = Operator
+                         && String.Equals(tokenArray[index + 1].Text, ">", StringComparison.Ordinal)
+                     ) ->
+                splitIndex <- Some index
+            | _ ->
+                ()
+
+        splitIndex
+
+    member private this.ParseRecordStyleConstructorParameter(tokens: Token list) =
+        let significantTokens =
+            tokens
+            |> List.filter (fun token ->
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent
+                | EndOfFile -> false
+                | _ -> true)
+
+        let declarationTokens, defaultTokens =
+            match this.TryFindLastTopLevelEquals(significantTokens) with
+            | Some splitIndex ->
+                let tokenArray = significantTokens |> List.toArray
+                tokenArray[0 .. splitIndex - 1] |> Array.toList,
+                Some(tokenArray[splitIndex + 1 ..] |> Array.toList)
+            | None ->
+                significantTokens, None
+
+        CoreParsing.parseParameterLayout source diagnostics declarationTokens
+        |> Option.map (fun parameter ->
+            let defaultValue =
+                defaultTokens |> Option.bind (CoreParsing.parseExpression fixities source diagnostics)
+
+            ({ ParameterName = Some parameter.Name
+               ParameterTypeTokens = parameter.TypeTokens |> Option.defaultValue []
+               ParameterQuantity = parameter.Quantity
+               ParameterIsImplicit = parameter.IsImplicit
+               DefaultValue = defaultValue }
+             : DataConstructorParameter))
+
+    member private this.ParseConstructor(lineTokens: Token list) =
+        let constructorName, fallbackArity =
+            this.ParseConstructorNameAndArity(lineTokens)
+
+        let significantTokens =
+            lineTokens
+            |> List.filter (fun token ->
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent
+                | EndOfFile -> false
+                | _ -> true)
+
+        let constructorTokens =
+            match significantTokens with
+            | { Kind = Operator; Text = "|" } :: rest -> rest
+            | tokens -> tokens
+
+        let parameterMetadata =
+            match constructorTokens with
+            | _nameToken :: { Kind = LeftBrace } :: rest when not (List.isEmpty rest) && (List.last rest).Kind = RightBrace ->
+                let innerTokens = rest |> List.take (List.length rest - 1)
+
+                this.SplitTopLevelCommaGroups(innerTokens)
+                |> List.map this.ParseRecordStyleConstructorParameter
+                |> fun parameters ->
+                    if parameters |> List.forall Option.isSome then
+                        parameters |> List.choose id |> Some
+                    else
+                        None
+            | _ ->
+                None
+
+        let signatureArity =
+            match constructorTokens with
+            | _nameToken :: { Kind = Colon } :: typeTokens ->
+                let tokenArray = typeTokens |> List.toArray
+                let mutable parenDepth = 0
+                let mutable braceDepth = 0
+                let mutable bracketDepth = 0
+                let mutable arity = 0
+
+                for index = 0 to tokenArray.Length - 1 do
+                    match tokenArray[index].Kind with
+                    | LeftParen -> parenDepth <- parenDepth + 1
+                    | RightParen -> parenDepth <- max 0 (parenDepth - 1)
+                    | LeftBrace -> braceDepth <- braceDepth + 1
+                    | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
+                    | LeftBracket -> bracketDepth <- bracketDepth + 1
+                    | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
+                    | Arrow when parenDepth = 0 && braceDepth = 0 && bracketDepth = 0 ->
+                        arity <- arity + 1
+                    | _ ->
+                        ()
+
+                Some arity
+            | _ ->
+                None
+
+        { Name = constructorName
+          Tokens = lineTokens
+          Arity =
+            parameterMetadata
+            |> Option.map List.length
+            |> Option.orElse signatureArity
+            |> Option.defaultValue fallbackArity
+          Parameters = parameterMetadata }
+
     member private this.IsSignatureStart() =
         (this.Current.Kind = Identifier || (match this.Current.Kind with | Keyword _ -> true | _ -> false))
         && this.Peek(1).Kind = Colon
@@ -594,6 +761,10 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
             | Some _ ->
                 let currentLine = ResizeArray<Token>()
                 let mutable nestedIndents = 0
+                let mutable parenDepth = 0
+                let mutable braceDepth = 0
+                let mutable bracketDepth = 0
+                let mutable setBraceDepth = 0
 
                 let flushLine () =
                     if currentLine.Count > 0 then
@@ -602,7 +773,12 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
 
                 while not (this.Current.Kind = Dedent && nestedIndents = 0) && this.Current.Kind <> EndOfFile do
                     match this.Current.Kind with
-                    | Newline when nestedIndents = 0 ->
+                    | Newline
+                        when nestedIndents = 0
+                             && parenDepth = 0
+                             && braceDepth = 0
+                             && bracketDepth = 0
+                             && setBraceDepth = 0 ->
                         flushLine ()
                         this.Advance() |> ignore
                     | Indent ->
@@ -612,6 +788,17 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
                         nestedIndents <- nestedIndents - 1
                         currentLine.Add(this.Advance())
                     | _ ->
+                        match this.Current.Kind with
+                        | LeftParen -> parenDepth <- parenDepth + 1
+                        | RightParen -> parenDepth <- max 0 (parenDepth - 1)
+                        | LeftBrace -> braceDepth <- braceDepth + 1
+                        | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
+                        | LeftBracket -> bracketDepth <- bracketDepth + 1
+                        | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
+                        | LeftSetBrace -> setBraceDepth <- setBraceDepth + 1
+                        | RightSetBrace -> setBraceDepth <- max 0 (setBraceDepth - 1)
+                        | _ -> ()
+
                         currentLine.Add(this.Advance())
 
                 flushLine ()
@@ -640,13 +827,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
         let constructors: DataConstructor list =
             if this.TryConsume(Equals).IsSome then
                 this.ParseIndentedLines()
-                |> List.map (fun lineTokens ->
-                    let constructorName, arity =
-                        this.ParseConstructorNameAndArity(lineTokens)
-
-                    ({ Name = constructorName
-                       Tokens = lineTokens
-                       Arity = arity }: DataConstructor))
+                |> List.map this.ParseConstructor
             else
                 []
 

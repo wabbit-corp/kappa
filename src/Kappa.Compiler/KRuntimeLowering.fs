@@ -212,85 +212,111 @@ module internal KRuntimeLowering =
         && isExportedVisibility moduleDump.ModuleAttributes declaration.Visibility
 
     let private constructorFieldNames (constructor: DataConstructor) =
-        let significant =
-            constructor.Tokens
-            |> List.filter (fun token ->
-                match token.Kind with
-                | Newline
-                | Indent
-                | Dedent
-                | EndOfFile -> false
-                | _ -> true)
-
-        let argumentTokens =
-            match significant with
-            | leftToken :: operatorToken :: rightToken :: rest
-                when leftToken.Kind = LeftParen && operatorToken.Kind = Operator && rightToken.Kind = RightParen ->
-                rest
-            | _ :: rest ->
-                rest
-            | [] ->
-                []
-
-        let takeAtom remaining =
-            match remaining with
-            | [] ->
-                [], []
-            | first :: _ when first.Kind = LeftParen ->
-                let tokenArray = remaining |> List.toArray
-                let current = ResizeArray<Token>()
-                let mutable depth = 0
-                let mutable index = 0
-                let mutable keepReading = true
-
-                while keepReading && index < tokenArray.Length do
-                    let token = tokenArray[index]
-                    index <- index + 1
-
+        match constructor.Parameters with
+        | Some parameters ->
+            parameters |> List.map (fun parameter -> parameter.ParameterName)
+        | None ->
+            let significant =
+                constructor.Tokens
+                |> List.filter (fun token ->
                     match token.Kind with
-                    | LeftParen ->
-                        depth <- depth + 1
-                        if depth > 1 then
-                            current.Add(token)
-                    | RightParen ->
-                        if depth > 1 then
+                    | Newline
+                    | Indent
+                    | Dedent
+                    | EndOfFile -> false
+                    | _ -> true)
+
+            let argumentTokens =
+                match significant with
+                | leftToken :: operatorToken :: rightToken :: rest
+                    when leftToken.Kind = LeftParen && operatorToken.Kind = Operator && rightToken.Kind = RightParen ->
+                    rest
+                | _ :: rest ->
+                    rest
+                | [] ->
+                    []
+
+            let takeAtom remaining =
+                match remaining with
+                | [] ->
+                    [], []
+                | first :: _ when first.Kind = LeftParen ->
+                    let tokenArray = remaining |> List.toArray
+                    let current = ResizeArray<Token>()
+                    let mutable depth = 0
+                    let mutable index = 0
+                    let mutable keepReading = true
+
+                    while keepReading && index < tokenArray.Length do
+                        let token = tokenArray[index]
+                        index <- index + 1
+
+                        match token.Kind with
+                        | LeftParen ->
+                            depth <- depth + 1
+                            if depth > 1 then
+                                current.Add(token)
+                        | RightParen ->
+                            if depth > 1 then
+                                current.Add(token)
+
+                            depth <- depth - 1
+
+                            if depth = 0 then
+                                keepReading <- false
+                        | _ ->
                             current.Add(token)
 
-                        depth <- depth - 1
+                    List.ofSeq current, List.ofArray tokenArray[index ..]
+                | first :: rest ->
+                    [ first ], rest
 
-                        if depth = 0 then
-                            keepReading <- false
+            let groups = ResizeArray<Token list>()
+            let mutable position = 0
+            let tokenArray = argumentTokens |> List.toArray
+
+            while position < tokenArray.Length do
+                let groupTokens, remaining = takeAtom (List.ofArray tokenArray[position ..])
+
+                if not (List.isEmpty groupTokens) then
+                    groups.Add(groupTokens)
+
+                position <- tokenArray.Length - remaining.Length
+
+            groups
+            |> Seq.toList
+            |> List.map (fun groupTokens ->
+                match groupTokens |> List.tryFindIndex (fun token -> token.Kind = Colon) with
+                | Some colonIndex when colonIndex > 0 ->
+                    match groupTokens |> List.take colonIndex with
+                    | [ nameToken ] when Token.isName nameToken ->
+                        Some(SyntaxFacts.trimIdentifierQuotes nameToken.Text)
                     | _ ->
-                        current.Add(token)
-
-                List.ofSeq current, List.ofArray tokenArray[index ..]
-            | first :: rest ->
-                [ first ], rest
-
-        let groups = ResizeArray<Token list>()
-        let mutable position = 0
-        let tokenArray = argumentTokens |> List.toArray
-
-        while position < tokenArray.Length do
-            let groupTokens, remaining = takeAtom (List.ofArray tokenArray[position ..])
-
-            if not (List.isEmpty groupTokens) then
-                groups.Add(groupTokens)
-
-            position <- tokenArray.Length - remaining.Length
-
-        groups
-        |> Seq.toList
-        |> List.map (fun groupTokens ->
-            match groupTokens |> List.tryFindIndex (fun token -> token.Kind = Colon) with
-            | Some colonIndex when colonIndex > 0 ->
-                match groupTokens |> List.take colonIndex with
-                | [ nameToken ] when Token.isName nameToken ->
-                    Some(SyntaxFacts.trimIdentifierQuotes nameToken.Text)
+                        None
                 | _ ->
-                    None
+                    None)
+
+    let private constructorFieldTypeTexts (constructor: DataConstructor) =
+        match constructor.Parameters with
+        | Some parameters ->
+            parameters |> List.map (fun parameter -> normalizeTypeTokens parameter.ParameterTypeTokens)
+        | None ->
+            let significant = constructor.Tokens |> significantTokens
+
+            match significant with
+            | _ :: { Kind = Colon } :: typeTokens ->
+                match TypeSignatures.parseScheme typeTokens with
+                | Some scheme ->
+                    let parameterTypes, _ = TypeSignatures.schemeParts scheme
+                    parameterTypes |> List.map TypeSignatures.toText
+                | None ->
+                    constructor
+                    |> TypeSignatures.constructorFieldTokenGroups
+                    |> List.map normalizeTypeTokens
             | _ ->
-                None)
+                constructor
+                |> TypeSignatures.constructorFieldTokenGroups
+                |> List.map normalizeTypeTokens
 
     let private isCompileTimeOnlyBindingBody body =
         match body with
@@ -402,10 +428,7 @@ module internal KRuntimeLowering =
                                   Arity = constructor.Arity
                                   TypeName = dataDeclaration.Name
                                   FieldNames = constructorFieldNames constructor
-                                  FieldTypeTexts =
-                                    constructor
-                                    |> TypeSignatures.constructorFieldTokenGroups
-                                    |> List.map normalizeTypeTokens
+                                  FieldTypeTexts = constructorFieldTypeTexts constructor
                                   Provenance =
                                     { declaration.Provenance with
                                         DeclarationName = Some constructor.Name

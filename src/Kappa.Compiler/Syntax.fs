@@ -282,11 +282,26 @@ type KindSelector =
     | EffectLabelKind
     | ModuleKind
 
+type BindingSignature =
+    { Visibility: Visibility option
+      IsOpaque: bool
+      Name: string
+      TypeTokens: Token list }
+
+type TypeAlias =
+    { Visibility: Visibility option
+      IsOpaque: bool
+      Name: string
+      HeaderTokens: Token list
+      BodyTokens: Token list option }
+
 type SurfaceExpression =
     | Literal of LiteralValue
     | Name of string list
     | KindQualifiedName of KindSelector * string list
     | LocalLet of binding: SurfaceBindPattern * value: SurfaceExpression * body: SurfaceExpression
+    | LocalSignature of declaration: BindingSignature * body: SurfaceExpression
+    | LocalTypeAlias of declaration: TypeAlias * body: SurfaceExpression
     | LocalScopedEffect of name: string * body: SurfaceExpression
     | Lambda of Parameter list * SurfaceExpression
     | IfThenElse of SurfaceExpression * SurfaceExpression * SurfaceExpression
@@ -373,12 +388,6 @@ and SurfaceLetQuestionFailure =
     { ResiduePattern: SurfaceBindPattern
       Body: SurfaceDoStatement list }
 
-type BindingSignature =
-    { Visibility: Visibility option
-      IsOpaque: bool
-      Name: string
-      TypeTokens: Token list }
-
 type ExpectedTypeDeclaration =
     { Name: string
       HeaderTokens: Token list
@@ -444,10 +453,18 @@ type ProjectionDeclaration =
       BodyTokens: Token list
       Body: SurfaceProjectionBody option }
 
+type DataConstructorParameter =
+    { ParameterName: string option
+      ParameterTypeTokens: Token list
+      ParameterQuantity: Quantity option
+      ParameterIsImplicit: bool
+      DefaultValue: SurfaceExpression option }
+
 type DataConstructor =
     { Name: string
       Tokens: Token list
-      Arity: int }
+      Arity: int
+      Parameters: DataConstructorParameter list option }
 
 type DataDeclaration =
     { Visibility: Visibility option
@@ -455,13 +472,6 @@ type DataDeclaration =
       Name: string
       HeaderTokens: Token list
       Constructors: DataConstructor list }
-
-type TypeAlias =
-    { Visibility: Visibility option
-      IsOpaque: bool
-      Name: string
-      HeaderTokens: Token list
-      BodyTokens: Token list option }
 
 type TraitMember =
     { Name: string option

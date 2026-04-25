@@ -334,6 +334,24 @@ module TypeSignatures =
                 |> function
                     | [] -> None
                     | parsedFields -> Some(TypeRecord parsedFields)
+            elif sawTopLevelComma then
+                let elementTypes =
+                    nonEmptyGroups
+                    |> List.map (fun group ->
+                        let nestedParser = Parser(group)
+                        nestedParser.ParseCompleteType())
+
+                if elementTypes |> List.forall Option.isSome then
+                    elementTypes
+                    |> List.choose id
+                    |> List.mapi (fun index elementType ->
+                        { Name = $"_{index + 1}"
+                          Quantity = QuantityOmega
+                          Type = elementType })
+                    |> TypeRecord
+                    |> Some
+                else
+                    None
             else
                 None
 
@@ -765,9 +783,131 @@ module TypeSignatures =
             else
                 None)
 
-    let private constructorFieldTokens (tokens: Token list) =
-        let significant =
+    let private stripConstructorDefaultTokens (tokens: Token list) =
+        let tokenArray = tokens |> List.toArray
+        let mutable parenDepth = 0
+        let mutable braceDepth = 0
+        let mutable bracketDepth = 0
+        let mutable setBraceDepth = 0
+        let mutable splitIndex = None
+
+        for index = 0 to tokenArray.Length - 1 do
+            match tokenArray[index].Kind with
+            | LeftParen -> parenDepth <- parenDepth + 1
+            | RightParen -> parenDepth <- max 0 (parenDepth - 1)
+            | LeftBrace -> braceDepth <- braceDepth + 1
+            | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
+            | LeftBracket -> bracketDepth <- bracketDepth + 1
+            | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
+            | LeftSetBrace -> setBraceDepth <- setBraceDepth + 1
+            | RightSetBrace -> setBraceDepth <- max 0 (setBraceDepth - 1)
+            | Equals
+                when parenDepth = 0
+                     && braceDepth = 0
+                     && bracketDepth = 0
+                     && setBraceDepth = 0
+                     && not (
+                         index + 1 < tokenArray.Length
+                         && tokenArray[index + 1].Kind = Operator
+                         && String.Equals(tokenArray[index + 1].Text, ">", StringComparison.Ordinal)
+                     ) ->
+                splitIndex <- Some index
+            | _ ->
+                ()
+
+        match splitIndex with
+        | Some index when index > 0 ->
+            tokenArray[0 .. index - 1] |> Array.toList
+        | _ ->
             tokens
+
+    let private constructorFieldTokens (constructor: DataConstructor) =
+        match constructor.Parameters with
+        | Some parameters ->
+            parameters |> List.map (fun parameter -> parameter.ParameterTypeTokens)
+        | None ->
+            let tokens = constructor.Tokens
+            let significant =
+                tokens
+                |> List.filter (fun token ->
+                    match token.Kind with
+                    | Newline
+                    | Indent
+                    | Dedent
+                    | EndOfFile -> false
+                    | _ -> true)
+
+            let argumentTokens =
+                match significant with
+                | leftToken :: operatorToken :: rightToken :: rest
+                    when leftToken.Kind = LeftParen && operatorToken.Kind = Operator && rightToken.Kind = RightParen ->
+                    rest
+                | _ :: rest ->
+                    rest
+                | [] ->
+                    []
+
+            let takeAtom remaining =
+                match remaining with
+                | [] ->
+                    [], []
+                | first :: _ when first.Kind = LeftParen ->
+                    let tokenArray = remaining |> List.toArray
+                    let current = ResizeArray<Token>()
+                    let mutable depth = 0
+                    let mutable index = 0
+                    let mutable keepReading = true
+
+                    while keepReading && index < tokenArray.Length do
+                        let token = tokenArray[index]
+                        index <- index + 1
+
+                        match token.Kind with
+                        | LeftParen ->
+                            depth <- depth + 1
+                            if depth > 1 then
+                                current.Add(token)
+                        | RightParen ->
+                            if depth > 1 then
+                                current.Add(token)
+
+                            depth <- depth - 1
+
+                            if depth = 0 then
+                                keepReading <- false
+                        | _ ->
+                            current.Add(token)
+
+                    List.ofSeq current, List.ofArray tokenArray[index ..]
+                | first :: rest ->
+                    [ first ], rest
+
+            let groups = ResizeArray<Token list>()
+            let mutable position = 0
+            let tokenArray = argumentTokens |> List.toArray
+
+            while position < tokenArray.Length do
+                let groupTokens, remaining = takeAtom (List.ofArray tokenArray[position ..])
+
+                if not (List.isEmpty groupTokens) then
+                    groups.Add(groupTokens)
+
+                position <- tokenArray.Length - remaining.Length
+
+            groups
+            |> Seq.toList
+            |> List.choose (fun groupTokens ->
+                match groupTokens |> List.tryFindIndex (fun token -> token.Kind = Colon) with
+                | Some colonIndex when colonIndex + 1 < groupTokens.Length ->
+                    Some(groupTokens |> List.skip (colonIndex + 1) |> stripConstructorDefaultTokens)
+                | _ when not (List.isEmpty groupTokens) ->
+                    Some(stripConstructorDefaultTokens groupTokens)
+                | _ ->
+                    None)
+
+    let constructorFieldTypes (constructor: DataConstructor) =
+        let significant =
+            constructor.Tokens
             |> List.filter (fun token ->
                 match token.Kind with
                 | Newline
@@ -776,80 +916,17 @@ module TypeSignatures =
                 | EndOfFile -> false
                 | _ -> true)
 
-        let argumentTokens =
-            match significant with
-            | leftToken :: operatorToken :: rightToken :: rest
-                when leftToken.Kind = LeftParen && operatorToken.Kind = Operator && rightToken.Kind = RightParen ->
-                rest
-            | _ :: rest ->
-                rest
-            | [] ->
-                []
-
-        let takeAtom remaining =
-            match remaining with
-            | [] ->
-                [], []
-            | first :: _ when first.Kind = LeftParen ->
-                let tokenArray = remaining |> List.toArray
-                let current = ResizeArray<Token>()
-                let mutable depth = 0
-                let mutable index = 0
-                let mutable keepReading = true
-
-                while keepReading && index < tokenArray.Length do
-                    let token = tokenArray[index]
-                    index <- index + 1
-
-                    match token.Kind with
-                    | LeftParen ->
-                        depth <- depth + 1
-                        if depth > 1 then
-                            current.Add(token)
-                    | RightParen ->
-                        if depth > 1 then
-                            current.Add(token)
-
-                        depth <- depth - 1
-
-                        if depth = 0 then
-                            keepReading <- false
-                    | _ ->
-                        current.Add(token)
-
-                List.ofSeq current, List.ofArray tokenArray[index ..]
-            | first :: rest ->
-                [ first ], rest
-
-        let groups = ResizeArray<Token list>()
-        let mutable position = 0
-        let tokenArray = argumentTokens |> List.toArray
-
-        while position < tokenArray.Length do
-            let groupTokens, remaining = takeAtom (List.ofArray tokenArray[position ..])
-
-            if not (List.isEmpty groupTokens) then
-                groups.Add(groupTokens)
-
-            position <- tokenArray.Length - remaining.Length
-
-        groups
-        |> Seq.toList
-        |> List.choose (fun groupTokens ->
-            match groupTokens |> List.tryFindIndex (fun token -> token.Kind = Colon) with
-            | Some colonIndex when colonIndex + 1 < groupTokens.Length ->
-                Some(groupTokens |> List.skip (colonIndex + 1))
-            | _ when not (List.isEmpty groupTokens) ->
-                Some groupTokens
-            | _ ->
-                None)
-
-    let constructorFieldTypes (constructor: DataConstructor) =
-        constructorFieldTokens constructor.Tokens
-        |> List.choose parseType
+        match significant with
+        | _ :: { Kind = Colon } :: typeTokens when constructor.Parameters.IsNone ->
+            parseScheme typeTokens
+            |> Option.map (schemeParts >> fst)
+            |> Option.defaultValue []
+        | _ ->
+            constructorFieldTokens constructor
+            |> List.choose parseType
 
     let constructorFieldTokenGroups (constructor: DataConstructor) =
-        constructorFieldTokens constructor.Tokens
+        constructorFieldTokens constructor
 
     let rec applySubstitution substitution typeExpr =
         match typeExpr with

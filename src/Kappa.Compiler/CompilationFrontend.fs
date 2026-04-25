@@ -41,9 +41,20 @@ module internal CompilationFrontend =
             if relativePath.StartsWith("..", StringComparison.Ordinal) then
                 None
             else
-                let withoutExtension = Path.ChangeExtension(relativePath, null)
+                let relativeDirectory = Path.GetDirectoryName(relativePath)
+                let fileStem = Path.GetFileNameWithoutExtension(relativePath)
+                let moduleStem =
+                    match fileStem.IndexOf('.') with
+                    | -1 -> fileStem
+                    | index -> fileStem.Substring(0, index)
 
-                withoutExtension.Split([| '\\'; '/' |], StringSplitOptions.RemoveEmptyEntries)
+                let relativeModulePath =
+                    if String.IsNullOrWhiteSpace(relativeDirectory) then
+                        moduleStem
+                    else
+                        Path.Combine(relativeDirectory, moduleStem)
+
+                relativeModulePath.Split([| '\\'; '/' |], StringSplitOptions.RemoveEmptyEntries)
                 |> Array.toList
                 |> fun segments ->
                     if segments |> List.forall isValidModuleSegment then Some segments else None
@@ -311,6 +322,13 @@ module internal CompilationFrontend =
                 kindText + " " + String.concat "." segments
             | LocalLet(binding, value, body) ->
                 $"(let {renderBindPattern binding} {render value} {render body})"
+            | LocalSignature(declaration, body) ->
+                let typeText = declaration.TypeTokens |> List.map (fun token -> token.Text) |> String.concat " "
+                $"(local-signature {declaration.Name} : {typeText} {render body})"
+            | LocalTypeAlias(declaration, body) ->
+                let headerText = declaration.HeaderTokens |> List.map (fun token -> token.Text) |> String.concat " "
+                let bodyTypeText = declaration.BodyTokens |> Option.defaultValue [] |> List.map (fun token -> token.Text) |> String.concat " "
+                $"(local-type {declaration.Name} {headerText} = {bodyTypeText} {render body})"
             | LocalScopedEffect(name, body) ->
                 $"(scoped-effect {name} {render body})"
             | Lambda(parameters, body) ->

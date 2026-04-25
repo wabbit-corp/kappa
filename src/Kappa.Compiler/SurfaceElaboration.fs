@@ -66,7 +66,8 @@ module SurfaceElaboration =
           IsPattern: bool
           Scheme: TypeScheme
           TypeTokens: Token list
-          ParameterLayouts: Parameter list option }
+          ParameterLayouts: Parameter list option
+          DefaultArguments: Map<string, SurfaceExpression> }
 
     type private ProjectionInfo =
         { ModuleName: string
@@ -589,6 +590,23 @@ module SurfaceElaboration =
         | _ ->
             definitionLayouts
 
+    let private stripForallOnlyParameterLayouts
+        (scheme: TypeScheme)
+        (parameterLayouts: Parameter list option)
+        =
+        let isForallLayoutParameter (parameter: Parameter) =
+            parameter.IsImplicit
+            && List.contains parameter.Name scheme.Forall
+            && (parameter.TypeTokens.IsNone
+                || (parameter.TypeTokens
+                    |> Option.bind TypeSignatures.parseType
+                    |> Option.exists (function
+                        | TypeName([ "Type" ], []) -> true
+                        | _ -> false)))
+
+        parameterLayouts
+        |> Option.map (List.filter (isForallLayoutParameter >> not))
+
     let private tryResolveVisibleConstructorInfo
         (environment: BindingLoweringEnvironment)
         nameSegments
@@ -824,6 +842,13 @@ module SurfaceElaboration =
                     LocalLet(binding, rewrittenValue, body)
                 else
                     LocalLet(binding, rewrittenValue, rewrite body)
+            | LocalSignature(declaration, body) ->
+                if aliasIsBoundByName declaration.Name then
+                    LocalSignature(declaration, body)
+                else
+                    LocalSignature(declaration, rewrite body)
+            | LocalTypeAlias(declaration, body) ->
+                LocalTypeAlias(declaration, rewrite body)
             | LocalScopedEffect(name, body) ->
                 if aliasIsBoundByName name then
                     LocalScopedEffect(name, body)
@@ -949,6 +974,203 @@ module SurfaceElaboration =
 
         rewrite expression
 
+    let private rewriteNamedApplicationAliasUse
+        aliasName
+        (parameters: Parameter list)
+        expression
+        =
+        let supportedParameters =
+            parameters
+            |> List.forall (fun parameter -> not parameter.IsImplicit && not parameter.IsInout && not parameter.IsReceiver)
+
+        let tryReorder arguments =
+            match supportedParameters, arguments with
+            | true, [ NamedApplicationBlock fields ] ->
+                let fieldMap =
+                    fields
+                    |> List.map (fun field -> field.Name, field.Value)
+                    |> Map.ofList
+
+                if parameters |> List.forall (fun parameter -> fieldMap.ContainsKey(parameter.Name)) then
+                    parameters
+                    |> List.map (fun parameter -> fieldMap[parameter.Name])
+                    |> Some
+                else
+                    None
+            | _ ->
+                None
+
+        let rec rewrite current =
+            match current with
+            | Apply(Name [ name ], arguments) when String.Equals(name, aliasName, StringComparison.Ordinal) ->
+                match tryReorder arguments with
+                | Some reorderedArguments ->
+                    Apply(Name [ name ], reorderedArguments |> List.map rewrite)
+                | None ->
+                    Apply(Name [ name ], arguments |> List.map rewrite)
+            | Apply(callee, arguments) ->
+                Apply(rewrite callee, arguments |> List.map rewrite)
+            | LocalLet(binding, value, body) ->
+                let shadowsAlias =
+                    collectPatternNames binding.Pattern
+                    |> List.exists (fun name -> String.Equals(name, aliasName, StringComparison.Ordinal))
+
+                LocalLet(binding, rewrite value, if shadowsAlias then body else rewrite body)
+            | LocalSignature(declaration, body) ->
+                if String.Equals(declaration.Name, aliasName, StringComparison.Ordinal) then
+                    current
+                else
+                    LocalSignature(declaration, rewrite body)
+            | LocalTypeAlias(declaration, body) ->
+                LocalTypeAlias(declaration, rewrite body)
+            | LocalScopedEffect(name, body) ->
+                if String.Equals(name, aliasName, StringComparison.Ordinal) then
+                    current
+                else
+                    LocalScopedEffect(name, rewrite body)
+            | Lambda(parameters, body) ->
+                if parameters |> List.exists (fun parameter -> String.Equals(parameter.Name, aliasName, StringComparison.Ordinal)) then
+                    current
+                else
+                    Lambda(parameters, rewrite body)
+            | IfThenElse(condition, whenTrue, whenFalse) ->
+                IfThenElse(rewrite condition, rewrite whenTrue, rewrite whenFalse)
+            | Match(scrutinee, cases) ->
+                Match(
+                    rewrite scrutinee,
+                    cases
+                    |> List.map (fun caseClause ->
+                        { caseClause with
+                            Guard = caseClause.Guard |> Option.map rewrite
+                            Body = rewrite caseClause.Body })
+                )
+            | RecordLiteral fields ->
+                RecordLiteral(fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+            | Seal(value, ascriptionTokens) ->
+                Seal(rewrite value, ascriptionTokens)
+            | RecordUpdate(receiver, fields) ->
+                RecordUpdate(rewrite receiver, fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+            | MemberAccess(receiver, segments, arguments) ->
+                MemberAccess(rewrite receiver, segments, arguments |> List.map rewrite)
+            | SafeNavigation(receiver, navigation) ->
+                SafeNavigation(rewrite receiver, { navigation with Arguments = navigation.Arguments |> List.map rewrite })
+            | TagTest(receiver, constructorName) ->
+                TagTest(rewrite receiver, constructorName)
+            | Do statements ->
+                Do statements
+            | MonadicSplice inner ->
+                MonadicSplice(rewrite inner)
+            | ExplicitImplicitArgument inner ->
+                ExplicitImplicitArgument(rewrite inner)
+            | NamedApplicationBlock fields ->
+                NamedApplicationBlock(fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+            | InoutArgument inner ->
+                InoutArgument(rewrite inner)
+            | Unary(operatorName, inner) ->
+                Unary(operatorName, rewrite inner)
+            | Binary(left, operatorName, right) ->
+                Binary(rewrite left, operatorName, rewrite right)
+            | Elvis(left, right) ->
+                Elvis(rewrite left, rewrite right)
+            | PrefixedString(prefix, parts) ->
+                PrefixedString(
+                    prefix,
+                    parts
+                    |> List.map (function
+                        | StringText text -> StringText text
+                        | StringInterpolation inner -> StringInterpolation(rewrite inner))
+                )
+            | Literal _
+            | KindQualifiedName _
+            | Name _ ->
+                current
+
+        rewrite expression
+
+    let private rewriteDirectAliasUse aliasName targetName expression =
+        let rec rewrite current =
+            match current with
+            | Apply(Name [ name ], arguments) when String.Equals(name, aliasName, StringComparison.Ordinal) ->
+                Apply(Name [ targetName ], arguments |> List.map rewrite)
+            | Apply(callee, arguments) ->
+                Apply(rewrite callee, arguments |> List.map rewrite)
+            | LocalLet(binding, value, body) ->
+                let shadowsAlias =
+                    collectPatternNames binding.Pattern
+                    |> List.exists (fun name -> String.Equals(name, aliasName, StringComparison.Ordinal))
+
+                LocalLet(binding, rewrite value, if shadowsAlias then body else rewrite body)
+            | LocalSignature(declaration, body) ->
+                if String.Equals(declaration.Name, aliasName, StringComparison.Ordinal) then
+                    current
+                else
+                    LocalSignature(declaration, rewrite body)
+            | LocalTypeAlias(declaration, body) ->
+                LocalTypeAlias(declaration, rewrite body)
+            | LocalScopedEffect(name, body) ->
+                if String.Equals(name, aliasName, StringComparison.Ordinal) then
+                    current
+                else
+                    LocalScopedEffect(name, rewrite body)
+            | Lambda(parameters, body) ->
+                if parameters |> List.exists (fun parameter -> String.Equals(parameter.Name, aliasName, StringComparison.Ordinal)) then
+                    current
+                else
+                    Lambda(parameters, rewrite body)
+            | IfThenElse(condition, whenTrue, whenFalse) ->
+                IfThenElse(rewrite condition, rewrite whenTrue, rewrite whenFalse)
+            | Match(scrutinee, cases) ->
+                Match(
+                    rewrite scrutinee,
+                    cases
+                    |> List.map (fun caseClause ->
+                        { caseClause with
+                            Guard = caseClause.Guard |> Option.map rewrite
+                            Body = rewrite caseClause.Body })
+                )
+            | RecordLiteral fields ->
+                RecordLiteral(fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+            | Seal(value, ascriptionTokens) ->
+                Seal(rewrite value, ascriptionTokens)
+            | RecordUpdate(receiver, fields) ->
+                RecordUpdate(rewrite receiver, fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+            | MemberAccess(receiver, segments, arguments) ->
+                MemberAccess(rewrite receiver, segments, arguments |> List.map rewrite)
+            | SafeNavigation(receiver, navigation) ->
+                SafeNavigation(rewrite receiver, { navigation with Arguments = navigation.Arguments |> List.map rewrite })
+            | TagTest(receiver, constructorName) ->
+                TagTest(rewrite receiver, constructorName)
+            | Do statements ->
+                Do statements
+            | MonadicSplice inner ->
+                MonadicSplice(rewrite inner)
+            | ExplicitImplicitArgument inner ->
+                ExplicitImplicitArgument(rewrite inner)
+            | NamedApplicationBlock fields ->
+                NamedApplicationBlock(fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+            | InoutArgument inner ->
+                InoutArgument(rewrite inner)
+            | Unary(operatorName, inner) ->
+                Unary(operatorName, rewrite inner)
+            | Binary(left, operatorName, right) ->
+                Binary(rewrite left, operatorName, rewrite right)
+            | Elvis(left, right) ->
+                Elvis(rewrite left, rewrite right)
+            | PrefixedString(prefix, parts) ->
+                PrefixedString(
+                    prefix,
+                    parts
+                    |> List.map (function
+                        | StringText text -> StringText text
+                        | StringInterpolation inner -> StringInterpolation(rewrite inner))
+                )
+            | Literal _
+            | KindQualifiedName _
+            | Name _ ->
+                current
+
+        rewrite expression
+
     let private rewriteStaticObjectPathAliasUses (aliases: Map<string list, StaticObjectInfo>) expression =
         let sortedAliases =
             aliases
@@ -1005,6 +1227,10 @@ module SurfaceElaboration =
                 let bodyAliases = withoutShadowedAliases shadowedNames activeAliases
 
                 LocalLet(binding, rewrittenValue, rewrite bodyAliases body)
+            | LocalSignature(declaration, body) ->
+                LocalSignature(declaration, rewrite (withoutShadowedAliases (Set.singleton declaration.Name) activeAliases) body)
+            | LocalTypeAlias(declaration, body) ->
+                LocalTypeAlias(declaration, rewrite activeAliases body)
             | LocalScopedEffect(name, body) ->
                 let bodyAliases = withoutShadowedAliases (Set.singleton name) activeAliases
                 LocalScopedEffect(name, rewrite bodyAliases body)
@@ -1375,26 +1601,67 @@ module SurfaceElaboration =
         item.Namespace = Some ImportNamespace.Constructor
 
     let private tryParseConstructorScheme (dataDeclaration: DataDeclaration) (constructor: DataConstructor) =
-        let typeParameters = TypeSignatures.collectLeadingTypeParameters dataDeclaration.HeaderTokens
-        let resultType = TypeName([ dataDeclaration.Name ], typeParameters |> List.map TypeVariable)
+        let significantConstructorTokens = significantTokens constructor.Tokens
 
-        let body =
-            constructor
-            |> TypeSignatures.constructorFieldTypes
-            |> List.rev
-            |> List.fold (fun state fieldType -> TypeArrow(QuantityOmega, fieldType, state)) resultType
+        let signatureScheme =
+            match significantConstructorTokens with
+            | _ :: { Kind = Colon } :: typeTokens ->
+                TypeSignatures.parseScheme typeTokens
+            | _ ->
+                None
+
+        let parameterLayouts, defaultArguments =
+            match constructor.Parameters with
+            | Some parameters when parameters |> List.forall (fun parameter -> parameter.ParameterName.IsSome) ->
+                let layouts =
+                    parameters
+                    |> List.map (fun parameter ->
+                        { Name = parameter.ParameterName.Value
+                          TypeTokens = Some parameter.ParameterTypeTokens
+                          Quantity = parameter.ParameterQuantity
+                          IsImplicit = parameter.ParameterIsImplicit
+                          IsInout = false
+                          IsReceiver = false })
+
+                let defaults =
+                    parameters
+                    |> List.choose (fun parameter ->
+                        match parameter.ParameterName, parameter.DefaultValue with
+                        | Some name, Some defaultValue -> Some(name, defaultValue)
+                        | _ -> None)
+                    |> Map.ofList
+
+                Some layouts, defaults
+            | _ ->
+                None, Map.empty
+
+        let scheme =
+            match signatureScheme with
+            | Some scheme ->
+                scheme
+            | None ->
+                let typeParameters = TypeSignatures.collectLeadingTypeParameters dataDeclaration.HeaderTokens
+                let resultType = TypeName([ dataDeclaration.Name ], typeParameters |> List.map TypeVariable)
+
+                let body =
+                    constructor
+                    |> TypeSignatures.constructorFieldTypes
+                    |> List.rev
+                    |> List.fold (fun state fieldType -> TypeArrow(QuantityOmega, fieldType, state)) resultType
+
+                { Forall = typeParameters
+                  Constraints = []
+                  Body = body }
 
         Some
             (constructor.Name,
              { ModuleName = ""
                Name = constructor.Name
                IsPattern = false
-               Scheme =
-                { Forall = typeParameters
-                  Constraints = []
-                  Body = body }
+               Scheme = scheme
                TypeTokens = []
-               ParameterLayouts = None })
+               ParameterLayouts = parameterLayouts
+               DefaultArguments = defaultArguments })
 
     let private selectionImportedName
         (exportedNames: Set<string>)
@@ -1488,20 +1755,24 @@ module SurfaceElaboration =
 
                     TypeSignatures.parseScheme declaration.TypeTokens
                     |> Option.map (fun scheme ->
+                        let parameterLayouts =
+                            bindingDefinitions
+                            |> Map.tryFind declaration.Name
+                            |> Option.map (fun definition -> definition.Parameters)
+                            |> mergeParameterLayouts signatureParameterLayouts
+                            |> stripForallOnlyParameterLayouts scheme
+
                         declaration.Name,
                         { ModuleName = moduleName
                           Name = declaration.Name
                           IsPattern =
                             bindingDefinitions
-                            |> Map.tryFind declaration.Name
-                            |> Option.exists (fun definition -> definition.IsPattern)
+                              |> Map.tryFind declaration.Name
+                              |> Option.exists (fun definition -> definition.IsPattern)
                           Scheme = scheme
                           TypeTokens = declaration.TypeTokens
-                          ParameterLayouts =
-                            bindingDefinitions
-                            |> Map.tryFind declaration.Name
-                            |> Option.map (fun definition -> definition.Parameters)
-                            |> mergeParameterLayouts signatureParameterLayouts })
+                          ParameterLayouts = parameterLayouts
+                          DefaultArguments = Map.empty })
                 | ExpectDeclarationNode (ExpectTermDeclaration declaration) ->
                     TypeSignatures.parseScheme declaration.TypeTokens
                     |> Option.map (fun scheme ->
@@ -1511,20 +1782,26 @@ module SurfaceElaboration =
                           IsPattern = false
                           Scheme = scheme
                           TypeTokens = declaration.TypeTokens
-                          ParameterLayouts = None })
+                          ParameterLayouts = None
+                          DefaultArguments = Map.empty })
                 | LetDeclaration definition
                     when definition.Name.IsSome
                          && not (Set.contains definition.Name.Value signatureNames)
                          && (definition.IsPattern || (definition.Parameters |> List.exists (fun parameter -> parameter.IsReceiver))) ->
                     tryParseLetDefinitionScheme definition
                     |> Option.map (fun scheme ->
+                        let parameterLayouts =
+                            Some definition.Parameters
+                            |> stripForallOnlyParameterLayouts scheme
+
                         definition.Name.Value,
                         { ModuleName = moduleName
                           Name = definition.Name.Value
                           IsPattern = definition.IsPattern
                           Scheme = scheme
                           TypeTokens = definition.ReturnTypeTokens |> Option.defaultValue []
-                          ParameterLayouts = Some definition.Parameters })
+                          ParameterLayouts = parameterLayouts
+                          DefaultArguments = Map.empty })
                 | _ ->
                     None)
             |> Map.ofList
@@ -2272,6 +2549,40 @@ module SurfaceElaboration =
         |> List.map (fun (left, right) -> normalize left, normalize right)
         |> TypeSignatures.tryUnifyMany
 
+    let private qualifyVisibleTypeNames
+        (environment: BindingLoweringEnvironment)
+        typeExpr
+        =
+        let rec loop current =
+            match normalizeTypeAliases environment.VisibleTypeAliases current with
+            | TypeName([ name ], arguments) when environment.VisibleTypeFacets.ContainsKey(name) ->
+                let typeFacet = environment.VisibleTypeFacets[name]
+                let qualifiedName =
+                    (typeFacet.ModuleName.Split('.', StringSplitOptions.RemoveEmptyEntries) |> Array.toList) @ [ typeFacet.Name ]
+
+                TypeName(qualifiedName, arguments |> List.map loop)
+            | TypeName(name, arguments) ->
+                TypeName(name, arguments |> List.map loop)
+            | TypeArrow(quantity, parameterType, resultType) ->
+                TypeArrow(quantity, loop parameterType, loop resultType)
+            | TypeEquality(left, right) ->
+                TypeEquality(loop left, loop right)
+            | TypeCapture(inner, captures) ->
+                TypeCapture(loop inner, captures)
+            | TypeRecord fields ->
+                TypeRecord(
+                    fields
+                    |> List.map (fun field ->
+                        { field with
+                            Type = loop field.Type })
+                )
+            | TypeUnion members ->
+                TypeUnion(members |> List.map loop)
+            | TypeVariable _ ->
+                current
+
+        loop typeExpr
+
     let private extendPatternLocalTypes
         (environment: BindingLoweringEnvironment)
         (freshCounter: int ref)
@@ -2311,7 +2622,13 @@ module SurfaceElaboration =
                         let parameterTypes, constructorResultType = TypeSignatures.schemeParts instantiated
 
                         if List.length parameterTypes = List.length arguments then
-                            match tryUnifyVisibleTypes environment.VisibleTypeAliases [ constructorResultType, expectedResultType ] with
+                            match
+                                TypeSignatures.tryUnifyMany
+                                    [
+                                        qualifyVisibleTypeNames environment constructorResultType,
+                                        qualifyVisibleTypeNames environment expectedResultType
+                                    ]
+                            with
                             | Some substitution ->
                                 parameterTypes
                                 |> List.map (TypeSignatures.applySubstitution substitution >> Some)
@@ -2332,6 +2649,15 @@ module SurfaceElaboration =
                     locals
 
         loop localTypes expectedType pattern
+
+    let private extendBindingLocalTypes
+        (environment: BindingLoweringEnvironment)
+        (freshCounter: int ref)
+        (localTypes: Map<string, TypeExpr>)
+        (binding: SurfaceBindPattern)
+        expectedType
+        =
+        extendPatternLocalTypes environment freshCounter localTypes expectedType binding.Pattern
 
     let private unwrapInstantiatedCallType
         (environment: BindingLoweringEnvironment)
@@ -2384,8 +2710,18 @@ module SurfaceElaboration =
         (scheme: TypeScheme option)
         (parameters: Parameter list)
         =
+        let runtimeParameters scheme =
+            parameters
+            |> List.filter (fun parameter ->
+                not (
+                    parameter.IsImplicit
+                    && parameter.TypeTokens.IsNone
+                    && List.contains parameter.Name scheme.Forall
+                ))
+
         match scheme with
         | Some scheme ->
+            let parameters = runtimeParameters scheme
             let parameterTypes, _ = TypeSignatures.schemeParts scheme
 
             if List.length parameterTypes = List.length parameters then
@@ -2419,6 +2755,15 @@ module SurfaceElaboration =
         let fromScheme =
             match scheme with
             | Some scheme ->
+                let parameters =
+                    parameters
+                    |> List.filter (fun parameter ->
+                        not (
+                            parameter.IsImplicit
+                            && parameter.TypeTokens.IsNone
+                            && List.contains parameter.Name scheme.Forall
+                        ))
+
                 let parameterTypes, _ = TypeSignatures.schemeParts scheme
 
                 if List.length parameterTypes = List.length parameters then
@@ -2741,6 +3086,35 @@ module SurfaceElaboration =
         let instantiated = TypeSignatures.instantiate "t" freshCounter.Value bindingInfo.Scheme
         freshCounter.Value <- freshCounter.Value + instantiated.Forall.Length
 
+        let rec consumeExplicitTypeApplications
+            (remainingForall: string list)
+            (remainingArguments: SurfaceExpression list)
+            substitution
+            =
+            match remainingForall, remainingArguments with
+            | typeVariable :: restForall, ExplicitImplicitArgument explicitArgument :: restArguments ->
+                match tryParseTypeLikeSurfaceExpression explicitArgument with
+                | Some explicitTypeArgument ->
+                    consumeExplicitTypeApplications
+                        restForall
+                        restArguments
+                        (composeTypeSubstitution substitution (Map.ofList [ typeVariable, explicitTypeArgument ]))
+                | None ->
+                    None
+            | _, _ ->
+                Some(substitution, remainingArguments)
+
+        let explicitTypeApplicationsValid, instantiated, arguments =
+            match consumeExplicitTypeApplications instantiated.Forall arguments Map.empty with
+            | Some(substitution, remainingArguments) ->
+                true,
+                TypeSignatures.applySchemeSubstitution substitution instantiated,
+                remainingArguments
+            | None ->
+                false,
+                instantiated,
+                arguments
+
         let hasApplicationOnlyArgument arguments =
             arguments
             |> List.exists (function
@@ -2748,9 +3122,12 @@ module SurfaceElaboration =
                 | NamedApplicationBlock _ -> true
                 | _ -> false)
 
+        let hasDefaultArgument (parameterLayout: Parameter) =
+            bindingInfo.DefaultArguments.ContainsKey(parameterLayout.Name)
+
         match bindingInfo.ParameterLayouts with
         | None ->
-            if hasApplicationOnlyArgument arguments then
+            if (not explicitTypeApplicationsValid) || hasApplicationOnlyArgument arguments then
                 None
             else
                 let argumentTypes = arguments |> List.map inferArgumentType
@@ -2765,269 +3142,294 @@ module SurfaceElaboration =
                           Parameters = []
                           Arguments = arguments |> List.map ExplicitArgument })
         | Some parameterLayouts ->
-            let schemeParameterTypes, resultType = TypeSignatures.schemeParts instantiated
-
-            let alignParameterTypesWithLayouts layouts parameterTypes =
-                let remaining = ref parameterTypes
-                let aligned = ResizeArray<TypeExpr>()
-                let mutable success = true
-
-                for layout in layouts do
-                    match tryParseParameterType layout with
-                    | Some layoutType when isCompileTimeArgumentType environment.VisibleTypeAliases layoutType ->
-                        aligned.Add(layoutType)
-
-                        match !remaining with
-                        | parameterType :: rest
-                            when TypeSignatures.definitionallyEqual
-                                     (normalizeTypeAliases environment.VisibleTypeAliases layoutType)
-                                     (normalizeTypeAliases environment.VisibleTypeAliases parameterType) ->
-                            remaining := rest
-                        | _ ->
-                            ()
-                    | _ ->
-                        match !remaining with
-                        | parameterType :: rest ->
-                            aligned.Add(parameterType)
-                            remaining := rest
-                        | [] ->
-                            success <- false
-
-                if success && List.isEmpty !remaining then
-                    Some(List.ofSeq aligned)
-                else
-                    None
-
-            match alignParameterTypesWithLayouts parameterLayouts schemeParameterTypes with
-            | None ->
+            if not explicitTypeApplicationsValid then
                 None
-            | Some parameterTypes ->
-                let splitNamedBlock (arguments: SurfaceExpression list) =
-                    let indexedNamedBlocks =
-                        arguments
-                        |> List.mapi (fun index argument ->
-                            match argument with
-                            | NamedApplicationBlock fields -> Some(index, fields)
-                            | _ -> None)
-                        |> List.choose id
+            else
+                let schemeParameterTypes, resultType = TypeSignatures.schemeParts instantiated
 
-                    match indexedNamedBlocks with
-                    | [] ->
-                        Some(arguments, None)
-                    | [ index, fields ] when index = List.length arguments - 1 ->
-                        Some(arguments |> List.take index, Some fields)
-                    | _ ->
+                let alignParameterTypesWithLayouts layouts parameterTypes =
+                    let remaining = ref parameterTypes
+                    let aligned = ResizeArray<TypeExpr>()
+                    let mutable success = true
+
+                    for layout in layouts do
+                        match tryParseParameterType layout with
+                        | Some layoutType when isCompileTimeArgumentType environment.VisibleTypeAliases layoutType ->
+                            aligned.Add(layoutType)
+
+                            match !remaining with
+                            | parameterType :: rest
+                                when TypeSignatures.definitionallyEqual
+                                         (normalizeTypeAliases environment.VisibleTypeAliases layoutType)
+                                         (normalizeTypeAliases environment.VisibleTypeAliases parameterType) ->
+                                remaining := rest
+                            | _ ->
+                                ()
+                        | _ ->
+                            match !remaining with
+                            | parameterType :: rest ->
+                                aligned.Add(parameterType)
+                                remaining := rest
+                            | [] ->
+                                success <- false
+
+                    if success then
+                        Some(List.ofSeq aligned, List.ofSeq !remaining)
+                    else
                         None
 
-                match splitNamedBlock arguments with
+                match alignParameterTypesWithLayouts parameterLayouts schemeParameterTypes with
                 | None ->
                     None
-                | Some(positionalArguments, namedFields) ->
-                let mutable remainingArguments = positionalArguments
-                let mutable substitution = Map.empty<string, TypeExpr>
-                let preparedArguments = ResizeArray<PreparedCallArgument>()
-                let preparedParameters = ResizeArray<PreparedCallParameter>()
-                let remainingParameters = ResizeArray<Parameter * TypeExpr>()
-                let mutable usedNamedFields = Set.empty<string>
-                let mutable success = true
-                let mutable stoppedAtPartialApplication = false
+                | Some(parameterTypes, trailingParameterTypes) ->
+                    let splitNamedBlock (arguments: SurfaceExpression list) =
+                        let indexedNamedBlocks =
+                            arguments
+                            |> List.mapi (fun index argument ->
+                                match argument with
+                                | NamedApplicationBlock fields -> Some(index, fields)
+                                | _ -> None)
+                            |> List.choose id
 
-                let namedFieldCounts =
-                    namedFields
-                    |> Option.map (fun fields -> fields |> List.countBy (fun field -> field.Name) |> Map.ofList)
-                    |> Option.defaultValue Map.empty
-
-                let tryTakeNamedArgument (parameterLayout: Parameter) =
-                    namedFields
-                    |> Option.bind (fun fields ->
-                        fields
-                        |> List.tryFind (fun field -> String.Equals(field.Name, parameterLayout.Name, StringComparison.Ordinal)))
-                    |> Option.bind (fun field ->
-                        if field.IsImplicit then
+                        match indexedNamedBlocks with
+                        | [] ->
+                            Some(arguments, None)
+                        | [ index, fields ] when index = List.length arguments - 1 ->
+                            Some(arguments |> List.take index, Some fields)
+                        | _ ->
                             None
-                        else
-                            usedNamedFields <- Set.add field.Name usedNamedFields
-                            Some field.Value)
 
-                for parameterLayout, rawParameterType in List.zip parameterLayouts parameterTypes do
-                    let parameterType = TypeSignatures.applySubstitution substitution rawParameterType
+                    match splitNamedBlock arguments with
+                    | None ->
+                        None
+                    | Some(positionalArguments, namedFields) ->
+                        let mutable remainingArguments = positionalArguments
+                        let mutable substitution = Map.empty<string, TypeExpr>
+                        let preparedArguments = ResizeArray<PreparedCallArgument>()
+                        let preparedParameters = ResizeArray<PreparedCallParameter>()
+                        let remainingParameters = ResizeArray<Parameter * TypeExpr>()
+                        let mutable usedNamedFields = Set.empty<string>
+                        let mutable success = true
+                        let mutable stoppedAtPartialApplication = false
 
-                    if stoppedAtPartialApplication then
-                        remainingParameters.Add(parameterLayout, parameterType)
-                    elif parameterLayout.IsImplicit then
-                        match remainingArguments with
-                        | ExplicitImplicitArgument explicitArgument :: rest ->
-                            if isCompileTimeArgumentType environment.VisibleTypeAliases parameterType then
-                                match tryParseTypeLikeSurfaceExpression explicitArgument with
-                                | Some explicitTypeArgument ->
-                                    remainingArguments <- rest
-                                    substitution <-
-                                        composeTypeSubstitution
-                                            substitution
-                                            (Map.ofList [ parameterLayout.Name, explicitTypeArgument ])
-                                    preparedParameters.Add(
-                                        { Layout = Some parameterLayout
-                                          ParameterType = parameterType
-                                          AssignedArgument = None }
-                                    )
-                                | None ->
-                                    success <- false
-                            else
-                                match inferArgumentType explicitArgument with
-                                | Some argumentType ->
-                                    match tryUnifyVisibleTypes environment.VisibleTypeAliases [ parameterType, argumentType ] with
-                                    | Some inferredSubstitution ->
-                                        preparedArguments.Add(ExplicitArgument explicitArgument)
+                        let namedFieldCounts =
+                            namedFields
+                            |> Option.map (fun fields -> fields |> List.countBy (fun field -> field.Name) |> Map.ofList)
+                            |> Option.defaultValue Map.empty
+
+                        let tryTakeNamedArgument (parameterLayout: Parameter) =
+                            namedFields
+                            |> Option.bind (fun fields ->
+                                fields
+                                |> List.tryFind (fun field -> String.Equals(field.Name, parameterLayout.Name, StringComparison.Ordinal)))
+                            |> Option.bind (fun field ->
+                                if field.IsImplicit then
+                                    None
+                                else
+                                    usedNamedFields <- Set.add field.Name usedNamedFields
+                                    Some field.Value)
+
+                        for parameterLayout, rawParameterType in List.zip parameterLayouts parameterTypes do
+                            let parameterType = TypeSignatures.applySubstitution substitution rawParameterType
+
+                            if stoppedAtPartialApplication then
+                                remainingParameters.Add(parameterLayout, parameterType)
+                            elif parameterLayout.IsImplicit then
+                                match remainingArguments with
+                                | ExplicitImplicitArgument explicitArgument :: rest ->
+                                    if isCompileTimeArgumentType environment.VisibleTypeAliases parameterType then
+                                        match tryParseTypeLikeSurfaceExpression explicitArgument with
+                                        | Some explicitTypeArgument ->
+                                            remainingArguments <- rest
+                                            substitution <-
+                                                composeTypeSubstitution
+                                                    substitution
+                                                    (Map.ofList [ parameterLayout.Name, explicitTypeArgument ])
+                                            preparedParameters.Add(
+                                                { Layout = Some parameterLayout
+                                                  ParameterType = parameterType
+                                                  AssignedArgument = None }
+                                            )
+                                        | None ->
+                                            success <- false
+                                    else
+                                        match inferArgumentType explicitArgument with
+                                        | Some argumentType ->
+                                            match tryUnifyVisibleTypes environment.VisibleTypeAliases [ parameterType, argumentType ] with
+                                            | Some inferredSubstitution ->
+                                                preparedArguments.Add(ExplicitArgument explicitArgument)
+                                                preparedParameters.Add(
+                                                    { Layout = Some parameterLayout
+                                                      ParameterType = parameterType
+                                                      AssignedArgument = Some(ExplicitArgument explicitArgument) }
+                                                )
+                                                remainingArguments <- rest
+                                                let termSubstitution =
+                                                    tryParseTypeLikeSurfaceExpression explicitArgument
+                                                    |> Option.map (fun argumentType -> Map.ofList [ parameterLayout.Name, argumentType ])
+                                                    |> Option.defaultValue Map.empty
+
+                                                substitution <-
+                                                    composeTypeSubstitution
+                                                        (composeTypeSubstitution substitution inferredSubstitution)
+                                                        termSubstitution
+                                            | None ->
+                                                success <- false
+                                        | None ->
+                                            success <- false
+                                | _ ->
+                                    match trySynthesizeImplicitArgument environment tryResolveLocalImplicit parameterType with
+                                    | Some implicitArgument ->
+                                        preparedArguments.Add(ImplicitArgument implicitArgument)
                                         preparedParameters.Add(
                                             { Layout = Some parameterLayout
                                               ParameterType = parameterType
-                                              AssignedArgument = Some(ExplicitArgument explicitArgument) }
+                                              AssignedArgument = Some(ImplicitArgument implicitArgument) }
                                         )
-                                        remainingArguments <- rest
-                                        let termSubstitution =
-                                            tryParseTypeLikeSurfaceExpression explicitArgument
-                                            |> Option.map (fun argumentType -> Map.ofList [ parameterLayout.Name, argumentType ])
-                                            |> Option.defaultValue Map.empty
-
-                                        substitution <-
-                                            composeTypeSubstitution
-                                                (composeTypeSubstitution substitution inferredSubstitution)
-                                                termSubstitution
                                     | None ->
                                         success <- false
-                                | None ->
+                            elif isCompileTimeArgumentType environment.VisibleTypeAliases parameterType then
+                                match remainingArguments with
+                                | ExplicitImplicitArgument _ :: _ ->
                                     success <- false
-                        | _ ->
-                            match trySynthesizeImplicitArgument environment tryResolveLocalImplicit parameterType with
-                            | Some implicitArgument ->
-                                preparedArguments.Add(ImplicitArgument implicitArgument)
-                                preparedParameters.Add(
-                                    { Layout = Some parameterLayout
-                                      ParameterType = parameterType
-                                      AssignedArgument = Some(ImplicitArgument implicitArgument) }
-                                )
-                            | None ->
-                                success <- false
-                    elif isCompileTimeArgumentType environment.VisibleTypeAliases parameterType then
-                        match remainingArguments with
-                        | ExplicitImplicitArgument _ :: _ ->
-                            success <- false
-                        | nextArgument :: rest ->
-                            match tryParseTypeLikeSurfaceExpression nextArgument with
-                            | Some explicitTypeArgument ->
-                                remainingArguments <- rest
-                                substitution <-
-                                    composeTypeSubstitution
-                                        substitution
-                                        (Map.ofList [ parameterLayout.Name, explicitTypeArgument ])
-                                preparedParameters.Add(
-                                    { Layout = Some parameterLayout
-                                      ParameterType = parameterType
-                                      AssignedArgument = None }
-                                )
-                            | None ->
-                                success <- false
-                        | [] ->
-                            match tryTakeNamedArgument parameterLayout with
-                            | Some namedArgument ->
-                                match tryParseTypeLikeSurfaceExpression namedArgument with
-                                | Some explicitTypeArgument ->
-                                    substitution <-
-                                        composeTypeSubstitution
-                                            substitution
-                                            (Map.ofList [ parameterLayout.Name, explicitTypeArgument ])
-                                    preparedParameters.Add(
-                                        { Layout = Some parameterLayout
-                                          ParameterType = parameterType
-                                          AssignedArgument = None }
-                                    )
-                                | None ->
-                                    success <- false
-                            | None ->
-                                if namedFields.IsSome then
-                                    success <- false
-                                else
-                                    stoppedAtPartialApplication <- true
-                                    remainingParameters.Add(parameterLayout, parameterType)
-                    else
-                        let explicitArgument =
-                            match remainingArguments with
-                            | ExplicitImplicitArgument _ :: _ ->
-                                success <- false
-                                None
-                            | nextArgument :: rest ->
-                                remainingArguments <- rest
-                                Some nextArgument
-                            | [] ->
-                                match tryTakeNamedArgument parameterLayout with
-                                | Some namedArgument ->
-                                    Some namedArgument
-                                | None ->
-                                    if namedFields.IsSome then
+                                | nextArgument :: rest ->
+                                    match tryParseTypeLikeSurfaceExpression nextArgument with
+                                    | Some explicitTypeArgument ->
+                                        remainingArguments <- rest
+                                        substitution <-
+                                            composeTypeSubstitution
+                                                substitution
+                                                (Map.ofList [ parameterLayout.Name, explicitTypeArgument ])
+                                        preparedParameters.Add(
+                                            { Layout = Some parameterLayout
+                                              ParameterType = parameterType
+                                              AssignedArgument = None }
+                                        )
+                                    | None ->
+                                        success <- false
+                                | [] ->
+                                    match tryTakeNamedArgument parameterLayout with
+                                    | Some namedArgument ->
+                                        match tryParseTypeLikeSurfaceExpression namedArgument with
+                                        | Some explicitTypeArgument ->
+                                            substitution <-
+                                                composeTypeSubstitution
+                                                    substitution
+                                                    (Map.ofList [ parameterLayout.Name, explicitTypeArgument ])
+                                            preparedParameters.Add(
+                                                { Layout = Some parameterLayout
+                                                  ParameterType = parameterType
+                                                  AssignedArgument = None }
+                                            )
+                                        | None ->
+                                            success <- false
+                                    | None ->
+                                        if namedFields.IsSome && not (hasDefaultArgument parameterLayout) then
+                                            success <- false
+                                        else
+                                            if namedFields.IsSome then
+                                                preparedParameters.Add(
+                                                    { Layout = Some parameterLayout
+                                                      ParameterType = parameterType
+                                                      AssignedArgument = None }
+                                                )
+                                            else
+                                                stoppedAtPartialApplication <- true
+                                                remainingParameters.Add(parameterLayout, parameterType)
+                            else
+                                let explicitArgument =
+                                    match remainingArguments with
+                                    | ExplicitImplicitArgument _ :: _ ->
                                         success <- false
                                         None
-                                    else
-                                        stoppedAtPartialApplication <- true
-                                        remainingParameters.Add(parameterLayout, parameterType)
-                                        None
+                                    | nextArgument :: rest ->
+                                        remainingArguments <- rest
+                                        Some nextArgument
+                                    | [] ->
+                                        match tryTakeNamedArgument parameterLayout with
+                                        | Some namedArgument ->
+                                            Some namedArgument
+                                        | None ->
+                                            if namedFields.IsSome && not (hasDefaultArgument parameterLayout) then
+                                                success <- false
+                                                None
+                                            else
+                                                if namedFields.IsSome then
+                                                    preparedParameters.Add(
+                                                        { Layout = Some parameterLayout
+                                                          ParameterType = parameterType
+                                                          AssignedArgument = None }
+                                                    )
+                                                else
+                                                    stoppedAtPartialApplication <- true
+                                                    remainingParameters.Add(parameterLayout, parameterType)
+                                                None
 
-                        explicitArgument
-                        |> Option.iter (fun nextArgument ->
-                            match inferArgumentType nextArgument with
-                            | Some argumentType ->
-                                match tryUnifyVisibleTypes environment.VisibleTypeAliases [ parameterType, argumentType ] with
-                                | Some inferredSubstitution ->
-                                    preparedArguments.Add(ExplicitArgument nextArgument)
-                                    preparedParameters.Add(
-                                        { Layout = Some parameterLayout
-                                          ParameterType = parameterType
-                                          AssignedArgument = Some(ExplicitArgument nextArgument) }
-                                    )
-                                    let termSubstitution =
-                                        tryParseTypeLikeSurfaceExpression nextArgument
-                                        |> Option.map (fun argumentType -> Map.ofList [ parameterLayout.Name, argumentType ])
-                                        |> Option.defaultValue Map.empty
+                                explicitArgument
+                                |> Option.iter (fun nextArgument ->
+                                    match inferArgumentType nextArgument with
+                                    | Some argumentType ->
+                                        match tryUnifyVisibleTypes environment.VisibleTypeAliases [ parameterType, argumentType ] with
+                                        | Some inferredSubstitution ->
+                                            preparedArguments.Add(ExplicitArgument nextArgument)
+                                            preparedParameters.Add(
+                                                { Layout = Some parameterLayout
+                                                  ParameterType = parameterType
+                                                  AssignedArgument = Some(ExplicitArgument nextArgument) }
+                                            )
+                                            let termSubstitution =
+                                                tryParseTypeLikeSurfaceExpression nextArgument
+                                                |> Option.map (fun argumentType -> Map.ofList [ parameterLayout.Name, argumentType ])
+                                                |> Option.defaultValue Map.empty
 
-                                    substitution <-
-                                        composeTypeSubstitution
-                                            (composeTypeSubstitution substitution inferredSubstitution)
-                                            termSubstitution
-                                | None ->
-                                    success <- false
-                            | None ->
-                                success <- false)
+                                            substitution <-
+                                                composeTypeSubstitution
+                                                    (composeTypeSubstitution substitution inferredSubstitution)
+                                                    termSubstitution
+                                        | None ->
+                                            success <- false
+                                    | None ->
+                                        success <- false)
 
-                let namedFieldsValid =
-                    namedFieldCounts
-                    |> Map.forall (fun _ count -> count = 1)
-                    && (namedFields
-                        |> Option.map (fun fields ->
-                            fields
-                            |> List.forall (fun field -> Set.contains field.Name usedNamedFields))
-                        |> Option.defaultValue true)
+                        let namedFieldsValid =
+                            namedFieldCounts
+                            |> Map.forall (fun _ count -> count = 1)
+                            && (namedFields
+                                |> Option.map (fun fields ->
+                                    fields
+                                    |> List.forall (fun field -> Set.contains field.Name usedNamedFields))
+                                |> Option.defaultValue true)
 
-                if success && namedFieldsValid && List.isEmpty remainingArguments then
-                    let instantiatedScheme = TypeSignatures.applySchemeSubstitution substitution instantiated
-                    let appliedResultType =
-                        remainingParameters
-                        |> Seq.toList
-                        |> List.rev
-                        |> List.fold
-                            (fun current (parameterLayout, parameterType) ->
-                                TypeArrow(
-                                    parameterLayout.Quantity |> Option.defaultValue QuantityOmega,
-                                    TypeSignatures.applySubstitution substitution parameterType,
-                                    current
-                                ))
-                            (TypeSignatures.applySubstitution substitution resultType)
+                        if success && namedFieldsValid && List.isEmpty remainingArguments then
+                            let instantiatedScheme = TypeSignatures.applySchemeSubstitution substitution instantiated
+                            let appliedResultType =
+                                let loweredRemainingParameters =
+                                    remainingParameters
+                                    |> Seq.toList
+                                    |> List.map (fun (parameterLayout, parameterType) ->
+                                        parameterLayout.Quantity |> Option.defaultValue QuantityOmega,
+                                        TypeSignatures.applySubstitution substitution parameterType)
 
-                    Some
-                        { InstantiatedScheme = instantiatedScheme
-                          ResultType = appliedResultType
-                          Parameters = List.ofSeq preparedParameters
-                          Arguments = List.ofSeq preparedArguments }
-                else
-                    None
+                                let trailingParameters =
+                                    trailingParameterTypes
+                                    |> List.map (fun parameterType ->
+                                        QuantityOmega,
+                                        TypeSignatures.applySubstitution substitution parameterType)
+
+                                loweredRemainingParameters @ trailingParameters
+                                |> List.rev
+                                |> List.fold
+                                    (fun current (parameterQuantity, parameterType) ->
+                                        TypeArrow(parameterQuantity, parameterType, current))
+                                    (TypeSignatures.applySubstitution substitution resultType)
+
+                            Some
+                                { InstantiatedScheme = instantiatedScheme
+                                  ResultType = appliedResultType
+                                  Parameters = List.ofSeq preparedParameters
+                                  Arguments = List.ofSeq preparedArguments }
+                        else
+                            None
 
     let private tryPrepareVisibleTraitMemberCall
         (environment: BindingLoweringEnvironment)
@@ -3058,7 +3460,8 @@ module SurfaceElaboration =
                           IsPattern = false
                           Scheme = overloadedScheme
                           TypeTokens = []
-                          ParameterLayouts = None }
+                          ParameterLayouts = None
+                          DefaultArguments = Map.empty }
 
                     tryPrepareVisibleBindingCall environment candidateCounter bindingInfo inferArgumentType noLocalImplicit arguments
                     |> Option.bind (fun preparedCall ->
@@ -3203,14 +3606,17 @@ module SurfaceElaboration =
                 ordinaryResolution
         | Name [] ->
             None
+        | LocalSignature(_, body) ->
+            inferValidationExpressionType environment freshCounter localTypes body
+        | LocalTypeAlias(_, body) ->
+            inferValidationExpressionType environment freshCounter localTypes body
         | LocalLet(binding, value, body) ->
             let bindingNames = collectPatternNames binding.Pattern
 
             let nextLocals =
                 match inferValidationExpressionType environment freshCounter localTypes value with
                 | Some valueType ->
-                    bindingNames
-                    |> List.fold (fun state name -> Map.add name valueType state) localTypes
+                    extendBindingLocalTypes environment freshCounter localTypes binding (Some valueType)
                 | None ->
                     localTypes
 
@@ -4125,6 +4531,10 @@ module SurfaceElaboration =
                     | LocalLet(_, value, body) ->
                         yield! loop value
                         yield! loop body
+                    | LocalSignature(_, body) ->
+                        yield! loop body
+                    | LocalTypeAlias(_, body) ->
+                        yield! loop body
                     | LocalScopedEffect(_, body) ->
                         yield! loop body
                     | Lambda(_, body) ->
@@ -4548,6 +4958,8 @@ module SurfaceElaboration =
                         | _ ->
                             nested
                     | LocalLet(_, value, nestedBody) -> loop value @ loop nestedBody
+                    | LocalSignature(_, nestedBody) -> loop nestedBody
+                    | LocalTypeAlias(_, nestedBody) -> loop nestedBody
                     | LocalScopedEffect(_, nestedBody) -> loop nestedBody
                     | Lambda(_, nestedBody) -> loop nestedBody
                     | IfThenElse(condition, whenTrue, whenFalse) -> loop condition @ loop whenTrue @ loop whenFalse
@@ -4822,8 +5234,7 @@ module SurfaceElaboration =
                 let nextLocals =
                     match inferValidationExpressionType environment freshCounter locals value with
                     | Some valueType ->
-                        collectPatternNames binding.Pattern
-                        |> List.fold (fun state name -> Map.add name valueType state) locals
+                        extendBindingLocalTypes environment freshCounter locals binding (Some valueType)
                     | None ->
                         locals
 
@@ -4845,6 +5256,13 @@ module SurfaceElaboration =
                             rewrite nestedValue,
                             if shadowsAlias then nestedBody else rewrite nestedBody
                         )
+                    | LocalSignature(declaration, nestedBody) ->
+                        if String.Equals(declaration.Name, aliasName, StringComparison.Ordinal) then
+                            expression
+                        else
+                            LocalSignature(declaration, rewrite nestedBody)
+                    | LocalTypeAlias(declaration, nestedBody) ->
+                        LocalTypeAlias(declaration, rewrite nestedBody)
                     | LocalScopedEffect(name, nestedBody) ->
                         if String.Equals(name, aliasName, StringComparison.Ordinal) then
                             expression
@@ -4910,11 +5328,14 @@ module SurfaceElaboration =
                 let bodyForValidation =
                     match binding.Pattern, value with
                     | NamePattern aliasName, Name [ targetName ]
-                        when environment.VisibleBindings
-                             |> Map.tryFind targetName
+                        when (environment.VisibleBindings
+                              |> Map.tryFind targetName
+                              |> Option.orElseWith (fun () -> environment.VisibleConstructors |> Map.tryFind targetName))
                              |> Option.bind (fun bindingInfo -> bindingInfo.ParameterLayouts)
                              |> Option.isSome ->
                         rewriteNamedAliasUse aliasName targetName body
+                    | NamePattern aliasName, Lambda(parameters, _) ->
+                        rewriteNamedApplicationAliasUse aliasName parameters body
                     | _ ->
                         body
 
@@ -4922,6 +5343,10 @@ module SurfaceElaboration =
                 let bodyForValidation = rewriteStaticObjectPathAliasUses localStaticAliases bodyForValidation
 
                 recurse value @ validateExpression nextLocals refinements bodyForValidation
+            | LocalSignature(_, body) ->
+                validateExpression locals refinements body
+            | LocalTypeAlias(_, body) ->
+                validateExpression locals refinements body
             | LocalScopedEffect(name, body) ->
                 withScopedEffectName name (fun () -> validateExpression locals refinements body)
             | Lambda(parameters, body) ->
@@ -5341,6 +5766,10 @@ module SurfaceElaboration =
                 markerDiagnostics @ recurse inner
             | LocalLet(_, value, body) ->
                 recurse value @ recurse body
+            | LocalSignature(_, body) ->
+                recurse body
+            | LocalTypeAlias(_, body) ->
+                recurse body
             | LocalScopedEffect(_, body) ->
                 recurse body
             | Lambda(_, body) ->
@@ -5556,6 +5985,10 @@ module SurfaceElaboration =
                     | _ -> shadowedAliases
 
                 valueDiagnostics @ validateProjectionDescriptorApplications bodyAliases body
+            | LocalSignature(declaration, body) ->
+                validateProjectionDescriptorApplications (Map.remove declaration.Name aliases) body
+            | LocalTypeAlias(_, body) ->
+                recurse body
             | LocalScopedEffect(_, body) ->
                 recurse body
             | Lambda(parameters, body) ->
@@ -5752,6 +6185,10 @@ module SurfaceElaboration =
                     |> Option.defaultValue []
                 | Apply(callee, arguments) ->
                     recurse callee @ (arguments |> List.collect recurse)
+                | LocalSignature(_, nestedBody) ->
+                    validateExpr inEscapingLambda scopes nestedBody
+                | LocalTypeAlias(_, nestedBody) ->
+                    validateExpr inEscapingLambda scopes nestedBody
                 | LocalLet(binding, value, nestedBody) ->
                     let valueDiagnostics = recurse value
                     let valueType =
@@ -6147,6 +6584,25 @@ module SurfaceElaboration =
                         | TypeName([ "Type" ], _) -> true
                         | _ -> false)
 
+                let constructorHasMalformedShape (constructor: DataConstructor) =
+                    let significant = significantTokens constructor.Tokens
+
+                    let remainingTokens =
+                        match significant with
+                        | { Kind = Operator; Text = "|" } :: _nameToken :: rest -> rest
+                        | _nameToken :: rest -> rest
+                        | [] -> []
+
+                    match constructor.Parameters, remainingTokens with
+                    | Some _, _ ->
+                        false
+                    | None, [] ->
+                        false
+                    | None, { Kind = Colon } :: typeTokens ->
+                        TypeSignatures.parseScheme typeTokens |> Option.isNone
+                    | None, _ ->
+                        List.isEmpty (TypeSignatures.constructorFieldTypes constructor)
+
                 frontendModule.Declarations
                 |> List.collect (function
                     | DataDeclarationNode declaration ->
@@ -6156,6 +6612,8 @@ module SurfaceElaboration =
                                 Some(makeDiagnostic DiagnosticCode.MalformedConstructorDeclaration $"Constructor declaration in data type '{declaration.Name}' starts with declaration keyword '{constructor.Name}'.")
                             elif exposesRuntimeTypeField constructor then
                                 Some(makeDiagnostic DiagnosticCode.MalformedConstructorDeclaration $"Constructor '{constructor.Name}' exposes runtime field metadata of type 'Type'.")
+                            elif constructorHasMalformedShape constructor then
+                                Some(makeDiagnostic DiagnosticCode.MalformedConstructorDeclaration $"Constructor declaration '{constructor.Name}' in data type '{declaration.Name}' is malformed.")
                             else
                                 None)
                     | _ ->
@@ -6212,6 +6670,13 @@ module SurfaceElaboration =
                     | LocalLet(binding, value, body) ->
                         references value
                         || expressionReferences target (Set.union shadowed (patternNames binding.Pattern)) body
+                    | LocalSignature(declaration, body) ->
+                        if String.Equals(declaration.Name, target, StringComparison.Ordinal) then
+                            false
+                        else
+                            expressionReferences target (Set.add declaration.Name shadowed) body
+                    | LocalTypeAlias(_, body) ->
+                        references body
                     | LocalScopedEffect(_, body) ->
                         references body
                     | Lambda(parameters, body) ->
@@ -6314,11 +6779,36 @@ module SurfaceElaboration =
                     | _ ->
                         None)
 
+            let trivialRecursiveCycleDiagnostics =
+                frontendModule.Declarations
+                |> List.choose (function
+                    | LetDeclaration definition
+                        when definition.Name.IsSome
+                             && definition.Body.IsSome
+                             && List.isEmpty definition.Parameters ->
+                        let name = definition.Name.Value
+
+                        match definition.Body.Value with
+                        | Name [ referencedName ] when String.Equals(referencedName, name, StringComparison.Ordinal) ->
+                            Some(
+                                makeDiagnostic
+                                    DiagnosticCode.RecursionRequiresSignature
+                                    $"Recursive cycle for binding '{name}' is not total and must be rejected."
+                            )
+                        | _ ->
+                            None
+                    | _ ->
+                        None)
+
             let expressionPatternDiagnostics expression =
                 let rec validateExpression current =
                     match current with
                     | LocalLet(binding, value, body) ->
                         patternDuplicateDiagnostics binding.Pattern @ validateExpression value @ validateExpression body
+                    | LocalSignature(_, body) ->
+                        validateExpression body
+                    | LocalTypeAlias(_, body) ->
+                        validateExpression body
                     | Lambda(_, body) ->
                         validateExpression body
                     | IfThenElse(condition, whenTrue, whenFalse) ->
@@ -6460,11 +6950,126 @@ module SurfaceElaboration =
                     | _ ->
                         []
 
+            let constructorDefaultDiagnostics =
+                let topLevelNames =
+                    frontendModule.Declarations
+                    |> List.collect (function
+                        | SignatureDeclaration declaration -> [ declaration.Name ]
+                        | LetDeclaration declaration -> declaration.Name |> Option.toList
+                        | ProjectionDeclarationNode declaration -> [ declaration.Name ]
+                        | DataDeclarationNode declaration ->
+                            declaration.Name :: (declaration.Constructors |> List.map (fun constructor -> constructor.Name))
+                        | TypeAliasNode declaration -> [ declaration.Name ]
+                        | TraitDeclarationNode declaration -> [ declaration.Name ]
+                        | ExpectDeclarationNode (ExpectTermDeclaration declaration) -> [ declaration.Name ]
+                        | ExpectDeclarationNode (ExpectTypeDeclaration declaration) -> [ declaration.Name ]
+                        | ExpectDeclarationNode (ExpectTraitDeclaration declaration) -> [ declaration.Name ]
+                        | _ -> [])
+                    |> Set.ofList
+
+                let baseVisibleNames =
+                    let preludeContract = IntrinsicCatalog.bundledPreludeExpectContract ()
+
+                    [ topLevelNames
+                      preludeContract.TermNames
+                      preludeContract.TypeNames
+                      preludeContract.TraitNames
+                      Set.ofList Stdlib.FixedPreludeConstructors
+                      environment.VisibleBindings |> Map.keys |> Set.ofSeq
+                      environment.VisibleConstructors |> Map.keys |> Set.ofSeq
+                      environment.VisibleModules
+                      environment.VisibleStaticObjects |> Map.keys |> Set.ofSeq
+                      environment.VisibleTypeFacets |> Map.keys |> Set.ofSeq
+                      environment.VisibleTraits |> Map.keys |> Set.ofSeq ]
+                    |> Set.unionMany
+                    |> Set.remove "<anonymous>"
+
+                let diagnosticsForDefault parameters index parameterName parameterTypeTokens defaultValue =
+                    let earlierParameters = parameters |> List.take index
+                    let forbiddenNames =
+                        parameters
+                        |> List.skip index
+                        |> List.choose (fun candidate -> candidate.ParameterName)
+                        |> Set.ofList
+
+                    let localTypes =
+                        earlierParameters
+                        |> List.choose (fun earlier ->
+                            match earlier.ParameterName, TypeSignatures.parseType earlier.ParameterTypeTokens with
+                            | Some name, Some parameterType -> Some(name, parameterType)
+                            | _ -> None)
+                        |> Map.ofList
+
+                    let visibleNames =
+                        earlierParameters
+                        |> List.choose (fun earlier -> earlier.ParameterName)
+                        |> Set.ofList
+                        |> Set.union baseVisibleNames
+
+                    let nameDiagnostics =
+                        ResourceCheckingSurface.expressionNames defaultValue
+                        |> Seq.distinct
+                        |> Seq.choose (fun referencedName ->
+                            if Set.contains referencedName forbiddenNames then
+                                Some(
+                                    makeDiagnostic
+                                        DiagnosticCode.NameUnresolved
+                                        $"Default expression for constructor parameter '{parameterName}' cannot reference '{referencedName}' before it is bound."
+                                )
+                            elif not (Set.contains referencedName visibleNames) then
+                                Some(makeDiagnostic DiagnosticCode.NameUnresolved $"Name '{referencedName}' is not in scope.")
+                            else
+                                None)
+                        |> Seq.toList
+
+                    let typeDiagnostics =
+                        match TypeSignatures.parseType parameterTypeTokens, inferValidationExpressionType environment (ref 0) localTypes defaultValue with
+                        | Some expectedType, Some actualType
+                            when not (
+                                TypeSignatures.definitionallyEqual
+                                    (normalizeTypeAliases environment.VisibleTypeAliases expectedType)
+                                    (normalizeTypeAliases environment.VisibleTypeAliases actualType)
+                            ) ->
+                            [ makeDiagnostic
+                                DiagnosticCode.TypeEqualityMismatch
+                                $"Default expression for constructor parameter '{parameterName}' has type '{TypeSignatures.toText actualType}', but '{TypeSignatures.toText expectedType}' was expected." ]
+                        | Some _, None when List.isEmpty nameDiagnostics ->
+                            [ makeDiagnostic
+                                DiagnosticCode.TypeEqualityMismatch
+                                $"Default expression for constructor parameter '{parameterName}' could not be checked against its declared type." ]
+                        | _ ->
+                            []
+
+                    nameDiagnostics @ typeDiagnostics
+
+                let diagnosticsForConstructor (constructor: DataConstructor) =
+                    match constructor.Parameters with
+                    | Some parameters ->
+                        parameters
+                        |> List.mapi (fun index parameter -> index, parameter)
+                        |> List.collect (fun (index, parameter) ->
+                            match parameter.ParameterName, parameter.DefaultValue with
+                            | Some parameterName, Some defaultValue ->
+                                diagnosticsForDefault parameters index parameterName parameter.ParameterTypeTokens defaultValue
+                            | _ ->
+                                [])
+                    | None ->
+                        []
+
+                frontendModule.Declarations
+                |> List.collect (function
+                    | DataDeclarationNode declaration ->
+                        declaration.Constructors |> List.collect diagnosticsForConstructor
+                    | _ ->
+                        [])
+
             let structuralDiagnostics =
                 duplicateDeclarationDiagnostics
                 @ typeAliasCycleDiagnostics
                 @ malformedConstructorDiagnostics
                 @ unsignedRecursiveBindingDiagnostics
+                @ trivialRecursiveCycleDiagnostics
+                @ constructorDefaultDiagnostics
 
             if not (List.isEmpty typeAliasCycleDiagnostics) then
                 structuralDiagnostics
@@ -6562,6 +7167,284 @@ module SurfaceElaboration =
             freshCounter.Value <- freshCounter.Value + 1
             $"{prefix}{index}"
 
+        let rec substituteZeroArityLocalTypeAliasInExpression (alias: TypeAlias) expression =
+            let substituteTypeTokens tokens =
+                let aliasBodyTokens = alias.BodyTokens |> Option.defaultValue []
+                let tokenArray = tokens |> List.toArray
+                let rewritten = ResizeArray<Token>()
+
+                let isStandaloneAlias index =
+                    let token = tokenArray[index]
+                    let previousIsDot = index > 0 && tokenArray[index - 1].Kind = Dot
+                    let nextIsDot = index + 1 < tokenArray.Length && tokenArray[index + 1].Kind = Dot
+
+                    Token.isName token
+                    && String.Equals(SyntaxFacts.trimIdentifierQuotes token.Text, alias.Name, StringComparison.Ordinal)
+                    && not previousIsDot
+                    && not nextIsDot
+
+                for index = 0 to tokenArray.Length - 1 do
+                    if isStandaloneAlias index then
+                        rewritten.AddRange(aliasBodyTokens)
+                    else
+                        rewritten.Add(tokenArray[index])
+
+                List.ofSeq rewritten
+
+            let substituteParameter (parameter: Parameter) =
+                { parameter with
+                    TypeTokens = parameter.TypeTokens |> Option.map substituteTypeTokens }
+
+            let substituteBinding (binding: SurfaceBindPattern) =
+                { binding with
+                    TypeTokens = binding.TypeTokens |> Option.map substituteTypeTokens }
+
+            let rec substitute current =
+                match current with
+                | LocalLet(binding, value, body) ->
+                    LocalLet(substituteBinding binding, substitute value, substitute body)
+                | LocalSignature(declaration, body) ->
+                    LocalSignature({ declaration with TypeTokens = substituteTypeTokens declaration.TypeTokens }, substitute body)
+                | LocalTypeAlias(declaration, body) ->
+                    LocalTypeAlias(
+                        { declaration with
+                            HeaderTokens = substituteTypeTokens declaration.HeaderTokens
+                            BodyTokens = declaration.BodyTokens |> Option.map substituteTypeTokens },
+                        substitute body
+                    )
+                | LocalScopedEffect(name, body) ->
+                    LocalScopedEffect(name, substitute body)
+                | Lambda(parameters, body) ->
+                    Lambda(parameters |> List.map substituteParameter, substitute body)
+                | IfThenElse(condition, whenTrue, whenFalse) ->
+                    IfThenElse(substitute condition, substitute whenTrue, substitute whenFalse)
+                | Match(scrutinee, cases) ->
+                    Match(
+                        substitute scrutinee,
+                        cases
+                        |> List.map (fun caseClause ->
+                            { caseClause with
+                                Guard = caseClause.Guard |> Option.map substitute
+                                Body = substitute caseClause.Body })
+                    )
+                | RecordLiteral fields ->
+                    RecordLiteral(fields |> List.map (fun field -> { field with Value = substitute field.Value }))
+                | Seal(value, ascriptionTokens) ->
+                    Seal(substitute value, substituteTypeTokens ascriptionTokens)
+                | RecordUpdate(receiver, fields) ->
+                    RecordUpdate(substitute receiver, fields |> List.map (fun field -> { field with Value = substitute field.Value }))
+                | MemberAccess(receiver, segments, arguments) ->
+                    MemberAccess(substitute receiver, segments, arguments |> List.map substitute)
+                | SafeNavigation(receiver, navigation) ->
+                    SafeNavigation(substitute receiver, { navigation with Arguments = navigation.Arguments |> List.map substitute })
+                | TagTest(receiver, constructorName) ->
+                    TagTest(substitute receiver, constructorName)
+                | Do statements ->
+                    Do(statements |> List.map substituteDoStatement)
+                | MonadicSplice inner ->
+                    MonadicSplice(substitute inner)
+                | Apply(callee, arguments) ->
+                    Apply(substitute callee, arguments |> List.map substitute)
+                | ExplicitImplicitArgument inner ->
+                    ExplicitImplicitArgument(substitute inner)
+                | NamedApplicationBlock fields ->
+                    NamedApplicationBlock(fields |> List.map (fun field -> { field with Value = substitute field.Value }))
+                | InoutArgument inner ->
+                    InoutArgument(substitute inner)
+                | Unary(operatorName, inner) ->
+                    Unary(operatorName, substitute inner)
+                | Binary(left, operatorName, right) ->
+                    Binary(substitute left, operatorName, substitute right)
+                | Elvis(left, right) ->
+                    Elvis(substitute left, substitute right)
+                | PrefixedString(prefix, parts) ->
+                    PrefixedString(
+                        prefix,
+                        parts
+                        |> List.map (function
+                            | StringText text -> StringText text
+                            | StringInterpolation inner -> StringInterpolation(substitute inner))
+                    )
+                | Literal _
+                | KindQualifiedName _
+                | Name _ ->
+                    current
+
+            and substituteDoStatement statement =
+                match statement with
+                | DoLet(binding, expression) ->
+                    DoLet(substituteBinding binding, substitute expression)
+                | DoLetQuestion(binding, expression, failure) ->
+                    let substitutedFailure =
+                        failure
+                        |> Option.map (fun failure ->
+                            { failure with
+                                ResiduePattern = substituteBinding failure.ResiduePattern
+                                Body = failure.Body |> List.map substituteDoStatement })
+
+                    DoLetQuestion(substituteBinding binding, substitute expression, substitutedFailure)
+                | DoBind(binding, expression) ->
+                    DoBind(substituteBinding binding, substitute expression)
+                | DoVar(name, expression) ->
+                    DoVar(name, substitute expression)
+                | DoAssign(name, expression) ->
+                    DoAssign(name, substitute expression)
+                | DoUsing(binding, expression) ->
+                    DoUsing(substituteBinding binding, substitute expression)
+                | DoDefer expression ->
+                    DoDefer(substitute expression)
+                | DoIf(condition, whenTrue, whenFalse) ->
+                    DoIf(substitute condition, whenTrue |> List.map substituteDoStatement, whenFalse |> List.map substituteDoStatement)
+                | DoWhile(condition, body) ->
+                    DoWhile(substitute condition, body |> List.map substituteDoStatement)
+                | DoReturn expression ->
+                    DoReturn(substitute expression)
+                | DoExpression expression ->
+                    DoExpression(substitute expression)
+
+            substitute expression
+
+        let annotateLambdaFromSignature (declaration: BindingSignature) value =
+            match TypeSignatures.parseScheme declaration.TypeTokens, value with
+            | Some signatureScheme, Lambda(lambdaParameters, lambdaBody) ->
+                let parameterTypes, _ = TypeSignatures.schemeParts signatureScheme
+
+                if List.length parameterTypes = List.length lambdaParameters then
+                    let annotatedParameters =
+                        List.zip lambdaParameters parameterTypes
+                        |> List.map (fun (parameter, parameterType) ->
+                            if parameter.TypeTokens.IsSome then
+                                parameter
+                            else
+                                { parameter with
+                                    TypeTokens = Some(typeTextTokens (TypeSignatures.toText parameterType)) })
+
+                    Lambda(annotatedParameters, lambdaBody)
+                else
+                    value
+            | _ ->
+                value
+
+        let rec normalizeLocalDeclarations expression =
+            match expression with
+            | LocalTypeAlias(declaration, body) ->
+                match tryParseTypeAliasInfo environment.CurrentModuleName declaration with
+                | Some(_, aliasInfo) when List.isEmpty aliasInfo.Parameters ->
+                    body
+                    |> substituteZeroArityLocalTypeAliasInExpression declaration
+                    |> normalizeLocalDeclarations
+                | _ ->
+                    LocalTypeAlias(declaration, normalizeLocalDeclarations body)
+            | LocalSignature(declaration, LocalLet(binding, value, body))
+                when binding.Pattern = NamePattern declaration.Name ->
+                LocalLet(binding, annotateLambdaFromSignature declaration (normalizeLocalDeclarations value), normalizeLocalDeclarations body)
+            | LocalSignature(declaration, body) ->
+                LocalSignature(declaration, normalizeLocalDeclarations body)
+            | LocalLet(binding, value, body) ->
+                LocalLet(binding, normalizeLocalDeclarations value, normalizeLocalDeclarations body)
+            | LocalScopedEffect(name, body) ->
+                LocalScopedEffect(name, normalizeLocalDeclarations body)
+            | Lambda(parameters, body) ->
+                Lambda(parameters, normalizeLocalDeclarations body)
+            | IfThenElse(condition, whenTrue, whenFalse) ->
+                IfThenElse(
+                    normalizeLocalDeclarations condition,
+                    normalizeLocalDeclarations whenTrue,
+                    normalizeLocalDeclarations whenFalse
+                )
+            | Match(scrutinee, cases) ->
+                Match(
+                    normalizeLocalDeclarations scrutinee,
+                    cases
+                    |> List.map (fun caseClause ->
+                        { caseClause with
+                            Guard = caseClause.Guard |> Option.map normalizeLocalDeclarations
+                            Body = normalizeLocalDeclarations caseClause.Body })
+                )
+            | RecordLiteral fields ->
+                RecordLiteral(fields |> List.map (fun field -> { field with Value = normalizeLocalDeclarations field.Value }))
+            | Seal(value, ascriptionTokens) ->
+                Seal(normalizeLocalDeclarations value, ascriptionTokens)
+            | RecordUpdate(receiver, fields) ->
+                RecordUpdate(receiver |> normalizeLocalDeclarations, fields |> List.map (fun field -> { field with Value = normalizeLocalDeclarations field.Value }))
+            | MemberAccess(receiver, segments, arguments) ->
+                MemberAccess(normalizeLocalDeclarations receiver, segments, arguments |> List.map normalizeLocalDeclarations)
+            | SafeNavigation(receiver, navigation) ->
+                SafeNavigation(
+                    normalizeLocalDeclarations receiver,
+                    { navigation with
+                        Arguments = navigation.Arguments |> List.map normalizeLocalDeclarations }
+                )
+            | TagTest(receiver, constructorName) ->
+                TagTest(normalizeLocalDeclarations receiver, constructorName)
+            | Do statements ->
+                Do(statements |> List.map normalizeLocalDoStatement)
+            | MonadicSplice inner ->
+                MonadicSplice(normalizeLocalDeclarations inner)
+            | Apply(callee, arguments) ->
+                Apply(normalizeLocalDeclarations callee, arguments |> List.map normalizeLocalDeclarations)
+            | ExplicitImplicitArgument inner ->
+                ExplicitImplicitArgument(normalizeLocalDeclarations inner)
+            | NamedApplicationBlock fields ->
+                NamedApplicationBlock(fields |> List.map (fun field -> { field with Value = normalizeLocalDeclarations field.Value }))
+            | InoutArgument inner ->
+                InoutArgument(normalizeLocalDeclarations inner)
+            | Unary(operatorName, inner) ->
+                Unary(operatorName, normalizeLocalDeclarations inner)
+            | Binary(left, operatorName, right) ->
+                Binary(normalizeLocalDeclarations left, operatorName, normalizeLocalDeclarations right)
+            | Elvis(left, right) ->
+                Elvis(normalizeLocalDeclarations left, normalizeLocalDeclarations right)
+            | PrefixedString(prefix, parts) ->
+                PrefixedString(
+                    prefix,
+                    parts
+                    |> List.map (function
+                        | StringText text -> StringText text
+                        | StringInterpolation inner -> StringInterpolation(normalizeLocalDeclarations inner))
+                )
+            | Literal _
+            | KindQualifiedName _
+            | Name _ ->
+                expression
+
+        and normalizeLocalDoStatement statement =
+            match statement with
+            | DoLet(binding, expression) ->
+                DoLet(binding, normalizeLocalDeclarations expression)
+            | DoLetQuestion(binding, expression, failure) ->
+                let normalizedFailure =
+                    failure
+                    |> Option.map (fun failure ->
+                        { failure with
+                            Body = failure.Body |> List.map normalizeLocalDoStatement })
+
+                DoLetQuestion(binding, normalizeLocalDeclarations expression, normalizedFailure)
+            | DoBind(binding, expression) ->
+                DoBind(binding, normalizeLocalDeclarations expression)
+            | DoVar(name, expression) ->
+                DoVar(name, normalizeLocalDeclarations expression)
+            | DoAssign(name, expression) ->
+                DoAssign(name, normalizeLocalDeclarations expression)
+            | DoUsing(binding, expression) ->
+                DoUsing(binding, normalizeLocalDeclarations expression)
+            | DoDefer expression ->
+                DoDefer(normalizeLocalDeclarations expression)
+            | DoIf(condition, whenTrue, whenFalse) ->
+                DoIf(
+                    normalizeLocalDeclarations condition,
+                    whenTrue |> List.map normalizeLocalDoStatement,
+                    whenFalse |> List.map normalizeLocalDoStatement
+                )
+            | DoWhile(condition, body) ->
+                DoWhile(normalizeLocalDeclarations condition, body |> List.map normalizeLocalDoStatement)
+            | DoReturn expression ->
+                DoReturn(normalizeLocalDeclarations expression)
+            | DoExpression expression ->
+                DoExpression(normalizeLocalDeclarations expression)
+
+        let body = normalizeLocalDeclarations body
+
         let rec inferExpressionType localTypes expression =
             match expression with
             | Literal literal ->
@@ -6634,14 +7517,17 @@ module SurfaceElaboration =
                     ordinaryResolution
             | Name [] ->
                 None
+            | LocalSignature(_, body) ->
+                inferExpressionType localTypes body
+            | LocalTypeAlias(_, body) ->
+                inferExpressionType localTypes body
             | LocalLet(binding, value, body) ->
                 let bindingNames = collectPatternNames binding.Pattern
 
                 let nextLocals =
                     match inferExpressionType localTypes value with
                     | Some valueType ->
-                        bindingNames
-                        |> List.fold (fun state name -> Map.add name valueType state) localTypes
+                        extendBindingLocalTypes environment freshCounter localTypes binding (Some valueType)
                     | None -> localTypes
 
                 let bodyForInference =
@@ -7088,6 +7974,10 @@ module SurfaceElaboration =
                     current
                 | LocalLet(binding, value, body) ->
                     LocalLet(binding, loop value, loop body)
+                | LocalSignature(declaration, body) ->
+                    LocalSignature(declaration, loop body)
+                | LocalTypeAlias(declaration, body) ->
+                    LocalTypeAlias(declaration, loop body)
                 | LocalScopedEffect(name, body) ->
                     LocalScopedEffect(name, loop body)
                 | Lambda(parameters, body) ->
@@ -7713,7 +8603,37 @@ module SurfaceElaboration =
             | LiteralPattern literal ->
                 KCoreLiteralPattern literal
             | ConstructorPattern(name, arguments) ->
-                KCoreConstructorPattern(name, arguments |> List.map (lowerPattern localTypes None))
+                let argumentTypes =
+                    match expectedType, tryResolveVisibleConstructorInfo environment name with
+                    | Some expectedResultType, Some constructorInfo ->
+                        let instantiated = TypeSignatures.instantiate "t" freshCounter.Value constructorInfo.Scheme
+                        freshCounter.Value <- freshCounter.Value + instantiated.Forall.Length
+
+                        let parameterTypes, constructorResultType = TypeSignatures.schemeParts instantiated
+
+                        if List.length parameterTypes = List.length arguments then
+                            match
+                                TypeSignatures.tryUnifyMany
+                                    [
+                                        qualifyVisibleTypeNames environment constructorResultType,
+                                        qualifyVisibleTypeNames environment expectedResultType
+                                    ]
+                            with
+                            | Some substitution ->
+                                parameterTypes
+                                |> List.map (TypeSignatures.applySubstitution substitution >> Some)
+                            | None ->
+                                List.replicate arguments.Length None
+                        else
+                            List.replicate arguments.Length None
+                    | _ ->
+                        List.replicate arguments.Length None
+
+                KCoreConstructorPattern(
+                    name,
+                    List.zip arguments argumentTypes
+                    |> List.map (fun (argumentPattern, argumentType) -> lowerPattern localTypes argumentType argumentPattern)
+                )
             | OrPattern alternatives ->
                 KCoreOrPattern(alternatives |> List.map (lowerPattern localTypes expectedType))
             | AnonymousRecordPattern fields ->
@@ -7816,6 +8736,132 @@ module SurfaceElaboration =
                     | ExplicitArgument argument -> lowerExpression localTypes argument
                     | ImplicitArgument implicitArgument -> implicitArgument)
 
+            let rec substituteKCoreNames substitutions current =
+                match current with
+                | KCoreName [ name ] ->
+                    substitutions |> Map.tryFind name |> Option.defaultValue current
+                | KCoreName _ ->
+                    current
+                | KCoreLiteral _
+                | KCoreDictionaryValue _
+                | KCoreStaticObject _ ->
+                    current
+                | KCoreLambda(parameters, body) ->
+                    let nextSubstitutions =
+                        parameters
+                        |> List.fold (fun state parameter -> Map.remove parameter.Name state) substitutions
+
+                    KCoreLambda(parameters, substituteKCoreNames nextSubstitutions body)
+                | KCoreIfThenElse(condition, whenTrue, whenFalse) ->
+                    KCoreIfThenElse(
+                        substituteKCoreNames substitutions condition,
+                        substituteKCoreNames substitutions whenTrue,
+                        substituteKCoreNames substitutions whenFalse
+                    )
+                | KCoreMatch(scrutinee, cases) ->
+                    KCoreMatch(
+                        substituteKCoreNames substitutions scrutinee,
+                        cases
+                        |> List.map (fun caseClause ->
+                            { Pattern = caseClause.Pattern
+                              Guard = caseClause.Guard |> Option.map (substituteKCoreNames substitutions)
+                              Body = substituteKCoreNames substitutions caseClause.Body })
+                    )
+                | KCoreExecute inner ->
+                    KCoreExecute(substituteKCoreNames substitutions inner)
+                | KCoreLet(bindingName, value, body) ->
+                    let nextSubstitutions = Map.remove bindingName substitutions
+                    KCoreLet(
+                        bindingName,
+                        substituteKCoreNames substitutions value,
+                        substituteKCoreNames nextSubstitutions body
+                    )
+                | KCoreDoScope(scopeLabel, body) ->
+                    KCoreDoScope(scopeLabel, substituteKCoreNames substitutions body)
+                | KCoreScheduleExit(scopeLabel, action, body) ->
+                    let loweredAction =
+                        match action with
+                        | KCoreDeferred deferred -> KCoreDeferred(substituteKCoreNames substitutions deferred)
+                        | KCoreRelease(typeText, release, resource) ->
+                            KCoreRelease(
+                                typeText,
+                                substituteKCoreNames substitutions release,
+                                substituteKCoreNames substitutions resource
+                            )
+
+                    KCoreScheduleExit(scopeLabel, loweredAction, substituteKCoreNames substitutions body)
+                | KCoreSequence(first, second) ->
+                    KCoreSequence(substituteKCoreNames substitutions first, substituteKCoreNames substitutions second)
+                | KCoreWhile(condition, body) ->
+                    KCoreWhile(substituteKCoreNames substitutions condition, substituteKCoreNames substitutions body)
+                | KCoreApply(callee, arguments) ->
+                    KCoreApply(
+                        substituteKCoreNames substitutions callee,
+                        arguments |> List.map (substituteKCoreNames substitutions)
+                    )
+                | KCoreTraitCall(traitName, memberName, dictionary, arguments) ->
+                    KCoreTraitCall(
+                        traitName,
+                        memberName,
+                        substituteKCoreNames substitutions dictionary,
+                        arguments |> List.map (substituteKCoreNames substitutions)
+                    )
+                | KCoreUnary(operatorName, operand) ->
+                    KCoreUnary(operatorName, substituteKCoreNames substitutions operand)
+                | KCoreBinary(left, operatorName, right) ->
+                    KCoreBinary(
+                        substituteKCoreNames substitutions left,
+                        operatorName,
+                        substituteKCoreNames substitutions right
+                    )
+                | KCorePrefixedString(prefix, parts) ->
+                    KCorePrefixedString(
+                        prefix,
+                        parts
+                        |> List.map (function
+                            | KCoreStringText text -> KCoreStringText text
+                            | KCoreStringInterpolation inner -> KCoreStringInterpolation(substituteKCoreNames substitutions inner))
+                    )
+
+            let lowerPreparedBindingCallArguments
+                (bindingInfo: BindingSchemeInfo)
+                (preparedCall: PreparedBindingCall)
+                =
+                if List.isEmpty preparedCall.Parameters then
+                    lowerPreparedArguments preparedCall.Arguments
+                else
+                    let rec loop substitutions parameters =
+                        match parameters with
+                        | [] ->
+                            []
+                        | parameter :: rest ->
+                            let runtimeArgument, nextSubstitutions =
+                                match parameter.Layout, parameter.AssignedArgument with
+                                | _, Some(ExplicitArgument argument) ->
+                                    let loweredArgument = lowerExpression localTypes argument
+                                    let substitutions =
+                                        match parameter.Layout with
+                                        | Some layout -> Map.add layout.Name loweredArgument substitutions
+                                        | None -> substitutions
+
+                                    Some loweredArgument, substitutions
+                                | Some layout, Some(ImplicitArgument implicitArgument) ->
+                                    Some implicitArgument, Map.add layout.Name implicitArgument substitutions
+                                | Some layout, None when bindingInfo.DefaultArguments.ContainsKey(layout.Name) ->
+                                    let loweredDefault =
+                                        lowerExpression localTypes bindingInfo.DefaultArguments[layout.Name]
+                                        |> substituteKCoreNames substitutions
+
+                                    Some loweredDefault, Map.add layout.Name loweredDefault substitutions
+                                | _ ->
+                                    None, substitutions
+
+                            match runtimeArgument with
+                            | Some runtimeArgument -> runtimeArgument :: loop nextSubstitutions rest
+                            | None -> loop nextSubstitutions rest
+
+                    loop Map.empty preparedCall.Parameters
+
             match expression with
             | Literal literal ->
                 KCoreLiteral literal
@@ -7872,43 +8918,42 @@ module SurfaceElaboration =
                     |> Option.defaultValue (KCoreName(receiverName :: path))
             | Name segments ->
                 KCoreName segments
+            | LocalSignature(_, body) ->
+                lowerExpression localTypes body
+            | LocalTypeAlias(_, body) ->
+                lowerExpression localTypes body
             | LocalLet(binding, value, body) ->
                 let bindingNames = collectPatternNames binding.Pattern
-
-                let nextLocals =
-                    match inferExpressionType localTypes value with
-                    | Some valueType ->
-                        bindingNames
-                        |> List.fold (fun state name -> Map.add name valueType state) localTypes
-                    | None -> localTypes
 
                 let loweredValue = lowerExpression localTypes value
                 let bodyForLowering =
                     match bindingNames, tryResolveScopedStaticObject environment value with
                     | [ aliasName ], Some staticObject ->
                         rewriteStaticObjectAliasUse aliasName staticObject body
+                    | [ aliasName ], _ ->
+                        match value with
+                        | Name [ targetName ]
+                            when (environment.VisibleBindings
+                                  |> Map.tryFind targetName
+                                  |> Option.orElseWith (fun () -> environment.VisibleConstructors |> Map.tryFind targetName))
+                                 |> Option.bind (fun bindingInfo -> bindingInfo.ParameterLayouts)
+                                 |> Option.isSome ->
+                            rewriteDirectAliasUse aliasName targetName body
+                        | Lambda(parameters, _) ->
+                            rewriteNamedApplicationAliasUse aliasName parameters body
+                        | _ ->
+                            body
                     | _ ->
                         body
 
-                let loweredBody = lowerExpression nextLocals bodyForLowering
+                let valueType = inferExpressionType localTypes value
 
-                match bindingNames with
-                | [] ->
-                    KCoreLet("__pattern", loweredValue, loweredBody)
-                | [ bindingName ] ->
-                    KCoreLet(bindingName, loweredValue, loweredBody)
-                | bindingName :: rest ->
-                    let loweredBindings =
-                        List.foldBack
-                            (fun name current -> KCoreLet(name, KCoreName [ bindingName ], current))
-                            rest
-                            loweredBody
-
-                    KCoreLet(
-                        "__pattern",
-                        loweredValue,
-                        KCoreLet(bindingName, KCoreName [ "__pattern" ], loweredBindings)
-                    )
+                lowerPatternBinding
+                    localTypes
+                    valueType
+                    binding
+                    loweredValue
+                    (fun loweredLocals -> lowerExpression loweredLocals bodyForLowering)
             | LocalScopedEffect(name, body) ->
                 withScopedEffectName name (fun () -> lowerExpression localTypes body)
             | Lambda(lambdaParameters, lambdaBody) ->
@@ -8253,6 +9298,24 @@ module SurfaceElaboration =
                             KCoreApply(
                                 KCoreName [ calleeName ],
                                 dictionaryArguments @ lowerPreparedArguments preparedCall.Arguments
+                            )
+                        | None ->
+                            KCoreApply(KCoreName [ calleeName ], lowerArguments arguments)
+                    | [ calleeName ] when environment.VisibleConstructors.ContainsKey calleeName ->
+                        let constructorInfo = environment.VisibleConstructors[calleeName]
+                        match
+                            tryPrepareVisibleBindingCall
+                                environment
+                                freshCounter
+                                constructorInfo
+                                (inferExpressionType localTypes)
+                                (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                arguments
+                        with
+                        | Some preparedCall ->
+                            KCoreApply(
+                                KCoreName [ calleeName ],
+                                lowerPreparedBindingCallArguments constructorInfo preparedCall
                             )
                         | None ->
                             KCoreApply(KCoreName [ calleeName ], lowerArguments arguments)

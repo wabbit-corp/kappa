@@ -41,6 +41,12 @@ module internal ResourceCheckingSurface =
                 for name in expressionNames body do
                     if not (Set.contains name boundNames) then
                         yield name
+            | LocalSignature(declaration, body) ->
+                for name in expressionNames body do
+                    if not (String.Equals(name, declaration.Name, StringComparison.Ordinal)) then
+                        yield name
+            | LocalTypeAlias(_, body) ->
+                yield! expressionNames body
             | LocalScopedEffect(_, body) ->
                 yield! expressionNames body
             | Lambda(parameters, body) ->

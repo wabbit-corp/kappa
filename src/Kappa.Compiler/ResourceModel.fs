@@ -123,7 +123,8 @@ module ResourceModel =
           Origin: SourceLocation option }
 
     type LocalLambda =
-        { Parameters: Parameter list
+        { Identity: string option
+          Parameters: Parameter list
           Body: SurfaceExpression
           CapturedBindings: ResourceBinding list }
 
@@ -174,6 +175,7 @@ module ResourceModel =
           UsingScopes: OwnershipUsingScopeFact list
           Closures: OwnershipClosureFact list
           DeferredFacts: OwnershipDeferredFact list
+          ActiveLocalLambdaInvocations: string list
           NextScopeId: int
           NextBindingId: int
           NextBorrowLockId: int
@@ -202,6 +204,7 @@ module ResourceModel =
               UsingScopes = []
               Closures = []
               DeferredFacts = []
+              ActiveLocalLambdaInvocations = []
               NextScopeId = 0
               NextBindingId = 0
               NextBorrowLockId = 0

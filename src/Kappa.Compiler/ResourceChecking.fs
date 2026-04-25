@@ -458,6 +458,12 @@ module ResourceChecking =
                 for name in expressionNames body do
                     if not (Set.contains name boundNames) then
                         yield name
+            | LocalSignature(declaration, body) ->
+                for name in expressionNames body do
+                    if not (String.Equals(name, declaration.Name, StringComparison.Ordinal)) then
+                        yield name
+            | LocalTypeAlias(_, body) ->
+                yield! expressionNames body
             | LocalScopedEffect(_, body) ->
                 yield! expressionNames body
             | Lambda(parameters, body) ->
@@ -1210,6 +1216,10 @@ module ResourceChecking =
                 |> List.fold (fun current name -> Map.remove name current) aliases
 
             LocalLet(binding, rewrite value, rewriteProjectionDescriptorApplications bodyAliases body)
+        | LocalSignature(declaration, body) ->
+            LocalSignature(declaration, rewriteProjectionDescriptorApplications (Map.remove declaration.Name aliases) body)
+        | LocalTypeAlias(declaration, body) ->
+            LocalTypeAlias(declaration, rewrite body)
         | LocalScopedEffect(name, body) ->
             LocalScopedEffect(name, rewrite body)
         | Lambda(parameters, body) ->
@@ -2394,6 +2404,13 @@ module ResourceChecking =
                 valueCount
             else
                 valueCount + recurse body
+        | LocalSignature(declaration, body) ->
+            if String.Equals(declaration.Name, aliasName, StringComparison.Ordinal) then
+                0
+            else
+                recurse body
+        | LocalTypeAlias(_, body) ->
+            recurse body
         | LocalScopedEffect(_, body) ->
             recurse body
         | Lambda(parameters, body) ->
@@ -2975,6 +2992,10 @@ module ResourceChecking =
             not (Set.isEmpty (capturedRegions state expression))
         | LocalLet(_, _, body) ->
             expressionResultMayCarryBorrow state body
+        | LocalSignature(_, body) ->
+            expressionResultMayCarryBorrow state body
+        | LocalTypeAlias(_, body) ->
+            expressionResultMayCarryBorrow state body
         | LocalScopedEffect(_, body) ->
             expressionResultMayCarryBorrow state body
         | IfThenElse(_, whenTrue, whenFalse) ->
@@ -3020,6 +3041,10 @@ module ResourceChecking =
         | Name [ name ] ->
             true
         | LocalLet(_, _, body) ->
+            expressionMayCarryEscapingBorrow body
+        | LocalSignature(_, body) ->
+            expressionMayCarryEscapingBorrow body
+        | LocalTypeAlias(_, body) ->
             expressionMayCarryEscapingBorrow body
         | LocalScopedEffect(_, body) ->
             expressionMayCarryEscapingBorrow body
@@ -3074,6 +3099,10 @@ module ResourceChecking =
             | _ ->
                 state
         | LocalLet(_, _, body) ->
+            checkResultEscapeAtBoundary allowedRegions document body state
+        | LocalSignature(_, body) ->
+            checkResultEscapeAtBoundary allowedRegions document body state
+        | LocalTypeAlias(_, body) ->
             checkResultEscapeAtBoundary allowedRegions document body state
         | LocalScopedEffect(_, body) ->
             checkResultEscapeAtBoundary allowedRegions document body state
@@ -3393,87 +3422,109 @@ module ResourceChecking =
         =
         if List.length arguments <> List.length lambdaValue.Parameters then
             state
+        elif
+            lambdaValue.Identity
+            |> Option.exists (fun identity -> List.contains identity state.ActiveLocalLambdaInvocations)
+        then
+            state
         else
             let allowedRegions = liveRegionIds state
+            let state =
+                match lambdaValue.Identity with
+                | Some identity ->
+                    { state with
+                        ActiveLocalLambdaInvocations = identity :: state.ActiveLocalLambdaInvocations }
+                | None ->
+                    state
 
-            withScope "lambda_call" (fun scopedState ->
-                let scopedState =
-                    lambdaValue.CapturedBindings
-                    |> List.fold (fun current binding -> addBindingSnapshot binding current) scopedState
+            let checkedState =
+                withScope "lambda_call" (fun scopedState ->
+                    let scopedState =
+                        lambdaValue.CapturedBindings
+                        |> List.fold (fun current binding -> addBindingSnapshot binding current) scopedState
 
-                let scopedState =
-                    (scopedState, List.zip lambdaValue.Parameters arguments)
-                    ||> List.fold (fun current (parameter, argument) ->
-                        let quantity = parameterQuantity parameter
-                        let checkDrop = quantity |> Option.exists ResourceQuantity.requiresUse
+                    let scopedState =
+                        (scopedState, List.zip lambdaValue.Parameters arguments)
+                        ||> List.fold (fun current (parameter, argument) ->
+                            let quantity = parameterQuantity parameter
+                            let checkDrop = quantity |> Option.exists ResourceQuantity.requiresUse
 
-                        let borrowRegion, current =
-                            match quantity, argument with
-                            | Some(ResourceQuantity.Borrow _), Name [ name ] ->
-                                match tryFindBinding name current with
-                                | Some binding ->
-                                    binding.BorrowRegion, current
-                                | None ->
+                            let borrowRegion, current =
+                                match quantity, argument with
+                                | Some(ResourceQuantity.Borrow _), Name [ name ] ->
+                                    match tryFindBinding name current with
+                                    | Some binding ->
+                                        binding.BorrowRegion, current
+                                    | None ->
+                                        introduceBorrowRegionForQuantity
+                                            $"{currentScopeId current}.param"
+                                            quantity
+                                            (argumentLocation document argument)
+                                            current
+                                | _ ->
                                     introduceBorrowRegionForQuantity
                                         $"{currentScopeId current}.param"
                                         quantity
                                         (argumentLocation document argument)
                                         current
-                            | _ ->
-                                introduceBorrowRegionForQuantity
-                                    $"{currentScopeId current}.param"
-                                    quantity
-                                    (argumentLocation document argument)
-                                    current
 
-                        let capturedRegions, capturedBindingOrigins =
-                            match argument with
-                            | Name [ name ] ->
-                                match tryFindBinding name current with
-                                | Some binding ->
-                                    let regions =
-                                        seq {
-                                            match binding.BorrowRegion with
-                                            | Some region -> yield region.Id
-                                            | None -> ()
+                            let capturedRegions, capturedBindingOrigins =
+                                match argument with
+                                | Name [ name ] ->
+                                    match tryFindBinding name current with
+                                    | Some binding ->
+                                        let regions =
+                                            seq {
+                                                match binding.BorrowRegion with
+                                                | Some region -> yield region.Id
+                                                | None -> ()
 
-                                            yield! binding.CapturedRegions
-                                        }
-                                        |> Set.ofSeq
+                                                yield! binding.CapturedRegions
+                                            }
+                                            |> Set.ofSeq
 
-                                    let origins =
-                                        [
-                                            match binding.Origin with
-                                            | Some origin -> yield origin
-                                            | None -> ()
+                                        let origins =
+                                            [
+                                                match binding.Origin with
+                                                | Some origin -> yield origin
+                                                | None -> ()
 
-                                            yield! binding.CapturedBindingOrigins
-                                        ]
+                                                yield! binding.CapturedBindingOrigins
+                                            ]
 
-                                    regions, origins
-                                | None ->
+                                        regions, origins
+                                    | None ->
+                                        Set.empty, []
+                                | _ ->
                                     Set.empty, []
-                            | _ ->
-                                Set.empty, []
 
-                        addBinding
-                            ParameterBinding
-                            parameter.Name
-                            quantity
-                            borrowRegion
-                            capturedRegions
-                            capturedBindingOrigins
-                            checkDrop
-                            None
-                            None
-                            None
-                            current)
+                            addBinding
+                                ParameterBinding
+                                parameter.Name
+                                quantity
+                                borrowRegion
+                                capturedRegions
+                                capturedBindingOrigins
+                                checkDrop
+                                None
+                                None
+                                None
+                                current)
 
-                scopedState
-                |> noteValueDemandingNameUse document lambdaValue.Body
-                |> fun current -> checkExpression projectionSummaries document signatures current lambdaValue.Body
-                |> checkResultEscapeAtBoundary allowedRegions document lambdaValue.Body
-                |> checkScopeLinearDrops document) state
+                    scopedState
+                    |> noteValueDemandingNameUse document lambdaValue.Body
+                    |> fun current -> checkExpression projectionSummaries document signatures current lambdaValue.Body
+                    |> checkResultEscapeAtBoundary allowedRegions document lambdaValue.Body
+                    |> checkScopeLinearDrops document) state
+
+            match lambdaValue.Identity with
+            | Some identity ->
+                { checkedState with
+                    ActiveLocalLambdaInvocations =
+                        checkedState.ActiveLocalLambdaInvocations
+                        |> List.filter (fun activeIdentity -> not (String.Equals(activeIdentity, identity, StringComparison.Ordinal))) }
+            | None ->
+                checkedState
 
     and private checkImmediateLambdaDemand projectionSummaries document signatures state parameters body =
         withScope "lambda_arg" (fun scopedState ->
@@ -3490,6 +3541,10 @@ module ResourceChecking =
         | KindQualifiedName _
         | Name [ _ ] ->
             state
+        | LocalSignature(_, body) ->
+            checkExpression projectionSummaries document signatures state body
+        | LocalTypeAlias(_, body) ->
+            checkExpression projectionSummaries document signatures state body
         | LocalScopedEffect(_, body) ->
             checkExpression projectionSummaries document signatures state body
         | Name(root :: path) ->
@@ -3594,12 +3649,14 @@ module ResourceChecking =
                     match value, delayedBody, bindingNames with
                     | Lambda(parameters, lambdaBody), _, [ _ ] ->
                         Some
-                            { Parameters = parameters
+                            { Identity = bindingNames |> List.tryHead
+                              Parameters = parameters
                               Body = lambdaBody
                               CapturedBindings = capturedBindings }
                     | _, Some body, [ _ ] ->
                         Some
-                            { Parameters = []
+                            { Identity = bindingNames |> List.tryHead
+                              Parameters = []
                               Body = body
                               CapturedBindings = capturedBindings }
                     | _ ->
@@ -4109,7 +4166,8 @@ module ResourceChecking =
                     match callee with
                     | Lambda(parameters, body) ->
                         Some
-                            { Parameters = parameters
+                            { Identity = None
+                              Parameters = parameters
                               Body = body
                               CapturedBindings = capturedBindings state callee }
                     | _ ->
@@ -4610,12 +4668,14 @@ module ResourceChecking =
                     match expression, delayedBody, collectPatternNames binding.Pattern with
                     | Lambda(parameters, body), _, [ _ ] ->
                         Some
-                            { Parameters = parameters
+                            { Identity = collectPatternNames binding.Pattern |> List.tryHead
+                              Parameters = parameters
                               Body = body
                               CapturedBindings = capturedBindings }
                     | _, Some body, [ _ ] ->
                         Some
-                            { Parameters = []
+                            { Identity = collectPatternNames binding.Pattern |> List.tryHead
+                              Parameters = []
                               Body = body
                               CapturedBindings = capturedBindings }
                     | _ ->
@@ -4952,6 +5012,10 @@ module ResourceChecking =
                                 || (body |> List.exists (fun statement -> containsEscapingAbruptControl (Do [ statement ]))))
                     | LocalLet(_, value, body) ->
                         containsEscapingAbruptControl value || containsEscapingAbruptControl body
+                    | LocalSignature(_, body) ->
+                        containsEscapingAbruptControl body
+                    | LocalTypeAlias(_, body) ->
+                        containsEscapingAbruptControl body
                     | LocalScopedEffect(_, body) ->
                         containsEscapingAbruptControl body
                     | IfThenElse(condition, whenTrue, whenFalse) ->
