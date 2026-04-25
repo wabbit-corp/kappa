@@ -716,6 +716,72 @@ module internal CompilationFrontend =
                   [ "BridgeOrigin"; "BoundaryDirection"; "BoundaryPrecision"; "BridgeFailure"; "BridgeContract"; "BridgePackage" ]
                   [ "BridgeBindable"; "BridgeHandle" ]
                   [ "IntoKappa"; "OutOfKappa"; "LaterUse"; "Exact"; "Conservative"; "Lossy" ]
+                  []
+              "std.atomic",
+              inventory
+                  [ "newAtomicRef"
+                    "atomicLoad"
+                    "atomicStore"
+                    "atomicExchange"
+                    "atomicCompareExchange"
+                    "atomicFetchAdd"
+                    "atomicFetchSub"
+                    "atomicFetchAnd"
+                    "atomicFetchOr"
+                    "atomicFetchXor" ]
+                  [ "AtomicRef"; "LoadOrder"; "StoreOrder"; "RmwOrder"; "CasFailureOrder"; "CompareExchangeResult" ]
+                  [ "AtomicValue" ]
+                  [ "LoadRelaxed"
+                    "LoadAcquire"
+                    "LoadSeqCst"
+                    "StoreRelaxed"
+                    "StoreRelease"
+                    "StoreSeqCst"
+                    "RmwRelaxed"
+                    "RmwAcquire"
+                    "RmwRelease"
+                    "RmwAcqRel"
+                    "RmwSeqCst"
+                    "CasFailRelaxed"
+                    "CasFailAcquire"
+                    "CasFailSeqCst"
+                    "Exchanged"
+                    "NotExchanged" ]
+                  [ "LoadOrder", [ "LoadRelaxed"; "LoadAcquire"; "LoadSeqCst" ]
+                    "StoreOrder", [ "StoreRelaxed"; "StoreRelease"; "StoreSeqCst" ]
+                    "RmwOrder", [ "RmwRelaxed"; "RmwAcquire"; "RmwRelease"; "RmwAcqRel"; "RmwSeqCst" ]
+                    "CasFailureOrder", [ "CasFailRelaxed"; "CasFailAcquire"; "CasFailSeqCst" ]
+                    "CompareExchangeResult", [ "Exchanged"; "NotExchanged" ] ]
+              "std.supervisor",
+              inventory
+                  [ "childSpec"; "startSupervisor"; "withSupervisor"; "shutdownSupervisor"; "awaitSupervisor" ]
+                  [ "Supervisor"; "ChildSpec"; "SupervisorStrategy"; "RestartPolicy"; "RestartIntensity" ]
+                  []
+                  [ "OneForOne"; "OneForAll"; "RestForOne"; "Permanent"; "Transient"; "Temporary"; "RestartIntensity"; "ChildSpec" ]
+                  [ "SupervisorStrategy", [ "OneForOne"; "OneForAll"; "RestForOne" ]
+                    "RestartPolicy", [ "Permanent"; "Transient"; "Temporary" ]
+                    "RestartIntensity", [ "RestartIntensity" ]
+                    "ChildSpec", [ "ChildSpec" ] ]
+              "std.hash",
+              inventory
+                  [ "defaultHashSeed"
+                    "newHashState"
+                    "finishHashState"
+                    "hashUnit"
+                    "hashBool"
+                    "hashChar"
+                    "hashString"
+                    "hashBytes"
+                    "hashInt"
+                    "hashInteger"
+                    "hashFloatRaw"
+                    "hashDoubleRaw"
+                    "hashNatTag"
+                    "hashField"
+                    "hashWith" ]
+                  [ "HashSeed"; "HashState"; "HashCode" ]
+                  [ "Hashable" ]
+                  []
                   [] ]
             |> Map.ofList
 

@@ -1,0 +1,47 @@
+module main
+
+-- Spec: §2.7E
+import std.hash.(type HashSeed, type HashState, type HashCode)
+import std.hash.(trait Hashable)
+import std.hash.(term defaultHashSeed, term newHashState, term finishHashState)
+import std.hash.(term hashUnit, term hashBool, term hashChar, term hashString, term hashBytes)
+import std.hash.(term hashInt, term hashInteger, term hashFloatRaw, term hashDoubleRaw, term hashNatTag)
+import std.hash.(term hashField, term hashWith)
+
+keepHashSeed : HashSeed -> HashSeed
+let keepHashSeed seed = seed
+
+keepHashState : HashState -> HashState
+let keepHashState state = state
+
+keepHashableWitness : (@_ : Hashable a) -> a -> a
+let keepHashableWitness value = value
+
+seed : HashSeed
+let seed = defaultHashSeed
+
+emptyState : HashState
+let emptyState = newHashState defaultHashSeed
+
+finishState : (1 state : HashState) -> HashCode
+let finishState state = finishHashState state
+
+hashBoolValue : Bool -> (1 state : HashState) -> HashState
+let hashBoolValue value state = hashBool value state
+
+hashIntValue : Int -> (1 state : HashState) -> HashState
+let hashIntValue value state = hashInt value state
+
+hashIntegerValue : Integer -> (1 state : HashState) -> HashState
+let hashIntegerValue value state = hashInteger value state
+
+hashDoubleValue : Double -> (1 state : HashState) -> HashState
+let hashDoubleValue value state = hashDoubleRaw value state
+
+hashFieldValue : (@_ : Hashable a) -> (& value : a) -> (1 state : HashState) -> HashState
+let hashFieldValue value state = hashField value state
+
+hashWithSeed : (@_ : Hashable a) -> HashSeed -> (& value : a) -> HashCode
+let hashWithSeed seed value = hashWith seed value
+
+--! assertNoErrors
