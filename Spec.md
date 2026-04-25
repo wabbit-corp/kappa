@@ -9442,13 +9442,13 @@ Scope and evaluation:
 <!-- expressions.conditionals.flow_sensitive_branch_evidence_atomic_conditions -->
 #### 7.4.1 Flow-sensitive branch evidence for atomic conditions
 
-Boolean condition expressions introduce boolean assumptions into the implicit context.
+Boolean conditions in flow-sensitive condition positions introduce boolean assumptions into the implicit context.
 
 ```kappa
 if cond then e1 else e2
 ```
 
-For a boolean condition expression, the success continuation is checked under additional erased implicit evidence:
+For an `if` condition `cond`, the success continuation is checked under additional erased implicit evidence:
 
 ```kappa
 @p : cond = True
@@ -9460,8 +9460,7 @@ and the failure continuation is checked under additional erased implicit evidenc
 @p : cond = False
 ```
 
-When such a boolean condition expression is syntactically a constructor-tag test `e is C`, the same branch additionally
-carries
+When such a condition is syntactically a constructor-tag test `e is C`, the same branch additionally carries
 constructor-refinement evidence:
 
 * success continuation:
