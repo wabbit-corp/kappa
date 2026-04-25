@@ -64,6 +64,14 @@ module internal KRuntimeLowering =
             eraseRuntimeTypeExpr left
         | TypeSignatures.TypeCapture(inner, _) ->
             eraseRuntimeTypeExpr inner
+        | TypeSignatures.TypeEffectRow(entries, tail) ->
+            TypeSignatures.TypeEffectRow(
+                entries
+                |> List.map (fun entry ->
+                    { Label = eraseRuntimeTypeExpr entry.Label
+                      Effect = eraseRuntimeTypeExpr entry.Effect }),
+                tail |> Option.map eraseRuntimeTypeExpr
+            )
         | TypeSignatures.TypeRecord fields ->
             fields
             |> List.choose (fun field ->
@@ -217,6 +225,12 @@ module internal KRuntimeLowering =
                 typeExprContainsCompileTimeOnly left || typeExprContainsCompileTimeOnly right
             | TypeSignatures.TypeCapture(inner, _) ->
                 typeExprContainsCompileTimeOnly inner
+            | TypeSignatures.TypeEffectRow(entries, tail) ->
+                entries
+                |> List.exists (fun entry ->
+                    typeExprContainsCompileTimeOnly entry.Label
+                    || typeExprContainsCompileTimeOnly entry.Effect)
+                || tail |> Option.exists typeExprContainsCompileTimeOnly
             | TypeSignatures.TypeRecord fields ->
                 fields |> List.exists (fun field -> typeExprContainsCompileTimeOnly field.Type)
             | TypeSignatures.TypeUnion members ->
@@ -253,6 +267,12 @@ module internal KRuntimeLowering =
                 || typeExprReferencesCompileTimeTrait compileTimeTraitNames right
             | TypeSignatures.TypeCapture(inner, _) ->
                 typeExprReferencesCompileTimeTrait compileTimeTraitNames inner
+            | TypeSignatures.TypeEffectRow(entries, tail) ->
+                entries
+                |> List.exists (fun entry ->
+                    typeExprReferencesCompileTimeTrait compileTimeTraitNames entry.Label
+                    || typeExprReferencesCompileTimeTrait compileTimeTraitNames entry.Effect)
+                || tail |> Option.exists (typeExprReferencesCompileTimeTrait compileTimeTraitNames)
             | TypeSignatures.TypeRecord fields ->
                 fields |> List.exists (fun field -> typeExprReferencesCompileTimeTrait compileTimeTraitNames field.Type)
             | TypeSignatures.TypeUnion members ->

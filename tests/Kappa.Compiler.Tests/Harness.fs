@@ -418,6 +418,14 @@ let private resolveFixtureTypeExpr
             TypeSignatures.TypeEquality(loop left, loop right)
         | TypeSignatures.TypeCapture(inner, captures) ->
             TypeSignatures.TypeCapture(loop inner, captures)
+        | TypeSignatures.TypeEffectRow(entries, tail) ->
+            TypeSignatures.TypeEffectRow(
+                entries
+                |> List.map (fun entry ->
+                    { Label = loop entry.Label
+                      Effect = loop entry.Effect }),
+                tail |> Option.map loop
+            )
         | TypeSignatures.TypeRecord fields ->
             TypeSignatures.TypeRecord(
                 fields
@@ -617,6 +625,8 @@ let private tokenKindText tokenKind =
     | RightParen -> "RightParen"
     | LeftBracket -> "LeftBracket"
     | RightBracket -> "RightBracket"
+    | LeftEffectRow -> "LeftEffectRow"
+    | RightEffectRow -> "RightEffectRow"
     | LeftBrace -> "LeftBrace"
     | RightBrace -> "RightBrace"
     | LeftSetBrace -> "LeftSetBrace"

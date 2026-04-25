@@ -197,6 +197,8 @@ module CheckpointVerification =
                 true
             | TypeSignatures.TypeCapture _ ->
                 true
+            | TypeSignatures.TypeEffectRow _ ->
+                true
             | TypeSignatures.TypeRecord fields ->
                 fields
                 |> List.exists (fun field -> field.Quantity <> QuantityOmega || loop field.Type)

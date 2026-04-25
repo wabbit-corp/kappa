@@ -31,8 +31,13 @@ module TypeSignatures =
         | TypeArrow of Quantity * TypeExpr * TypeExpr
         | TypeEquality of TypeExpr * TypeExpr
         | TypeCapture of TypeExpr * string list
+        | TypeEffectRow of EffectRowEntry list * TypeExpr option
         | TypeRecord of RecordField list
         | TypeUnion of TypeExpr list
+
+    and EffectRowEntry =
+        { Label: TypeExpr
+          Effect: TypeExpr }
 
     and RecordField =
         { Name: string
@@ -298,11 +303,13 @@ module TypeSignatures =
                     match tokens[index].Kind with
                     | LeftParen
                     | LeftBracket
+                    | LeftEffectRow
                     | LeftBrace
                     | LeftSetBrace ->
                         loop (depth + 1) (index + 1)
                     | RightParen
                     | RightBracket
+                    | RightEffectRow
                     | RightBrace
                     | RightSetBrace ->
                         loop (max 0 (depth - 1)) (index + 1)
@@ -368,12 +375,14 @@ module TypeSignatures =
                 match token.Kind with
                 | LeftParen
                 | LeftBracket
+                | LeftEffectRow
                 | LeftBrace
                 | LeftSetBrace ->
                     depth <- depth + 1
                     current.Add(token)
                 | RightParen
                 | RightBracket
+                | RightEffectRow
                 | RightBrace
                 | RightSetBrace ->
                     depth <- max 0 (depth - 1)
@@ -482,12 +491,14 @@ module TypeSignatures =
                 match token.Kind with
                 | LeftParen
                 | LeftBracket
+                | LeftEffectRow
                 | LeftBrace
                 | LeftSetBrace ->
                     depth <- depth + 1
                     current.Add(token)
                 | RightParen
                 | RightBracket
+                | RightEffectRow
                 | RightBrace
                 | RightSetBrace ->
                     depth <- max 0 (depth - 1)
@@ -534,6 +545,84 @@ module TypeSignatures =
                 | _ ->
                     None
             | _ ->
+                None
+
+        member private _.FindTopLevelEffectRowBar(tokens: Token list) =
+            let rec loop depth index =
+                if index >= tokens.Length then
+                    None
+                else
+                    match tokens[index].Kind with
+                    | LeftParen
+                    | LeftBracket
+                    | LeftEffectRow
+                    | LeftBrace
+                    | LeftSetBrace ->
+                        loop (depth + 1) (index + 1)
+                    | RightParen
+                    | RightBracket
+                    | RightEffectRow
+                    | RightBrace
+                    | RightSetBrace ->
+                        loop (max 0 (depth - 1)) (index + 1)
+                    | Operator when depth = 0 && String.Equals(tokens[index].Text, "|", StringComparison.Ordinal) ->
+                        Some index
+                    | _ ->
+                        loop depth (index + 1)
+
+            loop 0 0
+
+        member private this.TryParseEffectRowEntry(tokens: Token list) =
+            match this.FindTopLevelColon(tokens) with
+            | Some colonIndex when colonIndex > 0 && colonIndex + 1 < tokens.Length ->
+                let labelTokens = tokens |> List.take colonIndex
+                let effectTokens = tokens |> List.skip (colonIndex + 1)
+                let labelParser = Parser(labelTokens)
+                let effectParser = Parser(effectTokens)
+
+                match labelParser.ParseCompleteType(), effectParser.ParseCompleteType() with
+                | Some label, Some effectType ->
+                    Some { Label = label; Effect = effectType }
+                | _ ->
+                    None
+            | _ ->
+                None
+
+        member private this.TryParseEffectRowType(innerTokens: Token list) =
+            let innerTokens =
+                innerTokens
+                |> List.filter (fun token -> token.Kind <> EndOfFile)
+
+            let entryTokens, tailTokens =
+                match this.FindTopLevelEffectRowBar(innerTokens) with
+                | Some barIndex ->
+                    innerTokens |> List.take barIndex,
+                    innerTokens |> List.skip (barIndex + 1) |> Some
+                | None ->
+                    innerTokens, None
+
+            let entryGroups, _ = this.SplitTopLevelCommaGroups(entryTokens)
+
+            let entries =
+                entryGroups
+                |> List.filter (List.isEmpty >> not)
+                |> List.map this.TryParseEffectRowEntry
+
+            let parsedTail =
+                match tailTokens with
+                | None -> Some None
+                | Some [] -> None
+                | Some tokens ->
+                    let tailParser = Parser(tokens)
+                    tailParser.ParseCompleteType() |> Option.map Some
+
+            if entries |> List.forall Option.isSome then
+                match parsedTail with
+                | Some tail ->
+                    Some(TypeEffectRow(entries |> List.choose id, tail))
+                | None ->
+                    None
+            else
                 None
 
         member private this.ParseQualifiedName() =
@@ -622,6 +711,21 @@ module TypeSignatures =
                             None
                 | None ->
                     None
+            | Some { Kind = LeftEffectRow } ->
+                match this.FindMatchingIndex(LeftEffectRow, RightEffectRow, position) with
+                | Some rightRowIndex ->
+                    let innerTokens =
+                        tokenArray[position + 1 .. rightRowIndex - 1]
+                        |> Array.toList
+
+                    match this.TryParseEffectRowType innerTokens with
+                    | Some rowType ->
+                        position <- rightRowIndex + 1
+                        Some rowType
+                    | None ->
+                        None
+                | None ->
+                    None
             | _ ->
                 None
 
@@ -670,6 +774,7 @@ module TypeSignatures =
         member private this.CanStartAtom() =
             match this.Current with
             | Some { Kind = LeftParen } -> true
+            | Some { Kind = LeftEffectRow } -> true
             | Some token when Token.isName token ->
                 not (String.Equals(SyntaxFacts.trimIdentifierQuotes token.Text, "captures", StringComparison.Ordinal))
             | _ -> false
@@ -1265,6 +1370,14 @@ module TypeSignatures =
             TypeEquality(applySubstitution substitution left, applySubstitution substitution right)
         | TypeCapture(inner, captures) ->
             TypeCapture(applySubstitution substitution inner, captures)
+        | TypeEffectRow(entries, tail) ->
+            TypeEffectRow(
+                entries
+                |> List.map (fun entry ->
+                    { Label = applySubstitution substitution entry.Label
+                      Effect = applySubstitution substitution entry.Effect }),
+                tail |> Option.map (applySubstitution substitution)
+            )
         | TypeRecord fields ->
             TypeRecord(
                 fields
@@ -1321,6 +1434,9 @@ module TypeSignatures =
                 loop left || loop right
             | TypeCapture(inner, _) ->
                 loop inner
+            | TypeEffectRow(entries, tail) ->
+                entries |> List.exists (fun entry -> loop entry.Label || loop entry.Effect)
+                || tail |> Option.exists loop
             | TypeRecord fields ->
                 fields |> List.exists (fun field -> loop field.Type)
             | TypeUnion members ->
@@ -1388,6 +1504,30 @@ module TypeSignatures =
                 | TypeCapture(leftInner, leftCaptures), TypeCapture(rightInner, rightCaptures)
                     when (leftCaptures |> List.distinct |> List.sort) = (rightCaptures |> List.distinct |> List.sort) ->
                     unify substitution ((leftInner, rightInner) :: rest)
+                | TypeEffectRow(leftEntries, leftTail), TypeEffectRow(rightEntries, rightTail) ->
+                    let normalizeEntries entries =
+                        entries
+                        |> List.sortBy (fun entry -> sprintf "%A:%A" entry.Label entry.Effect)
+
+                    let normalizedLeftEntries = normalizeEntries leftEntries
+                    let normalizedRightEntries = normalizeEntries rightEntries
+
+                    if List.length normalizedLeftEntries = List.length normalizedRightEntries then
+                        let pendingEntries =
+                            List.zip normalizedLeftEntries normalizedRightEntries
+                            |> List.collect (fun (leftEntry, rightEntry) ->
+                                [ leftEntry.Label, rightEntry.Label
+                                  leftEntry.Effect, rightEntry.Effect ])
+
+                        match leftTail, rightTail with
+                        | None, None ->
+                            unify substitution (pendingEntries @ rest)
+                        | Some leftTailExpr, Some rightTailExpr ->
+                            unify substitution ((leftTailExpr, rightTailExpr) :: pendingEntries @ rest)
+                        | _ ->
+                            None
+                    else
+                        None
                 | TypeRecord leftFields, TypeRecord rightFields ->
                     let normalizeFieldList (fields: RecordField list) =
                         fields
@@ -1542,6 +1682,20 @@ module TypeSignatures =
                 Set.union (loop bound left) (loop bound right)
             | TypeCapture(inner, _) ->
                 loop bound inner
+            | TypeEffectRow(entries, tail) ->
+                let entryVariables =
+                    entries
+                    |> List.fold
+                        (fun state entry ->
+                            state
+                            |> Set.union (loop bound entry.Label)
+                            |> Set.union (loop bound entry.Effect))
+                        Set.empty
+
+                tail
+                |> Option.map (loop bound)
+                |> Option.defaultValue Set.empty
+                |> Set.union entryVariables
             | TypeRecord fields ->
                 fields
                 |> List.fold (fun state field -> Set.union state (loop bound field.Type)) Set.empty
@@ -1589,6 +1743,20 @@ module TypeSignatures =
                 Set.union (collectDependencies left) (collectDependencies right)
             | TypeCapture(inner, _) ->
                 collectDependencies inner
+            | TypeEffectRow(entries, tail) ->
+                let entryDependencies =
+                    entries
+                    |> List.fold
+                        (fun state entry ->
+                            state
+                            |> Set.union (collectDependencies entry.Label)
+                            |> Set.union (collectDependencies entry.Effect))
+                        Set.empty
+
+                tail
+                |> Option.map collectDependencies
+                |> Option.defaultValue Set.empty
+                |> Set.union entryDependencies
             | TypeRecord nestedFields ->
                 nestedFields
                 |> List.fold (fun state (field: RecordField) -> Set.union state (collectDependencies field.Type)) Set.empty
@@ -1653,6 +1821,9 @@ module TypeSignatures =
                 loop left || loop right
             | TypeCapture(inner, _) ->
                 loop inner
+            | TypeEffectRow(entries, tail) ->
+                entries |> List.exists (fun entry -> loop entry.Label || loop entry.Effect)
+                || tail |> Option.exists loop
             | TypeRecord fields ->
                 let _, dependencyMap = recordFieldDependencyMap fields
                 hasDependencyCycle dependencyMap || (fields |> List.exists (fun field -> loop field.Type))
@@ -1852,6 +2023,15 @@ module TypeSignatures =
                 TypeEquality(normalize left, normalize right)
             | TypeCapture(inner, captures) ->
                 TypeCapture(normalize inner, canonicalCaptureSet captures)
+            | TypeEffectRow(entries, tail) ->
+                TypeEffectRow(
+                    entries
+                    |> List.map (fun entry ->
+                        { Label = normalize entry.Label
+                          Effect = normalize entry.Effect })
+                    |> List.sortBy (fun entry -> sprintf "%A:%A" entry.Label entry.Effect),
+                    tail |> Option.map normalize
+                )
             | TypeRecord fields ->
                 let normalized = canonicalizeRecord fields
 
@@ -1947,6 +2127,7 @@ module TypeSignatures =
             | TypeProject(target, fieldName) ->
                 $"{renderAtom target}.{fieldName}"
             | TypeCapture _
+            | TypeEffectRow _
             | TypeRecord _
             | TypeUnion _
             | TypeArrow _
@@ -1965,6 +2146,21 @@ module TypeSignatures =
         | TypeCapture(inner, captures) ->
             let capturesText = String.concat ", " captures
             $"{renderAtom inner} captures ({capturesText})"
+        | TypeEffectRow(entries, tail) ->
+            let entryText =
+                entries
+                |> List.map (fun entry -> $"{toText entry.Label} : {toText entry.Effect}")
+                |> String.concat ", "
+
+            match tail with
+            | None when String.IsNullOrEmpty(entryText) ->
+                "<[ ]>"
+            | None ->
+                $"<[{entryText}]>"
+            | Some tailExpr when String.IsNullOrEmpty(entryText) ->
+                $"<[{toText tailExpr}]>"
+            | Some tailExpr ->
+                $"<[{entryText} | {toText tailExpr}]>"
         | TypeRecord fields ->
             let fieldText =
                 fields

@@ -2641,6 +2641,14 @@ module SurfaceElaboration =
                 TypeEquality(loop visited left, loop visited right)
             | TypeCapture(inner, captures) ->
                 TypeCapture(loop visited inner, captures)
+            | TypeEffectRow(entries, tail) ->
+                TypeEffectRow(
+                    entries
+                    |> List.map (fun entry ->
+                        { Label = loop visited entry.Label
+                          Effect = loop visited entry.Effect }),
+                    tail |> Option.map (loop visited)
+                )
             | TypeRecord fields ->
                 TypeRecord(
                     fields
@@ -2711,6 +2719,14 @@ module SurfaceElaboration =
             eraseSyntheticRecordTypeExpr left
         | TypeCapture(inner, _) ->
             eraseSyntheticRecordTypeExpr inner
+        | TypeEffectRow(entries, tail) ->
+            TypeEffectRow(
+                entries
+                |> List.map (fun entry ->
+                    { Label = eraseSyntheticRecordTypeExpr entry.Label
+                      Effect = eraseSyntheticRecordTypeExpr entry.Effect }),
+                tail |> Option.map eraseSyntheticRecordTypeExpr
+            )
         | TypeRecord fields ->
             fields
             |> List.choose (fun field ->
@@ -2882,6 +2898,14 @@ module SurfaceElaboration =
                 TypeEquality(loop left, loop right)
             | TypeCapture(inner, captures) ->
                 TypeCapture(loop inner, captures)
+            | TypeEffectRow(entries, tail) ->
+                TypeEffectRow(
+                    entries
+                    |> List.map (fun entry ->
+                        { Label = loop entry.Label
+                          Effect = loop entry.Effect }),
+                    tail |> Option.map loop
+                )
             | TypeRecord fields ->
                 TypeRecord(
                     fields
@@ -5067,6 +5091,12 @@ module SurfaceElaboration =
                 || typeContainsLocalTermVariable locals right
             | TypeCapture(inner, _) ->
                 typeContainsLocalTermVariable locals inner
+            | TypeEffectRow(entries, tail) ->
+                entries
+                |> List.exists (fun entry ->
+                    typeContainsLocalTermVariable locals entry.Label
+                    || typeContainsLocalTermVariable locals entry.Effect)
+                || tail |> Option.exists (typeContainsLocalTermVariable locals)
             | TypeRecord fields ->
                 fields |> List.exists (fun field -> typeContainsLocalTermVariable locals field.Type)
             | TypeUnion members ->
@@ -5102,6 +5132,12 @@ module SurfaceElaboration =
                 typeContainsSuspension left || typeContainsSuspension right
             | TypeCapture(inner, _) ->
                 typeContainsSuspension inner
+            | TypeEffectRow(entries, tail) ->
+                entries
+                |> List.exists (fun entry ->
+                    typeContainsSuspension entry.Label
+                    || typeContainsSuspension entry.Effect)
+                || tail |> Option.exists typeContainsSuspension
             | TypeRecord fields ->
                 fields |> List.exists (fun field -> typeContainsSuspension field.Type)
             | TypeUnion members ->
@@ -5139,6 +5175,12 @@ module SurfaceElaboration =
                 typeContainsUnion left || typeContainsUnion right
             | TypeCapture(inner, _) ->
                 typeContainsUnion inner
+            | TypeEffectRow(entries, tail) ->
+                entries
+                |> List.exists (fun entry ->
+                    typeContainsUnion entry.Label
+                    || typeContainsUnion entry.Effect)
+                || tail |> Option.exists typeContainsUnion
             | TypeRecord fields ->
                 fields |> List.exists (fun field -> typeContainsUnion field.Type)
             | TypeVariable _ ->
@@ -7558,6 +7600,14 @@ module SurfaceElaboration =
                             yield! referencedTypeNames right
                         | TypeCapture(inner, _) ->
                             yield! referencedTypeNames inner
+                        | TypeEffectRow(entries, tail) ->
+                            for entry in entries do
+                                yield! referencedTypeNames entry.Label
+                                yield! referencedTypeNames entry.Effect
+
+                            match tail with
+                            | Some tailType -> yield! referencedTypeNames tailType
+                            | None -> ()
                         | TypeRecord fields ->
                             for field in fields do
                                 yield! referencedTypeNames field.Type

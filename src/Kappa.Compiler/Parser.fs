@@ -254,6 +254,8 @@ type private TokenParser
                 | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
                 | LeftBracket -> bracketDepth <- bracketDepth + 1
                 | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
+                | LeftEffectRow -> bracketDepth <- bracketDepth + 1
+                | RightEffectRow -> bracketDepth <- max 0 (bracketDepth - 1)
                 | LeftSetBrace -> setBraceDepth <- setBraceDepth + 1
                 | RightSetBrace -> setBraceDepth <- max 0 (setBraceDepth - 1)
                 | Backslash when parenDepth = 0 && braceDepth = 0 && bracketDepth = 0 && setBraceDepth = 0 ->
@@ -320,6 +322,8 @@ type private TokenParser
             | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
             | LeftBracket -> bracketDepth <- bracketDepth + 1
             | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
+            | LeftEffectRow -> bracketDepth <- bracketDepth + 1
+            | RightEffectRow -> bracketDepth <- max 0 (bracketDepth - 1)
             | LeftSetBrace -> setBraceDepth <- setBraceDepth + 1
             | RightSetBrace -> setBraceDepth <- max 0 (setBraceDepth - 1)
             | Comma when parenDepth = 0 && braceDepth = 0 && bracketDepth = 0 && setBraceDepth = 0 ->
@@ -351,6 +355,8 @@ type private TokenParser
             | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
             | LeftBracket -> bracketDepth <- bracketDepth + 1
             | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
+            | LeftEffectRow -> bracketDepth <- bracketDepth + 1
+            | RightEffectRow -> bracketDepth <- max 0 (bracketDepth - 1)
             | LeftSetBrace -> setBraceDepth <- setBraceDepth + 1
             | RightSetBrace -> setBraceDepth <- max 0 (setBraceDepth - 1)
             | Equals
@@ -477,6 +483,8 @@ type private TokenParser
                     | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
                     | LeftBracket -> bracketDepth <- bracketDepth + 1
                     | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
+                    | LeftEffectRow -> bracketDepth <- bracketDepth + 1
+                    | RightEffectRow -> bracketDepth <- max 0 (bracketDepth - 1)
                     | Arrow when parenDepth = 0 && braceDepth = 0 && bracketDepth = 0 ->
                         arity <- arity + 1
                     | _ ->
@@ -1087,6 +1095,8 @@ type private TokenParser
                         | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
                         | LeftBracket -> bracketDepth <- bracketDepth + 1
                         | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
+                        | LeftEffectRow -> bracketDepth <- bracketDepth + 1
+                        | RightEffectRow -> bracketDepth <- max 0 (bracketDepth - 1)
                         | LeftSetBrace -> setBraceDepth <- setBraceDepth + 1
                         | RightSetBrace -> setBraceDepth <- max 0 (setBraceDepth - 1)
                         | _ -> ()

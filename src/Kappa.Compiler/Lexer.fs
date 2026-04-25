@@ -523,6 +523,12 @@ module Lexer =
                     | ')' ->
                         emit RightParen ")" currentIndex
                         currentIndex <- currentIndex + 1
+                    | '<' when currentIndex + 1 < lineText.Length && lineText[currentIndex + 1] = '[' ->
+                        emit LeftEffectRow "<[" currentIndex
+                        currentIndex <- currentIndex + 2
+                    | ']' when currentIndex + 1 < lineText.Length && lineText[currentIndex + 1] = '>' ->
+                        emit RightEffectRow "]>" currentIndex
+                        currentIndex <- currentIndex + 2
                     | '[' ->
                         emit LeftBracket "[" currentIndex
                         currentIndex <- currentIndex + 1
@@ -649,6 +655,14 @@ module Lexer =
                     emit RightParen ")" index
                     delimiterDepth <- max 0 (delimiterDepth - 1)
                     index <- index + 1
+                | '<' when index + 1 < lineText.Length && lineText[index + 1] = '[' ->
+                    emit LeftEffectRow "<[" index
+                    delimiterDepth <- delimiterDepth + 1
+                    index <- index + 2
+                | ']' when index + 1 < lineText.Length && lineText[index + 1] = '>' ->
+                    emit RightEffectRow "]>" index
+                    delimiterDepth <- max 0 (delimiterDepth - 1)
+                    index <- index + 2
                 | '[' ->
                     emit LeftBracket "[" index
                     delimiterDepth <- delimiterDepth + 1

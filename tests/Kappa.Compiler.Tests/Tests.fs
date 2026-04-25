@@ -1290,6 +1290,50 @@ let ``type signatures parse intrinsic compile-time classifiers and primitive uni
     Assert.Equal(TypeSignatures.TypeUniverse(Some(TypeSignatures.TypeVariable "u")), parseTypeText "Type u")
 
 [<Fact>]
+let ``lexer recognizes reserved effect row delimiters`` () =
+    let source = createSource "__effect_row_tokens__.kp" "<[label : Console | r]>"
+    let lexed = Lexer.tokenize source
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Equal<string list>([ "<["; "label"; ":"; "Console"; "|"; "r"; "]>" ], lexed.Tokens |> List.take 7 |> List.map (fun token -> token.Text))
+    Assert.Equal<TokenKind list>(
+        [ LeftEffectRow; Identifier; Colon; Identifier; Operator; Identifier; RightEffectRow ],
+        lexed.Tokens |> List.take 7 |> List.map (fun token -> token.Kind)
+    )
+    Assert.Equal(EndOfFile, lexed.Tokens |> List.last |> fun token -> token.Kind)
+
+[<Fact>]
+let ``type signatures parse effect row surface syntax and normalize entry order`` () =
+    let emptyRow = parseTypeText "<[ ]>"
+    let closedRow = parseTypeText "<[log : Console, state : State]>"
+    let openRow = parseTypeText "<[log : Console | r]>"
+
+    Assert.Equal(TypeSignatures.TypeEffectRow([], None), emptyRow)
+    Assert.Equal(
+        TypeSignatures.TypeEffectRow(
+            [ { Label = TypeSignatures.TypeVariable "log"
+                Effect = TypeSignatures.TypeName([ "Console" ], []) }
+              { Label = TypeSignatures.TypeVariable "state"
+                Effect = TypeSignatures.TypeName([ "State" ], []) } ],
+            None
+        ),
+        closedRow
+    )
+    Assert.Equal(
+        TypeSignatures.TypeEffectRow(
+            [ { Label = TypeSignatures.TypeVariable "log"
+                Effect = TypeSignatures.TypeName([ "Console" ], []) } ],
+            Some(TypeSignatures.TypeVariable "r")
+        ),
+        openRow
+    )
+    Assert.True(
+        TypeSignatures.definitionallyEqual
+            (parseTypeText "<[b : B, a : A]>")
+            (parseTypeText "<[a : A, b : B]>")
+    )
+
+[<Fact>]
 let ``parser gives built in safe navigation and elvis their spec precedence`` () =
     let source = createSource "__safe_navigation_precedence__.kp" "a?.b ?: fallback"
     let lexed = Lexer.tokenize source

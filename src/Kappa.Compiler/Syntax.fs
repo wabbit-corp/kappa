@@ -179,6 +179,8 @@ type TokenKind =
     | RightParen
     | LeftBracket
     | RightBracket
+    | LeftEffectRow
+    | RightEffectRow
     | LeftBrace
     | RightBrace
     | LeftSetBrace

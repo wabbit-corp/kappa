@@ -1051,6 +1051,9 @@ module ResourceChecking =
             typeContainsCaptureAnnotation left || typeContainsCaptureAnnotation right
         | TypeSignatures.TypeName(_, arguments) ->
             arguments |> List.exists typeContainsCaptureAnnotation
+        | TypeSignatures.TypeEffectRow(entries, tail) ->
+            entries |> List.exists (fun entry -> typeContainsCaptureAnnotation entry.Label || typeContainsCaptureAnnotation entry.Effect)
+            || tail |> Option.exists typeContainsCaptureAnnotation
         | TypeSignatures.TypeRecord fields ->
             fields |> List.exists (fun field -> typeContainsCaptureAnnotation field.Type)
         | TypeSignatures.TypeUnion members ->
@@ -1112,6 +1115,14 @@ module ResourceChecking =
                 | TypeSignatures.TypeRecord fields ->
                     for field in fields do
                         yield! loop visited field.Type
+                | TypeSignatures.TypeEffectRow(entries, tail) ->
+                    for entry in entries do
+                        yield! loop visited entry.Label
+                        yield! loop visited entry.Effect
+
+                    match tail with
+                    | Some tailType -> yield! loop visited tailType
+                    | None -> ()
                 | TypeSignatures.TypeUnion members ->
                     for memberType in members do
                         yield! loop visited memberType
@@ -1173,6 +1184,12 @@ module ResourceChecking =
             && typeIsReliableForApplicationBoundary resultType
         | TypeSignatures.TypeCapture(inner, _) ->
             typeIsReliableForApplicationBoundary inner
+        | TypeSignatures.TypeEffectRow(entries, tail) ->
+            entries
+            |> List.forall (fun entry ->
+                typeIsReliableForApplicationBoundary entry.Label
+                && typeIsReliableForApplicationBoundary entry.Effect)
+            && tail |> Option.forall typeIsReliableForApplicationBoundary
         | TypeSignatures.TypeRecord fields ->
             fields |> List.forall (fun field -> typeIsReliableForApplicationBoundary field.Type)
         | TypeSignatures.TypeUnion members ->
@@ -1209,6 +1226,12 @@ module ResourceChecking =
             || hasConservativeBoundarySpecialCase resultType
         | TypeSignatures.TypeCapture(inner, _) ->
             hasConservativeBoundarySpecialCase inner
+        | TypeSignatures.TypeEffectRow(entries, tail) ->
+            entries
+            |> List.exists (fun entry ->
+                hasConservativeBoundarySpecialCase entry.Label
+                || hasConservativeBoundarySpecialCase entry.Effect)
+            || tail |> Option.exists hasConservativeBoundarySpecialCase
         | TypeSignatures.TypeRecord fields ->
             fields |> List.exists (fun field -> hasConservativeBoundarySpecialCase field.Type)
         | TypeSignatures.TypeUnion members ->

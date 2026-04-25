@@ -206,6 +206,8 @@ module internal CompilationFrontend =
         | RightParen -> "RightParen"
         | LeftBracket -> "LeftBracket"
         | RightBracket -> "RightBracket"
+        | LeftEffectRow -> "LeftEffectRow"
+        | RightEffectRow -> "RightEffectRow"
         | LeftBrace -> "LeftBrace"
         | RightBrace -> "RightBrace"
         | LeftSetBrace -> "LeftSetBrace"
