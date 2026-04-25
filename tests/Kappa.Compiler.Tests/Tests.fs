@@ -27,6 +27,11 @@ let private parseSchemeText (text: string) =
     | Some parsed -> parsed
     | None -> failwithf "Failed to parse scheme text: %s" text
 
+let private tokensText (tokens: Token list) =
+    tokens
+    |> List.map (fun token -> token.Text)
+    |> String.concat " "
+
 let private assertSurfaceIntegerLiteral (expectedValue: int) expectedText expression =
     match expression with
     | NumericLiteral(SurfaceIntegerLiteral(value, sourceText, None)) ->
@@ -771,7 +776,7 @@ let ``backend profile aliases normalize to the effective backend identity`` () =
     Assert.Equal("bootstrap-prelude-v2", workspace.BackendIntrinsicIdentity)
 
 [<Fact>]
-let ``bundled bootstrap prelude exposes the current compiler contract`` () =
+let ``bundled bootstrap prelude exposes the normative minimum surface and IO shape`` () =
     let workspace =
         compileInMemoryWorkspace
             "memory-bootstrap-prelude-root"
@@ -793,92 +798,209 @@ let ``bundled bootstrap prelude exposes the current compiler contract`` () =
         |> List.choose (function
             | ExpectDeclarationNode (ExpectTypeDeclaration declaration) -> Some declaration.Name
             | _ -> None)
-        |> List.sort
+        |> Set.ofList
+
+    let dataTypes =
+        preludeDocument.Syntax.Declarations
+        |> List.choose (function
+            | DataDeclarationNode declaration -> Some declaration.Name
+            | _ -> None)
+        |> Set.ofList
+
+    let aliasTypes =
+        preludeDocument.Syntax.Declarations
+        |> List.choose (function
+            | TypeAliasNode declaration -> Some declaration.Name
+            | _ -> None)
+        |> Set.ofList
+
+    let exportedTypes =
+        Set.unionMany [ expectTypes; dataTypes; aliasTypes ]
 
     let expectTraits =
         preludeDocument.Syntax.Declarations
         |> List.choose (function
             | ExpectDeclarationNode (ExpectTraitDeclaration declaration) -> Some declaration.Name
             | _ -> None)
-        |> List.sort
+        |> Set.ofList
+
+    let declaredTraits =
+        preludeDocument.Syntax.Declarations
+        |> List.choose (function
+            | TraitDeclarationNode declaration -> Some declaration.Name
+            | _ -> None)
+        |> Set.ofList
+
+    let exportedTraits =
+        Set.union expectTraits declaredTraits
 
     let expectTerms =
         preludeDocument.Syntax.Declarations
         |> List.choose (function
             | ExpectDeclarationNode (ExpectTermDeclaration declaration) -> Some declaration.Name
             | _ -> None)
-        |> List.sort
+        |> Set.ofList
 
-    let dataDeclarations =
+    let declaredTerms =
         preludeDocument.Syntax.Declarations
         |> List.choose (function
-            | DataDeclarationNode declaration ->
-                Some(declaration.Name, declaration.Constructors |> List.map (fun constructor -> constructor.Name))
+            | SignatureDeclaration declaration -> Some declaration.Name
+            | LetDeclaration declaration -> declaration.Name
+            | ProjectionDeclarationNode declaration -> Some declaration.Name
             | _ -> None)
-        |> List.sortBy fst
+        |> Set.ofList
 
-    Assert.Equal<string list>(
-        [ "Array"
-          "Bytes"
-          "Char"
-          "Float"
-          "IO"
-          "Int"
-          "Nat"
-          "Ref"
-          "Regex"
-          "String"
-          "Unit" ],
-        expectTypes
+    let exportedTerms =
+        Set.union expectTerms declaredTerms
+
+    let constructors =
+        preludeDocument.Syntax.Declarations
+        |> List.choose (function
+            | DataDeclarationNode declaration -> Some declaration.Constructors
+            | _ -> None)
+        |> List.collect id
+        |> List.map (fun constructor -> constructor.Name)
+        |> Set.ofList
+
+    let requiredTypes =
+        Set.ofList
+            [ "Unit"
+              "Void"
+              "Bool"
+              "Char"
+              "String"
+              "Int"
+              "Nat"
+              "Integer"
+              "Float"
+              "Double"
+              "Real"
+              "Bytes"
+              "Ordering"
+              "SyntaxFragment"
+              "Query"
+              "RawComprehension"
+              "ComprehensionPlan"
+              "Option"
+              "Result"
+              "List"
+              "Array"
+              "Set"
+              "Map"
+              "Res"
+              "Match"
+              "Dec"
+              "Dict"
+              "WellFounded"
+              "Acc"
+              "IO"
+              "UIO"
+              "Fiber"
+              "FiberId"
+              "Exit"
+              "Cause"
+              "STM"
+              "TVar"
+              "Thunk"
+              "Need"
+              "Regex" ]
+
+    let requiredTraits =
+        Set.ofList
+            [ "Equiv"
+              "Eq"
+              "Ord"
+              "Show"
+              "Shareable"
+              "Functor"
+              "Applicative"
+              "Monad"
+              "Alternative"
+              "Foldable"
+              "Traversable"
+              "Filterable"
+              "FilterMap"
+              "Monoid"
+              "Iterator"
+              "InterpolatedMacro"
+              "IntoQuery"
+              "FromComprehensionPlan"
+              "FromComprehensionRaw"
+              "WellFoundedRelation"
+              "FromInteger"
+              "FromFloat"
+              "FromString"
+              "MonadError"
+              "MonadFinally"
+              "MonadResource"
+              "MonadRef"
+              "Releasable" ]
+
+    let requiredTerms =
+        Set.ofList
+            [ "witness"
+              "summon"
+              "pure"
+              ">>="
+              ">>"
+              "not"
+              "and"
+              "or"
+              "negate"
+              "println"
+              "print"
+              "printInt"
+              "printString"
+              "primitiveIntToString"
+              "newRef"
+              "readRef"
+              "writeRef" ]
+
+    let requiredConstructors =
+        Set.ofList
+            [ "True"
+              "False"
+              "None"
+              "Some"
+              "Ok"
+              "Err"
+              "Nil"
+              "::"
+              "LT"
+              "EQ"
+              "GT"
+              ]
+
+    Assert.True(Set.isSubset requiredTypes exportedTypes, $"Missing prelude types: {Set.difference requiredTypes exportedTypes}")
+    Assert.True(Set.isSubset requiredTraits exportedTraits, $"Missing prelude traits: {Set.difference requiredTraits exportedTraits}")
+    Assert.True(Set.isSubset requiredTerms exportedTerms, $"Missing prelude terms: {Set.difference requiredTerms exportedTerms}")
+
+    Assert.True(
+        Set.isSubset requiredConstructors constructors,
+        $"Missing prelude constructors: {Set.difference requiredConstructors constructors}"
     )
 
-    Assert.Equal<string list>(
-        [ "Applicative"
-          "Eq"
-          "Foldable"
-          "FromFloat"
-          "FromInteger"
-          "FromString"
-          "Functor"
-          "Monad"
-          "MonadError"
-          "MonadRef"
-          "Ord"
-          "Show"
-          "Traversable" ],
-        expectTraits
-    )
+    let ioHeaderText =
+        preludeDocument.Syntax.Declarations
+        |> List.pick (function
+            | ExpectDeclarationNode (ExpectTypeDeclaration declaration)
+                when String.Equals(declaration.Name, "IO", StringComparison.Ordinal) ->
+                Some(tokensText declaration.HeaderTokens)
+            | _ -> None)
 
-    Assert.Equal<string list>(
-        [ ">>"
-          ">>="
-          "False"
-          "True"
-          "and"
-          "negate"
-          "newRef"
-          "not"
-          "or"
-          "primitiveIntToString"
-          "print"
-          "printInt"
-          "printString"
-          "println"
-          "pure"
-          "readRef"
-          "writeRef" ],
-        expectTerms
-    )
+    let uioAliasHeaderText, uioAliasBodyText =
+        preludeDocument.Syntax.Declarations
+        |> List.pick (function
+            | TypeAliasNode declaration when String.Equals(declaration.Name, "UIO", StringComparison.Ordinal) ->
+                Some(
+                    tokensText declaration.HeaderTokens,
+                    declaration.BodyTokens |> Option.map tokensText |> Option.defaultValue ""
+                )
+            | _ -> None)
 
-    Assert.Equal<(string * string list) list>(
-        [
-            "Bool", [ "True"; "False" ]
-            "List", [ "Nil"; "::" ]
-            "Option", [ "None"; "Some" ]
-            "Result", [ "Ok"; "Err" ]
-        ],
-        dataDeclarations
-    )
+    Assert.Equal("( e : Type ) ( a : Type )", ioHeaderText)
+    Assert.Equal("( a : Type )", uioAliasHeaderText)
+    Assert.Equal("IO Void a", uioAliasBodyText)
 
 [<Fact>]
 let ``backend intrinsic bootstrap contract is derived from bundled prelude expectations with explicit module local supplement`` () =

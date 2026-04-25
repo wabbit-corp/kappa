@@ -15,6 +15,8 @@ infix left 70 (/)
 infix left 40 (&&)
 infix left 30 (||)
 
+data Void : Type
+
 data Bool : Type =
     True
     False
@@ -31,31 +33,83 @@ data List a : Type =
     Nil
     (::) (head : a) (tail : List a)
 
-expect type Unit
+data Ordering : Type =
+    LT
+    EQ
+    GT
+
 expect type Char
 expect type String
 expect type Int
 expect type Nat
-expect type Float
+expect type Unit
+expect type Integer
+expect type Double
+expect type Real
+type Float = Double
 expect type Bytes
-expect type Array a
-expect type Ref a
-expect type IO a
+expect type Array (a : Type)
+expect type Ref (a : Type)
+expect type Set (a : Type)
+expect type Map (k : Type) (v : Type)
+expect type Res (a : Type) (r : Type)
+expect type Dec (p : Type)
+expect type Match (a : Type) (r : Type)
+expect type Dict (c : Constraint)
+expect type WellFounded (a : Type) (rel : a -> a -> Type)
+expect type Acc (a : Type) (rel : a -> a -> Type) (x : a)
+expect type Query (a : Type)
+expect type RawComprehension (a : Type)
+expect type ComprehensionPlan (a : Type)
+expect type SyntaxFragment
+expect type IO (e : Type) (a : Type)
+type UIO (a : Type) = IO Void a
+expect type Fiber (e : Type) (a : Type)
+expect type FiberId
+expect type InterruptTag
+expect type InterruptCause
+expect type DefectTag
+expect type DefectInfo
+expect type Exit (e : Type) (a : Type)
+expect type Cause (e : Type)
+expect type Scope
+expect type Monitor (e : Type) (a : Type)
+expect type FiberRef (a : Type)
+expect type Promise (e : Type) (a : Type)
+expect type STM (a : Type)
+expect type TVar (a : Type)
+expect type Thunk (a : Type)
+expect type Need (a : Type)
 expect type Regex
 
-expect trait Eq a
-expect trait Ord a
-expect trait Show a
-expect trait Functor f
-expect trait Applicative f
-expect trait Monad m
-expect trait MonadRef m
-expect trait Foldable f
-expect trait Traversable f
-expect trait FromInteger a
-expect trait FromFloat a
-expect trait FromString a
-expect trait MonadError m e
+expect trait Equiv (a : Type)
+expect trait Eq (a : Type)
+expect trait Ord (a : Type)
+expect trait Show (a : Type)
+expect trait Shareable (a : Type)
+expect trait Functor (f : Type -> Type)
+expect trait Applicative (f : Type -> Type)
+expect trait Monad (m : Type -> Type)
+expect trait Alternative (f : Type -> Type)
+expect trait Foldable (f : Type -> Type)
+expect trait Traversable (f : Type -> Type)
+expect trait Filterable (f : Type -> Type)
+expect trait FilterMap (f : Type -> Type)
+expect trait Monoid (a : Type)
+expect trait Iterator (it : Type)
+expect trait InterpolatedMacro (t : Type)
+expect trait IntoQuery (src : Type)
+expect trait FromComprehensionPlan (c : Type)
+expect trait FromComprehensionRaw (c : Type)
+expect trait WellFoundedRelation (a : Type)
+expect trait FromInteger (a : Type)
+expect trait FromFloat (a : Type)
+expect trait FromString (a : Type)
+expect trait MonadError (m : Type -> Type)
+expect trait MonadFinally (m : Type -> Type)
+expect trait MonadResource (m : Type -> Type)
+expect trait MonadRef (m : Type -> Type)
+expect trait Releasable (m : Type -> Type) (a : Type)
 
 witness : (t : Type) -> (@v : t) -> t
 let witness (t : Type) (@v : t) = v

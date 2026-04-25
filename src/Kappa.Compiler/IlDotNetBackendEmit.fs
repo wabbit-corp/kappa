@@ -44,12 +44,29 @@ module internal IlDotNetBackendEmit =
     let internal emitUnitValue (il: ILGenerator) =
         emitLiteral il LiteralValue.Unit
 
+    let private lookupDataTypeEmission (state: EmissionState) moduleName typeName =
+        match state.DataTypeBuilders |> Map.tryFind (moduleName, typeName) with
+        | Some emission ->
+            emission
+        | None ->
+            invalidOp $"IL backend is missing emitted type builder metadata for '{moduleName}.{typeName}'."
+
     let rec internal resolveClrType (state: EmissionState) (typeParameters: Map<string, Type>) ilType =
         match ilType with
         | IlPrimitive primitiveType ->
             primitiveRuntimeType primitiveType
         | IlTypeParameter name ->
-            typeParameters[name]
+            match typeParameters |> Map.tryFind name with
+            | Some resolved ->
+                resolved
+            | None ->
+                let available =
+                    typeParameters
+                    |> Map.keys
+                    |> String.concat ", "
+
+                invalidOp
+                    $"IL backend could not resolve type parameter '{name}'. Available type parameters: [{available}]."
         | IlNamed("std.prelude", "Unit", []) ->
             typeof<ValueTuple>
         | IlNamed("std.prelude", "Ref", [ elementType ]) ->
@@ -59,7 +76,7 @@ module internal IlDotNetBackendEmit =
         | IlNamed("std.prelude", typeName, _) when isDictionaryTypeName typeName ->
             typeof<Tuple<string, string, string>>
         | IlNamed(moduleName, typeName, arguments) ->
-            let emission = state.DataTypeBuilders[moduleName, typeName]
+            let emission = lookupDataTypeEmission state moduleName typeName
             let baseType =
                 emission.BaseTypeBuilder :> Type
 
@@ -72,7 +89,8 @@ module internal IlDotNetBackendEmit =
                 baseType.MakeGenericType(genericArguments)
 
     let internal resolveConstructorTypeAndMembers (state: EmissionState) (substitution: Map<string, IlType>) (constructorInfo: ConstructorInfo) =
-        let emission = state.DataTypeBuilders[constructorInfo.ModuleName, constructorInfo.TypeName].Constructors[constructorInfo.Name]
+        let dataTypeEmission = lookupDataTypeEmission state constructorInfo.ModuleName constructorInfo.TypeName
+        let emission = dataTypeEmission.Constructors[constructorInfo.Name]
 
         if Array.isEmpty emission.GenericParameters then
             let fields = emission.FieldBuilders |> Array.map (fun fieldBuilder -> fieldBuilder :> FieldInfo)
@@ -1591,7 +1609,7 @@ module internal IlDotNetBackendEmit =
                           AssemblyName = assemblyName
                           AssemblyFilePath = assemblyPath }
             with ex ->
-                Result.Error $"IL backend emission failed: {ex.Message}"
+                Result.Error $"IL backend emission failed: {ex}"
 
     let emitAssemblyArtifact (workspace: WorkspaceCompilation) (outputDirectory: string) =
         if workspace.HasErrors then
