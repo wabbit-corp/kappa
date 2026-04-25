@@ -4443,6 +4443,8 @@ module SurfaceElaboration =
 
     let private validateBuiltInExpressionsForBinding
         (environment: BindingLoweringEnvironment)
+        (knownSurfaceTermNames: Set<string>)
+        (allowUnresolvedCallDiagnostics: bool)
         (definition: LetDefinition)
         (scheme: TypeScheme option)
         =
@@ -5839,8 +5841,8 @@ module SurfaceElaboration =
 
                         List.ofSeq diagnostics
 
-        let rec validateExpression locals refinements expression =
-            let recurse = validateExpression locals refinements
+        let rec validateExpression locals refinements lexicalNames expression =
+            let recurse = validateExpression locals refinements lexicalNames
 
             match expression with
             | Literal _ ->
@@ -5874,7 +5876,6 @@ module SurfaceElaboration =
                             [ makeDiagnostic DiagnosticCode.RecordProjectionMissingField $"Record type has no field named '{fieldName}'." ]
                         | _ ->
                             []
-
                 let staticMemberDiagnostics =
                     match expression with
                     | Name segments ->
@@ -6002,13 +6003,18 @@ module SurfaceElaboration =
                 let localStaticAliases = collectPatternStaticAliases binding.Pattern value Map.empty
                 let bodyForValidation = rewriteStaticObjectPathAliasUses localStaticAliases bodyForValidation
 
-                recurse value @ validateExpression nextLocals refinements bodyForValidation
-            | LocalSignature(_, body) ->
-                validateExpression locals refinements body
-            | LocalTypeAlias(_, body) ->
-                validateExpression locals refinements body
+                let nextLexicalNames =
+                    collectPatternNames binding.Pattern
+                    |> Set.ofList
+                    |> Set.union lexicalNames
+
+                recurse value @ validateExpression nextLocals refinements nextLexicalNames bodyForValidation
+            | LocalSignature(declaration, body) ->
+                validateExpression locals refinements (Set.add declaration.Name lexicalNames) body
+            | LocalTypeAlias(declaration, body) ->
+                validateExpression locals refinements (Set.add declaration.Name lexicalNames) body
             | LocalScopedEffect(name, body) ->
-                withScopedEffectName name (fun () -> validateExpression locals refinements body)
+                withScopedEffectName name (fun () -> validateExpression locals refinements (Set.add name lexicalNames) body)
             | Lambda(parameters, body) ->
                 let nextLocals =
                     parameters
@@ -6017,7 +6023,13 @@ module SurfaceElaboration =
                         | Some parameterType -> Map.add parameter.Name parameterType state
                         | None -> state) locals
 
-                validateExpression nextLocals refinements body
+                let nextLexicalNames =
+                    parameters
+                    |> List.map (fun parameter -> parameter.Name)
+                    |> Set.ofList
+                    |> Set.union lexicalNames
+
+                validateExpression nextLocals refinements nextLexicalNames body
             | IfThenElse(condition, whenTrue, whenFalse) ->
                 let trueRefinements, falseRefinements =
                     match condition with
@@ -6031,17 +6043,24 @@ module SurfaceElaboration =
                         refinements, refinements
 
                 recurse condition
-                @ validateExpression locals trueRefinements whenTrue
-                @ validateExpression locals falseRefinements whenFalse
+                @ validateExpression locals trueRefinements lexicalNames whenTrue
+                @ validateExpression locals falseRefinements lexicalNames whenFalse
             | Match(scrutinee, cases) ->
                 let caseDiagnostics =
                     cases
                     |> List.collect (fun caseClause ->
+                        let caseLexicalNames =
+                            collectPatternNames caseClause.Pattern
+                            |> Set.ofList
+                            |> Set.union lexicalNames
+
                         validatePatternHead caseClause.Pattern
                         @ staticPatternIdentityDiagnostics locals caseClause.Pattern
                         @ activePatternLinearityDiagnostics caseClause.Pattern "match case"
-                        @ (caseClause.Guard |> Option.map recurse |> Option.defaultValue [])
-                        @ recurse caseClause.Body)
+                        @ (caseClause.Guard
+                           |> Option.map (validateExpression locals refinements caseLexicalNames)
+                           |> Option.defaultValue [])
+                        @ validateExpression locals refinements caseLexicalNames caseClause.Body)
 
                 recurse scrutinee @ caseDiagnostics
             | RecordLiteral fields ->
@@ -6157,7 +6176,7 @@ module SurfaceElaboration =
             | TagTest(receiver, _) ->
                 recurse receiver
             | Do statements ->
-                validateDoStatements locals refinements statements
+                validateDoStatements locals refinements lexicalNames statements
             | MonadicSplice inner
             | ExplicitImplicitArgument inner
             | InoutArgument inner
@@ -6244,6 +6263,23 @@ module SurfaceElaboration =
                             |> Map.tryFind calleeName
                             |> Option.orElseWith (fun () -> environment.VisibleConstructors |> Map.tryFind calleeName)
 
+                        let resolvesAsTraitMemberCall () =
+                            tryPrepareVisibleTraitMemberCall
+                                environment
+                                (ref freshCounter.Value)
+                                calleeName
+                                (inferValidationExpressionType environment (ref freshCounter.Value) locals)
+                                arguments
+                            |> Option.isSome
+
+                        let isKnownVisibleCallee =
+                            (Set.contains calleeName lexicalNames)
+                            || (Set.contains calleeName knownSurfaceTermNames)
+                            || environment.VisibleProjections.ContainsKey(calleeName)
+                            || (environment.VisibleTraits |> Map.exists (fun _ traitInfo -> traitInfo.Members.ContainsKey(calleeName)))
+                            || environment.ConstrainedMembers.ContainsKey(calleeName)
+                            || resolvesAsTraitMemberCall ()
+
                         match bindingInfo with
                         | Some bindingInfo ->
                             let probeCounter = ref freshCounter.Value
@@ -6282,6 +6318,12 @@ module SurfaceElaboration =
                                 @ [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch message ]
                             | None ->
                                 expectedArgumentDiagnostics
+                        | None
+                            when allowUnresolvedCallDiagnostics
+                                 && not isKnownVisibleCallee
+                                 && not (String.IsNullOrEmpty(calleeName))
+                                 && Char.IsUpper(calleeName[0]) ->
+                            [ makeDiagnostic DiagnosticCode.NameUnresolved $"Name '{calleeName}' is not in scope." ]
                         | None when hasNamedBlock ->
                             [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch "Named application requires a callee with preserved parameter metadata." ]
                         | _ ->
@@ -6331,13 +6373,18 @@ module SurfaceElaboration =
                     | StringText _ -> []
                     | StringInterpolation inner -> recurse inner)
 
-        and validateDoStatements locals refinements statements =
+        and validateDoStatements locals refinements lexicalNames statements =
             match statements with
             | [] ->
                 []
             | statement :: rest ->
                 match statement with
                 | DoLet(binding, expression) ->
+                    let nextLexicalNames =
+                        collectPatternNames binding.Pattern
+                        |> Set.ofList
+                        |> Set.union lexicalNames
+
                     let nextLocals =
                         match inferValidationExpressionType environment freshCounter locals expression with
                         | Some valueType ->
@@ -6352,8 +6399,14 @@ module SurfaceElaboration =
                         | Do rewritten -> rewritten
                         | _ -> rest
 
-                    validateExpression locals refinements expression @ validateDoStatements nextLocals refinements restForValidation
+                    validateExpression locals refinements lexicalNames expression
+                    @ validateDoStatements nextLocals refinements nextLexicalNames restForValidation
                 | DoBind(binding, expression) ->
+                    let nextLexicalNames =
+                        collectPatternNames binding.Pattern
+                        |> Set.ofList
+                        |> Set.union lexicalNames
+
                     let nextLocals =
                         match inferValidationExpressionType environment freshCounter locals expression with
                         | Some valueType ->
@@ -6362,8 +6415,14 @@ module SurfaceElaboration =
                         | None ->
                             locals
 
-                    validateExpression locals refinements expression @ validateDoStatements nextLocals refinements rest
+                    validateExpression locals refinements lexicalNames expression
+                    @ validateDoStatements nextLocals refinements nextLexicalNames rest
                 | DoLetQuestion(binding, expression, failure) ->
+                    let nextLexicalNames =
+                        collectPatternNames binding.Pattern
+                        |> Set.ofList
+                        |> Set.union lexicalNames
+
                     let nextLocals =
                         match inferValidationExpressionType environment freshCounter locals expression with
                         | Some valueType ->
@@ -6374,43 +6433,57 @@ module SurfaceElaboration =
 
                     let failureDiagnostics =
                         match failure with
-                        | Some failure -> validateDoStatements locals refinements failure.Body
+                        | Some failure ->
+                            let failureLexicalNames =
+                                collectPatternNames failure.ResiduePattern.Pattern
+                                |> Set.ofList
+                                |> Set.union lexicalNames
+
+                            validateDoStatements locals refinements failureLexicalNames failure.Body
                         | None -> []
 
-                    validateExpression locals refinements expression
+                    validateExpression locals refinements lexicalNames expression
                     @ validatePatternHead binding.Pattern
                     @ activePatternLinearityDiagnostics binding.Pattern "let?"
                     @ failureDiagnostics
-                    @ validateDoStatements nextLocals refinements rest
+                    @ validateDoStatements nextLocals refinements nextLexicalNames rest
                 | DoUsing(binding, expression) ->
+                    let nextLexicalNames =
+                        collectPatternNames binding.Pattern
+                        |> Set.ofList
+                        |> Set.union lexicalNames
+
                     let nextLocals =
                         match binding.Pattern, inferValidationExpressionType environment freshCounter locals expression with
                         | NamePattern bindingName, Some valueType -> Map.add bindingName (unwrapIoType valueType) locals
                         | _ -> locals
 
-                    validateExpression locals refinements expression @ validateDoStatements nextLocals refinements rest
+                    validateExpression locals refinements lexicalNames expression
+                    @ validateDoStatements nextLocals refinements nextLexicalNames rest
                 | DoVar(bindingName, expression) ->
                     let nextLocals =
                         match inferValidationExpressionType environment freshCounter locals expression with
                         | Some valueType -> Map.add bindingName (refType valueType) locals
                         | None -> locals
 
-                    validateExpression locals refinements expression @ validateDoStatements nextLocals refinements rest
+                    validateExpression locals refinements lexicalNames expression
+                    @ validateDoStatements nextLocals refinements (Set.add bindingName lexicalNames) rest
                 | DoAssign(_, expression)
                 | DoDefer expression
                 | DoExpression expression ->
-                    validateExpression locals refinements expression @ validateDoStatements locals refinements rest
+                    validateExpression locals refinements lexicalNames expression
+                    @ validateDoStatements locals refinements lexicalNames rest
                 | DoIf(condition, whenTrue, whenFalse) ->
-                    validateExpression locals refinements condition
-                    @ validateDoStatements locals refinements whenTrue
-                    @ validateDoStatements locals refinements whenFalse
-                    @ validateDoStatements locals refinements rest
+                    validateExpression locals refinements lexicalNames condition
+                    @ validateDoStatements locals refinements lexicalNames whenTrue
+                    @ validateDoStatements locals refinements lexicalNames whenFalse
+                    @ validateDoStatements locals refinements lexicalNames rest
                 | DoWhile(condition, body) ->
-                    validateExpression locals refinements condition
-                    @ validateDoStatements locals refinements body
-                    @ validateDoStatements locals refinements rest
+                    validateExpression locals refinements lexicalNames condition
+                    @ validateDoStatements locals refinements lexicalNames body
+                    @ validateDoStatements locals refinements lexicalNames rest
                 | DoReturn expression ->
-                    validateExpression locals refinements expression
+                    validateExpression locals refinements lexicalNames expression
 
         let rec validateInoutPlacement insideDo expression =
             let recurse = validateInoutPlacement insideDo
@@ -7015,7 +7088,7 @@ module SurfaceElaboration =
         @
             match definition.Body with
             | Some body ->
-                validateExpression localTypes Map.empty body
+                validateExpression localTypes Map.empty parameterNames body
                 @ validateLocalImplicitResolution body
                 @ validateExpectedBody localTypes body
                 @ validateInoutPlacement false body
@@ -7029,6 +7102,22 @@ module SurfaceElaboration =
         frontendModules
         |> List.collect (fun frontendModule ->
             let moduleName = moduleNameText frontendModule.ModuleIdentity
+
+            let topLevelNames =
+                frontendModule.Declarations
+                |> List.collect (function
+                    | SignatureDeclaration declaration -> [ declaration.Name ]
+                    | LetDeclaration declaration -> declaration.Name |> Option.toList
+                    | ProjectionDeclarationNode declaration -> [ declaration.Name ]
+                    | DataDeclarationNode declaration ->
+                        declaration.Name :: (declaration.Constructors |> List.map (fun constructor -> constructor.Name))
+                    | TypeAliasNode declaration -> [ declaration.Name ]
+                    | TraitDeclarationNode declaration -> [ declaration.Name ]
+                    | ExpectDeclarationNode (ExpectTermDeclaration declaration) -> [ declaration.Name ]
+                    | ExpectDeclarationNode (ExpectTypeDeclaration declaration) -> [ declaration.Name ]
+                    | ExpectDeclarationNode (ExpectTraitDeclaration declaration) -> [ declaration.Name ]
+                    | _ -> [])
+                |> Set.ofList
 
             let makeDiagnostic code message =
                 { Severity = DiagnosticSeverity.Error
@@ -7056,6 +7145,67 @@ module SurfaceElaboration =
             let environment =
                 { baseEnvironment with
                     VisibleStaticObjects = buildStaticObjectAliasesForModule baseEnvironment frontendModule.Declarations }
+
+            let hasNonQualifiedImports =
+                frontendModule.Declarations
+                |> List.exists (function
+                    | ImportDeclaration (_, specs) ->
+                        specs
+                        |> List.exists (fun spec ->
+                            match spec.Selection with
+                            | QualifiedOnly -> false
+                            | _ -> true)
+                    | _ ->
+                        false)
+
+            let allowUnresolvedCallDiagnostics =
+                not hasNonQualifiedImports
+                && not (frontendModule.Diagnostics |> List.exists (fun diagnostic -> diagnostic.Severity = Error))
+
+            let knownSurfaceTermNames =
+                let preludeContract = IntrinsicCatalog.bundledPreludeExpectContract ()
+                let standardRuntimeNames =
+                    Set.ofList
+                        [ "bindModule"; "bindModuleOwned"; "bridgePackageValue"; "bridgePackageOrigin"; "bridgeFailureToCastBlame"
+                          "checkedCast"; "checkedCastWith"; "sameDynRep"; "toDyn"; "toDynWith"
+                          "Conservative"; "Exact"; "IntoKappa"; "LaterUse"; "Lossy"; "OutOfKappa" ]
+
+                let compilerKnownSurfaceTerms =
+                    Set.ofList
+                        [ "thunk"
+                          "lazy"
+                          "force"
+                          "captureBorrow"
+                          "withBorrowView"
+                          "fork"
+                          "defEqSyntax"
+                          "headSymbolSyntax"
+                          "sameSymbol" ]
+
+                let visibleTraitMemberNames =
+                    environment.VisibleTraits
+                    |> Map.values
+                    |> Seq.collect (fun traitInfo -> traitInfo.Members.Keys)
+                    |> Set.ofSeq
+
+                [ topLevelNames
+                  preludeContract.TermNames
+                  preludeContract.TypeNames
+                  preludeContract.TraitNames
+                  Set.ofList Stdlib.FixedPreludeConstructors
+                  IntrinsicCatalog.namedIntrinsicTermNames ()
+                  standardRuntimeNames
+                  compilerKnownSurfaceTerms
+                  environment.VisibleBindings |> Map.keys |> Set.ofSeq
+                  environment.VisibleConstructors |> Map.keys |> Set.ofSeq
+                  environment.VisibleModules
+                  environment.VisibleStaticObjects |> Map.keys |> Set.ofSeq
+                  environment.VisibleTypeFacets |> Map.keys |> Set.ofSeq
+                  environment.VisibleTraits |> Map.keys |> Set.ofSeq
+                  visibleTraitMemberNames
+                  environment.ConstrainedMembers |> Map.keys |> Set.ofSeq ]
+                |> Set.unionMany
+                |> Set.remove "<anonymous>"
 
             let validateProjectionDeclaration (declaration: ProjectionDeclaration) =
                 let placeBinders =
@@ -7627,22 +7777,6 @@ module SurfaceElaboration =
                 validateExpression expression
 
             let expressionNameResolutionDiagnostics (definition: LetDefinition) expression =
-                let topLevelNames =
-                    frontendModule.Declarations
-                    |> List.collect (function
-                        | SignatureDeclaration declaration -> [ declaration.Name ]
-                        | LetDeclaration declaration -> declaration.Name |> Option.toList
-                        | ProjectionDeclarationNode declaration -> [ declaration.Name ]
-                        | DataDeclarationNode declaration ->
-                            declaration.Name :: (declaration.Constructors |> List.map (fun constructor -> constructor.Name))
-                        | TypeAliasNode declaration -> [ declaration.Name ]
-                        | TraitDeclarationNode declaration -> [ declaration.Name ]
-                        | ExpectDeclarationNode (ExpectTermDeclaration declaration) -> [ declaration.Name ]
-                        | ExpectDeclarationNode (ExpectTypeDeclaration declaration) -> [ declaration.Name ]
-                        | ExpectDeclarationNode (ExpectTraitDeclaration declaration) -> [ declaration.Name ]
-                        | _ -> [])
-                    |> Set.ofList
-
                 let visibleNames =
                     let preludeContract = IntrinsicCatalog.bundledPreludeExpectContract ()
                     let standardRuntimeNames =
@@ -7669,18 +7803,6 @@ module SurfaceElaboration =
 
                 let unresolved name =
                     not (Set.contains name visibleNames)
-
-                let hasNonQualifiedImports =
-                    frontendModule.Declarations
-                    |> List.exists (function
-                        | ImportDeclaration (_, specs) ->
-                            specs
-                            |> List.exists (fun spec ->
-                                match spec.Selection with
-                                | QualifiedOnly -> false
-                                | _ -> true)
-                        | _ ->
-                            false)
 
                 if hasNonQualifiedImports then
                     []
@@ -7860,7 +7982,12 @@ module SurfaceElaboration =
                             |> Option.bind (fun name -> Map.tryFind name environment.VisibleBindings)
                             |> Option.map (fun bindingInfo -> bindingInfo.Scheme)
 
-                        validateBuiltInExpressionsForBinding environment definition scheme
+                        validateBuiltInExpressionsForBinding
+                            environment
+                            knownSurfaceTermNames
+                            allowUnresolvedCallDiagnostics
+                            definition
+                            scheme
                         @ (definition.Body
                            |> Option.map (fun body ->
                                expressionPatternDiagnostics body

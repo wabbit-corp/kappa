@@ -533,9 +533,12 @@ let main argv =
             let verificationFailed =
                 match options.VerifyCheckpoint with
                 | Some checkpoint ->
-                    let diagnostics = Compilation.verifyCheckpoint workspace checkpoint
-                    printVerification checkpoint diagnostics
-                    not (List.isEmpty diagnostics)
+                    if workspace.HasErrors then
+                        false
+                    else
+                        let diagnostics = Compilation.verifyCheckpoint workspace checkpoint
+                        printVerification checkpoint diagnostics
+                        not (List.isEmpty diagnostics)
                 | None ->
                     false
 

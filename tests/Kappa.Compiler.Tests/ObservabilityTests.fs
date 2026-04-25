@@ -1767,6 +1767,26 @@ let ``source compilation surfaces backend lowering failures as diagnostics`` () 
     Assert.Contains("Name 'I1' is not in scope", diagnosticsText workspace.Diagnostics)
 
 [<Fact>]
+let ``source compilation surfaces unresolved applied names before backend lowering`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-compile-unresolved-applied-name-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let i0 = I1 2"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected unresolved applied name to become a frontend compile diagnostic.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.NameUnresolved)
+    Assert.Contains("Name 'I1' is not in scope", diagnosticsText workspace.Diagnostics)
+    Assert.DoesNotContain("requires a backend module", diagnosticsText workspace.Diagnostics)
+
+[<Fact>]
 let ``source compilation surfaces backend verification call arity failures as diagnostics`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend

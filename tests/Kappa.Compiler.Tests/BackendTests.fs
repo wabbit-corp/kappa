@@ -217,6 +217,36 @@ let ``cli can run the managed dotnet il backend for recursive list matches`` () 
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
+let ``cli verify does not print backend checkpoint fallout when source diagnostics already exist`` () =
+    let workspaceRoot = createScratchDirectory "cli-verify-source-errors-workspace"
+
+    writeWorkspaceFiles
+        workspaceRoot
+        [
+            "main.kp",
+            [
+                "module main"
+                "let i0 = I1 2"
+            ]
+            |> String.concat "\n"
+        ]
+
+    let cliProjectPath =
+        Path.GetFullPath(
+            Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "src", "Kappa.Compiler.Cli", "Kappa.Compiler.Cli.fsproj")
+        )
+
+    let runResult =
+        runProcess
+            workspaceRoot
+            "dotnet"
+            $"run --project \"{cliProjectPath}\" -v q -- --source-root \"{workspaceRoot}\" --backend dotnet --verify KBackendIR"
+
+    Assert.Equal(1, runResult.ExitCode)
+    Assert.Contains("Name 'I1' is not in scope.", runResult.StandardOutput)
+    Assert.DoesNotContain("requires a backend module", runResult.StandardOutput)
+
+[<Fact>]
 let ``cli interpreter backend can execute io entry points`` () =
     let workspaceRoot = createScratchDirectory "cli-interpreter-workspace"
 
