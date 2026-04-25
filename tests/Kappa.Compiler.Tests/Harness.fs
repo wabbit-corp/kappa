@@ -344,11 +344,31 @@ let private normalizeFixtureTypeTokensWithResolutions (nameResolutions: Map<stri
                 let collapsedName = segments |> Seq.toList |> SyntaxFacts.moduleNameToText
 
                 let normalizedName =
-                    match segments |> Seq.toList with
+                    let segmentsList = segments |> Seq.toList
+
+                    match segmentsList with
                     | [ simpleName ] ->
-                        nameResolutions |> Map.tryFind simpleName |> Option.defaultValue collapsedName
+                        nameResolutions
+                        |> Map.tryFind simpleName
+                        |> Option.defaultValue (
+                            if simpleName.StartsWith("std.prelude.", StringComparison.Ordinal) then
+                                simpleName.Substring("std.prelude.".Length)
+                            else
+                                collapsedName
+                        )
+                    | [ "std"; "prelude"; shortName ] ->
+                        shortName
                     | _ ->
-                        collapsedName
+                        if collapsedName.StartsWith("std.prelude.", StringComparison.Ordinal) then
+                            collapsedName.Substring("std.prelude.".Length)
+                        else
+                            collapsedName
+
+                let normalizedName =
+                    if normalizedName.StartsWith("std.prelude.", StringComparison.Ordinal) then
+                        normalizedName.Substring("std.prelude.".Length)
+                    else
+                        normalizedName
 
                 loop nextIndex (normalizedName :: normalized)
             else

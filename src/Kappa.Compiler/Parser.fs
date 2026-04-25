@@ -86,15 +86,54 @@ type private TokenParser
             "<missing>"
 
     member private this.TryConsumeOperatorName() =
-        if this.Current.Kind = LeftParen && this.Peek(1).Kind = Operator && this.Peek(2).Kind = RightParen then
-            this.Advance() |> ignore
-            let operatorName = this.Advance().Text
-            this.Advance() |> ignore
-            Some operatorName
-        else
+        let isSymbolToken token =
+            match token.Kind with
+            | Operator
+            | Colon
+            | Equals -> true
+            | _ -> false
+
+        if this.Current.Kind <> LeftParen then
             None
+        else
+            let mutable offset = 1
+            let mutable parts = ResizeArray<string>()
+            let mutable keepReading = true
+            let mutable sawRightParen = false
+
+            while keepReading do
+                match this.Peek(offset).Kind with
+                | RightParen when parts.Count > 0 ->
+                    sawRightParen <- true
+                    keepReading <- false
+                | _ when isSymbolToken (this.Peek(offset)) ->
+                    parts.Add(this.Peek(offset).Text)
+                    offset <- offset + 1
+                | _ ->
+                    keepReading <- false
+
+            if sawRightParen then
+                this.Advance() |> ignore
+
+                for _ in 1 .. parts.Count do
+                    this.Advance() |> ignore
+
+                this.Advance() |> ignore
+                Some(String.Concat(parts))
+            else
+                None
 
     member private this.ConsumeTermBindingName(message: string) =
+        if Token.isName this.Current then
+            this.ConsumeName(message)
+        else
+            match this.TryConsumeOperatorName() with
+            | Some operatorName -> operatorName
+            | None ->
+                diagnostics.AddError(DiagnosticCode.ParseError, message, source.GetLocation(this.Current.Span))
+                "<missing>"
+
+    member private this.ConsumeTypeBindingName(message: string) =
         if Token.isName this.Current then
             this.ConsumeName(message)
         else
@@ -125,15 +164,39 @@ type private TokenParser
             | { Kind = Operator; Text = "|" } :: rest -> rest
             | tokens -> tokens
 
-        let name, argumentTokens =
-            match constructorTokens with
-            | leftToken :: operatorToken :: rightToken :: rest
-                when leftToken.Kind = LeftParen && operatorToken.Kind = Operator && rightToken.Kind = RightParen ->
-                operatorToken.Text, rest
-            | head :: rest when Token.isName head ->
-                SyntaxFacts.trimIdentifierQuotes head.Text, rest
+        let tryParseSymbolicConstructorName tokens =
+            let isSymbolToken token =
+                match token.Kind with
+                | Operator
+                | Colon
+                | Equals -> true
+                | _ -> false
+
+            match tokens with
+            | { Kind = LeftParen } :: rest ->
+                let rec collect acc remaining =
+                    match remaining with
+                    | { Kind = RightParen } :: tail when not (List.isEmpty acc) ->
+                        Some(String.Concat(List.rev acc), tail)
+                    | token :: tail when isSymbolToken token ->
+                        collect (token.Text :: acc) tail
+                    | _ ->
+                        None
+
+                collect [] rest
             | _ ->
-                "<anonymous>", []
+                None
+
+        let name, argumentTokens =
+            match tryParseSymbolicConstructorName constructorTokens with
+            | Some(name, rest) ->
+                name, rest
+            | None ->
+                match constructorTokens with
+                | head :: rest when Token.isName head ->
+                    SyntaxFacts.trimIdentifierQuotes head.Text, rest
+                | _ ->
+                    "<anonymous>", []
 
         let tokenArray = List.toArray argumentTokens
         let mutable arity = 0
@@ -357,9 +420,34 @@ type private TokenParser
             | { Kind = Operator; Text = "|" } :: rest -> rest
             | tokens -> tokens
 
-        let parameterMetadata =
+        let constructorBodyTokens =
+            let isSymbolToken token =
+                match token.Kind with
+                | Operator
+                | Colon
+                | Equals -> true
+                | _ -> false
+
             match constructorTokens with
-            | _nameToken :: { Kind = LeftBrace } :: rest when not (List.isEmpty rest) && (List.last rest).Kind = RightBrace ->
+            | { Kind = LeftParen } :: rest ->
+                let rec stripSymbolicName remaining =
+                    match remaining with
+                    | { Kind = RightParen } :: tail ->
+                        Some tail
+                    | token :: tail when isSymbolToken token ->
+                        stripSymbolicName tail
+                    | _ ->
+                        None
+
+                stripSymbolicName rest |> Option.defaultValue constructorTokens
+            | _nameToken :: rest ->
+                rest
+            | [] ->
+                []
+
+        let parameterMetadata =
+            match constructorBodyTokens with
+            | { Kind = LeftBrace } :: rest when not (List.isEmpty rest) && (List.last rest).Kind = RightBrace ->
                 let innerTokens = rest |> List.take (List.length rest - 1)
 
                 this.SplitTopLevelCommaGroups(innerTokens)
@@ -373,8 +461,8 @@ type private TokenParser
                 None
 
         let signatureArity =
-            match constructorTokens with
-            | _nameToken :: { Kind = Colon } :: typeTokens ->
+            match constructorBodyTokens with
+            | { Kind = Colon } :: typeTokens ->
                 let tokenArray = typeTokens |> List.toArray
                 let mutable parenDepth = 0
                 let mutable braceDepth = 0
@@ -784,7 +872,7 @@ type private TokenParser
         | Keyword Keyword.Type ->
             this.Advance() |> ignore
             let nameSpan = this.Current.Span
-            let name = this.ConsumeName("Expected a type name after 'expect type'.")
+            let name = this.ConsumeTypeBindingName("Expected a type name after 'expect type'.")
 
             ExpectDeclarationNode
                 (ExpectTypeDeclaration
@@ -1032,7 +1120,7 @@ type private TokenParser
 
     member private this.ParseDataDeclaration(modifiers: ModifierState) =
         this.ExpectKeyword(Keyword.Data, "Expected 'data'.") |> ignore
-        let name = this.ConsumeName("Expected a data type name.")
+        let name = this.ConsumeTypeBindingName("Expected a data type name.")
 
         let headerTokens = ResizeArray<Token>()
 
@@ -1057,7 +1145,7 @@ type private TokenParser
 
     member private this.ParseTypeAlias(modifiers: ModifierState) =
         this.ExpectKeyword(Keyword.Type, "Expected 'type'.") |> ignore
-        let name = this.ConsumeName("Expected a type alias name.")
+        let name = this.ConsumeTypeBindingName("Expected a type alias name.")
 
         let headerTokens = ResizeArray<Token>()
 

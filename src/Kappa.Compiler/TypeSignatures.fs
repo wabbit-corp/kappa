@@ -538,12 +538,41 @@ module TypeSignatures =
 
         member private this.ParseQualifiedName() =
             let parseOperatorName () =
-                match this.Current, this.Peek(1), this.Peek(2) with
-                | Some { Kind = LeftParen }, Some { Kind = Operator; Text = operatorText }, Some { Kind = RightParen } ->
-                    this.Advance() |> ignore
-                    this.Advance() |> ignore
-                    this.Advance() |> ignore
-                    Some [ operatorText ]
+                let isSymbolToken token =
+                    match token.Kind with
+                    | Operator
+                    | Colon
+                    | Equals -> true
+                    | _ -> false
+
+                match this.Current with
+                | Some { Kind = LeftParen } ->
+                    let mutable offset = 1
+                    let mutable parts = ResizeArray<string>()
+                    let mutable keepReading = true
+                    let mutable sawRightParen = false
+
+                    while keepReading do
+                        match this.Peek(offset) with
+                        | Some { Kind = RightParen } when parts.Count > 0 ->
+                            sawRightParen <- true
+                            keepReading <- false
+                        | Some token when isSymbolToken token ->
+                            parts.Add(token.Text)
+                            offset <- offset + 1
+                        | _ ->
+                            keepReading <- false
+
+                    if sawRightParen then
+                        this.Advance() |> ignore
+
+                        for _ in 1 .. parts.Count do
+                            this.Advance() |> ignore
+
+                        this.Advance() |> ignore
+                        Some [ String.Concat(parts) ]
+                    else
+                        None
                 | _ ->
                     None
 
@@ -936,13 +965,54 @@ module TypeSignatures =
                 | EndOfFile -> false
                 | _ -> true)
 
-        significant
-        |> List.takeWhile (fun token -> token.Kind <> Colon)
-        |> List.choose (fun token ->
-            if Token.isName token then
-                Some(SyntaxFacts.trimIdentifierQuotes token.Text)
-            else
-                None)
+        let rec collectHeader depth collected remaining =
+            match remaining with
+            | [] ->
+                List.rev collected
+            | token :: tail when token.Kind = LeftParen ->
+                collectHeader (depth + 1) (token :: collected) tail
+            | token :: tail when token.Kind = RightParen ->
+                collectHeader (max 0 (depth - 1)) (token :: collected) tail
+            | token :: _ when token.Kind = Colon && depth = 0 ->
+                List.rev collected
+            | token :: tail ->
+                collectHeader depth (token :: collected) tail
+
+        let headerTokens = collectHeader 0 [] significant
+
+        let rec loop collected remaining =
+            match remaining with
+            | [] ->
+                List.rev collected
+            | { Kind = LeftParen } :: tail ->
+                let rec collectBinder depth binderTokens rest =
+                    match rest with
+                    | [] ->
+                        List.rev binderTokens, []
+                    | token :: next when token.Kind = LeftParen ->
+                        collectBinder (depth + 1) (token :: binderTokens) next
+                    | token :: next when token.Kind = RightParen && depth = 0 ->
+                        List.rev binderTokens, next
+                    | token :: next when token.Kind = RightParen ->
+                        collectBinder (depth - 1) (token :: binderTokens) next
+                    | token :: next ->
+                        collectBinder depth (token :: binderTokens) next
+
+                let binderTokens, rest = collectBinder 0 [] tail
+
+                let nextCollected =
+                    binderTokens
+                    |> List.tryFind Token.isName
+                    |> Option.map (fun token -> SyntaxFacts.trimIdentifierQuotes token.Text :: collected)
+                    |> Option.defaultValue collected
+
+                loop nextCollected rest
+            | token :: tail when Token.isName token ->
+                loop (SyntaxFacts.trimIdentifierQuotes token.Text :: collected) tail
+            | _ :: tail ->
+                loop collected tail
+
+        loop [] headerTokens
 
     let private stripConstructorDefaultTokens (tokens: Token list) =
         let tokenArray = tokens |> List.toArray
@@ -982,81 +1052,133 @@ module TypeSignatures =
         | _ ->
             tokens
 
+    let private stripSymbolicConstructorNameTokens tokens =
+        let isSymbolToken token =
+            match token.Kind with
+            | Operator
+            | Colon
+            | Equals -> true
+            | _ -> false
+
+        match tokens with
+        | { Kind = LeftParen } :: rest ->
+            let rec loop remaining =
+                match remaining with
+                | { Kind = RightParen } :: tail ->
+                    tail
+                | token :: tail when isSymbolToken token ->
+                    loop tail
+                | _ ->
+                    tokens
+
+            loop rest
+        | _nameToken :: rest ->
+            rest
+        | [] ->
+            []
+
+    let private constructorParameterTokenGroupsFromTokens (tokens: Token list) =
+        let significant =
+            tokens
+            |> List.filter (fun token ->
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent
+                | EndOfFile -> false
+                | _ -> true)
+
+        let argumentTokens =
+            stripSymbolicConstructorNameTokens significant
+
+        let takeAtom remaining =
+            match remaining with
+            | [] ->
+                [], []
+            | first :: _ when first.Kind = LeftParen ->
+                let tokenArray = remaining |> List.toArray
+                let current = ResizeArray<Token>()
+                let mutable depth = 0
+                let mutable index = 0
+                let mutable keepReading = true
+
+                while keepReading && index < tokenArray.Length do
+                    let token = tokenArray[index]
+                    index <- index + 1
+
+                    match token.Kind with
+                    | LeftParen ->
+                        depth <- depth + 1
+                        if depth > 1 then
+                            current.Add(token)
+                    | RightParen ->
+                        if depth > 1 then
+                            current.Add(token)
+
+                        depth <- depth - 1
+
+                        if depth = 0 then
+                            keepReading <- false
+                    | _ ->
+                        current.Add(token)
+
+                List.ofSeq current, List.ofArray tokenArray[index ..]
+            | first :: rest ->
+                [ first ], rest
+
+        let groups = ResizeArray<Token list>()
+        let mutable position = 0
+        let tokenArray = argumentTokens |> List.toArray
+
+        while position < tokenArray.Length do
+            let groupTokens, remaining = takeAtom (List.ofArray tokenArray[position ..])
+
+            if not (List.isEmpty groupTokens) then
+                groups.Add(groupTokens)
+
+            position <- tokenArray.Length - remaining.Length
+
+        groups |> Seq.toList
+
+    let constructorParameterTokenGroups (constructor: DataConstructor) =
+        match constructor.Parameters with
+        | Some parameters ->
+            parameters
+            |> List.map (fun parameter ->
+                let quantityTokens =
+                    match parameter.ParameterQuantity with
+                    | Some QuantityZero -> [ { Kind = IntegerLiteral; Text = "0"; Span = { Start = 0; Length = 1 } } ]
+                    | Some QuantityOne -> [ { Kind = IntegerLiteral; Text = "1"; Span = { Start = 0; Length = 1 } } ]
+                    | Some QuantityOmega -> [ { Kind = Identifier; Text = "omega"; Span = { Start = 0; Length = 5 } } ]
+                    | Some(QuantityAtMostOne) ->
+                        [ { Kind = Operator; Text = "<="; Span = { Start = 0; Length = 2 } }
+                          { Kind = IntegerLiteral; Text = "1"; Span = { Start = 0; Length = 1 } } ]
+                    | Some(QuantityAtLeastOne) ->
+                        [ { Kind = Operator; Text = ">="; Span = { Start = 0; Length = 2 } }
+                          { Kind = IntegerLiteral; Text = "1"; Span = { Start = 0; Length = 1 } } ]
+                    | Some(QuantityBorrow _) -> [ { Kind = Operator; Text = "&"; Span = { Start = 0; Length = 1 } } ]
+                    | Some(QuantityVariable name) -> [ { Kind = Identifier; Text = name; Span = { Start = 0; Length = name.Length } } ]
+                    | None -> []
+
+                let binderTokens =
+                    match parameter.ParameterName with
+                    | Some name ->
+                        quantityTokens
+                        @ [ { Kind = Identifier; Text = name; Span = { Start = 0; Length = name.Length } }
+                            { Kind = Colon; Text = ":"; Span = { Start = 0; Length = 1 } } ]
+                    | None ->
+                        quantityTokens
+
+                binderTokens @ parameter.ParameterTypeTokens)
+        | None ->
+            constructorParameterTokenGroupsFromTokens constructor.Tokens
+
     let private constructorFieldTokens (constructor: DataConstructor) =
         match constructor.Parameters with
         | Some parameters ->
             parameters |> List.map (fun parameter -> parameter.ParameterTypeTokens)
         | None ->
-            let tokens = constructor.Tokens
-            let significant =
-                tokens
-                |> List.filter (fun token ->
-                    match token.Kind with
-                    | Newline
-                    | Indent
-                    | Dedent
-                    | EndOfFile -> false
-                    | _ -> true)
-
-            let argumentTokens =
-                match significant with
-                | leftToken :: operatorToken :: rightToken :: rest
-                    when leftToken.Kind = LeftParen && operatorToken.Kind = Operator && rightToken.Kind = RightParen ->
-                    rest
-                | _ :: rest ->
-                    rest
-                | [] ->
-                    []
-
-            let takeAtom remaining =
-                match remaining with
-                | [] ->
-                    [], []
-                | first :: _ when first.Kind = LeftParen ->
-                    let tokenArray = remaining |> List.toArray
-                    let current = ResizeArray<Token>()
-                    let mutable depth = 0
-                    let mutable index = 0
-                    let mutable keepReading = true
-
-                    while keepReading && index < tokenArray.Length do
-                        let token = tokenArray[index]
-                        index <- index + 1
-
-                        match token.Kind with
-                        | LeftParen ->
-                            depth <- depth + 1
-                            if depth > 1 then
-                                current.Add(token)
-                        | RightParen ->
-                            if depth > 1 then
-                                current.Add(token)
-
-                            depth <- depth - 1
-
-                            if depth = 0 then
-                                keepReading <- false
-                        | _ ->
-                            current.Add(token)
-
-                    List.ofSeq current, List.ofArray tokenArray[index ..]
-                | first :: rest ->
-                    [ first ], rest
-
-            let groups = ResizeArray<Token list>()
-            let mutable position = 0
-            let tokenArray = argumentTokens |> List.toArray
-
-            while position < tokenArray.Length do
-                let groupTokens, remaining = takeAtom (List.ofArray tokenArray[position ..])
-
-                if not (List.isEmpty groupTokens) then
-                    groups.Add(groupTokens)
-
-                position <- tokenArray.Length - remaining.Length
-
-            groups
-            |> Seq.toList
+            constructorParameterTokenGroupsFromTokens constructor.Tokens
             |> List.choose (fun groupTokens ->
                 match groupTokens |> List.tryFindIndex (fun token -> token.Kind = Colon) with
                 | Some colonIndex when colonIndex + 1 < groupTokens.Length ->
@@ -1077,8 +1199,8 @@ module TypeSignatures =
                 | EndOfFile -> false
                 | _ -> true)
 
-        match significant with
-        | _ :: { Kind = Colon } :: typeTokens when constructor.Parameters.IsNone ->
+        match stripSymbolicConstructorNameTokens significant with
+        | { Kind = Colon } :: typeTokens when constructor.Parameters.IsNone ->
             parseScheme typeTokens
             |> Option.map (schemeParts >> fst)
             |> Option.defaultValue []
@@ -1787,6 +1909,11 @@ module TypeSignatures =
         && definitionallyEqual left.Body right.Body
 
     let rec toText typeExpr =
+        let renderTypeName name =
+            match name with
+            | [ "std"; "prelude"; shortName ] -> shortName
+            | _ -> SyntaxFacts.moduleNameToText name
+
         let rec renderAtom current =
             match current with
             | TypeLevelLiteral level ->
@@ -1800,10 +1927,10 @@ module TypeSignatures =
             | TypeIntrinsic classifier ->
                 intrinsicClassifierName classifier
             | TypeName(name, []) ->
-                SyntaxFacts.moduleNameToText name
+                renderTypeName name
             | TypeName(name, arguments) ->
                 let argumentText = arguments |> List.map renderAtom |> String.concat " "
-                $"{SyntaxFacts.moduleNameToText name} {argumentText}"
+                $"{renderTypeName name} {argumentText}"
             | TypeVariable name ->
                 name
             | TypeApply(callee, arguments) ->

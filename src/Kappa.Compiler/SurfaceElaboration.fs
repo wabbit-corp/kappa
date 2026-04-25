@@ -1462,6 +1462,8 @@ module SurfaceElaboration =
     let private unwrapIoType typeExpr =
         match typeExpr with
         | TypeName([ "IO" ], [ inner ]) -> inner
+        | TypeName([ "IO" ], [ _; inner ]) -> inner
+        | TypeName([ "UIO" ], [ inner ]) -> inner
         | other -> other
 
     let private unwrapBindPayloadType typeExpr =
@@ -7466,11 +7468,35 @@ module SurfaceElaboration =
                     if hasUnbalancedDelimiters significant then
                         false
                     else
+                        let stripConstructorName tokens =
+                            let isSymbolToken token =
+                                match token.Kind with
+                                | Operator
+                                | Colon
+                                | Equals -> true
+                                | _ -> false
+
+                            match tokens with
+                            | { Kind = LeftParen } :: rest ->
+                                let rec loop remaining =
+                                    match remaining with
+                                    | { Kind = RightParen } :: tail ->
+                                        tail
+                                    | token :: tail when isSymbolToken token ->
+                                        loop tail
+                                    | _ ->
+                                        tokens
+
+                                loop rest
+                            | _nameToken :: rest ->
+                                rest
+                            | [] ->
+                                []
+
                         let remainingTokens =
                             match significant with
-                            | { Kind = Operator; Text = "|" } :: _nameToken :: rest -> rest
-                            | _nameToken :: rest -> rest
-                            | [] -> []
+                            | { Kind = Operator; Text = "|" } :: rest -> stripConstructorName rest
+                            | _ -> stripConstructorName significant
 
                         match constructor.Parameters, remainingTokens with
                         | Some _, _ ->
@@ -10482,7 +10508,7 @@ module SurfaceElaboration =
                 lowerSyntheticKCoreParameter
                     dictionaryParameterName
                     None
-                    false
+                    true
                     (Some(dictionaryType constraintInfo.TraitName constraintInfo.Arguments)))
 
         let loweredBody =

@@ -491,6 +491,75 @@ let ``interpreter resolves bundled summon helper across imported trait modules``
         failwithf "Expected imported bundled summon helper resolution to succeed, got %s" issue.Message
 
 [<Fact>]
+let ``resource checker lets parameters shadow prelude interpolation helpers`` () =
+    let mainSource =
+        [
+            "module main"
+            ""
+            "@allow_unsafe_consume"
+            ""
+            "data File : Type ="
+            "    Handle Int"
+            ""
+            "let consume (1 f : File) = unsafeConsume f"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspaceWithUnsafeConsume
+            "memory-resource-parameter-shadow-root"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected parameter shadowing to win over implicit prelude names, got %A" workspace.Diagnostics)
+
+[<Fact>]
+let ``resource checker lets local let bindings shadow prelude interpolation helpers`` () =
+    let mainSource =
+        [
+            "module main"
+            ""
+            "data Box : Type ="
+            "    Box (value : Int)"
+            ""
+            "readBox : (& b : Box) -> Int"
+            "let readBox (& b : Box) : Int = b.value"
+            ""
+            "ok : Unit -> Int"
+            "let ok () : Int ="
+            "    let & b = Box 1"
+            "    in readBox b"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-resource-let-shadow-root"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected local let shadowing to win over implicit prelude names, got %A" workspace.Diagnostics)
+
+[<Fact>]
+let ``resource checker preserves constructor parameter quantities`` () =
+    let mainSource =
+        [
+            "module main"
+            ""
+            "data Box : Type ="
+            "    Box (1 value : Int)"
+            ""
+            "wrap : (1 value : Int) -> Box"
+            "let wrap (1 value : Int) : Box = Box value"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-resource-constructor-quantity-root"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected constructor signatures to preserve parameter quantities, got %A" workspace.Diagnostics)
+
+[<Fact>]
 let ``interpreter evaluates the default inequality operator`` () =
     let mainSource =
         [

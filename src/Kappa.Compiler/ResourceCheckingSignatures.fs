@@ -4,6 +4,11 @@ open Kappa.Compiler.ResourceModel
 
 // Extracts quantity and resource-signature information from declarations for the checker.
 module internal ResourceCheckingSignatures =
+    let private syntheticIdentifierToken text =
+        { Kind = Identifier
+          Text = text
+          Span = { Start = 0; Length = text.Length } }
+
     let private signatureName (moduleName: string list option) bindingName =
         let simple = bindingName
 
@@ -206,6 +211,40 @@ module internal ResourceCheckingSignatures =
               ReturnTypeTokens = returnTypeTokens
               ParameterInout = parameterInout })
 
+    let private constructorSignatureEntries (document: ParsedDocument) (declaration: DataDeclaration) =
+        let typeParameterNames = TypeSignatures.collectLeadingTypeParameters declaration.HeaderTokens
+
+        let returnTypeTokens =
+            Some(
+                syntheticIdentifierToken declaration.Name
+                :: (typeParameterNames |> List.map syntheticIdentifierToken)
+            )
+
+        declaration.Constructors
+        |> List.map (fun constructor ->
+            let quantities, parameterTypes =
+                match constructor.Parameters with
+                | Some parameters ->
+                    parameters
+                    |> List.map (fun parameter -> parameter.ParameterQuantity |> Option.map ResourceQuantity.ofSurface)
+                    ,
+                    (parameters |> List.map (fun parameter -> Some parameter.ParameterTypeTokens))
+                | None ->
+                    let parameterGroups = TypeSignatures.constructorParameterTokenGroups constructor
+                    let parameterTypes = TypeSignatures.constructorFieldTokenGroups constructor
+                    parameterGroups |> List.map quantityFromSignatureSegment, parameterTypes |> List.map Some
+
+            let parameterInout = quantities |> List.map (fun _ -> false)
+
+            signatureEntries
+                document
+                constructor.Name
+                quantities
+                parameterTypes
+                returnTypeTokens
+                parameterInout)
+        |> List.concat
+
     let private mergeParameterQuantities existing next =
         let length = max (List.length existing) (List.length next)
 
@@ -304,6 +343,8 @@ module internal ResourceCheckingSignatures =
                             parameterTypes
                             definition.ReturnTypeTokens
                             (definition.Parameters |> List.map (fun parameter -> parameter.IsInout)))
+                | DataDeclarationNode declaration ->
+                    Some(constructorSignatureEntries document declaration)
                 | _ -> None)
             |> List.concat)
         |> List.fold (fun signatures (name, signature) ->

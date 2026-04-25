@@ -19,6 +19,9 @@ infix right 20 (||)
 
 data Void : Type
 
+data Unit : Type =
+    Unit
+
 data Bool : Type =
     True
     False
@@ -40,11 +43,72 @@ data Ordering : Type =
     EQ
     GT
 
+data Res (a : Type) (r : Type) : Type =
+    (:&) (value : a) (resource : r)
+
+data Match (a : Type) (r : Type) : Type =
+    Hit r
+    Miss
+
+data Dec (p : Type) : Type =
+    Yes p
+    No
+
+data SyntaxFragment : Type =
+    Lit String
+    Interp String
+    InterpFmt String String
+
+data InterruptTag : Type =
+    Requested
+    ScopeShutdown
+    TimedOut
+    RaceLost
+    External
+    Custom
+
+data InterruptCause : Type =
+    InterruptCause InterruptTag
+
+data DefectTag : Type =
+    Panic
+    AssertionFailed
+    ArithmeticFault
+    StackOverflow
+    OutOfMemory
+    HostFailure
+    ForeignContractViolation
+    UnhandledChildFailure
+    OtherDefect
+
+data DefectInfo : Type =
+    DefectInfo DefectTag String
+
+data Cause (e : Type) : Type =
+    Fail e
+    Interrupt InterruptCause
+    Defect DefectInfo
+    Both (Cause e) (Cause e)
+    Then (Cause e) (Cause e)
+
+data Exit (e : Type) (a : Type) : Type =
+    Success a
+    Failure (Cause e)
+
+data TimeoutError : Type =
+    Timeout
+
+data RaceResult (a : Type) (b : Type) : Type =
+    LeftWins a
+    RightWins b
+
+data (=) (a : Type) (x : a) : a -> Type =
+    refl
+
 expect type Char
 expect type String
 expect type Int
 expect type Nat
-expect type Unit
 expect type Integer
 expect type Double
 expect type Real
@@ -54,64 +118,56 @@ expect type Array (a : Type)
 expect type Ref (a : Type)
 expect type Set (a : Type)
 expect type Map (k : Type) (v : Type)
-expect type Res (a : Type) (r : Type)
-expect type Dec (p : Type)
-expect type Match (a : Type) (r : Type)
 expect type Dict (c : Constraint)
 expect type WellFounded (a : Type) (rel : a -> a -> Type)
 expect type Acc (a : Type) (rel : a -> a -> Type) (x : a)
 expect type Query (a : Type)
 expect type RawComprehension (a : Type)
 expect type ComprehensionPlan (a : Type)
-expect type SyntaxFragment
 expect type IO (e : Type) (a : Type)
 type UIO (a : Type) = IO Void a
 expect type Fiber (e : Type) (a : Type)
 expect type FiberId
-expect type InterruptTag
-expect type InterruptCause
-expect type DefectTag
-expect type DefectInfo
-expect type Exit (e : Type) (a : Type)
-expect type Cause (e : Type)
 expect type Scope
 expect type Monitor (e : Type) (a : Type)
 expect type FiberRef (a : Type)
 expect type Promise (e : Type) (a : Type)
 expect type STM (a : Type)
 expect type TVar (a : Type)
+expect type Duration
+expect type Instant
+expect type Regex
 expect type Thunk (a : Type)
 expect type Need (a : Type)
-expect type Regex
 
-expect trait Equiv (a : Type)
-expect trait Eq (a : Type)
-expect trait Ord (a : Type)
-expect trait Show (a : Type)
-expect trait Shareable (a : Type)
-expect trait Functor (f : Type -> Type)
-expect trait Applicative (f : Type -> Type)
-expect trait Monad (m : Type -> Type)
-expect trait Alternative (f : Type -> Type)
-expect trait Foldable (f : Type -> Type)
-expect trait Traversable (f : Type -> Type)
-expect trait Filterable (f : Type -> Type)
-expect trait FilterMap (f : Type -> Type)
-expect trait Monoid (a : Type)
-expect trait Iterator (it : Type)
-expect trait InterpolatedMacro (t : Type)
-expect trait IntoQuery (src : Type)
-expect trait FromComprehensionPlan (c : Type)
-expect trait FromComprehensionRaw (c : Type)
-expect trait WellFoundedRelation (a : Type)
-expect trait FromInteger (a : Type)
-expect trait FromFloat (a : Type)
-expect trait FromString (a : Type)
-expect trait MonadError (m : Type -> Type)
-expect trait MonadFinally (m : Type -> Type)
-expect trait MonadResource (m : Type -> Type)
-expect trait MonadRef (m : Type -> Type)
-expect trait Releasable (m : Type -> Type) (a : Type)
+trait Equiv (a : Type)
+trait Eq (a : Type)
+trait Ord (a : Type)
+trait Show (a : Type)
+trait Shareable (a : Type)
+trait Functor (f : Type -> Type)
+trait Applicative (f : Type -> Type)
+trait Monad (m : Type -> Type)
+trait Alternative (f : Type -> Type)
+trait Foldable (f : Type -> Type)
+trait Traversable (f : Type -> Type)
+trait Filterable (f : Type -> Type)
+trait FilterMap (f : Type -> Type)
+trait Monoid (a : Type)
+trait Iterator (it : Type)
+trait InterpolatedMacro (t : Type)
+trait IntoQuery (src : Type)
+trait FromComprehensionPlan (c : Type)
+trait FromComprehensionRaw (c : Type)
+trait WellFoundedRelation (a : Type)
+trait FromInteger (a : Type)
+trait FromFloat (a : Type)
+trait FromString (a : Type)
+trait MonadError (m : Type -> Type)
+trait MonadFinally (m : Type -> Type)
+trait MonadResource (m : Type -> Type)
+trait MonadRef (m : Type -> Type)
+trait Releasable (m : Type -> Type) (a : Type)
 
 witness : (t : Type) -> (@v : t) -> t
 let witness (t : Type) (@v : t) = v
@@ -119,20 +175,87 @@ let witness (t : Type) (@v : t) = v
 summon : (c : Constraint) -> (@v : c) -> c
 let summon (c : Constraint) (@v : c) = v
 
-expect term pure : (1 value : a) -> IO a
-expect term (>>=) : IO a -> (a -> IO b) -> IO b
-expect term (>>) : IO a -> IO b -> IO b
+expect term pure : (1 value : a) -> UIO a
+expect term (>>=) : UIO a -> (a -> UIO b) -> UIO b
+expect term (>>) : UIO a -> UIO b -> UIO b
+expect term (|>) : a -> (a -> b) -> b
+expect term (<|) : (a -> b) -> a -> b
 expect term True : Bool
 expect term False : Bool
 expect term not : Bool -> Bool
 expect term and : Bool -> Bool -> Bool
 expect term or : Bool -> Bool -> Bool
+expect term force : Thunk a -> a
+expect term empty : a
+expect term (<|>) : a -> a -> a
+expect term orElse : Option a -> Option a -> Option a
 expect term negate : a -> a
-expect term println : String -> IO Unit
-expect term print : String -> IO Unit
-expect term printInt : Int -> IO Unit
-expect term printString : String -> IO Unit
+expect term absurd : Void -> a
+expect term subst : ((=) a x y) -> b -> b
+expect term sym : ((=) a x y) -> ((=) a y x)
+expect term trans : ((=) a x y) -> ((=) a y z) -> ((=) a x z)
+expect term cong : ((=) a x y) -> ((=) b u v)
+expect term measureRelation : a -> a -> Bool
+expect term lexRelation : a -> a -> Bool
+expect term floatEq : Float -> Float -> Bool
+expect term runPure : Eff e a -> a
+expect term sandbox : IO e a -> UIO (Exit e a)
+expect term unsandbox : UIO (Exit e a) -> IO e a
+expect term fork : UIO a -> UIO (Fiber Void a)
+expect term forkDaemon : UIO a -> UIO (Fiber Void a)
+expect term await : Fiber e a -> IO e a
+expect term join : Fiber e a -> IO e a
+expect term interrupt : Fiber e a -> UIO Unit
+expect term interruptFork : UIO a -> UIO Unit
+expect term interruptAs : InterruptTag -> Fiber e a -> UIO Unit
+expect term interruptForkAs : InterruptTag -> UIO a -> UIO Unit
+expect term fiberId : Fiber e a -> FiberId
+expect term currentFiberId : UIO FiberId
+expect term getFiberLabel : UIO String
+expect term setFiberLabel : String -> UIO Unit
+expect term locallyFiberLabel : String -> UIO a -> UIO a
+expect term cede : UIO Unit
+expect term blocking : UIO a -> UIO a
+expect term poll : IO e a -> UIO (Option (Exit e a))
+expect term uninterruptible : IO e a -> IO e a
+expect term mask : IO e a -> IO e a
+expect term ensuring : IO e a -> UIO Unit -> IO e a
+expect term acquireRelease : UIO a -> (a -> UIO Unit) -> UIO a
+expect term newScope : UIO Scope
+expect term withScope : (Scope -> IO e a) -> IO e a
+expect term forkIn : Scope -> UIO a -> UIO (Fiber Void a)
+expect term shutdownScope : Scope -> UIO Unit
+expect term monitor : Fiber e a -> UIO (Monitor e a)
+expect term awaitMonitor : Monitor e a -> UIO (Exit e a)
+expect term demonitor : Monitor e a -> UIO Unit
+expect term newFiberRef : a -> UIO (FiberRef a)
+expect term getFiberRef : FiberRef a -> UIO a
+expect term setFiberRef : FiberRef a -> a -> UIO Unit
+expect term locallyFiberRef : FiberRef a -> a -> UIO b -> UIO b
+expect term newPromise : UIO (Promise e a)
+expect term awaitPromiseExit : Promise e a -> UIO (Exit e a)
+expect term awaitPromise : Promise e a -> IO e a
+expect term completePromise : Promise e a -> Exit e a -> UIO Bool
+expect term nowMonotonic : UIO Instant
+expect term sleepFor : Duration -> UIO Unit
+expect term sleepUntil : Instant -> UIO Unit
+expect term timeout : Duration -> IO e a -> IO TimeoutError a
+expect term race : IO e a -> IO e b -> UIO (RaceResult a b)
+expect term atomically : STM a -> UIO a
+expect term newTVar : a -> UIO (TVar a)
+expect term readTVar : TVar a -> STM a
+expect term writeTVar : TVar a -> a -> STM Unit
+expect term retry : STM a
+expect term check : Bool -> STM Unit
+expect term f : SyntaxFragment -> SyntaxFragment
+expect term re : SyntaxFragment -> SyntaxFragment
+expect term b : SyntaxFragment -> SyntaxFragment
+expect term type : SyntaxFragment -> SyntaxFragment
+expect term println : String -> UIO Unit
+expect term print : String -> UIO Unit
+expect term printInt : Int -> UIO Unit
+expect term printString : String -> UIO Unit
 expect term primitiveIntToString : Int -> String
-expect term newRef : a -> IO (Ref a)
-expect term readRef : Ref a -> IO a
-expect term writeRef : Ref a -> a -> IO Unit
+expect term newRef : a -> UIO (Ref a)
+expect term readRef : Ref a -> UIO a
+expect term writeRef : Ref a -> a -> UIO Unit

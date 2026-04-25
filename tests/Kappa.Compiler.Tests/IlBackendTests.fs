@@ -314,6 +314,42 @@ let ``il backend emits generic list adt types for the prelude`` () =
     Assert.Equal(listType.GetGenericTypeDefinition(), consType.GetGenericTypeDefinition().BaseType.GetGenericTypeDefinition())
 
 [<Fact>]
+let ``il backend emits constructors for multi parameter data types when constructors mention only a subset of parameters`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-il-multi-parameter-data-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "data Exit e a : Type ="
+                    "    Success a"
+                    "    Failure e"
+                    "let ok : Exit Int Int = Success 1"
+                    "let err : Exit Int Int = Failure 2"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "il-multi-parameter-data"
+
+    let artifact =
+        match Backend.emitIlAssemblyArtifact workspace outputDirectory with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    use loaded = loadManagedAssembly artifact.AssemblyFilePath
+
+    let moduleType = loaded.Assembly.GetType("Kappa.Generated.main", throwOnError = true, ignoreCase = false)
+    let okMethod = moduleType.GetMethod("ok", BindingFlags.Public ||| BindingFlags.Static)
+    let errMethod = moduleType.GetMethod("err", BindingFlags.Public ||| BindingFlags.Static)
+
+    Assert.NotNull(okMethod)
+    Assert.NotNull(errMethod)
+    Assert.NotNull(okMethod.Invoke(null, [||]))
+    Assert.NotNull(errMethod.Invoke(null, [||]))
+
+[<Fact>]
 let ``il backend evaluates recursive list matches through emitted clr types`` () =
     let workspace =
         compileInMemoryWorkspace

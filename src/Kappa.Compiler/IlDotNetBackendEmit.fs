@@ -1399,9 +1399,17 @@ module internal IlDotNetBackendEmit =
                         )
 
                     let constructorGenericParameters =
-                        match constructorInfo.TypeParameters with
+                        match dataTypeInfo.TypeParameters with
                         | [] -> [||]
                         | parameters -> constructorTypeBuilder.DefineGenericParameters(parameters |> List.toArray)
+
+                    let constructorTypeParameterMap =
+                        if Array.isEmpty constructorGenericParameters then
+                            genericTypeParameterMap
+                        else
+                            List.zip dataTypeInfo.TypeParameters (constructorGenericParameters |> Array.toList)
+                            |> List.map (fun (name, parameter) -> name, (parameter :> Type))
+                            |> Map.ofList
 
                     let baseType =
                         if Array.isEmpty constructorGenericParameters then
@@ -1424,10 +1432,7 @@ module internal IlDotNetBackendEmit =
                                       ModuleBuilders = Map.empty
                                       MethodBuilders = Map.empty
                                       DataTypeBuilders = baseTypeDefinitions }
-                                    (if Array.isEmpty constructorGenericParameters then genericTypeParameterMap else
-                                        List.zip constructorInfo.TypeParameters (constructorGenericParameters |> Array.toList)
-                                        |> List.map (fun (name, parameter) -> name, (parameter :> Type))
-                                        |> Map.ofList)
+                                    constructorTypeParameterMap
                                     fieldType,
                                 FieldAttributes.Public ||| FieldAttributes.InitOnly
                             ))
@@ -1440,10 +1445,7 @@ module internal IlDotNetBackendEmit =
                               ModuleBuilders = Map.empty
                               MethodBuilders = Map.empty
                               DataTypeBuilders = baseTypeDefinitions }
-                            (if Array.isEmpty constructorGenericParameters then genericTypeParameterMap else
-                                List.zip constructorInfo.TypeParameters (constructorGenericParameters |> Array.toList)
-                                |> List.map (fun (name, parameter) -> name, (parameter :> Type))
-                                |> Map.ofList))
+                            constructorTypeParameterMap)
                         |> List.toArray
 
                     let constructorBuilder =

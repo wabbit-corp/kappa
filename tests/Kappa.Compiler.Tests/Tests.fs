@@ -2055,13 +2055,26 @@ let ``bundled bootstrap prelude exposes the normative minimum surface and IO sha
               "UIO"
               "Fiber"
               "FiberId"
+              "InterruptTag"
+              "InterruptCause"
+              "DefectTag"
+              "DefectInfo"
               "Exit"
               "Cause"
+              "Scope"
+              "Monitor"
+              "FiberRef"
+              "Promise"
               "STM"
               "TVar"
+              "Duration"
+              "Instant"
+              "TimeoutError"
+              "RaceResult"
               "Thunk"
               "Need"
-              "Regex" ]
+              "Regex"
+              "=" ]
 
     let requiredTraits =
         Set.ofList
@@ -2101,10 +2114,77 @@ let ``bundled bootstrap prelude exposes the normative minimum surface and IO sha
               "pure"
               ">>="
               ">>"
+              "|>"
+              "<|"
               "not"
               "and"
               "or"
+              "force"
+              "empty"
+              "<|>"
+              "orElse"
               "negate"
+              "absurd"
+              "subst"
+              "sym"
+              "trans"
+              "cong"
+              "measureRelation"
+              "lexRelation"
+              "floatEq"
+              "runPure"
+              "sandbox"
+              "unsandbox"
+              "fork"
+              "forkDaemon"
+              "await"
+              "join"
+              "interrupt"
+              "interruptFork"
+              "interruptAs"
+              "interruptForkAs"
+              "fiberId"
+              "currentFiberId"
+              "getFiberLabel"
+              "setFiberLabel"
+              "locallyFiberLabel"
+              "cede"
+              "blocking"
+              "poll"
+              "uninterruptible"
+              "mask"
+              "ensuring"
+              "acquireRelease"
+              "newScope"
+              "withScope"
+              "forkIn"
+              "shutdownScope"
+              "monitor"
+              "awaitMonitor"
+              "demonitor"
+              "newFiberRef"
+              "getFiberRef"
+              "setFiberRef"
+              "locallyFiberRef"
+              "newPromise"
+              "awaitPromiseExit"
+              "awaitPromise"
+              "completePromise"
+              "nowMonotonic"
+              "sleepFor"
+              "sleepUntil"
+              "timeout"
+              "race"
+              "atomically"
+              "newTVar"
+              "readTVar"
+              "writeTVar"
+              "retry"
+              "check"
+              "f"
+              "re"
+              "b"
+              "type"
               "println"
               "print"
               "printInt"
@@ -2118,15 +2198,52 @@ let ``bundled bootstrap prelude exposes the normative minimum surface and IO sha
         Set.ofList
             [ "True"
               "False"
+              "Unit"
               "None"
               "Some"
               "Ok"
               "Err"
               "Nil"
               "::"
+              ":&"
               "LT"
               "EQ"
               "GT"
+              "Hit"
+              "Miss"
+              "Yes"
+              "No"
+              "Success"
+              "Failure"
+              "Fail"
+              "Interrupt"
+              "Defect"
+              "Both"
+              "Then"
+              "Requested"
+              "ScopeShutdown"
+              "TimedOut"
+              "RaceLost"
+              "External"
+              "Custom"
+              "InterruptCause"
+              "Panic"
+              "AssertionFailed"
+              "ArithmeticFault"
+              "StackOverflow"
+              "OutOfMemory"
+              "HostFailure"
+              "ForeignContractViolation"
+              "UnhandledChildFailure"
+              "OtherDefect"
+              "DefectInfo"
+              "Timeout"
+              "LeftWins"
+              "RightWins"
+              "Lit"
+              "Interp"
+              "InterpFmt"
+              "refl"
               ]
 
     Assert.True(Set.isSubset requiredTypes exportedTypes, $"Missing prelude types: {Set.difference requiredTypes exportedTypes}")
@@ -2146,6 +2263,15 @@ let ``bundled bootstrap prelude exposes the normative minimum surface and IO sha
                 Some(tokensText declaration.HeaderTokens)
             | _ -> None)
 
+    let expectTermTypes =
+        preludeDocument.Syntax.Declarations
+        |> List.choose (function
+            | ExpectDeclarationNode (ExpectTermDeclaration declaration) ->
+                Some(declaration.Name, tokensText declaration.TypeTokens)
+            | _ ->
+                None)
+        |> Map.ofList
+
     let uioAliasHeaderText, uioAliasBodyText =
         preludeDocument.Syntax.Declarations
         |> List.pick (function
@@ -2159,6 +2285,16 @@ let ``bundled bootstrap prelude exposes the normative minimum surface and IO sha
     Assert.Equal("( e : Type ) ( a : Type )", ioHeaderText)
     Assert.Equal("( a : Type )", uioAliasHeaderText)
     Assert.Equal("IO Void a", uioAliasBodyText)
+    Assert.Equal("( 1 value : a ) -> UIO a", expectTermTypes["pure"])
+    Assert.Equal("UIO a -> ( a -> UIO b ) -> UIO b", expectTermTypes[">>="])
+    Assert.Equal("UIO a -> UIO b -> UIO b", expectTermTypes[">>"])
+    Assert.Equal("String -> UIO Unit", expectTermTypes["println"])
+    Assert.Equal("String -> UIO Unit", expectTermTypes["print"])
+    Assert.Equal("Int -> UIO Unit", expectTermTypes["printInt"])
+    Assert.Equal("String -> UIO Unit", expectTermTypes["printString"])
+    Assert.Equal("a -> UIO ( Ref a )", expectTermTypes["newRef"])
+    Assert.Equal("Ref a -> UIO a", expectTermTypes["readRef"])
+    Assert.Equal("Ref a -> a -> UIO Unit", expectTermTypes["writeRef"])
 
 [<Fact>]
 let ``backend intrinsic bootstrap contract is derived from bundled prelude expectations with explicit module local supplement`` () =

@@ -67,12 +67,21 @@ module internal KRuntimeLowering =
     let private runtimeValueTypeExpr typeExpr =
         match eraseRuntimeTypeExpr typeExpr with
         | TypeSignatures.TypeName([ "IO" ], [ inner ]) -> inner
+        | TypeSignatures.TypeName([ "IO" ], [ _; inner ]) -> inner
+        | TypeSignatures.TypeName([ "UIO" ], [ inner ]) -> inner
         | other -> other
 
     let private eraseRuntimeTypeText (text: string) =
         match tryParseTypeText text with
         | Some parsed ->
             parsed |> eraseRuntimeTypeExpr |> TypeSignatures.toText
+        | None ->
+            text
+
+    let private runtimeValueTypeText (text: string) =
+        match tryParseTypeText text with
+        | Some parsed ->
+            parsed |> runtimeValueTypeExpr |> TypeSignatures.toText
         | None ->
             text
 
@@ -455,7 +464,7 @@ module internal KRuntimeLowering =
 
                     Some(
                         etaParameters,
-                        Some(TypeSignatures.toText resultType |> eraseRuntimeTypeText),
+                        Some(TypeSignatures.toText resultType |> runtimeValueTypeText),
                         Some closureBody
                     )
                 else
@@ -511,7 +520,7 @@ module internal KRuntimeLowering =
                 | Some binding when binding.Name.IsSome && not (isCompileTimeOnlyBindingBody binding.Body) ->
                     let loweredBody = binding.Body |> Option.map (lowerKRuntimeExpression runtimeParameterMasks)
                     let loweredParameters = binding.Parameters |> filterRuntimeParameters |> List.map lowerRuntimeParameter
-                    let loweredReturnType = binding.ReturnTypeText |> Option.map eraseRuntimeTypeText
+                    let loweredReturnType = binding.ReturnTypeText |> Option.map runtimeValueTypeText
                     let parameters, returnType, body =
                         match loweredParameters with
                         | [] ->

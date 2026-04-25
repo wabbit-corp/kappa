@@ -220,6 +220,21 @@ module ResourceChecking =
         | _ ->
             left |> Option.orElse right
 
+    let private refType argumentType =
+        TypeSignatures.TypeName([ "Ref" ], [ argumentType ])
+
+    let private unwrapIoType typeExpr =
+        match typeExpr with
+        | TypeSignatures.TypeName([ "IO" ], [ inner ]) -> inner
+        | TypeSignatures.TypeName([ "IO" ], [ _; inner ]) -> inner
+        | TypeSignatures.TypeName([ "UIO" ], [ inner ]) -> inner
+        | other -> other
+
+    let private unwrapBindPayloadType typeExpr =
+        match typeExpr with
+        | TypeSignatures.TypeName(_, [ inner ]) -> inner
+        | other -> unwrapIoType other
+
     let private inferLambdaBindingQuantity (capturedBindings: ResourceBinding list) =
         capturedBindings
         |> List.fold (fun current binding -> combineLambdaBindingQuantity current binding.DeclaredQuantity) None
@@ -698,6 +713,19 @@ module ResourceChecking =
         | None ->
             None
 
+    let private functionParameterInfoFromType typeExpr =
+        let rec loop current quantities parameterTypes =
+            match current with
+            | TypeSignatures.TypeArrow(quantity, parameterType, resultType) ->
+                loop
+                    resultType
+                    (Some(ResourceQuantity.ofSurface quantity) :: quantities)
+                    (Some parameterType :: parameterTypes)
+            | _ ->
+                List.rev quantities, List.rev parameterTypes
+
+        loop typeExpr [] []
+
     let private tryInferConservativeExpressionType
         (signatures: Map<string, FunctionSignature>)
         (localTypes: Map<string, TypeSignatures.TypeExpr>)
@@ -710,6 +738,12 @@ module ResourceChecking =
                 Some payloadType
             | _ ->
                 None
+
+        let stringType = TypeSignatures.TypeName([ "String" ], [])
+        let charType = TypeSignatures.TypeName([ "Char" ], [])
+        let unitType = TypeSignatures.TypeName([ "Unit" ], [])
+        let intType = TypeSignatures.TypeName([ "Int" ], [])
+        let doubleType = TypeSignatures.TypeName([ "Double" ], [])
 
         let rec tryProjectRecordType currentType path =
             match path, currentType with
@@ -734,6 +768,16 @@ module ResourceChecking =
                 |> Option.bind (fun rootType -> tryProjectRecordType rootType path)
             | Name [] ->
                 None
+            | Literal(String _) ->
+                Some stringType
+            | Literal(Character _) ->
+                Some charType
+            | Literal(Unit) ->
+                Some unitType
+            | NumericLiteral(SurfaceIntegerLiteral(_, _, None)) ->
+                Some intType
+            | NumericLiteral(SurfaceRealLiteral(_, _, None)) ->
+                Some doubleType
             | RecordLiteral fields ->
                 let inferredFields =
                     fields
@@ -753,6 +797,9 @@ module ResourceChecking =
                     None
             | Seal(value, _) ->
                 loop locals value
+            | Apply(callee, arguments) ->
+                loop locals callee
+                |> Option.bind (fun calleeType -> tryApplyType locals calleeType arguments)
             | Lambda(parameters, body) ->
                 let parameterTypes =
                     parameters
@@ -805,12 +852,153 @@ module ResourceChecking =
             match currentType, arguments with
             | currentType, [] ->
                 Some currentType
-            | TypeSignatures.TypeArrow(_, parameterType, resultType), argument :: rest when loop locals argument = Some parameterType ->
-                tryApplyType locals resultType rest
+            | TypeSignatures.TypeArrow(_, parameterType, resultType), argument :: rest ->
+                match loop locals argument with
+                | Some argumentType ->
+                    match TypeSignatures.tryUnifyMany [ parameterType, argumentType ] with
+                    | Some substitution ->
+                        let nextResultType = TypeSignatures.applySubstitution substitution resultType
+                        tryApplyType locals nextResultType rest
+                    | None ->
+                        None
+                | None ->
+                    None
             | _ ->
                 None
 
         loop localTypes expression
+
+    let private extendPatternLocalTypes
+        (signatures: Map<string, FunctionSignature>)
+        (localTypes: Map<string, TypeSignatures.TypeExpr>)
+        expectedType
+        pattern
+        =
+        let tryLookupSignature nameSegments =
+            let qualifiedName = SyntaxFacts.moduleNameToText nameSegments
+
+            signatures
+            |> Map.tryFind qualifiedName
+            |> Option.orElseWith (fun () ->
+                match List.rev nameSegments with
+                | name :: _ -> Map.tryFind name signatures
+                | [] -> None)
+
+        let rec splitArrowTypes current =
+            match current with
+            | TypeSignatures.TypeArrow(_, parameterType, resultType) ->
+                let parameterTypes, finalResultType = splitArrowTypes resultType
+                parameterType :: parameterTypes, finalResultType
+            | _ ->
+                [], current
+
+        let rec loop locals expected currentPattern =
+            match currentPattern with
+            | WildcardPattern
+            | LiteralPattern _ ->
+                locals
+            | NamePattern name ->
+                match expected with
+                | Some expectedType -> Map.add name expectedType locals
+                | None -> locals
+            | AsPattern(name, inner) ->
+                let locals =
+                    match expected with
+                    | Some expectedType -> Map.add name expectedType locals
+                    | None -> locals
+
+                loop locals expected inner
+            | TypedPattern(inner, typeTokens) ->
+                loop locals (TypeSignatures.parseType typeTokens |> Option.orElse expected) inner
+            | TuplePattern elements ->
+                let tupleFields =
+                    elements
+                    |> List.mapi (fun index element ->
+                        { Name = $"_{index + 1}"
+                          IsImplicit = false
+                          Pattern = element })
+
+                loop locals expected (AnonymousRecordPattern(tupleFields, None))
+            | AnonymousRecordPattern(fields, rest) ->
+                let locals =
+                    match expected with
+                    | Some(TypeSignatures.TypeRecord recordFields) ->
+                        fields
+                        |> List.fold (fun current field ->
+                            let fieldType =
+                                recordFields
+                                |> List.tryFind (fun recordField -> String.Equals(recordField.Name, field.Name, StringComparison.Ordinal))
+                                |> Option.map (fun recordField -> recordField.Type)
+
+                            loop current fieldType field.Pattern) locals
+                    | _ ->
+                        fields |> List.fold (fun current field -> loop current None field.Pattern) locals
+
+                match rest with
+                | Some(BindRecordPatternRest name) ->
+                    match expected with
+                    | Some(TypeSignatures.TypeRecord recordFields) ->
+                        let mentioned = fields |> List.map (fun field -> field.Name) |> Set.ofList
+                        let residualFields =
+                            recordFields
+                            |> List.filter (fun field -> not (Set.contains field.Name mentioned))
+
+                        Map.add name (TypeSignatures.TypeRecord residualFields) locals
+                    | _ ->
+                        Map.add name (TypeSignatures.TypeRecord []) locals
+                | _ ->
+                    locals
+            | ConstructorPattern(nameSegments, arguments) ->
+                let argumentTypes =
+                    match expected, tryLookupSignature nameSegments |> Option.bind tryBuildFunctionTypeFromSignature with
+                    | Some expectedType, Some constructorType ->
+                        let parameterTypes, resultType = splitArrowTypes constructorType
+
+                        match TypeSignatures.tryUnifyMany [ resultType, expectedType ] with
+                        | Some substitution when List.length parameterTypes = arguments.Length ->
+                            parameterTypes
+                            |> List.map (TypeSignatures.applySubstitution substitution >> Some)
+                        | None ->
+                            List.replicate arguments.Length None
+                        | Some _ ->
+                            List.replicate arguments.Length None
+                    | _ ->
+                        List.replicate arguments.Length None
+
+                List.zip arguments argumentTypes
+                |> List.fold (fun current (argumentPattern, argumentType) -> loop current argumentType argumentPattern) locals
+            | NamedConstructorPattern(_, fields) ->
+                fields |> List.fold (fun current field -> loop current None field.Pattern) locals
+            | VariantPattern(BoundVariantPattern(name, Some typeTokens)) ->
+                match TypeSignatures.parseType typeTokens with
+                | Some parsedType -> Map.add name parsedType locals
+                | None -> locals
+            | VariantPattern(BoundVariantPattern(name, None))
+            | VariantPattern(RestVariantPattern name) ->
+                match expected with
+                | Some expectedType -> Map.add name expectedType locals
+                | None -> locals
+            | VariantPattern(WildcardVariantPattern _) ->
+                locals
+            | OrPattern alternatives ->
+                match alternatives with
+                | first :: _ -> loop locals expected first
+                | [] -> locals
+
+        loop localTypes expectedType pattern
+
+    let private extendBindingLocalTypes
+        (signatures: Map<string, FunctionSignature>)
+        (localTypes: Map<string, TypeSignatures.TypeExpr>)
+        valueType
+        (binding: SurfaceBindPattern)
+        =
+        let valueType =
+            binding.TypeTokens
+            |> Option.bind TypeSignatures.parseType
+            |> Option.orElse valueType
+
+        extendPatternLocalTypes signatures localTypes valueType binding.Pattern
 
     let rec private typeContainsCaptureAnnotation typeExpr =
         match typeExpr with
@@ -911,6 +1099,8 @@ module ResourceChecking =
     let private applicationBoundaryTypesCompatible demandedType actualType =
         if TypeSignatures.definitionallyEqual demandedType actualType then
             true
+        elif TypeSignatures.tryUnifyMany [ demandedType, actualType ] |> Option.isSome then
+            true
         else
             match demandedType, actualType with
             | TypeSignatures.TypeArrow(demandedInnerQuantity, demandedParameterType, demandedResultType),
@@ -922,6 +1112,121 @@ module ResourceChecking =
                     (ResourceQuantity.ofSurface capabilityInnerQuantity)
             | _ ->
                 false
+
+    let rec typeIsReliableForApplicationBoundary typeExpr =
+        match typeExpr with
+        | TypeSignatures.TypeVariable _
+        | TypeSignatures.TypeIntrinsic _
+        | TypeSignatures.TypeUniverse _ ->
+            false
+        | TypeSignatures.TypeName([ "IO" ], _)
+        | TypeSignatures.TypeName([ "UIO" ], _) ->
+            false
+        | TypeSignatures.TypeName(_, arguments) ->
+            arguments |> List.forall typeIsReliableForApplicationBoundary
+        | TypeSignatures.TypeApply(callee, arguments) ->
+            typeIsReliableForApplicationBoundary callee
+            && (arguments |> List.forall typeIsReliableForApplicationBoundary)
+        | TypeSignatures.TypeLambda(_, parameterSort, body) ->
+            typeIsReliableForApplicationBoundary parameterSort
+            && typeIsReliableForApplicationBoundary body
+        | TypeSignatures.TypeDelay inner
+        | TypeSignatures.TypeMemo inner
+        | TypeSignatures.TypeForce inner ->
+            typeIsReliableForApplicationBoundary inner
+        | TypeSignatures.TypeProject(target, _) ->
+            typeIsReliableForApplicationBoundary target
+        | TypeSignatures.TypeArrow(_, parameterType, resultType)
+        | TypeSignatures.TypeEquality(parameterType, resultType) ->
+            typeIsReliableForApplicationBoundary parameterType
+            && typeIsReliableForApplicationBoundary resultType
+        | TypeSignatures.TypeCapture(inner, _) ->
+            typeIsReliableForApplicationBoundary inner
+        | TypeSignatures.TypeRecord fields ->
+            fields |> List.forall (fun field -> typeIsReliableForApplicationBoundary field.Type)
+        | TypeSignatures.TypeUnion members ->
+            members |> List.forall typeIsReliableForApplicationBoundary
+        | TypeSignatures.TypeLevelLiteral _ ->
+            true
+
+    let private isSingleLetterTypeParameterLike (nameSegments: string list) =
+        match nameSegments with
+        | [ name ] -> name.Length = 1 && Char.IsUpper name[0]
+        | _ -> false
+
+    let private isSuspensionWrapperName (nameSegments: string list) =
+        match nameSegments with
+        | [ "Need" ]
+        | [ "Thunk" ]
+        | [ "std"; "prelude"; "Need" ]
+        | [ "std"; "prelude"; "Thunk" ] ->
+            true
+        | _ ->
+            false
+
+    let rec private hasConservativeBoundarySpecialCase typeExpr =
+        match typeExpr with
+        | TypeSignatures.TypeApply _ ->
+            true
+        | TypeSignatures.TypeName(nameSegments, arguments) ->
+            isSingleLetterTypeParameterLike nameSegments
+            || isSuspensionWrapperName nameSegments
+            || (arguments |> List.exists hasConservativeBoundarySpecialCase)
+        | TypeSignatures.TypeArrow(_, parameterType, resultType)
+        | TypeSignatures.TypeEquality(parameterType, resultType) ->
+            hasConservativeBoundarySpecialCase parameterType
+            || hasConservativeBoundarySpecialCase resultType
+        | TypeSignatures.TypeCapture(inner, _) ->
+            hasConservativeBoundarySpecialCase inner
+        | TypeSignatures.TypeRecord fields ->
+            fields |> List.exists (fun field -> hasConservativeBoundarySpecialCase field.Type)
+        | TypeSignatures.TypeUnion members ->
+            members |> List.exists hasConservativeBoundarySpecialCase
+        | TypeSignatures.TypeDelay inner
+        | TypeSignatures.TypeMemo inner
+        | TypeSignatures.TypeForce inner
+        | TypeSignatures.TypeProject(inner, _) ->
+            hasConservativeBoundarySpecialCase inner
+        | TypeSignatures.TypeLambda(_, parameterSort, body) ->
+            hasConservativeBoundarySpecialCase parameterSort
+            || hasConservativeBoundarySpecialCase body
+        | TypeSignatures.TypeLevelLiteral _
+        | TypeSignatures.TypeUniverse _
+        | TypeSignatures.TypeIntrinsic _
+        | TypeSignatures.TypeVariable _ ->
+            false
+
+    let private shouldCheckApplicationTypeCompatibility argument demandedType actualType =
+        let mixesNamedAndStructuralRecord =
+            match demandedType, actualType with
+            | TypeSignatures.TypeRecord _, TypeSignatures.TypeName _
+            | TypeSignatures.TypeName _, TypeSignatures.TypeRecord _ ->
+                true
+            | _ ->
+                false
+
+        let isFunctionBoundary =
+            match demandedType, actualType with
+            | TypeSignatures.TypeArrow _, TypeSignatures.TypeArrow _ -> true
+            | _ -> false
+
+        match argument with
+        | NumericLiteral _
+        | Literal _
+        | ExplicitImplicitArgument _
+        | MonadicSplice _ ->
+            false
+        | Lambda _ when isFunctionBoundary ->
+            false
+        | Name _ when isFunctionBoundary ->
+            false
+        | _ when hasConservativeBoundarySpecialCase demandedType || hasConservativeBoundarySpecialCase actualType ->
+            false
+        | _ when mixesNamedAndStructuralRecord ->
+            false
+        | _ ->
+            typeIsReliableForApplicationBoundary demandedType
+            && typeIsReliableForApplicationBoundary actualType
 
     let private tryOutermostFunctionTypeFromArgument signatures argument =
         match argument with
@@ -3600,6 +3905,7 @@ module ResourceChecking =
         projectionSummaries
         (document: ParsedDocument)
         (signatures: Map<string, FunctionSignature>)
+        (localTypes: Map<string, TypeSignatures.TypeExpr>)
         state
         (lambdaValue: LocalLambda)
         arguments
@@ -3695,9 +4001,21 @@ module ResourceChecking =
                                 None
                                 current)
 
+                    let lambdaLocalTypes =
+                        (localTypes, List.zip lambdaValue.Parameters arguments)
+                        ||> List.fold (fun current (parameter, argument) ->
+                            let parameterType =
+                                parameter.TypeTokens
+                                |> Option.bind TypeSignatures.parseType
+                                |> Option.orElseWith (fun () -> tryInferConservativeExpressionType signatures localTypes argument)
+
+                            match parameterType with
+                            | Some parameterType -> Map.add parameter.Name parameterType current
+                            | None -> current)
+
                     scopedState
                     |> noteValueDemandingNameUse document lambdaValue.Body
-                    |> fun current -> checkExpression projectionSummaries document signatures current lambdaValue.Body
+                    |> fun current -> checkExpression projectionSummaries document signatures lambdaLocalTypes current lambdaValue.Body
                     |> checkResultEscapeAtBoundary allowedRegions document lambdaValue.Body
                     |> checkScopeLinearDrops document) state
 
@@ -3710,16 +4028,38 @@ module ResourceChecking =
             | None ->
                 checkedState
 
-    and private checkImmediateLambdaDemand projectionSummaries document signatures state parameters body =
+    and private checkImmediateLambdaDemand
+        projectionSummaries
+        document
+        signatures
+        localTypes
+        state
+        (parameters: Parameter list)
+        body
+        =
         withScope "lambda_arg" (fun scopedState ->
+            let lambdaLocalTypes =
+                (localTypes, parameters)
+                ||> List.fold (fun current parameter ->
+                    match parameter.TypeTokens |> Option.bind TypeSignatures.parseType with
+                    | Some parameterType -> Map.add parameter.Name parameterType current
+                    | None -> current)
+
             parameters
             |> List.fold (fun current parameter -> addLambdaExecutionParameterBinding document parameter current) scopedState
             |> noteValueDemandingNameUse document body
-            |> fun current -> checkExpression projectionSummaries document signatures current body
+            |> fun current -> checkExpression projectionSummaries document signatures lambdaLocalTypes current body
             |> checkResultEscapeAtBoundary (liveRegionIds state) document body
             |> checkScopeLinearDrops document) state
 
-    and private checkExpression projectionSummaries (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state expression =
+    and private checkExpression
+        projectionSummaries
+        (document: ParsedDocument)
+        (signatures: Map<string, FunctionSignature>)
+        (localTypes: Map<string, TypeSignatures.TypeExpr>)
+        state
+        expression
+        =
         match expression with
         | Literal _
         | NumericLiteral _
@@ -3727,11 +4067,11 @@ module ResourceChecking =
         | Name [ _ ] ->
             state
         | LocalSignature(_, body) ->
-            checkExpression projectionSummaries document signatures state body
+            checkExpression projectionSummaries document signatures localTypes state body
         | LocalTypeAlias(_, body) ->
-            checkExpression projectionSummaries document signatures state body
+            checkExpression projectionSummaries document signatures localTypes state body
         | LocalScopedEffect(_, body) ->
-            checkExpression projectionSummaries document signatures state body
+            checkExpression projectionSummaries document signatures localTypes state body
         | Name(root :: path) ->
             validatePlaceAccess
                 document
@@ -3788,7 +4128,11 @@ module ResourceChecking =
                 match value, delayedBody with
                 | Lambda _, _ -> checkLambdaParameterEscape document value state
                 | _, Some _ -> state
-                | _ -> checkExpression projectionSummaries document signatures state value
+                | _ -> checkExpression projectionSummaries document signatures localTypes state value
+
+            let nextLocalTypes =
+                tryInferConservativeExpressionType signatures localTypes value
+                |> fun valueType -> extendBindingLocalTypes signatures localTypes valueType binding
 
             let state =
                 checkShadowedLinearBindings document shadowedLinearBindings state stateAfterValue
@@ -3923,7 +4267,7 @@ module ResourceChecking =
                     |> Option.map (fun (aliasName, useCount) -> noteProjectionDescriptorAliasUses document aliasName useCount current)
                     |> Option.defaultValue current
                 |> noteValueDemandingNameUse document bodyForChecking
-                |> fun current -> checkExpression projectionSummaries document signatures current bodyForChecking
+                |> fun current -> checkExpression projectionSummaries document signatures nextLocalTypes current bodyForChecking
                 |> checkResultEscapeAtBoundary allowedRegions document bodyForChecking
                 |> checkScopeLinearDrops document) state
         | Lambda _ ->
@@ -3932,9 +4276,9 @@ module ResourceChecking =
             let state =
                 state
                 |> noteValueDemandingNameUse document condition
-                |> fun current -> checkExpression projectionSummaries document signatures current condition
-            let left = checkExpressionInScope "if_then" projectionSummaries document signatures state whenTrue
-            let right = checkExpressionInScope "if_else" projectionSummaries document signatures state whenFalse
+                |> fun current -> checkExpression projectionSummaries document signatures localTypes current condition
+            let left = checkExpressionInScope "if_then" projectionSummaries document signatures localTypes state whenTrue
+            let right = checkExpressionInScope "if_else" projectionSummaries document signatures localTypes state whenFalse
             mergeBranchState left right
         | Match(scrutinee, cases) ->
             let state =
@@ -3958,15 +4302,15 @@ module ResourceChecking =
                                 state
 
                         if supportsPatternOwnership then
-                            checkExpression projectionSummaries document signatures current scrutinee
+                            checkExpression projectionSummaries document signatures localTypes current scrutinee
                         else
                             current
                             |> noteValueDemandingNameUse document scrutinee
-                            |> fun next -> checkExpression projectionSummaries document signatures next scrutinee
+                            |> fun next -> checkExpression projectionSummaries document signatures localTypes next scrutinee
                     | _ ->
                         state
                         |> noteValueDemandingNameUse document scrutinee
-                        |> fun current -> checkExpression projectionSummaries document signatures current scrutinee
+                        |> fun current -> checkExpression projectionSummaries document signatures localTypes current scrutinee
 
                 if supportsPatternOwnership then
                     checkedState
@@ -3978,6 +4322,12 @@ module ResourceChecking =
             | first :: rest ->
                 let checkCase index (caseClause: SurfaceMatchCase) =
                     let allowedRegions = liveRegionIds state
+                    let caseLocalTypes =
+                        extendPatternLocalTypes
+                            signatures
+                            localTypes
+                            (tryInferConservativeExpressionType signatures localTypes scrutinee)
+                            caseClause.Pattern
 
                     withScope $"match_case{index}" (fun scopedState ->
                         let scopedState =
@@ -4017,10 +4367,10 @@ module ResourceChecking =
 
                         let scopedState =
                             match caseClause.Guard with
-                            | Some guard -> checkExpression projectionSummaries document signatures scopedState guard
+                            | Some guard -> checkExpression projectionSummaries document signatures caseLocalTypes scopedState guard
                             | None -> scopedState
 
-                        checkExpression projectionSummaries document signatures scopedState caseClause.Body
+                        checkExpression projectionSummaries document signatures caseLocalTypes scopedState caseClause.Body
                         |> checkResultEscapeAtBoundary allowedRegions document caseClause.Body
                         |> checkScopeLinearDrops document) state
 
@@ -4036,20 +4386,20 @@ module ResourceChecking =
             |> List.fold (fun current field ->
                 current
                 |> noteValueDemandingNameUse document field.Value
-                |> fun next -> checkExpression projectionSummaries document signatures next field.Value) state
+                |> fun next -> checkExpression projectionSummaries document signatures localTypes next field.Value) state
         | Seal(value, _) ->
             state
             |> noteValueDemandingNameUse document value
-            |> fun current -> checkExpression projectionSummaries document signatures current value
+            |> fun current -> checkExpression projectionSummaries document signatures localTypes current value
         | RecordUpdate(receiver, fields) ->
-            let state = checkExpression projectionSummaries document signatures state receiver
+            let state = checkExpression projectionSummaries document signatures localTypes state receiver
 
             let state =
                 fields
                 |> List.fold (fun current field ->
                     current
                     |> noteValueDemandingNameUse document field.Value
-                    |> fun next -> checkExpression projectionSummaries document signatures next field.Value) state
+                    |> fun next -> checkExpression projectionSummaries document signatures localTypes next field.Value) state
 
             match tryExpressionPlace receiver with
             | Some receiverPlace ->
@@ -4131,7 +4481,7 @@ module ResourceChecking =
             let state =
                 state
                 |> noteValueDemandingNameUse document receiver
-                |> fun current -> checkExpression projectionSummaries document signatures current receiver
+                |> fun current -> checkExpression projectionSummaries document signatures localTypes current receiver
 
             let state =
                 match receiver, segments with
@@ -4152,49 +4502,49 @@ module ResourceChecking =
             |> List.fold (fun current argument ->
                 current
                 |> noteValueDemandingNameUse document argument
-                |> fun next -> checkExpression projectionSummaries document signatures next argument) state
+                |> fun next -> checkExpression projectionSummaries document signatures localTypes next argument) state
         | SafeNavigation(receiver, navigation) ->
             let state =
                 state
                 |> noteValueDemandingNameUse document receiver
-                |> fun current -> checkExpression projectionSummaries document signatures current receiver
+                |> fun current -> checkExpression projectionSummaries document signatures localTypes current receiver
 
             navigation.Arguments
             |> List.fold (fun current argument ->
                 current
                 |> noteValueDemandingNameUse document argument
-                |> fun next -> checkExpression projectionSummaries document signatures next argument) state
+                |> fun next -> checkExpression projectionSummaries document signatures localTypes next argument) state
         | TagTest(receiver, _) ->
             state
             |> noteValueDemandingNameUse document receiver
-            |> fun current -> checkExpression projectionSummaries document signatures current receiver
+            |> fun current -> checkExpression projectionSummaries document signatures localTypes current receiver
         | Do statements ->
-            checkDoStatementsInScope "do" projectionSummaries document signatures state statements
+            checkDoStatementsInScope "do" projectionSummaries document signatures localTypes state statements
         | MonadicSplice inner
         | ExplicitImplicitArgument inner
         | InoutArgument inner
         | Unary(_, inner) ->
             state
             |> noteValueDemandingNameUse document inner
-            |> fun current -> checkExpression projectionSummaries document signatures current inner
+            |> fun current -> checkExpression projectionSummaries document signatures localTypes current inner
         | NamedApplicationBlock fields ->
             fields
             |> List.fold (fun current field ->
                 current
                 |> noteValueDemandingNameUse document field.Value
-                |> fun next -> checkExpression projectionSummaries document signatures next field.Value) state
+                |> fun next -> checkExpression projectionSummaries document signatures localTypes next field.Value) state
         | Binary(left, _, right) ->
             state
             |> noteValueDemandingNameUse document left
-            |> fun current -> checkExpression projectionSummaries document signatures current left
+            |> fun current -> checkExpression projectionSummaries document signatures localTypes current left
             |> noteValueDemandingNameUse document right
-            |> fun current -> checkExpression projectionSummaries document signatures current right
+            |> fun current -> checkExpression projectionSummaries document signatures localTypes current right
         | Elvis(left, right) ->
             state
             |> noteValueDemandingNameUse document left
-            |> fun current -> checkExpression projectionSummaries document signatures current left
+            |> fun current -> checkExpression projectionSummaries document signatures localTypes current left
             |> noteValueDemandingNameUse document right
-            |> fun current -> checkExpression projectionSummaries document signatures current right
+            |> fun current -> checkExpression projectionSummaries document signatures localTypes current right
         | PrefixedString(_, parts) ->
             parts
             |> List.fold (fun current part ->
@@ -4203,13 +4553,13 @@ module ResourceChecking =
                 | StringInterpolation inner ->
                     current
                     |> noteValueDemandingNameUse document inner
-                    |> fun next -> checkExpression projectionSummaries document signatures next inner) state
+                    |> fun next -> checkExpression projectionSummaries document signatures localTypes next inner) state
         | Apply(Name [ calleeName ], [ view; Lambda(parameters, body) ])
             when String.Equals(calleeName, "withBorrowView", StringComparison.Ordinal) ->
-            let state = checkExpression projectionSummaries document signatures state view
-            checkImmediateLambdaDemand projectionSummaries document signatures state parameters body
+            let state = checkExpression projectionSummaries document signatures localTypes state view
+            checkImmediateLambdaDemand projectionSummaries document signatures localTypes state parameters body
         | Apply(Name [ calleeName ], [ argument ]) when String.Equals(calleeName, "force", StringComparison.Ordinal) ->
-            let state = checkExpression projectionSummaries document signatures state argument
+            let state = checkExpression projectionSummaries document signatures localTypes state argument
 
             match argument with
             | Name [ name ] ->
@@ -4225,7 +4575,7 @@ module ResourceChecking =
                             state
 
                     match binding.LocalLambda with
-                    | Some lambdaValue -> checkLocalLambdaInvocation projectionSummaries document signatures state lambdaValue []
+                    | Some lambdaValue -> checkLocalLambdaInvocation projectionSummaries document signatures localTypes state lambdaValue []
                     | None -> state
                 | None ->
                     state
@@ -4236,13 +4586,13 @@ module ResourceChecking =
 
             if carriesBorrow then
                 state
-                |> checkExpression projectionSummaries document signatures <| argument
+                |> checkExpression projectionSummaries document signatures localTypes <| argument
                 |> checkEscape document argument
             else
                 let state =
                     match argument with
                     | Name [ name ] -> consumeBinding document name state
-                    | _ -> checkExpression projectionSummaries document signatures state argument
+                    | _ -> checkExpression projectionSummaries document signatures localTypes state argument
 
                 state
         | Apply(Name [ calleeName ], [ body ]) when String.Equals(calleeName, "fork", StringComparison.Ordinal) ->
@@ -4259,7 +4609,7 @@ module ResourceChecking =
                         document
                         state
 
-            checkExpression projectionSummaries document signatures state body
+            checkExpression projectionSummaries document signatures localTypes state body
         | Apply(Name [ calleeName ], arguments) when Map.containsKey calleeName projectionSummaries ->
             match Map.tryFind calleeName projectionSummaries with
             | None ->
@@ -4292,11 +4642,11 @@ module ResourceChecking =
                                 current
                                 |> addProjectionPlaceDiagnostic document argument
                                 |> noteValueDemandingNameUse document argument
-                                |> fun next -> checkExpression projectionSummaries document signatures next argument
+                                |> fun next -> checkExpression projectionSummaries document signatures localTypes next argument
                         | ProjectionValueBinder _ ->
                             current
                             |> noteValueDemandingNameUse document argument
-                            |> fun next -> checkExpression projectionSummaries document signatures next argument)
+                            |> fun next -> checkExpression projectionSummaries document signatures localTypes next argument)
 
                 if isAccessorProjection then
                     state
@@ -4316,16 +4666,16 @@ module ResourceChecking =
                 |> List.fold (fun current argument ->
                     current
                     |> noteValueDemandingNameUse document argument
-                    |> fun next -> checkExpression projectionSummaries document signatures next argument) state
+                    |> fun next -> checkExpression projectionSummaries document signatures localTypes next argument) state
         | Apply(Name [ receiverName; memberName ], arguments)
             when tryBuildReceiverMethodArgumentsForDocument document (Name [ receiverName ]) memberName arguments |> Option.isSome ->
             let receiverArguments =
                 tryBuildReceiverMethodArgumentsForDocument document (Name [ receiverName ]) memberName arguments
                 |> Option.defaultValue arguments
 
-            checkExpression projectionSummaries document signatures state (Apply(Name [ memberName ], receiverArguments))
+            checkExpression projectionSummaries document signatures localTypes state (Apply(Name [ memberName ], receiverArguments))
         | Apply(callee, arguments) ->
-            let state = checkExpression projectionSummaries document signatures state callee
+            let state = checkExpression projectionSummaries document signatures localTypes state callee
             let state =
                 match callee with
                 | Name(root :: path) when not (List.isEmpty path) && fieldPathRequiresUse state (makePlace root path) ->
@@ -4376,35 +4726,35 @@ module ResourceChecking =
                 | _ ->
                     state
 
-            let parameterQuantities =
+            let parameterQuantities, parameterTypes, parameterInout =
                 match localLambda with
                 | Some lambdaValue ->
-                    lambdaValue.Parameters |> List.map parameterQuantity
+                    lambdaValue.Parameters |> List.map parameterQuantity,
+                    (lambdaValue.Parameters |> List.map (fun parameter -> parameter.TypeTokens |> Option.bind TypeSignatures.parseType)),
+                    (lambdaValue.Parameters |> List.map (fun parameter -> parameter.IsInout))
                 | None ->
-                    calleeName
-                    |> Option.bind (fun name -> Map.tryFind name signatures)
-                    |> Option.map (fun signature -> signature.ParameterQuantities)
-                    |> Option.defaultValue []
-
-            let parameterTypeTokens =
-                match localLambda with
-                | Some lambdaValue ->
-                    lambdaValue.Parameters |> List.map (fun parameter -> parameter.TypeTokens)
-                | None ->
-                    calleeName
-                    |> Option.bind (fun name -> Map.tryFind name signatures)
-                    |> Option.map (fun signature -> signature.ParameterTypeTokens)
-                    |> Option.defaultValue []
-
-            let parameterInout =
-                match localLambda with
-                | Some lambdaValue ->
-                    lambdaValue.Parameters |> List.map (fun parameter -> parameter.IsInout)
-                | None ->
-                    calleeName
-                    |> Option.bind (fun name -> Map.tryFind name signatures)
-                    |> Option.map (fun signature -> signature.ParameterInout)
-                    |> Option.defaultValue []
+                    match callee with
+                    | Name [ name ] ->
+                        match Map.tryFind name localTypes with
+                        | Some localType ->
+                            let quantities, parameterTypes = functionParameterInfoFromType localType
+                            quantities, parameterTypes, List.replicate parameterTypes.Length false
+                        | None ->
+                            calleeName
+                            |> Option.bind (fun resolvedName -> Map.tryFind resolvedName signatures)
+                            |> Option.map (fun signature ->
+                                signature.ParameterQuantities,
+                                (signature.ParameterTypeTokens |> List.map (Option.bind TypeSignatures.parseType)),
+                                signature.ParameterInout)
+                            |> Option.defaultValue ([], [], [])
+                    | _ ->
+                        calleeName
+                        |> Option.bind (fun name -> Map.tryFind name signatures)
+                        |> Option.map (fun signature ->
+                            signature.ParameterQuantities,
+                            (signature.ParameterTypeTokens |> List.map (Option.bind TypeSignatures.parseType)),
+                            signature.ParameterInout)
+                        |> Option.defaultValue ([], [], [])
 
             let state =
                 let inoutPlaces =
@@ -4536,8 +4886,8 @@ module ResourceChecking =
 
                     let demandQuantity = demandedParameterQuantity quantity
 
-                    let demandedParameterTypeTokens =
-                        parameterTypeTokens
+                    let demandedParameterType =
+                        parameterTypes
                         |> List.tryItem index
                         |> Option.flatten
 
@@ -4573,7 +4923,9 @@ module ResourceChecking =
 
                     let current =
                         match demandQuantity, argument with
-                        | Some demandQuantity, Name [ name ] when ResourceQuantity.isInterval demandQuantity ->
+                        | Some demandQuantity, Name [ name ]
+                            when ResourceQuantity.isInterval demandQuantity
+                                 && not (calleeName |> Option.exists (fun callee -> String.Equals(callee, "withBorrowView", StringComparison.Ordinal))) ->
                             match tryFindBinding name current with
                             | Some binding when binding.DeclaredQuantity |> Option.exists ResourceQuantity.isBorrow ->
                                 current
@@ -4602,7 +4954,8 @@ module ResourceChecking =
                     let current =
                         match demandQuantity, inferredClosureQuantity current argument with
                         | Some demandQuantity, Some capability
-                            when not (ResourceQuantity.satisfies capability demandQuantity) ->
+                            when not (calleeName |> Option.exists (fun callee -> String.Equals(callee, "withBorrowView", StringComparison.Ordinal)))
+                                 && not (ResourceQuantity.satisfies capability demandQuantity) ->
                             let current = transferImmediateClosureArgumentCaptures document argument current
 
                             addDiagnostic
@@ -4616,10 +4969,11 @@ module ResourceChecking =
                             current
 
                     let current =
-                        match demandedParameterTypeTokens |> Option.bind TypeSignatures.parseType,
-                              tryInferConservativeExpressionType signatures Map.empty argument with
+                        match demandedParameterType,
+                              tryInferConservativeExpressionType signatures localTypes argument with
                         | Some demandedType, Some actualType
-                            when not (applicationBoundaryTypesCompatible demandedType actualType) ->
+                            when shouldCheckApplicationTypeCompatibility argument demandedType actualType
+                                 && not (applicationBoundaryTypesCompatible demandedType actualType) ->
                             addDiagnostic
                                 DiagnosticCode.TypeEqualityMismatch
                                 $"Argument type '{TypeSignatures.toText actualType}' does not match demanded parameter type '{TypeSignatures.toText demandedType}'."
@@ -4633,7 +4987,7 @@ module ResourceChecking =
                     let next =
                         match demandQuantity, argument with
                         | Some demandQuantity, Lambda(parameters, body) when lowerBoundIsPositive (Some demandQuantity) ->
-                            checkImmediateLambdaDemand projectionSummaries document signatures current parameters body
+                            checkImmediateLambdaDemand projectionSummaries document signatures localTypes current parameters body
                         | Some demandQuantity, Name(root :: path) when concreteQuantityCountsUse demandQuantity ->
                             consumeBindingAtPlace document (makePlace root path) current
                         | Some demandQuantity, _ when concreteQuantityCountsUse demandQuantity
@@ -4657,7 +5011,7 @@ module ResourceChecking =
                                         | None ->
                                             current
                                             |> addProjectionPlaceDiagnostic document argument
-                                            |> fun next -> checkExpression projectionSummaries document signatures next argument
+                                            |> fun next -> checkExpression projectionSummaries document signatures localTypes next argument
                                     | None ->
                                         match tryBorrowablePlacesWithEnv Map.empty projectionSummaries current argument with
                                         | Some places ->
@@ -4666,11 +5020,11 @@ module ResourceChecking =
                                         | None ->
                                             current
                                             |> addProjectionPlaceDiagnostic document argument
-                                            |> fun next -> checkExpression projectionSummaries document signatures next argument
+                                            |> fun next -> checkExpression projectionSummaries document signatures localTypes next argument
                                 | None ->
-                                    checkExpression projectionSummaries document signatures current argument
+                                    checkExpression projectionSummaries document signatures localTypes current argument
                             | _ ->
-                                checkExpression projectionSummaries document signatures current argument
+                                checkExpression projectionSummaries document signatures localTypes current argument
                         | Some demandQuantity, InoutArgument inner when concreteQuantityCountsUse demandQuantity ->
                             match inner with
                             | Apply(Name [ projectionName ], projectionArguments) when expectsInout && Map.containsKey projectionName projectionSummaries ->
@@ -4699,7 +5053,7 @@ module ResourceChecking =
                                 | None ->
                                     current
                                     |> addProjectionPlaceDiagnostic document inner
-                                    |> fun next -> checkExpression projectionSummaries document signatures next inner
+                                    |> fun next -> checkExpression projectionSummaries document signatures localTypes next inner
                             | _ ->
                                 match tryExpressionPlace inner with
                                 | Some place ->
@@ -4720,11 +5074,11 @@ module ResourceChecking =
                                         else
                                             current
 
-                                    checkExpression projectionSummaries document signatures current inner
+                                    checkExpression projectionSummaries document signatures localTypes current inner
                         | Some demandQuantity, Name [ name ] when ResourceQuantity.isBorrow demandQuantity ->
                             current
                             |> addNonConsumingDemand document name
-                            |> fun current -> checkExpression projectionSummaries document signatures current argument
+                            |> fun current -> checkExpression projectionSummaries document signatures localTypes current argument
                         | Some demandQuantity, _ when ResourceQuantity.isBorrow demandQuantity ->
                             let current =
                                 match argument with
@@ -4737,7 +5091,7 @@ module ResourceChecking =
                                 | _ ->
                                     current
 
-                            let current = checkExpression projectionSummaries document signatures current argument
+                            let current = checkExpression projectionSummaries document signatures localTypes current argument
 
                             match tryBorrowablePlacesWithEnv Map.empty projectionSummaries current argument with
                             | Some places ->
@@ -4768,28 +5122,43 @@ module ResourceChecking =
 
                             current
                             |> noteValueDemandingNameUse document argument
-                            |> fun next -> checkExpression projectionSummaries document signatures next argument
+                            |> fun next -> checkExpression projectionSummaries document signatures localTypes next argument
 
                     next, index + 1)
                 |> fst
 
             match localLambda with
             | Some lambdaValue ->
-                checkLocalLambdaInvocation projectionSummaries document signatures state lambdaValue arguments
+                checkLocalLambdaInvocation projectionSummaries document signatures localTypes state lambdaValue arguments
             | None ->
                 state
 
-    and private checkExpressionInScope scopeLabel projectionSummaries (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state expression =
+    and private checkExpressionInScope
+        scopeLabel
+        projectionSummaries
+        (document: ParsedDocument)
+        (signatures: Map<string, FunctionSignature>)
+        (localTypes: Map<string, TypeSignatures.TypeExpr>)
+        state
+        expression
+        =
         let allowedRegions = liveRegionIds state
 
         withScope scopeLabel (fun scopedState ->
             scopedState
             |> noteValueDemandingNameUse document expression
-            |> fun current -> checkExpression projectionSummaries document signatures current expression
+            |> fun current -> checkExpression projectionSummaries document signatures localTypes current expression
             |> checkResultEscapeAtBoundary allowedRegions document expression) state
 
-    and private checkDoStatements projectionSummaries (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state statements =
-        let rec loop current remaining =
+    and private checkDoStatements
+        projectionSummaries
+        (document: ParsedDocument)
+        (signatures: Map<string, FunctionSignature>)
+        (localTypes: Map<string, TypeSignatures.TypeExpr>)
+        state
+        statements
+        =
+        let rec loop localTypes current remaining =
             match remaining with
             | [] -> current
             | DoLet(binding, expression) :: rest ->
@@ -4824,7 +5193,7 @@ module ResourceChecking =
                     match expression, delayedBody with
                     | Lambda _, _ -> checkLambdaParameterEscape document expression current
                     | _, Some _ -> current
-                    | _ -> checkExpression projectionSummaries document signatures current expression
+                    | _ -> checkExpression projectionSummaries document signatures localTypes current expression
 
                 let current =
                     checkShadowedLinearBindings document shadowedLinearBindings current currentAfterValue
@@ -4945,6 +5314,10 @@ module ResourceChecking =
                     else
                         current
 
+                let nextLocalTypes =
+                    tryInferConservativeExpressionType signatures localTypes expression
+                    |> fun valueType -> extendBindingLocalTypes signatures localTypes valueType binding
+
                 let projectionDescriptorAlias =
                     match binding.Pattern with
                     | NamePattern aliasName ->
@@ -4967,12 +5340,12 @@ module ResourceChecking =
                         noteProjectionDescriptorAliasUses document aliasName (countProjectionDescriptorAliasUsesInStatements aliasName rest) current)
                     |> Option.defaultValue current
 
-                loop current restForChecking
+                loop nextLocalTypes current restForChecking
             | DoLetQuestion(binding, expression, failure) :: rest ->
                 let current =
                     current
                     |> noteValueDemandingNameUse document expression
-                    |> fun next -> checkExpression projectionSummaries document signatures next expression
+                    |> fun next -> checkExpression projectionSummaries document signatures localTypes next expression
 
                 let current =
                     match failure with
@@ -4993,6 +5366,10 @@ module ResourceChecking =
                     binding.Quantity
                     |> Option.map ResourceQuantity.ofSurface
                     |> Option.orElseWith (fun () -> tryConstructorPatternQuantity document binding.Pattern)
+
+                let successLocalTypes =
+                    tryInferConservativeExpressionType signatures localTypes expression
+                    |> fun valueType -> extendBindingLocalTypes signatures localTypes valueType binding
 
                 let current =
                     let borrowRegion, nextState =
@@ -5052,7 +5429,13 @@ module ResourceChecking =
                                         None
                                         scopedState
 
-                                checkDoStatements projectionSummaries document signatures scopedState failure.Body
+                                checkDoStatements
+                                    projectionSummaries
+                                    document
+                                    signatures
+                                    (extendBindingLocalTypes signatures localTypes None failure.ResiduePattern)
+                                    scopedState
+                                    failure.Body
                                 |> checkAllActiveLinearDrops document) current
 
                         { current with
@@ -5062,9 +5445,9 @@ module ResourceChecking =
                             Closures = current.Closures @ (failureState.Closures |> List.skip closureCount)
                             DeferredFacts = (current.DeferredFacts @ failureState.DeferredFacts) |> List.distinct |> List.sort }
 
-                loop current rest
+                loop successLocalTypes current rest
             | DoBind(binding, expression) :: rest ->
-                let current = checkExpression projectionSummaries document signatures current expression
+                let current = checkExpression projectionSummaries document signatures localTypes current expression
                 let declaredQuantity = binding.Quantity |> Option.map ResourceQuantity.ofSurface
                 let checkDrop = declaredQuantity |> Option.exists ResourceQuantity.requiresUse
 
@@ -5105,9 +5488,14 @@ module ResourceChecking =
                     else
                         current
 
-                loop current rest
+                let nextLocalTypes =
+                    tryInferConservativeExpressionType signatures localTypes expression
+                    |> Option.map unwrapBindPayloadType
+                    |> fun valueType -> extendBindingLocalTypes signatures localTypes valueType binding
+
+                loop nextLocalTypes current rest
             | DoUsing(binding, expression) :: rest ->
-                let current = checkExpression projectionSummaries document signatures current expression
+                let current = checkExpression projectionSummaries document signatures localTypes current expression
                 let surfaceOrigin =
                     bindPatternIntroductionOrigin document binding
                     |> Option.orElseWith (fun () -> argumentLocation document expression)
@@ -5163,7 +5551,12 @@ module ResourceChecking =
                             (bindPatternNameLocation document binding name)
                             state) current
 
-                loop current rest
+                let nextLocalTypes =
+                    tryInferConservativeExpressionType signatures localTypes expression
+                    |> Option.map unwrapIoType
+                    |> fun valueType -> extendBindingLocalTypes signatures localTypes valueType binding
+
+                loop nextLocalTypes current rest
             | DoDefer expression :: rest ->
                 let rec containsEscapingAbruptControl expression =
                     match expression with
@@ -5256,56 +5649,68 @@ module ResourceChecking =
                     else
                         current
 
-                loop current rest
+                loop localTypes current rest
             | DoVar(name, expression) :: rest ->
-                let current = checkExpression projectionSummaries document signatures current expression
+                let current = checkExpression projectionSummaries document signatures localTypes current expression
                 let current = addBinding LocalBinding name None None Set.empty [] false None None (findBinderLocation document name) current
-                loop current rest
+                let nextLocalTypes =
+                    match tryInferConservativeExpressionType signatures localTypes expression with
+                    | Some valueType -> Map.add name (refType valueType) localTypes
+                    | None -> localTypes
+                loop nextLocalTypes current rest
             | DoAssign(_, expression) :: rest ->
-                let current = checkExpression projectionSummaries document signatures current expression
-                loop current rest
+                let current = checkExpression projectionSummaries document signatures localTypes current expression
+                loop localTypes current rest
             | DoExpression expression :: rest ->
                 let current =
                     current
                     |> noteValueDemandingNameUse document expression
-                    |> fun next -> checkExpression projectionSummaries document signatures next expression
+                    |> fun next -> checkExpression projectionSummaries document signatures localTypes next expression
 
-                loop current rest
+                loop localTypes current rest
             | DoIf(condition, whenTrue, whenFalse) :: rest ->
                 let current =
                     current
                     |> noteValueDemandingNameUse document condition
-                    |> fun next -> checkExpression projectionSummaries document signatures next condition
+                    |> fun next -> checkExpression projectionSummaries document signatures localTypes next condition
 
-                let trueState = checkDoStatementsInScope "if_then" projectionSummaries document signatures current whenTrue
+                let trueState = checkDoStatementsInScope "if_then" projectionSummaries document signatures localTypes current whenTrue
 
                 let falseState =
                     if List.isEmpty whenFalse then
                         current
                     else
-                        checkDoStatementsInScope "if_else" projectionSummaries document signatures current whenFalse
+                        checkDoStatementsInScope "if_else" projectionSummaries document signatures localTypes current whenFalse
 
-                loop (mergeBranchState trueState falseState) rest
+                loop localTypes (mergeBranchState trueState falseState) rest
             | DoReturn expression :: _ ->
                 current
                 |> noteValueDemandingNameUse document expression
-                |> fun next -> checkExpression projectionSummaries document signatures next expression
+                |> fun next -> checkExpression projectionSummaries document signatures localTypes next expression
                 |> checkResultEscapeAtBoundary Set.empty document expression
                 |> checkAllActiveLinearDrops document
             | DoWhile(condition, body) :: rest ->
                 let current =
-                    checkExpression projectionSummaries document signatures current condition
+                    checkExpression projectionSummaries document signatures localTypes current condition
                     |> addDeferredFact OwnershipDeferredFact.WhileResourceFixedPoint
 
-                let bodyState = checkDoStatementsInScope "while" projectionSummaries document signatures current body
+                let bodyState = checkDoStatementsInScope "while" projectionSummaries document signatures localTypes current body
                 let current = mergeBranchState current bodyState
-                loop current rest
+                loop localTypes current rest
 
-        let checkedState = loop state statements
+        let checkedState = loop localTypes state statements
 
         checkScopeLinearDrops document checkedState
 
-    and private checkDoStatementsInScope scopeLabel projectionSummaries (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state statements =
+    and private checkDoStatementsInScope
+        scopeLabel
+        projectionSummaries
+        (document: ParsedDocument)
+        (signatures: Map<string, FunctionSignature>)
+        (localTypes: Map<string, TypeSignatures.TypeExpr>)
+        state
+        statements
+        =
         let allowedRegions = liveRegionIds state
         let expression =
             match List.tryLast statements with
@@ -5313,7 +5718,7 @@ module ResourceChecking =
             | _ -> None
 
         withScope scopeLabel (fun scopedState ->
-            let checkedState = checkDoStatements projectionSummaries document signatures scopedState statements
+            let checkedState = checkDoStatements projectionSummaries document signatures localTypes scopedState statements
 
             match expression with
             | Some result ->
@@ -5484,7 +5889,7 @@ module ResourceChecking =
                 let checkedState =
                     initialState
                     |> noteValueDemandingNameUse document body
-                    |> fun current -> checkExpression projectionSummaries document signatures current body
+                    |> fun current -> checkExpression projectionSummaries document signatures localTypes current body
                     |> fun current ->
                         if captureTypeMismatch then
                             current
