@@ -215,6 +215,12 @@ module internal KRuntimeLowering =
             KRuntimeLiteral LiteralValue.Unit
         | KCoreName segments ->
             KRuntimeName segments
+        | KCoreSyntaxQuote inner
+        | KCoreSyntaxSplice inner
+        | KCoreTopLevelSyntaxSplice inner
+        | KCoreCodeQuote inner
+        | KCoreCodeSplice inner ->
+            lowerKRuntimeExpression runtimeParameterMasks inner
         | KCoreLambda(parameters, body) ->
             KRuntimeClosure(
                 filterRuntimeParameters parameters |> List.map (fun parameter -> parameter.Name),

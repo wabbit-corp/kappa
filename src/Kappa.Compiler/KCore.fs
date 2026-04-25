@@ -39,6 +39,11 @@ and KCoreExpression =
     | KCoreLiteral of LiteralValue
     | KCoreName of string list
     | KCoreStaticObject of KCoreStaticObject
+    | KCoreSyntaxQuote of KCoreExpression
+    | KCoreSyntaxSplice of KCoreExpression
+    | KCoreTopLevelSyntaxSplice of KCoreExpression
+    | KCoreCodeQuote of KCoreExpression
+    | KCoreCodeSplice of KCoreExpression
     | KCoreLambda of KCoreParameter list * KCoreExpression
     | KCoreIfThenElse of KCoreExpression * KCoreExpression * KCoreExpression
     | KCoreMatch of KCoreExpression * KCoreMatchCase list

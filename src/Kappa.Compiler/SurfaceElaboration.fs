@@ -904,6 +904,16 @@ module SurfaceElaboration =
                 Name(staticObject.NameSegments @ path)
             | Name _ ->
                 current
+            | SyntaxQuote inner ->
+                SyntaxQuote(rewrite inner)
+            | SyntaxSplice inner ->
+                SyntaxSplice(rewrite inner)
+            | TopLevelSyntaxSplice inner ->
+                TopLevelSyntaxSplice(rewrite inner)
+            | CodeQuote inner ->
+                CodeQuote(rewrite inner)
+            | CodeSplice inner ->
+                CodeSplice(rewrite inner)
             | LocalLet(binding, value, body) ->
                 let rewrittenValue = rewrite value
 
@@ -1072,6 +1082,16 @@ module SurfaceElaboration =
 
         let rec rewrite current =
             match current with
+            | SyntaxQuote inner ->
+                SyntaxQuote(rewrite inner)
+            | SyntaxSplice inner ->
+                SyntaxSplice(rewrite inner)
+            | TopLevelSyntaxSplice inner ->
+                TopLevelSyntaxSplice(rewrite inner)
+            | CodeQuote inner ->
+                CodeQuote(rewrite inner)
+            | CodeSplice inner ->
+                CodeSplice(rewrite inner)
             | Apply(Name [ name ], arguments) when String.Equals(name, aliasName, StringComparison.Ordinal) ->
                 match tryReorder arguments with
                 | Some reorderedArguments ->
@@ -1161,6 +1181,16 @@ module SurfaceElaboration =
     let private rewriteDirectAliasUse aliasName targetName expression =
         let rec rewrite current =
             match current with
+            | SyntaxQuote inner ->
+                SyntaxQuote(rewrite inner)
+            | SyntaxSplice inner ->
+                SyntaxSplice(rewrite inner)
+            | TopLevelSyntaxSplice inner ->
+                TopLevelSyntaxSplice(rewrite inner)
+            | CodeQuote inner ->
+                CodeQuote(rewrite inner)
+            | CodeSplice inner ->
+                CodeSplice(rewrite inner)
             | Apply(Name [ name ], arguments) when String.Equals(name, aliasName, StringComparison.Ordinal) ->
                 Apply(Name [ targetName ], arguments |> List.map rewrite)
             | Apply(callee, arguments) ->
@@ -1293,6 +1323,16 @@ module SurfaceElaboration =
             | Name segments ->
                 tryRewriteName activeAliases segments
                 |> Option.defaultValue current
+            | SyntaxQuote inner ->
+                SyntaxQuote(rewrite activeAliases inner)
+            | SyntaxSplice inner ->
+                SyntaxSplice(rewrite activeAliases inner)
+            | TopLevelSyntaxSplice inner ->
+                TopLevelSyntaxSplice(rewrite activeAliases inner)
+            | CodeQuote inner ->
+                CodeQuote(rewrite activeAliases inner)
+            | CodeSplice inner ->
+                CodeSplice(rewrite activeAliases inner)
             | LocalLet(binding, value, body) ->
                 let rewrittenValue = rewrite activeAliases value
                 let shadowedNames = collectPatternNames binding.Pattern |> Set.ofList
@@ -1449,6 +1489,12 @@ module SurfaceElaboration =
 
     let private charType =
         TypeName([ "Char" ], [])
+
+    let private syntaxType argumentType =
+        TypeName([ "Syntax" ], [ argumentType ])
+
+    let private codeType argumentType =
+        TypeName([ "Code" ], [ argumentType ])
 
     let private ioType argumentType =
         TypeName([ "IO" ], [ argumentType ])
@@ -4040,6 +4086,27 @@ module SurfaceElaboration =
                 inferValidationExpressionType environment freshCounter localTypes (Apply(Name [ suffixName ], [ NumericLiteral(SurfaceNumericLiteral.withoutSuffix literal) ]))
             | None ->
                 Some(inferSurfaceNumericLiteralType literal)
+        | SyntaxQuote inner ->
+            inferValidationExpressionType environment freshCounter localTypes inner
+            |> Option.map syntaxType
+        | SyntaxSplice inner ->
+            inferValidationExpressionType environment freshCounter localTypes inner
+            |> Option.bind (function
+                | TypeName([ "Syntax" ], [ innerType ]) -> Some innerType
+                | _ -> None)
+        | TopLevelSyntaxSplice inner ->
+            inferValidationExpressionType environment freshCounter localTypes inner
+            |> Option.bind (function
+                | TypeName([ "Syntax" ], [ innerType ]) -> Some innerType
+                | _ -> None)
+        | CodeQuote inner ->
+            inferValidationExpressionType environment freshCounter localTypes inner
+            |> Option.map codeType
+        | CodeSplice inner ->
+            inferValidationExpressionType environment freshCounter localTypes inner
+            |> Option.bind (function
+                | TypeName([ "Code" ], [ innerType ]) -> Some innerType
+                | _ -> None)
         | Name [ "True" ]
         | Name [ "False" ] ->
             Some boolType
@@ -5153,6 +5220,12 @@ module SurfaceElaboration =
                     match current with
                     | Name("this" :: fieldName :: _) ->
                         yield fieldName
+                    | SyntaxQuote inner
+                    | SyntaxSplice inner
+                    | TopLevelSyntaxSplice inner
+                    | CodeQuote inner
+                    | CodeSplice inner ->
+                        yield! loop inner
                     | LocalLet(_, value, body) ->
                         yield! loop value
                         yield! loop body
@@ -5605,6 +5678,11 @@ module SurfaceElaboration =
                     | LocalTypeAlias(_, nestedBody) -> loop nestedBody
                     | LocalScopedEffect(_, nestedBody) -> loop nestedBody
                     | Lambda(_, nestedBody) -> loop nestedBody
+                    | SyntaxQuote inner
+                    | SyntaxSplice inner
+                    | TopLevelSyntaxSplice inner
+                    | CodeQuote inner
+                    | CodeSplice inner -> loop inner
                     | IfThenElse(condition, whenTrue, whenFalse) -> loop condition @ loop whenTrue @ loop whenFalse
                     | Match(scrutinee, cases) ->
                         loop scrutinee
@@ -5847,6 +5925,12 @@ module SurfaceElaboration =
             let recurse = validateExpression locals refinements lexicalNames
 
             match expression with
+            | SyntaxQuote inner
+            | SyntaxSplice inner
+            | TopLevelSyntaxSplice inner
+            | CodeQuote inner
+            | CodeSplice inner ->
+                recurse inner
             | Literal _ ->
                 []
             | NumericLiteral _ ->
@@ -5904,6 +5988,16 @@ module SurfaceElaboration =
                     let rewrite = rewriteNamedAliasUse aliasName targetName
 
                     match expression with
+                    | SyntaxQuote inner ->
+                        SyntaxQuote(rewrite inner)
+                    | SyntaxSplice inner ->
+                        SyntaxSplice(rewrite inner)
+                    | TopLevelSyntaxSplice inner ->
+                        TopLevelSyntaxSplice(rewrite inner)
+                    | CodeQuote inner ->
+                        CodeQuote(rewrite inner)
+                    | CodeSplice inner ->
+                        CodeSplice(rewrite inner)
                     | Apply(Name [ name ], arguments) when String.Equals(name, aliasName, StringComparison.Ordinal) ->
                         Apply(Name [ targetName ], arguments |> List.map rewrite)
                     | Apply(callee, arguments) ->
@@ -6499,6 +6593,12 @@ module SurfaceElaboration =
                         [ makeDiagnostic DiagnosticCode.QttInoutMarkerUnexpected "The '~' inout marker is only valid inside do blocks." ]
 
                 markerDiagnostics @ recurse inner
+            | SyntaxQuote inner
+            | SyntaxSplice inner
+            | TopLevelSyntaxSplice inner
+            | CodeQuote inner
+            | CodeSplice inner ->
+                recurse inner
             | LocalLet(_, value, body) ->
                 recurse value @ recurse body
             | LocalSignature(_, body) ->
@@ -6699,6 +6799,12 @@ module SurfaceElaboration =
             let recurse = validateProjectionDescriptorApplications aliases
 
             match expression with
+            | SyntaxQuote inner
+            | SyntaxSplice inner
+            | TopLevelSyntaxSplice inner
+            | CodeQuote inner
+            | CodeSplice inner ->
+                recurse inner
             | Apply(Name [ aliasName ], [ rootsArgument ]) ->
                 let nested = validateProjectionDescriptorApplications aliases rootsArgument
 
@@ -6907,6 +7013,12 @@ module SurfaceElaboration =
                 let recurse = validateExpr inEscapingLambda scopes
 
                 match expression with
+                | SyntaxQuote inner
+                | SyntaxSplice inner
+                | TopLevelSyntaxSplice inner
+                | CodeQuote inner
+                | CodeSplice inner ->
+                    recurse inner
                 | Apply(Name [ calleeName ], arguments) ->
                     let bindingDiagnostics =
                         environment.VisibleBindings
@@ -7580,6 +7692,12 @@ module SurfaceElaboration =
                     | Name [ name ] ->
                         String.Equals(name, target, StringComparison.Ordinal)
                         && not (Set.contains name shadowed)
+                    | SyntaxQuote inner
+                    | SyntaxSplice inner
+                    | TopLevelSyntaxSplice inner
+                    | CodeQuote inner
+                    | CodeSplice inner ->
+                        references inner
                     | Apply(callee, arguments) ->
                         references callee || (arguments |> List.exists references)
                     | LocalLet(binding, value, body) ->
@@ -7719,6 +7837,12 @@ module SurfaceElaboration =
             let expressionPatternDiagnostics expression =
                 let rec validateExpression current =
                     match current with
+                    | SyntaxQuote inner
+                    | SyntaxSplice inner
+                    | TopLevelSyntaxSplice inner
+                    | CodeQuote inner
+                    | CodeSplice inner ->
+                        validateExpression inner
                     | LocalLet(binding, value, body) ->
                         patternDuplicateDiagnostics binding.Pattern @ validateExpression value @ validateExpression body
                     | LocalSignature(_, body) ->
@@ -8120,6 +8244,16 @@ module SurfaceElaboration =
 
             let rec substitute current =
                 match current with
+                | SyntaxQuote inner ->
+                    SyntaxQuote(substitute inner)
+                | SyntaxSplice inner ->
+                    SyntaxSplice(substitute inner)
+                | TopLevelSyntaxSplice inner ->
+                    TopLevelSyntaxSplice(substitute inner)
+                | CodeQuote inner ->
+                    CodeQuote(substitute inner)
+                | CodeSplice inner ->
+                    CodeSplice(substitute inner)
                 | LocalLet(binding, value, body) ->
                     LocalLet(substituteBinding binding, substitute value, substitute body)
                 | LocalSignature(declaration, body) ->
@@ -8247,6 +8381,16 @@ module SurfaceElaboration =
 
         let rec normalizeLocalDeclarations expression =
             match expression with
+            | SyntaxQuote inner ->
+                SyntaxQuote(normalizeLocalDeclarations inner)
+            | SyntaxSplice inner ->
+                SyntaxSplice(normalizeLocalDeclarations inner)
+            | TopLevelSyntaxSplice inner ->
+                TopLevelSyntaxSplice(normalizeLocalDeclarations inner)
+            | CodeQuote inner ->
+                CodeQuote(normalizeLocalDeclarations inner)
+            | CodeSplice inner ->
+                CodeSplice(normalizeLocalDeclarations inner)
             | LocalTypeAlias(declaration, body) ->
                 match tryParseTypeAliasInfo environment.CurrentModuleName declaration with
                 | Some(_, aliasInfo) when List.isEmpty aliasInfo.Parameters ->
@@ -8376,6 +8520,27 @@ module SurfaceElaboration =
                     inferExpressionType localTypes (Apply(Name [ suffixName ], [ NumericLiteral(SurfaceNumericLiteral.withoutSuffix literal) ]))
                 | None ->
                     Some(inferSurfaceNumericLiteralType literal)
+            | SyntaxQuote inner ->
+                inferExpressionType localTypes inner
+                |> Option.map syntaxType
+            | SyntaxSplice inner ->
+                inferExpressionType localTypes inner
+                |> Option.bind (function
+                    | TypeName([ "Syntax" ], [ innerType ]) -> Some innerType
+                    | _ -> None)
+            | TopLevelSyntaxSplice inner ->
+                inferExpressionType localTypes inner
+                |> Option.bind (function
+                    | TypeName([ "Syntax" ], [ innerType ]) -> Some innerType
+                    | _ -> None)
+            | CodeQuote inner ->
+                inferExpressionType localTypes inner
+                |> Option.map codeType
+            | CodeSplice inner ->
+                inferExpressionType localTypes inner
+                |> Option.bind (function
+                    | TypeName([ "Code" ], [ innerType ]) -> Some innerType
+                    | _ -> None)
             | Name [ "True" ]
             | Name [ "False" ] ->
                 Some boolType
@@ -8899,6 +9064,16 @@ module SurfaceElaboration =
                             current
                 | Name [] ->
                     current
+                | SyntaxQuote inner ->
+                    SyntaxQuote(loop inner)
+                | SyntaxSplice inner ->
+                    SyntaxSplice(loop inner)
+                | TopLevelSyntaxSplice inner ->
+                    TopLevelSyntaxSplice(loop inner)
+                | CodeQuote inner ->
+                    CodeQuote(loop inner)
+                | CodeSplice inner ->
+                    CodeSplice(loop inner)
                 | LocalLet(binding, value, body) ->
                     LocalLet(binding, loop value, loop body)
                 | LocalSignature(declaration, body) ->
@@ -9761,6 +9936,16 @@ module SurfaceElaboration =
                     substitutions |> Map.tryFind name |> Option.defaultValue current
                 | KCoreName _ ->
                     current
+                | KCoreSyntaxQuote inner ->
+                    KCoreSyntaxQuote(substituteKCoreNames substitutions inner)
+                | KCoreSyntaxSplice inner ->
+                    KCoreSyntaxSplice(substituteKCoreNames substitutions inner)
+                | KCoreTopLevelSyntaxSplice inner ->
+                    KCoreTopLevelSyntaxSplice(substituteKCoreNames substitutions inner)
+                | KCoreCodeQuote inner ->
+                    KCoreCodeQuote(substituteKCoreNames substitutions inner)
+                | KCoreCodeSplice inner ->
+                    KCoreCodeSplice(substituteKCoreNames substitutions inner)
                 | KCoreLiteral _
                 | KCoreDictionaryValue _
                 | KCoreStaticObject _ ->
@@ -9925,6 +10110,16 @@ module SurfaceElaboration =
                     | None ->
                         tryLowerNumericLiteralForRuntime literal
                         |> Option.defaultValue (KCoreLiteral LiteralValue.Unit)
+            | SyntaxQuote inner ->
+                KCoreSyntaxQuote(lowerExpressionWithExpectedType localTypes None inner)
+            | SyntaxSplice inner ->
+                KCoreSyntaxSplice(lowerExpressionWithExpectedType localTypes None inner)
+            | TopLevelSyntaxSplice inner ->
+                KCoreTopLevelSyntaxSplice(lowerExpressionWithExpectedType localTypes None inner)
+            | CodeQuote inner ->
+                KCoreCodeQuote(lowerExpressionWithExpectedType localTypes None inner)
+            | CodeSplice inner ->
+                KCoreCodeSplice(lowerExpressionWithExpectedType localTypes None inner)
             | KindQualifiedName _ ->
                 tryResolveScopedStaticObject environment expression
                 |> Option.map lowerStaticObject
@@ -10607,6 +10802,16 @@ module SurfaceElaboration =
                 KCoreDictionaryValue(moduleName, instanceInfo.TraitName, instanceInfo.InstanceKey)
             | KCoreName _ ->
                 expression
+            | KCoreSyntaxQuote inner ->
+                KCoreSyntaxQuote(substituteSelfDictionary inner)
+            | KCoreSyntaxSplice inner ->
+                KCoreSyntaxSplice(substituteSelfDictionary inner)
+            | KCoreTopLevelSyntaxSplice inner ->
+                KCoreTopLevelSyntaxSplice(substituteSelfDictionary inner)
+            | KCoreCodeQuote inner ->
+                KCoreCodeQuote(substituteSelfDictionary inner)
+            | KCoreCodeSplice inner ->
+                KCoreCodeSplice(substituteSelfDictionary inner)
             | KCoreStaticObject _ ->
                 expression
             | KCoreLambda(parameters, body) ->

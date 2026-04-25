@@ -38,6 +38,12 @@ let rec private containsCoreSyntheticRecordApply expression =
     | KCoreSequence(first, second)
     | KCoreBinary(first, _, second) ->
         containsCoreSyntheticRecordApply first || containsCoreSyntheticRecordApply second
+    | KCoreSyntaxQuote inner
+    | KCoreSyntaxSplice inner
+    | KCoreTopLevelSyntaxSplice inner
+    | KCoreCodeQuote inner
+    | KCoreCodeSplice inner ->
+        containsCoreSyntheticRecordApply inner
     | KCoreIfThenElse(condition, whenTrue, whenFalse) ->
         containsCoreSyntheticRecordApply condition
         || containsCoreSyntheticRecordApply whenTrue

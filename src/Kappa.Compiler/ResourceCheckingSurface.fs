@@ -51,6 +51,12 @@ module internal ResourceCheckingSurface =
             | KindQualifiedName _ -> ()
             | Name(root :: _) -> yield root
             | Name [] -> ()
+            | SyntaxQuote inner
+            | SyntaxSplice inner
+            | TopLevelSyntaxSplice inner
+            | CodeQuote inner
+            | CodeSplice inner ->
+                yield! expressionNames inner
             | LocalLet(binding, value, body) ->
                 yield! expressionNames value
 
@@ -180,4 +186,5 @@ module internal ResourceCheckingSurface =
     let tryCalleeName (expression: SurfaceExpression) =
         match expression with
         | Name [ name ] -> Some name
+        | TopLevelSyntaxSplice(Name [ name ]) -> Some name
         | _ -> None

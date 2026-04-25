@@ -1083,7 +1083,15 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
 
             pattern
 
-type private ExpressionParser(tokens: Token list, source: SourceText, diagnostics: DiagnosticBag, fixities: FixityTable) =
+type private ExpressionParser
+    (
+        tokens: Token list,
+        source: SourceText,
+        diagnostics: DiagnosticBag,
+        fixities: FixityTable,
+        inSyntaxQuote: bool,
+        inCodeQuote: bool
+    ) =
     let eofSpan =
         match List.tryLast tokens with
         | Some token -> token.Span
@@ -1127,6 +1135,10 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
         syntheticNameCounter <- syntheticNameCounter + 1
         $"{prefix}\u001f{syntheticNameCounter}"
 
+    member private this.ParseNestedExpression(tokens: Token list, nestedInSyntaxQuote: bool, nestedInCodeQuote: bool) =
+        let nestedParser = ExpressionParser(tokens, source, diagnostics, fixities, nestedInSyntaxQuote, nestedInCodeQuote)
+        nestedParser.Parse() |> Option.defaultValue (Literal LiteralValue.Unit)
+
     member private this.ExpectKeyword(keyword: Keyword, message: string) =
         this.SkipLayout()
 
@@ -1155,6 +1167,10 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
         | LeftParen
         | AtSign
         | Backslash -> true
+        | Dot when inCodeQuote && this.Peek(1).Kind = Operator && this.Peek(1).Text = "~" -> true
+        | Dot when this.Peek(1).Kind = Operator && this.Peek(1).Text = "<" -> true
+        | Operator when token.Text = "'" && this.Peek(1).Kind = LeftBrace -> true
+        | Operator when token.Text = "$" && (this.Peek(1).Kind = LeftParen || (inSyntaxQuote && this.Peek(1).Kind = LeftBrace)) -> true
         | Operator when FixityTable.tryFindPrefix token.Text fixities |> Option.isSome -> true
         | Keyword Keyword.If
         | Keyword Keyword.Seal -> true
@@ -1186,7 +1202,7 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
 
     member private this.TryParseStandaloneExpression(tokens: Token list) =
         let nestedDiagnostics = DiagnosticBag()
-        let nestedParser = ExpressionParser(tokens, source, nestedDiagnostics, fixities)
+        let nestedParser = ExpressionParser(tokens, source, nestedDiagnostics, fixities, false, false)
 
         match nestedParser.Parse(), nestedDiagnostics.Items with
         | Some expression, [] ->
@@ -1196,7 +1212,7 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
 
     member private this.TryParseStandaloneExpressionWithMinimumPrecedence(tokens: Token list, minimumPrecedence: int) =
         let nestedDiagnostics = DiagnosticBag()
-        let nestedParser = ExpressionParser(tokens, source, nestedDiagnostics, fixities)
+        let nestedParser = ExpressionParser(tokens, source, nestedDiagnostics, fixities, false, false)
         let parsed = nestedParser.ParseExpression(minimumPrecedence)
         nestedParser.SkipLayout()
 
@@ -1207,8 +1223,7 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
             None
 
     member private this.ParseStandaloneExpression(tokens: Token list) =
-        let nestedParser = ExpressionParser(tokens, source, diagnostics, fixities)
-        nestedParser.Parse() |> Option.defaultValue (Literal LiteralValue.Unit)
+        this.ParseNestedExpression(tokens, false, false)
 
     member private this.ParsePatternFromTokens(tokens: Token list) =
         let nestedParser = PatternParser(tokens, source, diagnostics, fixities)
@@ -1856,6 +1871,38 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
                 innerTokens.Add(this.Advance())
 
         if depth > 0 then
+            diagnostics.AddError(DiagnosticCode.ParseError, errorMessage, source.GetLocation(start.Span))
+
+        List.ofSeq innerTokens
+
+    member private this.CollectCodeQuoteTokens(errorMessage: string) =
+        let start = this.Current
+        let openingDot = this.Advance()
+
+        if this.Current.Kind = Operator && this.Current.Text = "<" then
+            this.Advance() |> ignore
+        else
+            diagnostics.AddError(DiagnosticCode.ParseError, errorMessage, source.GetLocation(openingDot.Span))
+
+        let innerTokens = ResizeArray<Token>()
+        let mutable quoteDepth = 1
+
+        while quoteDepth > 0 && this.Current.Kind <> EndOfFile do
+            if this.Current.Kind = Dot && this.Peek(1).Kind = Operator && this.Peek(1).Text = "<" then
+                quoteDepth <- quoteDepth + 1
+                innerTokens.Add(this.Advance())
+                innerTokens.Add(this.Advance())
+            elif this.Current.Kind = Operator && this.Current.Text = ">." then
+                quoteDepth <- quoteDepth - 1
+
+                if quoteDepth > 0 then
+                    innerTokens.Add(this.Advance())
+                else
+                    this.Advance() |> ignore
+            else
+                innerTokens.Add(this.Advance())
+
+        if quoteDepth > 0 then
             diagnostics.AddError(DiagnosticCode.ParseError, errorMessage, source.GetLocation(start.Span))
 
         List.ofSeq innerTokens
@@ -3051,6 +3098,10 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
         this.SkipLayout()
 
         match this.Current.Kind with
+        | Dot when inCodeQuote && this.Peek(1).Kind = Operator && this.Peek(1).Text = "~" ->
+            this.Advance() |> ignore
+            this.Advance() |> ignore
+            CodeSplice(this.ParseApplicationExpression())
         | Keyword Keyword.Match when this.Peek(1).Kind = Dot ->
             let segments = this.ParseQualifiedName()
             Name segments
@@ -3101,23 +3152,8 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
             let token = this.Advance()
             Literal(Character(this.DecodeCharacterLiteral token))
         | Dot when this.Peek(1).Kind = Operator && this.Peek(1).Text = "<" ->
-            let startToken = this.Advance()
-            this.Advance() |> ignore
-
-            while this.Current.Kind <> EndOfFile
-                  && not (this.Current.Kind = Operator && this.Current.Text = ">.") do
-                this.Advance() |> ignore
-
-            if this.Current.Kind = Operator && this.Current.Text = ">." then
-                this.Advance() |> ignore
-
-            diagnostics.AddError(
-                DiagnosticCode.ParseError,
-                "Code quotations are specified but not implemented by this compiler milestone.",
-                source.GetLocation(startToken.Span)
-            )
-
-            Literal Unit
+            let innerTokens = this.CollectCodeQuoteTokens("Expected '>.' to close the code quote.")
+            CodeQuote(this.ParseNestedExpression(innerTokens, false, true))
         | Underscore ->
             this.Advance() |> ignore
             Name [ "_" ]
@@ -3166,7 +3202,15 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
             if this.Current.Text = "'" && this.Peek(1).Kind = LeftBrace then
                 this.Advance() |> ignore
                 let innerTokens = this.CollectBracedTokens("Expected '}' to close the syntax quote.")
-                this.ParseStandaloneExpression innerTokens
+                SyntaxQuote(this.ParseNestedExpression(innerTokens, true, false))
+            elif this.Current.Text = "$" && this.Peek(1).Kind = LeftParen then
+                this.Advance() |> ignore
+                let innerTokens = this.CollectParenthesizedTokens()
+                TopLevelSyntaxSplice(this.ParseNestedExpression(innerTokens, false, false))
+            elif this.Current.Text = "$" && inSyntaxQuote && this.Peek(1).Kind = LeftBrace then
+                this.Advance() |> ignore
+                let innerTokens = this.CollectBracedTokens("Expected '}' to close the syntax splice.")
+                SyntaxSplice(this.ParseNestedExpression(innerTokens, false, false))
             elif this.Current.Text = "!" then
                 this.Advance() |> ignore
                 // Splice should bind tightly to the next atomic/application form without
@@ -3948,7 +3992,7 @@ module CoreParsing =
         let tokens = trimLeadingLayout tokens
 
         let parseExpr tokens =
-            let parser = ExpressionParser(tokens, source, diagnostics, fixities)
+            let parser = ExpressionParser(tokens, source, diagnostics, fixities, false, false)
             parser.Parse() |> Option.defaultValue (Literal LiteralValue.Unit)
 
         let parseYield rest =
@@ -4311,10 +4355,10 @@ module CoreParsing =
             | Some expression ->
                 Some expression
             | None ->
-                let parser = ExpressionParser(tokens, source, diagnostics, fixities)
+                let parser = ExpressionParser(tokens, source, diagnostics, fixities, false, false)
                 parser.Parse()
         else
-            let parser = ExpressionParser(tokens, source, diagnostics, fixities)
+            let parser = ExpressionParser(tokens, source, diagnostics, fixities, false, false)
             parser.Parse()
 
     and private tryParseIndentedLocalLetSequence

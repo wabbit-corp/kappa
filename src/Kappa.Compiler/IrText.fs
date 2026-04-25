@@ -54,6 +54,16 @@ module internal IrText =
             let nameText = String.concat "." staticObject.Name
             let typeText = staticObject.TypeText |> Option.defaultValue "_"
             $"({kindText} {nameText} : {typeText})"
+        | KCoreSyntaxQuote inner ->
+            $"('{{ {kcoreExpressionText inner} }})"
+        | KCoreSyntaxSplice inner ->
+            $"(${{ {kcoreExpressionText inner} }})"
+        | KCoreTopLevelSyntaxSplice inner ->
+            $"($( {kcoreExpressionText inner} ))"
+        | KCoreCodeQuote inner ->
+            $"(.< {kcoreExpressionText inner} >.)"
+        | KCoreCodeSplice inner ->
+            $"(.~ {kcoreExpressionText inner})"
         | KCoreLambda(parameters, body) ->
             let names = parameters |> List.map (fun parameter -> parameter.Name) |> String.concat " "
             $"(lambda ({names}) {kcoreExpressionText body})"

@@ -1276,6 +1276,68 @@ let ``parser gives built in safe navigation and elvis their spec precedence`` ()
     | other -> failwithf "Unexpected expression shape: %A" other
 
 [<Fact>]
+let ``parser preserves syntax quotes, quote-local splices, and top level syntax splices`` () =
+    let fixities = Parser.bootstrapFixities ()
+
+    let syntaxQuoteParsed, syntaxQuoteDiagnostics =
+        parseExpressionWithFixities fixities "__syntax_quote__.kp" "'{ ${macroBody} + 1 }"
+
+    Assert.Empty(syntaxQuoteDiagnostics)
+
+    match syntaxQuoteParsed with
+    | Some(
+        SyntaxQuote(
+            Binary(
+                SyntaxSplice(Name [ "macroBody" ]),
+                "+",
+                NumericLiteral(SurfaceIntegerLiteral(value, "1", None))
+            )
+        )
+      ) ->
+        Assert.Equal(BigInteger.One, value)
+    | other ->
+        failwithf "Unexpected syntax quote parse shape: %A" other
+
+    let topLevelSpliceParsed, topLevelSpliceDiagnostics =
+        parseExpressionWithFixities fixities "__top_level_syntax_splice__.kp" "$(build '{ 10 })"
+
+    Assert.Empty(topLevelSpliceDiagnostics)
+
+    match topLevelSpliceParsed with
+    | Some(
+        TopLevelSyntaxSplice(
+            Apply(
+                Name [ "build" ],
+                [ SyntaxQuote(NumericLiteral(SurfaceIntegerLiteral(value, "10", None))) ]
+            )
+        )
+      ) ->
+        Assert.Equal(BigInteger(10), value)
+    | other ->
+        failwithf "Unexpected top level syntax splice shape: %A" other
+
+[<Fact>]
+let ``parser preserves staged code quotes and escapes`` () =
+    let parsed, diagnostics =
+        parseExpressionWithFixities (Parser.bootstrapFixities ()) "__code_quote__.kp" ".< .~shared + 1 >."
+
+    Assert.Empty(diagnostics)
+
+    match parsed with
+    | Some(
+        CodeQuote(
+            Binary(
+                CodeSplice(Name [ "shared" ]),
+                "+",
+                NumericLiteral(SurfaceIntegerLiteral(value, "1", None))
+            )
+        )
+      ) ->
+        Assert.Equal(BigInteger.One, value)
+    | other ->
+        failwithf "Unexpected code quote parse shape: %A" other
+
+[<Fact>]
 let ``operator sections prefer prefix and postfix fixities over section desugaring`` () =
     let fixities =
         Parser.bootstrapFixities ()

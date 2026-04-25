@@ -439,6 +439,16 @@ module internal CompilationFrontend =
                     | ModuleKind -> "module"
 
                 kindText + " " + String.concat "." segments
+            | SyntaxQuote inner ->
+                $"('{{ {render inner} }})"
+            | SyntaxSplice inner ->
+                $"(${{ {render inner} }})"
+            | TopLevelSyntaxSplice inner ->
+                $"($( {render inner} ))"
+            | CodeQuote inner ->
+                $"(.< {render inner} >.)"
+            | CodeSplice inner ->
+                $"(.~ {render inner})"
             | LocalLet(binding, value, body) ->
                 $"(let {renderBindPattern binding} {render value} {render body})"
             | LocalSignature(declaration, body) ->

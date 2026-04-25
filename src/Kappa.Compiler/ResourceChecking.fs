@@ -483,6 +483,12 @@ module ResourceChecking =
             | KindQualifiedName _ -> ()
             | Name(root :: _) -> yield root
             | Name [] -> ()
+            | SyntaxQuote inner
+            | SyntaxSplice inner
+            | TopLevelSyntaxSplice inner
+            | CodeQuote inner
+            | CodeSplice inner ->
+                yield! expressionNames inner
             | LocalLet(binding, value, body) ->
                 yield! expressionNames value
 
@@ -1561,6 +1567,16 @@ module ResourceChecking =
                 |> Option.defaultValue expression
             | None ->
                 Apply(Name [ aliasName ], [ rewrite rootsArgument ])
+        | SyntaxQuote inner ->
+            SyntaxQuote(rewrite inner)
+        | SyntaxSplice inner ->
+            SyntaxSplice(rewrite inner)
+        | TopLevelSyntaxSplice inner ->
+            TopLevelSyntaxSplice(rewrite inner)
+        | CodeQuote inner ->
+            CodeQuote(rewrite inner)
+        | CodeSplice inner ->
+            CodeSplice(rewrite inner)
         | Apply(callee, arguments) ->
             Apply(rewrite callee, arguments |> List.map rewrite)
         | LocalLet(binding, value, body) ->
@@ -2782,6 +2798,12 @@ module ResourceChecking =
         match expression with
         | Apply(Name [ name ], [ rootsArgument ]) when String.Equals(name, aliasName, StringComparison.Ordinal) ->
             1 + recurse rootsArgument
+        | SyntaxQuote inner
+        | SyntaxSplice inner
+        | TopLevelSyntaxSplice inner
+        | CodeQuote inner
+        | CodeSplice inner ->
+            recurse inner
         | Apply(callee, arguments) ->
             recurse callee + (arguments |> List.sumBy recurse)
         | LocalLet(binding, value, body) ->
@@ -3463,6 +3485,12 @@ module ResourceChecking =
 
     let rec private expressionResultMayCarryBorrow state expression =
         match expression with
+        | SyntaxQuote inner
+        | SyntaxSplice inner
+        | TopLevelSyntaxSplice inner
+        | CodeQuote inner
+        | CodeSplice inner ->
+            expressionResultMayCarryBorrow state inner
         | Name [ name ] ->
             match tryFindBinding name state with
             | Some binding ->
@@ -3523,6 +3551,12 @@ module ResourceChecking =
 
     let rec private expressionMayCarryEscapingBorrow expression =
         match expression with
+        | SyntaxQuote inner
+        | SyntaxSplice inner
+        | TopLevelSyntaxSplice inner
+        | CodeQuote inner
+        | CodeSplice inner ->
+            expressionMayCarryEscapingBorrow inner
         | Lambda _ ->
             true
         | Name [ name ] ->
@@ -3576,6 +3610,12 @@ module ResourceChecking =
 
     let rec private checkResultEscapeAtBoundary allowedRegions (document: ParsedDocument) expression state =
         match expression with
+        | SyntaxQuote inner
+        | SyntaxSplice inner
+        | TopLevelSyntaxSplice inner
+        | CodeQuote inner
+        | CodeSplice inner ->
+            checkResultEscapeAtBoundary allowedRegions document inner state
         | Lambda _ ->
             checkEscapeAgainstAllowed allowedRegions document expression state
         | Name [ name ] ->
@@ -4061,6 +4101,15 @@ module ResourceChecking =
         expression
         =
         match expression with
+        | CodeQuote inner ->
+            state
+            |> checkEscape document expression
+            |> fun next -> checkExpression projectionSummaries document signatures localTypes next inner
+        | SyntaxQuote inner
+        | SyntaxSplice inner
+        | TopLevelSyntaxSplice inner
+        | CodeSplice inner ->
+            checkExpression projectionSummaries document signatures localTypes state inner
         | Literal _
         | NumericLiteral _
         | KindQualifiedName _
@@ -5613,6 +5662,12 @@ module ResourceChecking =
                         || (navigation.Arguments |> List.exists containsEscapingAbruptControl)
                     | TagTest(receiver, _) ->
                         containsEscapingAbruptControl receiver
+                    | SyntaxQuote inner
+                    | SyntaxSplice inner
+                    | TopLevelSyntaxSplice inner
+                    | CodeQuote inner
+                    | CodeSplice inner ->
+                        containsEscapingAbruptControl inner
                     | MonadicSplice inner
                     | ExplicitImplicitArgument inner
                     | InoutArgument inner

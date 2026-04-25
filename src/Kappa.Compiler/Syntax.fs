@@ -328,6 +328,11 @@ type SurfaceExpression =
     | NumericLiteral of SurfaceNumericLiteral
     | Name of string list
     | KindQualifiedName of KindSelector * string list
+    | SyntaxQuote of SurfaceExpression
+    | SyntaxSplice of SurfaceExpression
+    | TopLevelSyntaxSplice of SurfaceExpression
+    | CodeQuote of SurfaceExpression
+    | CodeSplice of SurfaceExpression
     | LocalLet of binding: SurfaceBindPattern * value: SurfaceExpression * body: SurfaceExpression
     | LocalSignature of declaration: BindingSignature * body: SurfaceExpression
     | LocalTypeAlias of declaration: TypeAlias * body: SurfaceExpression
