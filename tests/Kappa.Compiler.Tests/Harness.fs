@@ -650,6 +650,7 @@ let private doItemDescriptor statement =
     | DoLetQuestion(binding, _, _) -> $"let? {fixtureBindPatternText binding}"
     | DoBind(binding, _) -> $"<- {fixtureBindPatternText binding}"
     | DoUsing(binding, _) -> $"using {fixturePatternText binding.Pattern}"
+    | DoDefer _ -> "defer"
     | DoVar(name, _) -> $"var {name}"
     | DoAssign(name, _) -> $"assign {name}"
     | DoIf _ -> "if"

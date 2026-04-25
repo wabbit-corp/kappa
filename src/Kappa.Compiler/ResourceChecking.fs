@@ -541,6 +541,7 @@ module ResourceChecking =
             | DoVar(_, expression)
             | DoAssign(_, expression)
             | DoUsing(_, expression)
+            | DoDefer expression
             | DoReturn expression
             | DoExpression expression ->
                 yield! expressionNames expression
@@ -1284,6 +1285,9 @@ module ResourceChecking =
                         :: rewriteStatements (Map.remove name activeAliases) rest
                     | DoAssign(target, value) ->
                         DoAssign(target, rewriteProjectionDescriptorApplications activeAliases value)
+                        :: rewriteStatements activeAliases rest
+                    | DoDefer value ->
+                        DoDefer(rewriteProjectionDescriptorApplications activeAliases value)
                         :: rewriteStatements activeAliases rest
                     | DoIf(condition, whenTrue, whenFalse) ->
                         DoIf(
@@ -2339,6 +2343,23 @@ module ResourceChecking =
 
     let private noteValueDemandingNameUse (document: ParsedDocument) expression state =
         match expression with
+        | Name(root :: path) when not (List.isEmpty path) ->
+            match tryFindBinding root state with
+            | Some binding when binding.DeclaredQuantity = Some ResourceQuantity.zero ->
+                addDiagnostic
+                    erasedRuntimeUseCode
+                    $"Quantity-0 binding '{binding.Name}' cannot be used at runtime."
+                    (findUseLocation document root 1)
+                    []
+                    document
+                    state
+            | Some binding when binding.DeclaredQuantity |> Option.exists concreteQuantityCountsUse
+                                && fieldPathRequiresUse state (makePlace root path) ->
+                consumeBindingAtPlace document (makePlace root path) state
+            | Some binding when quantityBorrows binding.DeclaredQuantity ->
+                addNonConsumingDemand document binding.Name state
+            | _ ->
+                state
         | Name [ name ] ->
             match tryFindBinding name state with
             | Some binding when binding.DeclaredQuantity = Some ResourceQuantity.zero ->
@@ -2457,6 +2478,7 @@ module ResourceChecking =
 
                     expressionCount + loop (activeAlias && not (String.Equals(name, aliasName, StringComparison.Ordinal))) rest
                 | DoAssign(_, expression)
+                | DoDefer expression
                 | DoExpression expression
                 | DoReturn expression ->
                     let expressionCount =
@@ -2488,25 +2510,36 @@ module ResourceChecking =
         [ 1 .. useCount ]
         |> List.fold (fun current _ -> noteValueDemandingNameUse document (Name [ aliasName ]) current) state
 
+    let private hasPriorBorrowOverlap message (state: CheckState) =
+        state.Diagnostics
+        |> List.exists (fun diagnostic ->
+            diagnostic.Severity = Error
+            && diagnostic.Code = borrowOverlapCode
+            && diagnostic.Message = message)
+
     let private validatePlaceAccess (document: ParsedDocument) (place: ResourcePlace) (state: CheckState) =
         match tryFindBinding place.Root state with
         | _ when tryFindBorrowOverlap place state |> Option.isSome ->
             let borrowLock = tryFindBorrowOverlap place state |> Option.get
             let placeText = String.concat "." (place.Root :: place.Path)
+            let message = $"Place '{placeText}' overlaps an active borrowed footprint."
 
-            addDiagnostic
-                borrowOverlapCode
-                $"Place '{placeText}' overlaps an active borrowed footprint."
-                (borrowLock.Origin |> Option.orElseWith (fun () -> Some(diagnosticLocation document)))
-                [
-                    match borrowLock.Origin with
-                    | Some location ->
-                        { Message = "Active borrowed footprint."
-                          Location = location }
-                    | None -> ()
-                ]
-                document
+            if hasPriorBorrowOverlap message state then
                 state
+            else
+                addDiagnostic
+                    borrowOverlapCode
+                    message
+                    (borrowLock.Origin |> Option.orElseWith (fun () -> Some(diagnosticLocation document)))
+                    [
+                        match borrowLock.Origin with
+                        | Some location ->
+                            { Message = "Active borrowed footprint."
+                              Location = location }
+                        | None -> ()
+                    ]
+                    document
+                    state
         | Some binding when List.isEmpty place.Path && not (List.isEmpty binding.ConsumedPaths) ->
             addDiagnostic
                 linearOveruseCode
@@ -2966,14 +2999,13 @@ module ResourceChecking =
             expressionResultMayCarryBorrow state inner
         | NamedApplicationBlock fields ->
             fields |> List.exists (fun field -> expressionResultMayCarryBorrow state field.Value)
-        | SafeNavigation _
-        | MemberAccess _
         | Elvis _ ->
             not (Set.isEmpty (capturedRegions state expression))
         | Literal _
         | KindQualifiedName _
         | Name _
         | RecordUpdate _
+        | SafeNavigation _
         | MemberAccess _
         | Apply _
         | Binary _
@@ -3002,7 +3034,7 @@ module ResourceChecking =
         | TagTest(receiver, _) ->
             expressionMayCarryEscapingBorrow receiver
         | SafeNavigation _ ->
-            true
+            false
         | Do statements ->
             match List.tryLast statements with
             | Some(DoExpression result) -> expressionMayCarryEscapingBorrow result
@@ -3021,6 +3053,7 @@ module ResourceChecking =
         | KindQualifiedName _
         | Name _
         | RecordUpdate _
+        | SafeNavigation _
         | MemberAccess _
         | Apply _
         | Binary _
@@ -3060,8 +3093,6 @@ module ResourceChecking =
             checkResultEscapeAtBoundary allowedRegions document value state
         | TagTest(receiver, _) ->
             checkResultEscapeAtBoundary allowedRegions document receiver state
-        | SafeNavigation _
-        | MemberAccess _
         | Elvis _ ->
             checkEscapeAgainstAllowed allowedRegions document expression state
         | Do statements ->
@@ -3091,6 +3122,7 @@ module ResourceChecking =
         | Apply _
         | Binary _
         | RecordUpdate _
+        | SafeNavigation _
         | MemberAccess _
         | PrefixedString _ ->
             state
@@ -3714,6 +3746,38 @@ module ResourceChecking =
                                 scopedState
 
                         let scopedState =
+                            match scrutinee, caseClause.Pattern with
+                            | Name [ scrutineeName ], AnonymousRecordPattern fields ->
+                                match tryFindBinding scrutineeName state with
+                                | Some binding ->
+                                    let mentioned =
+                                        fields
+                                        |> List.choose (fun field ->
+                                            if String.Equals(field.Name, "__kappa_record_rest", StringComparison.Ordinal) then
+                                                None
+                                            else
+                                                Some field.Name)
+                                        |> Set.ofList
+
+                                    binding.RecordFieldQuantities
+                                    |> Map.toList
+                                    |> List.filter (fun (fieldName, quantity) ->
+                                        not (Set.contains fieldName mentioned)
+                                        && ResourceQuantity.requiresUse quantity)
+                                    |> List.fold (fun current (fieldName, _) ->
+                                        addDiagnostic
+                                            linearDropCode
+                                            $"Record pattern omits linear field '{fieldName}'."
+                                            (argumentLocation document scrutinee)
+                                            []
+                                            document
+                                            current) scopedState
+                                | None ->
+                                    scopedState
+                            | _ ->
+                                scopedState
+
+                        let scopedState =
                             match caseClause.Guard with
                             | Some guard -> checkExpression projectionSummaries document signatures scopedState guard
                             | None -> scopedState
@@ -3943,6 +4007,21 @@ module ResourceChecking =
                     | _ -> checkExpression projectionSummaries document signatures state argument
 
                 state
+        | Apply(Name [ calleeName ], [ body ]) when String.Equals(calleeName, "fork", StringComparison.Ordinal) ->
+            let captured = capturedRegions state body
+            let state =
+                if Set.isEmpty captured then
+                    state
+                else
+                    addDiagnostic
+                        borrowEscapeCode
+                        "A forked child computation cannot capture a borrowed region from the parent fiber."
+                        (argumentLocation document body)
+                        []
+                        document
+                        state
+
+            checkExpression projectionSummaries document signatures state body
         | Apply(Name [ calleeName ], arguments) when Map.containsKey calleeName projectionSummaries ->
             match Map.tryFind calleeName projectionSummaries with
             | None ->
@@ -4162,7 +4241,18 @@ module ResourceChecking =
                         | _ ->
                             tryBorrowablePlacesWithEnv Map.empty projectionSummaries state argument
                     | _ ->
-                        None
+                        match argument with
+                        | Apply(callee, [ Name(root :: path) ]) ->
+                            tryCalleeName callee
+                            |> Option.bind (fun name -> Map.tryFind name signatures)
+                            |> Option.bind (fun signature ->
+                                signature.ParameterQuantities
+                                |> List.tryHead
+                                |> Option.flatten)
+                            |> Option.filter concreteQuantityCountsUse
+                            |> Option.map (fun _ -> [ makePlace root path ])
+                        | _ ->
+                            None
 
                 indexedArguments
                 |> List.fold (fun current (consumeIndex, consumeArgument) ->
@@ -4831,6 +4921,94 @@ module ResourceChecking =
                             None
                             (bindPatternNameLocation document binding name)
                             state) current
+
+                loop current rest
+            | DoDefer expression :: rest ->
+                let rec containsEscapingAbruptControl expression =
+                    match expression with
+                    | Do statements ->
+                        statements
+                        |> List.exists (function
+                            | DoReturn _ -> true
+                            | DoLet(_, inner)
+                            | DoBind(_, inner)
+                            | DoVar(_, inner)
+                            | DoAssign(_, inner)
+                            | DoUsing(_, inner)
+                            | DoDefer inner
+                            | DoExpression inner -> containsEscapingAbruptControl inner
+                            | DoLetQuestion(_, inner, failure) ->
+                                containsEscapingAbruptControl inner
+                                || (failure
+                                    |> Option.exists (fun failure ->
+                                        failure.Body
+                                        |> List.exists (fun statement -> containsEscapingAbruptControl (Do [ statement ]))))
+                            | DoIf(condition, whenTrue, whenFalse) ->
+                                containsEscapingAbruptControl condition
+                                || (whenTrue |> List.exists (fun statement -> containsEscapingAbruptControl (Do [ statement ])))
+                                || (whenFalse |> List.exists (fun statement -> containsEscapingAbruptControl (Do [ statement ])))
+                            | DoWhile(condition, body) ->
+                                containsEscapingAbruptControl condition
+                                || (body |> List.exists (fun statement -> containsEscapingAbruptControl (Do [ statement ]))))
+                    | LocalLet(_, value, body) ->
+                        containsEscapingAbruptControl value || containsEscapingAbruptControl body
+                    | LocalScopedEffect(_, body) ->
+                        containsEscapingAbruptControl body
+                    | IfThenElse(condition, whenTrue, whenFalse) ->
+                        containsEscapingAbruptControl condition
+                        || containsEscapingAbruptControl whenTrue
+                        || containsEscapingAbruptControl whenFalse
+                    | Match(scrutinee, cases) ->
+                        containsEscapingAbruptControl scrutinee
+                        || (cases |> List.exists (fun caseClause -> containsEscapingAbruptControl caseClause.Body))
+                    | RecordLiteral fields ->
+                        fields |> List.exists (fun field -> containsEscapingAbruptControl field.Value)
+                    | Seal(value, _) ->
+                        containsEscapingAbruptControl value
+                    | RecordUpdate(receiver, fields) ->
+                        containsEscapingAbruptControl receiver
+                        || (fields |> List.exists (fun field -> containsEscapingAbruptControl field.Value))
+                    | MemberAccess(receiver, _, arguments) ->
+                        containsEscapingAbruptControl receiver || (arguments |> List.exists containsEscapingAbruptControl)
+                    | SafeNavigation(receiver, navigation) ->
+                        containsEscapingAbruptControl receiver
+                        || (navigation.Arguments |> List.exists containsEscapingAbruptControl)
+                    | TagTest(receiver, _) ->
+                        containsEscapingAbruptControl receiver
+                    | MonadicSplice inner
+                    | ExplicitImplicitArgument inner
+                    | InoutArgument inner
+                    | Unary(_, inner) ->
+                        containsEscapingAbruptControl inner
+                    | Apply(callee, arguments) ->
+                        containsEscapingAbruptControl callee || (arguments |> List.exists containsEscapingAbruptControl)
+                    | NamedApplicationBlock fields ->
+                        fields |> List.exists (fun field -> containsEscapingAbruptControl field.Value)
+                    | Binary(left, _, right)
+                    | Elvis(left, right) ->
+                        containsEscapingAbruptControl left || containsEscapingAbruptControl right
+                    | PrefixedString(_, parts) ->
+                        parts
+                        |> List.exists (function
+                            | StringInterpolation inner -> containsEscapingAbruptControl inner
+                            | StringText _ -> false)
+                    | Literal _
+                    | Name _
+                    | KindQualifiedName _
+                    | Lambda _ ->
+                        false
+
+                let current =
+                    if containsEscapingAbruptControl expression then
+                        addDiagnostic
+                            DiagnosticCode.ControlFlowInvalidEscape
+                            "A deferred action must not contain return, break, or continue targeting an outer scope."
+                            (argumentLocation document expression)
+                            []
+                            document
+                            current
+                    else
+                        current
 
                 loop current rest
             | DoVar(name, expression) :: rest ->

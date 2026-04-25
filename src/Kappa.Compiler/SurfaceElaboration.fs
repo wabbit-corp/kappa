@@ -906,6 +906,8 @@ module SurfaceElaboration =
                                 rewritten :: rewriteStatements rest
                         | DoAssign(name, value) ->
                             DoAssign(name, rewrite value) :: rewriteStatements rest
+                        | DoDefer value ->
+                            DoDefer(rewrite value) :: rewriteStatements rest
                         | DoIf(condition, whenTrue, whenFalse) ->
                             DoIf(condition |> rewrite, whenTrue |> rewriteStatements, whenFalse |> rewriteStatements)
                             :: rewriteStatements rest
@@ -1074,6 +1076,8 @@ module SurfaceElaboration =
                             :: rewriteStatements (withoutShadowedAliases (Set.singleton name) activeAliases) rest
                         | DoAssign(name, value) ->
                             DoAssign(name, rewrite activeAliases value) :: rewriteStatements activeAliases rest
+                        | DoDefer value ->
+                            DoDefer(rewrite activeAliases value) :: rewriteStatements activeAliases rest
                         | DoIf(condition, whenTrue, whenFalse) ->
                             DoIf(
                                 rewrite activeAliases condition,
@@ -3525,6 +3529,8 @@ module SurfaceElaboration =
             inferValidationDoResultType environment freshCounter nextLocals rest
         | DoAssign _ :: rest ->
             inferValidationDoResultType environment freshCounter localTypes rest
+        | DoDefer _ :: rest ->
+            inferValidationDoResultType environment freshCounter localTypes rest
         | DoIf(_, _, _) :: rest ->
             inferValidationDoResultType environment freshCounter localTypes rest
         | DoWhile _ :: rest ->
@@ -4161,6 +4167,7 @@ module SurfaceElaboration =
                             | DoUsing(_, value)
                             | DoVar(_, value)
                             | DoAssign(_, value)
+                            | DoDefer value
                             | DoExpression value
                             | DoReturn value ->
                                 yield! loop value
@@ -5305,6 +5312,7 @@ module SurfaceElaboration =
 
                     validateExpression locals refinements expression @ validateDoStatements nextLocals refinements rest
                 | DoAssign(_, expression)
+                | DoDefer expression
                 | DoExpression expression ->
                     validateExpression locals refinements expression @ validateDoStatements locals refinements rest
                 | DoIf(condition, whenTrue, whenFalse) ->
@@ -5387,6 +5395,7 @@ module SurfaceElaboration =
             | DoBind(_, expression)
             | DoVar(_, expression)
             | DoAssign(_, expression)
+            | DoDefer expression
             | DoUsing(_, expression)
             | DoReturn expression
             | DoExpression expression ->
@@ -5631,6 +5640,7 @@ module SurfaceElaboration =
                 | DoAssign(target, expression) ->
                     validateProjectionDescriptorApplications aliases expression
                     @ validateProjectionDescriptorDoStatements aliases rest
+                | DoDefer expression
                 | DoExpression expression
                 | DoReturn expression ->
                     validateProjectionDescriptorApplications aliases expression
@@ -5850,6 +5860,7 @@ module SurfaceElaboration =
                         validateExpr inEscapingLambda scopes expression @ validateDo inEscapingLambda scopes rest
                     | DoVar(_, expression)
                     | DoAssign(_, expression)
+                    | DoDefer expression
                     | DoExpression expression
                     | DoReturn expression ->
                         validateExpr inEscapingLambda scopes expression @ validateDo inEscapingLambda scopes rest
@@ -6272,6 +6283,7 @@ module SurfaceElaboration =
                             expressionReferences target shadowed expression
                             || doStatementsReference target (Set.add name shadowed) rest
                         | DoAssign(_, expression)
+                        | DoDefer expression
                         | DoExpression expression
                         | DoReturn expression ->
                             expressionReferences target shadowed expression
@@ -6372,6 +6384,7 @@ module SurfaceElaboration =
                                |> Option.defaultValue [])
                         | DoVar(_, expression)
                         | DoAssign(_, expression)
+                        | DoDefer expression
                         | DoExpression expression
                         | DoReturn expression ->
                             validateExpression expression
@@ -6979,6 +6992,8 @@ module SurfaceElaboration =
                 inferDoResultType nextLocals rest
             | DoAssign _ :: rest ->
                 inferDoResultType localTypes rest
+            | DoDefer _ :: rest ->
+                inferDoResultType localTypes rest
             | DoIf(_, _, _) :: rest ->
                 inferDoResultType localTypes rest
             | DoWhile _ :: rest ->
@@ -7117,6 +7132,7 @@ module SurfaceElaboration =
                         | DoVar(name, value) -> DoVar(name, loop value)
                         | DoAssign(name, value) -> DoAssign(name, loop value)
                         | DoUsing(binding, value) -> DoUsing(binding, loop value)
+                        | DoDefer value -> DoDefer(loop value)
                         | DoIf(condition, whenTrue, whenFalse) ->
                             DoIf(
                                 loop condition,
@@ -7663,6 +7679,12 @@ module SurfaceElaboration =
             | DoAssign(bindingName, expression) :: rest ->
                 KCoreSequence(
                     KCoreExecute(KCoreApply(KCoreName [ "writeRef" ], [ KCoreName [ bindingName ]; lowerExpression localTypes expression ])),
+                    lowerDoStatements scopeLabel localTypes rest
+                )
+            | DoDefer expression :: rest ->
+                KCoreScheduleExit(
+                    scopeLabel,
+                    KCoreDeferred(lowerExpression localTypes expression),
                     lowerDoStatements scopeLabel localTypes rest
                 )
             | DoIf(condition, whenTrue, whenFalse) :: rest ->

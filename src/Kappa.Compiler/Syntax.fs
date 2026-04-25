@@ -32,6 +32,7 @@ type Keyword =
     | Impossible
     | In
     | Inout
+    | Defer
     | Infix
     | Instance
     | Is
@@ -100,6 +101,7 @@ module Keyword =
             "impossible", Impossible
             "in", In
             "inout", Inout
+            "defer", Defer
             "infix", Infix
             "instance", Instance
             "is", Is
@@ -361,6 +363,7 @@ and SurfaceDoStatement =
     | DoVar of string * SurfaceExpression
     | DoAssign of string * SurfaceExpression
     | DoUsing of SurfaceBindPattern * SurfaceExpression
+    | DoDefer of SurfaceExpression
     | DoIf of condition: SurfaceExpression * whenTrue: SurfaceDoStatement list * whenFalse: SurfaceDoStatement list
     | DoWhile of condition: SurfaceExpression * body: SurfaceDoStatement list
     | DoReturn of SurfaceExpression

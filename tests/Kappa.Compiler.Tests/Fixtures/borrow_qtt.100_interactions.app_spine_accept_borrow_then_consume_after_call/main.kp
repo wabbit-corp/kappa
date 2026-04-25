@@ -1,0 +1,20 @@
+@PrivateByDefault module main
+
+--! allow_unsafe_consume
+
+type Box : Type = (value : Int)
+
+readBox : (& b : Box) -> Int
+let readBox (& b : Box) : Int = b.value
+
+consumeBox : (1 b : Box) -> Int
+let consumeBox (1 b : Box) : Int =
+    block
+        let _ = unsafeConsume b
+        0
+
+useBorrowThenConsume : (1 b : Box) -> Int
+let useBorrowThenConsume (1 b : Box) : Int =
+    block
+        let n = readBox b
+        n + consumeBox b

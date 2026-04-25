@@ -124,6 +124,7 @@ module internal ResourceCheckingSurface =
             | DoVar(_, expression)
             | DoAssign(_, expression)
             | DoUsing(_, expression)
+            | DoDefer expression
             | DoReturn expression
             | DoExpression expression ->
                 yield! expressionNames expression

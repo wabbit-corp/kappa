@@ -62,6 +62,7 @@ type DiagnosticCode =
     | QttInoutMarkerRequired
     | QttInoutMarkerUnexpected
     | QttInoutThreadedFieldMissing
+    | ControlFlowInvalidEscape
 
 module DiagnosticCode =
     let toIdentifier code =
@@ -122,6 +123,7 @@ module DiagnosticCode =
         | QttInoutMarkerRequired -> "E_QTT_INOUT_MARKER_REQUIRED"
         | QttInoutMarkerUnexpected -> "E_QTT_INOUT_MARKER_UNEXPECTED"
         | QttInoutThreadedFieldMissing -> "E_QTT_INOUT_THREADED_FIELD_MISSING"
+        | ControlFlowInvalidEscape -> "E_CONTROL_FLOW_INVALID_ESCAPE"
 
     let tryParseIdentifier (identifier: string) =
         match identifier.Trim() with
@@ -181,6 +183,7 @@ module DiagnosticCode =
         | "E_QTT_INOUT_MARKER_REQUIRED" -> Some QttInoutMarkerRequired
         | "E_QTT_INOUT_MARKER_UNEXPECTED" -> Some QttInoutMarkerUnexpected
         | "E_QTT_INOUT_THREADED_FIELD_MISSING" -> Some QttInoutThreadedFieldMissing
+        | "E_CONTROL_FLOW_INVALID_ESCAPE" -> Some ControlFlowInvalidEscape
         | _ -> None
 
 type DiagnosticRelatedLocation =

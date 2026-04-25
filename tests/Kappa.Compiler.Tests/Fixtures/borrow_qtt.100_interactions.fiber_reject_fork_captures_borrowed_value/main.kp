@@ -1,0 +1,10 @@
+@PrivateByDefault module main
+
+read : (& x : Int) -> Int
+let read (& x : Int) : Int = x
+
+bad : (& x : Int) -> UIO (Fiber Void Int)
+let bad (& x : Int) : UIO (Fiber Void Int) =
+    fork
+        do
+            pure (read x)

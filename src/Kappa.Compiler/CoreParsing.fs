@@ -563,6 +563,7 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
 
         let isRestPattern (fieldTokens: Token list) =
             match fieldTokens with
+            | { Kind = Dot } :: { Kind = Dot } :: [] -> true
             | { Kind = Dot } :: { Kind = Dot } :: nameToken :: [] when this.IsNameToken(nameToken) -> true
             | _ -> false
 
@@ -596,6 +597,9 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                               Pattern = WildcardPattern }
                     | None ->
                         match fieldTokens with
+                        | { Kind = Dot } :: { Kind = Dot } :: [] ->
+                            { Name = "__kappa_record_rest"
+                              Pattern = WildcardPattern }
                         | { Kind = Dot } :: { Kind = Dot } :: nameToken :: [] when this.IsNameToken(nameToken) ->
                             { Name = "__kappa_record_rest"
                               Pattern = NamePattern(SyntaxFacts.trimIdentifierQuotes nameToken.Text) }
@@ -1901,6 +1905,12 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
             DoVar(name, this.ParseStandaloneExpression(rest))
         | returnToken :: rest when Token.isKeyword Keyword.Return returnToken ->
             DoReturn(this.ParseStandaloneExpression(rest))
+        | deferToken :: rest when Token.isKeyword Keyword.Defer deferToken ->
+            if List.isEmpty rest then
+                diagnostics.AddError(DiagnosticCode.ParseError, "Expected an expression after 'defer'.", source.GetLocation(deferToken.Span))
+                DoExpression(Literal LiteralValue.Unit)
+            else
+                DoDefer(this.ParseStandaloneExpression(rest))
         | ifToken :: rest when Token.isKeyword Keyword.If ifToken ->
             parseDoIf ifToken rest
         | usingToken :: rest when Token.isKeyword Keyword.Using usingToken ->
@@ -2539,6 +2549,24 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
         | CharacterLiteral ->
             let token = this.Advance()
             Literal(Character(this.DecodeCharacterLiteral token))
+        | Dot when this.Peek(1).Kind = Operator && this.Peek(1).Text = "<" ->
+            let startToken = this.Advance()
+            this.Advance() |> ignore
+
+            while this.Current.Kind <> EndOfFile
+                  && not (this.Current.Kind = Operator && this.Current.Text = ">.") do
+                this.Advance() |> ignore
+
+            if this.Current.Kind = Operator && this.Current.Text = ">." then
+                this.Advance() |> ignore
+
+            diagnostics.AddError(
+                DiagnosticCode.ParseError,
+                "Code quotations are specified but not implemented by this compiler milestone.",
+                source.GetLocation(startToken.Span)
+            )
+
+            Literal Unit
         | Underscore ->
             this.Advance() |> ignore
             Name [ "_" ]

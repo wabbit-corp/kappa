@@ -1,0 +1,7 @@
+@PrivateByDefault module main
+
+ok : Int -> UIO (Fiber Void Int)
+let ok (x : Int) : UIO (Fiber Void Int) =
+    fork
+        do
+            pure (x + 1)

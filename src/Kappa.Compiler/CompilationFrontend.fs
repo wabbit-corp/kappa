@@ -400,6 +400,7 @@ module internal CompilationFrontend =
                     | DoVar(name, body) -> $"(var {name} {render body})"
                     | DoAssign(name, body) -> $"(assign {name} {render body})"
                     | DoUsing(binding, body) -> $"(using {renderPattern binding.Pattern} {render body})"
+                    | DoDefer body -> $"(defer {render body})"
                     | DoIf(condition, whenTrue, whenFalse) ->
                         let trueText =
                             whenTrue

@@ -1,0 +1,7 @@
+@PrivateByDefault module main
+
+namedUse : (1 x : Int) -> (>=1 y : Int) -> Int
+let namedUse (1 x : Int) (>=1 y : Int) : Int = x + y
+
+ok : (>=1 y : Int) -> Int
+let ok (>=1 y : Int) : Int = namedUse { x = 1, y = y }
