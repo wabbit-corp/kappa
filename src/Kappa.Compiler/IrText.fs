@@ -84,16 +84,23 @@ module internal IrText =
             $"(seq {kcoreExpressionText first} {kcoreExpressionText second})"
         | KCoreWhile(condition, body) ->
             $"(while {kcoreExpressionText condition} {kcoreExpressionText body})"
-        | KCoreApply(callee, arguments) ->
+        | KCoreAppSpine(callee, arguments) ->
             let argumentText =
                 arguments
-                |> List.map kcoreExpressionText
+                |> List.map (fun argument ->
+                    let prefix =
+                        match argument.ArgumentKind with
+                        | KCoreExplicitArgument -> ""
+                        | KCoreImplicitArgument -> "@implicit "
+                        | KCoreInoutArgument -> "@inout "
+
+                    prefix + kcoreExpressionText argument.Expression)
                 |> String.concat " "
 
             if String.IsNullOrWhiteSpace(argumentText) then
-                $"(apply {kcoreExpressionText callee})"
+                $"(app-spine {kcoreExpressionText callee})"
             else
-                $"(apply {kcoreExpressionText callee} {argumentText})"
+                $"(app-spine {kcoreExpressionText callee} {argumentText})"
         | KCoreDictionaryValue(moduleName, traitName, instanceKey) ->
             $"(dictionary {moduleName} {traitName} {instanceKey})"
         | KCoreTraitCall(traitName, memberName, dictionary, arguments) ->

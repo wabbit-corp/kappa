@@ -407,7 +407,7 @@ module internal CompilationFrontend =
 
                 $"({parts})"
 
-        let renderBindPattern binding =
+        let renderBindPattern (binding: SurfaceBindPattern) =
             let quantityText =
                 binding.Quantity
                 |> Option.map (fun quantity -> Quantity.toSurfaceText quantity + " ")
@@ -445,7 +445,10 @@ module internal CompilationFrontend =
             | LocalScopedEffect(name, body) ->
                 $"(scoped-effect {name} {render body})"
             | Lambda(parameters, body) ->
-                let names = parameters |> List.map (fun parameter -> parameter.Name) |> String.concat " "
+                let names =
+                    parameters
+                    |> List.map (fun (parameter: Parameter) -> parameter.Name)
+                    |> String.concat " "
                 $"(lambda ({names}) {render body})"
             | IfThenElse(condition, whenTrue, whenFalse) ->
                 $"(if {render condition} {render whenTrue} {render whenFalse})"

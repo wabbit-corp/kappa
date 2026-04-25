@@ -828,9 +828,9 @@ module internal KBackendLowering =
                                     |> Result.bind (fun loweredGuard ->
                                         lowerExpression scopeLabel caseLocals caseClause.Body
                                         |> Result.map (fun (loweredBody, bodyRepresentation) ->
-                                            { Pattern = loweredPattern
-                                              Guard = loweredGuard
-                                              Body = loweredBody }
+                                            ({ Pattern = loweredPattern
+                                               Guard = loweredGuard
+                                               Body = loweredBody }: KBackendMatchCase)
                                             :: loweredCases,
                                             bodyRepresentation :: caseRepresentations)))))
                         |> Result.map (fun (loweredCases, caseRepresentations) ->

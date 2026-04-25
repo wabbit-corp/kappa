@@ -1,14 +1,18 @@
 namespace Kappa.Compiler
 
 // The public KCore data model used for post-elaboration observability and lowering.
-type KCoreOrigin =
-    { FilePath: string
-      ModuleName: string
-      DeclarationName: string option
-      IntroductionKind: string }
+type KCoreType = TypeSignatures.TypeExpr
+
+type KCoreArgumentKind =
+    | KCoreExplicitArgument
+    | KCoreImplicitArgument
+    | KCoreInoutArgument
 
 type KCoreParameter =
     { Name: string
+      Quantity: Quantity option
+      IsImplicit: bool
+      Type: KCoreType option
       TypeText: string option }
 
 type KCoreStaticObjectKind =
@@ -20,11 +24,16 @@ type KCoreStaticObjectKind =
 type KCoreStaticObject =
     { ObjectKind: KCoreStaticObjectKind
       Name: string list
+      Type: KCoreType option
       TypeText: string option }
 
 type KCoreExitAction =
     | KCoreDeferred of KCoreExpression
     | KCoreRelease of resourceTypeText: string option * release: KCoreExpression * resource: KCoreExpression
+
+and KCoreArgument =
+    { ArgumentKind: KCoreArgumentKind
+      Expression: KCoreExpression }
 
 and KCoreExpression =
     | KCoreLiteral of LiteralValue
@@ -39,7 +48,7 @@ and KCoreExpression =
     | KCoreScheduleExit of scopeLabel: string * action: KCoreExitAction * body: KCoreExpression
     | KCoreSequence of KCoreExpression * KCoreExpression
     | KCoreWhile of condition: KCoreExpression * body: KCoreExpression
-    | KCoreApply of KCoreExpression * KCoreExpression list
+    | KCoreAppSpine of KCoreExpression * KCoreArgument list
     | KCoreDictionaryValue of moduleName: string * traitName: string * instanceKey: string
     | KCoreTraitCall of traitName: string * memberName: string * dictionary: KCoreExpression * arguments: KCoreExpression list
     | KCoreUnary of operatorName: string * KCoreExpression
@@ -67,6 +76,7 @@ type KCoreBinding =
       IsOpaque: bool
       Name: string option
       Parameters: KCoreParameter list
+      ReturnType: KCoreType option
       ReturnTypeText: string option
       Body: KCoreExpression option
       BodyText: string option

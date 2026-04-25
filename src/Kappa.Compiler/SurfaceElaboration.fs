@@ -225,9 +225,39 @@ module SurfaceElaboration =
               BodyTokens = []
               Body = None }
 
-    let private lowerKCoreParameter (name: string) (typeText: string option) : KCoreParameter =
+    let private lowerKCoreParameter (parameter: Parameter) (parameterType: TypeExpr option) : KCoreParameter =
+        { Name = parameter.Name
+          Quantity = parameter.Quantity
+          IsImplicit = parameter.IsImplicit
+          Type = parameterType
+          TypeText =
+            parameterType
+            |> Option.map TypeSignatures.toText
+            |> Option.orElseWith (fun () -> parameter.TypeTokens |> Option.map tokensText) }
+
+    let private lowerSyntheticKCoreParameter
+        (name: string)
+        (quantity: Quantity option)
+        (isImplicit: bool)
+        (parameterType: TypeExpr option)
+        : KCoreParameter =
         { Name = name
-          TypeText = typeText }
+          Quantity = quantity
+          IsImplicit = isImplicit
+          Type = parameterType
+          TypeText = parameterType |> Option.map TypeSignatures.toText }
+
+    let private explicitKCoreArgument expression =
+        { ArgumentKind = KCoreExplicitArgument
+          Expression = expression }
+
+    let private implicitKCoreArgument expression =
+        { ArgumentKind = KCoreImplicitArgument
+          Expression = expression }
+
+    let private inoutKCoreArgument expression =
+        { ArgumentKind = KCoreInoutArgument
+          Expression = expression }
 
     let rec private lowerKCorePattern (pattern: SurfacePattern) =
         match pattern with
@@ -1440,8 +1470,11 @@ module SurfaceElaboration =
     let private tryParseParameterType (parameter: Parameter) =
         parameter.TypeTokens |> Option.bind TypeSignatures.parseType
 
+    let private tryParseReturnTypeType tokens =
+        tokens |> Option.bind TypeSignatures.parseType
+
     let private tryParseReturnTypeTokens tokens =
-        tokens |> Option.bind TypeSignatures.parseType |> Option.map typeTextOf
+        tryParseReturnTypeType tokens |> Option.map typeTextOf
 
     let private tryParseLetDefinitionScheme (definition: LetDefinition) =
         match definition.ReturnTypeTokens |> Option.bind TypeSignatures.parseType with
@@ -2994,30 +3027,42 @@ module SurfaceElaboration =
         | SurfaceIntegerLiteral _ -> LiteralValue.Integer 0L
         | SurfaceRealLiteral _ -> LiteralValue.Float 0.0
 
+    let private lowerBindingReturnTypeExpr
+        (scheme: TypeScheme option)
+        (parameters: Parameter list)
+        (fallbackTokens: Token list option)
+        =
+        match tryParseReturnTypeType fallbackTokens with
+        | Some explicitReturnType ->
+            Some explicitReturnType
+        | None ->
+            match scheme with
+            | Some scheme ->
+                let resultType =
+                    if List.isEmpty parameters then
+                        scheme.Body
+                    else
+                        let _, resultType = TypeSignatures.schemeParts scheme
+                        resultType
+
+                Some resultType
+            | None ->
+                None
+
     let private lowerBindingReturnType
         (scheme: TypeScheme option)
         (parameters: Parameter list)
         (fallbackTokens: Token list option)
         =
-        match scheme with
-        | Some scheme ->
-            let resultType =
-                if List.isEmpty parameters then
-                    scheme.Body
-                else
-                    let _, resultType = TypeSignatures.schemeParts scheme
-                    resultType
-
-            Some(typeTextOf resultType)
-        | None ->
-            tryParseReturnTypeTokens fallbackTokens
+        lowerBindingReturnTypeExpr scheme parameters fallbackTokens
+        |> Option.map typeTextOf
 
     let private buildBindingParameters
-        (aliases: Map<string, TypeAliasInfo>)
+        (_aliases: Map<string, TypeAliasInfo>)
         (scheme: TypeScheme option)
         (parameters: Parameter list)
         =
-        let runtimeParameters scheme =
+        let coreParameters scheme =
             parameters
             |> List.filter (fun parameter ->
                 not (
@@ -3028,32 +3073,17 @@ module SurfaceElaboration =
 
         match scheme with
         | Some scheme ->
-            let parameters = runtimeParameters scheme
+            let parameters = coreParameters scheme
             let parameterTypes, _ = TypeSignatures.schemeParts scheme
 
             if List.length parameterTypes = List.length parameters then
                 List.zip parameters parameterTypes
-                |> List.filter (fun (_, parameterType) -> not (isCompileTimeArgumentType aliases parameterType))
                 |> List.map (fun (parameter, parameterType) ->
-                    lowerKCoreParameter parameter.Name (Some(TypeSignatures.toText parameterType)))
+                    lowerKCoreParameter parameter (Some parameterType))
             else
-                parameters
-                |> List.filter (fun parameter ->
-                    parameter.TypeTokens
-                    |> Option.bind TypeSignatures.parseType
-                    |> Option.map (isCompileTimeArgumentType aliases >> not)
-                    |> Option.defaultValue true)
-                |> List.map (fun parameter ->
-                    lowerKCoreParameter parameter.Name (parameter.TypeTokens |> Option.map tokensText))
+                parameters |> List.map (fun parameter -> lowerKCoreParameter parameter (parameter.TypeTokens |> Option.bind TypeSignatures.parseType))
         | None ->
-            parameters
-            |> List.filter (fun parameter ->
-                parameter.TypeTokens
-                |> Option.bind TypeSignatures.parseType
-                |> Option.map (isCompileTimeArgumentType aliases >> not)
-                |> Option.defaultValue true)
-            |> List.map (fun parameter ->
-                lowerKCoreParameter parameter.Name (parameter.TypeTokens |> Option.map tokensText))
+            parameters |> List.map (fun parameter -> lowerKCoreParameter parameter (parameter.TypeTokens |> Option.bind TypeSignatures.parseType))
 
     let private buildLocalTypes
         (scheme: TypeScheme option)
@@ -7622,7 +7652,7 @@ module SurfaceElaboration =
     let private makeSyntheticBindingDeclaration
         (name: string)
         (parameters: KCoreParameter list)
-        (returnTypeText: string option)
+        (returnType: TypeExpr option)
         (body: KCoreExpression)
         (provenance: KCoreOrigin)
         =
@@ -7633,7 +7663,8 @@ module SurfaceElaboration =
                   IsOpaque = false
                   Name = Some name
                   Parameters = parameters
-                  ReturnTypeText = returnTypeText
+                  ReturnType = returnType
+                  ReturnTypeText = returnType |> Option.map typeTextOf
                   Body = Some body
                   BodyText = Some ""
                   Provenance = provenance }
@@ -8818,7 +8849,12 @@ module SurfaceElaboration =
                                                     preludeBindings.Add(
                                                         hiddenRootName,
                                                         refInnerType,
-                                                        KCoreExecute(KCoreApply(KCoreName [ "readRef" ], [ KCoreName [ rootName ] ]))
+                                                        KCoreExecute(
+                                                            KCoreAppSpine(
+                                                                KCoreName [ "readRef" ],
+                                                                [ explicitKCoreArgument (KCoreName [ rootName ]) ]
+                                                            )
+                                                        )
                                                     )
 
                                                     callLocalTypes <- Map.add hiddenRootName refInnerType callLocalTypes
@@ -8894,10 +8930,11 @@ module SurfaceElaboration =
                                                             recordLayouts
                                                             residualResultType
 
-                                                    KCoreApply(
+                                                    KCoreAppSpine(
                                                         KCoreName [ residualLayout.ConstructorName ],
                                                         residualLayout.Fields
-                                                        |> List.map (fun field -> KCoreName [ fieldBindingNames[field.Name] ])
+                                                        |> List.map (fun field ->
+                                                            explicitKCoreArgument (KCoreName [ fieldBindingNames[field.Name] ]))
                                                     )
 
                                             Some(
@@ -8941,7 +8978,13 @@ module SurfaceElaboration =
 
                                                 if isVarRoot then
                                                     KCoreSequence(
-                                                        KCoreExecute(KCoreApply(KCoreName [ "writeRef" ], [ KCoreName [ rootName ]; rebuiltValue ])),
+                                                        KCoreExecute(
+                                                            KCoreAppSpine(
+                                                                KCoreName [ "writeRef" ],
+                                                                [ explicitKCoreArgument (KCoreName [ rootName ])
+                                                                  explicitKCoreArgument rebuiltValue ]
+                                                            )
+                                                        ),
                                                         current
                                                     )
                                                 else
@@ -9080,7 +9123,12 @@ module SurfaceElaboration =
                 )
             | DoVar(bindingName, expression) :: rest ->
                 let loweredValue =
-                    KCoreExecute(KCoreApply(KCoreName [ "newRef" ], [ lowerExpression localTypes expression ]))
+                    KCoreExecute(
+                        KCoreAppSpine(
+                            KCoreName [ "newRef" ],
+                            [ explicitKCoreArgument (lowerExpression localTypes expression) ]
+                        )
+                    )
 
                 let nextLocals =
                     match inferExpressionType localTypes expression with
@@ -9090,7 +9138,13 @@ module SurfaceElaboration =
                 KCoreLet(bindingName, loweredValue, lowerDoStatements scopeLabel nextLocals rest)
             | DoAssign(bindingName, expression) :: rest ->
                 KCoreSequence(
-                    KCoreExecute(KCoreApply(KCoreName [ "writeRef" ], [ KCoreName [ bindingName ]; lowerExpression localTypes expression ])),
+                    KCoreExecute(
+                        KCoreAppSpine(
+                            KCoreName [ "writeRef" ],
+                            [ explicitKCoreArgument (KCoreName [ bindingName ])
+                              explicitKCoreArgument (lowerExpression localTypes expression) ]
+                        )
+                    ),
                     lowerDoStatements scopeLabel localTypes rest
                 )
             | DoDefer expression :: rest ->
@@ -9114,7 +9168,12 @@ module SurfaceElaboration =
                     lowerDoStatements scopeLabel localTypes rest
                 )
             | DoReturn expression :: _ ->
-                KCoreExecute(KCoreApply(KCoreName [ "return" ], [ lowerExpression localTypes expression ]))
+                KCoreExecute(
+                    KCoreAppSpine(
+                        KCoreName [ "return" ],
+                        [ explicitKCoreArgument (lowerExpression localTypes expression) ]
+                    )
+                )
 
         and lowerPattern localTypes expectedType pattern =
             match pattern with
@@ -9236,6 +9295,7 @@ module SurfaceElaboration =
             KCoreStaticObject
                 { ObjectKind = kind
                   Name = staticObject.NameSegments
+                  Type = staticObjectTypeText staticObject |> Option.bind tryParseTypeText
                   TypeText = staticObjectTypeText staticObject }
 
         and tryLowerRecordProjectionPath
@@ -9294,9 +9354,24 @@ module SurfaceElaboration =
 
         and lowerExpression localTypes expression =
             let lowerArguments arguments =
-                arguments |> List.map (lowerExpression localTypes)
+                arguments
+                |> List.map (function
+                    | InoutArgument inner -> inoutKCoreArgument (lowerExpression localTypes inner)
+                    | argument -> explicitKCoreArgument (lowerExpression localTypes argument))
+
+            let lowerArgumentExpressions arguments =
+                arguments
+                |> List.map (function
+                    | InoutArgument inner -> lowerExpression localTypes inner
+                    | argument -> lowerExpression localTypes argument)
 
             let lowerPreparedArguments preparedArguments =
+                preparedArguments
+                |> List.map (function
+                    | ExplicitArgument argument -> explicitKCoreArgument (lowerExpression localTypes argument)
+                    | ImplicitArgument implicitArgument -> implicitKCoreArgument implicitArgument)
+
+            let lowerPreparedArgumentExpressions preparedArguments =
                 preparedArguments
                 |> List.map (function
                     | ExplicitArgument argument -> lowerExpression localTypes argument
@@ -9360,10 +9435,13 @@ module SurfaceElaboration =
                     KCoreSequence(substituteKCoreNames substitutions first, substituteKCoreNames substitutions second)
                 | KCoreWhile(condition, body) ->
                     KCoreWhile(substituteKCoreNames substitutions condition, substituteKCoreNames substitutions body)
-                | KCoreApply(callee, arguments) ->
-                    KCoreApply(
+                | KCoreAppSpine(callee, arguments) ->
+                    KCoreAppSpine(
                         substituteKCoreNames substitutions callee,
-                        arguments |> List.map (substituteKCoreNames substitutions)
+                        arguments
+                        |> List.map (fun argument ->
+                            { argument with
+                                Expression = substituteKCoreNames substitutions argument.Expression })
                     )
                 | KCoreTraitCall(traitName, memberName, dictionary, arguments) ->
                     KCoreTraitCall(
@@ -9410,15 +9488,15 @@ module SurfaceElaboration =
                                         | Some layout -> Map.add layout.Name loweredArgument substitutions
                                         | None -> substitutions
 
-                                    Some loweredArgument, substitutions
+                                    Some(explicitKCoreArgument loweredArgument), substitutions
                                 | Some layout, Some(ImplicitArgument implicitArgument) ->
-                                    Some implicitArgument, Map.add layout.Name implicitArgument substitutions
+                                    Some(implicitKCoreArgument implicitArgument), Map.add layout.Name implicitArgument substitutions
                                 | Some layout, None when bindingInfo.DefaultArguments.ContainsKey(layout.Name) ->
                                     let loweredDefault =
                                         lowerExpression localTypes bindingInfo.DefaultArguments[layout.Name]
                                         |> substituteKCoreNames substitutions
 
-                                    Some loweredDefault, Map.add layout.Name loweredDefault substitutions
+                                    Some(explicitKCoreArgument loweredDefault), Map.add layout.Name loweredDefault substitutions
                                 | _ ->
                                     None, substitutions
 
@@ -9439,7 +9517,7 @@ module SurfaceElaboration =
 
                 match SurfaceNumericLiteral.suffix literal with
                 | Some suffixName ->
-                    KCoreApply(KCoreName [ suffixName ], [ KCoreLiteral loweredLiteral ])
+                    KCoreAppSpine(KCoreName [ suffixName ], [ explicitKCoreArgument (KCoreLiteral loweredLiteral) ])
                 | None ->
                     KCoreLiteral loweredLiteral
             | KindQualifiedName _ ->
@@ -9460,7 +9538,7 @@ module SurfaceElaboration =
                         []
                 with
                 | Some preparedCall when not (List.isEmpty preparedCall.Arguments) ->
-                    KCoreApply(KCoreName [ bindingName ], lowerPreparedArguments preparedCall.Arguments)
+                    KCoreAppSpine(KCoreName [ bindingName ], lowerPreparedArguments preparedCall.Arguments)
                 | _ ->
                     KCoreName [ bindingName ]
             | Name [ bindingName ]
@@ -9486,7 +9564,7 @@ module SurfaceElaboration =
                     | None ->
                         match tryReceiverProjection environment localTypes receiverName memberName with
                         | Some _ ->
-                            KCoreApply(KCoreName [ memberName ], [ loweredReceiver ])
+                            KCoreAppSpine(KCoreName [ memberName ], [ explicitKCoreArgument loweredReceiver ])
                         | None ->
                             recordProjection
                             |> Option.defaultValue (KCoreName [ receiverName; memberName ])
@@ -9544,7 +9622,7 @@ module SurfaceElaboration =
                 KCoreLambda(
                     lambdaParameters
                     |> List.map (fun parameter ->
-                        lowerKCoreParameter parameter.Name (parameter.TypeTokens |> Option.map tokensText)),
+                        lowerKCoreParameter parameter (tryParseParameterType parameter)),
                     lowerExpression lambdaLocals lambdaBody
                 )
             | IfThenElse(condition, whenTrue, whenFalse) ->
@@ -9598,14 +9676,14 @@ module SurfaceElaboration =
                         |> List.map (fun field -> field.Name, field.Value)
                         |> Map.ofList
 
-                    KCoreApply(
+                    KCoreAppSpine(
                         KCoreName [ layout.ConstructorName ],
                         layout.Fields
                         |> List.map (fun field ->
                             fieldValues
                             |> Map.tryFind field.Name
-                            |> Option.map (lowerExpression localTypes)
-                            |> Option.defaultValue (KCoreLiteral LiteralValue.Unit))
+                            |> Option.map (lowerExpression localTypes >> explicitKCoreArgument)
+                            |> Option.defaultValue (explicitKCoreArgument (KCoreLiteral LiteralValue.Unit)))
                     )
                 else
                     KCoreLiteral LiteralValue.Unit
@@ -9687,7 +9765,11 @@ module SurfaceElaboration =
                         [
                             { Pattern = pattern
                               Guard = None
-                              Body = KCoreApply(KCoreName [ layout.ConstructorName ], rebuiltFields) }
+                              Body =
+                                KCoreAppSpine(
+                                    KCoreName [ layout.ConstructorName ],
+                                    rebuiltFields |> List.map explicitKCoreArgument
+                                ) }
                         ]
                     )
                 | None ->
@@ -9695,11 +9777,11 @@ module SurfaceElaboration =
             | MemberAccess(receiver, segments, arguments) ->
                 match segments with
                 | [] ->
-                    KCoreApply(lowerExpression localTypes receiver, lowerArguments arguments)
+                    KCoreAppSpine(lowerExpression localTypes receiver, lowerArguments arguments)
                 | [ memberName ] ->
                     match tryResolveStaticConstructor environment receiver memberName with
                     | Some _ ->
-                        KCoreApply(KCoreName [ memberName ], lowerArguments arguments)
+                        KCoreAppSpine(KCoreName [ memberName ], lowerArguments arguments)
                     | None ->
                         match environment.VisibleBindings |> Map.tryFind memberName with
                         | Some bindingInfo ->
@@ -9715,14 +9797,14 @@ module SurfaceElaboration =
                                         receiverArguments
                                 with
                                 | Some preparedCall ->
-                                    KCoreApply(KCoreName [ memberName ], lowerPreparedArguments preparedCall.Arguments)
+                                    KCoreAppSpine(KCoreName [ memberName ], lowerPreparedArguments preparedCall.Arguments)
                                 | None ->
-                                    KCoreApply(KCoreName [ memberName ], lowerArguments receiverArguments)
+                                    KCoreAppSpine(KCoreName [ memberName ], lowerArguments receiverArguments)
                             | None ->
                                 if List.isEmpty arguments then
                                     KCoreName [ memberName ]
                                 else
-                                    KCoreApply(KCoreName [ memberName ], lowerArguments arguments)
+                                    KCoreAppSpine(KCoreName [ memberName ], lowerArguments arguments)
                         | None ->
                             let loweredReceiver = lowerExpression localTypes receiver
 
@@ -9733,7 +9815,7 @@ module SurfaceElaboration =
                                     if List.isEmpty arguments then
                                         projected
                                     else
-                                        KCoreApply(projected, lowerArguments arguments))
+                                        KCoreAppSpine(projected, lowerArguments arguments))
                                 |> Option.defaultValue (KCoreName [ memberName ])
                             | None ->
                                 KCoreName [ memberName ]
@@ -9750,7 +9832,7 @@ module SurfaceElaboration =
                     | [] ->
                         callee
                     | arguments ->
-                        KCoreApply(callee, arguments |> List.map (lowerExpression localTypes))
+                        KCoreAppSpine(callee, arguments |> List.map (lowerExpression localTypes >> explicitKCoreArgument))
 
                 let wrapsResult =
                     inferExpressionType localTypes receiver
@@ -9767,7 +9849,7 @@ module SurfaceElaboration =
 
                 let successBody =
                     if wrapsResult then
-                        KCoreApply(KCoreName [ "Some" ], [ loweredMember ])
+                        KCoreAppSpine(KCoreName [ "Some" ], [ explicitKCoreArgument loweredMember ])
                     else
                         loweredMember
 
@@ -9798,7 +9880,7 @@ module SurfaceElaboration =
             | Apply(Name [ receiverName; memberName ], arguments) ->
                 match tryResolveStaticConstructor environment (Name [ receiverName ]) memberName with
                 | Some _ ->
-                    KCoreApply(KCoreName [ memberName ], lowerArguments arguments)
+                    KCoreAppSpine(KCoreName [ memberName ], lowerArguments arguments)
                 | None ->
                     match tryResolveTraitMemberProjection environment localTypes [ receiverName; memberName ] with
                     | Some(traitInfo, resolvedMemberName, _, resolvedReceiverName) ->
@@ -9806,7 +9888,7 @@ module SurfaceElaboration =
                             traitInfo.Name,
                             resolvedMemberName,
                             lowerExpression localTypes (Name [ resolvedReceiverName ]),
-                            lowerArguments arguments
+                            lowerArgumentExpressions arguments
                         )
                     | None ->
                         match environment.VisibleBindings |> Map.tryFind memberName with
@@ -9823,13 +9905,13 @@ module SurfaceElaboration =
                                         receiverArguments
                                 with
                                 | Some preparedCall ->
-                                    KCoreApply(KCoreName [ memberName ], lowerPreparedArguments preparedCall.Arguments)
+                                    KCoreAppSpine(KCoreName [ memberName ], lowerPreparedArguments preparedCall.Arguments)
                                 | None ->
-                                    KCoreApply(KCoreName [ memberName ], lowerArguments receiverArguments)
+                                    KCoreAppSpine(KCoreName [ memberName ], lowerArguments receiverArguments)
                             | None ->
-                                KCoreApply(lowerExpression localTypes (Name [ receiverName; memberName ]), lowerArguments arguments)
+                                KCoreAppSpine(lowerExpression localTypes (Name [ receiverName; memberName ]), lowerArguments arguments)
                         | None ->
-                            KCoreApply(lowerExpression localTypes (Name [ receiverName; memberName ]), lowerArguments arguments)
+                            KCoreAppSpine(lowerExpression localTypes (Name [ receiverName; memberName ]), lowerArguments arguments)
             | Apply(Name nameSegments, arguments) ->
                 match tryResolveTraitMemberProjection environment localTypes nameSegments with
                 | Some(traitInfo, memberName, _, receiverName) ->
@@ -9837,7 +9919,7 @@ module SurfaceElaboration =
                         traitInfo.Name,
                         memberName,
                         lowerExpression localTypes (Name [ receiverName ]),
-                        lowerArguments arguments
+                        lowerArgumentExpressions arguments
                     )
                 | None ->
                     match nameSegments with
@@ -9851,7 +9933,7 @@ module SurfaceElaboration =
                             traitName,
                             calleeName,
                             KCoreName [ dictionaryParameterName ],
-                            lowerArguments arguments
+                            lowerArgumentExpressions arguments
                         )
                     | [ calleeName ] when environment.VisibleBindings.ContainsKey calleeName ->
                         let bindingInfo = environment.VisibleBindings[calleeName]
@@ -9870,14 +9952,16 @@ module SurfaceElaboration =
                                 |> List.choose (fun constraintInfo ->
                                     resolveConstraintInstance environment constraintInfo
                                     |> Option.map (fun instanceInfo ->
-                                        KCoreDictionaryValue(instanceInfo.ModuleName, instanceInfo.TraitName, instanceInfo.InstanceKey)))
+                                        explicitKCoreArgument (
+                                            KCoreDictionaryValue(instanceInfo.ModuleName, instanceInfo.TraitName, instanceInfo.InstanceKey)
+                                        )))
 
-                            KCoreApply(
+                            KCoreAppSpine(
                                 KCoreName [ calleeName ],
                                 dictionaryArguments @ lowerPreparedArguments preparedCall.Arguments
                             )
                         | None ->
-                            KCoreApply(KCoreName [ calleeName ], lowerArguments arguments)
+                            KCoreAppSpine(KCoreName [ calleeName ], lowerArguments arguments)
                     | [ calleeName ] when environment.VisibleConstructors.ContainsKey calleeName ->
                         let constructorInfo = environment.VisibleConstructors[calleeName]
                         match
@@ -9890,12 +9974,12 @@ module SurfaceElaboration =
                                 arguments
                         with
                         | Some preparedCall ->
-                            KCoreApply(
+                            KCoreAppSpine(
                                 KCoreName [ calleeName ],
                                 lowerPreparedBindingCallArguments constructorInfo preparedCall
                             )
                         | None ->
-                            KCoreApply(KCoreName [ calleeName ], lowerArguments arguments)
+                            KCoreAppSpine(KCoreName [ calleeName ], lowerArguments arguments)
                     | [ calleeName ] ->
                         match
                             tryPrepareVisibleTraitMemberCall
@@ -9910,14 +9994,14 @@ module SurfaceElaboration =
                                 traitInfo.Name,
                                 calleeName,
                                 KCoreDictionaryValue(instanceInfo.ModuleName, instanceInfo.TraitName, instanceInfo.InstanceKey),
-                                lowerPreparedArguments preparedCall.Arguments
+                                lowerPreparedArgumentExpressions preparedCall.Arguments
                             )
                         | None ->
-                            KCoreApply(KCoreName [ calleeName ], lowerArguments arguments)
+                            KCoreAppSpine(KCoreName [ calleeName ], lowerArguments arguments)
                     | _ ->
-                        KCoreApply(lowerExpression localTypes (Name nameSegments), lowerArguments arguments)
+                        KCoreAppSpine(lowerExpression localTypes (Name nameSegments), lowerArguments arguments)
             | Apply(callee, arguments) ->
-                KCoreApply(lowerExpression localTypes callee, lowerArguments arguments)
+                KCoreAppSpine(lowerExpression localTypes callee, lowerArguments arguments)
             | Unary(operatorName, operand) ->
                 KCoreUnary(operatorName, lowerExpression localTypes operand)
             | Binary(left, operatorName, right) ->
@@ -10013,9 +10097,11 @@ module SurfaceElaboration =
         let hiddenParameters =
             hiddenParameters
             |> List.map (fun (constraintInfo, dictionaryParameterName) ->
-                lowerKCoreParameter
+                lowerSyntheticKCoreParameter
                     dictionaryParameterName
-                    (Some(TypeSignatures.toText (dictionaryType constraintInfo.TraitName constraintInfo.Arguments))))
+                    None
+                    false
+                    (Some(dictionaryType constraintInfo.TraitName constraintInfo.Arguments)))
 
         let loweredBody =
             definition.Body
@@ -10033,6 +10119,7 @@ module SurfaceElaboration =
                   IsOpaque = definition.IsOpaque
                   Name = definition.Name
                   Parameters = parameters
+                  ReturnType = lowerBindingReturnTypeExpr scheme definition.Parameters definition.ReturnTypeTokens
                   ReturnTypeText = lowerBindingReturnType scheme definition.Parameters definition.ReturnTypeTokens
                   Body = loweredBody
                   BodyText = loweredBody |> Option.map (fun _ -> "")
@@ -10057,12 +10144,14 @@ module SurfaceElaboration =
                 |> List.mapi (fun index _ -> $"arg{index}")
 
             let parameters =
-                lowerKCoreParameter
+                lowerSyntheticKCoreParameter
                     dictionaryParameterName
-                    (Some(TypeSignatures.toText (dictionaryType traitInfo.Name dictionaryArgumentTypes)))
+                    None
+                    false
+                    (Some(dictionaryType traitInfo.Name dictionaryArgumentTypes))
                 :: (List.zip valueParameterNames parameterTypes
                     |> List.map (fun (parameterName, parameterType) ->
-                        lowerKCoreParameter parameterName (Some(TypeSignatures.toText parameterType))))
+                        lowerSyntheticKCoreParameter parameterName None false (Some parameterType)))
 
             let body =
                 KCoreTraitCall(
@@ -10081,13 +10170,15 @@ module SurfaceElaboration =
 
             makeSyntheticBindingDeclaration
                 (TraitRuntime.dispatchBindingName traitInfo.Name memberName)
-                (lowerKCoreParameter
+                (lowerSyntheticKCoreParameter
                     dictionaryParameterName
-                    (Some(TypeSignatures.toText (dictionaryType traitInfo.Name dictionaryArgumentTypes)))
+                    None
+                    false
+                    (Some(dictionaryType traitInfo.Name dictionaryArgumentTypes))
                  :: (List.zip valueParameterNames parameterTypes
                      |> List.map (fun (parameterName, parameterType) ->
-                         lowerKCoreParameter parameterName (Some(TypeSignatures.toText parameterType)))))
-                (Some(TypeSignatures.toText resultType))
+                         lowerSyntheticKCoreParameter parameterName None false (Some parameterType))))
+                (Some resultType)
                 body
                 provenance)
 
@@ -10146,8 +10237,14 @@ module SurfaceElaboration =
                 KCoreSequence(substituteSelfDictionary first, substituteSelfDictionary second)
             | KCoreWhile(condition, body) ->
                 KCoreWhile(substituteSelfDictionary condition, substituteSelfDictionary body)
-            | KCoreApply(callee, arguments) ->
-                KCoreApply(substituteSelfDictionary callee, arguments |> List.map substituteSelfDictionary)
+            | KCoreAppSpine(callee, arguments) ->
+                KCoreAppSpine(
+                    substituteSelfDictionary callee,
+                    arguments
+                    |> List.map (fun argument ->
+                        { argument with
+                            Expression = substituteSelfDictionary argument.Expression })
+                )
             | KCoreDictionaryValue _ ->
                 expression
             | KCoreTraitCall(traitName, memberName, dictionary, arguments) ->
@@ -10259,7 +10356,7 @@ module SurfaceElaboration =
                         makeSyntheticBindingDeclaration
                             (TraitRuntime.instanceMemberBindingName instanceInfo.TraitName instanceInfo.InstanceKey memberName)
                             parameters
-                            (lowerBindingReturnType (Some specializedScheme) definition.Parameters definition.ReturnTypeTokens)
+                            (lowerBindingReturnTypeExpr (Some specializedScheme) definition.Parameters definition.ReturnTypeTokens)
                             (loweredBody |> Option.defaultValue (KCoreLiteral LiteralValue.Unit))
                             provenance)))
             |> Option.defaultValue []
@@ -10275,7 +10372,7 @@ module SurfaceElaboration =
             makeSyntheticBindingDeclaration
                 (TraitRuntime.instanceDictionaryBindingName instanceInfo.TraitName instanceInfo.InstanceKey)
                 []
-                (Some(TypeSignatures.toText (dictionaryType instanceInfo.TraitName instanceInfo.HeadTypes)))
+                (Some(dictionaryType instanceInfo.TraitName instanceInfo.HeadTypes))
                 (KCoreDictionaryValue(moduleName, instanceInfo.TraitName, instanceInfo.InstanceKey))
                 provenance
 

@@ -1437,6 +1437,87 @@ let ``supported backend profiles satisfy the current prelude intrinsic surface``
         Assert.Contains("printInt", preludeModule.IntrinsicTerms)
 
 [<Fact>]
+let ``KCore preserves compile time binders and structured capture aware types`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-kcore-structured-types-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "makeGetter : forall (s : Region). (&[s] x : Int) -> ((Unit -> Int) captures (s))"
+                    "let makeGetter (@0 s : Region) (&[s] x : Int) : ((Unit -> Int) captures (s)) ="
+                    "    \\() -> x"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let binding =
+        workspace.KCore
+        |> List.find (fun moduleDump -> moduleDump.Name = "main")
+        |> fun moduleDump ->
+            moduleDump.Declarations
+            |> List.pick (fun declaration ->
+                match declaration.Binding with
+                | Some binding when binding.Name = Some "makeGetter" -> Some binding
+                | _ -> None)
+
+    Assert.Equal(2, binding.Parameters.Length)
+
+    let regionParameter = binding.Parameters[0]
+    Assert.Equal("s", regionParameter.Name)
+    Assert.Equal(Some QuantityZero, regionParameter.Quantity)
+    Assert.True(regionParameter.IsImplicit)
+    Assert.Equal(Some(parseTypeText "Region"), regionParameter.Type)
+
+    let borrowedParameter = binding.Parameters[1]
+    Assert.Equal("x", borrowedParameter.Name)
+    Assert.Equal(Some(QuantityBorrow(Some "s")), borrowedParameter.Quantity)
+    Assert.Equal(Some(parseTypeText "Int"), borrowedParameter.Type)
+
+    Assert.Equal(
+        Some(parseTypeText "((Unit -> Int) captures (s))"),
+        binding.ReturnType
+    )
+
+[<Fact>]
+let ``KCore lowers calls as application spines with explicit arguments`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-kcore-app-spine-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "id : Int -> Int"
+                    "let id value = value"
+                    "let answer = id 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let answerBinding =
+        workspace.KCore
+        |> List.find (fun moduleDump -> moduleDump.Name = "main")
+        |> fun moduleDump ->
+            moduleDump.Declarations
+            |> List.pick (fun declaration ->
+                match declaration.Binding with
+                | Some binding when binding.Name = Some "answer" -> Some binding
+                | _ -> None)
+
+    match answerBinding.Body with
+    | Some(
+        KCoreAppSpine(
+            KCoreName [ "id" ],
+            [ { ArgumentKind = KCoreExplicitArgument
+                Expression = KCoreLiteral(LiteralValue.Integer 42L) } ]
+        )
+      ) -> ()
+    | other ->
+        failwithf "Expected KCore app spine for answer, got %A" other
+
+[<Fact>]
 let ``backend profile aliases normalize to the effective backend identity`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend

@@ -18,11 +18,12 @@ let private diagnosticsText diagnostics =
 
 let rec private containsCoreSyntheticRecordApply expression =
     match expression with
-    | KCoreApply(KCoreName [ constructorName ], arguments)
+    | KCoreAppSpine(KCoreName [ constructorName ], arguments)
         when constructorName.StartsWith("__kappa_record_", StringComparison.Ordinal) ->
         true
-    | KCoreApply(callee, arguments) ->
-        containsCoreSyntheticRecordApply callee || (arguments |> List.exists containsCoreSyntheticRecordApply)
+    | KCoreAppSpine(callee, arguments) ->
+        containsCoreSyntheticRecordApply callee
+        || (arguments |> List.exists (fun argument -> containsCoreSyntheticRecordApply argument.Expression))
     | KCoreLet(_, value, body) ->
         containsCoreSyntheticRecordApply value || containsCoreSyntheticRecordApply body
     | KCoreDoScope(_, body)
@@ -864,11 +865,27 @@ let ``KCore preserves using as protected release schedule`` () =
             scopeLabel,
             KCoreLet(
                 hiddenOwnedName,
-                KCoreExecute(KCoreApply(KCoreName [ "openFile" ], [ KCoreLiteral(LiteralValue.String "data.txt") ])),
+                KCoreExecute(
+                    KCoreAppSpine(
+                        KCoreName [ "openFile" ],
+                        [ { ArgumentKind = KCoreExplicitArgument
+                            Expression = KCoreLiteral(LiteralValue.String "data.txt") } ]
+                    )
+                ),
                 KCoreScheduleExit(
                     scheduledScopeLabel,
                     KCoreRelease(None, KCoreName [ "release" ], KCoreName [ releasedName ]),
-                    KCoreLet("file", KCoreName [ borrowedRoot ], KCoreExecute(KCoreApply(KCoreName [ "readData" ], [ KCoreName [ "file" ] ])))
+                    KCoreLet(
+                        "file",
+                        KCoreName [ borrowedRoot ],
+                        KCoreExecute(
+                            KCoreAppSpine(
+                                KCoreName [ "readData" ],
+                                [ { ArgumentKind = KCoreExplicitArgument
+                                    Expression = KCoreName [ "file" ] } ]
+                            )
+                        )
+                    )
                 )
             )
         )

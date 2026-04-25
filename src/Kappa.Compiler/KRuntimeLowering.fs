@@ -64,6 +64,11 @@ module internal KRuntimeLowering =
         | TypeSignatures.TypeUnion members ->
             TypeSignatures.TypeUnion(members |> List.map eraseRuntimeTypeExpr)
 
+    let private runtimeValueTypeExpr typeExpr =
+        match eraseRuntimeTypeExpr typeExpr with
+        | TypeSignatures.TypeName([ "IO" ], [ inner ]) -> inner
+        | other -> other
+
     let private eraseRuntimeTypeText (text: string) =
         match tryParseTypeText text with
         | Some parsed ->
@@ -131,6 +136,44 @@ module internal KRuntimeLowering =
         { Name = parameter.Name
           TypeText = parameter.TypeText |> Option.map eraseRuntimeTypeText }
 
+    let private isCompileTimeParameterType parameterType =
+        match parameterType with
+        | TypeSignatures.TypeUniverse _
+        | TypeSignatures.TypeIntrinsic TypeSignatures.UniverseClassifier
+        | TypeSignatures.TypeIntrinsic TypeSignatures.ConstraintClassifier
+        | TypeSignatures.TypeIntrinsic TypeSignatures.QuantityClassifier
+        | TypeSignatures.TypeIntrinsic TypeSignatures.RegionClassifier
+        | TypeSignatures.TypeIntrinsic TypeSignatures.RecRowClassifier
+        | TypeSignatures.TypeIntrinsic TypeSignatures.VarRowClassifier
+        | TypeSignatures.TypeIntrinsic TypeSignatures.EffRowClassifier
+        | TypeSignatures.TypeIntrinsic TypeSignatures.LabelClassifier
+        | TypeSignatures.TypeIntrinsic TypeSignatures.EffLabelClassifier
+        | TypeSignatures.TypeName([ "Type" ], [])
+        | TypeSignatures.TypeName([ "Constraint" ], [])
+        | TypeSignatures.TypeName([ "Quantity" ], [])
+        | TypeSignatures.TypeName([ "Region" ], [])
+        | TypeSignatures.TypeName([ "RecRow" ], [])
+        | TypeSignatures.TypeName([ "VarRow" ], [])
+        | TypeSignatures.TypeName([ "EffRow" ], [])
+        | TypeSignatures.TypeName([ "Label" ], [])
+        | TypeSignatures.TypeName([ "EffLabel" ], []) ->
+            true
+        | _ ->
+            false
+
+    let private isCompileTimeKCoreParameter (parameter: KCoreParameter) =
+        parameter.Type |> Option.exists isCompileTimeParameterType
+
+    let private filterRuntimeParameters (parameters: KCoreParameter list) =
+        parameters |> List.filter (isCompileTimeKCoreParameter >> not)
+
+    let private filterRuntimeArguments (keepMask: bool list) (arguments: KCoreArgument list) =
+        if List.length keepMask = List.length arguments then
+            List.zip keepMask arguments
+            |> List.choose (fun (keep, argument) -> if keep then Some argument else None)
+        else
+            arguments
+
     let rec private lowerKRuntimePattern pattern =
         match pattern with
         | KCoreWildcardPattern ->
@@ -144,14 +187,18 @@ module internal KRuntimeLowering =
         | KCoreOrPattern alternatives ->
             KRuntimeOrPattern(alternatives |> List.map lowerKRuntimePattern)
 
-    let rec private lowerKRuntimeExitAction action =
+    let rec private lowerKRuntimeExitAction runtimeParameterMasks action =
         match action with
         | KCoreDeferred expression ->
-            KRuntimeDeferred(lowerKRuntimeExpression expression)
+            KRuntimeDeferred(lowerKRuntimeExpression runtimeParameterMasks expression)
         | KCoreRelease(resourceTypeText, release, resource) ->
-            KRuntimeRelease(resourceTypeText, lowerKRuntimeExpression release, lowerKRuntimeExpression resource)
+            KRuntimeRelease(
+                resourceTypeText,
+                lowerKRuntimeExpression runtimeParameterMasks release,
+                lowerKRuntimeExpression runtimeParameterMasks resource
+            )
 
-    and private lowerKRuntimeExpression expression =
+    and private lowerKRuntimeExpression runtimeParameterMasks expression =
         match expression with
         | KCoreLiteral literal ->
             KRuntimeLiteral literal
@@ -160,58 +207,94 @@ module internal KRuntimeLowering =
         | KCoreName segments ->
             KRuntimeName segments
         | KCoreLambda(parameters, body) ->
-            KRuntimeClosure(parameters |> List.map (fun parameter -> parameter.Name), lowerKRuntimeExpression body)
+            KRuntimeClosure(
+                filterRuntimeParameters parameters |> List.map (fun parameter -> parameter.Name),
+                lowerKRuntimeExpression runtimeParameterMasks body
+            )
         | KCoreIfThenElse(condition, whenTrue, whenFalse) ->
             KRuntimeIfThenElse(
-                lowerKRuntimeExpression condition,
-                lowerKRuntimeExpression whenTrue,
-                lowerKRuntimeExpression whenFalse
+                lowerKRuntimeExpression runtimeParameterMasks condition,
+                lowerKRuntimeExpression runtimeParameterMasks whenTrue,
+                lowerKRuntimeExpression runtimeParameterMasks whenFalse
             )
         | KCoreMatch(scrutinee, cases) ->
             KRuntimeMatch(
-                lowerKRuntimeExpression scrutinee,
+                lowerKRuntimeExpression runtimeParameterMasks scrutinee,
                 cases
                 |> List.map (fun caseClause ->
                     { Pattern = lowerKRuntimePattern caseClause.Pattern
-                      Guard = caseClause.Guard |> Option.map lowerKRuntimeExpression
-                      Body = lowerKRuntimeExpression caseClause.Body })
+                      Guard = caseClause.Guard |> Option.map (lowerKRuntimeExpression runtimeParameterMasks)
+                      Body = lowerKRuntimeExpression runtimeParameterMasks caseClause.Body })
             )
         | KCoreExecute inner ->
-            KRuntimeExecute(lowerKRuntimeExpression inner)
+            KRuntimeExecute(lowerKRuntimeExpression runtimeParameterMasks inner)
         | KCoreLet(_, KCoreStaticObject _, body) ->
-            lowerKRuntimeExpression body
+            lowerKRuntimeExpression runtimeParameterMasks body
         | KCoreLet(bindingName, value, body) ->
-            KRuntimeLet(bindingName, lowerKRuntimeExpression value, lowerKRuntimeExpression body)
+            KRuntimeLet(
+                bindingName,
+                lowerKRuntimeExpression runtimeParameterMasks value,
+                lowerKRuntimeExpression runtimeParameterMasks body
+            )
         | KCoreDoScope(scopeLabel, body) ->
-            KRuntimeDoScope(scopeLabel, lowerKRuntimeExpression body)
+            KRuntimeDoScope(scopeLabel, lowerKRuntimeExpression runtimeParameterMasks body)
         | KCoreScheduleExit(scopeLabel, action, body) ->
-            KRuntimeScheduleExit(scopeLabel, lowerKRuntimeExitAction action, lowerKRuntimeExpression body)
+            KRuntimeScheduleExit(
+                scopeLabel,
+                lowerKRuntimeExitAction runtimeParameterMasks action,
+                lowerKRuntimeExpression runtimeParameterMasks body
+            )
         | KCoreSequence(first, second) ->
-            KRuntimeSequence(lowerKRuntimeExpression first, lowerKRuntimeExpression second)
+            KRuntimeSequence(
+                lowerKRuntimeExpression runtimeParameterMasks first,
+                lowerKRuntimeExpression runtimeParameterMasks second
+            )
         | KCoreWhile(condition, body) ->
-            KRuntimeWhile(lowerKRuntimeExpression condition, lowerKRuntimeExpression body)
-        | KCoreApply(callee, arguments) ->
-            KRuntimeApply(lowerKRuntimeExpression callee, arguments |> List.map lowerKRuntimeExpression)
+            KRuntimeWhile(
+                lowerKRuntimeExpression runtimeParameterMasks condition,
+                lowerKRuntimeExpression runtimeParameterMasks body
+            )
+        | KCoreAppSpine(callee, arguments) ->
+            let runtimeArguments =
+                match callee with
+                | KCoreName [ calleeName ] ->
+                    runtimeParameterMasks
+                    |> Map.tryFind calleeName
+                    |> Option.map (fun keepMask -> filterRuntimeArguments keepMask arguments)
+                    |> Option.defaultValue arguments
+                | _ ->
+                    arguments
+
+            KRuntimeApply(
+                lowerKRuntimeExpression runtimeParameterMasks callee,
+                runtimeArguments
+                |> List.map (fun argument -> lowerKRuntimeExpression runtimeParameterMasks argument.Expression)
+            )
         | KCoreDictionaryValue(moduleName, traitName, instanceKey) ->
             KRuntimeDictionaryValue(moduleName, traitName, instanceKey)
         | KCoreTraitCall(traitName, memberName, dictionary, arguments) ->
             KRuntimeTraitCall(
                 traitName,
                 memberName,
-                lowerKRuntimeExpression dictionary,
-                arguments |> List.map lowerKRuntimeExpression
+                lowerKRuntimeExpression runtimeParameterMasks dictionary,
+                arguments |> List.map (lowerKRuntimeExpression runtimeParameterMasks)
             )
         | KCoreUnary(operatorName, operand) ->
-            KRuntimeUnary(operatorName, lowerKRuntimeExpression operand)
+            KRuntimeUnary(operatorName, lowerKRuntimeExpression runtimeParameterMasks operand)
         | KCoreBinary(left, operatorName, right) ->
-            KRuntimeBinary(lowerKRuntimeExpression left, operatorName, lowerKRuntimeExpression right)
+            KRuntimeBinary(
+                lowerKRuntimeExpression runtimeParameterMasks left,
+                operatorName,
+                lowerKRuntimeExpression runtimeParameterMasks right
+            )
         | KCorePrefixedString(prefix, parts) ->
             KRuntimePrefixedString(
                 prefix,
                 parts
                 |> List.map (function
                     | KCoreStringText text -> KRuntimeStringText text
-                    | KCoreStringInterpolation inner -> KRuntimeStringInterpolation(lowerKRuntimeExpression inner))
+                    | KCoreStringInterpolation inner ->
+                        KRuntimeStringInterpolation(lowerKRuntimeExpression runtimeParameterMasks inner))
             )
 
     let private isPrivateByDefaultAttributes attributes =
@@ -380,6 +463,21 @@ module internal KRuntimeLowering =
         | _ ->
             None
 
+    let private intrinsicRuntimeSignature (declaration: ExpectedTermDeclaration) =
+        declaration.TypeTokens
+        |> TypeSignatures.parseScheme
+        |> Option.map (fun scheme ->
+            let parameterTypes, resultType = TypeSignatures.schemeParts scheme
+
+            let parameters: KRuntimeParameter list =
+                parameterTypes
+                |> List.filter (isCompileTimeParameterType >> not)
+                |> List.mapi (fun index parameterType ->
+                    { Name = $"arg{index}"
+                      TypeText = Some(TypeSignatures.toText parameterType |> eraseRuntimeTypeText) })
+
+            parameters, Some(runtimeValueTypeExpr resultType |> TypeSignatures.toText))
+
     let lowerKRuntimeModule (coreModule: KCoreModule) : KRuntimeModule =
         let moduleTraitArities =
             coreModule.Declarations
@@ -395,13 +493,24 @@ module internal KRuntimeLowering =
                     None)
             |> Map.ofList
 
+        let runtimeParameterMasks =
+            coreModule.Declarations
+            |> List.choose (fun declaration ->
+                declaration.Binding
+                |> Option.bind (fun binding ->
+                    binding.Name
+                    |> Option.map (fun bindingName ->
+                        bindingName,
+                        (binding.Parameters |> List.map (isCompileTimeKCoreParameter >> not)))))
+            |> Map.ofList
+
         let termBindings : KRuntimeBinding list =
             coreModule.Declarations
             |> List.choose (fun declaration ->
                 match declaration.Binding with
                 | Some binding when binding.Name.IsSome && not (isCompileTimeOnlyBindingBody binding.Body) ->
-                    let loweredBody = binding.Body |> Option.map lowerKRuntimeExpression
-                    let loweredParameters = binding.Parameters |> List.map lowerRuntimeParameter
+                    let loweredBody = binding.Body |> Option.map (lowerKRuntimeExpression runtimeParameterMasks)
+                    let loweredParameters = binding.Parameters |> filterRuntimeParameters |> List.map lowerRuntimeParameter
                     let loweredReturnType = binding.ReturnTypeText |> Option.map eraseRuntimeTypeText
                     let parameters, returnType, body =
                         match loweredParameters with
@@ -422,11 +531,27 @@ module internal KRuntimeLowering =
                     None)
 
         let intrinsicBindings : KRuntimeBinding list =
+            let intrinsicSignatures =
+                coreModule.Declarations
+                |> List.choose (fun declaration ->
+                    match declaration.Source with
+                    | ExpectDeclarationNode (ExpectTermDeclaration termDeclaration) ->
+                        intrinsicRuntimeSignature termDeclaration
+                        |> Option.map (fun signature -> termDeclaration.Name, signature)
+                    | _ ->
+                        None)
+                |> Map.ofList
+
             coreModule.IntrinsicTerms
             |> List.map (fun name ->
+                let parameters, returnTypeText =
+                    intrinsicSignatures
+                    |> Map.tryFind name
+                    |> Option.defaultValue ([], None)
+
                 { Name = name
-                  Parameters = []
-                  ReturnTypeText = None
+                  Parameters = parameters
+                  ReturnTypeText = returnTypeText
                   Body = None
                   Intrinsic = true
                   Provenance =
