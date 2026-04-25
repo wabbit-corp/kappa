@@ -287,6 +287,208 @@ let ``parser rejects aliases on constructor-bundle import items`` () =
     Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("ctorAll may not be combined with an alias"))
 
 [<Fact>]
+let ``parser accepts URL singleton sugar for import and export`` () =
+    let sourceText =
+        [
+            "module demo.hello"
+            "import \"https://example.com/lib\".value"
+            "export \"https://example.com/lib\".result"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "demo/hello.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Empty(parsed.Diagnostics)
+
+    match parsed.Syntax.Declarations with
+    | [ ImportDeclaration (false, [ importSpec ])
+        ImportDeclaration (true, [ exportSpec ]) ] ->
+        match importSpec.Source, importSpec.Selection with
+        | Url "https://example.com/lib", Items [ item ] ->
+            Assert.Equal("value", item.Name)
+            Assert.Equal(None, item.Namespace)
+            Assert.Equal(None, item.Alias)
+            Assert.False(item.IncludeConstructors)
+        | other ->
+            failwithf "Unexpected URL singleton import: %A" other
+
+        match exportSpec.Source, exportSpec.Selection with
+        | Url "https://example.com/lib", Items [ item ] ->
+            Assert.Equal("result", item.Name)
+            Assert.Equal(None, item.Namespace)
+            Assert.Equal(None, item.Alias)
+            Assert.False(item.IncludeConstructors)
+        | other ->
+            failwithf "Unexpected URL singleton export: %A" other
+    | other ->
+        failwithf "Unexpected declarations for URL singleton sugar: %A" other
+
+[<Fact>]
+let ``bare dotted import resolves to singleton sugar when only the parent item exists`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-bare-dotted-singleton-import"
+            [
+                "a/b.kp",
+                String.concat
+                    "\n"
+                    [
+                        "module a.b"
+                        "value : Int"
+                        "let value = 41"
+                    ]
+                "main.kp",
+                String.concat
+                    "\n"
+                    [
+                        "module main"
+                        "import a.b.value"
+                        "result : Int"
+                        "let result = value"
+                    ]
+            ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+[<Fact>]
+let ``bare dotted export resolves to singleton sugar when only the parent item exists`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-bare-dotted-singleton-export"
+            [
+                "lib.kp",
+                String.concat
+                    "\n"
+                    [
+                        "module lib"
+                        "value : Int"
+                        "let value = 41"
+                    ]
+                "facade.kp",
+                String.concat
+                    "\n"
+                    [
+                        "module facade"
+                        "export lib.value"
+                    ]
+                "main.kp",
+                String.concat
+                    "\n"
+                    [
+                        "module main"
+                        "import facade.(value)"
+                        "result : Int"
+                        "let result = value"
+                    ]
+            ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+[<Fact>]
+let ``bare dotted import is rejected when both module and singleton interpretations resolve`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-bare-dotted-import-ambiguous"
+            [
+                "a/b.kp",
+                String.concat
+                    "\n"
+                    [
+                        "module a.b"
+                        "c : Int"
+                        "let c = 1"
+                    ]
+                "a/b/c.kp",
+                String.concat
+                    "\n"
+                    [
+                        "module a.b.c"
+                        "answer : Int"
+                        "let answer = 42"
+                    ]
+                "main.kp",
+                String.concat
+                    "\n"
+                    [
+                        "module main"
+                        "import a.b.c"
+                        "result : Int"
+                        "let result = 0"
+                    ]
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected ambiguous bare dotted import to become a compile-time error.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.ImportAmbiguous)
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("a.b.c", StringComparison.Ordinal))
+
+[<Fact>]
+let ``bare dotted export is rejected when both module and singleton interpretations resolve`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-bare-dotted-export-ambiguous"
+            [
+                "a/b.kp",
+                String.concat
+                    "\n"
+                    [
+                        "module a.b"
+                        "c : Int"
+                        "let c = 1"
+                    ]
+                "a/b/c.kp",
+                String.concat
+                    "\n"
+                    [
+                        "module a.b.c"
+                        "answer : Int"
+                        "let answer = 42"
+                    ]
+                "main.kp",
+                String.concat
+                    "\n"
+                    [
+                        "module main"
+                        "export a.b.c"
+                    ]
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected ambiguous bare dotted export to become a compile-time error.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.ImportAmbiguous)
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("a.b.c", StringComparison.Ordinal))
+
+[<Fact>]
+let ``URL imports and exports participate in unresolved module validation`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-url-import-validation"
+            [
+                "main.kp",
+                String.concat
+                    "\n"
+                    [
+                        "module main"
+                        "import \"https://example.com/lib\".(value)"
+                        "export \"https://example.com/lib\".*"
+                    ]
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected unresolved URL modules to produce compile-time diagnostics.")
+
+    let unresolvedDiagnostics =
+        workspace.Diagnostics
+        |> List.filter (fun diagnostic -> diagnostic.Code = DiagnosticCode.ModuleNameUnresolved)
+
+    Assert.Equal(2, unresolvedDiagnostics.Length)
+    Assert.All(
+        unresolvedDiagnostics,
+        fun diagnostic -> Assert.Contains("https://example.com/lib", diagnostic.Message, StringComparison.Ordinal)
+    )
+
+[<Fact>]
 let ``parser decodes raw and multiline strings using spec dedent rules`` () =
     let sourceText =
         [

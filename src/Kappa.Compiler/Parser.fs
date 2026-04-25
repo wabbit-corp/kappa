@@ -609,11 +609,25 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
                   Alias = None
                   Selection = Items(this.ParseImportItems()) }
             | _ ->
-                diagnostics.AddError(DiagnosticCode.ParseError, "Expected '*' or '(...)' after '.'.", source.GetLocation(this.Current.Span))
+                match this.TryConsumeTermBindingName() with
+                | Some itemName ->
+                    { Source = moduleSource
+                      Alias = None
+                      Selection =
+                        Items
+                            [
+                                { Modifiers = []
+                                  Namespace = None
+                                  Name = itemName
+                                  IncludeConstructors = false
+                                  Alias = None }
+                            ] }
+                | None ->
+                    diagnostics.AddError(DiagnosticCode.ParseError, "Expected '*', '(...)', or a singleton item after '.'.", source.GetLocation(this.Current.Span))
 
-                { Source = moduleSource
-                  Alias = None
-                  Selection = QualifiedOnly }
+                    { Source = moduleSource
+                      Alias = None
+                      Selection = QualifiedOnly }
         else
             { Source = moduleSource
               Alias = None

@@ -5,6 +5,6 @@ import "https://example.com/lib#sha256:0123abcd".*
 value : Int
 let value = 1
 
---! assertNoErrors
---! assertType value Int
+--! assertErrorCount 1
+--! assertDiagnosticCodes E_MODULE_NAME_UNRESOLVED
 --! x-assertDeclDescriptors import "https://example.com/lib#sha256:0123abcd".*, signature value, let value

@@ -1728,7 +1728,7 @@ let ``source compilation surfaces missing imported runtime modules as diagnostic
 
     Assert.True(workspace.HasErrors, "Expected missing imported module to become a frontend compile diagnostic.")
     Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.ModuleNameUnresolved)
-    Assert.Contains("Imported module 'missing.mod' was not found", diagnosticsText workspace.Diagnostics)
+    Assert.Contains("Neither module 'missing.mod' nor item 'mod' from module 'missing' was found", diagnosticsText workspace.Diagnostics)
 
 [<Fact>]
 let ``source compilation surfaces backend lowering failures as diagnostics`` () =

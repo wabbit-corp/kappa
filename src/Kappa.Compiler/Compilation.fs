@@ -76,16 +76,20 @@ module Compilation =
         let analysisSessionIdentity =
             $"sourceRoot={options.SourceRoot};{buildConfigurationIdentity}"
 
-        let userDocuments =
+        let parsedUserDocuments =
             collectInputFiles options inputs
             |> List.map (parseFile options)
-            |> reparseDocumentsWithImportedFixities options
+
+        let initialDocuments =
+            if parsedUserDocuments |> List.exists (fun document -> document.ModuleName = Some Stdlib.PreludeModuleName) then
+                parsedUserDocuments
+            else
+                parseBundledPrelude options.AllowUnsafeConsume :: parsedUserDocuments
 
         let documents =
-            if userDocuments |> List.exists (fun document -> document.ModuleName = Some Stdlib.PreludeModuleName) then
-                userDocuments
-            else
-                parseBundledPrelude options.AllowUnsafeConsume :: userDocuments
+            initialDocuments
+            |> reparseDocumentsWithImportedFixities options
+            |> resolveImportExportSemantics
 
         let frontendModulesForValidation =
             documents

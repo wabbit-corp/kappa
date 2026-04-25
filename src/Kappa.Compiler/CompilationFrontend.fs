@@ -120,6 +120,18 @@ module internal CompilationFrontend =
         { document with
             Diagnostics = document.Diagnostics @ validateModuleName options document }
 
+    let private reparseDocumentWithFixities (options: CompilationOptions) initialFixities (document: ParsedDocument) =
+        let lexed = Lexer.tokenize document.Source
+        let parsed = Parser.parseWithInitialFixities initialFixities document.Source lexed.Tokens
+
+        let reparsed =
+            { document with
+                Syntax = parsed.Syntax
+                Diagnostics = lexed.Diagnostics @ parsed.Diagnostics }
+
+        { reparsed with
+            Diagnostics = reparsed.Diagnostics @ validateModuleName options reparsed }
+
     let collectInputFiles (options: CompilationOptions) inputs =
         let roots =
             if List.isEmpty inputs then
@@ -155,7 +167,7 @@ module internal CompilationFrontend =
         |> List.choose (fun spec ->
             match spec.Source with
             | Dotted name -> Some(SyntaxFacts.moduleNameToText name)
-            | Url _ -> None)
+            | Url url -> Some url)
 
     let severityText severity =
         match severity with
@@ -269,6 +281,50 @@ module internal CompilationFrontend =
             $"{sourceText}.* except ({nameText})"
         | Some alias, _ ->
             $"{sourceText} as {alias}"
+
+    type private QualifiedOnlyImportResolution =
+        | ResolvedImportSpec of ImportSpec
+        | AmbiguousBareImport of fullModuleName: string * parentModuleName: string * itemName: string
+        | UnresolvedBareImport of fullModuleName: string * parentModuleName: string * itemName: string
+
+    let private singletonImportSelection itemName =
+        Items
+            [
+                { Modifiers = []
+                  Namespace = None
+                  Name = itemName
+                  IncludeConstructors = false
+                  Alias = None }
+            ]
+
+    let private resolveQualifiedOnlyImportSpec (inventories: Map<string, ModuleExportInventory>) (spec: ImportSpec) =
+        match spec.Source, spec.Alias, spec.Selection with
+        | Dotted moduleSegments, None, QualifiedOnly when moduleSegments.Length >= 2 ->
+            let fullModuleName = SyntaxFacts.moduleNameToText moduleSegments
+            let parentModuleSegments = moduleSegments |> List.take (moduleSegments.Length - 1)
+            let parentModuleName = SyntaxFacts.moduleNameToText parentModuleSegments
+            let itemName = List.last moduleSegments
+            let moduleCandidateExists = Map.containsKey fullModuleName inventories
+
+            let itemCandidateExists =
+                match Map.tryFind parentModuleName inventories with
+                | Some inventory -> Set.contains itemName inventory.UnqualifiedBindings
+                | None -> false
+
+            match moduleCandidateExists, itemCandidateExists with
+            | true, true ->
+                AmbiguousBareImport(fullModuleName, parentModuleName, itemName)
+            | true, false ->
+                ResolvedImportSpec spec
+            | false, true ->
+                ResolvedImportSpec
+                    { Source = Dotted parentModuleSegments
+                      Alias = None
+                      Selection = singletonImportSelection itemName }
+            | false, false ->
+                UnresolvedBareImport(fullModuleName, parentModuleName, itemName)
+        | _ ->
+            ResolvedImportSpec spec
 
     let visibilityText visibility =
         match visibility with
@@ -572,6 +628,24 @@ module internal CompilationFrontend =
             |> Option.filter (fun tokenName -> String.Equals(tokenName, name, StringComparison.Ordinal))
             |> Option.map (fun _ -> document.Source.GetLocation(token.Span)))
 
+    let private findImportSpecifierLocation (document: ParsedDocument) (spec: ImportSpec) =
+        match spec.Source with
+        | Dotted moduleName ->
+            moduleName
+            |> List.tryHead
+            |> Option.bind (findTokenLocation document)
+        | Url url ->
+            document.Syntax.Tokens
+            |> List.tryPick (fun token ->
+                if token.Kind <> StringLiteral then
+                    None
+                else
+                    match SyntaxFacts.tryDecodeStringLiteral token.Text with
+                    | Result.Ok decoded when String.Equals(decoded, url, StringComparison.Ordinal) ->
+                        Some(document.Source.GetLocation(token.Span))
+                    | _ ->
+                        None)
+
     let private buildModuleExportInventory (documents: ParsedDocument list) =
         let emptyInventory =
             { Terms = Set.empty
@@ -739,17 +813,18 @@ module internal CompilationFrontend =
             |> recomputeUnqualifiedBindings
 
         let applyReexportSpec inventories inventory (spec: ImportSpec) =
-            match spec.Source with
-            | Url _ ->
+            match resolveQualifiedOnlyImportSpec inventories spec with
+            | AmbiguousBareImport _
+            | UnresolvedBareImport _ ->
                 inventory
-            | Dotted moduleName ->
-                let importedModuleName = SyntaxFacts.moduleNameToText moduleName
+            | ResolvedImportSpec resolvedSpec ->
+                let importedModuleName = moduleSpecifierText resolvedSpec.Source
 
                 match Map.tryFind importedModuleName inventories with
                 | None ->
                     inventory
                 | Some importedInventory ->
-                    match spec.Selection with
+                    match resolvedSpec.Selection with
                     | QualifiedOnly ->
                         inventory
                     | Items items ->
@@ -893,20 +968,39 @@ module internal CompilationFrontend =
                 match declaration with
                 | ImportDeclaration (_, specs) ->
                     for spec in specs do
-                        match spec.Source, spec.Selection with
-                        | Dotted moduleName, selection ->
-                            let importedModuleName = SyntaxFacts.moduleNameToText moduleName
+                        let defaultLocation = document.Source.GetLocation(TextSpan.FromBounds(0, 0))
+                        let specLocation = defaultArg (findImportSpecifierLocation document spec) defaultLocation
+
+                        match resolveQualifiedOnlyImportSpec exportInventories spec with
+                        | AmbiguousBareImport(fullModuleName, parentModuleName, itemName) ->
+                            diagnostics.AddError(
+                                DiagnosticCode.ImportAmbiguous,
+                                $"Bare dotted import/export '{fullModuleName}' is ambiguous between module '{fullModuleName}' and item '{itemName}' from module '{parentModuleName}'. Use an explicit module-only form or '(...)' singleton syntax.",
+                                specLocation,
+                                stage = "KFrontIR",
+                                phase = KFrontIRPhase.phaseName CHECKERS
+                            )
+                        | UnresolvedBareImport(fullModuleName, parentModuleName, itemName) ->
+                            diagnostics.AddError(
+                                DiagnosticCode.ModuleNameUnresolved,
+                                $"Neither module '{fullModuleName}' nor item '{itemName}' from module '{parentModuleName}' was found.",
+                                specLocation,
+                                stage = "KFrontIR",
+                                phase = KFrontIRPhase.phaseName CHECKERS
+                            )
+                        | ResolvedImportSpec resolvedSpec ->
+                            let importedModuleName = moduleSpecifierText resolvedSpec.Source
 
                             match Map.tryFind importedModuleName exportInventories with
                             | Some inventory ->
-                                match selection with
+                                match resolvedSpec.Selection with
                                 | Items items ->
                                     for item in items do
                                         if not (importItemExists inventory item) then
                                             diagnostics.AddError(
                                                 DiagnosticCode.ImportItemNotFound,
                                                 $"Import item '{item.Name}' was not found in module '{importedModuleName}'.",
-                                                defaultArg (findTokenLocation document item.Name) (document.Source.GetLocation(TextSpan.FromBounds(0, 0))),
+                                                defaultArg (findTokenLocation document item.Name) defaultLocation,
                                                 stage = "KFrontIR",
                                                 phase = KFrontIRPhase.phaseName CHECKERS
                                             )
@@ -916,7 +1010,7 @@ module internal CompilationFrontend =
                                             diagnostics.AddError(
                                                 DiagnosticCode.ImportItemNotFound,
                                                 $"Excluded import item '{item.Name}' was not found in module '{importedModuleName}'.",
-                                                defaultArg (findTokenLocation document item.Name) (document.Source.GetLocation(TextSpan.FromBounds(0, 0))),
+                                                defaultArg (findTokenLocation document item.Name) defaultLocation,
                                                 stage = "KFrontIR",
                                                 phase = KFrontIRPhase.phaseName CHECKERS
                                             )
@@ -926,16 +1020,37 @@ module internal CompilationFrontend =
                                 diagnostics.AddError(
                                     DiagnosticCode.ModuleNameUnresolved,
                                     $"Imported module '{importedModuleName}' was not found.",
-                                    defaultArg (moduleName |> List.tryHead |> Option.bind (findTokenLocation document)) (document.Source.GetLocation(TextSpan.FromBounds(0, 0))),
+                                    specLocation,
                                     stage = "KFrontIR",
                                     phase = KFrontIRPhase.phaseName CHECKERS
                                 )
-                        | _ ->
-                            ()
                 | _ ->
                     ()
 
         diagnostics.Items
+
+    let resolveImportExportSemantics (documents: ParsedDocument list) =
+        let exportInventories = buildModuleExportInventory documents
+
+        let resolveSpec spec =
+            match resolveQualifiedOnlyImportSpec exportInventories spec with
+            | ResolvedImportSpec resolvedSpec -> resolvedSpec
+            | AmbiguousBareImport _
+            | UnresolvedBareImport _ -> spec
+
+        let resolveDeclaration declaration =
+            match declaration with
+            | ImportDeclaration (isExport, specs) ->
+                ImportDeclaration(isExport, specs |> List.map resolveSpec)
+            | _ ->
+                declaration
+
+        documents
+        |> List.map (fun document ->
+            { document with
+                Syntax =
+                    { document.Syntax with
+                        Declarations = document.Syntax.Declarations |> List.map resolveDeclaration } })
 
     let private buildModuleFixityInventory (documents: ParsedDocument list) =
         documents
@@ -989,25 +1104,27 @@ module internal CompilationFrontend =
                     | ImportDeclaration (_, specs) -> specs
                     | _ -> [])
                 |> List.collect (fun spec ->
-                    match spec.Source with
-                    | Dotted moduleName ->
-                        let moduleNameText = SyntaxFacts.moduleNameToText moduleName
+                    let resolvedSpec =
+                        match resolveQualifiedOnlyImportSpec exportInventories spec with
+                        | ResolvedImportSpec resolvedSpec -> resolvedSpec
+                        | AmbiguousBareImport _
+                        | UnresolvedBareImport _ -> spec
 
-                        match Map.tryFind moduleNameText exportInventories, Map.tryFind moduleNameText moduleFixityInventory with
-                        | Some inventory, Some fixities ->
-                            fixities
-                            |> List.filter (fun declaration ->
-                                selectionImportsFixityName inventory spec.Selection declaration.OperatorName)
-                        | _ ->
-                            []
-                    | Url _ ->
+                    let moduleNameText = moduleSpecifierText resolvedSpec.Source
+
+                    match Map.tryFind moduleNameText exportInventories, Map.tryFind moduleNameText moduleFixityInventory with
+                    | Some inventory, Some fixities ->
+                        fixities
+                        |> List.filter (fun declaration ->
+                            selectionImportsFixityName inventory resolvedSpec.Selection declaration.OperatorName)
+                    | _ ->
                         [])
 
             let initialFixities =
                 importedFixities
                 |> List.fold (fun table declaration -> FixityTable.add declaration table) baseFixities
 
-            parseFileWithFixities options initialFixities document.Source.FilePath)
+            reparseDocumentWithFixities options initialFixities document)
 
     let declarationKindText (declaration: TopLevelDeclaration) =
         match declaration with

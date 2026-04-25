@@ -5,6 +5,6 @@ import "https://example.com/lib" as remote
 value : String
 let value = "alias"
 
---! assertNoErrors
---! assertType value String
+--! assertErrorCount 1
+--! assertDiagnosticCodes E_MODULE_NAME_UNRESOLVED
 --! x-assertDeclDescriptors import "https://example.com/lib" as remote, signature value, let value

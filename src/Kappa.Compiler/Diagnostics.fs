@@ -16,6 +16,7 @@ type DiagnosticCode =
     | ExpectAmbiguous
     | ExpectUnsatisfied
     | ImportCycle
+    | ImportAmbiguous
     | ImportItemNotFound
     | ModuleNameUnresolved
     | ModulePathMismatch
@@ -77,6 +78,7 @@ module DiagnosticCode =
         | ExpectAmbiguous -> "E_EXPECT_AMBIGUOUS"
         | ExpectUnsatisfied -> "E_EXPECT_UNSATISFIED"
         | ImportCycle -> "E_IMPORT_CYCLE"
+        | ImportAmbiguous -> "E_IMPORT_AMBIGUOUS"
         | ImportItemNotFound -> "E_IMPORT_ITEM_NOT_FOUND"
         | ModuleNameUnresolved -> "E_MODULE_NAME_UNRESOLVED"
         | ModulePathMismatch -> "E_MODULE_PATH_MISMATCH"
@@ -137,6 +139,7 @@ module DiagnosticCode =
         | "E_EXPECT_AMBIGUOUS" -> Some ExpectAmbiguous
         | "E_EXPECT_UNSATISFIED" -> Some ExpectUnsatisfied
         | "E_IMPORT_CYCLE" -> Some ImportCycle
+        | "E_IMPORT_AMBIGUOUS" -> Some ImportAmbiguous
         | "E_IMPORT_ITEM_NOT_FOUND" -> Some ImportItemNotFound
         | "E_MODULE_NAME_UNRESOLVED" -> Some ModuleNameUnresolved
         | "E_MODULE_PATH_MISMATCH" -> Some ModulePathMismatch

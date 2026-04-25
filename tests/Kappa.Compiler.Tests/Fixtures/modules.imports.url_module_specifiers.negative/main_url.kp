@@ -6,3 +6,5 @@ answer : Int
 let answer = 42
 
 --! assertDeclKinds import, signature, let
+--! assertErrorCount 1
+--! assertDiagnosticCodes E_MODULE_NAME_UNRESOLVED

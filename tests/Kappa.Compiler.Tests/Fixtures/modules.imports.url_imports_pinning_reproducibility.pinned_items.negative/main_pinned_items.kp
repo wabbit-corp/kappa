@@ -5,6 +5,6 @@ import "https://example.com/lib#ref:v1.2.3".(foo, bar)
 value : String
 let value = "ok"
 
---! assertNoErrors
---! assertType value String
+--! assertErrorCount 1
+--! assertDiagnosticCodes E_MODULE_NAME_UNRESOLVED
 --! x-assertDeclDescriptors import "https://example.com/lib#ref:v1.2.3".(foo + bar), signature value, let value
