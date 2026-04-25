@@ -815,6 +815,123 @@ let ``compilation resolves suffixed numeric literals through ordinary bindings``
     Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
 
 [<Fact>]
+let ``unsuffixed integer literals adopt explicit Integer parameter context`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-integer-literal-parameter-context"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    ""
+                    "idInt : Integer -> Integer"
+                    "let idInt x = x"
+                    ""
+                    "value : Integer"
+                    "let value = idInt 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+[<Fact>]
+let ``unsuffixed integer literals elaborate through an in-scope FromInteger instance`` () =
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-integer-literal-instance-context"
+            "main.value"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    ""
+                    "data Score : Type ="
+                    "    Score Int"
+                    ""
+                    "trait FromInteger (a : Type) ="
+                    "    fromInteger : Integer -> a"
+                    ""
+                    "instance FromInteger Score ="
+                    "    let fromInteger n = Score 7"
+                    ""
+                    "value : Score"
+                    "let value = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("Score 7", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected FromInteger instance elaboration to evaluate, got %s" issue.Message
+
+[<Fact>]
+let ``unsuffixed integer literals reject custom runtime targets without a FromInteger instance`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-integer-literal-missing-instance"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    ""
+                    "data Score : Type ="
+                    "    Score Int"
+                    ""
+                    "value : Score"
+                    "let value = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected a numeric literal without FromInteger support to be rejected.")
+
+[<Fact>]
+let ``oversized Int literals report a range diagnostic instead of compiling through`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-oversized-int-literal"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    ""
+                    "big : Int"
+                    "let big = 9223372036854775808"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected an out-of-range integer literal diagnostic.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.NumericLiteralOutOfRange)
+
+[<Fact>]
+let ``oversized suffixed integer literals report a range diagnostic instead of lowering to zero`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-oversized-suffixed-integer-literal"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    ""
+                    "px : Integer -> Int"
+                    "let px n = 1"
+                    ""
+                    "value : Int"
+                    "let value = 9223372036854775808px"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected an out-of-range suffixed integer literal diagnostic.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.NumericLiteralOutOfRange)
+
+[<Fact>]
 let ``parser reports unexpected indentation for a misindented match case body`` () =
     let sourceText =
         [

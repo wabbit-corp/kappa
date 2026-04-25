@@ -1,6 +1,7 @@
 namespace Kappa.Compiler
 
 open System
+open System.Numerics
 open System.Security.Cryptography
 open System.Text
 open System.Threading
@@ -1434,8 +1435,14 @@ module SurfaceElaboration =
     let private intType =
         TypeName([ "Int" ], [])
 
+    let private integerType =
+        TypeName([ "Integer" ], [])
+
     let private floatType =
         TypeName([ "Float" ], [])
+
+    let private doubleType =
+        TypeName([ "Double" ], [])
 
     let private stringType =
         TypeName([ "String" ], [])
@@ -3022,11 +3029,6 @@ module SurfaceElaboration =
         | SurfaceIntegerLiteral _ -> intType
         | SurfaceRealLiteral _ -> floatType
 
-    let private defaultPrimitiveLiteralForSurfaceNumeric literal =
-        match literal with
-        | SurfaceIntegerLiteral _ -> LiteralValue.Integer 0L
-        | SurfaceRealLiteral _ -> LiteralValue.Float 0.0
-
     let private lowerBindingReturnTypeExpr
         (scheme: TypeScheme option)
         (parameters: Parameter list)
@@ -3361,6 +3363,153 @@ module SurfaceElaboration =
 
         solve Set.empty constraintInfo
 
+    let private matchesBuiltinNumericTarget
+        (aliases: Map<string, TypeAliasInfo>)
+        literal
+        expectedType
+        =
+        let isIntegerLiteral =
+            match literal with
+            | SurfaceIntegerLiteral _ -> true
+            | _ -> false
+
+        let isRealLiteral =
+            match literal with
+            | SurfaceRealLiteral _ -> true
+            | _ -> false
+
+        match normalizeTypeAliases aliases expectedType with
+        | TypeName([ "Int" ], [])
+        | TypeName([ "Integer" ], [])
+        | TypeName([ "Nat" ], [])
+            when isIntegerLiteral ->
+            true
+        | TypeName([ "Float" ], [])
+        | TypeName([ "Double" ], [])
+        | TypeName([ "Real" ], [])
+            when isRealLiteral ->
+            true
+        | _ ->
+            false
+
+    let private numericLiteralConstraintName literal =
+        match literal with
+        | SurfaceIntegerLiteral _ -> "FromInteger"
+        | SurfaceRealLiteral _ -> "FromFloat"
+
+    let private tryResolveNumericStaticObjectTarget
+        (environment: BindingLoweringEnvironment)
+        expectedType
+        =
+        let rec loop visited current =
+            let normalizedCurrent =
+                normalizeTypeAliases environment.VisibleTypeAliases current
+
+            let candidateKey = TypeSignatures.toText normalizedCurrent
+
+            if Set.contains candidateKey visited then
+                None
+            else
+                let visited = Set.add candidateKey visited
+
+                match normalizedCurrent with
+                | TypeName(nameSegments, []) ->
+                    let aliasName = SyntaxFacts.moduleNameToText nameSegments
+
+                    environment.VisibleStaticObjects
+                    |> Map.tryFind aliasName
+                    |> Option.bind (fun staticObject ->
+                        match staticObject.ObjectKind with
+                        | StaticTypeObject ->
+                            loop visited (TypeName(staticObject.NameSegments, []))
+                        | _ ->
+                            None)
+                    |> Option.orElseWith (fun () ->
+                        if Set.isEmpty visited then
+                            None
+                        else
+                            Some normalizedCurrent)
+                | _ ->
+                    if Set.isEmpty visited then
+                        None
+                    else
+                        Some normalizedCurrent
+
+        loop Set.empty expectedType
+
+    let private tryResolveNumericLiteralContext
+        (environment: BindingLoweringEnvironment)
+        expectedType
+        literal
+        =
+        let candidateTypes =
+            expectedType
+            :: (tryResolveNumericStaticObjectTarget environment expectedType |> Option.toList)
+
+        let tryResolveAgainstTarget targetType =
+            let normalizedTargetType =
+                normalizeTypeAliases environment.VisibleTypeAliases targetType
+
+            if isCompileTimeArgumentType environment.VisibleTypeAliases normalizedTargetType then
+                None
+            elif matchesBuiltinNumericTarget environment.VisibleTypeAliases literal normalizedTargetType then
+                Some(expectedType, None)
+            else
+                let constraintInfo =
+                    { TraitName = numericLiteralConstraintName literal
+                      Arguments = [ normalizedTargetType ] }
+
+                resolveConstraintInstance environment constraintInfo
+                |> Option.map (fun instanceInfo -> expectedType, Some instanceInfo)
+
+        candidateTypes
+        |> List.tryPick tryResolveAgainstTarget
+
+    let private tryInferNumericLiteralTypeFromContext
+        (environment: BindingLoweringEnvironment)
+        expectedType
+        literal
+        =
+        tryResolveNumericLiteralContext environment expectedType literal
+        |> Option.map fst
+
+    let private tryInferNumericExpressionTypeFromContext
+        (environment: BindingLoweringEnvironment)
+        expectedType
+        expression
+        =
+        match expression with
+        | NumericLiteral literal ->
+            tryInferNumericLiteralTypeFromContext environment expectedType literal
+        | Unary("-", NumericLiteral literal) ->
+            tryInferNumericLiteralTypeFromContext environment expectedType literal
+        | _ ->
+            None
+
+    let private tryLowerNumericLiteralForRuntime literal =
+        match literal with
+        | SurfaceIntegerLiteral(value, _, _) when value >= BigInteger(Int64.MinValue) && value <= BigInteger(Int64.MaxValue) ->
+            Some(KCoreLiteral(LiteralValue.Integer(int64 value)))
+        | SurfaceRealLiteral(_, text, _) ->
+            match Double.TryParse(text, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture) with
+            | true, value ->
+                Some(KCoreLiteral(LiteralValue.Float value))
+            | _ ->
+                None
+        | _ ->
+            None
+
+    let private tryLowerNumericExpressionForRuntime expression =
+        match expression with
+        | NumericLiteral literal ->
+            tryLowerNumericLiteralForRuntime literal
+        | Unary("-", NumericLiteral(SurfaceIntegerLiteral(value, text, suffix))) ->
+            tryLowerNumericLiteralForRuntime (SurfaceIntegerLiteral(-value, "-" + text, suffix))
+        | Unary("-", NumericLiteral(SurfaceRealLiteral(decimalValue, text, suffix))) ->
+            tryLowerNumericLiteralForRuntime (SurfaceRealLiteral(decimalValue |> Option.map (~-), "-" + text, suffix))
+        | _ ->
+            None
+
     let private trySynthesizeImplicitArgument
         (environment: BindingLoweringEnvironment)
         (tryResolveLocalImplicit: TypeExpr -> KCoreExpression option)
@@ -3420,6 +3569,10 @@ module SurfaceElaboration =
         (tryResolveLocalImplicit: TypeExpr -> KCoreExpression option)
         (arguments: SurfaceExpression list)
         =
+        let inferArgumentTypeForParameter parameterType argument =
+            tryInferNumericExpressionTypeFromContext environment parameterType argument
+            |> Option.orElseWith (fun () -> inferArgumentType argument)
+
         let instantiated = TypeSignatures.instantiate "t" freshCounter.Value bindingInfo.Scheme
         freshCounter.Value <- freshCounter.Value + instantiated.Forall.Length
 
@@ -3704,7 +3857,7 @@ module SurfaceElaboration =
 
                                 explicitArgument
                                 |> Option.iter (fun nextArgument ->
-                                    match inferArgumentType nextArgument with
+                                    match inferArgumentTypeForParameter parameterType nextArgument with
                                     | Some argumentType ->
                                         match tryUnifyVisibleTypes environment.VisibleTypeAliases [ parameterType, argumentType ] with
                                         | Some inferredSubstitution ->
@@ -4308,6 +4461,25 @@ module SurfaceElaboration =
               Message = message
               Location = None
               RelatedLocations = [] }
+
+        let numericLiteralRangeDiagnostic literal =
+            let sourceText = SurfaceNumericLiteral.toSurfaceText literal
+            makeDiagnostic DiagnosticCode.NumericLiteralOutOfRange $"Numeric literal '{sourceText}' is outside the currently supported runtime range for its target type."
+
+        let tryNumericLiteralRangeDiagnostic expectedType expression =
+            match tryInferNumericExpressionTypeFromContext environment expectedType expression with
+            | Some _ when tryLowerNumericExpressionForRuntime expression |> Option.isNone ->
+                match expression with
+                | NumericLiteral literal ->
+                    Some(numericLiteralRangeDiagnostic literal)
+                | Unary("-", NumericLiteral(SurfaceIntegerLiteral(value, text, suffix))) ->
+                    Some(numericLiteralRangeDiagnostic (SurfaceIntegerLiteral(-value, "-" + text, suffix)))
+                | Unary("-", NumericLiteral(SurfaceRealLiteral(decimalValue, text, suffix))) ->
+                    Some(numericLiteralRangeDiagnostic (SurfaceRealLiteral(decimalValue |> Option.map (~-), "-" + text, suffix)))
+                | _ ->
+                    None
+            | _ ->
+                None
 
         let isVisibleConstructorName name =
             environment.VisibleConstructors |> Map.containsKey name
@@ -4934,11 +5106,21 @@ module SurfaceElaboration =
             makeDiagnostic DiagnosticCode.TypeEqualityMismatch message
 
         let expectedTypeDiagnostics locals refinements context expectedType expression =
-            match inferValidationExpressionType environment freshCounter locals expression with
-            | Some actualType when not (expectedTypeAccepts locals refinements expectedType actualType) ->
-                [ expectedMismatchDiagnostic locals refinements context expectedType actualType ]
-            | _ ->
-                []
+            match tryNumericLiteralRangeDiagnostic expectedType expression with
+            | Some diagnostic ->
+                [ diagnostic ]
+            | None ->
+                match tryInferNumericExpressionTypeFromContext environment expectedType expression with
+                | Some actualType when not (expectedTypeAccepts locals refinements expectedType actualType) ->
+                    [ expectedMismatchDiagnostic locals refinements context expectedType actualType ]
+                | Some _ ->
+                    []
+                | None ->
+                    match inferValidationExpressionType environment freshCounter locals expression with
+                    | Some actualType when not (expectedTypeAccepts locals refinements expectedType actualType) ->
+                        [ expectedMismatchDiagnostic locals refinements context expectedType actualType ]
+                    | _ ->
+                        []
 
         let fieldTypeReferences (recordInfo: RecordSurfaceInfo) (tokens: Token list) =
             let fieldNames = recordSurfaceFieldNames recordInfo
@@ -5514,6 +5696,15 @@ module SurfaceElaboration =
                 | _ ->
                     []
 
+            let contextualNumericBodyDiagnostics =
+                match expectedBodyType, body with
+                | Some expectedType, (NumericLiteral _ | Unary("-", NumericLiteral _)) ->
+                    expectedTypeDiagnostics locals Map.empty "Definition body" expectedType body
+                | Some _, _ ->
+                    []
+                | None, _ ->
+                    []
+
             directSignatureLiteralDiagnostic
             @ sealAscriptionDiagnostics
             @ opaqueUnfoldingDiagnostics
@@ -5521,8 +5712,13 @@ module SurfaceElaboration =
             @ staticObjectResultDiagnostics
             @ constructorAsStaticObjectDiagnostics
             @ expectedUnionDiagnostics
+            @ contextualNumericBodyDiagnostics
 
         let applicationExpectedArgumentDiagnostics locals refinements (bindingInfo: BindingSchemeInfo) arguments =
+            let inferArgumentTypeForParameter parameterType argument =
+                tryInferNumericExpressionTypeFromContext environment parameterType argument
+                |> Option.orElseWith (fun () -> inferValidationExpressionType environment freshCounter locals argument)
+
             match bindingInfo.ParameterLayouts with
             | None ->
                 []
@@ -5606,9 +5802,12 @@ module SurfaceElaboration =
                                 | nextArgument :: rest ->
                                     remainingArguments := rest
 
-                                    match inferValidationExpressionType environment freshCounter locals nextArgument with
+                                    match inferArgumentTypeForParameter parameterType nextArgument with
                                     | Some argumentType ->
-                                        if not (expectedTypeAccepts locals refinements parameterType argumentType) then
+                                        match tryNumericLiteralRangeDiagnostic parameterType nextArgument with
+                                        | Some diagnostic ->
+                                            diagnostics.Add(diagnostic)
+                                        | None when not (expectedTypeAccepts locals refinements parameterType argumentType) ->
                                             diagnostics.Add(
                                                 expectedMismatchDiagnostic
                                                     locals
@@ -5617,7 +5816,7 @@ module SurfaceElaboration =
                                                     parameterType
                                                     argumentType
                                             )
-                                        else
+                                        | None ->
                                             match tryParseTypeLikeSurfaceExpression nextArgument with
                                             | Some termArgument ->
                                                 substitution :=
@@ -9376,28 +9575,31 @@ module SurfaceElaboration =
                 None
 
         and lowerExpression localTypes expression =
+            lowerExpressionWithExpectedType localTypes None expression
+
+        and lowerExpressionWithExpectedType localTypes expectedType expression =
             let lowerArguments arguments =
                 arguments
                 |> List.map (function
-                    | InoutArgument inner -> inoutKCoreArgument (lowerExpression localTypes inner)
-                    | argument -> explicitKCoreArgument (lowerExpression localTypes argument))
+                    | InoutArgument inner -> inoutKCoreArgument (lowerExpressionWithExpectedType localTypes None inner)
+                    | argument -> explicitKCoreArgument (lowerExpressionWithExpectedType localTypes None argument))
 
             let lowerArgumentExpressions arguments =
                 arguments
                 |> List.map (function
-                    | InoutArgument inner -> lowerExpression localTypes inner
-                    | argument -> lowerExpression localTypes argument)
+                    | InoutArgument inner -> lowerExpressionWithExpectedType localTypes None inner
+                    | argument -> lowerExpressionWithExpectedType localTypes None argument)
 
             let lowerPreparedArguments preparedArguments =
                 preparedArguments
                 |> List.map (function
-                    | ExplicitArgument argument -> explicitKCoreArgument (lowerExpression localTypes argument)
+                    | ExplicitArgument argument -> explicitKCoreArgument (lowerExpressionWithExpectedType localTypes None argument)
                     | ImplicitArgument implicitArgument -> implicitKCoreArgument implicitArgument)
 
             let lowerPreparedArgumentExpressions preparedArguments =
                 preparedArguments
                 |> List.map (function
-                    | ExplicitArgument argument -> lowerExpression localTypes argument
+                    | ExplicitArgument argument -> lowerExpressionWithExpectedType localTypes None argument
                     | ImplicitArgument implicitArgument -> implicitArgument)
 
             let rec substituteKCoreNames substitutions current =
@@ -9505,7 +9707,7 @@ module SurfaceElaboration =
                             let runtimeArgument, nextSubstitutions =
                                 match parameter.Layout, parameter.AssignedArgument with
                                 | _, Some(ExplicitArgument argument) ->
-                                    let loweredArgument = lowerExpression localTypes argument
+                                    let loweredArgument = lowerExpressionWithExpectedType localTypes (Some parameter.ParameterType) argument
                                     let substitutions =
                                         match parameter.Layout with
                                         | Some layout -> Map.add layout.Name loweredArgument substitutions
@@ -9516,7 +9718,7 @@ module SurfaceElaboration =
                                     Some(implicitKCoreArgument implicitArgument), Map.add layout.Name implicitArgument substitutions
                                 | Some layout, None when bindingInfo.DefaultArguments.ContainsKey(layout.Name) ->
                                     let loweredDefault =
-                                        lowerExpression localTypes bindingInfo.DefaultArguments[layout.Name]
+                                        lowerExpressionWithExpectedType localTypes (Some parameter.ParameterType) bindingInfo.DefaultArguments[layout.Name]
                                         |> substituteKCoreNames substitutions
 
                                     Some(explicitKCoreArgument loweredDefault), Map.add layout.Name loweredDefault substitutions
@@ -9533,16 +9735,43 @@ module SurfaceElaboration =
             | Literal literal ->
                 KCoreLiteral literal
             | NumericLiteral literal ->
-                let unsuffixedLiteral = SurfaceNumericLiteral.withoutSuffix literal
-                let loweredLiteral =
-                    SurfaceNumericLiteral.tryLowerPrimitiveLiteral unsuffixedLiteral
-                    |> Option.defaultValue (defaultPrimitiveLiteralForSurfaceNumeric unsuffixedLiteral)
-
                 match SurfaceNumericLiteral.suffix literal with
                 | Some suffixName ->
-                    KCoreAppSpine(KCoreName [ suffixName ], [ explicitKCoreArgument (KCoreLiteral loweredLiteral) ])
+                    lowerExpressionWithExpectedType
+                        localTypes
+                        expectedType
+                        (Apply(Name [ suffixName ], [ NumericLiteral(SurfaceNumericLiteral.withoutSuffix literal) ]))
                 | None ->
-                    KCoreLiteral loweredLiteral
+                    let contextualType =
+                        expectedType
+                        |> Option.bind (fun expectedResultType ->
+                            tryResolveNumericLiteralContext environment expectedResultType literal)
+
+                    match contextualType with
+                    | Some(_, None) ->
+                        tryLowerNumericLiteralForRuntime literal
+                        |> Option.defaultValue (KCoreLiteral LiteralValue.Unit)
+                    | Some(targetType, Some instanceInfo) ->
+                        let literalConstraint =
+                            { TraitName = numericLiteralConstraintName literal
+                              Arguments = [ targetType ] }
+
+                        let semanticArgument =
+                            tryLowerNumericLiteralForRuntime literal
+                            |> Option.defaultValue (KCoreLiteral LiteralValue.Unit)
+
+                        KCoreTraitCall(
+                            literalConstraint.TraitName,
+                            (if literalConstraint.TraitName = "FromInteger" then
+                                 "fromInteger"
+                             else
+                                 "fromFloat"),
+                            KCoreDictionaryValue(instanceInfo.ModuleName, instanceInfo.TraitName, instanceInfo.InstanceKey),
+                            [ semanticArgument ]
+                        )
+                    | None ->
+                        tryLowerNumericLiteralForRuntime literal
+                        |> Option.defaultValue (KCoreLiteral LiteralValue.Unit)
             | KindQualifiedName _ ->
                 tryResolveScopedStaticObject environment expression
                 |> Option.map lowerStaticObject
@@ -9561,7 +9790,7 @@ module SurfaceElaboration =
                         []
                 with
                 | Some preparedCall when not (List.isEmpty preparedCall.Arguments) ->
-                    KCoreAppSpine(KCoreName [ bindingName ], lowerPreparedArguments preparedCall.Arguments)
+                    KCoreAppSpine(KCoreName [ bindingName ], lowerPreparedBindingCallArguments bindingInfo preparedCall)
                 | _ ->
                     KCoreName [ bindingName ]
             | Name [ bindingName ]
@@ -9597,13 +9826,13 @@ module SurfaceElaboration =
             | Name segments ->
                 KCoreName segments
             | LocalSignature(_, body) ->
-                lowerExpression localTypes body
+                lowerExpressionWithExpectedType localTypes expectedType body
             | LocalTypeAlias(_, body) ->
-                lowerExpression localTypes body
+                lowerExpressionWithExpectedType localTypes expectedType body
             | LocalLet(binding, value, body) ->
                 let bindingNames = collectPatternNames binding.Pattern
 
-                let loweredValue = lowerExpression localTypes value
+                let loweredValue = lowerExpressionWithExpectedType localTypes None value
                 let bodyForLowering =
                     match bindingNames, tryResolveScopedStaticObject environment value with
                     | [ aliasName ], Some staticObject ->
@@ -9633,7 +9862,7 @@ module SurfaceElaboration =
                     loweredValue
                     (fun loweredLocals -> lowerExpression loweredLocals bodyForLowering)
             | LocalScopedEffect(name, body) ->
-                withScopedEffectName name (fun () -> lowerExpression localTypes body)
+                withScopedEffectName name (fun () -> lowerExpressionWithExpectedType localTypes expectedType body)
             | Lambda(lambdaParameters, lambdaBody) ->
                 let lambdaLocals =
                     lambdaParameters
@@ -9646,13 +9875,13 @@ module SurfaceElaboration =
                     lambdaParameters
                     |> List.map (fun parameter ->
                         lowerKCoreParameter parameter (tryParseParameterType parameter)),
-                    lowerExpression lambdaLocals lambdaBody
+                    lowerExpressionWithExpectedType lambdaLocals expectedType lambdaBody
                 )
             | IfThenElse(condition, whenTrue, whenFalse) ->
                 KCoreIfThenElse(
-                    lowerExpression localTypes condition,
-                    lowerExpression localTypes whenTrue,
-                    lowerExpression localTypes whenFalse
+                    lowerExpressionWithExpectedType localTypes None condition,
+                    lowerExpressionWithExpectedType localTypes expectedType whenTrue,
+                    lowerExpressionWithExpectedType localTypes expectedType whenFalse
                 )
             | Match(scrutinee, cases) ->
                 let scrutineeType = inferExpressionType localTypes scrutinee
@@ -9711,7 +9940,7 @@ module SurfaceElaboration =
                 else
                     KCoreLiteral LiteralValue.Unit
             | Seal(value, _) ->
-                lowerExpression localTypes value
+                lowerExpressionWithExpectedType localTypes expectedType value
             | RecordUpdate(receiver, fields) ->
                 let loweredReceiver = lowerExpression localTypes receiver
 
@@ -9820,7 +10049,7 @@ module SurfaceElaboration =
                                         receiverArguments
                                 with
                                 | Some preparedCall ->
-                                    KCoreAppSpine(KCoreName [ memberName ], lowerPreparedArguments preparedCall.Arguments)
+                                    KCoreAppSpine(KCoreName [ memberName ], lowerPreparedBindingCallArguments bindingInfo preparedCall)
                                 | None ->
                                     KCoreAppSpine(KCoreName [ memberName ], lowerArguments receiverArguments)
                             | None ->
@@ -9893,13 +10122,13 @@ module SurfaceElaboration =
                 let scopeLabel = freshDoScopeLabel ()
                 KCoreDoScope(scopeLabel, lowerDoStatements scopeLabel localTypes statements)
             | MonadicSplice inner ->
-                KCoreExecute(lowerExpression localTypes inner)
+                KCoreExecute(lowerExpressionWithExpectedType localTypes None inner)
             | ExplicitImplicitArgument inner ->
-                lowerExpression localTypes inner
+                lowerExpressionWithExpectedType localTypes None inner
             | NamedApplicationBlock _ ->
                 KCoreLiteral LiteralValue.Unit
             | InoutArgument inner ->
-                lowerExpression localTypes inner
+                lowerExpressionWithExpectedType localTypes None inner
             | Apply(Name [ receiverName; memberName ], arguments) ->
                 match tryResolveStaticConstructor environment (Name [ receiverName ]) memberName with
                 | Some _ ->
@@ -9907,12 +10136,12 @@ module SurfaceElaboration =
                 | None ->
                     match tryResolveTraitMemberProjection environment localTypes [ receiverName; memberName ] with
                     | Some(traitInfo, resolvedMemberName, _, resolvedReceiverName) ->
-                        KCoreTraitCall(
-                            traitInfo.Name,
-                            resolvedMemberName,
-                            lowerExpression localTypes (Name [ resolvedReceiverName ]),
-                            lowerArgumentExpressions arguments
-                        )
+                            KCoreTraitCall(
+                                traitInfo.Name,
+                                resolvedMemberName,
+                                lowerExpressionWithExpectedType localTypes None (Name [ resolvedReceiverName ]),
+                                lowerArgumentExpressions arguments
+                            )
                     | None ->
                         match environment.VisibleBindings |> Map.tryFind memberName with
                         | Some bindingInfo ->
@@ -9928,7 +10157,7 @@ module SurfaceElaboration =
                                         receiverArguments
                                 with
                                 | Some preparedCall ->
-                                    KCoreAppSpine(KCoreName [ memberName ], lowerPreparedArguments preparedCall.Arguments)
+                                    KCoreAppSpine(KCoreName [ memberName ], lowerPreparedBindingCallArguments bindingInfo preparedCall)
                                 | None ->
                                     KCoreAppSpine(KCoreName [ memberName ], lowerArguments receiverArguments)
                             | None ->
@@ -9941,7 +10170,7 @@ module SurfaceElaboration =
                     KCoreTraitCall(
                         traitInfo.Name,
                         memberName,
-                        lowerExpression localTypes (Name [ receiverName ]),
+                        lowerExpressionWithExpectedType localTypes None (Name [ receiverName ]),
                         lowerArgumentExpressions arguments
                     )
                 | None ->
@@ -9981,7 +10210,7 @@ module SurfaceElaboration =
 
                             KCoreAppSpine(
                                 KCoreName [ calleeName ],
-                                dictionaryArguments @ lowerPreparedArguments preparedCall.Arguments
+                                dictionaryArguments @ lowerPreparedBindingCallArguments bindingInfo preparedCall
                             )
                         | None ->
                             KCoreAppSpine(KCoreName [ calleeName ], lowerArguments arguments)
@@ -10024,9 +10253,12 @@ module SurfaceElaboration =
                     | _ ->
                         KCoreAppSpine(lowerExpression localTypes (Name nameSegments), lowerArguments arguments)
             | Apply(callee, arguments) ->
-                KCoreAppSpine(lowerExpression localTypes callee, lowerArguments arguments)
+                        KCoreAppSpine(lowerExpressionWithExpectedType localTypes None callee, lowerArguments arguments)
             | Unary(operatorName, operand) ->
-                KCoreUnary(operatorName, lowerExpression localTypes operand)
+                let operandExpectedType =
+                    if operatorName = "-" || operatorName = "negate" then expectedType else None
+
+                KCoreUnary(operatorName, lowerExpressionWithExpectedType localTypes operandExpectedType operand)
             | Binary(left, operatorName, right) ->
                 KCoreBinary(lowerExpression localTypes left, operatorName, lowerExpression localTypes right)
             | Elvis(left, right) ->
@@ -10049,7 +10281,7 @@ module SurfaceElaboration =
                     parts
                     |> List.map (function
                         | StringText text -> KCoreStringText text
-                        | StringInterpolation inner -> KCoreStringInterpolation(lowerExpression localTypes inner))
+                        | StringInterpolation inner -> KCoreStringInterpolation(lowerExpressionWithExpectedType localTypes None inner))
                 )
 
         let localTypes =
@@ -10076,7 +10308,7 @@ module SurfaceElaboration =
             | _ ->
                 body
 
-        lowerExpression localTypes bodyForLowering
+        lowerExpressionWithExpectedType localTypes (lowerBindingReturnTypeExpr scheme parameters None) bodyForLowering
 
     let private lowerUserBinding
         (environment: BindingLoweringEnvironment)

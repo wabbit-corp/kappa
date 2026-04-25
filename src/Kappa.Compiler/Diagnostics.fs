@@ -50,6 +50,7 @@ type DiagnosticCode =
     | SealOpenRecordAscription
     | SealOpaqueUnfolding
     | TypeEqualityMismatch
+    | NumericLiteralOutOfRange
     | UnexpectedIndentation
     | UnterminatedBacktickIdentifier
     | UnterminatedStringLiteral
@@ -114,6 +115,7 @@ module DiagnosticCode =
         | SealOpenRecordAscription -> "E_SEAL_OPEN_RECORD_ASCRIPTION"
         | SealOpaqueUnfolding -> "E_SEAL_OPAQUE_UNFOLDING"
         | TypeEqualityMismatch -> "E_TYPE_EQUALITY_MISMATCH"
+        | NumericLiteralOutOfRange -> "E_NUMERIC_LITERAL_OUT_OF_RANGE"
         | UnexpectedIndentation -> "E_UNEXPECTED_INDENTATION"
         | UnterminatedBacktickIdentifier -> "E_UNTERMINATED_BACKTICK_IDENTIFIER"
         | UnterminatedStringLiteral -> "E_UNTERMINATED_STRING_LITERAL"
@@ -177,6 +179,7 @@ module DiagnosticCode =
         | "E_SEAL_OPEN_RECORD_ASCRIPTION" -> Some SealOpenRecordAscription
         | "E_SEAL_OPAQUE_UNFOLDING" -> Some SealOpaqueUnfolding
         | "E_TYPE_EQUALITY_MISMATCH" -> Some TypeEqualityMismatch
+        | "E_NUMERIC_LITERAL_OUT_OF_RANGE" -> Some NumericLiteralOutOfRange
         | "E_UNEXPECTED_INDENTATION" -> Some UnexpectedIndentation
         | "E_UNTERMINATED_BACKTICK_IDENTIFIER" -> Some UnterminatedBacktickIdentifier
         | "E_UNTERMINATED_STRING_LITERAL" -> Some UnterminatedStringLiteral
