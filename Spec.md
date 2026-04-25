@@ -9523,11 +9523,11 @@ These erased assumptions participate in implicit resolution (§7.3.3).
 <!-- expressions.conditionals.flow_typing_through_short_circuit_short_circuit_not -->
 #### 7.4.2 Flow typing through `&&`, `||`, and `not`
 
-Flow typing for boolean condition expressions is defined over ordinary boolean syntax.
+Flow typing for `if` and `elif` conditions is defined over ordinary boolean syntax.
 
 A flow-sensitive condition position is:
 
-* the condition of `if` or `elif`;
+* the condition expression of an `if` or `elif`;
 * the guard of `case pat if guard`;
 * the condition of `while` when that condition is a pure `Bool` expression; and
 * any later construct explicitly defined in terms of the success or failure environment of a boolean condition.
@@ -9759,7 +9759,8 @@ Rules:
 * In a constructor branch of `match`, the branch-local environment includes all index equalities and parameter
   refinements forced by the matched constructor.
 * The same index refinement is introduced by `if e is C then ... else ...`.
-* The same index refinement is introduced by any refinement-predicate clause whose branch fact is `e is C`.
+* The same index refinement is introduced by any other flow-sensitive boolean condition position whose branch fact is
+  `e is C`.
 * These equalities participate in definitional equality, reachability, and implicit resolution within the refined
   branch.
 * Accordingly, constructor tests on indexed families may narrow associated indices whenever the constructor declaration
@@ -12268,6 +12269,9 @@ do
     else
         pure ()
 ```
+
+The condition grammar is the ordinary `if` condition grammar of §7.4; condition lists and `if let` pattern conditions
+are not admitted in `do` either.
 
 So `if` remains an expression; the missing `else` is implicitly `pure ()` in the monad. The nested branch `do` block
 is a fresh dynamic do-scope, so any `defer`, `using`, or other do-scope obligations introduced in that branch unwind
