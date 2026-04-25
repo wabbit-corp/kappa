@@ -633,6 +633,84 @@ let ``parser gives built in safe navigation and elvis their spec precedence`` ()
     | other -> failwithf "Unexpected expression shape: %A" other
 
 [<Fact>]
+let ``bootstrap fixity table matches spec defaults for core reserved and prelude operators`` () =
+    let fixities = Parser.bootstrapFixities ()
+
+    Assert.Equal(Some(NonAssociative, 50), FixityTable.tryFindInfix "==" fixities)
+    Assert.Equal(Some(NonAssociative, 40), FixityTable.tryFindInfix "~=" fixities)
+    Assert.Equal(Some(NonAssociative, 40), FixityTable.tryFindInfix "/=" fixities)
+    Assert.Equal(Some(RightAssociative, 30), FixityTable.tryFindInfix "&&" fixities)
+    Assert.Equal(Some(RightAssociative, 20), FixityTable.tryFindInfix "||" fixities)
+    Assert.Equal(Some(RightAssociative, 50), FixityTable.tryFindInfix "::" fixities)
+
+[<Fact>]
+let ``bootstrap fixities parse and/or and cons with the spec associativity`` () =
+    let sourceText =
+        [
+            "module main"
+            "let a = True && False && True"
+            "let b = True || False || True"
+            "let c = 1 :: 2 :: Nil"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "memory-bootstrap-assoc.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Empty(parsed.Diagnostics)
+
+    match parsed.Syntax.Declarations with
+    | [ LetDeclaration andDecl; LetDeclaration orDecl; LetDeclaration consDecl ] ->
+        match andDecl.Body with
+        | Some(Binary(Name [ "True" ], "&&", Binary(Name [ "False" ], "&&", Name [ "True" ]))) -> ()
+        | other -> failwithf "Unexpected && parse shape: %A" other
+
+        match orDecl.Body with
+        | Some(Binary(Name [ "True" ], "||", Binary(Name [ "False" ], "||", Name [ "True" ]))) -> ()
+        | other -> failwithf "Unexpected || parse shape: %A" other
+
+        match consDecl.Body with
+        | Some(
+            Binary(
+                NumericLiteral(SurfaceIntegerLiteral(left, "1", None)),
+                "::",
+                Binary(NumericLiteral(SurfaceIntegerLiteral(middle, "2", None)), "::", Name [ "Nil" ])
+            )
+          ) ->
+            Assert.Equal(BigInteger.One, left)
+            Assert.Equal(BigInteger(2), middle)
+        | other -> failwithf "Unexpected :: parse shape: %A" other
+    | other ->
+        failwithf "Unexpected declarations: %A" other
+
+[<Fact>]
+let ``user bare question-mark fixities do not affect reserved safe navigation or elvis tokens`` () =
+    let source = createSource "__question_fixity_reserved_tokens__.kp" "a?.b ?: fallback"
+    let lexed = Lexer.tokenize source
+    let diagnostics = DiagnosticBag()
+    let customFixities =
+        Parser.bootstrapFixities ()
+        |> FixityTable.add { Fixity = Postfix; Precedence = 1; OperatorName = "?" }
+        |> FixityTable.add { Fixity = Infix LeftAssociative; Precedence = 99; OperatorName = "?" }
+
+    let parsed =
+        CoreParsing.parseExpression
+            customFixities
+            source
+            diagnostics
+            lexed.Tokens
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Empty(diagnostics.Items)
+
+    match parsed with
+    | Some(Elvis(SafeNavigation(Name [ "a" ], { Segments = [ "b" ]; Arguments = [] }), Name [ "fallback" ])) -> ()
+    | other -> failwithf "Unexpected reserved-token parse shape: %A" other
+
+[<Fact>]
 let ``type signatures treat lawful record reorderings as definitionally equal`` () =
     let left = parseTypeText "(y : Int, x : Int)"
     let right = parseTypeText "(x : Int, y : Int)"
