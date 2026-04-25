@@ -32,7 +32,9 @@ module SurfaceElaboration =
         { ModuleName: string
           Name: string
           Parameters: string list
-          Body: TypeExpr }
+          Body: TypeExpr
+          TerminationCertified: bool
+          ConversionReducible: bool }
 
     type private TypeFacetInfo =
         { ModuleName: string
@@ -214,6 +216,7 @@ module SurfaceElaboration =
         LetDeclaration
             { Visibility = Some Visibility.Private
               IsOpaque = false
+              TotalityAssertion = None
               IsPattern = false
               Name = Some name
               Parameters = []
@@ -1473,7 +1476,9 @@ module SurfaceElaboration =
                 { ModuleName = moduleName
                   Name = declaration.Name
                   Parameters = TypeSignatures.collectLeadingTypeParameters declaration.HeaderTokens
-                  Body = body })
+                  Body = body
+                  TerminationCertified = true
+                  ConversionReducible = true })
 
     let private splitHeaderKindTokens (tokens: Token list) =
         let rec loop depth index =
@@ -1573,6 +1578,10 @@ module SurfaceElaboration =
     let private isPrivateByDefault (frontendModule: KFrontIRModule) =
         frontendModule.ModuleAttributes
         |> List.exists (fun attributeName -> String.Equals(attributeName, "PrivateByDefault", StringComparison.Ordinal))
+
+    let private moduleHasAttribute (frontendModule: KFrontIRModule) (attributeName: string) =
+        frontendModule.ModuleAttributes
+        |> List.exists (fun current -> String.Equals(current, attributeName, StringComparison.Ordinal))
 
     let private isExportedVisibility isPrivateByDefault visibility =
         match visibility with
@@ -2504,6 +2513,7 @@ module SurfaceElaboration =
                 match aliases |> Map.tryFind name with
                 | Some aliasInfo
                     when not (Set.contains name visited)
+                         && aliasInfo.ConversionReducible
                          && List.length aliasInfo.Parameters = List.length normalizedArguments ->
                     let substitution = List.zip aliasInfo.Parameters normalizedArguments |> Map.ofList
                     aliasInfo.Body
@@ -6752,6 +6762,25 @@ module SurfaceElaboration =
                 @ duplicateNames "Type declaration" typeDeclarations
                 @ duplicateNames "Constructor declaration" constructorDeclarations
 
+            let totalityAssertionDiagnostics =
+                let allowAssertTerminates = moduleHasAttribute frontendModule "allow_assert_terminates"
+                let allowAssertReducible = moduleHasAttribute frontendModule "allow_assert_reducible"
+
+                frontendModule.Declarations
+                |> List.choose (function
+                    | LetDeclaration definition ->
+                        match definition.TotalityAssertion with
+                        | Some AssertTerminatesAssertion when not allowAssertTerminates ->
+                            let bindingName = definition.Name |> Option.defaultValue "<anonymous>"
+                            Some(makeDiagnostic DiagnosticCode.FrontendValidation $"Declaration '{bindingName}' uses assertTerminates/assertTotal without enabling module attribute 'allow_assert_terminates'.")
+                        | Some AssertReducibleAssertion when not allowAssertReducible ->
+                            let bindingName = definition.Name |> Option.defaultValue "<anonymous>"
+                            Some(makeDiagnostic DiagnosticCode.FrontendValidation $"Declaration '{bindingName}' uses assertReducible without enabling module attribute 'allow_assert_reducible'.")
+                        | _ ->
+                            None
+                    | _ ->
+                        None)
+
             let typeAliasCycleDiagnostics =
                 let rec referencedTypeNames typeExpr =
                     seq {
@@ -7332,6 +7361,7 @@ module SurfaceElaboration =
 
             let structuralDiagnostics =
                 duplicateDeclarationDiagnostics
+                @ totalityAssertionDiagnostics
                 @ typeAliasCycleDiagnostics
                 @ malformedConstructorDiagnostics
                 @ unsignedRecursiveBindingDiagnostics

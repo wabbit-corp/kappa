@@ -57,7 +57,15 @@ module TypeSignatures =
         { ParameterNames: string list
           DefinitionBody: TypeExpr
           Transparent: bool
-          ConversionReducible: bool }
+          TerminationCertified: bool
+          ConversionReducible: bool
+          CertificationSource: DefinitionCertificationSource option }
+
+    and DefinitionCertificationSource =
+        | CheckedDefinition
+        | VerifiedAssertTerminates
+        | AssertTerminatesUnverified
+        | AssertReducibleUnverified
 
     type DefinitionContext = Map<string, TypeDefinition>
 
@@ -106,7 +114,31 @@ module TypeSignatures =
             { ParameterNames = parameters
               DefinitionBody = body
               Transparent = true
-              ConversionReducible = true }
+              TerminationCertified = true
+              ConversionReducible = true
+              CertificationSource = Some CheckedDefinition }
+            context
+
+    let addAssertTerminatesDefinition name parameters body context =
+        addDefinition
+            name
+            { ParameterNames = parameters
+              DefinitionBody = body
+              Transparent = true
+              TerminationCertified = false
+              ConversionReducible = false
+              CertificationSource = Some AssertTerminatesUnverified }
+            context
+
+    let addAssertReducibleDefinition name parameters body context =
+        addDefinition
+            name
+            { ParameterNames = parameters
+              DefinitionBody = body
+              Transparent = true
+              TerminationCertified = true
+              ConversionReducible = true
+              CertificationSource = Some AssertReducibleUnverified }
             context
 
     let private builtinDefinitionContext =

@@ -9,7 +9,8 @@ type ParseResult =
 
 type private ModifierState =
     { Visibility: Visibility option
-      IsOpaque: bool }
+      IsOpaque: bool
+      TotalityAssertion: TotalityAssertion option }
 
 type private TokenParser(tokens: Token list, source: SourceText, initialFixities: FixityTable) =
     let tokenArray = List.toArray tokens
@@ -342,6 +343,9 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
         | Keyword Keyword.Postfix
         | Keyword Keyword.Public
         | Keyword Keyword.Private
+        | Keyword Keyword.AssertReducible
+        | Keyword Keyword.AssertTerminates
+        | Keyword Keyword.AssertTotal
         | Keyword Keyword.Opaque -> true
         | Identifier when String.Equals(token.Text, "pattern", StringComparison.Ordinal) -> true
         | Identifier
@@ -618,6 +622,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
     member private this.ParseModifiers() =
         let mutable visibility = None
         let mutable isOpaque = false
+        let mutable totalityAssertion = None
         let mutable keepGoing = true
 
         while keepGoing do
@@ -631,11 +636,29 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
             | Keyword Keyword.Opaque ->
                 isOpaque <- true
                 this.Advance() |> ignore
+            | Keyword Keyword.AssertTerminates
+            | Keyword Keyword.AssertTotal ->
+                match totalityAssertion with
+                | Some _ ->
+                    diagnostics.AddError(DiagnosticCode.ParseError, "Multiple totality assertions cannot be applied to the same declaration.", source.GetLocation(this.Current.Span))
+                | None ->
+                    totalityAssertion <- Some AssertTerminatesAssertion
+
+                this.Advance() |> ignore
+            | Keyword Keyword.AssertReducible ->
+                match totalityAssertion with
+                | Some _ ->
+                    diagnostics.AddError(DiagnosticCode.ParseError, "Multiple totality assertions cannot be applied to the same declaration.", source.GetLocation(this.Current.Span))
+                | None ->
+                    totalityAssertion <- Some AssertReducibleAssertion
+
+                this.Advance() |> ignore
             | _ ->
                 keepGoing <- false
 
         { Visibility = visibility
-          IsOpaque = isOpaque }
+          IsOpaque = isOpaque
+          TotalityAssertion = totalityAssertion }
 
     member private this.ParseSignature(modifiers: ModifierState) =
         let name = this.ConsumeTermBindingName("Expected a name in the signature declaration.")
@@ -786,6 +809,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
         LetDeclaration
             { Visibility = modifiers.Visibility
               IsOpaque = modifiers.IsOpaque
+              TotalityAssertion = modifiers.TotalityAssertion
               IsPattern = isPattern
               Name = name
               Parameters = parsedHeader.Parameters
@@ -931,6 +955,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
         TypeAliasNode
             { Visibility = modifiers.Visibility
               IsOpaque = modifiers.IsOpaque
+              TotalityAssertion = None
               Name = name
               HeaderTokens = List.ofSeq headerTokens
               BodyTokens = bodyTokens }
@@ -1043,6 +1068,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
             Some
                 { Visibility = None
                   IsOpaque = false
+                  TotalityAssertion = None
                   IsPattern = false
                   Name = name
                   Parameters = parsedHeader.Parameters
@@ -1184,21 +1210,41 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
         | Keyword Keyword.Import -> this.ParseImportOrExport(false)
         | Keyword Keyword.Export -> this.ParseImportOrExport(true)
         | Keyword Keyword.Expect -> this.ParseExpectDeclaration()
-        | Keyword Keyword.Projection -> this.ParseProjectionDeclaration(modifiers)
+        | Keyword Keyword.Projection ->
+            if modifiers.TotalityAssertion.IsSome then
+                diagnostics.AddError(DiagnosticCode.ParseError, "Totality assertions do not apply to projection declarations.", source.GetLocation(this.Current.Span))
+
+            this.ParseProjectionDeclaration(modifiers)
         | Keyword Keyword.Infix
         | Keyword Keyword.Prefix
         | Keyword Keyword.Postfix -> this.ParseFixityDeclaration()
         | Keyword Keyword.Let -> this.ParseLetDeclaration(modifiers)
         | Identifier when String.Equals(this.Current.Text, "pattern", StringComparison.Ordinal) -> this.ParsePatternDeclaration(modifiers)
-        | Keyword Keyword.Data -> this.ParseDataDeclaration(modifiers)
-        | Keyword Keyword.Type -> this.ParseTypeAlias(modifiers)
-        | Keyword Keyword.Trait -> this.ParseTraitDeclaration(modifiers)
+        | Keyword Keyword.Data ->
+            if modifiers.TotalityAssertion.IsSome then
+                diagnostics.AddError(DiagnosticCode.ParseError, "Totality assertions do not apply to data declarations.", source.GetLocation(this.Current.Span))
+
+            this.ParseDataDeclaration(modifiers)
+        | Keyword Keyword.Type ->
+            if modifiers.TotalityAssertion.IsSome then
+                diagnostics.AddError(DiagnosticCode.ParseError, "Totality assertions currently apply only to term declarations.", source.GetLocation(this.Current.Span))
+
+            this.ParseTypeAlias(modifiers)
+        | Keyword Keyword.Trait ->
+            if modifiers.TotalityAssertion.IsSome then
+                diagnostics.AddError(DiagnosticCode.ParseError, "Totality assertions do not apply to trait declarations.", source.GetLocation(this.Current.Span))
+
+            this.ParseTraitDeclaration(modifiers)
         | Keyword Keyword.Instance ->
-            if modifiers.Visibility.IsSome || modifiers.IsOpaque then
-                diagnostics.AddError(DiagnosticCode.ParseError, "Visibility and opacity modifiers do not apply to instance declarations.", source.GetLocation(this.Current.Span))
+            if modifiers.Visibility.IsSome || modifiers.IsOpaque || modifiers.TotalityAssertion.IsSome then
+                diagnostics.AddError(DiagnosticCode.ParseError, "Visibility, opacity, and totality modifiers do not apply to instance declarations.", source.GetLocation(this.Current.Span))
 
             this.ParseInstanceDeclaration()
-        | _ when this.IsSignatureStart() -> this.ParseSignature(modifiers)
+        | _ when this.IsSignatureStart() ->
+            if modifiers.TotalityAssertion.IsSome then
+                diagnostics.AddError(DiagnosticCode.ParseError, "Totality assertions do not apply to signature declarations.", source.GetLocation(this.Current.Span))
+
+            this.ParseSignature(modifiers)
         | _ -> this.ParseUnknownDeclaration()
 
     member this.ParseCompilationUnit() =
@@ -1218,6 +1264,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
         while this.Current.Kind = AtSign do
             this.Advance() |> ignore
             moduleAttributes.Add(this.ConsumeName("Expected a module attribute name after '@'."))
+            this.SkipLayout()
 
         let moduleHeader =
             if Token.isKeyword Keyword.Module this.Current then

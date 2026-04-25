@@ -65,6 +65,7 @@ let private mkUsingPattern name =
 let private mkLetDefinition name parameters body =
     { Visibility = None
       IsOpaque = false
+      TotalityAssertion = None
       IsPattern = false
       Name = Some name
       Parameters = parameters

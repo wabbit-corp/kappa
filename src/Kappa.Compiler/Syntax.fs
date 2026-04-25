@@ -7,6 +7,8 @@ open System.Text
 type Keyword =
     | As
     | Asc
+    | AssertReducible
+    | AssertTerminates
     | AssertTotal
     | Break
     | By
@@ -76,6 +78,8 @@ module Keyword =
         [
             "as", As
             "asc", Asc
+            "assertReducible", AssertReducible
+            "assertTerminates", AssertTerminates
             "assertTotal", AssertTotal
             "break", Break
             "by", By
@@ -298,9 +302,14 @@ type BindingSignature =
       Name: string
       TypeTokens: Token list }
 
+type TotalityAssertion =
+    | AssertTerminatesAssertion
+    | AssertReducibleAssertion
+
 type TypeAlias =
     { Visibility: Visibility option
       IsOpaque: bool
+      TotalityAssertion: TotalityAssertion option
       Name: string
       HeaderTokens: Token list
       BodyTokens: Token list option }
@@ -422,6 +431,7 @@ type ExpectDeclaration =
 type LetDefinition =
     { Visibility: Visibility option
       IsOpaque: bool
+      TotalityAssertion: TotalityAssertion option
       IsPattern: bool
       Name: string option
       Parameters: Parameter list

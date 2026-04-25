@@ -1228,6 +1228,7 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
                 Some
                     { Visibility = None
                       IsOpaque = false
+                      TotalityAssertion = None
                       Name = aliasName
                       HeaderTokens = List.ofSeq headerTokens
                       BodyTokens = bodyTokens }

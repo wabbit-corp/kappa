@@ -828,6 +828,119 @@ let ``type signatures definitional equality reduces beta delta eta suspension an
     Assert.True(TypeSignatures.definitionallyEqualIn context (TypeSignatures.TypeRecord []) (TypeSignatures.TypeName([ "Unit" ], [])))
 
 [<Fact>]
+let ``type signatures unfold only conversion reducible transparent definitions`` () =
+    let intType = TypeSignatures.TypeName([ "Int" ], [])
+
+    let context =
+        TypeSignatures.emptyDefinitionContext
+        |> TypeSignatures.addDefinition
+            [ "CheckedAlias" ]
+            { ParameterNames = []
+              DefinitionBody = intType
+              Transparent = true
+              TerminationCertified = true
+              ConversionReducible = true
+              CertificationSource = Some TypeSignatures.CheckedDefinition }
+        |> TypeSignatures.addDefinition
+            [ "AssertedOnly" ]
+            { ParameterNames = []
+              DefinitionBody = intType
+              Transparent = true
+              TerminationCertified = false
+              ConversionReducible = false
+              CertificationSource = Some TypeSignatures.AssertTerminatesUnverified }
+        |> TypeSignatures.addDefinition
+            [ "OpaqueAlias" ]
+            { ParameterNames = []
+              DefinitionBody = intType
+              Transparent = false
+              TerminationCertified = true
+              ConversionReducible = false
+              CertificationSource = Some TypeSignatures.CheckedDefinition }
+
+    Assert.True(TypeSignatures.definitionallyEqualIn context (TypeSignatures.TypeName([ "CheckedAlias" ], [])) intType)
+    Assert.False(TypeSignatures.definitionallyEqualIn context (TypeSignatures.TypeName([ "AssertedOnly" ], [])) intType)
+    Assert.False(TypeSignatures.definitionallyEqualIn context (TypeSignatures.TypeName([ "OpaqueAlias" ], [])) intType)
+
+[<Fact>]
+let ``frontend preserves totality assertions on let declarations and gates unsafe escapes`` () =
+    let allowedWorkspace =
+        compileInMemoryWorkspace
+            "memory-assert-terminates-root"
+            [
+                "main.kp",
+                [
+                    "@allow_assert_terminates"
+                    "@allow_assert_reducible"
+                    "module main"
+                    "assertTerminates let keep (x : Int) : Int = x"
+                    "assertReducible let uncheckedId (x : Int) : Int = x"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(allowedWorkspace.HasErrors, sprintf "Expected no diagnostics, got %A" allowedWorkspace.Diagnostics)
+
+    let mainDocument =
+        allowedWorkspace.Documents
+        |> List.find (fun document -> document.ModuleName = Some [ "main" ])
+
+    let keepDefinition =
+        mainDocument.Syntax.Declarations
+        |> List.pick (function
+            | LetDeclaration declaration when declaration.Name = Some "keep" -> Some declaration
+            | _ -> None)
+
+    let uncheckedDefinition =
+        mainDocument.Syntax.Declarations
+        |> List.pick (function
+            | LetDeclaration declaration when declaration.Name = Some "uncheckedId" -> Some declaration
+            | _ -> None)
+
+    Assert.Equal(Some AssertTerminatesAssertion, keepDefinition.TotalityAssertion)
+    Assert.Equal(Some AssertReducibleAssertion, uncheckedDefinition.TotalityAssertion)
+
+    let blockedTerminatesWorkspace =
+        compileInMemoryWorkspace
+            "memory-blocked-assert-terminates-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "assertTerminates let keep (x : Int) : Int = x"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(blockedTerminatesWorkspace.HasErrors, "Expected assertTerminates to require allow_assert_terminates.")
+    Assert.Contains(
+        blockedTerminatesWorkspace.Diagnostics,
+        fun diagnostic ->
+            diagnostic.Code = DiagnosticCode.FrontendValidation
+            && diagnostic.Message.Contains("allow_assert_terminates", StringComparison.Ordinal)
+    )
+
+    let blockedReducibleWorkspace =
+        compileInMemoryWorkspace
+            "memory-blocked-assert-reducible-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "assertReducible let uncheckedId (x : Int) : Int = x"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(blockedReducibleWorkspace.HasErrors, "Expected assertReducible to require allow_assert_reducible.")
+    Assert.Contains(
+        blockedReducibleWorkspace.Diagnostics,
+        fun diagnostic ->
+            diagnostic.Code = DiagnosticCode.FrontendValidation
+            && diagnostic.Message.Contains("allow_assert_reducible", StringComparison.Ordinal)
+    )
+
+[<Fact>]
 let ``compilation injects bundled std prelude and satisfies its intrinsic expects`` () =
     let mainSource =
         [
