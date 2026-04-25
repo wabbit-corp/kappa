@@ -177,15 +177,34 @@ module private SurfaceBinderParsing =
                 match current with
                 | NamePattern name ->
                     yield name
+                | AsPattern(name, inner) ->
+                    yield name
+                    yield! loop inner
+                | TypedPattern(inner, _) ->
+                    yield! loop inner
                 | ConstructorPattern(_, arguments) ->
                     for argument in arguments do
                         yield! loop argument
+                | NamedConstructorPattern(_, fields) ->
+                    for field in fields do
+                        yield! loop field.Pattern
+                | TuplePattern elements ->
+                    for element in elements do
+                        yield! loop element
+                | VariantPattern(BoundVariantPattern(name, _))
+                | VariantPattern(RestVariantPattern name) ->
+                    yield name
+                | VariantPattern(WildcardVariantPattern _) ->
+                    ()
                 | OrPattern alternatives ->
                     for alternative in alternatives do
                         yield! loop alternative
-                | AnonymousRecordPattern fields ->
+                | AnonymousRecordPattern(fields, rest) ->
                     for field in fields do
                         yield! loop field.Pattern
+                    match rest with
+                    | Some(BindRecordPatternRest name) -> yield name
+                    | _ -> ()
                 | WildcardPattern
                 | LiteralPattern _ ->
                     ()
@@ -272,16 +291,34 @@ module private SurfaceBinderParsing =
             match pattern with
             | ConstructorPattern([ name ], []) ->
                 NamePattern name
+            | AsPattern(name, inner) ->
+                AsPattern(name, normalizeBinderPattern inner)
+            | TypedPattern(inner, typeTokens) ->
+                TypedPattern(normalizeBinderPattern inner, typeTokens)
             | ConstructorPattern(name, arguments) ->
                 ConstructorPattern(name, arguments |> List.map normalizeBinderPattern)
+            | NamedConstructorPattern(name, fields) ->
+                NamedConstructorPattern(
+                    name,
+                    fields
+                    |> List.map (fun field ->
+                        { field with
+                            Pattern = normalizeBinderPattern field.Pattern })
+                )
+            | TuplePattern elements ->
+                TuplePattern(elements |> List.map normalizeBinderPattern)
+            | VariantPattern _ ->
+                pattern
             | OrPattern alternatives ->
                 OrPattern(alternatives |> List.map normalizeBinderPattern)
-            | AnonymousRecordPattern fields ->
+            | AnonymousRecordPattern(fields, rest) ->
                 AnonymousRecordPattern(
                     fields
                     |> List.map (fun field ->
                         { field with
                             Pattern = normalizeBinderPattern field.Pattern })
+                    ,
+                    rest
                 )
             | WildcardPattern
             | NamePattern _
@@ -390,15 +427,34 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                 match current with
                 | NamePattern name ->
                     yield name
+                | AsPattern(name, inner) ->
+                    yield name
+                    yield! loop inner
+                | TypedPattern(inner, _) ->
+                    yield! loop inner
                 | ConstructorPattern(_, arguments) ->
                     for argument in arguments do
                         yield! loop argument
+                | NamedConstructorPattern(_, fields) ->
+                    for field in fields do
+                        yield! loop field.Pattern
+                | TuplePattern elements ->
+                    for element in elements do
+                        yield! loop element
+                | VariantPattern(BoundVariantPattern(name, _))
+                | VariantPattern(RestVariantPattern name) ->
+                    yield name
+                | VariantPattern(WildcardVariantPattern _) ->
+                    ()
                 | OrPattern alternatives ->
                     for alternative in alternatives do
                         yield! loop alternative
-                | AnonymousRecordPattern fields ->
+                | AnonymousRecordPattern(fields, rest) ->
                     for field in fields do
                         yield! loop field.Pattern
+                    match rest with
+                    | Some(BindRecordPatternRest name) -> yield name
+                    | _ -> ()
                 | WildcardPattern
                 | LiteralPattern _ ->
                     ()
@@ -561,73 +617,157 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
 
         List.ofSeq innerTokens
 
-    member private this.TryParseAnonymousRecordPattern(tokens: Token list) =
-        let trimmed =
-            tokens
-            |> List.filter (fun token ->
-                match token.Kind with
-                | Newline
-                | Indent
-                | Dedent -> false
-                | _ -> true)
+    member private _.TrimPatternTokens(tokens: Token list) =
+        tokens
+        |> List.filter (fun token ->
+            match token.Kind with
+            | Newline
+            | Indent
+            | Dedent -> false
+            | _ -> true)
 
-        let splitTopLevelCommas (fieldTokens: Token list) =
-            let tokenArray = List.toArray fieldTokens
-            let items = ResizeArray<Token list>()
-            let current = ResizeArray<Token>()
-            let mutable depth = 0
+    member private _.SplitTopLevelCommas(tokens: Token list) =
+        let tokenArray = List.toArray tokens
+        let items = ResizeArray<Token list>()
+        let current = ResizeArray<Token>()
+        let mutable depth = 0
+        let mutable sawTopLevelComma = false
 
-            for token in tokenArray do
-                match token.Kind with
-                | LeftParen
-                | LeftBracket
-                | LeftBrace
-                | LeftSetBrace ->
-                    depth <- depth + 1
-                    current.Add(token)
-                | RightParen
-                | RightBracket
-                | RightBrace
-                | RightSetBrace ->
-                    depth <- max 0 (depth - 1)
-                    current.Add(token)
-                | Comma when depth = 0 ->
-                    items.Add(List.ofSeq current)
-                    current.Clear()
-                | _ ->
-                    current.Add(token)
-
-            if current.Count > 0 then
+        for token in tokenArray do
+            match token.Kind with
+            | LeftParen
+            | LeftBracket
+            | LeftBrace
+            | LeftSetBrace ->
+                depth <- depth + 1
+                current.Add(token)
+            | RightParen
+            | RightBracket
+            | RightBrace
+            | RightSetBrace ->
+                depth <- max 0 (depth - 1)
+                current.Add(token)
+            | Comma when depth = 0 ->
+                sawTopLevelComma <- true
                 items.Add(List.ofSeq current)
+                current.Clear()
+            | _ ->
+                current.Add(token)
 
-            items |> Seq.toList
+        items.Add(List.ofSeq current)
+        List.ofSeq items, sawTopLevelComma
 
-        let tryFindTopLevelEquals (fieldTokens: Token list) =
-            let tokenArray = List.toArray fieldTokens
-            let mutable depth = 0
-            let mutable index = 0
-            let mutable result = None
+    member private _.TryFindTopLevelEquals(fieldTokens: Token list) =
+        let tokenArray = List.toArray fieldTokens
+        let mutable depth = 0
+        let mutable index = 0
+        let mutable result = None
 
-            while index < tokenArray.Length && result.IsNone do
-                match tokenArray[index].Kind with
-                | LeftParen
-                | LeftBracket
-                | LeftBrace
-                | LeftSetBrace ->
-                    depth <- depth + 1
-                | RightParen
-                | RightBracket
-                | RightBrace
-                | RightSetBrace ->
-                    depth <- max 0 (depth - 1)
-                | Equals when depth = 0 ->
-                    result <- Some index
+        while index < tokenArray.Length && result.IsNone do
+            match tokenArray[index].Kind with
+            | LeftParen
+            | LeftBracket
+            | LeftBrace
+            | LeftSetBrace ->
+                depth <- depth + 1
+            | RightParen
+            | RightBracket
+            | RightBrace
+            | RightSetBrace ->
+                depth <- max 0 (depth - 1)
+            | Equals when depth = 0 ->
+                result <- Some index
+            | _ ->
+                ()
+
+            index <- index + 1
+
+        result
+
+    member private _.TryFindTopLevelColon(tokens: Token list) =
+        let tokenArray = List.toArray tokens
+        let mutable depth = 0
+        let mutable index = 0
+        let mutable result = None
+
+        while index < tokenArray.Length && result.IsNone do
+            match tokenArray[index].Kind with
+            | LeftParen
+            | LeftBracket
+            | LeftBrace
+            | LeftSetBrace ->
+                depth <- depth + 1
+            | RightParen
+            | RightBracket
+            | RightBrace
+            | RightSetBrace ->
+                depth <- max 0 (depth - 1)
+            | Colon when depth = 0 ->
+                result <- Some index
+            | _ ->
+                ()
+
+            index <- index + 1
+
+        result
+
+    member private this.TryParseVariantPattern(tokens: Token list) =
+        let trimmed = this.TrimPatternTokens(tokens)
+
+        match trimmed with
+        | { Kind = Operator; Text = "|" } :: rest ->
+            match List.rev rest with
+            | { Kind = Operator; Text = "|" } :: reversedBody ->
+                let body = reversedBody |> List.rev
+
+                match body with
+                | [ { Kind = Dot }; { Kind = Dot }; nameToken ] when this.IsNameToken(nameToken) ->
+                    Some(VariantPattern(RestVariantPattern(SyntaxFacts.trimIdentifierQuotes nameToken.Text)))
+                | [ { Kind = Underscore } ] ->
+                    Some(VariantPattern(WildcardVariantPattern None))
+                | [ nameToken ] when this.IsNameToken(nameToken) ->
+                    Some(VariantPattern(BoundVariantPattern(SyntaxFacts.trimIdentifierQuotes nameToken.Text, None)))
                 | _ ->
-                    ()
+                    match this.TryFindTopLevelColon body with
+                    | Some index ->
+                        let tokenArray = List.toArray body
+                        let headTokens = tokenArray[0 .. index - 1] |> Array.toList
+                        let typeTokens = tokenArray[index + 1 ..] |> Array.toList
 
-                index <- index + 1
+                        match headTokens with
+                        | [ { Kind = Underscore } ] ->
+                            Some(VariantPattern(WildcardVariantPattern(Some typeTokens)))
+                        | [ nameToken ] when this.IsNameToken(nameToken) ->
+                            Some(VariantPattern(BoundVariantPattern(SyntaxFacts.trimIdentifierQuotes nameToken.Text, Some typeTokens)))
+                        | _ ->
+                            None
+                    | None ->
+                        None
+            | _ ->
+                None
+        | _ ->
+            None
 
-            result
+    member private this.TryParseTuplePattern(tokens: Token list) =
+        let trimmed = this.TrimPatternTokens(tokens)
+        let groups, sawTopLevelComma = this.SplitTopLevelCommas(trimmed)
+        let nonEmptyGroups = groups |> List.filter (List.isEmpty >> not)
+
+        if not sawTopLevelComma then
+            None
+        elif List.isEmpty nonEmptyGroups then
+            None
+        else
+            let elements =
+                nonEmptyGroups
+                |> List.map (fun group ->
+                    let nestedParser = PatternParser(group, source, diagnostics, fixities)
+                    nestedParser.Parse())
+
+            Some(TuplePattern elements)
+
+    member private this.TryParseAnonymousRecordPattern(tokens: Token list) =
+        let trimmed = this.TrimPatternTokens(tokens)
 
         let isRestPattern (fieldTokens: Token list) =
             match fieldTokens with
@@ -636,27 +776,17 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
             | _ -> false
 
         let fieldGroups =
-            splitTopLevelCommas trimmed
+            this.SplitTopLevelCommas trimmed
+            |> fst
             |> List.filter (List.isEmpty >> not)
 
-        if trimmed |> List.exists (fun token -> token.Kind = Equals) |> not
-           && fieldGroups |> List.exists isRestPattern |> not then
-            if List.length fieldGroups > 1 then
-                fieldGroups
-                |> List.mapi (fun index fieldTokens ->
-                    let nestedParser = PatternParser(fieldTokens, source, diagnostics, fixities)
+        if trimmed |> List.exists (fun token -> token.Kind = Equals) || fieldGroups |> List.exists isRestPattern then
+            let mutable rest = None
 
-                    { Name = $"_{index + 1}"
-                      Pattern = nestedParser.Parse() })
-                |> AnonymousRecordPattern
-                |> Some
-            else
-                None
-        else
             let fields =
                 fieldGroups
-                |> List.map (fun fieldTokens ->
-                    match tryFindTopLevelEquals fieldTokens with
+                |> List.choose (fun fieldTokens ->
+                    match this.TryFindTopLevelEquals fieldTokens with
                     | Some index ->
                         let tokenArray = List.toArray fieldTokens
                         let labelTokens = tokenArray[0 .. index - 1] |> Array.toList
@@ -666,24 +796,37 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                         | [ labelToken ] when this.IsNameToken(labelToken) ->
                             let nestedParser = PatternParser(patternTokens, source, diagnostics, fixities)
 
-                            { Name = SyntaxFacts.trimIdentifierQuotes labelToken.Text
-                              Pattern = nestedParser.Parse() }
+                            Some
+                                { Name = SyntaxFacts.trimIdentifierQuotes labelToken.Text
+                                  IsImplicit = false
+                                  Pattern = nestedParser.Parse() }
+                        | [ { Kind = AtSign }; labelToken ] when this.IsNameToken(labelToken) ->
+                            let nestedParser = PatternParser(patternTokens, source, diagnostics, fixities)
+
+                            Some
+                                { Name = SyntaxFacts.trimIdentifierQuotes labelToken.Text
+                                  IsImplicit = true
+                                  Pattern = nestedParser.Parse() }
                         | labelToken :: _ ->
                             diagnostics.AddError(DiagnosticCode.ParseError, "Expected a record pattern field label.", source.GetLocation(labelToken.Span))
-                            { Name = "<missing>"
-                              Pattern = WildcardPattern }
+                            Some
+                                { Name = "<missing>"
+                                  IsImplicit = false
+                                  Pattern = WildcardPattern }
                         | [] ->
                             diagnostics.AddError(DiagnosticCode.ParseError, "Expected a record pattern field label.", source.GetLocation(eofSpan))
-                            { Name = "<missing>"
-                              Pattern = WildcardPattern }
+                            Some
+                                { Name = "<missing>"
+                                  IsImplicit = false
+                                  Pattern = WildcardPattern }
                     | None ->
                         match fieldTokens with
                         | { Kind = Dot } :: { Kind = Dot } :: [] ->
-                            { Name = "__kappa_record_rest"
-                              Pattern = WildcardPattern }
+                            rest <- Some DiscardRecordPatternRest
+                            None
                         | { Kind = Dot } :: { Kind = Dot } :: nameToken :: [] when this.IsNameToken(nameToken) ->
-                            { Name = "__kappa_record_rest"
-                              Pattern = NamePattern(SyntaxFacts.trimIdentifierQuotes nameToken.Text) }
+                            rest <- Some(BindRecordPatternRest(SyntaxFacts.trimIdentifierQuotes nameToken.Text))
+                            None
                         | _ ->
                             let errorSpan =
                                 match fieldTokens with
@@ -691,10 +834,121 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                                 | [] -> eofSpan
 
                             diagnostics.AddError(DiagnosticCode.ParseError, "Expected a record pattern field of the form 'name = pattern'.", source.GetLocation(errorSpan))
-                            { Name = "<missing>"
-                              Pattern = WildcardPattern })
+                            Some
+                                { Name = "<missing>"
+                                  IsImplicit = false
+                                  Pattern = WildcardPattern })
 
-            Some(AnonymousRecordPattern fields)
+            Some(AnonymousRecordPattern(fields, rest))
+        else
+            None
+
+    member private this.TryParseTypedPattern(tokens: Token list) =
+        let trimmed = this.TrimPatternTokens(tokens)
+
+        match this.TryFindTopLevelColon trimmed with
+        | Some index ->
+            let tokenArray = List.toArray trimmed
+            let patternTokens = tokenArray[0 .. index - 1] |> Array.toList
+            let typeTokens = tokenArray[index + 1 ..] |> Array.toList
+
+            if List.isEmpty patternTokens || List.isEmpty typeTokens then
+                None
+            else
+                let nestedParser = PatternParser(patternTokens, source, diagnostics, fixities)
+                Some(TypedPattern(nestedParser.Parse(), typeTokens))
+        | None ->
+            None
+
+    member private this.CollectBracedTokens() =
+        let start = this.Current
+        this.Advance() |> ignore
+
+        let innerTokens = ResizeArray<Token>()
+        let mutable depth = 1
+
+        while depth > 0 && this.Current.Kind <> EndOfFile do
+            match this.Current.Kind with
+            | LeftBrace ->
+                depth <- depth + 1
+                innerTokens.Add(this.Advance())
+            | RightBrace ->
+                depth <- depth - 1
+
+                if depth > 0 then
+                    innerTokens.Add(this.Advance())
+                else
+                    this.Advance() |> ignore
+            | _ ->
+                innerTokens.Add(this.Advance())
+
+        if depth > 0 then
+            diagnostics.AddError(DiagnosticCode.ParseError, "Expected '}' to close the pattern.", source.GetLocation(start.Span))
+
+        List.ofSeq innerTokens
+
+    member private this.ParseNamedConstructorPattern(name: string list) =
+        let innerTokens = this.CollectBracedTokens() |> this.TrimPatternTokens
+        let fieldGroups =
+            this.SplitTopLevelCommas innerTokens
+            |> fst
+            |> List.filter (List.isEmpty >> not)
+
+        let fields =
+            fieldGroups
+            |> List.map (fun fieldTokens ->
+                match this.TryFindTopLevelEquals fieldTokens with
+                | Some index ->
+                    let tokenArray = List.toArray fieldTokens
+                    let labelTokens = tokenArray[0 .. index - 1] |> Array.toList
+                    let patternTokens = tokenArray[index + 1 ..] |> Array.toList
+
+                    match labelTokens with
+                    | [ labelToken ] when this.IsNameToken(labelToken) ->
+                        let nestedParser = PatternParser(patternTokens, source, diagnostics, fixities)
+
+                        { Name = SyntaxFacts.trimIdentifierQuotes labelToken.Text
+                          IsImplicit = false
+                          Pattern = nestedParser.Parse() }
+                    | [ { Kind = AtSign }; labelToken ] when this.IsNameToken(labelToken) ->
+                        let nestedParser = PatternParser(patternTokens, source, diagnostics, fixities)
+
+                        { Name = SyntaxFacts.trimIdentifierQuotes labelToken.Text
+                          IsImplicit = true
+                          Pattern = nestedParser.Parse() }
+                    | labelToken :: _ ->
+                        diagnostics.AddError(DiagnosticCode.ParseError, "Expected a named constructor pattern field label.", source.GetLocation(labelToken.Span))
+                        { Name = "<missing>"
+                          IsImplicit = false
+                          Pattern = WildcardPattern }
+                    | [] ->
+                        diagnostics.AddError(DiagnosticCode.ParseError, "Expected a named constructor pattern field label.", source.GetLocation(eofSpan))
+                        { Name = "<missing>"
+                          IsImplicit = false
+                          Pattern = WildcardPattern }
+                | None ->
+                    match fieldTokens with
+                    | [ labelToken ] when this.IsNameToken(labelToken) ->
+                        let name = SyntaxFacts.trimIdentifierQuotes labelToken.Text
+                        { Name = name
+                          IsImplicit = false
+                          Pattern = NamePattern name }
+                    | [ { Kind = AtSign }; labelToken ] when this.IsNameToken(labelToken) ->
+                        let name = SyntaxFacts.trimIdentifierQuotes labelToken.Text
+                        { Name = name
+                          IsImplicit = true
+                          Pattern = NamePattern name }
+                    | token :: _ ->
+                        diagnostics.AddError(DiagnosticCode.ParseError, "Expected a named constructor pattern field.", source.GetLocation(token.Span))
+                        { Name = "<missing>"
+                          IsImplicit = false
+                          Pattern = WildcardPattern }
+                    | [] ->
+                        { Name = "<missing>"
+                          IsImplicit = false
+                          Pattern = WildcardPattern })
+
+        NamedConstructorPattern(name, fields)
 
     member private this.ParseAtomicPattern() =
         this.SkipLayout()
@@ -716,16 +970,28 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
             | [ operatorToken ] when operatorToken.Kind = Operator ->
                 ConstructorPattern([ operatorToken.Text ], [])
             | _ ->
-                match this.TryParseAnonymousRecordPattern innerTokens with
+                match this.TryParseVariantPattern innerTokens with
                 | Some pattern -> pattern
                 | None ->
-                    let nestedParser = PatternParser(innerTokens, source, diagnostics, fixities)
-                    nestedParser.Parse()
+                    match this.TryParseAnonymousRecordPattern innerTokens with
+                    | Some pattern -> pattern
+                    | None ->
+                        match this.TryParseTuplePattern innerTokens with
+                        | Some pattern -> pattern
+                        | None ->
+                            match this.TryParseTypedPattern innerTokens with
+                            | Some pattern -> pattern
+                            | None ->
+                                let nestedParser = PatternParser(innerTokens, source, diagnostics, fixities)
+                                nestedParser.Parse()
         | _ when this.IsNameToken(this.Current) ->
             let segments = this.ParseQualifiedName()
 
             if this.IsConstructorSegments(segments) then
-                ConstructorPattern(segments, [])
+                if this.Current.Kind = LeftBrace then
+                    this.ParseNamedConstructorPattern(segments)
+                else
+                    ConstructorPattern(segments, [])
             else
                 match segments with
                 | [ name ] -> NamePattern name
@@ -744,6 +1010,9 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
         match head, List.ofSeq arguments with
         | ConstructorPattern(name, existingArguments), additionalArguments ->
             ConstructorPattern(name, existingArguments @ additionalArguments)
+        | NamedConstructorPattern _, _ :: _ ->
+            diagnostics.AddError(DiagnosticCode.ParseError, "Named constructor patterns cannot take positional subpatterns.", source.GetLocation(this.Current.Span))
+            head
         | NamePattern name, [] ->
             NamePattern name
         | NamePattern name, additionalArguments ->
@@ -762,6 +1031,14 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
             this.SkipLayout()
 
             match this.Current.Kind with
+            | AtSign ->
+                match left with
+                | NamePattern aliasName when minimumPrecedence <= 2 ->
+                    this.Advance() |> ignore
+                    let right = this.ParsePattern(2)
+                    left <- AsPattern(aliasName, right)
+                | _ ->
+                    keepParsing <- false
             | Operator when this.Current.Text = "|" ->
                 let precedence = 1
 

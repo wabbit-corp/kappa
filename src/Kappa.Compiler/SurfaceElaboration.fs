@@ -235,10 +235,23 @@ module SurfaceElaboration =
             KCoreWildcardPattern
         | NamePattern name ->
             KCoreNamePattern name
+        | AsPattern(_, inner) ->
+            lowerKCorePattern inner
+        | TypedPattern(inner, _) ->
+            lowerKCorePattern inner
         | LiteralPattern literal ->
             KCoreLiteralPattern literal
         | ConstructorPattern(name, arguments) ->
             KCoreConstructorPattern(name, arguments |> List.map lowerKCorePattern)
+        | NamedConstructorPattern(name, fields) ->
+            KCoreConstructorPattern(name, fields |> List.map (fun field -> lowerKCorePattern field.Pattern))
+        | TuplePattern _ ->
+            KCoreWildcardPattern
+        | VariantPattern(BoundVariantPattern(name, _))
+        | VariantPattern(RestVariantPattern name) ->
+            KCoreNamePattern name
+        | VariantPattern(WildcardVariantPattern _) ->
+            KCoreWildcardPattern
         | OrPattern alternatives ->
             KCoreOrPattern(alternatives |> List.map lowerKCorePattern)
         | AnonymousRecordPattern _ ->
@@ -249,18 +262,37 @@ module SurfaceElaboration =
             seq {
                 match current with
                 | NamePattern name -> yield name
+                | AsPattern(name, inner) ->
+                    yield name
+                    yield! loop inner
+                | TypedPattern(inner, _) ->
+                    yield! loop inner
                 | ConstructorPattern(_, arguments) ->
                     for argument in arguments do
                         yield! loop argument
+                | NamedConstructorPattern(_, fields) ->
+                    for field in fields do
+                        yield! loop field.Pattern
+                | TuplePattern elements ->
+                    for element in elements do
+                        yield! loop element
+                | VariantPattern(BoundVariantPattern(name, _))
+                | VariantPattern(RestVariantPattern name) ->
+                    yield name
+                | VariantPattern(WildcardVariantPattern _) ->
+                    ()
                 | OrPattern alternatives ->
                     match alternatives with
                     | first :: _ ->
                         yield! loop first
                     | [] ->
                         ()
-                | AnonymousRecordPattern fields ->
+                | AnonymousRecordPattern(fields, rest) ->
                     for field in fields do
                         yield! loop field.Pattern
+                    match rest with
+                    | Some(BindRecordPatternRest name) -> yield name
+                    | _ -> ()
                 | WildcardPattern
                 | LiteralPattern _ -> ()
             }
@@ -2769,19 +2801,62 @@ module SurfaceElaboration =
                 match expected with
                 | Some expectedType -> Map.add name expectedType locals
                 | None -> locals
-            | AnonymousRecordPattern fields ->
+            | AsPattern(name, inner) ->
+                let locals =
+                    match expected with
+                    | Some expectedType -> Map.add name expectedType locals
+                    | None -> locals
+
+                loop locals expected inner
+            | TypedPattern(inner, typeTokens) ->
+                let ascribedType =
+                    TypeSignatures.parseType typeTokens
+                    |> Option.map (qualifyVisibleTypeNames environment)
+                    |> Option.orElse expected
+
+                loop locals ascribedType inner
+            | TuplePattern elements ->
+                let tupleFields =
+                    elements
+                    |> List.mapi (fun index element ->
+                        { Name = $"_{index + 1}"
+                          IsImplicit = false
+                          Pattern = element })
+
+                loop locals expected (AnonymousRecordPattern(tupleFields, None))
+            | AnonymousRecordPattern(fields, rest) ->
                 match expected |> Option.bind (tryCanonicalRecordType environment.VisibleTypeAliases) with
                 | Some(TypeRecord recordFields) ->
-                    fields
-                    |> List.fold (fun state field ->
-                        let fieldType =
-                            recordFields
-                            |> List.tryFind (fun recordField -> String.Equals(recordField.Name, field.Name, StringComparison.Ordinal))
-                            |> Option.map (fun recordField -> recordField.Type)
+                    let afterFields =
+                        fields
+                        |> List.fold (fun state field ->
+                            let fieldType =
+                                recordFields
+                                |> List.tryFind (fun recordField -> String.Equals(recordField.Name, field.Name, StringComparison.Ordinal))
+                                |> Option.map (fun recordField -> recordField.Type)
 
-                        loop state fieldType field.Pattern) locals
+                            loop state fieldType field.Pattern) locals
+
+                    match rest with
+                    | Some(BindRecordPatternRest name) ->
+                        let mentioned =
+                            fields |> List.map (fun field -> field.Name) |> Set.ofList
+
+                        let residualFields =
+                            recordFields
+                            |> List.filter (fun field -> not (Set.contains field.Name mentioned))
+
+                        Map.add name (TypeRecord residualFields) afterFields
+                    | _ ->
+                        afterFields
                 | _ ->
-                    fields |> List.fold (fun state field -> loop state None field.Pattern) locals
+                    let afterFields = fields |> List.fold (fun state field -> loop state None field.Pattern) locals
+
+                    match rest with
+                    | Some(BindRecordPatternRest name) ->
+                        Map.add name (TypeRecord []) afterFields
+                    | _ ->
+                        afterFields
             | ConstructorPattern(nameSegments, arguments) ->
                 let argumentTypes =
                     match expected, tryResolveVisibleConstructorInfo environment nameSegments with
@@ -2811,6 +2886,58 @@ module SurfaceElaboration =
 
                 List.zip arguments argumentTypes
                 |> List.fold (fun state (argumentPattern, argumentType) -> loop state argumentType argumentPattern) locals
+            | NamedConstructorPattern(nameSegments, fields) ->
+                let argumentTypes =
+                    match expected, tryResolveVisibleConstructorInfo environment nameSegments with
+                    | Some expectedResultType, Some constructorInfo ->
+                        let instantiated = TypeSignatures.instantiate "t" freshCounter.Value constructorInfo.Scheme
+                        freshCounter.Value <- freshCounter.Value + instantiated.Forall.Length
+
+                        let parameterTypes, constructorResultType = TypeSignatures.schemeParts instantiated
+
+                        let fieldTypeMap =
+                            constructorInfo.ParameterLayouts
+                            |> Option.map (fun layouts ->
+                                layouts
+                                |> List.filter (fun parameter -> not parameter.IsImplicit)
+                                |> List.map (fun parameter -> parameter.Name)
+                                |> List.zip parameterTypes
+                                |> List.map (fun (fieldType, fieldName) -> fieldName, fieldType)
+                                |> Map.ofList)
+                            |> Option.defaultValue Map.empty
+
+                        match
+                            TypeSignatures.tryUnifyMany
+                                [
+                                    qualifyVisibleTypeNames environment constructorResultType,
+                                    qualifyVisibleTypeNames environment expectedResultType
+                                ]
+                        with
+                        | Some substitution ->
+                            fieldTypeMap
+                            |> Map.map (fun _ fieldType -> TypeSignatures.applySubstitution substitution fieldType)
+                        | None ->
+                            Map.empty
+                    | _ ->
+                        Map.empty
+
+                fields
+                |> List.fold (fun state field ->
+                    let fieldType = argumentTypes |> Map.tryFind field.Name
+                    loop state fieldType field.Pattern) locals
+            | VariantPattern(BoundVariantPattern(name, Some typeTokens)) ->
+                match TypeSignatures.parseType typeTokens with
+                | Some parsedType ->
+                    Map.add name (qualifyVisibleTypeNames environment parsedType) locals
+                | None ->
+                    locals
+            | VariantPattern(BoundVariantPattern(name, None))
+            | VariantPattern(RestVariantPattern name) ->
+                match expected with
+                | Some expectedType -> Map.add name expectedType locals
+                | None -> locals
+            | VariantPattern(WildcardVariantPattern _) ->
+                locals
             | OrPattern alternatives ->
                 match alternatives with
                 | first :: _ ->
@@ -4229,6 +4356,10 @@ module SurfaceElaboration =
 
         let rec staticPatternIdentityDiagnostics locals pattern =
             match pattern with
+            | AsPattern(_, inner) ->
+                staticPatternIdentityDiagnostics locals inner
+            | TypedPattern(inner, _) ->
+                staticPatternIdentityDiagnostics locals inner
             | ConstructorPattern(segments, arguments) ->
                 let nested = arguments |> List.collect (staticPatternIdentityDiagnostics locals)
 
@@ -4238,9 +4369,15 @@ module SurfaceElaboration =
                     staticConstructorIdentityDiagnostic locals receiver memberName @ nested
                 | _ ->
                     nested
+            | NamedConstructorPattern(segments, fields) ->
+                staticPatternIdentityDiagnostics locals (ConstructorPattern(segments, fields |> List.map (fun field -> field.Pattern)))
+            | TuplePattern elements ->
+                elements |> List.collect (staticPatternIdentityDiagnostics locals)
+            | VariantPattern _ ->
+                []
             | OrPattern alternatives ->
                 alternatives |> List.collect (staticPatternIdentityDiagnostics locals)
-            | AnonymousRecordPattern fields ->
+            | AnonymousRecordPattern(fields, _) ->
                 fields |> List.collect (fun field -> staticPatternIdentityDiagnostics locals field.Pattern)
             | WildcardPattern
             | NamePattern _
@@ -4340,7 +4477,11 @@ module SurfaceElaboration =
             match pattern with
             | NamePattern name ->
                 collectExpressionStaticAliases [ name ] value aliases
-            | AnonymousRecordPattern fields ->
+            | AsPattern(name, inner) ->
+                collectPatternStaticAliases inner value (collectExpressionStaticAliases [ name ] value aliases)
+            | TypedPattern(inner, _) ->
+                collectPatternStaticAliases inner value aliases
+            | AnonymousRecordPattern(fields, rest) ->
                 fields
                 |> List.fold (fun current field ->
                     let fieldExpression =
@@ -4349,8 +4490,23 @@ module SurfaceElaboration =
                         | _ -> MemberAccess(value, [ field.Name ], [])
 
                     collectPatternStaticAliases field.Pattern fieldExpression current) aliases
+                |> fun current ->
+                    match rest with
+                    | Some(BindRecordPatternRest name) ->
+                        collectExpressionStaticAliases [ name ] value current
+                    | _ ->
+                        current
             | ConstructorPattern(_, arguments) ->
                 arguments |> List.fold (fun current argument -> collectPatternStaticAliases argument value current) aliases
+            | NamedConstructorPattern(_, fields) ->
+                fields |> List.fold (fun current field -> collectPatternStaticAliases field.Pattern value current) aliases
+            | TuplePattern elements ->
+                elements |> List.fold (fun current element -> collectPatternStaticAliases element value current) aliases
+            | VariantPattern(BoundVariantPattern(name, _))
+            | VariantPattern(RestVariantPattern name) ->
+                collectExpressionStaticAliases [ name ] value aliases
+            | VariantPattern(WildcardVariantPattern _) ->
+                aliases
             | OrPattern alternatives ->
                 alternatives
                 |> List.tryHead
@@ -4402,6 +4558,10 @@ module SurfaceElaboration =
 
         let rec validatePatternHead pattern =
             match pattern with
+            | AsPattern(_, inner) ->
+                validatePatternHead inner
+            | TypedPattern(inner, _) ->
+                validatePatternHead inner
             | ConstructorPattern(nameSegments, arguments) ->
                 let nestedDiagnostics = arguments |> List.collect validatePatternHead
                 let headDiagnostics =
@@ -4418,9 +4578,15 @@ module SurfaceElaboration =
                             []
 
                 headDiagnostics @ nestedDiagnostics
+            | NamedConstructorPattern(nameSegments, fields) ->
+                validatePatternHead (ConstructorPattern(nameSegments, fields |> List.map (fun field -> field.Pattern)))
+            | TuplePattern elements ->
+                elements |> List.collect validatePatternHead
+            | VariantPattern _ ->
+                []
             | OrPattern alternatives ->
                 alternatives |> List.collect validatePatternHead
-            | AnonymousRecordPattern fields ->
+            | AnonymousRecordPattern(fields, _) ->
                 fields |> List.collect (fun field -> validatePatternHead field.Pattern)
             | WildcardPattern
             | NamePattern _
@@ -6942,11 +7108,21 @@ module SurfaceElaboration =
 
                 let rec loop current =
                     match current with
+                    | AsPattern(_, inner) ->
+                        duplicateNames current @ loop inner
+                    | TypedPattern(inner, _) ->
+                        duplicateNames current @ loop inner
                     | OrPattern alternatives ->
                         alternatives |> List.collect loop
                     | ConstructorPattern(_, arguments) ->
                         duplicateNames current @ (arguments |> List.collect loop)
-                    | AnonymousRecordPattern fields ->
+                    | NamedConstructorPattern(_, fields) ->
+                        duplicateNames current @ (fields |> List.collect (fun field -> loop field.Pattern))
+                    | TuplePattern elements ->
+                        duplicateNames current @ (elements |> List.collect loop)
+                    | VariantPattern _ ->
+                        duplicateNames current
+                    | AnonymousRecordPattern(fields, _) ->
                         duplicateNames current @ (fields |> List.collect (fun field -> loop field.Pattern))
                     | WildcardPattern
                     | NamePattern _
@@ -8946,6 +9122,15 @@ module SurfaceElaboration =
                 KCoreWildcardPattern
             | NamePattern name ->
                 KCoreNamePattern name
+            | AsPattern(_, inner) ->
+                lowerPattern localTypes expectedType inner
+            | TypedPattern(inner, typeTokens) ->
+                let narrowedExpected =
+                    TypeSignatures.parseType typeTokens
+                    |> Option.map (qualifyVisibleTypeNames environment)
+                    |> Option.orElse expectedType
+
+                lowerPattern localTypes narrowedExpected inner
             | LiteralPattern literal ->
                 KCoreLiteralPattern literal
             | ConstructorPattern(name, arguments) ->
@@ -8980,9 +9165,44 @@ module SurfaceElaboration =
                     List.zip arguments argumentTypes
                     |> List.map (fun (argumentPattern, argumentType) -> lowerPattern localTypes argumentType argumentPattern)
                 )
+            | NamedConstructorPattern(name, fields) ->
+                let positionalPatterns =
+                    match tryResolveVisibleConstructorInfo environment name with
+                    | Some constructorInfo ->
+                        let fieldMap =
+                            fields
+                            |> List.map (fun field -> field.Name, field.Pattern)
+                            |> Map.ofList
+
+                        constructorInfo.ParameterLayouts
+                        |> Option.map (fun layouts ->
+                            layouts
+                            |> List.filter (fun parameter -> not parameter.IsImplicit)
+                            |> List.map (fun parameter ->
+                                fieldMap |> Map.tryFind parameter.Name |> Option.defaultValue WildcardPattern))
+                        |> Option.defaultValue (fields |> List.map (fun field -> field.Pattern))
+                    | None ->
+                        fields |> List.map (fun field -> field.Pattern)
+
+                lowerPattern localTypes expectedType (ConstructorPattern(name, positionalPatterns))
+            | TuplePattern elements ->
+                let tupleFields =
+                    elements
+                    |> List.mapi (fun index element ->
+                        { Name = $"_{index + 1}"
+                          IsImplicit = false
+                          Pattern = element })
+
+                lowerPattern localTypes expectedType (AnonymousRecordPattern(tupleFields, None))
+            | VariantPattern(BoundVariantPattern(name, _)) ->
+                KCoreNamePattern name
+            | VariantPattern(RestVariantPattern name) ->
+                KCoreNamePattern name
+            | VariantPattern(WildcardVariantPattern _) ->
+                KCoreWildcardPattern
             | OrPattern alternatives ->
                 KCoreOrPattern(alternatives |> List.map (lowerPattern localTypes expectedType))
-            | AnonymousRecordPattern fields ->
+            | AnonymousRecordPattern(fields, _) ->
                 match expectedType |> Option.bind (tryCanonicalRecordType environment.VisibleTypeAliases) with
                 | Some recordType ->
                     let layout =

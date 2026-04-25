@@ -878,6 +878,84 @@ let ``parser keeps or-pattern alternatives in match cases`` () =
         failwithf "Unexpected parsed declarations for or-pattern test: %A" other
 
 [<Fact>]
+let ``parser captures typed as tuple and record-rest patterns`` () =
+    let source =
+        createSource
+            "__pattern_forms__.kp"
+            "module main\nlet demo value = match value\n  case whole@((head, tail) : (Int, Int)) -> head\n  case (@proof = p, name = n, ..rest) -> n"
+    let lexed = Lexer.tokenize source
+    Assert.Empty(lexed.Diagnostics)
+
+    let parsed = Parser.parse source lexed.Tokens
+    Assert.Empty(parsed.Diagnostics)
+
+    match parsed.Syntax.Declarations with
+    | [ LetDeclaration { Body = Some(Match(_, [ firstCase; secondCase ])) } ] ->
+        match firstCase.Pattern with
+        | AsPattern("whole", TypedPattern(TuplePattern [ NamePattern "head"; NamePattern "tail" ], typeTokens)) ->
+            Assert.Equal("( Int , Int )", tokensText typeTokens)
+        | other ->
+            failwithf "Unexpected typed/as/tuple pattern: %A" other
+
+        match secondCase.Pattern with
+        | AnonymousRecordPattern(fields, Some(BindRecordPatternRest "rest")) ->
+            match fields with
+            | [ { Name = "proof"
+                  IsImplicit = true
+                  Pattern = NamePattern "p" }
+                { Name = "name"
+                  IsImplicit = false
+                  Pattern = NamePattern "n" } ] -> ()
+            | other ->
+                failwithf "Unexpected anonymous record fields: %A" other
+        | other ->
+            failwithf "Unexpected anonymous record rest pattern: %A" other
+    | other ->
+        failwithf "Unexpected parsed declarations for pattern forms test: %A" other
+
+[<Fact>]
+let ``parser captures named constructor and variant patterns`` () =
+    let source =
+        createSource
+            "__named_constructor_pattern__.kp"
+            "module main\ntype U = (| Int | String |)\nlet demo value other = match value\n  case User { name, age = years } -> years\n  case (| item : Int |) -> item\n  case (| ..rest |) -> other"
+    let lexed = Lexer.tokenize source
+    Assert.Empty(lexed.Diagnostics)
+
+    let parsed = Parser.parse source lexed.Tokens
+    Assert.Empty(parsed.Diagnostics)
+
+    match parsed.Syntax.Declarations with
+    | [ TypeAliasNode _
+        LetDeclaration { Body = Some(Match(_, [ firstCase; secondCase; thirdCase ])) } ] ->
+        match firstCase.Pattern with
+        | NamedConstructorPattern([ "User" ], fields) ->
+            match fields with
+            | [ { Name = "name"
+                  IsImplicit = false
+                  Pattern = NamePattern "name" }
+                { Name = "age"
+                  IsImplicit = false
+                  Pattern = NamePattern "years" } ] -> ()
+            | other ->
+                failwithf "Unexpected named constructor fields: %A" other
+        | other ->
+            failwithf "Unexpected named constructor pattern: %A" other
+
+        match secondCase.Pattern with
+        | VariantPattern(BoundVariantPattern("item", Some typeTokens)) ->
+            Assert.Equal("Int", tokensText typeTokens)
+        | other ->
+            failwithf "Unexpected typed variant pattern: %A" other
+
+        match thirdCase.Pattern with
+        | VariantPattern(RestVariantPattern "rest") -> ()
+        | other ->
+            failwithf "Unexpected variant rest pattern: %A" other
+    | other ->
+        failwithf "Unexpected parsed declarations for named constructor/variant test: %A" other
+
+[<Fact>]
 let ``compilation reports import cycles across modules`` () =
     let root = Path.GetFullPath("memory-cycle-root")
     let moduleASource =

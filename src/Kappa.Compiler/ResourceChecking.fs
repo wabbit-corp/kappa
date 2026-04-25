@@ -409,18 +409,37 @@ module ResourceChecking =
                 match current with
                 | NamePattern name ->
                     yield name, path
+                | AsPattern(name, inner) ->
+                    yield name, path
+                    yield! loop path inner
+                | TypedPattern(inner, _) ->
+                    yield! loop path inner
                 | ConstructorPattern(_, arguments) ->
                     for index, argument in arguments |> List.indexed do
                         yield! loop (path @ [ $"#{index}" ]) argument
+                | NamedConstructorPattern(_, fields) ->
+                    for field in fields do
+                        yield! loop (path @ [ field.Name ]) field.Pattern
+                | TuplePattern elements ->
+                    for index, element in elements |> List.indexed do
+                        yield! loop (path @ [ $"_{index + 1}" ]) element
+                | VariantPattern(BoundVariantPattern(name, _))
+                | VariantPattern(RestVariantPattern name) ->
+                    yield name, path
+                | VariantPattern(WildcardVariantPattern _) ->
+                    ()
                 | OrPattern alternatives ->
                     match alternatives with
                     | first :: _ ->
                         yield! loop path first
                     | [] ->
                         ()
-                | AnonymousRecordPattern fields ->
+                | AnonymousRecordPattern(fields, rest) ->
                     for field in fields do
                         yield! loop (path @ [ field.Name ]) field.Pattern
+                    match rest with
+                    | Some(BindRecordPatternRest name) -> yield name, path
+                    | _ -> ()
                 | WildcardPattern
                 | LiteralPattern _ -> ()
             }
@@ -1898,12 +1917,18 @@ module ResourceChecking =
         match pattern with
         | NamePattern _ ->
             true
+        | AsPattern _
+        | TypedPattern _
+        | NamedConstructorPattern _
+        | TuplePattern _
+        | VariantPattern _ ->
+            true
         | ConstructorPattern _ ->
             true
         | OrPattern alternatives ->
             not (List.isEmpty alternatives)
             && (alternatives |> List.forall patternCanDischargeMovedValue)
-        | AnonymousRecordPattern fields ->
+        | AnonymousRecordPattern(_, _) ->
             // Record patterns may omit fields, and omitted fields are discard positions under §5.1.5B.
             false
         | WildcardPattern
@@ -2070,6 +2095,26 @@ module ResourceChecking =
         let rec loop current =
             seq {
                 match current with
+                | AsPattern(_, inner) ->
+                    yield! loop inner
+                | TypedPattern(inner, _) ->
+                    yield! loop inner
+                | NamedConstructorPattern(segments, fields) ->
+                    match List.tryLast segments with
+                    | Some name -> yield name
+                    | None -> ()
+
+                    for field in fields do
+                        yield! loop field.Pattern
+                | TuplePattern elements ->
+                    for element in elements do
+                        yield! loop element
+                | VariantPattern _ ->
+                    ()
+                | _ ->
+                    ()
+
+                match current with
                 | ConstructorPattern(segments, arguments) ->
                     match List.tryLast segments with
                     | Some name -> yield name
@@ -2080,12 +2125,17 @@ module ResourceChecking =
                 | OrPattern alternatives ->
                     for alternative in alternatives do
                         yield! loop alternative
-                | AnonymousRecordPattern fields ->
+                | AnonymousRecordPattern(fields, _) ->
                     for field in fields do
                         yield! loop field.Pattern
                 | WildcardPattern
                 | NamePattern _
-                | LiteralPattern _ -> ()
+                | LiteralPattern _
+                | AsPattern _
+                | TypedPattern _
+                | NamedConstructorPattern _
+                | TuplePattern _
+                | VariantPattern _ -> ()
             }
 
         loop pattern |> Set.ofSeq
@@ -2685,6 +2735,27 @@ module ResourceChecking =
                             None
                             (findBinderLocation document name)
                             currentState
+                    | AsPattern(name, inner) ->
+                        let withAlias =
+                            let checkDrop = defaultQuantity |> Option.exists ResourceQuantity.requiresUse
+
+                            addBindingWithPlace
+                                PatternBinding
+                                (ResourcePlace.root name)
+                                name
+                                defaultQuantity
+                                borrowRegion
+                                Set.empty
+                                []
+                                checkDrop
+                                None
+                                None
+                                (findBinderLocation document name)
+                                currentState
+
+                        bindNested defaultQuantity inner withAlias
+                    | TypedPattern(inner, _) ->
+                        bindNested defaultQuantity inner currentState
                     | ConstructorPattern(segments, arguments) ->
                         let fieldQuantities =
                             segments
@@ -2701,9 +2772,31 @@ module ResourceChecking =
                                 |> Option.orElse defaultQuantity
 
                             bindNested fieldQuantity argument nestedState) currentState
-                    | AnonymousRecordPattern fields ->
+                    | NamedConstructorPattern(_, fields)
+                    | AnonymousRecordPattern(fields, _) ->
                         fields
                         |> List.fold (fun nestedState field -> bindNested defaultQuantity field.Pattern nestedState) currentState
+                    | TuplePattern elements ->
+                        elements |> List.fold (fun nestedState element -> bindNested defaultQuantity element nestedState) currentState
+                    | VariantPattern(BoundVariantPattern(name, _))
+                    | VariantPattern(RestVariantPattern name) ->
+                        let checkDrop = defaultQuantity |> Option.exists ResourceQuantity.requiresUse
+
+                        addBindingWithPlace
+                            PatternBinding
+                            (ResourcePlace.root name)
+                            name
+                            defaultQuantity
+                            borrowRegion
+                            Set.empty
+                            []
+                            checkDrop
+                            None
+                            None
+                            (findBinderLocation document name)
+                            currentState
+                    | VariantPattern(WildcardVariantPattern _) ->
+                        currentState
                     | OrPattern alternatives ->
                         alternatives
                         |> List.tryHead
@@ -2777,6 +2870,15 @@ module ResourceChecking =
                     | _ ->
                         None
 
+                let recordFieldQuantity (path: string list) =
+                    match pattern, path with
+                    | AnonymousRecordPattern(_, _), fieldName :: _ ->
+                        scrutineeBinding.RecordFieldQuantities |> Map.tryFind fieldName
+                    | TuplePattern _, fieldName :: _ ->
+                        scrutineeBinding.RecordFieldQuantities |> Map.tryFind fieldName
+                    | _ ->
+                        None
+
                 let state =
                     match scrutineeBinding.DeclaredQuantity with
                     | _ when quantityBorrows scrutineeBinding.DeclaredQuantity ->
@@ -2786,6 +2888,19 @@ module ResourceChecking =
                              && not (List.isEmpty patternBindings)
                              && (constructorFieldQuantitiesForPattern
                                  |> Option.exists (List.forall (function | Some fieldQuantity -> not (ResourceQuantity.requiresUse fieldQuantity) | None -> true))) ->
+                        match tryFindBindingId scrutineeName state with
+                        | Some bindingId ->
+                            updateBinding bindingId (fun binding -> { binding with UseMinimum = max binding.UseMinimum 1 }) state
+                        | None ->
+                            state
+                    | Some quantity
+                        when ResourceQuantity.requiresUse quantity
+                             && not (List.isEmpty patternBindings)
+                             && (match pattern with
+                                 | AnonymousRecordPattern _
+                                 | TuplePattern _
+                                 | NamedConstructorPattern _ -> true
+                                 | _ -> false) ->
                         match tryFindBindingId scrutineeName state with
                         | Some bindingId ->
                             updateBinding bindingId (fun binding -> { binding with UseMinimum = max binding.UseMinimum 1 }) state
@@ -2802,6 +2917,7 @@ module ResourceChecking =
                 |> List.fold (fun current (name, path) ->
                     let bindingQuantity =
                         constructorFieldQuantity path
+                        |> Option.orElseWith (fun () -> recordFieldQuantity path)
                         |> Option.orElse scrutineeBinding.DeclaredQuantity
 
                     let checkDrop =
@@ -2829,15 +2945,35 @@ module ResourceChecking =
             0
         | NamePattern _ ->
             1
+        | AsPattern(_, inner) ->
+            1 + patternBoundNameCount inner
+        | TypedPattern(inner, _) ->
+            patternBoundNameCount inner
         | ConstructorPattern(_, arguments) ->
             arguments |> List.sumBy patternBoundNameCount
+        | NamedConstructorPattern(_, fields) ->
+            fields |> List.sumBy (fun field -> patternBoundNameCount field.Pattern)
+        | TuplePattern elements ->
+            elements |> List.sumBy patternBoundNameCount
+        | VariantPattern(BoundVariantPattern _) ->
+            1
+        | VariantPattern(RestVariantPattern _) ->
+            1
+        | VariantPattern(WildcardVariantPattern _) ->
+            0
         | OrPattern alternatives ->
             alternatives
             |> List.tryHead
             |> Option.map patternBoundNameCount
             |> Option.defaultValue 0
-        | AnonymousRecordPattern fields ->
-            fields |> List.sumBy (fun field -> patternBoundNameCount field.Pattern)
+        | AnonymousRecordPattern(fields, rest) ->
+            let fieldCount = fields |> List.sumBy (fun field -> patternBoundNameCount field.Pattern)
+            let restCount =
+                match rest with
+                | Some(BindRecordPatternRest _) -> 1
+                | _ -> 0
+
+            fieldCount + restCount
 
     let private matchPatternOwnershipSupported scrutinee pattern =
         let rec supports topLevel current =
@@ -2847,10 +2983,22 @@ module ResourceChecking =
                 topLevel
             | NamePattern _ ->
                 true
+            | AsPattern(_, inner) ->
+                supports false inner
+            | TypedPattern(inner, _) ->
+                supports topLevel inner
             | ConstructorPattern(_, arguments) ->
                 arguments |> List.forall (supports false)
-            | AnonymousRecordPattern fields ->
+            | NamedConstructorPattern(_, fields)
+            | AnonymousRecordPattern(fields, _) ->
                 fields |> List.forall (fun field -> supports false field.Pattern)
+            | TuplePattern elements ->
+                elements |> List.forall (supports false)
+            | VariantPattern(BoundVariantPattern _)
+            | VariantPattern(RestVariantPattern _) ->
+                true
+            | VariantPattern(WildcardVariantPattern _) ->
+                topLevel
             | OrPattern alternatives ->
                 patternBoundNameCount current = 0 && alternatives |> List.forall (supports topLevel)
 
@@ -3841,16 +3989,12 @@ module ResourceChecking =
 
                         let scopedState =
                             match scrutinee, caseClause.Pattern with
-                            | Name [ scrutineeName ], AnonymousRecordPattern fields ->
+                            | Name [ scrutineeName ], AnonymousRecordPattern(fields, _) ->
                                 match tryFindBinding scrutineeName state with
                                 | Some binding ->
                                     let mentioned =
                                         fields
-                                        |> List.choose (fun field ->
-                                            if String.Equals(field.Name, "__kappa_record_rest", StringComparison.Ordinal) then
-                                                None
-                                            else
-                                                Some field.Name)
+                                        |> List.map (fun field -> field.Name)
                                         |> Set.ofList
 
                                     binding.RecordFieldQuantities

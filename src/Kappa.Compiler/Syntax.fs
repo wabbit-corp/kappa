@@ -380,13 +380,28 @@ and SurfacePattern =
     | WildcardPattern
     | NamePattern of string
     | LiteralPattern of LiteralValue
+    | AsPattern of string * SurfacePattern
+    | TypedPattern of SurfacePattern * Token list
     | ConstructorPattern of string list * SurfacePattern list
+    | NamedConstructorPattern of string list * SurfaceRecordPatternField list
+    | TuplePattern of SurfacePattern list
+    | VariantPattern of SurfaceVariantPattern
     | OrPattern of SurfacePattern list
-    | AnonymousRecordPattern of SurfaceRecordPatternField list
+    | AnonymousRecordPattern of SurfaceRecordPatternField list * SurfaceRecordPatternRest option
 
 and SurfaceRecordPatternField =
     { Name: string
+      IsImplicit: bool
       Pattern: SurfacePattern }
+
+and SurfaceRecordPatternRest =
+    | DiscardRecordPatternRest
+    | BindRecordPatternRest of string
+
+and SurfaceVariantPattern =
+    | BoundVariantPattern of name: string * typeTokens: Token list option
+    | WildcardVariantPattern of typeTokens: Token list option
+    | RestVariantPattern of string
 
 and SurfaceMatchCase =
     { Pattern: SurfacePattern

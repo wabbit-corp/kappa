@@ -832,11 +832,15 @@ let ``parser captures local borrowed anonymous record patterns`` () =
             Assert.Equal<Quantity option>(Some(QuantityBorrow None), binding.Quantity)
 
             match binding.Pattern with
-            | AnonymousRecordPattern
+            | AnonymousRecordPattern(
                 [ { Name = "x"
+                    IsImplicit = false
                     Pattern = NamePattern "bx" }
                   { Name = "y"
-                    Pattern = NamePattern "by" } ] -> ()
+                    IsImplicit = false
+                    Pattern = NamePattern "by" } ],
+                None
+              ) -> ()
             | other ->
                 failwithf "Unexpected local borrowed record pattern: %A" other
         | other ->

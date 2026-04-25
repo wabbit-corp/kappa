@@ -9,15 +9,34 @@ module internal ResourceCheckingSurface =
             seq {
                 match current with
                 | NamePattern name -> yield name
+                | AsPattern(name, inner) ->
+                    yield name
+                    yield! loop inner
+                | TypedPattern(inner, _) ->
+                    yield! loop inner
                 | ConstructorPattern(_, arguments) ->
                     for argument in arguments do
                         yield! loop argument
+                | NamedConstructorPattern(_, fields) ->
+                    for field in fields do
+                        yield! loop field.Pattern
+                | TuplePattern elements ->
+                    for element in elements do
+                        yield! loop element
+                | VariantPattern(BoundVariantPattern(name, _))
+                | VariantPattern(RestVariantPattern name) ->
+                    yield name
+                | VariantPattern(WildcardVariantPattern _) ->
+                    ()
                 | OrPattern alternatives ->
                     for alternative in alternatives do
                         yield! loop alternative
-                | AnonymousRecordPattern fields ->
+                | AnonymousRecordPattern(fields, rest) ->
                     for field in fields do
                         yield! loop field.Pattern
+                    match rest with
+                    | Some(BindRecordPatternRest name) -> yield name
+                    | _ -> ()
                 | WildcardPattern
                 | LiteralPattern _ -> ()
             }

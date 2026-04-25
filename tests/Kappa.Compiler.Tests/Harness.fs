@@ -647,6 +647,8 @@ let rec private fixturePatternText pattern =
     match pattern with
     | WildcardPattern -> "_"
     | NamePattern name -> name
+    | AsPattern(name, inner) -> $"{name}@{fixturePatternText inner}"
+    | TypedPattern(inner, typeTokens) -> $"({fixturePatternText inner} : {tokenTexts typeTokens})"
     | LiteralPattern(LiteralValue.Integer value) -> string value
     | LiteralPattern(LiteralValue.Float value) -> string value
     | LiteralPattern(LiteralValue.String value) -> $"\"{value}\""
@@ -660,15 +662,47 @@ let rec private fixturePatternText pattern =
         | _ ->
             let argumentText = arguments |> List.map fixturePatternText |> String.concat " "
             $"{nameText} {argumentText}"
+    | NamedConstructorPattern(name, fields) ->
+        let nameText = String.concat "." name
+        let fieldText =
+            fields
+            |> List.map (fun field ->
+                let prefix = if field.IsImplicit then "@" else ""
+                $"{prefix}{field.Name} = {fixturePatternText field.Pattern}")
+            |> String.concat ", "
+
+        $"{nameText} {{ {fieldText} }}"
+    | TuplePattern elements ->
+        let suffix = if List.length elements = 1 then "," else ""
+        let elementText = elements |> List.map fixturePatternText |> String.concat ", "
+        $"({elementText}{suffix})"
+    | VariantPattern(BoundVariantPattern(name, None)) -> $"(| {name} |)"
+    | VariantPattern(BoundVariantPattern(name, Some typeTokens)) -> $"(| {name} : {tokenTexts typeTokens} |)"
+    | VariantPattern(WildcardVariantPattern None) -> "(| _ |)"
+    | VariantPattern(WildcardVariantPattern(Some typeTokens)) -> $"(| _ : {tokenTexts typeTokens} |)"
+    | VariantPattern(RestVariantPattern name) -> $"(| ..{name} |)"
     | OrPattern alternatives ->
         alternatives
         |> List.map fixturePatternText
         |> String.concat " | "
-    | AnonymousRecordPattern fields ->
-        fields
-        |> List.map (fun field -> $"{field.Name} = {fixturePatternText field.Pattern}")
+    | AnonymousRecordPattern(fields, rest) ->
+        let fieldText =
+            fields
+            |> List.map (fun field ->
+                let prefix = if field.IsImplicit then "@" else ""
+                $"{prefix}{field.Name} = {fixturePatternText field.Pattern}")
+            |> String.concat ", "
+
+        let restText =
+            match rest with
+            | Some DiscardRecordPatternRest -> ".."
+            | Some(BindRecordPatternRest name) -> $"..{name}"
+            | None -> ""
+
+        [ if not (String.IsNullOrEmpty fieldText) then fieldText
+          if not (String.IsNullOrEmpty restText) then restText ]
         |> String.concat ", "
-        |> fun fieldText -> $"({fieldText})"
+        |> fun parts -> $"({parts})"
 
 let private fixtureBindPatternText (binding: SurfaceBindPattern) =
     let quantityText =

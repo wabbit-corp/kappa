@@ -48,7 +48,10 @@ let private mkAnonymousRecordBindPattern quantity fields =
             fields
             |> List.map (fun (name, patternName) ->
                 { Name = name
+                  IsImplicit = false
                   Pattern = NamePattern patternName })
+            ,
+            None
         )
       Quantity = quantity
       IsImplicit = false

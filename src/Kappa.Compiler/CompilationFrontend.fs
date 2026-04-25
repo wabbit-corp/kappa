@@ -342,6 +342,8 @@ module internal CompilationFrontend =
             match pattern with
             | WildcardPattern -> "_"
             | NamePattern name -> name
+            | AsPattern(name, inner) -> $"{name}@{renderPattern inner}"
+            | TypedPattern(inner, typeTokens) -> $"({renderPattern inner} : {tokensText typeTokens})"
             | LiteralPattern(LiteralValue.Integer value) -> string value
             | LiteralPattern(LiteralValue.Float value) -> string value
             | LiteralPattern(LiteralValue.String value) -> $"\"{value}\""
@@ -356,17 +358,54 @@ module internal CompilationFrontend =
                 | _ ->
                     let argumentText = arguments |> List.map renderPattern |> String.concat " "
                     $"({nameText} {argumentText})"
+            | NamedConstructorPattern(name, fields) ->
+                let fieldText =
+                    fields
+                    |> List.map (fun field ->
+                        let prefix = if field.IsImplicit then "@" else ""
+                        $"{prefix}{field.Name} = {renderPattern field.Pattern}")
+                    |> String.concat ", "
+
+                let nameText = String.concat "." name
+                $"{nameText} {{ {fieldText} }}"
+            | TuplePattern elements ->
+                let suffix = if List.length elements = 1 then "," else ""
+                let elementText = elements |> List.map renderPattern |> String.concat ", "
+                $"({elementText}{suffix})"
+            | VariantPattern(BoundVariantPattern(name, None)) ->
+                $"(| {name} |)"
+            | VariantPattern(BoundVariantPattern(name, Some typeTokens)) ->
+                $"(| {name} : {tokensText typeTokens} |)"
+            | VariantPattern(WildcardVariantPattern None) ->
+                "(| _ |)"
+            | VariantPattern(WildcardVariantPattern(Some typeTokens)) ->
+                $"(| _ : {tokensText typeTokens} |)"
+            | VariantPattern(RestVariantPattern name) ->
+                $"(| ..{name} |)"
             | OrPattern alternatives ->
                 alternatives
                 |> List.map renderPattern
                 |> String.concat " | "
-            | AnonymousRecordPattern fields ->
+            | AnonymousRecordPattern(fields, rest) ->
                 let fieldText =
                     fields
-                    |> List.map (fun field -> $"{field.Name} = {renderPattern field.Pattern}")
+                    |> List.map (fun field ->
+                        let prefix = if field.IsImplicit then "@" else ""
+                        $"{prefix}{field.Name} = {renderPattern field.Pattern}")
                     |> String.concat ", "
 
-                $"({fieldText})"
+                let restText =
+                    match rest with
+                    | Some DiscardRecordPatternRest -> ".."
+                    | Some(BindRecordPatternRest name) -> $"..{name}"
+                    | None -> ""
+
+                let parts =
+                    [ if not (String.IsNullOrEmpty fieldText) then fieldText
+                      if not (String.IsNullOrEmpty restText) then restText ]
+                    |> String.concat ", "
+
+                $"({parts})"
 
         let renderBindPattern binding =
             let quantityText =
