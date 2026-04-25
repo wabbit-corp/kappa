@@ -145,7 +145,7 @@ module internal ResourceCheckingSurface =
                 for part in parts do
                     match part with
                     | StringText _ -> ()
-                    | StringInterpolation inner -> yield! expressionNames inner
+                    | StringInterpolation(inner, _) -> yield! expressionNames inner
         }
 
     and private doStatementNames (statement: SurfaceDoStatement) =

@@ -615,7 +615,8 @@ module internal CompilationFrontend =
                     parts
                     |> List.map (function
                         | StringText text -> $"text:{text}"
-                        | StringInterpolation inner -> $"interp:{render inner}")
+                        | StringInterpolation(inner, None) -> $"interp:{render inner}"
+                        | StringInterpolation(inner, Some format) -> $"interpfmt:{render inner}:{format}")
                     |> String.concat " | "
 
                 $"({prefix}-string {partText})"

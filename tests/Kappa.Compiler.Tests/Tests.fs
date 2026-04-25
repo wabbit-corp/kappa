@@ -778,10 +778,34 @@ let ``lexer and parser support raw prefixed interpolation with matching hash cou
     Assert.Contains(InterpolatedStringEnd, tokenKinds)
 
     match parsed.Syntax.Declarations with
-    | [ LetDeclaration { Body = Some(PrefixedString("sql", [ StringText "select "; StringInterpolation(Name [ "userId" ]) ])) }
-        LetDeclaration { Body = Some(PrefixedString("re", [ StringText "\\b"; StringInterpolation(Name [ "word" ]); StringText "\\b" ])) } ] -> ()
+    | [ LetDeclaration { Body = Some(PrefixedString("sql", [ StringText "select "; StringInterpolation(Name [ "userId" ], None) ])) }
+        LetDeclaration { Body = Some(PrefixedString("re", [ StringText "\\b"; StringInterpolation(Name [ "word" ], None); StringText "\\b" ])) } ] -> ()
     | other ->
         failwithf "Unexpected parsed raw prefixed string: %A" other
+
+[<Fact>]
+let ``parser preserves prefixed string format specifiers`` () =
+    let sourceText =
+        [
+            "module main"
+            "let padded = f\"pre${value : %04d}post\""
+            "let sql = sql#\"select #{userId:param}\"#"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "main.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Empty(parsed.Diagnostics)
+
+    match parsed.Syntax.Declarations with
+    | [ LetDeclaration { Body = Some(PrefixedString("f", [ StringText "pre"; StringInterpolation(Name [ "value" ], Some "%04d"); StringText "post" ])) }
+        LetDeclaration { Body = Some(PrefixedString("sql", [ StringText "select "; StringInterpolation(Name [ "userId" ], Some "param") ])) } ] -> ()
+    | other ->
+        failwithf "Unexpected parsed prefixed string with format specifiers: %A" other
 
 [<Fact>]
 let ``parser preserves suffixed numeric literals as exact surface literals`` () =
@@ -1976,6 +2000,87 @@ let ``KCore lowers calls as application spines with explicit arguments`` () =
       ) -> ()
     | other ->
         failwithf "Expected KCore app spine for answer, got %A" other
+
+[<Fact>]
+let ``prefixed strings infer their macro result type from the prefix dictionary`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-prefixed-string-macro-result-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "value : Dict (InterpolatedMacro Int) -> Int"
+                    "let value num = num\"123\""
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, $"Expected prefixed string macro result inference to succeed, got {workspace.Diagnostics}.")
+
+[<Fact>]
+let ``KCore lowers prefixed strings through buildInterpolated macro splices`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-prefixed-string-kcore-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "name : String"
+                    "let name = \"done\""
+                    "value : String"
+                    "let value = f\"pre${name : %04d}post\""
+                ]
+                |> String.concat "\n"
+            ]
+
+    let valueBinding =
+        workspace.KCore
+        |> List.find (fun moduleDump -> moduleDump.Name = "main")
+        |> fun moduleDump ->
+            moduleDump.Declarations
+            |> List.pick (fun declaration ->
+                match declaration.Binding with
+                | Some binding when binding.Name = Some "value" -> Some binding
+                | _ -> None)
+
+    match valueBinding.Body with
+    | Some(
+        KCoreTopLevelSyntaxSplice(
+            KCoreTraitCall(
+                "InterpolatedMacro",
+                "buildInterpolated",
+                KCoreName [ "f" ],
+                [ fragments ]
+            )
+        )
+      ) ->
+        let rec flattenList expression =
+            match expression with
+            | KCoreName [ "Nil" ] -> []
+            | KCoreAppSpine(
+                KCoreName [ "Cons" ],
+                [ { Expression = head }
+                  { Expression = tail } ]
+              ) ->
+                head :: flattenList tail
+            | other ->
+                failwithf "Expected Cons/Nil fragment list, got %A" other
+
+        match flattenList fragments with
+        | [ KCoreAppSpine(KCoreName [ "Lit" ], [ { Expression = KCoreLiteral(LiteralValue.String "pre") } ])
+            KCoreAppSpine(
+                KCoreName [ "InterpFmt" ],
+                [ _
+                  { Expression = KCoreSyntaxQuote(KCoreName [ "name" ]) }
+                  { Expression = KCoreLiteral(LiteralValue.String "%04d") } ]
+              )
+            KCoreAppSpine(KCoreName [ "Lit" ], [ { Expression = KCoreLiteral(LiteralValue.String "post") } ]) ] -> ()
+        | other ->
+            failwithf "Unexpected macro fragment list: %A" other
+    | other ->
+        failwithf "Expected prefixed string lowering through top-level macro splice, got %A" other
 
 [<Fact>]
 let ``backend profile aliases normalize to the effective backend identity`` () =

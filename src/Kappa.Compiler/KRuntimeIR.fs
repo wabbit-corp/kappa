@@ -26,7 +26,7 @@ and KRuntimeExpression =
 
 and KRuntimeStringPart =
     | KRuntimeStringText of string
-    | KRuntimeStringInterpolation of KRuntimeExpression
+    | KRuntimeStringInterpolation of expression: KRuntimeExpression * format: string option
 
 and KRuntimePattern =
     | KRuntimeWildcardPattern

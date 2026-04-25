@@ -22,12 +22,9 @@ module internal KRuntimeLowering =
         match typeExpr with
         | TypeSignatures.TypeLevelLiteral _ ->
             typeExpr
-        | TypeSignatures.TypeUniverse None ->
-            typeExpr
-        | TypeSignatures.TypeUniverse(Some universeExpr) ->
-            TypeSignatures.TypeUniverse(Some(eraseRuntimeTypeExpr universeExpr))
+        | TypeSignatures.TypeUniverse _
         | TypeSignatures.TypeIntrinsic _ ->
-            typeExpr
+            TypeSignatures.TypeName([ "Unit" ], [])
         | TypeSignatures.TypeApply(callee, arguments) ->
             TypeSignatures.TypeApply(eraseRuntimeTypeExpr callee, arguments |> List.map eraseRuntimeTypeExpr)
         | TypeSignatures.TypeLambda(parameterName, parameterSort, body) ->
@@ -42,8 +39,25 @@ module internal KRuntimeLowering =
             TypeSignatures.TypeProject(eraseRuntimeTypeExpr target, fieldName)
         | TypeSignatures.TypeVariable name ->
             TypeSignatures.TypeVariable name
-        | TypeSignatures.TypeName(name, arguments) ->
-            TypeSignatures.TypeName(name, arguments |> List.map eraseRuntimeTypeExpr)
+        | TypeSignatures.TypeName(nameSegments, arguments) ->
+            match nameSegments with
+            | [ "Type" ]
+            | [ "Universe" ]
+            | [ "Constraint" ]
+            | [ "Quantity" ]
+            | [ "Region" ]
+            | [ "RecRow" ]
+            | [ "VarRow" ]
+            | [ "EffRow" ]
+            | [ "Label" ]
+            | [ "EffLabel" ]
+            | [ "Syntax" ]
+            | [ "Code" ]
+            | [ "std"; "prelude"; "Syntax" ]
+            | [ "std"; "prelude"; "Code" ] ->
+                TypeSignatures.TypeName([ "Unit" ], [])
+            | _ ->
+                TypeSignatures.TypeName(nameSegments, arguments |> List.map eraseRuntimeTypeExpr)
         | TypeSignatures.TypeArrow(_, parameterType, resultType) ->
             TypeSignatures.TypeArrow(QuantityOmega, eraseRuntimeTypeExpr parameterType, eraseRuntimeTypeExpr resultType)
         | TypeSignatures.TypeEquality(left, _) ->
@@ -165,7 +179,11 @@ module internal KRuntimeLowering =
         | TypeSignatures.TypeName([ "VarRow" ], [])
         | TypeSignatures.TypeName([ "EffRow" ], [])
         | TypeSignatures.TypeName([ "Label" ], [])
-        | TypeSignatures.TypeName([ "EffLabel" ], []) ->
+        | TypeSignatures.TypeName([ "EffLabel" ], [])
+        | TypeSignatures.TypeName([ "Syntax" ], _)
+        | TypeSignatures.TypeName([ "Code" ], _)
+        | TypeSignatures.TypeName([ "std"; "prelude"; "Syntax" ], _)
+        | TypeSignatures.TypeName([ "std"; "prelude"; "Code" ], _) ->
             true
         | _ ->
             false
@@ -175,6 +193,120 @@ module internal KRuntimeLowering =
 
     let private filterRuntimeParameters (parameters: KCoreParameter list) =
         parameters |> List.filter (isCompileTimeKCoreParameter >> not)
+
+    let rec private typeExprContainsCompileTimeOnly typeExpr =
+        if isCompileTimeParameterType typeExpr then
+            true
+        else
+            match typeExpr with
+            | TypeSignatures.TypeApply(callee, arguments) ->
+                typeExprContainsCompileTimeOnly callee || (arguments |> List.exists typeExprContainsCompileTimeOnly)
+            | TypeSignatures.TypeLambda(_, parameterSort, body) ->
+                typeExprContainsCompileTimeOnly parameterSort || typeExprContainsCompileTimeOnly body
+            | TypeSignatures.TypeDelay inner
+            | TypeSignatures.TypeMemo inner
+            | TypeSignatures.TypeForce inner ->
+                typeExprContainsCompileTimeOnly inner
+            | TypeSignatures.TypeProject(target, _) ->
+                typeExprContainsCompileTimeOnly target
+            | TypeSignatures.TypeName(_, arguments) ->
+                arguments |> List.exists typeExprContainsCompileTimeOnly
+            | TypeSignatures.TypeArrow(_, parameterType, resultType) ->
+                typeExprContainsCompileTimeOnly parameterType || typeExprContainsCompileTimeOnly resultType
+            | TypeSignatures.TypeEquality(left, right) ->
+                typeExprContainsCompileTimeOnly left || typeExprContainsCompileTimeOnly right
+            | TypeSignatures.TypeCapture(inner, _) ->
+                typeExprContainsCompileTimeOnly inner
+            | TypeSignatures.TypeRecord fields ->
+                fields |> List.exists (fun field -> typeExprContainsCompileTimeOnly field.Type)
+            | TypeSignatures.TypeUnion members ->
+                members |> List.exists typeExprContainsCompileTimeOnly
+            | TypeSignatures.TypeLevelLiteral _
+            | TypeSignatures.TypeUniverse _
+            | TypeSignatures.TypeIntrinsic _
+            | TypeSignatures.TypeVariable _ ->
+                false
+
+    let rec private typeExprReferencesCompileTimeTrait
+        (compileTimeTraitNames: Set<string>)
+        typeExpr
+        =
+        let referencesChildren =
+            match typeExpr with
+            | TypeSignatures.TypeApply(callee, arguments) ->
+                typeExprReferencesCompileTimeTrait compileTimeTraitNames callee
+                || (arguments |> List.exists (typeExprReferencesCompileTimeTrait compileTimeTraitNames))
+            | TypeSignatures.TypeLambda(_, parameterSort, body) ->
+                typeExprReferencesCompileTimeTrait compileTimeTraitNames parameterSort
+                || typeExprReferencesCompileTimeTrait compileTimeTraitNames body
+            | TypeSignatures.TypeDelay inner
+            | TypeSignatures.TypeMemo inner
+            | TypeSignatures.TypeForce inner ->
+                typeExprReferencesCompileTimeTrait compileTimeTraitNames inner
+            | TypeSignatures.TypeProject(target, _) ->
+                typeExprReferencesCompileTimeTrait compileTimeTraitNames target
+            | TypeSignatures.TypeArrow(_, parameterType, resultType) ->
+                typeExprReferencesCompileTimeTrait compileTimeTraitNames parameterType
+                || typeExprReferencesCompileTimeTrait compileTimeTraitNames resultType
+            | TypeSignatures.TypeEquality(left, right) ->
+                typeExprReferencesCompileTimeTrait compileTimeTraitNames left
+                || typeExprReferencesCompileTimeTrait compileTimeTraitNames right
+            | TypeSignatures.TypeCapture(inner, _) ->
+                typeExprReferencesCompileTimeTrait compileTimeTraitNames inner
+            | TypeSignatures.TypeRecord fields ->
+                fields |> List.exists (fun field -> typeExprReferencesCompileTimeTrait compileTimeTraitNames field.Type)
+            | TypeSignatures.TypeUnion members ->
+                members |> List.exists (typeExprReferencesCompileTimeTrait compileTimeTraitNames)
+            | TypeSignatures.TypeName(_, arguments) ->
+                arguments |> List.exists (typeExprReferencesCompileTimeTrait compileTimeTraitNames)
+            | TypeSignatures.TypeLevelLiteral _
+            | TypeSignatures.TypeUniverse _
+            | TypeSignatures.TypeIntrinsic _
+            | TypeSignatures.TypeVariable _ ->
+                false
+
+        let referencesSelf =
+            match typeExpr with
+            | TypeSignatures.TypeName(([ "Dict" ] | [ "std"; "prelude"; "Dict" ]), [ constraintType ]) ->
+                match constraintType with
+                | TypeSignatures.TypeName(traitNameSegments, _) ->
+                    compileTimeTraitNames.Contains(List.last traitNameSegments)
+                | _ ->
+                    false
+            | TypeSignatures.TypeName([ dictionaryTypeName ], _) ->
+                compileTimeTraitNames
+                |> Seq.exists (fun traitName ->
+                    String.Equals(dictionaryTypeName, TraitRuntime.dictionaryTypeName traitName, StringComparison.Ordinal))
+            | _ ->
+                false
+
+        referencesSelf || referencesChildren
+
+    let private schemeRequiresRuntimeErasure
+        (compileTimeTraitNames: Set<string>)
+        (scheme: TypeSignatures.TypeScheme)
+        =
+        let touches typeExpr =
+            typeExprContainsCompileTimeOnly typeExpr
+            || typeExprReferencesCompileTimeTrait compileTimeTraitNames typeExpr
+
+        let parameterTypes, resultType = TypeSignatures.schemeParts scheme
+
+        touches resultType
+        || (parameterTypes |> List.exists touches)
+        || (scheme.Constraints
+            |> List.exists (fun constraintInfo ->
+                Set.contains constraintInfo.TraitName compileTimeTraitNames
+                || (constraintInfo.Arguments |> List.exists touches)))
+
+    let private tryParseTraitMemberScheme (memberDeclaration: TraitMember) =
+        let tokens = significantTokens memberDeclaration.Tokens
+
+        match tokens with
+        | head :: colon :: rest when Token.isName head && colon.Kind = Colon ->
+            TypeSignatures.parseScheme rest
+        | _ ->
+            None
 
     let private filterRuntimeArguments (keepMask: bool list) (arguments: KCoreArgument list) =
         if List.length keepMask = List.length arguments then
@@ -208,6 +340,45 @@ module internal KRuntimeLowering =
             )
 
     and private lowerKRuntimeExpression runtimeParameterMasks expression =
+        let rec tryDecodeInterpolatedFragments expression =
+            let rec decodeList current =
+                match current with
+                | KCoreName [ "Nil" ] ->
+                    Some []
+                | KCoreAppSpine(
+                    KCoreName [ "Cons" ],
+                    [ { Expression = head }
+                      { Expression = tail } ]
+                  ) ->
+                    decodeFragment head
+                    |> Option.bind (fun decodedHead ->
+                        decodeList tail
+                        |> Option.map (fun decodedTail -> decodedHead :: decodedTail))
+                | _ ->
+                    None
+
+            and decodeFragment fragment =
+                match fragment with
+                | KCoreAppSpine(KCoreName [ "Lit" ], [ { Expression = KCoreLiteral(LiteralValue.String text) } ]) ->
+                    Some(KRuntimeStringText text)
+                | KCoreAppSpine(
+                    KCoreName [ "Interp" ],
+                    [ _
+                      { Expression = KCoreSyntaxQuote inner } ]
+                  ) ->
+                    Some(KRuntimeStringInterpolation(lowerKRuntimeExpression runtimeParameterMasks inner, None))
+                | KCoreAppSpine(
+                    KCoreName [ "InterpFmt" ],
+                    [ _
+                      { Expression = KCoreSyntaxQuote inner }
+                      { Expression = KCoreLiteral(LiteralValue.String formatText) } ]
+                  ) ->
+                    Some(KRuntimeStringInterpolation(lowerKRuntimeExpression runtimeParameterMasks inner, Some formatText))
+                | _ ->
+                    None
+
+            decodeList expression
+
         match expression with
         | KCoreLiteral literal ->
             KRuntimeLiteral literal
@@ -215,9 +386,23 @@ module internal KRuntimeLowering =
             KRuntimeLiteral LiteralValue.Unit
         | KCoreName segments ->
             KRuntimeName segments
+        | KCoreTopLevelSyntaxSplice inner ->
+            match inner with
+            | KCoreTraitCall(
+                "InterpolatedMacro",
+                "buildInterpolated",
+                KCoreName [ prefix ],
+                [ fragments ]
+              ) ->
+                match tryDecodeInterpolatedFragments fragments with
+                | Some parts ->
+                    KRuntimePrefixedString(prefix, parts)
+                | None ->
+                    lowerKRuntimeExpression runtimeParameterMasks inner
+            | _ ->
+                lowerKRuntimeExpression runtimeParameterMasks inner
         | KCoreSyntaxQuote inner
         | KCoreSyntaxSplice inner
-        | KCoreTopLevelSyntaxSplice inner
         | KCoreCodeQuote inner
         | KCoreCodeSplice inner ->
             lowerKRuntimeExpression runtimeParameterMasks inner
@@ -309,7 +494,7 @@ module internal KRuntimeLowering =
                 |> List.map (function
                     | KCoreStringText text -> KRuntimeStringText text
                     | KCoreStringInterpolation inner ->
-                        KRuntimeStringInterpolation(lowerKRuntimeExpression runtimeParameterMasks inner))
+                        KRuntimeStringInterpolation(lowerKRuntimeExpression runtimeParameterMasks inner, None))
             )
 
     let private isPrivateByDefaultAttributes attributes =
@@ -329,112 +514,124 @@ module internal KRuntimeLowering =
         not declaration.IsOpaque
         && isExportedVisibility moduleDump.ModuleAttributes declaration.Visibility
 
-    let private constructorFieldNames (constructor: DataConstructor) =
+    let private isCompileTimeOnlyConstructorParameterTokens parameterTokens =
+        match parameterTokens |> significantTokens with
+        | { Kind = AtSign } :: _ ->
+            true
+        | { Kind = IntegerLiteral; Text = "0" } :: _ ->
+            true
+        | _ ->
+            false
+
+    let private isCompileTimeOnlyTypeExpr typeExpr =
+        match typeExpr with
+        | TypeSignatures.TypeUniverse _
+        | TypeSignatures.TypeIntrinsic _ ->
+            true
+        | TypeSignatures.TypeName(nameSegments, _) ->
+            match nameSegments with
+            | [ "Type" ]
+            | [ "Universe" ]
+            | [ "Constraint" ]
+            | [ "Quantity" ]
+            | [ "Region" ]
+            | [ "RecRow" ]
+            | [ "VarRow" ]
+            | [ "EffRow" ]
+            | [ "Label" ]
+            | [ "EffLabel" ]
+            | [ "Syntax" ]
+            | [ "Code" ]
+            | [ "std"; "prelude"; "Syntax" ]
+            | [ "std"; "prelude"; "Code" ] ->
+                true
+            | _ ->
+                false
+        | _ ->
+            false
+
+    let private runtimeConstructorParameterTypeTokens parameterTokens =
+        let typeTokens =
+            match parameterTokens |> List.tryFindIndex (fun token -> token.Kind = Colon) with
+            | Some colonIndex when colonIndex + 1 < parameterTokens.Length ->
+                parameterTokens |> List.skip (colonIndex + 1)
+            | _ ->
+                parameterTokens
+
+        typeTokens
+
+    let private tryConstructorRuntimeSignatureFieldTypes (constructor: DataConstructor) =
+        let significant = constructor.Tokens |> significantTokens
+
+        match significant with
+        | _ :: { Kind = Colon } :: typeTokens ->
+            TypeSignatures.parseScheme typeTokens
+            |> Option.map (fun scheme ->
+                let parameterTypes, _ = TypeSignatures.schemeParts scheme
+
+                parameterTypes
+                |> List.filter (isCompileTimeParameterType >> not)
+                |> List.map eraseRuntimeTypeExpr)
+        | _ ->
+            None
+
+    let private runtimeConstructorParameterTokenGroups (constructor: DataConstructor) =
+        TypeSignatures.constructorParameterTokenGroups constructor
+        |> List.filter (fun parameterTokens ->
+            not (isCompileTimeOnlyConstructorParameterTokens parameterTokens)
+            && (runtimeConstructorParameterTypeTokens parameterTokens
+                |> TypeSignatures.parseType
+                |> Option.map isCompileTimeOnlyTypeExpr
+                |> Option.defaultValue false
+                |> not))
+
+    let private runtimeConstructorParameters (constructor: DataConstructor) =
         match constructor.Parameters with
         | Some parameters ->
-            parameters |> List.map (fun parameter -> parameter.ParameterName)
+            parameters
+            |> List.filter (fun parameter ->
+                not parameter.ParameterIsImplicit
+                && parameter.ParameterQuantity <> Some QuantityZero
+                && (parameter.ParameterTypeTokens
+                    |> TypeSignatures.parseType
+                    |> Option.map isCompileTimeOnlyTypeExpr
+                    |> Option.defaultValue false
+                    |> not))
+            |> List.map Choice1Of2
         | None ->
-            let significant =
-                constructor.Tokens
-                |> List.filter (fun token ->
-                    match token.Kind with
-                    | Newline
-                    | Indent
-                    | Dedent
-                    | EndOfFile -> false
-                    | _ -> true)
+            runtimeConstructorParameterTokenGroups constructor |> List.map Choice2Of2
 
-            let argumentTokens =
-                match significant with
-                | leftToken :: operatorToken :: rightToken :: rest
-                    when leftToken.Kind = LeftParen && operatorToken.Kind = Operator && rightToken.Kind = RightParen ->
-                    rest
-                | _ :: rest ->
-                    rest
-                | [] ->
-                    []
-
-            let takeAtom remaining =
-                match remaining with
-                | [] ->
-                    [], []
-                | first :: _ when first.Kind = LeftParen ->
-                    let tokenArray = remaining |> List.toArray
-                    let current = ResizeArray<Token>()
-                    let mutable depth = 0
-                    let mutable index = 0
-                    let mutable keepReading = true
-
-                    while keepReading && index < tokenArray.Length do
-                        let token = tokenArray[index]
-                        index <- index + 1
-
-                        match token.Kind with
-                        | LeftParen ->
-                            depth <- depth + 1
-                            if depth > 1 then
-                                current.Add(token)
-                        | RightParen ->
-                            if depth > 1 then
-                                current.Add(token)
-
-                            depth <- depth - 1
-
-                            if depth = 0 then
-                                keepReading <- false
+    let private constructorFieldNames (constructor: DataConstructor) =
+        match tryConstructorRuntimeSignatureFieldTypes constructor with
+        | Some fieldTypes ->
+            List.replicate fieldTypes.Length None
+        | None ->
+            runtimeConstructorParameters constructor
+            |> List.map (function
+                | Choice1Of2 parameter ->
+                    parameter.ParameterName
+                | Choice2Of2 groupTokens ->
+                    match groupTokens |> List.tryFindIndex (fun token -> token.Kind = Colon) with
+                    | Some colonIndex when colonIndex > 0 ->
+                        match groupTokens |> List.take colonIndex with
+                        | [ nameToken ] when Token.isName nameToken ->
+                            Some(SyntaxFacts.trimIdentifierQuotes nameToken.Text)
                         | _ ->
-                            current.Add(token)
-
-                    List.ofSeq current, List.ofArray tokenArray[index ..]
-                | first :: rest ->
-                    [ first ], rest
-
-            let groups = ResizeArray<Token list>()
-            let mutable position = 0
-            let tokenArray = argumentTokens |> List.toArray
-
-            while position < tokenArray.Length do
-                let groupTokens, remaining = takeAtom (List.ofArray tokenArray[position ..])
-
-                if not (List.isEmpty groupTokens) then
-                    groups.Add(groupTokens)
-
-                position <- tokenArray.Length - remaining.Length
-
-            groups
-            |> Seq.toList
-            |> List.map (fun groupTokens ->
-                match groupTokens |> List.tryFindIndex (fun token -> token.Kind = Colon) with
-                | Some colonIndex when colonIndex > 0 ->
-                    match groupTokens |> List.take colonIndex with
-                    | [ nameToken ] when Token.isName nameToken ->
-                        Some(SyntaxFacts.trimIdentifierQuotes nameToken.Text)
+                            None
                     | _ ->
-                        None
-                | _ ->
-                    None)
+                        None)
 
     let private constructorFieldTypeTexts (constructor: DataConstructor) =
-        match constructor.Parameters with
-        | Some parameters ->
-            parameters |> List.map (fun parameter -> normalizeTypeTokens parameter.ParameterTypeTokens)
+        match tryConstructorRuntimeSignatureFieldTypes constructor with
+        | Some fieldTypes ->
+            fieldTypes |> List.map TypeSignatures.toText
         | None ->
-            let significant = constructor.Tokens |> significantTokens
-
-            match significant with
-            | _ :: { Kind = Colon } :: typeTokens ->
-                match TypeSignatures.parseScheme typeTokens with
-                | Some scheme ->
-                    let parameterTypes, _ = TypeSignatures.schemeParts scheme
-                    parameterTypes |> List.map TypeSignatures.toText
-                | None ->
-                    constructor
-                    |> TypeSignatures.constructorFieldTokenGroups
-                    |> List.map normalizeTypeTokens
-            | _ ->
-                constructor
-                |> TypeSignatures.constructorFieldTokenGroups
-                |> List.map normalizeTypeTokens
+            runtimeConstructorParameters constructor
+            |> List.map (function
+                | Choice1Of2 parameter ->
+                    normalizeTypeTokens parameter.ParameterTypeTokens |> eraseRuntimeTypeText
+                | Choice2Of2 groupTokens ->
+                    runtimeConstructorParameterTypeTokens groupTokens |> normalizeTypeTokens |> eraseRuntimeTypeText)
 
     let private isCompileTimeOnlyBindingBody body =
         match body with
@@ -494,6 +691,24 @@ module internal KRuntimeLowering =
             parameters, Some(runtimeValueTypeExpr resultType |> TypeSignatures.toText))
 
     let lowerKRuntimeModule (coreModule: KCoreModule) : KRuntimeModule =
+        let compileTimeOnlyTraitNames =
+            coreModule.Declarations
+            |> List.choose (fun declaration ->
+                match declaration.Source with
+                | TraitDeclarationNode traitDeclaration ->
+                    let isCompileTimeOnlyTrait =
+                        traitDeclaration.Members
+                        |> List.choose tryParseTraitMemberScheme
+                        |> List.exists (schemeRequiresRuntimeErasure Set.empty)
+
+                    if isCompileTimeOnlyTrait then
+                        Some traitDeclaration.Name
+                    else
+                        None
+                | _ ->
+                    None)
+            |> Set.ofList
+
         let moduleTraitArities =
             coreModule.Declarations
             |> List.choose (fun declaration ->
@@ -523,7 +738,22 @@ module internal KRuntimeLowering =
             coreModule.Declarations
             |> List.choose (fun declaration ->
                 match declaration.Binding with
-                | Some binding when binding.Name.IsSome && not (isCompileTimeOnlyBindingBody binding.Body) ->
+                | Some binding
+                    when binding.Name.IsSome
+                         && not (isCompileTimeOnlyBindingBody binding.Body)
+                         && not (
+                             (binding.Parameters |> List.exists (fun parameter ->
+                                 parameter.Type
+                                 |> Option.map (typeExprReferencesCompileTimeTrait compileTimeOnlyTraitNames)
+                                 |> Option.defaultValue false))
+                             || (binding.ReturnType
+                                 |> Option.map (fun returnType ->
+                                     typeExprContainsCompileTimeOnly returnType
+                                     || typeExprReferencesCompileTimeTrait compileTimeOnlyTraitNames returnType)
+                                 |> Option.defaultValue false)
+                             || (binding.Name
+                                 |> Option.bind TraitRuntime.tryParseDispatchBindingName
+                                 |> Option.exists (fun (traitName, _) -> Set.contains traitName compileTimeOnlyTraitNames))) ->
                     let loweredBody = binding.Body |> Option.map (lowerKRuntimeExpression runtimeParameterMasks)
                     let loweredParameters = binding.Parameters |> filterRuntimeParameters |> List.map lowerRuntimeParameter
                     let loweredReturnType = binding.ReturnTypeText |> Option.map runtimeValueTypeText
@@ -551,18 +781,22 @@ module internal KRuntimeLowering =
                 |> List.choose (fun declaration ->
                     match declaration.Source with
                     | ExpectDeclarationNode (ExpectTermDeclaration termDeclaration) ->
-                        intrinsicRuntimeSignature termDeclaration
-                        |> Option.map (fun signature -> termDeclaration.Name, signature)
+                        TypeSignatures.parseScheme termDeclaration.TypeTokens
+                        |> Option.bind (fun scheme ->
+                            if schemeRequiresRuntimeErasure compileTimeOnlyTraitNames scheme then
+                                None
+                            else
+                                intrinsicRuntimeSignature termDeclaration
+                                |> Option.map (fun signature -> termDeclaration.Name, signature))
                     | _ ->
                         None)
                 |> Map.ofList
 
             coreModule.IntrinsicTerms
+            |> List.filter intrinsicSignatures.ContainsKey
             |> List.map (fun name ->
                 let parameters, returnTypeText =
-                    intrinsicSignatures
-                    |> Map.tryFind name
-                    |> Option.defaultValue ([], None)
+                    intrinsicSignatures[name]
 
                 { Name = name
                   Parameters = parameters
@@ -584,11 +818,13 @@ module internal KRuntimeLowering =
                         let constructors : KRuntimeConstructor list =
                             dataDeclaration.Constructors
                             |> List.map (fun constructor ->
+                                let fieldTypeTexts = constructorFieldTypeTexts constructor
+
                                 { Name = constructor.Name
-                                  Arity = constructor.Arity
+                                  Arity = fieldTypeTexts.Length
                                   TypeName = dataDeclaration.Name
                                   FieldNames = constructorFieldNames constructor
-                                  FieldTypeTexts = constructorFieldTypeTexts constructor
+                                  FieldTypeTexts = fieldTypeTexts
                                   Provenance =
                                     { declaration.Provenance with
                                         DeclarationName = Some constructor.Name
@@ -622,7 +858,7 @@ module internal KRuntimeLowering =
             coreModule.Declarations
             |> List.choose (fun declaration ->
                 match declaration.Source with
-                | TraitDeclarationNode traitDeclaration ->
+                | TraitDeclarationNode traitDeclaration when not (Set.contains traitDeclaration.Name compileTimeOnlyTraitNames) ->
                     Some
                         { Name = traitDeclaration.Name
                           TypeParameterCount =
@@ -635,7 +871,7 @@ module internal KRuntimeLowering =
             coreModule.Declarations
             |> List.choose (fun declaration ->
                 match declaration.Source with
-                | InstanceDeclarationNode instanceDeclaration ->
+                | InstanceDeclarationNode instanceDeclaration when not (Set.contains instanceDeclaration.TraitName compileTimeOnlyTraitNames) ->
                     let instanceKey = TraitRuntime.instanceKeyFromTokens instanceDeclaration.HeaderTokens
                     let argumentCount =
                         moduleTraitArities

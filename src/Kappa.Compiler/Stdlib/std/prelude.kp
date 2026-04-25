@@ -56,8 +56,8 @@ data Dec (p : Type) : Type =
 
 data SyntaxFragment : Type =
     Lit String
-    Interp String
-    InterpFmt String String
+    Interp (@t : Type) (Syntax t)
+    InterpFmt (@t : Type) (Syntax t) String
 
 data InterruptTag : Type =
     Requested
@@ -116,6 +116,7 @@ type Float = Double
 expect type Bytes
 expect type Array (a : Type)
 expect type Ref (a : Type)
+expect type Syntax (t : Type)
 expect type Set (a : Type)
 expect type Map (k : Type) (v : Type)
 expect type Dict (c : Constraint)
@@ -155,7 +156,8 @@ trait Filterable (f : Type -> Type)
 trait FilterMap (f : Type -> Type)
 trait Monoid (a : Type)
 trait Iterator (it : Type)
-trait InterpolatedMacro (t : Type)
+trait InterpolatedMacro (t : Type) =
+    buildInterpolated : List SyntaxFragment -> Syntax t
 trait IntoQuery (src : Type)
 trait FromComprehensionPlan (c : Type)
 trait FromComprehensionRaw (c : Type)
@@ -247,10 +249,10 @@ expect term readTVar : TVar a -> STM a
 expect term writeTVar : TVar a -> a -> STM Unit
 expect term retry : STM a
 expect term check : Bool -> STM Unit
-expect term f : SyntaxFragment -> SyntaxFragment
-expect term re : SyntaxFragment -> SyntaxFragment
-expect term b : SyntaxFragment -> SyntaxFragment
-expect term type : SyntaxFragment -> SyntaxFragment
+expect term f : Dict (InterpolatedMacro String)
+expect term re : Dict (InterpolatedMacro String)
+expect term b : Dict (InterpolatedMacro String)
+expect term type : Dict (InterpolatedMacro String)
 expect term println : String -> UIO Unit
 expect term print : String -> UIO Unit
 expect term printInt : Int -> UIO Unit

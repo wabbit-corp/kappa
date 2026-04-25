@@ -577,7 +577,7 @@ module ResourceChecking =
                 for part in parts do
                     match part with
                     | StringText _ -> ()
-                    | StringInterpolation inner -> yield! expressionNames inner
+                    | StringInterpolation(inner, _) -> yield! expressionNames inner
         }
 
     and private doStatementNames (statement: SurfaceDoStatement) =
@@ -1005,6 +1005,31 @@ module ResourceChecking =
             |> Option.orElse valueType
 
         extendPatternLocalTypes signatures localTypes valueType binding.Pattern
+
+    let private inferConservativeFallbackBindingType value =
+        match value with
+        | Lambda(parameters, _) ->
+            let resultType = TypeSignatures.TypeVariable "__kappa_shadow_result"
+
+            parameters
+            |> List.rev
+            |> List.fold
+                (fun current parameter ->
+                    let parameterType =
+                        parameter.TypeTokens
+                        |> Option.bind TypeSignatures.parseType
+                        |> Option.defaultValue (TypeSignatures.TypeVariable $"__kappa_shadow_param_{parameter.Name}")
+
+                    let quantity =
+                        if parameter.IsInout then
+                            QuantityOne
+                        else
+                            parameter.Quantity |> Option.defaultValue QuantityOmega
+
+                    TypeSignatures.TypeArrow(quantity, parameterType, current))
+                resultType
+        | _ ->
+            TypeSignatures.TypeVariable "__kappa_shadow_local"
 
     let rec private typeContainsCaptureAnnotation typeExpr =
         match typeExpr with
@@ -1706,7 +1731,7 @@ module ResourceChecking =
             let parts =
                 parts
                 |> List.map (function
-                    | StringInterpolation inner -> StringInterpolation(rewrite inner)
+                    | StringInterpolation(inner, format) -> StringInterpolation(rewrite inner, format)
                     | StringText text -> StringText text)
 
             PrefixedString(prefix, parts)
@@ -2862,7 +2887,7 @@ module ResourceChecking =
         | PrefixedString(_, parts) ->
             parts
             |> List.sumBy (function
-                | StringInterpolation inner -> recurse inner
+                | StringInterpolation(inner, _) -> recurse inner
                 | StringText _ -> 0)
         | Literal _
         | NumericLiteral _
@@ -4181,6 +4206,7 @@ module ResourceChecking =
 
             let nextLocalTypes =
                 tryInferConservativeExpressionType signatures localTypes value
+                |> Option.orElseWith (fun () -> Some(inferConservativeFallbackBindingType value))
                 |> fun valueType -> extendBindingLocalTypes signatures localTypes valueType binding
 
             let state =
@@ -4599,7 +4625,7 @@ module ResourceChecking =
             |> List.fold (fun current part ->
                 match part with
                 | StringText _ -> current
-                | StringInterpolation inner ->
+                | StringInterpolation(inner, _) ->
                     current
                     |> noteValueDemandingNameUse document inner
                     |> fun next -> checkExpression projectionSummaries document signatures localTypes next inner) state
@@ -5365,6 +5391,7 @@ module ResourceChecking =
 
                 let nextLocalTypes =
                     tryInferConservativeExpressionType signatures localTypes expression
+                    |> Option.orElseWith (fun () -> Some(inferConservativeFallbackBindingType expression))
                     |> fun valueType -> extendBindingLocalTypes signatures localTypes valueType binding
 
                 let projectionDescriptorAlias =
@@ -5418,6 +5445,7 @@ module ResourceChecking =
 
                 let successLocalTypes =
                     tryInferConservativeExpressionType signatures localTypes expression
+                    |> Option.orElseWith (fun () -> Some(inferConservativeFallbackBindingType expression))
                     |> fun valueType -> extendBindingLocalTypes signatures localTypes valueType binding
 
                 let current =
@@ -5540,6 +5568,7 @@ module ResourceChecking =
                 let nextLocalTypes =
                     tryInferConservativeExpressionType signatures localTypes expression
                     |> Option.map unwrapBindPayloadType
+                    |> Option.orElseWith (fun () -> Some(inferConservativeFallbackBindingType expression))
                     |> fun valueType -> extendBindingLocalTypes signatures localTypes valueType binding
 
                 loop nextLocalTypes current rest
@@ -5603,6 +5632,7 @@ module ResourceChecking =
                 let nextLocalTypes =
                     tryInferConservativeExpressionType signatures localTypes expression
                     |> Option.map unwrapIoType
+                    |> Option.orElseWith (fun () -> Some(inferConservativeFallbackBindingType expression))
                     |> fun valueType -> extendBindingLocalTypes signatures localTypes valueType binding
 
                 loop nextLocalTypes current rest
@@ -5683,7 +5713,7 @@ module ResourceChecking =
                     | PrefixedString(_, parts) ->
                         parts
                         |> List.exists (function
-                            | StringInterpolation inner -> containsEscapingAbruptControl inner
+                            | StringInterpolation(inner, _) -> containsEscapingAbruptControl inner
                             | StringText _ -> false)
                     | Literal _
                     | NumericLiteral _

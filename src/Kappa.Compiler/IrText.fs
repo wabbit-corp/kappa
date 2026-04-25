@@ -237,7 +237,8 @@ module internal IrText =
                 parts
                 |> List.map (function
                     | KRuntimeStringText text -> $"text:{text}"
-                    | KRuntimeStringInterpolation inner -> $"interp:{runtimeExpressionText inner}")
+                    | KRuntimeStringInterpolation(inner, None) -> $"interp:{runtimeExpressionText inner}"
+                    | KRuntimeStringInterpolation(inner, Some format) -> $"interpfmt:{runtimeExpressionText inner}:{format}")
                 |> String.concat " | "
 
             $"({prefix}-string {partText})"

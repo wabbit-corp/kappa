@@ -359,7 +359,7 @@ type SurfaceExpression =
 
 and SurfaceInterpolatedStringPart =
     | StringText of string
-    | StringInterpolation of SurfaceExpression
+    | StringInterpolation of expression: SurfaceExpression * format: string option
 
 and SurfaceSafeNavigationMember =
     { Segments: string list

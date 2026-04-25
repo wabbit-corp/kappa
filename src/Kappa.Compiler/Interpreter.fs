@@ -516,7 +516,7 @@ module Interpreter =
                             match part with
                             | KRuntimeStringText text ->
                                 ok (text :: segments)
-                            | KRuntimeStringInterpolation expression ->
+                            | KRuntimeStringInterpolation(expression, _) ->
                                 evaluateExpression scope expression
                                 |> Result.bind renderInterpolatedValue
                                 |> Result.map (fun text -> text :: segments)))

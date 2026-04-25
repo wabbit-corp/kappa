@@ -2645,6 +2645,77 @@ type private ExpressionParser
         let parts = ResizeArray<SurfaceInterpolatedStringPart>()
         let mutable closed = false
 
+        let trySplitInterpolationTokensAtFormatColon (tokens: Token list) =
+            let tokenArray = tokens |> List.toArray
+            let mutable parenDepth = 0
+            let mutable bracketDepth = 0
+            let mutable braceDepth = 0
+            let mutable setBraceDepth = 0
+            let mutable interpolatedStringDepth = 0
+            let mutable interpolationDepth = 0
+            let mutable splitIndex = -1
+            let mutable index = 0
+
+            while index < tokenArray.Length && splitIndex < 0 do
+                match tokenArray[index].Kind with
+                | LeftParen ->
+                    parenDepth <- parenDepth + 1
+                | RightParen ->
+                    parenDepth <- max 0 (parenDepth - 1)
+                | LeftBracket ->
+                    bracketDepth <- bracketDepth + 1
+                | RightBracket ->
+                    bracketDepth <- max 0 (bracketDepth - 1)
+                | LeftBrace ->
+                    braceDepth <- braceDepth + 1
+                | RightBrace ->
+                    braceDepth <- max 0 (braceDepth - 1)
+                | LeftSetBrace ->
+                    setBraceDepth <- setBraceDepth + 1
+                | RightSetBrace ->
+                    setBraceDepth <- max 0 (setBraceDepth - 1)
+                | InterpolatedStringStart ->
+                    interpolatedStringDepth <- interpolatedStringDepth + 1
+                | InterpolatedStringEnd ->
+                    interpolatedStringDepth <- max 0 (interpolatedStringDepth - 1)
+                | InterpolationStart ->
+                    interpolationDepth <- interpolationDepth + 1
+                | InterpolationEnd ->
+                    interpolationDepth <- max 0 (interpolationDepth - 1)
+                | Colon
+                    when parenDepth = 0
+                         && bracketDepth = 0
+                         && braceDepth = 0
+                         && setBraceDepth = 0
+                         && interpolatedStringDepth = 0
+                         && interpolationDepth = 0 ->
+                    splitIndex <- index
+                | _ ->
+                    ()
+
+                index <- index + 1
+
+            if splitIndex < 0 then
+                None
+            else
+                Some(
+                    tokenArray[0 .. splitIndex - 1] |> Array.toList,
+                    tokenArray[splitIndex],
+                    tokenArray[splitIndex + 1 ..] |> Array.toList
+                )
+
+        let normalizeInterpolationFormatText (text: string) =
+            let trimmedAfterColon =
+                if text.StartsWith(" ", StringComparison.Ordinal) then
+                    text.Substring(1)
+                else
+                    text
+
+            if trimmedAfterColon.EndsWith(" ", StringComparison.Ordinal) then
+                trimmedAfterColon.Substring(0, trimmedAfterColon.Length - 1)
+            else
+                trimmedAfterColon
+
         while not closed && this.Current.Kind <> EndOfFile do
             match this.Current.Kind with
             | StringTextSegment ->
@@ -2658,8 +2729,38 @@ type private ExpressionParser
                 parts.Add(StringText text)
             | InterpolationStart ->
                 this.Advance() |> ignore
-                let expression = this.ParseExpression(0)
-                parts.Add(StringInterpolation expression)
+                let interpolationTokens = ResizeArray<Token>()
+                let mutable nestedInterpolationDepth = 0
+
+                while this.Current.Kind <> EndOfFile
+                      && not (this.Current.Kind = InterpolationEnd && nestedInterpolationDepth = 0) do
+                    let token = this.Advance()
+
+                    match token.Kind with
+                    | InterpolationStart ->
+                        nestedInterpolationDepth <- nestedInterpolationDepth + 1
+                    | InterpolationEnd when nestedInterpolationDepth > 0 ->
+                        nestedInterpolationDepth <- nestedInterpolationDepth - 1
+                    | _ ->
+                        ()
+
+                    interpolationTokens.Add(token)
+
+                let expressionTokens, formatText =
+                    let tokens = List.ofSeq interpolationTokens
+
+                    match trySplitInterpolationTokensAtFormatColon tokens with
+                    | Some(expressionTokens, colonToken, formatTokens) when this.Current.Kind = InterpolationEnd ->
+                        let formatSpan =
+                            let closingToken = this.Current
+                            TextSpan.FromBounds(colonToken.Span.End, closingToken.Span.Start)
+
+                        expressionTokens, Some(normalizeInterpolationFormatText (source.Slice formatSpan))
+                    | _ ->
+                        tokens, None
+
+                let expression = this.ParseStandaloneExpression expressionTokens
+                parts.Add(StringInterpolation(expression, formatText))
 
                 if this.Current.Kind = InterpolationEnd then
                     this.Advance() |> ignore

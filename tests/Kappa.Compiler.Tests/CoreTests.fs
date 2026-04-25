@@ -613,9 +613,9 @@ let ``parser captures interpolated strings with nested expressions`` () =
             PrefixedString(
                 "f",
                 [ StringText "test = "
-                  StringInterpolation(Literal(LiteralValue.String "test"))
+                  StringInterpolation(Literal(LiteralValue.String "test"), None)
                   StringText " and "
-                  StringInterpolation(Name [ "value" ]) ]
+                  StringInterpolation(Name [ "value" ], None) ]
             )
           ) -> ()
         | other ->

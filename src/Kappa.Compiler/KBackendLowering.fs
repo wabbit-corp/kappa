@@ -478,7 +478,7 @@ module internal KBackendLowering =
                         match part with
                         | KRuntimeStringText _ ->
                             state
-                        | KRuntimeStringInterpolation inner ->
+                        | KRuntimeStringInterpolation(inner, _) ->
                             Set.union state (collectClosureCaptures locals bound inner))
                     Set.empty
 
@@ -1030,7 +1030,7 @@ module internal KBackendLowering =
                         | KRuntimeStringText text :: rest ->
                             lowerStringParts rest
                             |> Result.map (fun loweredRest -> BackendStringText text :: loweredRest)
-                        | KRuntimeStringInterpolation inner :: rest ->
+                        | KRuntimeStringInterpolation(inner, _) :: rest ->
                             lowerExpression scopeLabel locals inner
                             |> Result.bind (fun (loweredInner, _) ->
                                 lowerStringParts rest

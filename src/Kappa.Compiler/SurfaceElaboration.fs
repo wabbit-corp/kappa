@@ -1045,7 +1045,7 @@ module SurfaceElaboration =
                     parts
                     |> List.map (function
                         | StringText _ as part -> part
-                        | StringInterpolation inner -> StringInterpolation(rewrite inner))
+                        | StringInterpolation(inner, format) -> StringInterpolation(rewrite inner, format))
                 )
             | Literal _
             | NumericLiteral _
@@ -1168,7 +1168,7 @@ module SurfaceElaboration =
                     parts
                     |> List.map (function
                         | StringText text -> StringText text
-                        | StringInterpolation inner -> StringInterpolation(rewrite inner))
+                        | StringInterpolation(inner, format) -> StringInterpolation(rewrite inner, format))
                 )
             | Literal _
             | NumericLiteral _
@@ -1263,7 +1263,7 @@ module SurfaceElaboration =
                     parts
                     |> List.map (function
                         | StringText text -> StringText text
-                        | StringInterpolation inner -> StringInterpolation(rewrite inner))
+                        | StringInterpolation(inner, format) -> StringInterpolation(rewrite inner, format))
                 )
             | Literal _
             | NumericLiteral _
@@ -1454,7 +1454,7 @@ module SurfaceElaboration =
                     parts
                     |> List.map (function
                         | StringText _ as part -> part
-                        | StringInterpolation inner -> StringInterpolation(rewrite activeAliases inner))
+                        | StringInterpolation(inner, format) -> StringInterpolation(rewrite activeAliases inner, format))
                 )
             | Literal _
             | NumericLiteral _
@@ -1530,6 +1530,29 @@ module SurfaceElaboration =
 
     let private tryParseReturnTypeTokens tokens =
         tryParseReturnTypeType tokens |> Option.map typeTextOf
+
+    let private freshUnknownLocalType (freshCounter: int ref) =
+        let name = $"__kappa_local_t{freshCounter.Value}"
+        freshCounter.Value <- freshCounter.Value + 1
+        TypeVariable name
+
+    let private inferFallbackLocalType (freshCounter: int ref) expression =
+        match expression with
+        | Lambda(parameters, _) ->
+            let resultType = freshUnknownLocalType freshCounter
+
+            parameters
+            |> List.rev
+            |> List.fold
+                (fun current parameter ->
+                    let parameterType =
+                        tryParseParameterType parameter
+                        |> Option.defaultValue (freshUnknownLocalType freshCounter)
+
+                    TypeArrow(parameter.Quantity |> Option.defaultValue QuantityOmega, parameterType, current))
+                resultType
+        | _ ->
+            freshUnknownLocalType freshCounter
 
     let private tryParseLetDefinitionScheme (definition: LetDefinition) =
         match definition.ReturnTypeTokens |> Option.bind TypeSignatures.parseType with
@@ -3213,6 +3236,36 @@ module SurfaceElaboration =
             freshCounter.Value <- freshCounter.Value + instance.Forall.Length
             snd (TypeSignatures.schemeParts instance))
 
+    let private tryInterpolatedMacroResultType
+        (aliases: Map<string, TypeAliasInfo>)
+        (typeExpr: TypeExpr)
+        =
+        let normalize = normalizeTypeAliases aliases
+
+        match normalize typeExpr with
+        | TypeName(([ "Dict" ] | [ "std"; "prelude"; "Dict" ]), [ dictionaryConstraint ]) ->
+            match normalize dictionaryConstraint with
+            | TypeName(([ "InterpolatedMacro" ] | [ "std"; "prelude"; "InterpolatedMacro" ]), [ resultType ]) ->
+                Some resultType
+            | _ ->
+                None
+        | TypeName([ dictionaryTypeName ], [ resultType ])
+            when String.Equals(dictionaryTypeName, TraitRuntime.dictionaryTypeName "InterpolatedMacro", StringComparison.Ordinal) ->
+            Some resultType
+        | _ ->
+            None
+
+    let private tryInferPrefixedStringMacroResultType
+        (environment: BindingLoweringEnvironment)
+        (freshCounter: int ref)
+        (localTypes: Map<string, TypeExpr>)
+        prefix
+        =
+        localTypes
+        |> Map.tryFind prefix
+        |> Option.orElseWith (fun () -> instantiateVisibleBindingResultType environment freshCounter prefix)
+        |> Option.bind (tryInterpolatedMacroResultType environment.VisibleTypeAliases)
+
     let private tryInferVisibleAppliedType
         (aliases: Map<string, TypeAliasInfo>)
         (inferArgumentType: SurfaceExpression -> TypeExpr option)
@@ -4184,7 +4237,12 @@ module SurfaceElaboration =
                 | Some valueType ->
                     extendBindingLocalTypes environment freshCounter localTypes binding (Some valueType)
                 | None ->
-                    localTypes
+                    extendBindingLocalTypes
+                        environment
+                        freshCounter
+                        localTypes
+                        binding
+                        (Some(inferFallbackLocalType freshCounter value))
 
             let bodyForInference =
                 match bindingNames, tryResolveScopedStaticObject environment value with
@@ -4429,8 +4487,8 @@ module SurfaceElaboration =
                             None))
             | _ ->
                 None
-        | PrefixedString _ ->
-            Some stringType
+        | PrefixedString(prefix, _) ->
+            tryInferPrefixedStringMacroResultType environment freshCounter localTypes prefix
 
     and private inferValidationDoResultType
         (environment: BindingLoweringEnvironment)
@@ -5311,7 +5369,7 @@ module SurfaceElaboration =
                     | PrefixedString(_, parts) ->
                         for part in parts do
                             match part with
-                            | StringInterpolation inner -> yield! loop inner
+                            | StringInterpolation(inner, _) -> yield! loop inner
                             | StringText _ -> ()
                     | Literal _
                     | NumericLiteral _
@@ -5706,7 +5764,7 @@ module SurfaceElaboration =
                     | PrefixedString(_, parts) ->
                         parts
                         |> List.collect (function
-                            | StringInterpolation inner -> loop inner
+                            | StringInterpolation(inner, _) -> loop inner
                             | StringText _ -> [])
                     | Literal _
                     | NumericLiteral _
@@ -6074,7 +6132,7 @@ module SurfaceElaboration =
                             parts
                             |> List.map (function
                                 | StringText text -> StringText text
-                                | StringInterpolation inner -> StringInterpolation(rewrite inner))
+                                | StringInterpolation(inner, format) -> StringInterpolation(rewrite inner, format))
                         )
                     | Literal _
                     | NumericLiteral _
@@ -6467,7 +6525,7 @@ module SurfaceElaboration =
                 parts
                 |> List.collect (function
                     | StringText _ -> []
-                    | StringInterpolation inner -> recurse inner)
+                    | StringInterpolation(inner, _) -> recurse inner)
 
         and validateDoStatements locals refinements lexicalNames statements =
             match statements with
@@ -6646,7 +6704,7 @@ module SurfaceElaboration =
                 parts
                 |> List.collect (function
                     | StringText _ -> []
-                    | StringInterpolation inner -> recurse inner)
+                    | StringInterpolation(inner, _) -> recurse inner)
             | Literal _
             | NumericLiteral _
             | KindQualifiedName _
@@ -6875,7 +6933,7 @@ module SurfaceElaboration =
                 parts
                 |> List.collect (function
                     | StringText _ -> []
-                    | StringInterpolation inner -> recurse inner)
+                    | StringInterpolation(inner, _) -> recurse inner)
             | Literal _
             | NumericLiteral _
             | KindQualifiedName _
@@ -7093,7 +7151,7 @@ module SurfaceElaboration =
                     parts
                     |> List.collect (function
                         | StringText _ -> []
-                        | StringInterpolation inner -> recurse inner)
+                        | StringInterpolation(inner, _) -> recurse inner)
                 | Literal _
                 | NumericLiteral _
                 | KindQualifiedName _
@@ -7546,8 +7604,34 @@ module SurfaceElaboration =
                     Set.ofList [ "data"; "expect"; "export"; "import"; "instance"; "let"; "module"; "opaque"; "private"; "projection"; "public"; "trait"; "type" ]
 
                 let exposesRuntimeTypeField (constructor: DataConstructor) =
-                    constructor
-                    |> TypeSignatures.constructorFieldTypes
+                    let exposedFieldTypes =
+                        match constructor.Parameters with
+                        | Some parameters ->
+                            parameters
+                            |> List.choose (fun parameter ->
+                                if parameter.ParameterIsImplicit || parameter.ParameterQuantity = Some QuantityZero then
+                                    None
+                                else
+                                    TypeSignatures.parseType parameter.ParameterTypeTokens)
+                        | None ->
+                            TypeSignatures.constructorParameterTokenGroups constructor
+                            |> List.choose (fun parameterTokens ->
+                                match parameterTokens with
+                                | { Kind = AtSign } :: _ ->
+                                    None
+                                | { Kind = IntegerLiteral; Text = "0" } :: _ ->
+                                    None
+                                | _ ->
+                                    let typeTokens =
+                                        match parameterTokens |> List.tryFindIndex (fun token -> token.Kind = Colon) with
+                                        | Some colonIndex when colonIndex + 1 < parameterTokens.Length ->
+                                            parameterTokens |> List.skip (colonIndex + 1)
+                                        | _ ->
+                                            parameterTokens
+
+                                    TypeSignatures.parseType typeTokens)
+
+                    exposedFieldTypes
                     |> List.exists (function
                         | TypeUniverse _ -> true
                         | TypeIntrinsic UniverseClassifier -> true
@@ -7751,7 +7835,7 @@ module SurfaceElaboration =
                         parts
                         |> List.exists (function
                             | StringText _ -> false
-                            | StringInterpolation inner -> references inner)
+                            | StringInterpolation(inner, _) -> references inner)
                     | Literal _
                     | NumericLiteral _
                     | KindQualifiedName _
@@ -7890,7 +7974,7 @@ module SurfaceElaboration =
                         parts
                         |> List.collect (function
                             | StringText _ -> []
-                            | StringInterpolation inner -> validateExpression inner)
+                            | StringInterpolation(inner, _) -> validateExpression inner)
                     | LocalScopedEffect(_, body) ->
                         validateExpression body
                     | Literal _
@@ -8316,7 +8400,7 @@ module SurfaceElaboration =
                         parts
                         |> List.map (function
                             | StringText text -> StringText text
-                            | StringInterpolation inner -> StringInterpolation(substitute inner))
+                            | StringInterpolation(inner, format) -> StringInterpolation(substitute inner, format))
                     )
                 | Literal _
                 | NumericLiteral _
@@ -8465,7 +8549,7 @@ module SurfaceElaboration =
                     parts
                     |> List.map (function
                         | StringText text -> StringText text
-                        | StringInterpolation inner -> StringInterpolation(normalizeLocalDeclarations inner))
+                        | StringInterpolation(inner, format) -> StringInterpolation(normalizeLocalDeclarations inner, format))
                 )
             | Literal _
             | NumericLiteral _
@@ -8620,7 +8704,13 @@ module SurfaceElaboration =
                     match inferExpressionType localTypes value with
                     | Some valueType ->
                         extendBindingLocalTypes environment freshCounter localTypes binding (Some valueType)
-                    | None -> localTypes
+                    | None ->
+                        extendBindingLocalTypes
+                            environment
+                            freshCounter
+                            localTypes
+                            binding
+                            (Some(inferFallbackLocalType freshCounter value))
 
                 let bodyForInference =
                     match bindingNames, tryResolveScopedStaticObject environment value with
@@ -8851,8 +8941,8 @@ module SurfaceElaboration =
                                 None))
                 | _ ->
                     None
-            | PrefixedString _ ->
-                Some stringType
+            | PrefixedString(prefix, _) ->
+                tryInferPrefixedStringMacroResultType environment freshCounter localTypes prefix
 
         and tryInferProjectionCallResultType localTypes (projectionInfo: ProjectionInfo) arguments =
             if List.length projectionInfo.Binders <> List.length arguments then
@@ -9159,7 +9249,7 @@ module SurfaceElaboration =
                         parts
                         |> List.map (function
                             | StringText text -> StringText text
-                            | StringInterpolation inner -> StringInterpolation(loop inner))
+                            | StringInterpolation(inner, format) -> StringInterpolation(loop inner, format))
                     )
                 | Literal _
                 | NumericLiteral _
@@ -9930,6 +10020,91 @@ module SurfaceElaboration =
                     | ExplicitArgument argument -> lowerExpressionWithExpectedType localTypes None argument
                     | ImplicitArgument implicitArgument -> implicitArgument)
 
+            let lowerInterpolatedMacroTypeArgument inner =
+                match inferExpressionType localTypes inner |> Option.map (normalizeTypeAliases environment.VisibleTypeAliases) with
+                | Some(TypeName(nameSegments, [])) ->
+                    KCoreStaticObject
+                        { ObjectKind = KCoreTypeObject
+                          Name = nameSegments
+                          Type = Some(TypeName([ "Type" ], []))
+                          TypeText = Some "Type" }
+                | _ ->
+                    KCoreLiteral LiteralValue.Unit
+
+            let interpolatedFragmentConstructor name arguments =
+                KCoreAppSpine(KCoreName [ name ], arguments |> List.map explicitKCoreArgument)
+
+            let fragmentListExpression fragments =
+                let cons head tail =
+                    KCoreAppSpine(
+                        KCoreName [ "Cons" ],
+                        [ explicitKCoreArgument head
+                          explicitKCoreArgument tail ]
+                    )
+
+                fragments
+                |> List.rev
+                |> List.fold (fun tail head -> cons head tail) (KCoreName [ "Nil" ])
+
+            let lowerPrefixedStringFragments parts =
+                let flushText pending acc =
+                    match pending with
+                    | Some text when not (String.IsNullOrEmpty(text)) ->
+                        interpolatedFragmentConstructor "Lit" [ KCoreLiteral(LiteralValue.String text) ] :: acc
+                    | _ ->
+                        acc
+
+                let interpolationFragment inner format =
+                    let typeArgument = lowerInterpolatedMacroTypeArgument inner
+                    let quoted = KCoreSyntaxQuote(lowerExpressionWithExpectedType localTypes None inner)
+
+                    match format with
+                    | None ->
+                        interpolatedFragmentConstructor "Interp" [ typeArgument; quoted ]
+                    | Some formatText ->
+                        interpolatedFragmentConstructor
+                            "InterpFmt"
+                            [ typeArgument
+                              quoted
+                              KCoreLiteral(LiteralValue.String formatText) ]
+
+                let rec loop pendingText acc remainingParts =
+                    match remainingParts with
+                    | [] ->
+                        let completed = flushText pendingText acc |> List.rev
+
+                        if List.isEmpty completed then
+                            [ interpolatedFragmentConstructor "Lit" [ KCoreLiteral(LiteralValue.String "") ] ]
+                        else
+                            completed
+                    | StringText text :: rest ->
+                        let mergedText =
+                            pendingText
+                            |> Option.map (fun pending -> pending + text)
+                            |> Option.defaultValue text
+
+                        loop (Some mergedText) acc rest
+                    | StringInterpolation(inner, format) :: rest ->
+                        let nextAcc =
+                            flushText pendingText acc
+                            |> fun fragments -> interpolationFragment inner format :: fragments
+
+                        loop None nextAcc rest
+
+                loop None [] parts
+
+            let lowerPrefixedString prefix parts =
+                let fragments = lowerPrefixedStringFragments parts |> fragmentListExpression
+
+                KCoreTopLevelSyntaxSplice(
+                    KCoreTraitCall(
+                        "InterpolatedMacro",
+                        "buildInterpolated",
+                        KCoreName [ prefix ],
+                        [ fragments ]
+                    )
+                )
+
             let rec substituteKCoreNames substitutions current =
                 match current with
                 | KCoreName [ name ] ->
@@ -10624,13 +10799,7 @@ module SurfaceElaboration =
                     ]
                 )
             | PrefixedString(prefix, parts) ->
-                KCorePrefixedString(
-                    prefix,
-                    parts
-                    |> List.map (function
-                        | StringText text -> KCoreStringText text
-                        | StringInterpolation inner -> KCoreStringInterpolation(lowerExpressionWithExpectedType localTypes None inner))
-                )
+                lowerPrefixedString prefix parts
 
         let localTypes =
             buildLocalTypes scheme parameters

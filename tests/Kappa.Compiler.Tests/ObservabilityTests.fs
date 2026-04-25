@@ -116,7 +116,7 @@ let rec private containsRuntimeSyntheticRecordApply expression =
         parts
         |> List.exists (function
             | KRuntimeStringText _ -> false
-            | KRuntimeStringInterpolation inner -> containsRuntimeSyntheticRecordApply inner)
+            | KRuntimeStringInterpolation(inner, _) -> containsRuntimeSyntheticRecordApply inner)
     | KRuntimeLiteral _
     | KRuntimeName _
     | KRuntimeDictionaryValue _ ->

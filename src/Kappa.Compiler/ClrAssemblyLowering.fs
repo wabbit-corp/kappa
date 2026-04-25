@@ -97,7 +97,7 @@ module internal ClrAssemblyLowering =
         | BackendStringText text ->
             KRuntimeStringText text
         | BackendStringInterpolation expression ->
-            KRuntimeStringInterpolation(lowerExpression expression)
+            KRuntimeStringInterpolation(lowerExpression expression, None)
 
     and private lowerExitAction cleanup =
         match cleanup with

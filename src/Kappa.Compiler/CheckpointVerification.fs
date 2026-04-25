@@ -286,7 +286,7 @@ module CheckpointVerification =
                 |> List.collect (function
                     | KRuntimeStringText _ ->
                         []
-                    | KRuntimeStringInterpolation inner ->
+                    | KRuntimeStringInterpolation(inner, _) ->
                         verify locals inner)
 
         verify Set.empty expression
