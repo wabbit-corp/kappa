@@ -32,6 +32,14 @@ let private tokensText (tokens: Token list) =
     |> List.map (fun token -> token.Text)
     |> String.concat " "
 
+let private parseExpressionWithFixities (fixities: FixityTable) (fileName: string) (text: string) =
+    let source = createSource fileName text
+    let lexed = Lexer.tokenize source
+    Assert.Empty(lexed.Diagnostics)
+    let diagnostics = DiagnosticBag()
+    let parsed = CoreParsing.parseExpression fixities source diagnostics lexed.Tokens
+    parsed, diagnostics.Items
+
 let private assertSurfaceIntegerLiteral (expectedValue: int) expectedText expression =
     match expression with
     | NumericLiteral(SurfaceIntegerLiteral(value, sourceText, None)) ->
@@ -1247,6 +1255,101 @@ let ``parser gives built in safe navigation and elvis their spec precedence`` ()
     match parsed with
     | Some(Elvis(SafeNavigation(Name [ "a" ], { Segments = [ "b" ]; Arguments = [] }), Name [ "fallback" ])) -> ()
     | other -> failwithf "Unexpected expression shape: %A" other
+
+[<Fact>]
+let ``operator sections prefer prefix and postfix fixities over section desugaring`` () =
+    let fixities =
+        Parser.bootstrapFixities ()
+        |> FixityTable.add { Fixity = Postfix; Precedence = 80; OperatorName = "!" }
+
+    let prefixParsed, prefixDiagnostics =
+        parseExpressionWithFixities fixities "__operator_section_prefix__.kp" "(- x)"
+
+    Assert.Empty(prefixDiagnostics)
+
+    match prefixParsed with
+    | Some(Unary("-", Name [ "x" ])) -> ()
+    | other -> failwithf "Expected prefix parse shape for (- x), got %A" other
+
+    let postfixParsed, postfixDiagnostics =
+        parseExpressionWithFixities fixities "__operator_section_postfix__.kp" "(x !)"
+
+    Assert.Empty(postfixDiagnostics)
+
+    match postfixParsed with
+    | Some(Apply(Name [ "!" ], [ Name [ "x" ] ])) -> ()
+    | other -> failwithf "Expected postfix parse shape for (x !), got %A" other
+
+[<Fact>]
+let ``operator sections require infix fixity and enforce operand precedence floors`` () =
+    let noFixityParsed, noFixityDiagnostics =
+        parseExpressionWithFixities FixityTable.empty "__operator_section_requires_infix__.kp" "(% 1)"
+
+    Assert.True(noFixityParsed.IsSome, "Parser should still return a placeholder expression on failure.")
+    Assert.NotEmpty(noFixityDiagnostics)
+
+    let equalPrecedenceParsed, equalPrecedenceDiagnostics =
+        parseExpressionWithFixities (Parser.bootstrapFixities ()) "__operator_section_precedence_floor__.kp" "(+ 1 + 2)"
+
+    Assert.True(equalPrecedenceParsed.IsSome, "Parser should still return a placeholder expression on failure.")
+    Assert.NotEmpty(equalPrecedenceDiagnostics)
+
+    let parenthesizedOperandParsed, parenthesizedOperandDiagnostics =
+        parseExpressionWithFixities (Parser.bootstrapFixities ()) "__operator_section_parenthesized_operand__.kp" "(+ (1 + 2))"
+
+    Assert.Empty(parenthesizedOperandDiagnostics)
+
+    match parenthesizedOperandParsed with
+    | Some(Lambda(parameters, Binary(Name [ generated ], "+", Binary(left, "+", right)))) ->
+        Assert.Single(parameters) |> ignore
+        Assert.Equal(parameters.Head.Name, generated)
+        assertSurfaceIntegerLiteral 1 "1" left
+        assertSurfaceIntegerLiteral 2 "2" right
+    | other ->
+        failwithf "Unexpected right-section parse shape: %A" other
+
+[<Fact>]
+let ``operator sections use hygienic binders instead of fixed reserved spellings`` () =
+    let parsed, diagnostics =
+        parseExpressionWithFixities (Parser.bootstrapFixities ()) "__operator_section_hygiene__.kp" "(__sectionArg +)"
+
+    Assert.Empty(diagnostics)
+
+    match parsed with
+    | Some(Lambda(parameters, Binary(Name [ leftName ], "+", Name [ rightName ]))) ->
+        Assert.Single(parameters) |> ignore
+        Assert.Equal(parameters.Head.Name, rightName)
+        Assert.Equal("__sectionArg", leftName)
+        Assert.False(String.Equals("__sectionArg", rightName, StringComparison.Ordinal))
+        Assert.False(String.Equals("__sectionLeft", rightName, StringComparison.Ordinal))
+        Assert.False(String.Equals("__sectionRight", rightName, StringComparison.Ordinal))
+    | other ->
+        failwithf "Unexpected left-section hygiene parse shape: %A" other
+
+[<Fact>]
+let ``operator section hygiene does not capture user written names`` () =
+    let mainSource =
+        [
+            "module main"
+            "let __sectionArg = 41"
+            "let addOuter = (__sectionArg +)"
+            "let result = addOuter 1"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-operator-section-hygiene-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("42", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected hygienic operator section evaluation to succeed, got %s" issue.Message
 
 [<Fact>]
 let ``bootstrap fixity table matches spec defaults for core reserved and prelude operators`` () =

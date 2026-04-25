@@ -1097,6 +1097,7 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
         |> List.toArray
 
     let mutable position = 0
+    let mutable syntheticNameCounter = 0
 
     member private _.Current =
         let index = min position (tokenArray.Length - 1)
@@ -1121,6 +1122,10 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
                | Dedent -> true
                | _ -> false) do
             this.Advance() |> ignore
+
+    member private _.FreshSyntheticName(prefix: string) =
+        syntheticNameCounter <- syntheticNameCounter + 1
+        $"{prefix}\u001f{syntheticNameCounter}"
 
     member private this.ExpectKeyword(keyword: Keyword, message: string) =
         this.SkipLayout()
@@ -1186,6 +1191,18 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
         match nestedParser.Parse(), nestedDiagnostics.Items with
         | Some expression, [] ->
             Some expression
+        | _ ->
+            None
+
+    member private this.TryParseStandaloneExpressionWithMinimumPrecedence(tokens: Token list, minimumPrecedence: int) =
+        let nestedDiagnostics = DiagnosticBag()
+        let nestedParser = ExpressionParser(tokens, source, nestedDiagnostics, fixities)
+        let parsed = nestedParser.ParseExpression(minimumPrecedence)
+        nestedParser.SkipLayout()
+
+        match nestedParser.Current.Kind, nestedDiagnostics.Items with
+        | EndOfFile, [] ->
+            Some parsed
         | _ ->
             None
 
@@ -1639,17 +1656,17 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
                     diagnostics.AddError(DiagnosticCode.ParseError, malformedMessage, source.GetLocation(errorSpan))
                     Literal LiteralValue.Unit
 
-    member private _.MakeOperatorSection body =
-        let parameterName = "__sectionArg"
+    member private this.MakeOperatorSection body =
+        let parameterName = this.FreshSyntheticName "__sectionArg"
 
         Lambda(
             [ SurfaceBinderParsing.makeParameter parameterName None None false false ],
             body
         )
 
-    member private _.MakeOperatorFunction operatorName =
-        let leftName = "__sectionLeft"
-        let rightName = "__sectionRight"
+    member private this.MakeOperatorFunction operatorName =
+        let leftName = this.FreshSyntheticName "__sectionLeft"
+        let rightName = this.FreshSyntheticName "__sectionRight"
 
         Lambda(
             [ SurfaceBinderParsing.makeParameter leftName None None false false
@@ -1709,17 +1726,52 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
         | [] ->
             None
         | [ operatorToken ] when operatorToken.Kind = Operator ->
-            Some(this.MakeOperatorFunction operatorToken.Text)
+            match FixityTable.tryFindPrefix operatorToken.Text fixities, FixityTable.tryFindInfix operatorToken.Text fixities with
+            | Some _, None ->
+                let parameterName = this.FreshSyntheticName "__sectionPrefix"
+
+                Some(
+                    Lambda(
+                        [ SurfaceBinderParsing.makeParameter parameterName None None false false ],
+                        Unary(operatorToken.Text, Name [ parameterName ])
+                    )
+                )
+            | _, Some _ ->
+                Some(this.MakeOperatorFunction operatorToken.Text)
+            | _ ->
+                None
         | operatorToken :: operandTokens when operatorToken.Kind = Operator ->
-            this.TryParseStandaloneExpression operandTokens
-            |> Option.map (fun operand ->
-                this.MakeOperatorSection(Binary(Name [ "__sectionArg" ], operatorToken.Text, operand)))
+            match FixityTable.tryFindPrefix operatorToken.Text fixities, FixityTable.tryFindInfix operatorToken.Text fixities with
+            | Some _, _ ->
+                None
+            | None, Some(_, precedence) ->
+                this.TryParseStandaloneExpressionWithMinimumPrecedence(operandTokens, precedence + 1)
+                |> Option.map (fun operand ->
+                    let parameterName = this.FreshSyntheticName "__sectionArg"
+
+                    Lambda(
+                        [ SurfaceBinderParsing.makeParameter parameterName None None false false ],
+                        Binary(Name [ parameterName ], operatorToken.Text, operand)
+                    ))
+            | None, None ->
+                None
         | _ ->
             match List.rev tokens with
             | operatorToken :: prefixTokens when operatorToken.Kind = Operator ->
-                this.TryParseStandaloneExpression (List.rev prefixTokens)
-                |> Option.map (fun left ->
-                    this.MakeOperatorSection(Binary(left, operatorToken.Text, Name [ "__sectionArg" ])))
+                match FixityTable.tryFindPostfix operatorToken.Text fixities, FixityTable.tryFindInfix operatorToken.Text fixities with
+                | Some _, _ ->
+                    None
+                | None, Some(_, precedence) ->
+                    this.TryParseStandaloneExpressionWithMinimumPrecedence(List.rev prefixTokens, precedence + 1)
+                    |> Option.map (fun left ->
+                        let parameterName = this.FreshSyntheticName "__sectionArg"
+
+                        Lambda(
+                            [ SurfaceBinderParsing.makeParameter parameterName None None false false ],
+                            Binary(left, operatorToken.Text, Name [ parameterName ])
+                        ))
+                | None, None ->
+                    None
             | _ ->
                 None
 
