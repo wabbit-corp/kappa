@@ -2,10 +2,19 @@
 module CoreTests
 
 open System
+open System.Numerics
 open System.Text
 open Kappa.Compiler
 open Harness
 open Xunit
+
+let private assertSurfaceIntegerLiteral (expectedValue: int) expectedText expression =
+    match expression with
+    | NumericLiteral(SurfaceIntegerLiteral(value, sourceText, None)) ->
+        Assert.Equal(BigInteger(expectedValue), value)
+        Assert.Equal(expectedText, sourceText)
+    | other ->
+        failwithf "Expected surface integer literal %s, got %A" expectedText other
 
 [<Fact>]
 let ``parser captures core let parameters return type and expression tree`` () =
@@ -54,13 +63,15 @@ let ``parser captures core let parameters return type and expression tree`` () =
                     Name [ "right" ],
                     "+",
                     Binary(
-                        Literal(LiteralValue.Integer 1L),
+                        leftFactor,
                         "*",
-                        Literal(LiteralValue.Integer 2L)
+                        rightFactor
                     )
                 )
             )
-          ) -> ()
+          ) ->
+            assertSurfaceIntegerLiteral 1 "1" leftFactor
+            assertSurfaceIntegerLiteral 2 "2" rightFactor
         | other ->
             failwithf "Unexpected core expression: %A" other
     | other ->
@@ -214,7 +225,9 @@ let ``parser and interpreter support user defined operators via fixity declarati
         | other -> failwithf "Unexpected operator binding name: %A" other
 
         match resultDefinition.Body with
-        | Some(Binary(Literal(LiteralValue.Integer 20L), "++", Literal(LiteralValue.Integer 22L))) -> ()
+        | Some(Binary(left, "++", right)) ->
+            assertSurfaceIntegerLiteral 20 "20" left
+            assertSurfaceIntegerLiteral 22 "22" right
         | other -> failwithf "Unexpected operator expression: %A" other
     | other ->
         failwithf "Unexpected declarations: %A" other
@@ -729,8 +742,8 @@ let ``parser captures recursive list matches and do blocks`` () =
                 | other -> failwithf "Unexpected Nil pattern: %A" other
 
                 match nilCase.Body with
-                | Literal(LiteralValue.Integer 0L) -> ()
-                | other -> failwithf "Unexpected Nil case body: %A" other
+                | expression ->
+                    assertSurfaceIntegerLiteral 0 "0" expression
 
                 match consCase.Pattern with
                 | ConstructorPattern([ "::" ], [ NamePattern "head"; NamePattern "tail" ]) -> ()
@@ -763,13 +776,13 @@ let ``parser captures recursive list matches and do blocks`` () =
                     { Pattern = NamePattern "nums"
                       Quantity = None },
                     Binary(
-                        Literal(LiteralValue.Integer 10L),
+                        firstValue,
                         "::",
                         Binary(
-                            Literal(LiteralValue.Integer 20L),
+                            secondValue,
                             "::",
                             Binary(
-                                Literal(LiteralValue.Integer 42L),
+                                thirdValue,
                                 "::",
                                 Name [ "Nil" ]
                             )
@@ -782,7 +795,10 @@ let ``parser captures recursive list matches and do blocks`` () =
                       Apply(Name [ "sumList" ], [ Name [ "nums" ] ])
                   )
                   DoExpression(Apply(Name [ "printInt" ], [ Name [ "total" ] ])) ]
-          ) -> ()
+          ) ->
+            assertSurfaceIntegerLiteral 10 "10" firstValue
+            assertSurfaceIntegerLiteral 20 "20" secondValue
+            assertSurfaceIntegerLiteral 42 "42" thirdValue
         | other ->
             failwithf "Unexpected main body: %A" other
     | other ->

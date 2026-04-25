@@ -445,6 +445,7 @@ module ResourceChecking =
         seq {
             match expression with
             | Literal _ -> ()
+            | NumericLiteral _ -> ()
             | KindQualifiedName _ -> ()
             | Name(root :: _) -> yield root
             | Name [] -> ()
@@ -1340,6 +1341,7 @@ module ResourceChecking =
 
             PrefixedString(prefix, parts)
         | Literal _
+        | NumericLiteral _
         | KindQualifiedName _
         | Name _ ->
             expression
@@ -2456,6 +2458,7 @@ module ResourceChecking =
                 | StringInterpolation inner -> recurse inner
                 | StringText _ -> 0)
         | Literal _
+        | NumericLiteral _
         | KindQualifiedName _
         | Name _ ->
             0
@@ -3023,6 +3026,7 @@ module ResourceChecking =
         | Elvis _ ->
             not (Set.isEmpty (capturedRegions state expression))
         | Literal _
+        | NumericLiteral _
         | KindQualifiedName _
         | Name _
         | RecordUpdate _
@@ -3075,6 +3079,7 @@ module ResourceChecking =
         | NamedApplicationBlock fields ->
             fields |> List.exists (fun field -> expressionMayCarryEscapingBorrow field.Value)
         | Literal _
+        | NumericLiteral _
         | KindQualifiedName _
         | Name _
         | RecordUpdate _
@@ -3146,6 +3151,7 @@ module ResourceChecking =
         | Apply(Name [ "captureBorrow" ], [ _ ]) ->
             checkEscapeAgainstAllowed allowedRegions document expression state
         | Literal _
+        | NumericLiteral _
         | KindQualifiedName _
         | Name _
         | Apply _
@@ -3538,6 +3544,7 @@ module ResourceChecking =
     and private checkExpression projectionSummaries (document: ParsedDocument) (signatures: Map<string, FunctionSignature>) state expression =
         match expression with
         | Literal _
+        | NumericLiteral _
         | KindQualifiedName _
         | Name [ _ ] ->
             state
@@ -5057,6 +5064,7 @@ module ResourceChecking =
                             | StringInterpolation inner -> containsEscapingAbruptControl inner
                             | StringText _ -> false)
                     | Literal _
+                    | NumericLiteral _
                     | Name _
                     | KindQualifiedName _
                     | Lambda _ ->

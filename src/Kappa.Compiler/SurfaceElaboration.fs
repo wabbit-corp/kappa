@@ -67,6 +67,7 @@ module SurfaceElaboration =
           Scheme: TypeScheme
           TypeTokens: Token list
           ParameterLayouts: Parameter list option
+          ConstructorTypeName: string option
           DefaultArguments: Map<string, SurfaceExpression> }
 
     type private ProjectionInfo =
@@ -92,6 +93,7 @@ module SurfaceElaboration =
           Imports: ImportSpec list
           ExportedTerms: Set<string>
           ExportedConstructors: Set<string>
+          ExportedConstructorsByType: Map<string, Set<string>>
           ExportedTypes: Set<string>
           ExportedTraits: Set<string> }
 
@@ -596,7 +598,7 @@ module SurfaceElaboration =
         =
         let isForallLayoutParameter (parameter: Parameter) =
             parameter.IsImplicit
-            && List.contains parameter.Name scheme.Forall
+            && (scheme.Forall |> List.exists (fun binder -> binder.Name = parameter.Name))
             && (parameter.TypeTokens.IsNone
                 || (parameter.TypeTokens
                     |> Option.bind TypeSignatures.parseType
@@ -969,6 +971,7 @@ module SurfaceElaboration =
                         | StringInterpolation inner -> StringInterpolation(rewrite inner))
                 )
             | Literal _
+            | NumericLiteral _
             | KindQualifiedName _ ->
                 current
 
@@ -1081,6 +1084,7 @@ module SurfaceElaboration =
                         | StringInterpolation inner -> StringInterpolation(rewrite inner))
                 )
             | Literal _
+            | NumericLiteral _
             | KindQualifiedName _
             | Name _ ->
                 current
@@ -1165,6 +1169,7 @@ module SurfaceElaboration =
                         | StringInterpolation inner -> StringInterpolation(rewrite inner))
                 )
             | Literal _
+            | NumericLiteral _
             | KindQualifiedName _
             | Name _ ->
                 current
@@ -1345,6 +1350,7 @@ module SurfaceElaboration =
                         | StringInterpolation inner -> StringInterpolation(rewrite activeAliases inner))
                 )
             | Literal _
+            | NumericLiteral _
             | KindQualifiedName _ ->
                 current
 
@@ -1585,6 +1591,11 @@ module SurfaceElaboration =
     let private itemImportsConstructorName (item: ImportItem) =
         item.Namespace = Some ImportNamespace.Constructor
 
+    let private itemImportsConstructorsOfType typeName (item: ImportItem) =
+        item.IncludeConstructors
+        && item.Namespace = Some ImportNamespace.Type
+        && String.Equals(item.Name, typeName, StringComparison.Ordinal)
+
     let private importedItemLocalName (item: ImportItem) =
         item.Alias |> Option.defaultValue item.Name
 
@@ -1649,7 +1660,7 @@ module SurfaceElaboration =
                     |> List.rev
                     |> List.fold (fun state fieldType -> TypeArrow(QuantityOmega, fieldType, state)) resultType
 
-                { Forall = typeParameters
+                { Forall = TypeSignatures.inferredTypeForallBinders typeParameters
                   Constraints = []
                   Body = body }
 
@@ -1661,9 +1672,15 @@ module SurfaceElaboration =
                Scheme = scheme
                TypeTokens = []
                ParameterLayouts = parameterLayouts
+               ConstructorTypeName = Some dataDeclaration.Name
                DefaultArguments = defaultArguments })
 
+    let private exceptMatches namespaceName name (item: ExceptItem) =
+        String.Equals(item.Name, name, StringComparison.Ordinal)
+        && (item.Namespace.IsNone || item.Namespace = Some namespaceName)
+
     let private selectionImportedName
+        namespaceName
         (exportedNames: Set<string>)
         itemSelector
         (selection: ImportSelection)
@@ -1685,8 +1702,8 @@ module SurfaceElaboration =
                 |> Option.map importedItemLocalName
         | All ->
             if exported then Some name else None
-        | AllExcept excludedNames ->
-            if exported && not (List.contains name excludedNames) then
+        | AllExcept excludedItems ->
+            if exported && not (excludedItems |> List.exists (exceptMatches namespaceName name)) then
                 Some name
             else
                 None
@@ -1772,6 +1789,7 @@ module SurfaceElaboration =
                           Scheme = scheme
                           TypeTokens = declaration.TypeTokens
                           ParameterLayouts = parameterLayouts
+                          ConstructorTypeName = None
                           DefaultArguments = Map.empty })
                 | ExpectDeclarationNode (ExpectTermDeclaration declaration) ->
                     TypeSignatures.parseScheme declaration.TypeTokens
@@ -1783,6 +1801,7 @@ module SurfaceElaboration =
                           Scheme = scheme
                           TypeTokens = declaration.TypeTokens
                           ParameterLayouts = None
+                          ConstructorTypeName = None
                           DefaultArguments = Map.empty })
                 | LetDeclaration definition
                     when definition.Name.IsSome
@@ -1801,6 +1820,7 @@ module SurfaceElaboration =
                           Scheme = scheme
                           TypeTokens = definition.ReturnTypeTokens |> Option.defaultValue []
                           ParameterLayouts = parameterLayouts
+                          ConstructorTypeName = None
                           DefaultArguments = Map.empty })
                 | _ ->
                     None)
@@ -1872,6 +1892,18 @@ module SurfaceElaboration =
                     None)
             |> List.concat
             |> Set.ofList
+
+        let exportedConstructorsByType =
+            frontendModule.Declarations
+            |> List.choose (function
+                | DataDeclarationNode declaration when isExportedVisibility privateByDefault declaration.Visibility ->
+                    Some(
+                        declaration.Name,
+                        declaration.Constructors |> List.map (fun constructor -> constructor.Name) |> Set.ofList
+                    )
+                | _ ->
+                    None)
+            |> Map.ofList
 
         let exportedTraits =
             frontendModule.Declarations
@@ -1956,6 +1988,7 @@ module SurfaceElaboration =
           Imports = frontendModule.Imports
           ExportedTerms = exportedTerms
           ExportedConstructors = exportedConstructors
+          ExportedConstructorsByType = exportedConstructorsByType
           ExportedTypes = exportedTypes
           ExportedTraits = exportedTraits }
 
@@ -1978,36 +2011,50 @@ module SurfaceElaboration =
             let exportsTerm = Set.contains exportedName importedModule.ExportedTerms && itemExportsTermName item
             let exportsTrait = Set.contains exportedName importedModule.ExportedTraits && itemExportsTraitName item
             let exportsConstructor = Set.contains exportedName importedModule.ExportedConstructors && itemExportsConstructorName item
+            let exportsBundledConstructors = itemImportsConstructorsOfType exportedName item
             let exportsSameSpellingConstructor =
                 item.Namespace.IsNone
                 && Set.contains exportedName importedModule.ExportedTypes
                 && Set.contains exportedName importedModule.ExportedConstructors
 
-            { moduleInfo with
-                ExportedTerms =
-                    if exportsTerm then Set.add localName moduleInfo.ExportedTerms else moduleInfo.ExportedTerms
-                ExportedTypes =
-                    if exportsType then Set.add localName moduleInfo.ExportedTypes else moduleInfo.ExportedTypes
-                ExportedTraits =
-                    if exportsTrait then Set.add localName moduleInfo.ExportedTraits else moduleInfo.ExportedTraits
-                ExportedConstructors =
-                    moduleInfo.ExportedConstructors
-                    |> fun constructors ->
-                        if exportsConstructor || exportsSameSpellingConstructor then
-                            Set.add localName constructors
-                        else
-                            constructors }
+            let moduleInfo =
+                { moduleInfo with
+                    ExportedTerms =
+                        if exportsTerm then Set.add localName moduleInfo.ExportedTerms else moduleInfo.ExportedTerms
+                    ExportedTypes =
+                        if exportsType then Set.add localName moduleInfo.ExportedTypes else moduleInfo.ExportedTypes
+                    ExportedTraits =
+                        if exportsTrait then Set.add localName moduleInfo.ExportedTraits else moduleInfo.ExportedTraits
+                    ExportedConstructors =
+                        moduleInfo.ExportedConstructors
+                        |> fun constructors ->
+                            if exportsConstructor || exportsSameSpellingConstructor then
+                                Set.add localName constructors
+                            else
+                                constructors }
 
-        let addWildcardReexports (importedModule: ModuleSurfaceInfo) (moduleInfo: ModuleSurfaceInfo) excludedNames =
-            let notExcluded name = not (List.contains name excludedNames)
+            if exportsBundledConstructors then
+                let bundledConstructors =
+                    importedModule.ExportedConstructorsByType
+                    |> Map.tryFind exportedName
+                    |> Option.defaultValue Set.empty
+
+                { moduleInfo with
+                    ExportedConstructors = Set.union moduleInfo.ExportedConstructors bundledConstructors
+                    ExportedConstructorsByType = Map.add localName bundledConstructors moduleInfo.ExportedConstructorsByType }
+            else
+                moduleInfo
+
+        let addWildcardReexports (importedModule: ModuleSurfaceInfo) (moduleInfo: ModuleSurfaceInfo) excludedItems =
+            let notExcluded namespaceName name = not (excludedItems |> List.exists (exceptMatches namespaceName name))
             let sameSpellingConstructors =
                 Set.intersect importedModule.ExportedConstructors importedModule.ExportedTypes
-                |> Set.filter notExcluded
+                |> Set.filter (notExcluded ImportNamespace.Constructor)
 
             { moduleInfo with
-                ExportedTerms = Set.union moduleInfo.ExportedTerms (Set.filter notExcluded importedModule.ExportedTerms)
-                ExportedTypes = Set.union moduleInfo.ExportedTypes (Set.filter notExcluded importedModule.ExportedTypes)
-                ExportedTraits = Set.union moduleInfo.ExportedTraits (Set.filter notExcluded importedModule.ExportedTraits)
+                ExportedTerms = Set.union moduleInfo.ExportedTerms (Set.filter (notExcluded ImportNamespace.Term) importedModule.ExportedTerms)
+                ExportedTypes = Set.union moduleInfo.ExportedTypes (Set.filter (notExcluded ImportNamespace.Type) importedModule.ExportedTypes)
+                ExportedTraits = Set.union moduleInfo.ExportedTraits (Set.filter (notExcluded ImportNamespace.Trait) importedModule.ExportedTraits)
                 ExportedConstructors = Set.union moduleInfo.ExportedConstructors sameSpellingConstructors }
 
         let applyReexportSpec (surfaceIndex: Map<string, ModuleSurfaceInfo>) (moduleInfo: ModuleSurfaceInfo) (spec: ImportSpec) =
@@ -2028,8 +2075,8 @@ module SurfaceElaboration =
                         items |> List.fold (addReexportedItem importedModule) moduleInfo
                     | All ->
                         addWildcardReexports importedModule moduleInfo []
-                    | AllExcept excludedNames ->
-                        addWildcardReexports importedModule moduleInfo excludedNames
+                    | AllExcept excludedItems ->
+                        addWildcardReexports importedModule moduleInfo excludedItems
 
         let rec saturate surfaceIndex =
             let nextSurfaceIndex =
@@ -2083,7 +2130,7 @@ module SurfaceElaboration =
             |> List.fold (fun state (spec, importedModule) ->
                 importedModule.BindingSchemes
                 |> Map.fold (fun current name info ->
-                    match selectionImportedName importedModule.ExportedTerms itemImportsTermName spec.Selection name with
+                    match selectionImportedName ImportNamespace.Term importedModule.ExportedTerms itemImportsTermName spec.Selection name with
                     | Some localName -> Map.add localName info current
                     | None -> current) state) Map.empty
 
@@ -2109,15 +2156,40 @@ module SurfaceElaboration =
             |> List.fold (fun state (spec, importedModule) ->
                 importedModule.Constructors
                 |> Map.fold (fun current name info ->
-                    match
-                        selectionImportedName
-                            importedModule.ExportedConstructors
-                            itemImportsConstructorName
-                            spec.Selection
-                            name
-                    with
+                    let importedName =
+                        match spec.Selection with
+                        | QualifiedOnly ->
+                            None
+                        | All
+                        | AllExcept _ ->
+                            None
+                        | Items items ->
+                            if not (Set.contains name importedModule.ExportedConstructors) then
+                                None
+                            else
+                                items
+                                |> List.tryPick (fun item ->
+                                    if String.Equals(item.Name, name, StringComparison.Ordinal)
+                                       && itemImportsConstructorName item then
+                                        Some(importedItemLocalName item)
+                                    else
+                                        match info.ConstructorTypeName with
+                                        | Some typeName when itemImportsConstructorsOfType typeName item ->
+                                            Some name
+                                        | _ ->
+                                            None)
+
+                    match importedName with
                     | Some localName -> Map.add localName info current
                     | None -> current) state) Map.empty
+
+        let preludeConstructors =
+            surfaceIndex
+            |> Map.tryFind Stdlib.PreludeModuleText
+            |> Option.map (fun moduleInfo ->
+                moduleInfo.Constructors
+                |> Map.filter (fun name _ -> List.contains name Stdlib.FixedPreludeConstructors))
+            |> Option.defaultValue Map.empty
 
         let moduleConstructors =
             surfaceIndex
@@ -2125,8 +2197,9 @@ module SurfaceElaboration =
             |> Option.map (fun moduleInfo -> moduleInfo.Constructors)
             |> Option.defaultValue Map.empty
 
-        moduleConstructors
+        preludeConstructors
         |> Map.fold (fun state name info -> Map.add name info state) importedConstructors
+        |> fun state -> moduleConstructors |> Map.fold (fun current name info -> Map.add name info current) state
 
     let private mergeVisibleProjections (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
         let importedProjections =
@@ -2134,7 +2207,7 @@ module SurfaceElaboration =
             |> List.fold (fun state (spec, importedModule) ->
                 importedModule.Projections
                 |> Map.fold (fun current name info ->
-                    match selectionImportedName importedModule.ExportedTerms itemImportsTermName spec.Selection name with
+                    match selectionImportedName ImportNamespace.Term importedModule.ExportedTerms itemImportsTermName spec.Selection name with
                     | Some localName -> Map.add localName info current
                     | None -> current) state) Map.empty
 
@@ -2153,7 +2226,7 @@ module SurfaceElaboration =
             |> List.fold (fun state (spec, importedModule) ->
                 importedModule.TypeAliases
                 |> Map.fold (fun current name info ->
-                    match selectionImportedName importedModule.ExportedTypes itemImportsTypeName spec.Selection name with
+                    match selectionImportedName ImportNamespace.Type importedModule.ExportedTypes itemImportsTypeName spec.Selection name with
                     | Some localName -> Map.add localName info current
                     | None -> current) state) Map.empty
 
@@ -2179,7 +2252,7 @@ module SurfaceElaboration =
             |> List.fold (fun state (spec, importedModule) ->
                 importedModule.TypeFacets
                 |> Map.fold (fun current name info ->
-                    match selectionImportedName importedModule.ExportedTypes itemImportsTypeName spec.Selection name with
+                    match selectionImportedName ImportNamespace.Type importedModule.ExportedTypes itemImportsTypeName spec.Selection name with
                     | Some localName -> Map.add localName info current
                     | None -> current) state) Map.empty
 
@@ -2230,7 +2303,7 @@ module SurfaceElaboration =
             |> List.fold (fun state (spec, importedModule) ->
                 importedModule.RecordTypes
                 |> Map.fold (fun current name info ->
-                    match selectionImportedName importedModule.ExportedTypes itemImportsTypeName spec.Selection name with
+                    match selectionImportedName ImportNamespace.Type importedModule.ExportedTypes itemImportsTypeName spec.Selection name with
                     | Some localName -> Map.add localName info current
                     | None -> current) state) Map.empty
 
@@ -2249,7 +2322,7 @@ module SurfaceElaboration =
             |> List.fold (fun state (spec, importedModule) ->
                 importedModule.Traits
                 |> Map.fold (fun current name info ->
-                    match selectionImportedName importedModule.ExportedTraits itemImportsTraitName spec.Selection name with
+                    match selectionImportedName ImportNamespace.Trait importedModule.ExportedTraits itemImportsTraitName spec.Selection name with
                     | Some localName -> Map.add localName info current
                     | None -> current) state) Map.empty
 
@@ -2275,7 +2348,7 @@ module SurfaceElaboration =
             |> List.collect (fun (spec, importedModule) ->
                 importedModule.Instances
                 |> List.filter (fun instanceInfo ->
-                    selectionImportedName importedModule.ExportedTraits itemImportsTraitName spec.Selection instanceInfo.TraitName
+                    selectionImportedName ImportNamespace.Trait importedModule.ExportedTraits itemImportsTraitName spec.Selection instanceInfo.TraitName
                     |> Option.isSome))
 
         let moduleInstances =
@@ -2687,6 +2760,16 @@ module SurfaceElaboration =
         | LiteralValue.Character _ -> charType
         | LiteralValue.Unit -> unitType
 
+    let private inferSurfaceNumericLiteralType literal =
+        match literal with
+        | SurfaceIntegerLiteral _ -> intType
+        | SurfaceRealLiteral _ -> floatType
+
+    let private defaultPrimitiveLiteralForSurfaceNumeric literal =
+        match literal with
+        | SurfaceIntegerLiteral _ -> LiteralValue.Integer 0L
+        | SurfaceRealLiteral _ -> LiteralValue.Float 0.0
+
     let private lowerBindingReturnType
         (scheme: TypeScheme option)
         (parameters: Parameter list)
@@ -2716,7 +2799,7 @@ module SurfaceElaboration =
                 not (
                     parameter.IsImplicit
                     && parameter.TypeTokens.IsNone
-                    && List.contains parameter.Name scheme.Forall
+                    && (scheme.Forall |> List.exists (fun binder -> binder.Name = parameter.Name))
                 ))
 
         match scheme with
@@ -2761,7 +2844,7 @@ module SurfaceElaboration =
                         not (
                             parameter.IsImplicit
                             && parameter.TypeTokens.IsNone
-                            && List.contains parameter.Name scheme.Forall
+                            && (scheme.Forall |> List.exists (fun binder -> binder.Name = parameter.Name))
                         ))
 
                 let parameterTypes, _ = TypeSignatures.schemeParts scheme
@@ -3087,18 +3170,18 @@ module SurfaceElaboration =
         freshCounter.Value <- freshCounter.Value + instantiated.Forall.Length
 
         let rec consumeExplicitTypeApplications
-            (remainingForall: string list)
+            (remainingForall: TypeSignatures.ForallBinder list)
             (remainingArguments: SurfaceExpression list)
             substitution
             =
             match remainingForall, remainingArguments with
-            | typeVariable :: restForall, ExplicitImplicitArgument explicitArgument :: restArguments ->
+            | binder :: restForall, ExplicitImplicitArgument explicitArgument :: restArguments ->
                 match tryParseTypeLikeSurfaceExpression explicitArgument with
                 | Some explicitTypeArgument ->
                     consumeExplicitTypeApplications
                         restForall
                         restArguments
-                        (composeTypeSubstitution substitution (Map.ofList [ typeVariable, explicitTypeArgument ]))
+                        (composeTypeSubstitution substitution (Map.ofList [ binder.Name, explicitTypeArgument ]))
                 | None ->
                     None
             | _, _ ->
@@ -3461,6 +3544,7 @@ module SurfaceElaboration =
                           Scheme = overloadedScheme
                           TypeTokens = []
                           ParameterLayouts = None
+                          ConstructorTypeName = None
                           DefaultArguments = Map.empty }
 
                     tryPrepareVisibleBindingCall environment candidateCounter bindingInfo inferArgumentType noLocalImplicit arguments
@@ -3541,6 +3625,12 @@ module SurfaceElaboration =
         match expression with
         | Literal literal ->
             Some(inferLiteralType literal)
+        | NumericLiteral literal ->
+            match SurfaceNumericLiteral.suffix literal with
+            | Some suffixName ->
+                inferValidationExpressionType environment freshCounter localTypes (Apply(Name [ suffixName ], [ NumericLiteral(SurfaceNumericLiteral.withoutSuffix literal) ]))
+            | None ->
+                Some(inferSurfaceNumericLiteralType literal)
         | Name [ "True" ]
         | Name [ "False" ] ->
             Some boolType
@@ -4616,6 +4706,7 @@ module SurfaceElaboration =
                             | StringInterpolation inner -> yield! loop inner
                             | StringText _ -> ()
                     | Literal _
+                    | NumericLiteral _
                     | KindQualifiedName _
                     | Name _ ->
                         ()
@@ -4988,6 +5079,7 @@ module SurfaceElaboration =
                             | StringInterpolation inner -> loop inner
                             | StringText _ -> [])
                     | Literal _
+                    | NumericLiteral _
                     | KindQualifiedName _
                     | Name _
                     | Do _ -> []
@@ -5188,6 +5280,8 @@ module SurfaceElaboration =
             match expression with
             | Literal _ ->
                 []
+            | NumericLiteral _ ->
+                []
             | KindQualifiedName(kind, nameSegments) ->
                 match tryResolveScopedStaticObject environment expression with
                 | Some _ ->
@@ -5321,6 +5415,7 @@ module SurfaceElaboration =
                                 | StringInterpolation inner -> StringInterpolation(rewrite inner))
                         )
                     | Literal _
+                    | NumericLiteral _
                     | KindQualifiedName _
                     | Name _ ->
                         expression
@@ -5813,6 +5908,7 @@ module SurfaceElaboration =
                     | StringText _ -> []
                     | StringInterpolation inner -> recurse inner)
             | Literal _
+            | NumericLiteral _
             | KindQualifiedName _
             | Name _ ->
                 []
@@ -6035,6 +6131,7 @@ module SurfaceElaboration =
                     | StringText _ -> []
                     | StringInterpolation inner -> recurse inner)
             | Literal _
+            | NumericLiteral _
             | KindQualifiedName _
             | Name _ ->
                 []
@@ -6246,6 +6343,7 @@ module SurfaceElaboration =
                         | StringText _ -> []
                         | StringInterpolation inner -> recurse inner)
                 | Literal _
+                | NumericLiteral _
                 | KindQualifiedName _
                 | Name _ ->
                     []
@@ -6720,6 +6818,7 @@ module SurfaceElaboration =
                             | StringText _ -> false
                             | StringInterpolation inner -> references inner)
                     | Literal _
+                    | NumericLiteral _
                     | KindQualifiedName _
                     | Name _ ->
                         false
@@ -6854,6 +6953,7 @@ module SurfaceElaboration =
                     | LocalScopedEffect(_, body) ->
                         validateExpression body
                     | Literal _
+                    | NumericLiteral _
                     | KindQualifiedName _
                     | Name _ ->
                         []
@@ -7266,6 +7366,7 @@ module SurfaceElaboration =
                             | StringInterpolation inner -> StringInterpolation(substitute inner))
                     )
                 | Literal _
+                | NumericLiteral _
                 | KindQualifiedName _
                 | Name _ ->
                     current
@@ -7404,6 +7505,7 @@ module SurfaceElaboration =
                         | StringInterpolation inner -> StringInterpolation(normalizeLocalDeclarations inner))
                 )
             | Literal _
+            | NumericLiteral _
             | KindQualifiedName _
             | Name _ ->
                 expression
@@ -7449,6 +7551,12 @@ module SurfaceElaboration =
             match expression with
             | Literal literal ->
                 Some(inferLiteralType literal)
+            | NumericLiteral literal ->
+                match SurfaceNumericLiteral.suffix literal with
+                | Some suffixName ->
+                    inferExpressionType localTypes (Apply(Name [ suffixName ], [ NumericLiteral(SurfaceNumericLiteral.withoutSuffix literal) ]))
+                | None ->
+                    Some(inferSurfaceNumericLiteralType literal)
             | Name [ "True" ]
             | Name [ "False" ] ->
                 Some boolType
@@ -8060,6 +8168,7 @@ module SurfaceElaboration =
                             | StringInterpolation inner -> StringInterpolation(loop inner))
                     )
                 | Literal _
+                | NumericLiteral _
                 | KindQualifiedName _ ->
                     current
 
@@ -8865,6 +8974,17 @@ module SurfaceElaboration =
             match expression with
             | Literal literal ->
                 KCoreLiteral literal
+            | NumericLiteral literal ->
+                let unsuffixedLiteral = SurfaceNumericLiteral.withoutSuffix literal
+                let loweredLiteral =
+                    SurfaceNumericLiteral.tryLowerPrimitiveLiteral unsuffixedLiteral
+                    |> Option.defaultValue (defaultPrimitiveLiteralForSurfaceNumeric unsuffixedLiteral)
+
+                match SurfaceNumericLiteral.suffix literal with
+                | Some suffixName ->
+                    KCoreApply(KCoreName [ suffixName ], [ KCoreLiteral loweredLiteral ])
+                | None ->
+                    KCoreLiteral loweredLiteral
             | KindQualifiedName _ ->
                 tryResolveScopedStaticObject environment expression
                 |> Option.map lowerStaticObject

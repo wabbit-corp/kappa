@@ -113,38 +113,6 @@ let ``dotnet backend execution does not depend on KCore or KRuntimeIR`` () =
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
-let ``hosted dotnet backend remains available`` () =
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-dotnet-hosted-root"
-            [
-                "main.kp",
-                [
-                    "module main"
-                    "let result = if not False then 42 else 0"
-                ]
-                |> String.concat "\n"
-            ]
-
-    let outputDirectory = createScratchDirectory "dotnet-hosted-backend"
-
-    let artifact =
-        match Backend.emitHostedDotNetArtifact workspace "main.result" outputDirectory DotNetDeployment.Managed with
-        | Result.Ok artifact -> artifact
-        | Result.Error message -> failwith message
-
-    let runtimeSource = File.ReadAllText(artifact.RuntimeFilePath)
-    Assert.Contains("abstract class KExpr", runtimeSource)
-    Assert.DoesNotContain("__KAPPA_", runtimeSource)
-
-    let runResult =
-        runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
-
-    Assert.Equal(0, runResult.ExitCode)
-    Assert.Equal("42", runResult.StandardOutput.Trim())
-    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
-
-[<Fact>]
 let ``cli can run the managed dotnet backend`` () =
     let workspaceRoot = createScratchDirectory "cli-dotnet-workspace"
 
@@ -319,41 +287,5 @@ let ``dotnet backend runs the milestone one recursive list program`` () =
         runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
 
     Assert.True(runResult.ExitCode = 0, runResult.StandardError + runResult.StandardOutput)
-    Assert.Equal("72", runResult.StandardOutput.Trim())
-    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
-
-[<Fact>]
-let ``hosted dotnet backend runs the milestone one recursive list program`` () =
-    let workspace =
-        compileInMemoryWorkspace
-            "memory-m1-dotnet-hosted-root"
-            [
-                "main.kp",
-                [
-                    "module main"
-                    "sumList : List Int -> Int"
-                    "let sumList xs ="
-                    "    match xs"
-                    "    case Nil -> 0"
-                    "    case head :: tail -> head + sumList tail"
-                    "let main : IO Unit = do"
-                    "    let nums = 10 :: 20 :: 42 :: Nil"
-                    "    let total = sumList nums"
-                    "    printInt total"
-                ]
-                |> String.concat "\n"
-            ]
-
-    let outputDirectory = createScratchDirectory "dotnet-hosted-m1-backend"
-
-    let artifact =
-        match Backend.emitHostedDotNetArtifact workspace "main.main" outputDirectory DotNetDeployment.Managed with
-        | Result.Ok artifact -> artifact
-        | Result.Error message -> failwith message
-
-    let runResult =
-        runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
-
-    Assert.Equal(0, runResult.ExitCode)
     Assert.Equal("72", runResult.StandardOutput.Trim())
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)

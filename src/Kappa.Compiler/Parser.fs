@@ -433,15 +433,26 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
 
     member private this.ParseImportItem() =
         let modifiers = ResizeArray<ImportItemModifier>()
+        let seenModifiers = HashSet<ImportItemModifier>()
+
+        let addModifier modifier keywordText =
+            if not (seenModifiers.Add(modifier)) then
+                diagnostics.AddError(
+                    DiagnosticCode.ParseError,
+                    $"Duplicate '{keywordText}' modifier in import item.",
+                    source.GetLocation(this.Current.Span)
+                )
+
+            modifiers.Add(modifier)
 
         let rec consumeModifiers () =
             match this.Current.Kind with
             | Keyword Keyword.Unhide ->
-                modifiers.Add(Unhide)
+                addModifier Unhide "unhide"
                 this.Advance() |> ignore
                 consumeModifiers ()
             | Keyword Keyword.Clarify ->
-                modifiers.Add(Clarify)
+                addModifier Clarify "clarify"
                 this.Advance() |> ignore
                 consumeModifiers ()
             | _ -> ()
@@ -467,8 +478,26 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
 
         let name = this.ConsumeTermBindingName("Expected an imported name.")
 
+        let includeConstructors =
+            match this.Current.Kind, this.Peek(1).Kind, this.Peek(2).Kind, this.Peek(3).Kind with
+            | LeftParen, Dot, Dot, RightParen ->
+                this.Advance() |> ignore
+                this.Advance() |> ignore
+                this.Advance() |> ignore
+                this.Advance() |> ignore
+                true
+            | _ ->
+                false
+
         let alias =
             if this.TryConsumeKeyword(Keyword.As).IsSome then
+                if includeConstructors then
+                    diagnostics.AddError(
+                        DiagnosticCode.ParseError,
+                        "ctorAll may not be combined with an alias.",
+                        source.GetLocation(this.Current.Span)
+                    )
+
                 Some(this.ConsumeName("Expected an alias after 'as'."))
             else
                 None
@@ -476,7 +505,48 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
         { Modifiers = List.ofSeq modifiers
           Namespace = importNamespace
           Name = name
+          IncludeConstructors = includeConstructors
           Alias = alias }
+
+    member private this.ParseExceptItem() =
+        let importNamespace =
+            match this.Current.Kind with
+            | Keyword Keyword.Term ->
+                this.Advance() |> ignore
+                Some ImportNamespace.Term
+            | Keyword Keyword.Type ->
+                this.Advance() |> ignore
+                Some ImportNamespace.Type
+            | Keyword Keyword.Trait ->
+                this.Advance() |> ignore
+                Some ImportNamespace.Trait
+            | Keyword Keyword.Ctor ->
+                this.Advance() |> ignore
+                Some ImportNamespace.Constructor
+            | _ ->
+                None
+
+        let name = this.ConsumeTermBindingName("Expected an excluded import name.")
+
+        { Namespace = importNamespace
+          Name = name }
+
+    member private this.ParseExceptItems() =
+        let items = ResizeArray<ExceptItem>()
+        this.Expect(LeftParen, "Expected '(' to start the exclusion list.") |> ignore
+
+        while this.Current.Kind <> RightParen && this.Current.Kind <> EndOfFile do
+            let startPosition = position
+            items.Add(this.ParseExceptItem())
+
+            if this.TryConsume(Comma).IsNone && this.Current.Kind <> RightParen then
+                diagnostics.AddError(DiagnosticCode.ParseError, "Expected ',' between excluded import items.", source.GetLocation(this.Current.Span))
+
+            if position = startPosition && this.Current.Kind <> RightParen && this.Current.Kind <> EndOfFile then
+                this.Advance() |> ignore
+
+        this.Expect(RightParen, "Expected ')' to close the exclusion list.") |> ignore
+        List.ofSeq items
 
     member private this.ParseImportItems() =
         let items = ResizeArray<ImportItem>()
@@ -523,7 +593,7 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
 
                 let selection =
                     if this.TryConsumeKeyword(Keyword.Except).IsSome then
-                        AllExcept(this.ParseNameList())
+                        AllExcept(this.ParseExceptItems())
                     else
                         All
 
@@ -657,8 +727,11 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
             this.Expect(IntegerLiteral, "Expected a numeric precedence in the fixity declaration.")
 
         let precedence =
-            match Int32.TryParse(precedenceToken.Text) with
-            | true, value -> value
+            match SyntaxFacts.tryParseNumericLiteral precedenceToken.Text with
+            | Result.Ok { Literal = SurfaceIntegerLiteral(value, _, None) }
+                when value >= System.Numerics.BigInteger(Int32.MinValue)
+                     && value <= System.Numerics.BigInteger(Int32.MaxValue) ->
+                int value
             | _ ->
                 diagnostics.AddError(DiagnosticCode.ParseError, "Expected a valid integer precedence in the fixity declaration.", source.GetLocation(precedenceToken.Span))
                 0

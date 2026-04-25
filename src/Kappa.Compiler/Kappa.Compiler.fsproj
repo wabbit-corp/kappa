@@ -38,7 +38,6 @@
     <Compile Include="CheckpointVerification.fs" />
     <Compile Include="HostSupport.fs" />
     <Compile Include="BundledBackendSources.fs" />
-    <Compile Include="HostedRuntimeDotNetBackend.fs" />
     <Compile Include="IlDotNetBackendModel.fs" />
     <Compile Include="IlDotNetBackendInput.fs" />
     <Compile Include="IlDotNetBackendTyping.fs" />

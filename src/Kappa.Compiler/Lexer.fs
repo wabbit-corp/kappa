@@ -9,6 +9,11 @@ type LexResult =
 
 // Tokenizes source text, tracks layout, and records lexical diagnostics.
 module Lexer =
+    type private ScannedStringLiteral =
+        { EndIndex: int
+          Closed: bool
+          IsMultiline: bool }
+
     let private token kind text startIndex =
         { Kind = kind
           Text = text
@@ -141,20 +146,103 @@ module Lexer =
 
         endIndex, closed
 
+    let private countLeadingHashes (text: string) index =
+        let mutable currentIndex = index
+
+        while currentIndex < text.Length && text[currentIndex] = '#' do
+            currentIndex <- currentIndex + 1
+
+        currentIndex - index
+
+    let private tryScanStringLiteral (text: string) startIndex =
+        let hashCount =
+            if startIndex < text.Length && text[startIndex] = '#' then
+                countLeadingHashes text startIndex
+            else
+                0
+
+        let quoteIndex = startIndex + hashCount
+
+        if quoteIndex >= text.Length || text[quoteIndex] <> '"' then
+            None
+        else
+            let isMultiline =
+                quoteIndex + 2 < text.Length
+                && text[quoteIndex + 1] = '"'
+                && text[quoteIndex + 2] = '"'
+
+            if isMultiline then
+                let closingDelimiter = "\"\"\"" + String('#', hashCount)
+                let closeIndex = text.IndexOf(closingDelimiter, quoteIndex + 3, StringComparison.Ordinal)
+
+                if closeIndex >= 0 then
+                    Some
+                        { EndIndex = closeIndex + closingDelimiter.Length
+                          Closed = true
+                          IsMultiline = true }
+                else
+                    Some
+                        { EndIndex = text.Length
+                          Closed = false
+                          IsMultiline = true }
+            elif hashCount > 0 then
+                let mutable currentIndex = quoteIndex + 1
+                let mutable closed = false
+
+                while currentIndex < text.Length && not closed do
+                    if text[currentIndex] = '\r' || text[currentIndex] = '\n' then
+                        currentIndex <- text.Length
+                    elif text[currentIndex] = '"' then
+                        let hashSuffixLength = countLeadingHashes text (currentIndex + 1)
+
+                        if hashSuffixLength = hashCount then
+                            currentIndex <- currentIndex + 1 + hashCount
+                            closed <- true
+                        else
+                            currentIndex <- currentIndex + 1
+                    else
+                        currentIndex <- currentIndex + 1
+
+                Some
+                    { EndIndex = currentIndex
+                      Closed = closed
+                      IsMultiline = false }
+            else
+                let mutable currentIndex = quoteIndex + 1
+                let mutable closed = false
+
+                while currentIndex < text.Length && not closed do
+                    if text[currentIndex] = '\r' || text[currentIndex] = '\n' then
+                        currentIndex <- text.Length
+                    elif text[currentIndex] = '\\' then
+                        currentIndex <- min text.Length (currentIndex + 2)
+                    elif text[currentIndex] = '"' then
+                        currentIndex <- currentIndex + 1
+                        closed <- true
+                    else
+                        currentIndex <- currentIndex + 1
+
+                Some
+                    { EndIndex = currentIndex
+                      Closed = closed
+                      IsMultiline = false }
+
     let private tokenizeLine
         (source: SourceText)
         lineIndex
         (lineText: string)
         startingBlockCommentDepth
         startingDelimiterDepth
+        startOffset
         (tokens: ResizeArray<Token>)
         (diagnostics: DiagnosticBag)
         =
         let lineStart = source.LineStarts[lineIndex]
         let mutable blockCommentDepth = startingBlockCommentDepth
         let mutable delimiterDepth = startingDelimiterDepth
-        let mutable index = 0
+        let mutable index = startOffset
         let mutable emittedCode = false
+        let mutable consumedUntilAbsoluteIndex = lineStart
 
         let emit kind text startOffset =
             emittedCode <- true
@@ -184,10 +272,43 @@ module Lexer =
             emit kind (lineText.Substring(startOffset, endIndex - startOffset)) startOffset
             endIndex
 
-        let rec scanPrefixedString prefixText prefixStart prefixEnd =
-            emit InterpolatedStringStart prefixText prefixStart
+        let emitAbsolute kind text absoluteStartIndex =
+            emittedCode <- true
+            tokens.Add(token kind text absoluteStartIndex)
 
-            let mutable currentIndex = prefixEnd + 1
+        let scanStringLiteral startOffset =
+            let absoluteStartIndex = lineStart + startOffset
+
+            let scanned =
+                tryScanStringLiteral source.Content absoluteStartIndex
+                |> Option.defaultValue
+                    { EndIndex = absoluteStartIndex + 1
+                      Closed = false
+                      IsMultiline = false }
+
+            if not scanned.Closed then
+                diagnostics.AddError(
+                    DiagnosticCode.UnterminatedStringLiteral,
+                    "Unterminated string literal.",
+                    source.GetLocation(TextSpan.FromBounds(absoluteStartIndex, scanned.EndIndex))
+                )
+
+            emitAbsolute StringLiteral (source.Slice(TextSpan.FromBounds(absoluteStartIndex, scanned.EndIndex))) absoluteStartIndex
+            consumedUntilAbsoluteIndex <- max consumedUntilAbsoluteIndex scanned.EndIndex
+
+            if scanned.EndIndex <= lineStart + lineText.Length then
+                scanned.EndIndex - lineStart
+            else
+                lineText.Length
+
+        let rec scanPrefixedString prefixText prefixStart prefixEnd hashCount =
+            emit InterpolatedStringStart (SyntaxFacts.encodePrefixedStringStart prefixText hashCount) prefixStart
+
+            let mutable currentIndex =
+                if hashCount = 0 then
+                    prefixEnd + 1
+                else
+                    prefixEnd + hashCount + 1
             let mutable segmentStart = currentIndex
             let mutable closed = false
 
@@ -196,15 +317,22 @@ module Lexer =
                     emit StringTextSegment (lineText.Substring(segmentStart, endIndex - segmentStart)) segmentStart
 
             while currentIndex < lineText.Length && not closed do
-                match lineText[currentIndex] with
-                | '\\' ->
+                if hashCount = 0 && lineText[currentIndex] = '\\' then
                     currentIndex <- min lineText.Length (currentIndex + 2)
-                | '"' ->
+                elif hashCount = 0 && lineText[currentIndex] = '"' then
                     emitPendingSegment currentIndex
                     emit InterpolatedStringEnd "\"" currentIndex
                     currentIndex <- currentIndex + 1
                     closed <- true
-                | '$' when currentIndex + 1 < lineText.Length && lineText[currentIndex + 1] = '{' ->
+                elif hashCount > 0
+                     && lineText[currentIndex] = '"'
+                     && currentIndex + hashCount < lineText.Length
+                     && countLeadingHashes lineText (currentIndex + 1) = hashCount then
+                    emitPendingSegment currentIndex
+                    emit InterpolatedStringEnd ("\"" + String('#', hashCount)) currentIndex
+                    currentIndex <- currentIndex + 1 + hashCount
+                    closed <- true
+                elif hashCount = 0 && currentIndex + 1 < lineText.Length && lineText[currentIndex] = '$' && lineText[currentIndex + 1] = '{' then
                     emitPendingSegment currentIndex
                     emit InterpolationStart "${" currentIndex
 
@@ -216,7 +344,7 @@ module Lexer =
                         segmentStart <- currentIndex
                     else
                         currentIndex <- expressionEnd
-                | '$' when currentIndex + 1 < lineText.Length && lineText[currentIndex + 1] = '`' ->
+                elif hashCount = 0 && currentIndex + 1 < lineText.Length && lineText[currentIndex] = '$' && lineText[currentIndex + 1] = '`' then
                     emitPendingSegment currentIndex
                     emit InterpolationStart "$" currentIndex
 
@@ -224,7 +352,7 @@ module Lexer =
                     tokens.Add(zeroLengthToken InterpolationEnd (lineStart + endIndex))
                     currentIndex <- endIndex
                     segmentStart <- currentIndex
-                | '$' when currentIndex + 1 < lineText.Length && SyntaxFacts.isIdentifierStart lineText[currentIndex + 1] ->
+                elif hashCount = 0 && currentIndex + 1 < lineText.Length && lineText[currentIndex] = '$' && SyntaxFacts.isIdentifierStart lineText[currentIndex + 1] then
                     emitPendingSegment currentIndex
                     emit InterpolationStart "$" currentIndex
 
@@ -232,7 +360,22 @@ module Lexer =
                     tokens.Add(zeroLengthToken InterpolationEnd (lineStart + endIndex))
                     currentIndex <- endIndex
                     segmentStart <- currentIndex
-                | _ ->
+                elif hashCount > 0
+                     && currentIndex + hashCount < lineText.Length
+                     && lineText.Substring(currentIndex, hashCount) = String('#', hashCount)
+                     && lineText[currentIndex + hashCount] = '{' then
+                    emitPendingSegment currentIndex
+                    emit InterpolationStart (String('#', hashCount) + "{") currentIndex
+
+                    let expressionEnd, terminated = scanInterpolationExpression (currentIndex + hashCount + 1)
+
+                    if terminated then
+                        emit InterpolationEnd "}" expressionEnd
+                        currentIndex <- expressionEnd + 1
+                        segmentStart <- currentIndex
+                    else
+                        currentIndex <- expressionEnd
+                else
                     currentIndex <- currentIndex + 1
 
             if not closed then
@@ -281,8 +424,12 @@ module Lexer =
 
             let text = lineText.Substring(startOffset, endIndex - startOffset)
 
+            let rawHashCount = countLeadingHashes lineText endIndex
+
             if closed && endIndex < lineText.Length && lineText[endIndex] = '"' then
-                scanPrefixedString text startOffset endIndex
+                scanPrefixedString text startOffset endIndex 0
+            elif closed && rawHashCount > 0 && endIndex + rawHashCount < lineText.Length && lineText[endIndex + rawHashCount] = '"' then
+                scanPrefixedString text startOffset endIndex rawHashCount
             else
                 emit Identifier text startOffset
                 endIndex
@@ -295,27 +442,23 @@ module Lexer =
                 emit (Keyword Keyword.LetQuestion) "let?" startOffset
                 endIndex + 1
             elif endIndex < lineText.Length && lineText[endIndex] = '"' then
-                scanPrefixedString text startOffset endIndex
+                scanPrefixedString text startOffset endIndex 0
+            elif endIndex < lineText.Length && lineText[endIndex] = '#' then
+                let rawHashCount = countLeadingHashes lineText endIndex
+
+                if endIndex + rawHashCount < lineText.Length && lineText[endIndex + rawHashCount] = '"' then
+                    scanPrefixedString text startOffset endIndex rawHashCount
+                else
+                    emitNameToken text startOffset
+                    endIndex
             else
                 emitNameToken text startOffset
                 endIndex
 
         and scanNumber startOffset =
-            let mutable endIndex = startOffset + 1
-
-            while endIndex < lineText.Length && Char.IsDigit(lineText[endIndex]) do
-                endIndex <- endIndex + 1
-
-            let kind =
-                if endIndex + 1 < lineText.Length && lineText[endIndex] = '.' && Char.IsDigit(lineText[endIndex + 1]) then
-                    endIndex <- endIndex + 2
-
-                    while endIndex < lineText.Length && Char.IsDigit(lineText[endIndex]) do
-                        endIndex <- endIndex + 1
-
-                    FloatLiteral
-                else
-                    IntegerLiteral
+            let kind, endIndex =
+                SyntaxFacts.tryReadNumericLiteral lineText startOffset
+                |> Option.defaultValue (IntegerLiteral, startOffset + 1)
 
             emit kind (lineText.Substring(startOffset, endIndex - startOffset)) startOffset
             endIndex
@@ -424,13 +567,11 @@ module Lexer =
                         emit Arrow "->" currentIndex
                         currentIndex <- currentIndex + 2
                     | '"' ->
-                        currentIndex <-
-                            emitQuotedLiteral
-                                StringLiteral
-                                currentIndex
-                                '"'
-                                "Unterminated string literal."
-                                DiagnosticCode.UnterminatedStringLiteral
+                        currentIndex <- scanStringLiteral currentIndex
+                    | '#' when
+                        let hashCount = countLeadingHashes lineText currentIndex
+                        currentIndex + hashCount < lineText.Length && lineText[currentIndex + hashCount] = '"' ->
+                        currentIndex <- scanStringLiteral currentIndex
                     | '\'' ->
                         if currentIndex + 1 < lineText.Length && lineText[currentIndex + 1] = '{' then
                             emit Operator "'" currentIndex
@@ -554,13 +695,11 @@ module Lexer =
                     emit Arrow "->" index
                     index <- index + 2
                 | '"' ->
-                    index <-
-                        emitQuotedLiteral
-                            StringLiteral
-                            index
-                            '"'
-                            "Unterminated string literal."
-                            DiagnosticCode.UnterminatedStringLiteral
+                    index <- scanStringLiteral index
+                | '#' when
+                    let hashCount = countLeadingHashes lineText index
+                    index + hashCount < lineText.Length && lineText[index + hashCount] = '"' ->
+                    index <- scanStringLiteral index
                 | '\'' ->
                     if index + 1 < lineText.Length && lineText[index + 1] = '{' then
                         emit Operator "'" index
@@ -592,7 +731,7 @@ module Lexer =
         if emittedCode then
             tokens.Add(zeroLengthToken Newline (lineStart + lineText.Length))
 
-        blockCommentDepth, delimiterDepth
+        blockCommentDepth, delimiterDepth, consumedUntilAbsoluteIndex
 
     let tokenize (source: SourceText) =
         let diagnostics = DiagnosticBag()
@@ -602,20 +741,31 @@ module Lexer =
 
         let mutable blockCommentDepth = 0
         let mutable delimiterDepth = 0
+        let mutable consumedUntilAbsoluteIndex = 0
 
         for lineIndex in 0 .. source.LineCount - 1 do
+            let lineStart = source.LineStarts[lineIndex]
             let lineText = source.GetLineText(lineIndex)
-            let hasCode = lineContainsCode lineText blockCommentDepth
+            let startOffset =
+                if consumedUntilAbsoluteIndex > lineStart then
+                    min lineText.Length (consumedUntilAbsoluteIndex - lineStart)
+                else
+                    0
+
+            let hasCode =
+                startOffset = 0
+                && lineContainsCode lineText blockCommentDepth
 
             if hasCode && blockCommentDepth = 0 && delimiterDepth = 0 then
                 let indent = countLeadingSpaces source lineIndex lineText diagnostics
                 addIndentationTokens source lineIndex indent indentStack tokens diagnostics
 
-            let newBlockDepth, newDelimiterDepth =
-                tokenizeLine source lineIndex lineText blockCommentDepth delimiterDepth tokens diagnostics
+            let newBlockDepth, newDelimiterDepth, newConsumedUntilAbsoluteIndex =
+                tokenizeLine source lineIndex lineText blockCommentDepth delimiterDepth startOffset tokens diagnostics
 
             blockCommentDepth <- newBlockDepth
             delimiterDepth <- newDelimiterDepth
+            consumedUntilAbsoluteIndex <- max consumedUntilAbsoluteIndex newConsumedUntilAbsoluteIndex
 
         if blockCommentDepth > 0 then
             diagnostics.AddError(

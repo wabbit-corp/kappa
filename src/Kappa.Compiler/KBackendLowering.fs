@@ -147,6 +147,10 @@ module internal KBackendLowering =
             BackendRepString
 
     let private selectionImportsRuntimeTermName selection name =
+        let exceptMatches namespaceName (item: ExceptItem) =
+            String.Equals(item.Name, name, StringComparison.Ordinal)
+            && (item.Namespace.IsNone || item.Namespace = Some namespaceName)
+
         match selection with
         | QualifiedOnly ->
             false
@@ -157,18 +161,21 @@ module internal KBackendLowering =
                 && (item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Term))
         | All ->
             true
-        | AllExcept excludedNames ->
-            not (List.contains name excludedNames)
+        | AllExcept excludedItems ->
+            not (excludedItems |> List.exists (exceptMatches ImportNamespace.Term))
 
-    let private selectionImportsRuntimeConstructorName selection name =
+    let private selectionImportsRuntimeConstructorName selection name typeName =
         match selection with
         | QualifiedOnly ->
             false
         | Items items ->
             items
             |> List.exists (fun item ->
-                String.Equals(item.Name, name, StringComparison.Ordinal)
-                && item.Namespace = Some ImportNamespace.Constructor)
+                ((String.Equals(item.Name, name, StringComparison.Ordinal)
+                  && item.Namespace = Some ImportNamespace.Constructor)
+                 || (item.IncludeConstructors
+                     && item.Namespace = Some ImportNamespace.Type
+                     && String.Equals(item.Name, typeName, StringComparison.Ordinal))))
         | All
         | AllExcept _ ->
             false
@@ -342,8 +349,12 @@ module internal KBackendLowering =
                                 match context.RuntimeModules |> Map.tryFind importedModuleName with
                                 | Some importedModule when selectionImportsRuntimeTermName spec.Selection name ->
                                     tryResolveModuleMember importedModule name |> Option.map (fun resolved -> importedModuleName, resolved)
-                                | Some importedModule when selectionImportsRuntimeConstructorName spec.Selection name ->
-                                    tryResolveModuleMember importedModule name |> Option.map (fun resolved -> importedModuleName, resolved)
+                                | Some importedModule ->
+                                    match importedModule.Constructors |> List.tryFind (fun constructorInfo -> String.Equals(constructorInfo.Name, name, StringComparison.Ordinal)) with
+                                    | Some constructorInfo when selectionImportsRuntimeConstructorName spec.Selection name constructorInfo.TypeName ->
+                                        tryResolveModuleMember importedModule name |> Option.map (fun resolved -> importedModuleName, resolved)
+                                    | _ ->
+                                        None
                                 | _ ->
                                     None)
                         |> List.distinctBy fst

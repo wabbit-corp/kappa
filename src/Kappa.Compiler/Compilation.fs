@@ -12,8 +12,7 @@ module Compilation =
     let private defaultDeploymentModeForBackendProfile backendProfile =
         match Stdlib.normalizeBackendProfile backendProfile with
         | "dotnet"
-        | "dotnet-il"
-        | "hosted-dotnet" -> "managed"
+        | "dotnet-il" -> "managed"
         | "zig" -> "executable"
         | _ -> "default"
 

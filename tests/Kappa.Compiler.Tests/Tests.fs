@@ -3,6 +3,7 @@ module SmokeTests
 
 open System
 open System.IO
+open System.Numerics
 open System.Runtime.InteropServices
 open Kappa.Compiler
 open Harness
@@ -25,6 +26,14 @@ let private parseSchemeText (text: string) =
     match TypeSignatures.parseScheme lexed.Tokens with
     | Some parsed -> parsed
     | None -> failwithf "Failed to parse scheme text: %s" text
+
+let private assertSurfaceIntegerLiteral (expectedValue: int) expectedText expression =
+    match expression with
+    | NumericLiteral(SurfaceIntegerLiteral(value, sourceText, None)) ->
+        Assert.Equal(BigInteger(expectedValue), value)
+        Assert.Equal(expectedText, sourceText)
+    | other ->
+        failwithf "Expected surface integer literal %s, got %A" expectedText other
 
 [<Fact>]
 let ``repo zig bootstrap command uses the native shell for this platform`` () =
@@ -68,6 +77,74 @@ let ``lexer emits indent and dedent tokens for indented declarations`` () =
     Assert.Empty(lexed.Diagnostics)
     Assert.Contains(Indent, kinds)
     Assert.Contains(Dedent, kinds)
+
+[<Fact>]
+let ``lexer recognizes spec numeric literal forms including suffixes`` () =
+    let source =
+        createSource
+            "__numeric_literals__.kp"
+            "0xDEAD_BEEF 0o1_2_3 0b1_0_1_0 1_000 6.022_140_857E23 12px 3.14rad"
+
+    let lexed = Lexer.tokenize source
+
+    let actualTokens =
+        lexed.Tokens
+        |> List.filter (fun token ->
+            match token.Kind with
+            | Newline
+            | EndOfFile -> false
+            | _ -> true)
+        |> List.map (fun token -> token.Kind, token.Text)
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Equal<(TokenKind * string) list>(
+        [
+            IntegerLiteral, "0xDEAD_BEEF"
+            IntegerLiteral, "0o1_2_3"
+            IntegerLiteral, "0b1_0_1_0"
+            IntegerLiteral, "1_000"
+            FloatLiteral, "6.022_140_857E23"
+            IntegerLiteral, "12px"
+            FloatLiteral, "3.14rad"
+        ],
+        actualTokens
+    )
+
+[<Fact>]
+let ``lexer recognizes raw and multiline string literal spellings`` () =
+    let sourceText =
+        [
+            "#\"C:\\tmp\\file.txt\"#"
+            "##\"she said \"hello\"\"##"
+            "let cooked = \"\"\""
+            "    alpha"
+            "    \"\"\""
+            "let raw = #\"\"\""
+            "    beta\\n"
+            "    \"\"\"#"
+        ]
+        |> String.concat "\n"
+
+    let source = createSource "__string_literals__.kp" sourceText
+    let lexed = Lexer.tokenize source
+
+    let stringTokens =
+        lexed.Tokens
+        |> List.choose (fun token ->
+            match token.Kind with
+            | StringLiteral -> Some token.Text
+            | _ -> None)
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Equal<string list>(
+        [
+            "#\"C:\\tmp\\file.txt\"#"
+            "##\"she said \"hello\"\"##"
+            "\"\"\"\n    alpha\n    \"\"\""
+            "#\"\"\"\n    beta\\n\n    \"\"\"#"
+        ],
+        stringTokens
+    )
 
 [<Fact>]
 let ``parser captures import selectors and declaration kinds`` () =
@@ -116,6 +193,217 @@ let ``parser captures import selectors and declaration kinds`` () =
         Assert.Equal(Some "answer", definition.Name)
     | other ->
         failwithf "Unexpected top-level declarations: %A" other
+
+[<Fact>]
+let ``parser captures constructor-bundle import items and kind-qualified wildcard exclusions`` () =
+    let sourceText =
+        [
+            "module demo.hello"
+            "import std.list.(type List(..), ctor Cons)"
+            "import std.math.* except (term sin, type pi, ctor Cons)"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "demo/hello.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Empty(parsed.Diagnostics)
+
+    match parsed.Syntax.Declarations with
+    | [ ImportDeclaration (false, [ itemSpec ])
+        ImportDeclaration (false, [ exceptSpec ]) ] ->
+        match itemSpec.Source, itemSpec.Selection with
+        | Dotted [ "std"; "list" ], Items [ listItem; ctorItem ] ->
+            Assert.Equal(Some ImportNamespace.Type, listItem.Namespace)
+            Assert.Equal("List", listItem.Name)
+            Assert.True(listItem.IncludeConstructors)
+            Assert.Equal(Some ImportNamespace.Constructor, ctorItem.Namespace)
+            Assert.Equal("Cons", ctorItem.Name)
+            Assert.False(ctorItem.IncludeConstructors)
+        | other ->
+            failwithf "Unexpected constructor-bundle import item: %A" other
+
+        match exceptSpec.Source, exceptSpec.Selection with
+        | Dotted [ "std"; "math" ], AllExcept excludedItems ->
+            Assert.Equal<ExceptItem list>(
+                [
+                    { Namespace = Some ImportNamespace.Term; Name = "sin" }
+                    { Namespace = Some ImportNamespace.Type; Name = "pi" }
+                    { Namespace = Some ImportNamespace.Constructor; Name = "Cons" }
+                ],
+                excludedItems
+            )
+        | other ->
+            failwithf "Unexpected wildcard exclusion import: %A" other
+    | other ->
+        failwithf "Unexpected declarations: %A" other
+
+[<Fact>]
+let ``parser rejects duplicate unhide and clarify modifiers within one import item`` () =
+    let sourceText =
+        [
+            "module demo.hello"
+            "import std.rope.(unhide unhide term normalizeWorker, clarify clarify type Rope)"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "demo/hello.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Equal<DiagnosticCode list>(
+        [ DiagnosticCode.ParseError; DiagnosticCode.ParseError ],
+        parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code)
+    )
+    Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("Duplicate 'unhide'"))
+    Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("Duplicate 'clarify'"))
+
+[<Fact>]
+let ``parser rejects aliases on constructor-bundle import items`` () =
+    let sourceText =
+        [
+            "module demo.hello"
+            "import std.list.(type List(..) as StdList)"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "demo/hello.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Equal<DiagnosticCode list>([ DiagnosticCode.ParseError ], parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code))
+    Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("ctorAll may not be combined with an alias"))
+
+[<Fact>]
+let ``parser decodes raw and multiline strings using spec dedent rules`` () =
+    let sourceText =
+        [
+            "module main"
+            "let raw = #\"C:\\tmp\\file.txt\"#"
+            "let cooked = \"\"\""
+            "    alpha"
+            "    beta\\n"
+            "    \"\"\""
+            "let rawMulti = #\"\"\""
+            "    gamma\\n"
+            "      delta"
+            "    \"\"\"#"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "main.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Empty(parsed.Diagnostics)
+
+    match parsed.Syntax.Declarations with
+    | [ LetDeclaration { Body = Some(Literal(LiteralValue.String raw)) }
+        LetDeclaration { Body = Some(Literal(LiteralValue.String cooked)) }
+        LetDeclaration { Body = Some(Literal(LiteralValue.String rawMulti)) } ] ->
+        Assert.Equal("C:\\tmp\\file.txt", raw)
+        Assert.Equal("alpha\nbeta\n", cooked)
+        Assert.Equal("gamma\\n\n  delta", rawMulti)
+    | other ->
+        failwithf "Unexpected parsed declarations for raw/multiline strings: %A" other
+
+[<Fact>]
+let ``lexer and parser support raw prefixed interpolation with matching hash count`` () =
+    let sourceText =
+        [
+            "module main"
+            "let query = sql#\"select #{userId}\"#"
+            "let regex = re##\"\\b##{word}\\b\"##"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "main.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Empty(parsed.Diagnostics)
+
+    let tokenKinds = lexed.Tokens |> List.map (fun token -> token.Kind)
+    Assert.Contains(InterpolatedStringStart, tokenKinds)
+    Assert.Contains(StringTextSegment, tokenKinds)
+    Assert.Contains(InterpolationStart, tokenKinds)
+    Assert.Contains(InterpolationEnd, tokenKinds)
+    Assert.Contains(InterpolatedStringEnd, tokenKinds)
+
+    match parsed.Syntax.Declarations with
+    | [ LetDeclaration { Body = Some(PrefixedString("sql", [ StringText "select "; StringInterpolation(Name [ "userId" ]) ])) }
+        LetDeclaration { Body = Some(PrefixedString("re", [ StringText "\\b"; StringInterpolation(Name [ "word" ]); StringText "\\b" ])) } ] -> ()
+    | other ->
+        failwithf "Unexpected parsed raw prefixed string: %A" other
+
+[<Fact>]
+let ``parser preserves suffixed numeric literals as exact surface literals`` () =
+    let sourceText =
+        [
+            "module main"
+            "let pixels = 12px"
+            "let angle = 3.14rad"
+            "let mask = 0xFFu32"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "main.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Empty(parsed.Diagnostics)
+
+    match parsed.Syntax.Declarations with
+    | [ LetDeclaration { Body = Some(NumericLiteral(SurfaceIntegerLiteral(value, sourceText, Some "px"))) }
+        LetDeclaration { Body = Some(NumericLiteral(SurfaceRealLiteral(_, sourceText2, Some "rad"))) }
+        LetDeclaration { Body = Some(NumericLiteral(SurfaceIntegerLiteral(value2, sourceText3, Some "u32"))) } ] ->
+        Assert.Equal(BigInteger(12), value)
+        Assert.Equal("12", sourceText)
+        Assert.Equal("3.14", sourceText2)
+        Assert.Equal(BigInteger(255), value2)
+        Assert.Equal("0xFF", sourceText3)
+    | other ->
+        failwithf "Unexpected parsed declarations for suffixed numeric literals: %A" other
+
+[<Fact>]
+let ``compilation resolves suffixed numeric literals through ordinary bindings`` () =
+    let sourceText =
+        [
+            "module main"
+            "px : Int -> Int"
+            "let px n = n + 1"
+            "rad : Float -> Float"
+            "let rad d = d"
+            "u32 : Int -> Int"
+            "let u32 n = n"
+            "pixels : Int"
+            "let pixels = 12px"
+            "angle : Float"
+            "let angle = 3.14rad"
+            "mask : Int"
+            "let mask = 0xFFu32"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-suffixed-numerics"
+            [ "main.kp", sourceText ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
 
 [<Fact>]
 let ``parser reports unexpected indentation for a misindented match case body`` () =
@@ -219,9 +507,10 @@ let ``parser treats constructor tag tests as dedicated infix expressions`` () =
             IfThenElse(
                 Binary(TagTest(Name [ "p" ], [ "IntBox" ]), "||", TagTest(Name [ "p" ], [ "NatBox" ])),
                 Name [ "p"; "value" ],
-                Literal(LiteralValue.Integer 0L)
+                elseBranch
             ))
-        } ] -> ()
+        } ] ->
+        assertSurfaceIntegerLiteral 0 "0" elseBranch
     | other ->
         failwithf "Unexpected parsed tag-test expression: %A" other
 
@@ -348,9 +637,53 @@ let ``type signatures treat lawful record reorderings as definitionally equal`` 
 [<Fact>]
 let ``type signature schemes parse typed forall binders and captures`` () =
     let scheme =
-        parseSchemeText "forall (s : Region) (a : Type). (&[s] box : Box a) -> ((Unit -> a) captures (s))"
+        parseSchemeText "forall (q : Quantity) (r : EffRow) (s : Region) (u : Universe) (a : Type u). (&[s] box : Box a) -> ((Unit -> a) captures (s))"
 
-    Assert.Equal<string list>([ "s"; "a" ], scheme.Forall)
+    Assert.Collection(
+        scheme.Forall,
+        (fun (binder: TypeSignatures.ForallBinder) ->
+            Assert.Equal("q", binder.Name)
+            Assert.Equal(QuantityZero, binder.Quantity)
+            Assert.Equal(TypeSignatures.TypeName([ "Quantity" ], []), binder.Sort)),
+        (fun (binder: TypeSignatures.ForallBinder) ->
+            Assert.Equal("r", binder.Name)
+            Assert.Equal(QuantityZero, binder.Quantity)
+            Assert.Equal(TypeSignatures.TypeName([ "EffRow" ], []), binder.Sort)),
+        (fun (binder: TypeSignatures.ForallBinder) ->
+            Assert.Equal("s", binder.Name)
+            Assert.Equal(QuantityZero, binder.Quantity)
+            Assert.Equal(TypeSignatures.TypeName([ "Region" ], []), binder.Sort)),
+        (fun (binder: TypeSignatures.ForallBinder) ->
+            Assert.Equal("u", binder.Name)
+            Assert.Equal(QuantityZero, binder.Quantity)
+            Assert.Equal(TypeSignatures.TypeName([ "Universe" ], []), binder.Sort)),
+        (fun (binder: TypeSignatures.ForallBinder) ->
+            Assert.Equal("a", binder.Name)
+            Assert.Equal(QuantityZero, binder.Quantity)
+            Assert.Equal(TypeSignatures.TypeName([ "Type" ], [ TypeSignatures.TypeVariable "u" ]), binder.Sort))
+    )
+
+[<Fact>]
+let ``type signature schemes preserve dependent forall telescope structure under instantiation and alpha equality`` () =
+    let left =
+        parseSchemeText "forall (u : Universe) (a : Type u). a -> a"
+
+    let right =
+        parseSchemeText "forall (v : Universe) (b : Type v). b -> b"
+
+    let instantiated = TypeSignatures.instantiate "t" 0 left
+
+    Assert.True(TypeSignatures.schemeDefinitionallyEqual left right)
+
+    Assert.Collection(
+        instantiated.Forall,
+        (fun (binder: TypeSignatures.ForallBinder) ->
+            Assert.Equal("t0", binder.Name)
+            Assert.Equal(TypeSignatures.TypeName([ "Universe" ], []), binder.Sort)),
+        (fun (binder: TypeSignatures.ForallBinder) ->
+            Assert.Equal("t1", binder.Name)
+            Assert.Equal(TypeSignatures.TypeName([ "Type" ], [ TypeSignatures.TypeVariable "t0" ]), binder.Sort))
+    )
 
 [<Fact>]
 let ``compilation injects bundled std prelude and satisfies its intrinsic expects`` () =
@@ -400,7 +733,7 @@ let ``supported backend profiles satisfy the current prelude intrinsic surface``
         ]
         |> String.concat "\n"
 
-    for backendProfile in [ "interpreter"; "dotnet"; "dotnet-hosted"; "dotnet-il"; "zig"; "zigcc" ] do
+    for backendProfile in [ "interpreter"; "dotnet"; "dotnet-il"; "zig"; "zigcc" ] do
         let workspace =
             compileInMemoryWorkspaceWithBackend
                 $"memory-supported-intrinsics-{backendProfile}"
@@ -642,7 +975,20 @@ let ``bundled prelude bootstrap fixities are derived from leading prelude declar
     match userParsed.Syntax.Declarations with
     | [ LetDeclaration declaration ] ->
         match declaration.Body with
-        | Some(Binary(Literal(LiteralValue.Integer 1L), "+", Binary(Literal(LiteralValue.Integer 2L), "*", Literal(LiteralValue.Integer 3L)))) -> ()
+        | Some(
+            Binary(
+                left,
+                "+",
+                Binary(
+                    innerLeft,
+                    "*",
+                    innerRight
+                )
+            )
+          ) ->
+            assertSurfaceIntegerLiteral 1 "1" left
+            assertSurfaceIntegerLiteral 2 "2" innerLeft
+            assertSurfaceIntegerLiteral 3 "3" innerRight
         | other -> failwithf "Unexpected bootstrap fixity parse shape: %A" other
     | other ->
         failwithf "Unexpected declarations when parsing with bootstrap prelude fixities: %A" other

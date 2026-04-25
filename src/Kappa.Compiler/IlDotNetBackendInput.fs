@@ -133,6 +133,15 @@ module internal IlDotNetBackendInput =
     let internal itemImportsConstructorName (item: ImportItem) =
         item.Namespace = Some ImportNamespace.Constructor
 
+    let internal itemImportsConstructorsOfType typeName (item: ImportItem) =
+        item.IncludeConstructors
+        && item.Namespace = Some ImportNamespace.Type
+        && String.Equals(item.Name, typeName, StringComparison.Ordinal)
+
+    let internal exceptMatches namespaceName name (item: ExceptItem) =
+        String.Equals(item.Name, name, StringComparison.Ordinal)
+        && (item.Namespace.IsNone || item.Namespace = Some namespaceName)
+
     let internal selectionImportsTypeName selection name =
         match selection with
         | QualifiedOnly ->
@@ -144,8 +153,8 @@ module internal IlDotNetBackendInput =
                 && itemImportsTypeName item)
         | All ->
             true
-        | AllExcept excludedNames ->
-            not (List.contains name excludedNames)
+        | AllExcept excludedItems ->
+            not (excludedItems |> List.exists (exceptMatches ImportNamespace.Type name))
 
     let internal selectionImportsTermName selection name =
         match selection with
@@ -158,18 +167,19 @@ module internal IlDotNetBackendInput =
                 && itemImportsTermName item)
         | All ->
             true
-        | AllExcept excludedNames ->
-            not (List.contains name excludedNames)
+        | AllExcept excludedItems ->
+            not (excludedItems |> List.exists (exceptMatches ImportNamespace.Term name))
 
-    let internal selectionImportsConstructorName selection name =
+    let internal selectionImportsConstructorName selection name constructorTypeName =
         match selection with
         | QualifiedOnly ->
             false
         | Items items ->
             items
             |> List.exists (fun item ->
-                String.Equals(item.Name, name, StringComparison.Ordinal)
-                && itemImportsConstructorName item)
+                ((String.Equals(item.Name, name, StringComparison.Ordinal)
+                  && itemImportsConstructorName item)
+                 || itemImportsConstructorsOfType constructorTypeName item))
         | All
         | AllExcept _ ->
             false
@@ -738,11 +748,11 @@ module internal IlDotNetBackendInput =
                 let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
 
                 match modules |> Map.tryFind importedModuleName with
-                | Some importedModule
-                    when selectionImportsConstructorName spec.Selection name
-                         && importedModule.Exports.Contains(name) ->
+                | Some importedModule when importedModule.Exports.Contains(name) ->
                     importedModule.Constructors
                     |> Map.tryFind name
+                    |> Option.filter (fun constructorInfo ->
+                        selectionImportsConstructorName spec.Selection name constructorInfo.TypeName)
                     |> Option.map (fun constructorInfo -> importedModule.Name, constructorInfo)
                 | _ ->
                     None)

@@ -44,6 +44,7 @@ module Stdlib =
                     { Modifiers = []
                       Namespace = Some ImportNamespace.Constructor
                       Name = name
+                      IncludeConstructors = false
                       Alias = None })
             ) }
 
@@ -113,7 +114,6 @@ module Stdlib =
         match normalizeBackendProfile backendProfile with
         | "interpreter"
         | "dotnet"
-        | "dotnet-hosted"
         | "dotnet-il"
         | "zig" ->
             preludeIntrinsicSet

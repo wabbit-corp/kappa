@@ -23,8 +23,13 @@ module TypeSignatures =
         { TraitName: string
           Arguments: TypeExpr list }
 
+    type ForallBinder =
+        { Name: string
+          Quantity: Quantity
+          Sort: TypeExpr }
+
     type TypeScheme =
-        { Forall: string list
+        { Forall: ForallBinder list
           Constraints: TraitConstraint list
           Body: TypeExpr }
 
@@ -195,7 +200,7 @@ module TypeSignatures =
 
             loop 0 0
 
-        member private this.TryParseNamedBinder(tokens: Token list) =
+        member private this.TryParseNamedBinder(tokens: Token list, defaultQuantity: Quantity) =
             match this.FindTopLevelColon(tokens) with
             | Some colonIndex when colonIndex > 0 && colonIndex + 1 < tokens.Length ->
                 let binderTokens = tokens |> List.take colonIndex
@@ -219,7 +224,7 @@ module TypeSignatures =
                         | Some(quantity, rest) ->
                             quantity, rest
                         | None ->
-                            QuantityOmega, binderTokens
+                            defaultQuantity, binderTokens
 
                 let typeTokens, nameTokens =
                     match afterQuantity with
@@ -286,7 +291,7 @@ module TypeSignatures =
                         tokenArray[position + 1 .. rightParenIndex - 1]
                         |> Array.toList
 
-                    match this.TryParseNamedBinder innerTokens with
+                    match this.TryParseNamedBinder(innerTokens, QuantityOmega) with
                     | Some(quantity, _, typeTokens) ->
                         let nestedParser = Parser(typeTokens)
 
@@ -306,7 +311,7 @@ module TypeSignatures =
                 None
 
         member private this.TryParseRecordField(tokens: Token list) =
-            match this.TryParseNamedBinder(tokens) with
+            match this.TryParseNamedBinder(tokens, QuantityOmega) with
             | Some(quantity, name, typeTokens) ->
                 let nestedParser = Parser(typeTokens)
 
@@ -604,18 +609,35 @@ module TypeSignatures =
                 some
 
         member this.ParseScheme() =
+            let parseForallBinder binderTokens =
+                match this.TryParseNamedBinder(binderTokens, QuantityZero) with
+                | Some(quantity, binderName, typeTokens) ->
+                    let binderParser = Parser(typeTokens)
+
+                    binderParser.ParseCompleteType()
+                    |> Option.map (fun binderSort ->
+                        { Name = binderName
+                          Quantity = quantity
+                          Sort = binderSort })
+                | None ->
+                    None
+
             let parseForall () =
                 match this.Current with
                 | Some token when Token.isKeyword Keyword.Forall token ->
                     this.Advance() |> ignore
 
-                    let variables = ResizeArray<string>()
+                    let binders = ResizeArray<ForallBinder>()
                     let mutable keepReading = true
 
                     while keepReading do
                         match this.Current with
                         | Some token when Token.isName token ->
-                            variables.Add(SyntaxFacts.trimIdentifierQuotes token.Text)
+                            binders.Add(
+                                { Name = SyntaxFacts.trimIdentifierQuotes token.Text
+                                  Quantity = QuantityZero
+                                  Sort = TypeName([ "Type" ], []) }
+                            )
                             this.Advance() |> ignore
                         | Some { Kind = LeftParen } ->
                             match this.FindMatchingIndex(LeftParen, RightParen, position) with
@@ -626,9 +648,9 @@ module TypeSignatures =
 
                                 position <- rightParenIndex + 1
 
-                                match this.TryParseNamedBinder binderTokens with
-                                | Some(_, binderName, _) ->
-                                    variables.Add(binderName)
+                                match parseForallBinder binderTokens with
+                                | Some binder ->
+                                    binders.Add(binder)
                                 | None ->
                                     keepReading <- false
                             | None ->
@@ -639,7 +661,7 @@ module TypeSignatures =
                         | _ ->
                             keepReading <- false
 
-                    List.ofSeq variables
+                    List.ofSeq binders
                 | _ ->
                     []
 
@@ -966,8 +988,13 @@ module TypeSignatures =
         { constraintInfo with
             Arguments = constraintInfo.Arguments |> List.map (applySubstitution substitution) }
 
+    let applyForallBinderSubstitution substitution (binder: ForallBinder) =
+        { binder with
+            Sort = applySubstitution substitution binder.Sort }
+
     let applySchemeSubstitution substitution (scheme: TypeScheme) =
         { scheme with
+            Forall = scheme.Forall |> List.map (applyForallBinderSubstitution substitution)
             Constraints = scheme.Constraints |> List.map (applyConstraintSubstitution substitution)
             Body = applySubstitution substitution scheme.Body }
 
@@ -1025,23 +1052,23 @@ module TypeSignatures =
                     when (leftCaptures |> List.distinct |> List.sort) = (rightCaptures |> List.distinct |> List.sort) ->
                     unify substitution ((leftInner, rightInner) :: rest)
                 | TypeRecord leftFields, TypeRecord rightFields ->
-                    let normalizeFieldList fields =
+                    let normalizeFieldList (fields: RecordField list) =
                         fields
-                        |> List.sortBy (fun field -> field.Name)
+                        |> List.sortBy (fun (field: RecordField) -> field.Name)
 
                     let normalizedLeftFields = normalizeFieldList leftFields
                     let normalizedRightFields = normalizeFieldList rightFields
 
                     if List.length normalizedLeftFields = List.length normalizedRightFields
                        && List.forall2
-                           (fun leftField rightField ->
+                           (fun (leftField: RecordField) (rightField: RecordField) ->
                                String.Equals(leftField.Name, rightField.Name, StringComparison.Ordinal)
                                && leftField.Quantity = rightField.Quantity)
                            normalizedLeftFields
                            normalizedRightFields then
                         let pendingFields =
                             List.zip normalizedLeftFields normalizedRightFields
-                            |> List.map (fun (leftField, rightField) -> leftField.Type, rightField.Type)
+                            |> List.map (fun ((leftField: RecordField), (rightField: RecordField)) -> leftField.Type, rightField.Type)
 
                         unify substitution (pendingFields @ rest)
                     else
@@ -1085,19 +1112,47 @@ module TypeSignatures =
 
         loop Map.empty pairs
 
-    let private renameVariables prefix index names =
-        names
-        |> List.mapi (fun offset name -> name, TypeVariable($"{prefix}{index + offset}"))
-        |> Map.ofList
+    let private instantiateBinders prefix index binders =
+        let rec loop substitution nextIndex remaining instantiated =
+            match remaining with
+            | [] ->
+                substitution, List.rev instantiated
+            | binder :: rest ->
+                let renamedName = $"{prefix}{nextIndex}"
+                let renamedBinder =
+                    { binder with
+                        Name = renamedName
+                        Sort = applySubstitution substitution binder.Sort }
+
+                loop
+                    (Map.add binder.Name (TypeVariable renamedName) substitution)
+                    (nextIndex + 1)
+                    rest
+                    (renamedBinder :: instantiated)
+
+        loop Map.empty index binders []
 
     let instantiate prefix nextId (scheme: TypeScheme) =
-        let substitution = renameVariables prefix nextId scheme.Forall
-        applySchemeSubstitution substitution scheme
+        let substitution, instantiatedBinders = instantiateBinders prefix nextId scheme.Forall
+
+        { Forall = instantiatedBinders
+          Constraints = scheme.Constraints |> List.map (applyConstraintSubstitution substitution)
+          Body = applySubstitution substitution scheme.Body }
 
     let private canonicalCaptureSet captures =
         captures
         |> List.distinct
         |> List.sort
+
+    let forallBinderNames binders =
+        binders |> List.map (fun binder -> binder.Name)
+
+    let inferredTypeForallBinders names =
+        names
+        |> List.map (fun name ->
+            { Name = name
+              Quantity = QuantityZero
+              Sort = TypeName([ "Type" ], []) })
 
     let private tryFieldDependencyReference (fieldNames: Set<string>) (referenceName: string) =
         let direct =
@@ -1118,10 +1173,10 @@ module TypeSignatures =
             else
                 None)
 
-    let private canonicalRecordFields fields =
+    let private canonicalRecordFields (fields: RecordField list) =
         let fieldNames =
             fields
-            |> List.map (fun field -> field.Name)
+            |> List.map (fun (field: RecordField) -> field.Name)
             |> Set.ofList
 
         let rec collectDependencies typeExpr =
@@ -1139,19 +1194,19 @@ module TypeSignatures =
                 collectDependencies inner
             | TypeRecord nestedFields ->
                 nestedFields
-                |> List.fold (fun state field -> Set.union state (collectDependencies field.Type)) Set.empty
+                |> List.fold (fun state (field: RecordField) -> Set.union state (collectDependencies field.Type)) Set.empty
             | TypeUnion members ->
                 members
                 |> List.fold (fun state memberType -> Set.union state (collectDependencies memberType)) Set.empty
 
         let fieldMap =
             fields
-            |> List.map (fun field -> field.Name, field)
+            |> List.map (fun (field: RecordField) -> field.Name, field)
             |> Map.ofList
 
         let dependencyMap =
             fields
-            |> List.map (fun field ->
+            |> List.map (fun (field: RecordField) ->
                 field.Name, (collectDependencies field.Type |> Set.remove field.Name))
             |> Map.ofList
 
@@ -1195,7 +1250,7 @@ module TypeSignatures =
         | TypeRecord fields ->
             TypeRecord(
                 fields
-                |> List.map (fun field ->
+                |> List.map (fun (field: RecordField) ->
                     { field with
                         Type = canonicalize field.Type })
                 |> canonicalRecordFields
@@ -1211,8 +1266,25 @@ module TypeSignatures =
     let definitionallyEqual left right =
         canonicalize left = canonicalize right
 
+    let private canonicalizeScheme (scheme: TypeScheme) =
+        let substitution, canonicalBinders =
+            instantiateBinders "__canon" 0 scheme.Forall
+
+        { Forall = canonicalBinders
+          Constraints = scheme.Constraints |> List.map (applyConstraintSubstitution substitution)
+          Body = applySubstitution substitution scheme.Body }
+
     let schemeDefinitionallyEqual left right =
-        left.Forall = right.Forall
+        let left = canonicalizeScheme left
+        let right = canonicalizeScheme right
+
+        List.length left.Forall = List.length right.Forall
+        && List.forall2
+            (fun leftBinder rightBinder ->
+                leftBinder.Quantity = rightBinder.Quantity
+                && definitionallyEqual leftBinder.Sort rightBinder.Sort)
+            left.Forall
+            right.Forall
         && List.length left.Constraints = List.length right.Constraints
         && List.forall2
             (fun leftConstraint rightConstraint ->

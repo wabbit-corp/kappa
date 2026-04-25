@@ -171,7 +171,7 @@ internal static class Program
             if deployment <> DotNetDeployment.Managed then
                 return!
                     Result.Error
-                        "The CLR-backed dotnet profile currently supports managed builds only. Use dotnet-hosted for Native AOT until the CLR backend grows a native publish path."
+                        "The CLR-backed dotnet profile currently supports managed builds only."
 
             let! moduleName, bindingName = resolveClrEntryPoint workspace entryPoint
 
@@ -202,14 +202,6 @@ internal static class Program
                   EntryPoint = entryPoint
                   Deployment = deployment }
         }
-
-    let emitHostedDotNetArtifact
-        (workspace: WorkspaceCompilation)
-        (entryPoint: string)
-        (outputDirectory: string)
-        (deployment: DotNetDeployment)
-        =
-        HostedRuntimeDotNetBackend.emitDotNetArtifact workspace entryPoint outputDirectory deployment
 
     let emitDotNetArtifact
         (workspace: WorkspaceCompilation)

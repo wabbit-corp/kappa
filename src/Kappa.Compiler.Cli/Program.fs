@@ -25,7 +25,7 @@ module private Cli =
             "kp [--source-root <path>] [--backend <profile>] [--emit-dir <path>] [--native-aot] [--dump-tokens] [--dump-ast] [--dump-stage <checkpoint>] [--dump-format <json|sexpr>] [--trace] [--verify <checkpoint>] [--run <binding>] [inputs...]"
             ""
             "If no input paths are supplied, the compiler scans the source root for *.kp files."
-            "Runtime backends: interpreter | dotnet | dotnet-hosted | dotnet-il | zig (alias: zigcc)"
+            "Runtime backends: interpreter | dotnet | dotnet-il | zig (alias: zigcc)"
         ]
         |> String.concat Environment.NewLine
 
@@ -578,13 +578,11 @@ let main argv =
                             1
                     | "dotnet" ->
                         runDotNetBackend Backend.emitDotNetArtifact workspace entryPoint options.EmitDirectory options.NativeAot
-                    | "dotnet-hosted" ->
-                        runDotNetBackend Backend.emitHostedDotNetArtifact workspace entryPoint options.EmitDirectory options.NativeAot
                     | "dotnet-il" ->
                         runIlBackend workspace entryPoint options.EmitDirectory
                     | "zig"
                     | "zigcc" ->
                         runZigBackend workspace entryPoint options.EmitDirectory options.NativeAot
                     | other ->
-                        Console.Error.WriteLine($"Unsupported runtime backend '{other}'. Expected interpreter, dotnet, dotnet-hosted, dotnet-il, or zig.")
+                        Console.Error.WriteLine($"Unsupported runtime backend '{other}'. Expected interpreter, dotnet, dotnet-il, or zig.")
                         1

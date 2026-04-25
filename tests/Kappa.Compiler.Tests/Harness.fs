@@ -172,6 +172,10 @@ let private fixtureImportedNamesForSelection importNamespace selection (inventor
         | ImportNamespace.Trait -> Set.contains name inventory.Traits
         | _ -> false
 
+    let isExcluded name (item: ExceptItem) =
+        String.Equals(item.Name, name, StringComparison.Ordinal)
+        && (item.Namespace.IsNone || item.Namespace = Some importNamespace)
+
     match selection with
     | QualifiedOnly ->
         Set.empty
@@ -180,12 +184,10 @@ let private fixtureImportedNamesForSelection importNamespace selection (inventor
         | ImportNamespace.Type -> inventory.Types
         | ImportNamespace.Trait -> inventory.Traits
         | _ -> Set.empty
-    | AllExcept excludedNames ->
-        let excluded = Set.ofList excludedNames
-
+    | AllExcept excludedItems ->
         match importNamespace with
-        | ImportNamespace.Type -> Set.difference inventory.Types excluded
-        | ImportNamespace.Trait -> Set.difference inventory.Traits excluded
+        | ImportNamespace.Type -> inventory.Types |> Set.filter (fun name -> not (excludedItems |> List.exists (isExcluded name)))
+        | ImportNamespace.Trait -> inventory.Traits |> Set.filter (fun name -> not (excludedItems |> List.exists (isExcluded name)))
         | _ -> Set.empty
     | Items items ->
         items
@@ -470,9 +472,20 @@ let private importItemText (item: ImportItem) =
         |> List.filter (String.IsNullOrWhiteSpace >> not)
         |> String.concat " "
 
+    let baseText =
+        if item.IncludeConstructors then
+            $"{baseText}(..)"
+        else
+            baseText
+
     match item.Alias with
     | Some alias -> $"{baseText} as {alias}"
     | None -> baseText
+
+let private exceptItemText (item: ExceptItem) =
+    match item.Namespace with
+    | Some importNamespace -> $"{importNamespaceText importNamespace} {item.Name}"
+    | None -> item.Name
 
 let private importSpecText (spec: ImportSpec) =
     let sourceText = moduleSpecifierText spec.Source
@@ -491,8 +504,8 @@ let private importSpecText (spec: ImportSpec) =
         $"{sourceText}.({itemText})"
     | None, All ->
         $"{sourceText}.*"
-    | None, AllExcept names ->
-        let nameText = String.concat " + " names
+    | None, AllExcept items ->
+        let nameText = items |> List.map exceptItemText |> String.concat " + "
         $"{sourceText}.* except ({nameText})"
     | Some alias, _ ->
         $"{sourceText} as {alias}"

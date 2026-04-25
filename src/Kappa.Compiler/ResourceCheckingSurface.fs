@@ -28,6 +28,7 @@ module internal ResourceCheckingSurface =
         seq {
             match expression with
             | Literal _ -> ()
+            | NumericLiteral _ -> ()
             | KindQualifiedName _ -> ()
             | Name(root :: _) -> yield root
             | Name [] -> ()

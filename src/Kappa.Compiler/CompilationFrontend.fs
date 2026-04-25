@@ -11,6 +11,7 @@ module internal CompilationFrontend =
           Types: Set<string>
           Traits: Set<string>
           Constructors: Set<string>
+          ConstructorsByType: Map<string, Set<string>>
           UnqualifiedBindings: Set<string> }
 
     let parseBundledPrelude allowUnsafeConsume =
@@ -231,9 +232,20 @@ module internal CompilationFrontend =
             |> List.filter (String.IsNullOrWhiteSpace >> not)
             |> String.concat " "
 
+        let baseText =
+            if item.IncludeConstructors then
+                $"{baseText}(..)"
+            else
+                baseText
+
         match item.Alias with
         | Some alias -> $"{baseText} as {alias}"
         | None -> baseText
+
+    let private exceptItemText (item: ExceptItem) =
+        match item.Namespace with
+        | Some importNamespace -> $"{importNamespaceText importNamespace} {item.Name}"
+        | None -> item.Name
 
     let importSpecText (spec: ImportSpec) =
         let sourceText = moduleSpecifierText spec.Source
@@ -252,8 +264,8 @@ module internal CompilationFrontend =
             $"{sourceText}.({itemText})"
         | None, All ->
             $"{sourceText}.*"
-        | None, AllExcept names ->
-            let nameText = String.concat " + " names
+        | None, AllExcept items ->
+            let nameText = items |> List.map exceptItemText |> String.concat " + "
             $"{sourceText}.* except ({nameText})"
         | Some alias, _ ->
             $"{sourceText} as {alias}"
@@ -310,6 +322,7 @@ module internal CompilationFrontend =
             | Literal(LiteralValue.String value) -> $"\"{value}\""
             | Literal(LiteralValue.Character value) -> $"'{value}'"
             | Literal LiteralValue.Unit -> "()"
+            | NumericLiteral literal -> SurfaceNumericLiteral.toSurfaceText literal
             | Name segments -> String.concat "." segments
             | KindQualifiedName(kind, segments) ->
                 let kindText =
@@ -565,9 +578,17 @@ module internal CompilationFrontend =
               Types = Set.empty
               Traits = Set.empty
               Constructors = Set.empty
+              ConstructorsByType = Map.empty
               UnqualifiedBindings = Set.empty }
 
-        let inventory terms types traits constructors =
+        let recomputeUnqualifiedBindings inventory =
+            let sameSpellingConstructors = Set.intersect inventory.Types inventory.Constructors
+
+            { inventory with
+                UnqualifiedBindings =
+                    Set.unionMany [ inventory.Terms; inventory.Types; inventory.Traits; sameSpellingConstructors ] }
+
+        let inventory terms types traits constructors constructorsByType =
             let terms = Set.ofList terms
             let types = Set.ofList types
             let traits = Set.ofList traits
@@ -577,7 +598,16 @@ module internal CompilationFrontend =
               Types = types
               Traits = traits
               Constructors = constructors
-              UnqualifiedBindings = Set.unionMany [ terms; types; traits; constructors ] }
+              ConstructorsByType = constructorsByType |> List.map (fun (name, ctors) -> name, Set.ofList ctors) |> Map.ofList
+              UnqualifiedBindings = Set.empty }
+            |> recomputeUnqualifiedBindings
+
+        let exceptMatches namespaceName name (item: ExceptItem) =
+            String.Equals(item.Name, name, StringComparison.Ordinal)
+            && (item.Namespace.IsNone || item.Namespace = Some namespaceName)
+
+        let excludedByExcept namespaceName name items =
+            items |> List.exists (exceptMatches namespaceName name)
 
         let standardModuleInventories =
             [ "std.gradual",
@@ -586,10 +616,12 @@ module internal CompilationFrontend =
                   [ "Dyn"; "DynRep"; "CastBlame" ]
                   [ "DynamicType" ]
                   []
+                  []
               "std.ffi",
               inventory
                   []
                   [ "I8"; "I16"; "I32"; "I64"; "U8"; "U16"; "U32"; "U64"; "Isize"; "Usize"; "F32"; "F64"; "RawPtr"; "OpaqueHandle" ]
+                  []
                   []
                   []
               "std.ffi.c",
@@ -598,12 +630,14 @@ module internal CompilationFrontend =
                   [ "CChar"; "CSChar"; "CUChar"; "CShort"; "CUShort"; "CInt"; "CUInt"; "CLong"; "CULong"; "CLongLong"; "CULongLong"; "CSize"; "CPtrdiff"; "CBool" ]
                   []
                   []
+                  []
               "std.bridge",
               inventory
                   [ "bindModule"; "bindModuleOwned"; "bridgePackageValue"; "bridgePackageOrigin"; "bridgeFailureToCastBlame" ]
                   [ "BridgeOrigin"; "BoundaryDirection"; "BoundaryPrecision"; "BridgeFailure"; "BridgeContract"; "BridgePackage" ]
                   [ "BridgeBindable"; "BridgeHandle" ]
-                  [ "IntoKappa"; "OutOfKappa"; "LaterUse"; "Exact"; "Conservative"; "Lossy" ] ]
+                  [ "IntoKappa"; "OutOfKappa"; "LaterUse"; "Exact"; "Conservative"; "Lossy" ]
+                  [] ]
             |> Map.ofList
 
         let itemExportsTermName (item: ImportItem) =
@@ -618,12 +652,13 @@ module internal CompilationFrontend =
         let itemExportsConstructorName (item: ImportItem) =
             item.Namespace = Some ImportNamespace.Constructor
 
+        let itemExportsConstructorsOfType typeName (item: ImportItem) =
+            item.IncludeConstructors
+            && item.Namespace = Some ImportNamespace.Type
+            && String.Equals(item.Name, typeName, StringComparison.Ordinal)
+
         let exportedItemLocalName (item: ImportItem) =
             item.Alias |> Option.defaultValue item.Name
-
-        let addUnqualifiedBinding name inventory =
-            { inventory with
-                UnqualifiedBindings = Set.add name inventory.UnqualifiedBindings }
 
         let addReexportedItem importedInventory inventory (item: ImportItem) =
             let exportedName = item.Name
@@ -637,21 +672,18 @@ module internal CompilationFrontend =
             let inventory =
                 if hasTerm && itemExportsTermName item then
                     { inventory with Terms = Set.add localName inventory.Terms }
-                    |> addUnqualifiedBinding localName
                 else
                     inventory
 
             let inventory =
                 if hasType && itemExportsTypeName item then
                     { inventory with Types = Set.add localName inventory.Types }
-                    |> addUnqualifiedBinding localName
                 else
                     inventory
 
             let inventory =
                 if hasTrait && itemExportsTraitName item then
                     { inventory with Traits = Set.add localName inventory.Traits }
-                    |> addUnqualifiedBinding localName
                 else
                     inventory
 
@@ -661,24 +693,50 @@ module internal CompilationFrontend =
                 else
                     inventory
 
-            if hasSameSpellingConstructor && item.Namespace.IsNone then
-                { inventory with Constructors = Set.add localName inventory.Constructors }
-                |> addUnqualifiedBinding localName
-            else
-                inventory
+            let inventory =
+                if hasSameSpellingConstructor && item.Namespace.IsNone then
+                    { inventory with Constructors = Set.add localName inventory.Constructors }
+                else
+                    inventory
 
-        let addWildcardReexports importedInventory inventory excludedNames =
-            let notExcluded name = not (List.contains name excludedNames)
-            let sameSpellingConstructors =
-                Set.intersect importedInventory.Constructors importedInventory.UnqualifiedBindings
-                |> Set.filter notExcluded
+            let inventory =
+                if itemExportsConstructorsOfType exportedName item then
+                    let bundledConstructors =
+                        importedInventory.ConstructorsByType
+                        |> Map.tryFind exportedName
+                        |> Option.defaultValue Set.empty
+
+                    { inventory with
+                        Constructors = Set.union inventory.Constructors bundledConstructors
+                        ConstructorsByType = Map.add localName bundledConstructors inventory.ConstructorsByType }
+                else
+                    inventory
+
+            recomputeUnqualifiedBindings inventory
+
+        let addWildcardReexports importedInventory inventory excludedItems =
+            let includedTerms =
+                importedInventory.Terms
+                |> Set.filter (fun name -> not (excludedByExcept ImportNamespace.Term name excludedItems))
+
+            let includedTypes =
+                importedInventory.Types
+                |> Set.filter (fun name -> not (excludedByExcept ImportNamespace.Type name excludedItems))
+
+            let includedTraits =
+                importedInventory.Traits
+                |> Set.filter (fun name -> not (excludedByExcept ImportNamespace.Trait name excludedItems))
+
+            let includedSameSpellingConstructors =
+                Set.intersect importedInventory.Constructors importedInventory.Types
+                |> Set.filter (fun name -> not (excludedByExcept ImportNamespace.Constructor name excludedItems))
 
             { inventory with
-                Terms = Set.union inventory.Terms (Set.filter notExcluded importedInventory.Terms)
-                Types = Set.union inventory.Types (Set.filter notExcluded importedInventory.Types)
-                Traits = Set.union inventory.Traits (Set.filter notExcluded importedInventory.Traits)
-                Constructors = Set.union inventory.Constructors sameSpellingConstructors
-                UnqualifiedBindings = Set.union inventory.UnqualifiedBindings (Set.filter notExcluded importedInventory.UnqualifiedBindings) }
+                Terms = Set.union inventory.Terms includedTerms
+                Types = Set.union inventory.Types includedTypes
+                Traits = Set.union inventory.Traits includedTraits
+                Constructors = Set.union inventory.Constructors includedSameSpellingConstructors }
+            |> recomputeUnqualifiedBindings
 
         let applyReexportSpec inventories inventory (spec: ImportSpec) =
             match spec.Source with
@@ -707,46 +765,38 @@ module internal CompilationFrontend =
                 match declaration with
                 | SignatureDeclaration signature when exportedSignature document signature ->
                     { current with
-                        Terms = Set.add signature.Name current.Terms
-                        UnqualifiedBindings = Set.add signature.Name current.UnqualifiedBindings }
+                        Terms = Set.add signature.Name current.Terms }
+                    |> recomputeUnqualifiedBindings
                 | LetDeclaration definition when isExportedDefinition document definition ->
                     match definition.Name with
                     | Some name ->
                         { current with
-                            Terms = Set.add name current.Terms
-                            UnqualifiedBindings = Set.add name current.UnqualifiedBindings }
+                            Terms = Set.add name current.Terms }
+                        |> recomputeUnqualifiedBindings
                     | None ->
                         current
                 | ProjectionDeclarationNode declaration when exportedProjectionDeclaration document declaration ->
                     { current with
-                        Terms = Set.add declaration.Name current.Terms
-                        UnqualifiedBindings = Set.add declaration.Name current.UnqualifiedBindings }
+                        Terms = Set.add declaration.Name current.Terms }
+                    |> recomputeUnqualifiedBindings
                 | DataDeclarationNode declaration when exportedDataDeclaration document declaration ->
                     let constructorNames =
                         declaration.Constructors
                         |> List.map (fun constructor -> constructor.Name)
 
-                    let sameSpellingConstructors, _ =
-                        constructorNames
-                        |> List.partition (fun name -> String.Equals(name, declaration.Name, StringComparison.Ordinal))
-
                     { current with
                         Types = Set.add declaration.Name current.Types
                         Constructors = Set.union current.Constructors (Set.ofList constructorNames)
-                        UnqualifiedBindings =
-                            current.UnqualifiedBindings
-                            |> Set.add declaration.Name
-                            |> fun bindings ->
-                                sameSpellingConstructors
-                                |> List.fold (fun state name -> Set.add name state) bindings }
+                        ConstructorsByType = Map.add declaration.Name (Set.ofList constructorNames) current.ConstructorsByType }
+                    |> recomputeUnqualifiedBindings
                 | TypeAliasNode declaration when exportedTypeAlias document declaration ->
                     { current with
-                        Types = Set.add declaration.Name current.Types
-                        UnqualifiedBindings = Set.add declaration.Name current.UnqualifiedBindings }
+                        Types = Set.add declaration.Name current.Types }
+                    |> recomputeUnqualifiedBindings
                 | TraitDeclarationNode declaration when exportedTraitDeclaration document declaration ->
                     { current with
-                        Traits = Set.add declaration.Name current.Traits
-                        UnqualifiedBindings = Set.add declaration.Name current.UnqualifiedBindings }
+                        Traits = Set.add declaration.Name current.Traits }
+                    |> recomputeUnqualifiedBindings
                 | _ ->
                     current) inventory
 
@@ -772,13 +822,8 @@ module internal CompilationFrontend =
                     { syntaxInventory with
                         Terms = Set.union syntaxInventory.Terms contract.TermNames
                         Types = Set.union syntaxInventory.Types contract.TypeNames
-                        Traits = Set.union syntaxInventory.Traits contract.TraitNames
-                        UnqualifiedBindings =
-                            syntaxInventory.UnqualifiedBindings
-                            |> Set.union contract.TermNames
-                            |> Set.union contract.TypeNames
-                            |> Set.union contract.TraitNames
-                            |> Set.union (Set.ofList Stdlib.FixedPreludeConstructors) }
+                        Traits = Set.union syntaxInventory.Traits contract.TraitNames }
+                    |> recomputeUnqualifiedBindings
                 else
                     syntaxInventory)
 
@@ -809,6 +854,24 @@ module internal CompilationFrontend =
         saturate (withStandardModuleInventories syntaxInventories)
 
     let private importItemExists inventory (item: ImportItem) =
+        if item.IncludeConstructors then
+            item.Namespace = Some ImportNamespace.Type
+            && Set.contains item.Name inventory.Types
+            && Map.containsKey item.Name inventory.ConstructorsByType
+        else
+            match item.Namespace with
+            | Some ImportNamespace.Term ->
+                Set.contains item.Name inventory.Terms
+            | Some ImportNamespace.Type ->
+                Set.contains item.Name inventory.Types
+            | Some ImportNamespace.Trait ->
+                Set.contains item.Name inventory.Traits
+            | Some ImportNamespace.Constructor ->
+                Set.contains item.Name inventory.Constructors
+            | None ->
+                Set.contains item.Name inventory.UnqualifiedBindings
+
+    let private exceptItemExists inventory (item: ExceptItem) =
         match item.Namespace with
         | Some ImportNamespace.Term ->
             Set.contains item.Name inventory.Terms
@@ -843,6 +906,16 @@ module internal CompilationFrontend =
                                             diagnostics.AddError(
                                                 DiagnosticCode.ImportItemNotFound,
                                                 $"Import item '{item.Name}' was not found in module '{importedModuleName}'.",
+                                                defaultArg (findTokenLocation document item.Name) (document.Source.GetLocation(TextSpan.FromBounds(0, 0))),
+                                                stage = "KFrontIR",
+                                                phase = KFrontIRPhase.phaseName CHECKERS
+                                            )
+                                | AllExcept items ->
+                                    for item in items do
+                                        if not (exceptItemExists inventory item) then
+                                            diagnostics.AddError(
+                                                DiagnosticCode.ImportItemNotFound,
+                                                $"Excluded import item '{item.Name}' was not found in module '{importedModuleName}'.",
                                                 defaultArg (findTokenLocation document item.Name) (document.Source.GetLocation(TextSpan.FromBounds(0, 0))),
                                                 stage = "KFrontIR",
                                                 phase = KFrontIRPhase.phaseName CHECKERS
@@ -883,6 +956,12 @@ module internal CompilationFrontend =
         |> Map.ofList
 
     let private selectionImportsFixityName inventory selection name =
+        let excludedByExcept itemNamespace items =
+            items
+            |> List.exists (fun (item: ExceptItem) ->
+                String.Equals(item.Name, name, StringComparison.Ordinal)
+                && (item.Namespace.IsNone || item.Namespace = Some itemNamespace))
+
         match selection with
         | QualifiedOnly ->
             false
@@ -893,9 +972,9 @@ module internal CompilationFrontend =
                 && importItemExists inventory item)
         | All ->
             Set.contains name inventory.UnqualifiedBindings
-        | AllExcept excludedNames ->
+        | AllExcept excludedItems ->
             Set.contains name inventory.UnqualifiedBindings
-            && not (excludedNames |> List.exists (fun excluded -> String.Equals(excluded, name, StringComparison.Ordinal)))
+            && not (excludedByExcept ImportNamespace.Term excludedItems)
 
     let reparseDocumentsWithImportedFixities (options: CompilationOptions) (documents: ParsedDocument list) =
         let baseFixities = Parser.bootstrapFixities ()

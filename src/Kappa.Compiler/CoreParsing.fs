@@ -445,16 +445,78 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
     member private this.ParseLiteralPattern(token: Token) =
         match token.Kind with
         | IntegerLiteral ->
-            match Int64.TryParse(token.Text) with
-            | true, value -> LiteralPattern(LiteralValue.Integer value)
-            | _ ->
-                diagnostics.AddError(DiagnosticCode.ParseError, $"Invalid integer literal '{token.Text}'.", source.GetLocation(token.Span))
+            match SyntaxFacts.tryParseNumericLiteral token.Text with
+            | Result.Ok parsed ->
+                match parsed.Suffix with
+                | Some _ ->
+                    diagnostics.AddError(
+                        DiagnosticCode.ParseError,
+                        $"Numeric literal suffixes are not permitted in patterns: '{token.Text}'.",
+                        source.GetLocation(token.Span)
+                    )
+
+                    match SurfaceNumericLiteral.tryLowerPrimitiveLiteral parsed.Literal with
+                    | Some literal ->
+                        LiteralPattern literal
+                    | None ->
+                        diagnostics.AddError(
+                            DiagnosticCode.ParseError,
+                            $"Numeric literal '{token.Text}' is not representable in patterns.",
+                            source.GetLocation(token.Span)
+                        )
+
+                        LiteralPattern(LiteralValue.Integer 0L)
+                | None ->
+                    match SurfaceNumericLiteral.tryLowerPrimitiveLiteral parsed.Literal with
+                    | Some literal ->
+                        LiteralPattern literal
+                    | None ->
+                        diagnostics.AddError(
+                            DiagnosticCode.ParseError,
+                            $"Numeric literal '{token.Text}' is not representable in patterns.",
+                            source.GetLocation(token.Span)
+                        )
+
+                        LiteralPattern(LiteralValue.Integer 0L)
+            | Result.Error message ->
+                diagnostics.AddError(DiagnosticCode.ParseError, message, source.GetLocation(token.Span))
                 LiteralPattern(LiteralValue.Integer 0L)
         | FloatLiteral ->
-            match Double.TryParse(token.Text) with
-            | true, value -> LiteralPattern(LiteralValue.Float value)
-            | _ ->
-                diagnostics.AddError(DiagnosticCode.ParseError, $"Invalid float literal '{token.Text}'.", source.GetLocation(token.Span))
+            match SyntaxFacts.tryParseNumericLiteral token.Text with
+            | Result.Ok parsed ->
+                match parsed.Suffix with
+                | Some _ ->
+                    diagnostics.AddError(
+                        DiagnosticCode.ParseError,
+                        $"Numeric literal suffixes are not permitted in patterns: '{token.Text}'.",
+                        source.GetLocation(token.Span)
+                    )
+
+                    match SurfaceNumericLiteral.tryLowerPrimitiveLiteral parsed.Literal with
+                    | Some literal ->
+                        LiteralPattern literal
+                    | None ->
+                        diagnostics.AddError(
+                            DiagnosticCode.ParseError,
+                            $"Numeric literal '{token.Text}' is not representable in patterns.",
+                            source.GetLocation(token.Span)
+                        )
+
+                        LiteralPattern(LiteralValue.Float 0.0)
+                | None ->
+                    match SurfaceNumericLiteral.tryLowerPrimitiveLiteral parsed.Literal with
+                    | Some literal ->
+                        LiteralPattern literal
+                    | None ->
+                        diagnostics.AddError(
+                            DiagnosticCode.ParseError,
+                            $"Numeric literal '{token.Text}' is not representable in patterns.",
+                            source.GetLocation(token.Span)
+                        )
+
+                        LiteralPattern(LiteralValue.Float 0.0)
+            | Result.Error message ->
+                diagnostics.AddError(DiagnosticCode.ParseError, message, source.GetLocation(token.Span))
                 LiteralPattern(LiteralValue.Float 0.0)
         | StringLiteral ->
             match SyntaxFacts.tryDecodeStringLiteral token.Text with
@@ -2195,7 +2257,14 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
 
     member private this.ParseInterpolatedString() =
         let startToken = this.Advance()
-        let prefix = SyntaxFacts.trimIdentifierQuotes startToken.Text
+        let startInfo : SyntaxFacts.PrefixedStringStartInfo =
+            SyntaxFacts.tryDecodePrefixedStringStart startToken.Text
+            |> Option.defaultValue
+                { PrefixText = startToken.Text
+                  HashCount = 0 }
+
+        let prefix = SyntaxFacts.trimIdentifierQuotes startInfo.PrefixText
+        let isRaw = startInfo.HashCount > 0
         let parts = ResizeArray<SurfaceInterpolatedStringPart>()
         let mutable closed = false
 
@@ -2203,7 +2272,13 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
             match this.Current.Kind with
             | StringTextSegment ->
                 let token = this.Advance()
-                parts.Add(StringText(this.DecodeStringTextSegment token))
+                let text =
+                    if isRaw then
+                        token.Text
+                    else
+                        this.DecodeStringTextSegment token
+
+                parts.Add(StringText text)
             | InterpolationStart ->
                 this.Advance() |> ignore
                 let expression = this.ParseExpression(0)
@@ -2672,18 +2747,20 @@ type private ExpressionParser(tokens: Token list, source: SourceText, diagnostic
         | IntegerLiteral ->
             let token = this.Advance()
 
-            match Int64.TryParse(token.Text) with
-            | true, value -> Literal(Integer value)
-            | _ ->
-                diagnostics.AddError(DiagnosticCode.ParseError, $"Invalid integer literal '{token.Text}'.", source.GetLocation(token.Span))
+            match SyntaxFacts.tryParseNumericLiteral token.Text with
+            | Result.Ok parsed ->
+                NumericLiteral parsed.Literal
+            | Result.Error message ->
+                diagnostics.AddError(DiagnosticCode.ParseError, message, source.GetLocation(token.Span))
                 Literal(Integer 0L)
         | FloatLiteral ->
             let token = this.Advance()
 
-            match Double.TryParse(token.Text) with
-            | true, value -> Literal(Float value)
-            | _ ->
-                diagnostics.AddError(DiagnosticCode.ParseError, $"Invalid float literal '{token.Text}'.", source.GetLocation(token.Span))
+            match SyntaxFacts.tryParseNumericLiteral token.Text with
+            | Result.Ok parsed ->
+                NumericLiteral parsed.Literal
+            | Result.Error message ->
+                diagnostics.AddError(DiagnosticCode.ParseError, message, source.GetLocation(token.Span))
                 Literal(Float 0.0)
         | StringLiteral ->
             let token = this.Advance()

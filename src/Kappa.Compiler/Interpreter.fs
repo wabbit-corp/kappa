@@ -1011,6 +1011,15 @@ module Interpreter =
         and itemImportsConstructorName (item: ImportItem) =
             item.Namespace = Some ImportNamespace.Constructor
 
+        and itemImportsConstructorsOfType typeName (item: ImportItem) =
+            item.IncludeConstructors
+            && item.Namespace = Some ImportNamespace.Type
+            && String.Equals(item.Name, typeName, StringComparison.Ordinal)
+
+        and exceptMatches namespaceName name (item: ExceptItem) =
+            String.Equals(item.Name, name, StringComparison.Ordinal)
+            && (item.Namespace.IsNone || item.Namespace = Some namespaceName)
+
         and selectionImportsTermName (importedModule: RuntimeModule) (selection: ImportSelection) (name: string) =
             let exportsTerm =
                 importedModule.Definitions.ContainsKey(name)
@@ -1026,8 +1035,8 @@ module Interpreter =
                     && itemImportsTermName item)
             | All ->
                 exportsTerm && importedModule.Exports.Contains(name)
-            | AllExcept excludedNames ->
-                not (List.contains name excludedNames)
+            | AllExcept excludedItems ->
+                not (excludedItems |> List.exists (exceptMatches ImportNamespace.Term name))
                 && exportsTerm
                 && importedModule.Exports.Contains(name)
 
@@ -1036,6 +1045,11 @@ module Interpreter =
                 importedModule.Constructors.ContainsKey(name)
                 && importedModule.Exports.Contains(name)
 
+            let constructorTypeName =
+                importedModule.Constructors
+                |> Map.tryFind name
+                |> Option.map (fun constructorInfo -> constructorInfo.TypeName)
+
             match selection with
             | QualifiedOnly ->
                 false
@@ -1043,8 +1057,10 @@ module Interpreter =
                 exportsConstructor
                 && (items
                     |> List.exists (fun item ->
-                        String.Equals(item.Name, name, StringComparison.Ordinal)
-                        && itemImportsConstructorName item))
+                        ((String.Equals(item.Name, name, StringComparison.Ordinal)
+                          && itemImportsConstructorName item)
+                        || (constructorTypeName
+                            |> Option.exists (fun typeName -> itemImportsConstructorsOfType typeName item)))))
             | All
             | AllExcept _ ->
                 false
