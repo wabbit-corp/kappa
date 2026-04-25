@@ -199,9 +199,18 @@ type Visibility =
     | Public
     | Private
 
+type UrlModulePin =
+    | Sha256Pin of digest: string
+    | RefPin of reference: string
+
+type UrlModuleSpecifier =
+    { OriginalText: string
+      BaseUrl: string
+      Pin: UrlModulePin option }
+
 type ModuleSpecifier =
     | Dotted of string list
-    | Url of string
+    | Url of UrlModuleSpecifier
 
 type ImportNamespace =
     | Term
@@ -571,6 +580,59 @@ module SyntaxFacts =
             value.Substring(1, value.Length - 2)
         else
             value
+
+    let tryParseUrlModuleSpecifier (text: string) =
+        let hashIndex = text.IndexOf('#')
+
+        if hashIndex < 0 then
+            Result.Ok
+                { OriginalText = text
+                  BaseUrl = text
+                  Pin = None }
+        else
+            let baseUrl = text.Substring(0, hashIndex)
+            let pinText = text.Substring(hashIndex + 1)
+
+            if String.IsNullOrWhiteSpace(baseUrl) then
+                Result.Error "URL module specifier must include a non-empty base URL."
+            elif String.IsNullOrWhiteSpace(pinText) then
+                Result.Error "URL module pin cannot be empty."
+            elif pinText.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) then
+                let digest = pinText.Substring("sha256:".Length)
+
+                if String.IsNullOrWhiteSpace(digest) then
+                    Result.Error "sha256 URL pins must include a hexadecimal digest."
+                elif digest |> Seq.forall Uri.IsHexDigit then
+                    Result.Ok
+                        { OriginalText = text
+                          BaseUrl = baseUrl
+                          Pin = Some(Sha256Pin(digest.ToLowerInvariant())) }
+                else
+                    Result.Error $"Invalid sha256 URL pin '{pinText}'."
+            elif pinText.StartsWith("ref:", StringComparison.Ordinal) then
+                let reference = pinText.Substring("ref:".Length)
+
+                if String.IsNullOrWhiteSpace(reference) then
+                    Result.Error "ref URL pins must include a non-empty reference."
+                else
+                    Result.Ok
+                        { OriginalText = text
+                          BaseUrl = baseUrl
+                          Pin = Some(RefPin reference) }
+            else
+                Result.Error $"Unsupported URL pin '{pinText}'. Expected 'sha256:<hex>' or 'ref:<text>'."
+
+    let urlModuleSpecifierText (specifier: UrlModuleSpecifier) =
+        specifier.OriginalText
+
+    let urlModuleSpecifierIdentityText (specifier: UrlModuleSpecifier) =
+        match specifier.Pin with
+        | None ->
+            specifier.BaseUrl
+        | Some(Sha256Pin digest) ->
+            $"{specifier.BaseUrl}#sha256:{digest}"
+        | Some(RefPin reference) ->
+            $"{specifier.BaseUrl}#ref:{reference}"
 
     let private prefixedStringMetadataSeparator = '\u001f'
 

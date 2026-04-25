@@ -16,6 +16,7 @@ let lexAndParse = HarnessWorkspace.lexAndParse
 let compileInMemoryWorkspace = HarnessWorkspace.compileInMemoryWorkspace
 let compileInMemoryWorkspaceWithBackend = HarnessWorkspace.compileInMemoryWorkspaceWithBackend
 let compileInMemoryWorkspaceWithUnsafeConsume = HarnessWorkspace.compileInMemoryWorkspaceWithUnsafeConsume
+let compileInMemoryWorkspaceWithPackageMode = HarnessWorkspace.compileInMemoryWorkspaceWithPackageMode
 let evaluateInMemoryBinding = HarnessWorkspace.evaluateInMemoryBinding
 let discoverKpFixtureCases = HarnessFixtures.discoverKpFixtureCases
 
@@ -467,7 +468,7 @@ let private moduleSpecifierText moduleSpecifier =
     | Dotted segments ->
         SyntaxFacts.moduleNameToText segments
     | Url url ->
-        $"\"{url}\""
+        $"\"{url.OriginalText}\""
 
 let private importItemModifierText modifier =
     match modifier with

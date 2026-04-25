@@ -167,7 +167,7 @@ module internal CompilationFrontend =
         |> List.choose (fun spec ->
             match spec.Source with
             | Dotted name -> Some(SyntaxFacts.moduleNameToText name)
-            | Url url -> Some url)
+            | Url url -> Some(SyntaxFacts.urlModuleSpecifierIdentityText url))
 
     let severityText severity =
         match severity with
@@ -219,7 +219,12 @@ module internal CompilationFrontend =
     let private moduleSpecifierText moduleSpecifier =
         match moduleSpecifier with
         | Dotted segments -> SyntaxFacts.moduleNameToText segments
-        | Url url -> url
+        | Url url -> SyntaxFacts.urlModuleSpecifierText url
+
+    let private moduleSpecifierIdentityText moduleSpecifier =
+        match moduleSpecifier with
+        | Dotted segments -> SyntaxFacts.moduleNameToText segments
+        | Url url -> SyntaxFacts.urlModuleSpecifierIdentityText url
 
     let private importItemModifierText modifier =
         match modifier with
@@ -641,7 +646,7 @@ module internal CompilationFrontend =
                     None
                 else
                     match SyntaxFacts.tryDecodeStringLiteral token.Text with
-                    | Result.Ok decoded when String.Equals(decoded, url, StringComparison.Ordinal) ->
+                    | Result.Ok decoded when String.Equals(decoded, url.OriginalText, StringComparison.Ordinal) ->
                         Some(document.Source.GetLocation(token.Span))
                     | _ ->
                         None)
@@ -820,7 +825,7 @@ module internal CompilationFrontend =
             | ResolvedImportSpec resolvedSpec ->
                 let importedModuleName = moduleSpecifierText resolvedSpec.Source
 
-                match Map.tryFind importedModuleName inventories with
+                match Map.tryFind (moduleSpecifierIdentityText resolvedSpec.Source) inventories with
                 | None ->
                     inventory
                 | Some importedInventory ->
@@ -959,7 +964,26 @@ module internal CompilationFrontend =
         | None ->
             Set.contains item.Name inventory.UnqualifiedBindings
 
-    let validateImportSelections (documents: ParsedDocument list) =
+    type private UrlImportValidationResult =
+        | UrlImportValid
+        | UrlImportInvalid of DiagnosticCode * string
+
+    let private validateUrlImportSpecifier packageMode (specifier: UrlModuleSpecifier) =
+        match specifier.Pin with
+        | None when packageMode ->
+            UrlImportInvalid(
+                DiagnosticCode.UrlImportUnpinnedInPackageMode,
+                $"URL import '{specifier.OriginalText}' is unpinned. Package mode requires pinned URL imports."
+            )
+        | Some(RefPin _) when packageMode ->
+            UrlImportInvalid(
+                DiagnosticCode.UrlImportRefPinRequiresLock,
+                $"URL import '{specifier.OriginalText}' uses a ref pin, but this toolchain has no recorded immutable resolution for it in package mode."
+            )
+        | _ ->
+            UrlImportValid
+
+    let validateImportSelections packageMode (documents: ParsedDocument list) =
         let diagnostics = DiagnosticBag()
         let exportInventories = buildModuleExportInventory documents
 
@@ -970,6 +994,22 @@ module internal CompilationFrontend =
                     for spec in specs do
                         let defaultLocation = document.Source.GetLocation(TextSpan.FromBounds(0, 0))
                         let specLocation = defaultArg (findImportSpecifierLocation document spec) defaultLocation
+
+                        match spec.Source with
+                        | Url specifier ->
+                            match validateUrlImportSpecifier packageMode specifier with
+                            | UrlImportInvalid(code, message) ->
+                                diagnostics.AddError(
+                                    code,
+                                    message,
+                                    specLocation,
+                                    stage = "KFrontIR",
+                                    phase = KFrontIRPhase.phaseName CHECKERS
+                                )
+                            | UrlImportValid ->
+                                ()
+                        | _ ->
+                            ()
 
                         match resolveQualifiedOnlyImportSpec exportInventories spec with
                         | AmbiguousBareImport(fullModuleName, parentModuleName, itemName) ->
@@ -991,39 +1031,79 @@ module internal CompilationFrontend =
                         | ResolvedImportSpec resolvedSpec ->
                             let importedModuleName = moduleSpecifierText resolvedSpec.Source
 
-                            match Map.tryFind importedModuleName exportInventories with
-                            | Some inventory ->
-                                match resolvedSpec.Selection with
-                                | Items items ->
-                                    for item in items do
-                                        if not (importItemExists inventory item) then
-                                            diagnostics.AddError(
-                                                DiagnosticCode.ImportItemNotFound,
-                                                $"Import item '{item.Name}' was not found in module '{importedModuleName}'.",
-                                                defaultArg (findTokenLocation document item.Name) defaultLocation,
-                                                stage = "KFrontIR",
-                                                phase = KFrontIRPhase.phaseName CHECKERS
-                                            )
-                                | AllExcept items ->
-                                    for item in items do
-                                        if not (exceptItemExists inventory item) then
-                                            diagnostics.AddError(
-                                                DiagnosticCode.ImportItemNotFound,
-                                                $"Excluded import item '{item.Name}' was not found in module '{importedModuleName}'.",
-                                                defaultArg (findTokenLocation document item.Name) defaultLocation,
-                                                stage = "KFrontIR",
-                                                phase = KFrontIRPhase.phaseName CHECKERS
-                                            )
-                                | _ ->
+                            match resolvedSpec.Source with
+                            | Url specifier ->
+                                match validateUrlImportSpecifier packageMode specifier with
+                                | UrlImportInvalid _ ->
                                     ()
-                            | None ->
-                                diagnostics.AddError(
-                                    DiagnosticCode.ModuleNameUnresolved,
-                                    $"Imported module '{importedModuleName}' was not found.",
-                                    specLocation,
-                                    stage = "KFrontIR",
-                                    phase = KFrontIRPhase.phaseName CHECKERS
-                                )
+                                | UrlImportValid ->
+                                    match Map.tryFind (moduleSpecifierIdentityText resolvedSpec.Source) exportInventories with
+                                    | Some inventory ->
+                                        match resolvedSpec.Selection with
+                                        | Items items ->
+                                            for item in items do
+                                                if not (importItemExists inventory item) then
+                                                    diagnostics.AddError(
+                                                        DiagnosticCode.ImportItemNotFound,
+                                                        $"Import item '{item.Name}' was not found in module '{importedModuleName}'.",
+                                                        defaultArg (findTokenLocation document item.Name) defaultLocation,
+                                                        stage = "KFrontIR",
+                                                        phase = KFrontIRPhase.phaseName CHECKERS
+                                                    )
+                                        | AllExcept items ->
+                                            for item in items do
+                                                if not (exceptItemExists inventory item) then
+                                                    diagnostics.AddError(
+                                                        DiagnosticCode.ImportItemNotFound,
+                                                        $"Excluded import item '{item.Name}' was not found in module '{importedModuleName}'.",
+                                                        defaultArg (findTokenLocation document item.Name) defaultLocation,
+                                                        stage = "KFrontIR",
+                                                        phase = KFrontIRPhase.phaseName CHECKERS
+                                                    )
+                                        | _ ->
+                                            ()
+                                    | None ->
+                                        diagnostics.AddError(
+                                            DiagnosticCode.ModuleNameUnresolved,
+                                            $"Imported module '{importedModuleName}' was not found.",
+                                            specLocation,
+                                            stage = "KFrontIR",
+                                            phase = KFrontIRPhase.phaseName CHECKERS
+                                        )
+                            | _ ->
+                                match Map.tryFind (moduleSpecifierIdentityText resolvedSpec.Source) exportInventories with
+                                | Some inventory ->
+                                    match resolvedSpec.Selection with
+                                    | Items items ->
+                                        for item in items do
+                                            if not (importItemExists inventory item) then
+                                                diagnostics.AddError(
+                                                    DiagnosticCode.ImportItemNotFound,
+                                                    $"Import item '{item.Name}' was not found in module '{importedModuleName}'.",
+                                                    defaultArg (findTokenLocation document item.Name) defaultLocation,
+                                                    stage = "KFrontIR",
+                                                    phase = KFrontIRPhase.phaseName CHECKERS
+                                                )
+                                    | AllExcept items ->
+                                        for item in items do
+                                            if not (exceptItemExists inventory item) then
+                                                diagnostics.AddError(
+                                                    DiagnosticCode.ImportItemNotFound,
+                                                    $"Excluded import item '{item.Name}' was not found in module '{importedModuleName}'.",
+                                                    defaultArg (findTokenLocation document item.Name) defaultLocation,
+                                                    stage = "KFrontIR",
+                                                    phase = KFrontIRPhase.phaseName CHECKERS
+                                                )
+                                    | _ ->
+                                        ()
+                                | None ->
+                                    diagnostics.AddError(
+                                        DiagnosticCode.ModuleNameUnresolved,
+                                        $"Imported module '{importedModuleName}' was not found.",
+                                        specLocation,
+                                        stage = "KFrontIR",
+                                        phase = KFrontIRPhase.phaseName CHECKERS
+                                    )
                 | _ ->
                     ()
 
@@ -1110,7 +1190,7 @@ module internal CompilationFrontend =
                         | AmbiguousBareImport _
                         | UnresolvedBareImport _ -> spec
 
-                    let moduleNameText = moduleSpecifierText resolvedSpec.Source
+                    let moduleNameText = moduleSpecifierIdentityText resolvedSpec.Source
 
                     match Map.tryFind moduleNameText exportInventories, Map.tryFind moduleNameText moduleFixityInventory with
                     | Some inventory, Some fixities ->

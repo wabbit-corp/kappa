@@ -98,7 +98,7 @@ module Compilation =
         let frontendDiagnostics =
             (documents |> List.collect (fun document -> document.Diagnostics))
             @ detectImportCycles documents
-            @ validateImportSelections documents
+            @ validateImportSelections options.PackageMode documents
             @ CompilationFrontend.validateReflEqualityDeclarations documents
             @ SurfaceElaboration.validateSurfaceModules frontendModulesForValidation
             @ validateExpectDeclarations normalizedBackendProfile options.AllowUnsafeConsume documents

@@ -122,6 +122,21 @@ let compileInMemoryWorkspaceWithUnsafeConsume (rootName: string) (files: (string
 
     Compilation.parse options [ root ]
 
+let compileInMemoryWorkspaceWithPackageMode (rootName: string) (packageMode: bool) (files: (string * string) list) =
+    let root = rootPath rootName
+
+    let fileSystem =
+        InMemoryFileSystem(
+            files
+            |> List.map (fun (filePath, text) -> rootedFilePath root filePath, text)
+        )
+
+    let options =
+        { CompilationOptions.createWithFileSystem fileSystem root with
+            PackageMode = packageMode }
+
+    Compilation.parse options [ root ]
+
 let evaluateInMemoryBinding (rootName: string) (entryPoint: string) (files: (string * string) list) =
     let workspace = compileInMemoryWorkspace rootName files
     workspace, Interpreter.evaluateBinding workspace entryPoint

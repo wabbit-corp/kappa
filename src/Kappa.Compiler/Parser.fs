@@ -582,7 +582,15 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
                         diagnostics.AddError(DiagnosticCode.ParseError, message, source.GetLocation(token.Span))
                         SyntaxFacts.trimStringQuotes token.Text
 
-                Url value
+                match SyntaxFacts.tryParseUrlModuleSpecifier value with
+                | Result.Ok specifier ->
+                    Url specifier
+                | Result.Error message ->
+                    diagnostics.AddError(DiagnosticCode.ParseError, message, source.GetLocation(token.Span))
+                    Url
+                        { OriginalText = value
+                          BaseUrl = value
+                          Pin = None }
             | _ ->
                 Dotted(this.ParseDottedName())
 

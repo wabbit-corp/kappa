@@ -308,7 +308,7 @@ let ``parser accepts URL singleton sugar for import and export`` () =
     | [ ImportDeclaration (false, [ importSpec ])
         ImportDeclaration (true, [ exportSpec ]) ] ->
         match importSpec.Source, importSpec.Selection with
-        | Url "https://example.com/lib", Items [ item ] ->
+        | Url { OriginalText = "https://example.com/lib"; BaseUrl = "https://example.com/lib"; Pin = None }, Items [ item ] ->
             Assert.Equal("value", item.Name)
             Assert.Equal(None, item.Namespace)
             Assert.Equal(None, item.Alias)
@@ -317,7 +317,7 @@ let ``parser accepts URL singleton sugar for import and export`` () =
             failwithf "Unexpected URL singleton import: %A" other
 
         match exportSpec.Source, exportSpec.Selection with
-        | Url "https://example.com/lib", Items [ item ] ->
+        | Url { OriginalText = "https://example.com/lib"; BaseUrl = "https://example.com/lib"; Pin = None }, Items [ item ] ->
             Assert.Equal("result", item.Name)
             Assert.Equal(None, item.Namespace)
             Assert.Equal(None, item.Alias)
@@ -326,6 +326,141 @@ let ``parser accepts URL singleton sugar for import and export`` () =
             failwithf "Unexpected URL singleton export: %A" other
     | other ->
         failwithf "Unexpected declarations for URL singleton sugar: %A" other
+
+[<Fact>]
+let ``parser parses URL pins structurally and canonicalizes sha256 digests`` () =
+    let sourceText =
+        [
+            "module demo.hello"
+            "import \"https://example.com/lib#sha256:ABCD1234\".*"
+            "import \"https://example.com/lib#ref:v1.2.3\".(value)"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "demo/hello.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Empty(parsed.Diagnostics)
+
+    match parsed.Syntax.Declarations with
+    | [ ImportDeclaration (false, [ shaSpec ])
+        ImportDeclaration (false, [ refSpec ]) ] ->
+        match shaSpec.Source with
+        | Url { OriginalText = "https://example.com/lib#sha256:ABCD1234"
+                BaseUrl = "https://example.com/lib"
+                Pin = Some(Sha256Pin "abcd1234") } -> ()
+        | other ->
+            failwithf "Unexpected sha256 URL import specifier: %A" other
+
+        match refSpec.Source with
+        | Url { OriginalText = "https://example.com/lib#ref:v1.2.3"
+                BaseUrl = "https://example.com/lib"
+                Pin = Some(RefPin "v1.2.3") } -> ()
+        | other ->
+            failwithf "Unexpected ref URL import specifier: %A" other
+    | other ->
+        failwithf "Unexpected declarations for URL pin parsing: %A" other
+
+[<Fact>]
+let ``parser rejects malformed URL pins`` () =
+    let sourceText =
+        [
+            "module demo.hello"
+            "import \"https://example.com/lib#sha256:not-hex\".*"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "demo/hello.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Equal<DiagnosticCode list>([ DiagnosticCode.ParseError ], parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code))
+    Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("sha256", StringComparison.Ordinal))
+
+[<Fact>]
+let ``package mode rejects unpinned URL imports before unresolved-module validation`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-package-unpinned-url"
+            [
+                "main.kp",
+                String.concat
+                    "\n"
+                    [
+                        "module main"
+                        "import \"https://example.com/lib\".*"
+                    ]
+            ]
+
+    let codes = workspace.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code)
+    Assert.Contains(DiagnosticCode.UrlImportUnpinnedInPackageMode, codes)
+    Assert.DoesNotContain(DiagnosticCode.ModuleNameUnresolved, codes)
+
+[<Fact>]
+let ``package mode rejects ref pinned URL imports without a locked immutable resolution`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-package-ref-url"
+            [
+                "main.kp",
+                String.concat
+                    "\n"
+                    [
+                        "module main"
+                        "import \"https://example.com/lib#ref:v1.2.3\".*"
+                    ]
+            ]
+
+    let codes = workspace.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code)
+    Assert.Contains(DiagnosticCode.UrlImportRefPinRequiresLock, codes)
+    Assert.DoesNotContain(DiagnosticCode.ModuleNameUnresolved, codes)
+
+[<Fact>]
+let ``package mode accepts sha256 pinned URL syntax without reproducibility diagnostics`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-package-sha-url"
+            [
+                "main.kp",
+                String.concat
+                    "\n"
+                    [
+                        "module main"
+                        "import \"https://example.com/lib#sha256:ABCD1234\".*"
+                    ]
+            ]
+
+    let codes = workspace.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code)
+    Assert.DoesNotContain(DiagnosticCode.UrlImportUnpinnedInPackageMode, codes)
+    Assert.DoesNotContain(DiagnosticCode.UrlImportRefPinRequiresLock, codes)
+    Assert.Contains(DiagnosticCode.ModuleNameUnresolved, codes)
+
+[<Fact>]
+let ``script mode permits unpinned and ref pinned URL imports without package-mode reproducibility diagnostics`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithPackageMode
+            "memory-script-url-imports"
+            false
+            [
+                "main.kp",
+                String.concat
+                    "\n"
+                    [
+                        "module main"
+                        "import \"https://example.com/lib\".*"
+                        "import \"https://example.com/lib#ref:v1.2.3\".(value)"
+                    ]
+            ]
+
+    let codes = workspace.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code)
+    Assert.DoesNotContain(DiagnosticCode.UrlImportUnpinnedInPackageMode, codes)
+    Assert.DoesNotContain(DiagnosticCode.UrlImportRefPinRequiresLock, codes)
+    Assert.Equal(2, codes |> List.filter ((=) DiagnosticCode.ModuleNameUnresolved) |> List.length)
 
 [<Fact>]
 let ``bare dotted import resolves to singleton sugar when only the parent item exists`` () =
@@ -461,7 +596,7 @@ let ``bare dotted export is rejected when both module and singleton interpretati
     Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("a.b.c", StringComparison.Ordinal))
 
 [<Fact>]
-let ``URL imports and exports participate in unresolved module validation`` () =
+let ``package mode rejects unpinned URL imports and exports before module resolution`` () =
     let workspace =
         compileInMemoryWorkspace
             "memory-url-import-validation"
@@ -476,15 +611,15 @@ let ``URL imports and exports participate in unresolved module validation`` () =
                     ]
             ]
 
-    Assert.True(workspace.HasErrors, "Expected unresolved URL modules to produce compile-time diagnostics.")
+    Assert.True(workspace.HasErrors, "Expected unpinned URL imports/exports to produce package-mode diagnostics.")
 
-    let unresolvedDiagnostics =
+    let urlDiagnostics =
         workspace.Diagnostics
-        |> List.filter (fun diagnostic -> diagnostic.Code = DiagnosticCode.ModuleNameUnresolved)
+        |> List.filter (fun diagnostic -> diagnostic.Code = DiagnosticCode.UrlImportUnpinnedInPackageMode)
 
-    Assert.Equal(2, unresolvedDiagnostics.Length)
+    Assert.Equal(2, urlDiagnostics.Length)
     Assert.All(
-        unresolvedDiagnostics,
+        urlDiagnostics,
         fun diagnostic -> Assert.Contains("https://example.com/lib", diagnostic.Message, StringComparison.Ordinal)
     )
 

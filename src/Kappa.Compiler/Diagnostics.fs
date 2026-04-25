@@ -18,6 +18,8 @@ type DiagnosticCode =
     | ImportCycle
     | ImportAmbiguous
     | ImportItemNotFound
+    | UrlImportUnpinnedInPackageMode
+    | UrlImportRefPinRequiresLock
     | ModuleNameUnresolved
     | ModulePathMismatch
     | StaticObjectUnresolved
@@ -80,6 +82,8 @@ module DiagnosticCode =
         | ImportCycle -> "E_IMPORT_CYCLE"
         | ImportAmbiguous -> "E_IMPORT_AMBIGUOUS"
         | ImportItemNotFound -> "E_IMPORT_ITEM_NOT_FOUND"
+        | UrlImportUnpinnedInPackageMode -> "E_URL_IMPORT_UNPINNED_IN_PACKAGE_MODE"
+        | UrlImportRefPinRequiresLock -> "E_URL_IMPORT_REF_PIN_REQUIRES_LOCK"
         | ModuleNameUnresolved -> "E_MODULE_NAME_UNRESOLVED"
         | ModulePathMismatch -> "E_MODULE_PATH_MISMATCH"
         | StaticObjectUnresolved -> "E_STATIC_OBJECT_UNRESOLVED"
@@ -141,6 +145,8 @@ module DiagnosticCode =
         | "E_IMPORT_CYCLE" -> Some ImportCycle
         | "E_IMPORT_AMBIGUOUS" -> Some ImportAmbiguous
         | "E_IMPORT_ITEM_NOT_FOUND" -> Some ImportItemNotFound
+        | "E_URL_IMPORT_UNPINNED_IN_PACKAGE_MODE" -> Some UrlImportUnpinnedInPackageMode
+        | "E_URL_IMPORT_REF_PIN_REQUIRES_LOCK" -> Some UrlImportRefPinRequiresLock
         | "E_MODULE_NAME_UNRESOLVED" -> Some ModuleNameUnresolved
         | "E_MODULE_PATH_MISMATCH" -> Some ModulePathMismatch
         | "E_STATIC_OBJECT_UNRESOLVED" -> Some StaticObjectUnresolved
