@@ -9413,40 +9413,42 @@ Dynamic semantics:
 `if` is an expression.
 
 ```text
-ifExpr     ::= 'if' condList 'then' expr ('elif' condList 'then' expr)* 'else' expr
-condList   ::= condClause (',' condClause)*
-condClause ::= expr
-             | 'let' pattern '=' expr
+ifExpr ::= 'if' expr 'then' expr ('elif' expr 'then' expr)* 'else' expr
 ```
 
-Clause forms:
+Condition:
 
-* A plain expression clause `e` is a boolean condition. It must have type `Bool`.
-  This includes constructor-tag test expressions `e is C` from §7.3.4.
-* A pattern clause `let pat = e` is a refutable pattern condition. It succeeds iff matching `e` against `pat` succeeds.
+* The condition expression of each `if` or `elif` must have type `Bool`.
+* Constructor-tag tests such as `e is C` are ordinary boolean expressions (§7.3.4) and require no special `if`
+  grammar.
+* There is no `if let` condition form in v0.1.
+* Commas do not separate conditions in `if` or `elif`.
+
+To combine boolean conditions, use `&&`, `||`, `not`, nested `if`, or `match`.
+To perform refutable pattern matching, use `match`, `try match`, `let?` in `do`, or `let?` in comprehensions.
 
 Scope and evaluation:
 
 * Outside `do`, `if` must have a final `else`.
-* `elif` is sugar for `else if`.
+* Inside a `do` block, an `if` without `else` is allowed as sugar (§8.3).
+* `elif c then e` is sugar for `else if c then e`.
+* Each condition expression is elaborated and evaluated exactly once when control reaches that `if` or `elif`.
+* The `then` branch is checked in the success environment of that condition.
+* The `else` branch is checked in the failure environment of that condition.
+* Because `elif` is nested `else if` sugar, an `elif` condition is checked in the failure environment of the preceding
+  condition chain.
 * All branches must have the same type.
-* Clauses are elaborated and evaluated in source order.
-* Later clauses are checked in the environment produced by earlier successful clauses.
-* The `then` branch is checked in the success environment of the full condition list.
-* The `else` branch is checked in the failure environment of the first failing clause.
-
-Inside a `do` block, an `if` without `else` is allowed as sugar (see §8).
 
 <!-- expressions.conditionals.flow_sensitive_branch_evidence_atomic_conditions -->
 #### 7.4.1 Flow-sensitive branch evidence for atomic conditions
 
-Boolean clauses introduce boolean assumptions into the implicit context.
+Boolean condition expressions introduce boolean assumptions into the implicit context.
 
 ```kappa
 if cond then e1 else e2
 ```
 
-For a plain boolean clause, the success continuation is checked under additional erased implicit evidence:
+For a boolean condition expression, the success continuation is checked under additional erased implicit evidence:
 
 ```kappa
 @p : cond = True
@@ -9458,7 +9460,8 @@ and the failure continuation is checked under additional erased implicit evidenc
 @p : cond = False
 ```
 
-When such a plain boolean clause is syntactically a constructor-tag test `e is C`, the same branch additionally carries
+When such a boolean condition expression is syntactically a constructor-tag test `e is C`, the same branch additionally
+carries
 constructor-refinement evidence:
 
 * success continuation:
@@ -9514,10 +9517,6 @@ case _ ->
 Outside a module where an opaque data type's constructors are visible, failure-side `LacksCtor` evidence does not reveal
 hidden constructors.
 
-Pattern clauses introduce bindings but no negative residual fact. The success continuation is checked under the
-bindings and refinements introduced by matching `pat` against `e`; the failure continuation receives no additional
-negative evidence beyond the ordinary control-flow fact that the pattern clause failed.
-
 These erased assumptions participate in implicit resolution (§7.3.3).
 
 `elif` introduces no separate rule beyond its desugaring to nested `else if`.
@@ -9525,11 +9524,11 @@ These erased assumptions participate in implicit resolution (§7.3.3).
 <!-- expressions.conditionals.flow_typing_through_short_circuit_short_circuit_not -->
 #### 7.4.2 Flow typing through `&&`, `||`, and `not`
 
-Flow typing for plain boolean clauses is defined over ordinary boolean syntax.
+Flow typing for boolean condition expressions is defined over ordinary boolean syntax.
 
 A flow-sensitive condition position is:
 
-* a plain boolean clause in an `if` condition list;
+* the condition of `if` or `elif`;
 * the guard of `case pat if guard`;
 * the condition of `while` when that condition is a pure `Bool` expression; and
 * any later construct explicitly defined in terms of the success or failure environment of a boolean condition.
