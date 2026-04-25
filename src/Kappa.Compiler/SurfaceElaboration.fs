@@ -7094,21 +7094,44 @@ module SurfaceElaboration =
                 let constructorHasMalformedShape (constructor: DataConstructor) =
                     let significant = significantTokens constructor.Tokens
 
-                    let remainingTokens =
-                        match significant with
-                        | { Kind = Operator; Text = "|" } :: _nameToken :: rest -> rest
-                        | _nameToken :: rest -> rest
-                        | [] -> []
+                    let hasUnbalancedDelimiters tokens =
+                        let mutable parenDepth = 0
+                        let mutable braceDepth = 0
+                        let mutable bracketDepth = 0
+                        let mutable setBraceDepth = 0
 
-                    match constructor.Parameters, remainingTokens with
-                    | Some _, _ ->
+                        for token in tokens do
+                            match token.Kind with
+                            | LeftParen -> parenDepth <- parenDepth + 1
+                            | RightParen -> parenDepth <- max 0 (parenDepth - 1)
+                            | LeftBrace -> braceDepth <- braceDepth + 1
+                            | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
+                            | LeftBracket -> bracketDepth <- bracketDepth + 1
+                            | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
+                            | LeftSetBrace -> setBraceDepth <- setBraceDepth + 1
+                            | RightSetBrace -> setBraceDepth <- max 0 (setBraceDepth - 1)
+                            | _ -> ()
+
+                        parenDepth <> 0 || braceDepth <> 0 || bracketDepth <> 0 || setBraceDepth <> 0
+
+                    if hasUnbalancedDelimiters significant then
                         false
-                    | None, [] ->
-                        false
-                    | None, { Kind = Colon } :: typeTokens ->
-                        TypeSignatures.parseScheme typeTokens |> Option.isNone
-                    | None, _ ->
-                        List.isEmpty (TypeSignatures.constructorFieldTypes constructor)
+                    else
+                        let remainingTokens =
+                            match significant with
+                            | { Kind = Operator; Text = "|" } :: _nameToken :: rest -> rest
+                            | _nameToken :: rest -> rest
+                            | [] -> []
+
+                        match constructor.Parameters, remainingTokens with
+                        | Some _, _ ->
+                            false
+                        | None, [] ->
+                            false
+                        | None, { Kind = Colon } :: typeTokens ->
+                            TypeSignatures.parseScheme typeTokens |> Option.isNone
+                        | None, _ ->
+                            List.isEmpty (TypeSignatures.constructorFieldTypes constructor)
 
                 frontendModule.Declarations
                 |> List.collect (function

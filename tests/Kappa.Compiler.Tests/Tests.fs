@@ -287,6 +287,73 @@ let ``parser rejects aliases on constructor-bundle import items`` () =
     Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("ctorAll may not be combined with an alias"))
 
 [<Fact>]
+let ``parser rejects malformed type aliases with trailing operator garbage`` () =
+    let sourceText =
+        [
+            "module main"
+            ""
+            "type I0 = (left : I0)\\I0\\I1 I1"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "memory.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Equal<DiagnosticCode list>([ DiagnosticCode.ParseError ], parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code))
+    Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("type alias body"))
+
+[<Fact>]
+let ``parser rejects malformed trait members that are not signatures or defaults`` () =
+    let sourceText =
+        [
+            "module main"
+            ""
+            "type I1 = (left : I0)\\I0\\I1 as I3"
+            ""
+            "trait I4 i0 ="
+            "    while I4 (I4 this = I0 40 0)"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "memory.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Equal<DiagnosticCode list>(
+        [ DiagnosticCode.ParseError; DiagnosticCode.ParseError ],
+        parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code)
+    )
+    Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("type alias body"))
+    Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("trait member"))
+
+[<Fact>]
+let ``parser rejects unterminated data constructors before the next declaration`` () =
+    let sourceText =
+        [
+            "module main"
+            ""
+            "data I0 : Type ="
+            "    I1 (I0 : Int)"
+            "    I3 (I1 : I1"
+            "let I1 (1 I1 : I1) = I1 I1"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "memory.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Equal<DiagnosticCode list>([ DiagnosticCode.ParseError ], parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code))
+    Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("Expected ')'"))
+
+[<Fact>]
 let ``parser accepts URL singleton sugar for import and export`` () =
     let sourceText =
         [

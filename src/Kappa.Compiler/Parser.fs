@@ -155,6 +155,85 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
 
         name, arity
 
+    member private _.SignificantTokens(tokens: Token list) =
+        tokens
+        |> List.filter (fun token ->
+            match token.Kind with
+            | Newline
+            | Indent
+            | Dedent
+            | EndOfFile -> false
+            | _ -> true)
+
+    member private this.ValidateTypeAliasBody(tokens: Token list) =
+        let significantTokens = this.SignificantTokens tokens
+
+        let hasInvalidTopLevelToken =
+            let tokenArray = significantTokens |> List.toArray
+            let mutable parenDepth = 0
+            let mutable braceDepth = 0
+            let mutable bracketDepth = 0
+            let mutable setBraceDepth = 0
+            let mutable foundInvalid = None
+            let mutable index = 0
+
+            while index < tokenArray.Length && foundInvalid.IsNone do
+                match tokenArray[index].Kind with
+                | LeftParen -> parenDepth <- parenDepth + 1
+                | RightParen -> parenDepth <- max 0 (parenDepth - 1)
+                | LeftBrace -> braceDepth <- braceDepth + 1
+                | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
+                | LeftBracket -> bracketDepth <- bracketDepth + 1
+                | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
+                | LeftSetBrace -> setBraceDepth <- setBraceDepth + 1
+                | RightSetBrace -> setBraceDepth <- max 0 (setBraceDepth - 1)
+                | Backslash when parenDepth = 0 && braceDepth = 0 && bracketDepth = 0 && setBraceDepth = 0 ->
+                    foundInvalid <- Some tokenArray[index]
+                | Operator when parenDepth = 0 && braceDepth = 0 && bracketDepth = 0 && setBraceDepth = 0 && String.Equals(tokenArray[index].Text, "\\", StringComparison.Ordinal) ->
+                    foundInvalid <- Some tokenArray[index]
+                | Keyword Keyword.As when parenDepth = 0 && braceDepth = 0 && bracketDepth = 0 && setBraceDepth = 0 ->
+                    foundInvalid <- Some tokenArray[index]
+                | _ ->
+                    ()
+
+                index <- index + 1
+
+            foundInvalid
+
+        match significantTokens, hasInvalidTopLevelToken with
+        | [], _ ->
+            diagnostics.AddError(DiagnosticCode.ParseError, "Expected a type alias body.", source.GetLocation(this.Current.Span))
+        | _, Some token ->
+            diagnostics.AddError(DiagnosticCode.ParseError, "Expected a valid type alias body.", source.GetLocation(token.Span))
+        | _ ->
+            ()
+
+    member private this.ValidateTraitMember(lineTokens: Token list) =
+        let significantTokens = this.SignificantTokens lineTokens
+
+        let isValidSignature tokens =
+            match tokens with
+            | head :: colon :: schemeTokens when Token.isName head && colon.Kind = Colon ->
+                TypeSignatures.parseScheme schemeTokens |> Option.isSome
+            | { Kind = LeftParen } :: { Kind = Operator } :: { Kind = RightParen } :: colon :: schemeTokens when colon.Kind = Colon ->
+                TypeSignatures.parseScheme schemeTokens |> Option.isSome
+            | _ ->
+                false
+
+        match significantTokens with
+        | [] ->
+            ()
+        | head :: _ when Token.isKeyword Keyword.Let head ->
+            ()
+        | _ when isValidSignature significantTokens ->
+            ()
+        | head :: _ ->
+            diagnostics.AddError(
+                DiagnosticCode.ParseError,
+                "Expected a trait member signature or a default member definition.",
+                source.GetLocation(head.Span)
+            )
+
     member private _.SplitTopLevelCommaGroups(tokens: Token list) =
         let groups = ResizeArray<Token list>()
         let tokenArray = tokens |> List.toArray
@@ -921,6 +1000,19 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
                         currentLine.Add(this.Advance())
 
                 flushLine ()
+
+                if parenDepth > 0 then
+                    diagnostics.AddError(DiagnosticCode.ParseError, "Expected ')' to close the declaration block item.", source.GetLocation(this.Current.Span))
+
+                if braceDepth > 0 then
+                    diagnostics.AddError(DiagnosticCode.ParseError, "Expected '}' to close the declaration block item.", source.GetLocation(this.Current.Span))
+
+                if bracketDepth > 0 then
+                    diagnostics.AddError(DiagnosticCode.ParseError, "Expected ']' to close the declaration block item.", source.GetLocation(this.Current.Span))
+
+                if setBraceDepth > 0 then
+                    diagnostics.AddError(DiagnosticCode.ParseError, "Expected '>}' to close the declaration block item.", source.GetLocation(this.Current.Span))
+
                 this.Expect(Dedent, "Expected the declaration block to dedent.") |> ignore
             | None ->
                 diagnostics.AddError(DiagnosticCode.ParseError, "Expected an indented block.", source.GetLocation(this.Current.Span))
@@ -970,7 +1062,9 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
 
         let bodyTokens =
             if this.TryConsume(Equals).IsSome then
-                Some(this.CollectUntilTopLevelBoundary())
+                let parsedBody = this.CollectUntilTopLevelBoundary()
+                this.ValidateTypeAliasBody(parsedBody)
+                Some parsedBody
             else
                 None
 
@@ -988,7 +1082,12 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
 
         let headerTokens = ResizeArray<Token>()
 
-        while (this.Current.Kind <> Equals
+        let isConstraintArrowEquals () =
+            this.Current.Kind = Equals
+            && this.Peek(1).Kind = Operator
+            && String.Equals(this.Peek(1).Text, ">", StringComparison.Ordinal)
+
+        while ((this.Current.Kind <> Equals || isConstraintArrowEquals ())
                && this.Current.Kind <> Newline
                && this.Current.Kind <> EndOfFile) do
             headerTokens.Add(this.Advance())
@@ -997,6 +1096,8 @@ type private TokenParser(tokens: Token list, source: SourceText, initialFixities
             if this.TryConsume(Equals).IsSome then
                 this.ParseIndentedLines()
                 |> List.map (fun lineTokens ->
+                    this.ValidateTraitMember(lineTokens)
+
                     let defaultDefinition =
                         match lineTokens with
                         | head :: _ when Token.isKeyword Keyword.Let head ->
