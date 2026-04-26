@@ -6881,33 +6881,34 @@ The reflection API MUST additionally provide elaboration-time convenience operat
 ```kappa
 renderSyntax :
     forall (@0 t : Type).
-    Syntax t -> String
+    Syntax t -> Elab String
 
 typeOfSyntax :
     forall (@0 t : Type).
-    Syntax t -> Syntax Type
+    Syntax t -> Elab (Syntax Type)
 
 whnfSyntax :
     forall (@0 t : Type).
-    Syntax t -> Syntax t
+    Syntax t -> Elab (Syntax t)
 
 normalizeSyntax :
     forall (@0 t : Type).
-    Syntax t -> Syntax t
+    Syntax t -> Elab (Syntax t)
 
 defEqSyntax :
     forall (@0 a : Type) (@0 b : Type).
-    Syntax a -> Syntax b -> Bool
+    Syntax a -> Syntax b -> Elab Bool
 
 headSymbolSyntax :
     forall (@0 t : Type).
-    Syntax t -> Option Symbol
+    Syntax t -> Elab (Option Symbol)
 ```
 
 Normative meaning:
 
-* `renderSyntax` returns a deterministic, human-oriented rendering of the given syntax value. The exact pretty-printing
-  style is implementation-defined, but the rendering MUST preserve binding structure and hygiene up to alpha-renaming.
+* `renderSyntax` returns a deterministic, human-oriented rendering of the given syntax value during elaboration. The
+  exact pretty-printing style is implementation-defined, but the rendering MUST preserve binding structure and hygiene
+  up to alpha-renaming.
 * `typeOfSyntax s` elaborates `s` at the current call site, infers its type using the ordinary elaborator, and reifies
   that type back to `Syntax Type`.
 * `whnfSyntax s` elaborates `s` at the current call site, computes weak-head normal form using the ordinary
@@ -6918,9 +6919,9 @@ Normative meaning:
   `defEq` would return for the resulting reflected cores.
 * `headSymbolSyntax s` elaborates `s` at the current call site and returns the same result that `headSymbol` would
   return for the resulting reflected core.
-* These convenience operations are pure elaboration-time queries. They MUST obey the same name-resolution,
-  implicit-insertion, visibility, opacity, `unhide`, and `clarify` rules as the underlying reflection operations at the
-  call site.
+* These convenience operations are elaboration-time queries. They MUST obey the same name-resolution,
+  implicit-insertion, quantity, borrow, region, visibility, opacity, `unhide`, and `clarify` rules as the underlying
+  reflection operations at the call site.
 
 <!-- types.macros.restrictions_macro_effects -->
 #### 5.8.6 Restrictions on macro effects
