@@ -3603,29 +3603,50 @@ Usage rules:
   descriptors and does not introduce coherent evidence for `c`.
 
 <!-- types.universes.erasure_elaboration_time -->
-#### 5.1.4 Erasure and elaboration time
+#### 5.1.4 Erasure, phases, and elaboration time
 
-Kappa distinguishes computational values from compile-time values.
+Kappa distinguishes:
 
-Compile-time values are:
+1. object-phase values, which are ordinary program values governed by runtime computation, quantity checking, borrowing,
+   and erasure; and
+
+2. meta-phase values, which exist only during elaboration and are erased before runtime.
+
+Some types are intrinsically compile-time-only. Values of those types are always meta-phase values.
+
+Compile-time-only values include:
 
 * inhabitants of the intrinsic compile-time types `Universe`, `Quantity`, `Region`, `Constraint`, `RecRow`, `VarRow`,
   `EffRow`, `Label`, and `EffLabel`;
 * universe terms appearing in `Type u`;
+* inhabitants of `Syntax t`, `SyntaxOrigin`, and `SyntaxFragment`;
 * inhabitants of the elaboration-time reflection types `CoreCtx`, `Symbol`, `Core Γ t`, and `CoreEq x y` of §5.8.5;
 * inhabitants of the comprehension reflection types `RawComprehension a` and `ComprehensionPlan a` of §5.8.5;
 * inhabitants of the elaboration-time action type `Elab a` and of the elaboration-time goal record `ElabGoal` of
   §5.8.7;
-* inhabitants of compile-time function spaces built entirely from such types and from `Type u`.
+* internal nominal-scope tokens introduced by scoped local declarations; and
+* function values whose complete explicit/implicit application result is compile-time-only, including functions whose
+  eventual result is `Elab a`.
 
-Compile-time values are ordinary terms for binding, projection, packaging, sealing, opening, and definitional equality,
-but Kappa does not require implicit runtime reflection over them.
+A value of an ordinary runtime-capable type such as `String`, `Bool`, `List a`, or a record type may still exist at the
+meta phase when it is introduced inside an `Elab` computation or another explicitly meta-phase context. Such a value is
+a compile-time value by phase, not by its ordinary type classifier.
+
+This distinction is intentional:
+
+* `String` is not globally a compile-time-only type.
+* `Elab String` is a compile-time action producing a meta-phase `String`.
+* A `String` bound inside an `Elab` action is a meta-phase string and is erased.
+* A `String` bound by ordinary object-phase code is an ordinary runtime value.
+
+Compile-time values are ordinary terms for binding, projection, packaging, sealing, opening, and definitional equality
+within the phase in which they are valid, but Kappa does not provide implicit runtime reflection over them.
 
 Runtime erasure is governed as follows:
 
-* For computational binders and fields, runtime erasure is governed by quantities (§5.1.5, §14.4), subject to the
-  special treatment of coherent constraint evidence and `Dict` values in §5.1.3.
-* For compile-time binders, fields, arguments, and package members, erasure is by classifier rather than by written
+* For object-phase computational binders and fields, runtime erasure is governed by quantities (§5.1.5, §14.4), subject
+  to the special treatment of coherent constraint evidence and `Dict` values in §5.1.3.
+* For meta-phase binders, fields, arguments, and package members, erasure is by phase/classifier rather than by written
   quantity: they are compile-time only and are erased unless preserved by an explicit reified runtime carrier such as
   `Dict C` or another representation type supplied by the implementation or libraries.
 * Implementations may provide library mechanisms to reify type information or other compile-time information explicitly
@@ -3634,21 +3655,18 @@ Runtime erasure is governed as follows:
 <!-- types.universes.erasure_elaboration_time.compile_time_bindings_fields -->
 ##### 5.1.4.1 Compile-time bindings and fields
 
-A binder, record field, or package member is compile-time if its annotation elaborates to one of the intrinsic
-compile-time types of §5.1.3, to `Type u`, to one of the elaboration-time reflection types of §5.8.5, to
-`RawComprehension a` or `ComprehensionPlan a` of §5.8.5, to `Elab a` or `ElabGoal` of §5.8.7, or to a compile-time
-function space built from such types.
+A binder, record field, argument, or package member is compile-time exactly when it is meta-phase under §5.1.4.
 
-Compile-time bindings and fields:
+Such bindings and fields:
 
 * may carry any quantity annotation otherwise admitted by the surrounding grammar;
-* may be named, rebound, projected, packaged, sealed, opened, and returned;
+* may be named, rebound, projected, packaged, sealed, opened, and returned within the phase where they are valid;
 * participate in ordinary source-level typing, definitional equality, hashing, and interface identity; and
-* are erased according to §§5.1.4 and 14.4 unless preserved by an explicit reified carrier.
+* are erased according to §5.1.4 and §14.4 unless preserved by an explicit reified carrier.
 
-Writing `let y = x` where `x` is compile-time simply binds `y` to the same compile-time value.
+Writing `let y = x` where `x` is meta-phase simply binds `y` to the same meta-phase value.
 
-Packaging or rebinding a compile-time value does not discharge region escape. If a compile-time value mentions a fresh
+Packaging or rebinding a meta-phase value does not discharge region escape. If a compile-time value mentions a fresh
 anonymous rigid region introduced by a local borrow, the ordinary skolem-escape rule of §5.1.6 still applies.
 
 <!-- types.universes.erasure_elaboration_time.static_object_positions -->
@@ -3670,28 +3688,7 @@ A **static-object expression position** is a source position whose expected clas
 At such a position, elaboration proceeds by ordinary expression checking against the expected compile-time type, subject
 to the syntactic restrictions of the surrounding grammar.
 
-Consequences:
-
-* A type position is a static-object expression position expecting `Type u` for some universe `u`.
-* A constraint position is a static-object expression position expecting `Constraint`.
-* An effect-label position is a static-object expression position expecting `EffLabel`.
-* A record-label position remains structural and is not automatically an arbitrary term expression; where labels are
-  user-nameable, the expected type is `Label`.
-
-Examples:
-
-```kappa
-let F = Option
-let x : F Int = F.Some 1
-
-let C = Eq
-let d : Dict (C Int) = ...
-
-let L = state
-handle L in computation
-```
-
-Static-object expression positions are compile-time only unless the surrounding type explicitly uses a runtime reified
+Static-object expression positions are meta-phase only unless the surrounding type explicitly uses a runtime reified
 carrier such as `Dict`.
 
 <!-- types.universes.quantities -->
