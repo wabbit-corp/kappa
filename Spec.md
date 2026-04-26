@@ -18423,23 +18423,152 @@ Definitional equality also includes canonical normalization of:
 * projection of a non-erased field through a seal is not required to reduce for definitional equality. It remains a
   well-typed neutral elimination form whose runtime behavior is ordinary projection.
 
-<!-- core_semantics.definitional_equality.active_refinement_context -->
-#### 14.3A Active refinement context for definitional equality
+<!-- core_semantics.definitional_equality.refinement_aware_normalization -->
+#### 14.3A Branch-local refinement-aware normalization
 
-The active refinement context is the branch-local fact environment used by definitional equality and ordinary checking
-inside a control-flow branch.
+Normalization and definitional equality are parameterized by the active refinement context of the branch being checked.
 
-It contains only the compiler-introduced refinement facts standardized by this specification, including boolean branch
-facts, `HasCtor` / `LacksCtor` facts, constructor-forced index equalities, and stable-alias equalities used to transport
-those facts.
+This section defines how branch-local facts affect ι-reduction.
 
-When conversion, case-tree reduction, or constructor-tag testing needs branch knowledge, the implementation may use both:
+Definitions:
 
-* facts derivable from the normalized scrutinee itself; and
-* facts available in the active refinement context for the current branch.
+* A **refinement subject** is a stable scrutinee representative:
+  * a stable place under §5.1.7.1;
+  * a fresh hidden scrutinee term introduced by elaboration of a control-flow form; or
+  * a simple stable alias of either, under §7.4.3.
+* A **constructor decision** is a case-tree node, `match` branch selection, or constructor-tag test that inspects the
+  top-level constructor of a refinement subject.
+* A **boolean decision** is an `if`, boolean `match`, or equivalent case-tree node that inspects a `Bool`.
 
-Ordinary user-written propositional equality evidence does not enter the active refinement context merely by being in
-scope. It participates in checking only through the explicit mechanisms standardized elsewhere in this specification.
+The active refinement context proves constructor facts by the following rules:
+
+* If it contains `HasCtor s ⟨C⟩`, then it proves that `s` has constructor `C`.
+* If it contains `LacksCtor s ⟨C⟩`, then it proves that `s` does not have constructor `C`.
+* If it proves `HasCtor s ⟨D⟩` and `C` and `D` are distinct constructors of the same visible data type, then it proves
+  `LacksCtor s ⟨C⟩`.
+* If the current visibility and opacity environment exposes a finite constructor set for the scrutinee type, and the
+  active refinement context proves `LacksCtor s ⟨C⟩` for every visible constructor except one constructor `D`, then it
+  proves `HasCtor s ⟨D⟩`.
+* If the context contains a stable-alias equality between refinement subjects, constructor facts may be transported
+  across that equality as specified by §7.4.3 and §17.3.1.8.
+
+The active refinement context proves boolean facts by the following rules:
+
+* If it contains branch-local evidence `b = True`, then it proves that `b` is true for branch-local normalization.
+* If it contains branch-local evidence `b = False`, then it proves that `b` is false for branch-local normalization.
+* Boolean facts may be transported across stable-alias equality when the aliased subject is the boolean expression being
+  tested.
+
+Refinement-aware boolean reduction:
+
+* In a context proving `b = True`, the expression `if b then t else f` reduces to `t`.
+* In a context proving `b = False`, the expression `if b then t else f` reduces to `f`.
+* In a context proving `b = True`, a `match b` decision selects the `True` branch.
+* In a context proving `b = False`, a `match b` decision selects the `False` branch.
+
+Refinement-aware constructor-tag-test reduction:
+
+For a constructor-tag test:
+
+```kappa
+s is C
+```
+
+normalization behaves as follows:
+
+* if the active refinement context proves `HasCtor s ⟨C⟩`, the test reduces to `True`;
+* if the active refinement context proves `LacksCtor s ⟨C⟩`, the test reduces to `False`;
+* otherwise the test remains neutral unless the scrutinee itself normalizes to a known constructor.
+
+Refinement-aware case reduction:
+
+For a `match` or case-tree decision on refinement subject `s`:
+
+* if `s` normalizes to a constructor value, ordinary ι-reduction selects the matching branch;
+* otherwise, if the active refinement context proves `HasCtor s ⟨C⟩`, the decision may select the branch whose
+  top-level constructor requirement is `C`;
+* otherwise, any branch whose top-level constructor requirement is `C` may be skipped when the active refinement context
+  proves `LacksCtor s ⟨C⟩`;
+* if all preceding alternatives before a catch-all or residual branch are skipped by the preceding rule, the catch-all or
+  residual branch is selected;
+* if no unique branch is selected and no catch-all or residual branch is forced, the decision remains neutral.
+
+When a branch is selected by `HasCtor` evidence rather than by a concrete constructor value, constructor fields bound by
+the selected pattern are represented by constructor-field projections from the original refinement subject, under the
+rules of §§2.8.3 and 7.5.4.
+
+Negative constructor evidence alone does not expose constructor fields.
+
+A `LacksCtor` fact may select a catch-all or residual branch without identifying which remaining constructor is present.
+
+A positive `HasCtor` fact is derived from negative evidence only when the finite visible constructor-set rule above
+leaves exactly one visible constructor.
+
+Contradictory refinement contexts:
+
+If the active refinement context proves both `HasCtor s ⟨C⟩` and `LacksCtor s ⟨C⟩`, the branch is unreachable.
+
+An unreachable branch may be accepted only through the ordinary reachability and `impossible` rules of §§7.5.1,
+7.5.2, and 7.5.2A.
+
+The normalizer MUST NOT use a contradictory refinement context to prove arbitrary definitional equalities in reachable
+code.
+
+Guarded branches:
+
+A guarded branch contributes constructor-success evidence only within the branch body reached after the guard succeeds.
+
+Failure of a guard does not, by itself, introduce `LacksCtor` evidence for the guarded pattern's constructor.
+
+Consequently, a residual branch following:
+
+```kappa
+case C x if guard -> body
+```
+
+must not assume `LacksCtor s ⟨C⟩` merely because the guarded branch was not selected.
+
+Opacity:
+
+Failure-side constructor narrowing and unique-remaining-constructor derivation may use only constructors visible in the
+current visibility and opacity environment.
+
+Outside a module where an opaque data type's constructors are visible, branch-local normalization MUST NOT infer hidden
+constructor facts for that type.
+
+Transparent definitions:
+
+If δ-reduction unfolds a transparent conversion-reducible definition to a `match`, `if`, constructor-tag test, or
+case-tree decision, the resulting expression is normalized under the same active refinement context.
+
+Example:
+
+```kappa
+let notLT (o : Ordering) : Bool =
+    match o
+    case LT -> False
+    case _  -> True
+```
+
+In a branch whose active refinement context contains:
+
+```kappa
+@_ : LacksCtor o ⟨LT⟩
+```
+
+the expression:
+
+```kappa
+notLT o
+```
+
+reduces by δ to the `match` above, then by refinement-aware ι-reduction to:
+
+```kappa
+True
+```
+
+No positive fact that `o` is `EQ` or `GT` is introduced by this reduction.
 
 <!-- core_semantics.definitional_equality.literal_normalization -->
 #### 14.3.1 Literal normalization
