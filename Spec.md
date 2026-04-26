@@ -3371,7 +3371,7 @@ There is no built-in `type"..."`
 intrinsic.
 
 ```kappa
-type : Dict (InterpolatedMacro Type)
+type : Elab (Dict (InterpolatedMacro Type))
 ```
 
 Because keywords are soft (§3.2), `type"..."`, `type"""..."""`, and their raw forms are parsed as prefixed-string
