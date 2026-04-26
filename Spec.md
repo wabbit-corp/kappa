@@ -20650,10 +20650,637 @@ help: call `g`, demand `x` directly, or change the declared quantity if ignoring
 <!-- compiler.kfrontir.standard_diagnostic_families -->
 #### 17.2.4A Standard diagnostic families
 
-This subsection is reserved for standardized diagnostic-family definitions and their required payload shapes.
+This section defines standardized diagnostic families and their required structured payloads.
 
-Until a later revision of this specification populates this subsection, no diagnostic-family payload shape is mandated
-beyond the generic rules of §17.2.4.
+An implementation may choose its own rendered diagnostic codes, but a diagnostic corresponding to one of these families
+MUST expose the listed `family` value and payload information in machine-readable diagnostic output.
+
+Payload field names below are normative at the conceptual schema level. A JSON schema MAY use casing conventions
+appropriate to JSON, provided the mapping is documented and stable.
+
+<!-- compiler.kfrontir.standard_diagnostic_families.name_import -->
+##### 17.2.4A.1 Name and import diagnostics
+
+Family:
+
+```text
+kappa.name.unresolved
+```
+
+Used when an identifier, operator name, module path, field name, constructor name, effect label, or kind-qualified name
+cannot be resolved.
+
+Payload MUST include, when applicable:
+
+* unresolved spelling;
+* admissible declaration kinds at the use site;
+* nearest scopes searched;
+* whether reified static-object fallback was attempted;
+* candidate spellings considered for typo suggestions;
+* import or prelude status relevant to the lookup; and
+* whether the failure occurred inside generated syntax.
+
+If a close spelling exists in the same admissible kind set, the diagnostic SHOULD include a `maybe-applicable` or
+`placeholder` fix.
+
+Family:
+
+```text
+kappa.name.ambiguous
+```
+
+Used when lookup finds multiple admissible declarations.
+
+Payload MUST include:
+
+* ambiguous spelling;
+* admissible declaration kinds;
+* candidate declarations with declaration kind, defining module, and origin;
+* whether the ambiguity is between module import and singleton import syntax;
+* whether a kind-qualified expression, explicit import item, module alias, or qualification would disambiguate.
+
+Family:
+
+```text
+kappa.import.ambiguous-dotted
+```
+
+Used when a bare dotted import or export form is resolvable both as a module import/export and as a singleton item
+import/export.
+
+Payload MUST include:
+
+* source spelling;
+* module interpretation;
+* singleton-item interpretation;
+* origins or provider identities for both interpretations; and
+* concrete rewrites that force either interpretation.
+
+<!-- compiler.kfrontir.standard_diagnostic_families.type_equality -->
+##### 17.2.4A.2 Type and equality diagnostics
+
+Family:
+
+```text
+kappa.type.mismatch
+```
+
+Used when an expression has a type that cannot be checked against the expected type.
+
+Payload MUST include:
+
+* expected type;
+* actual type;
+* expected-type origin when available;
+* actual-expression origin;
+* mismatch path when the mismatch is nested inside a record field, variant member, function binder, effect row,
+  capture annotation, or type argument;
+* whether equality-based transport was attempted;
+* any synthesized equality goal that would have made the check succeed; and
+* alias, opacity, and `clarify` status relevant to rendering the compared types.
+
+A human renderer SHOULD show the smallest useful type difference rather than only printing both complete types.
+
+Family:
+
+```text
+kappa.type.unsolved-metavariable
+```
+
+Used when a type, universe, quantity, row, region, capture, or term metavariable remains unsolved after the enclosing
+checking unit completes.
+
+Payload MUST include:
+
+* metavariable kind;
+* expected classifier;
+* source origin of the metavariable;
+* constraints that mention it;
+* blocked obligations, if any;
+* whether defaulting was attempted;
+* why defaulting did not apply or failed.
+
+Family:
+
+```text
+kappa.type.transport-failed
+```
+
+Used when equality-based subsumption or transport insertion would be needed but no suitable equality proof was available.
+
+Payload MUST include:
+
+* source type;
+* target type;
+* replaced subterm or subterms considered;
+* equality goal attempted;
+* implicit-resolution result for that goal; and
+* relevant local equality or boolean-refinement evidence.
+
+<!-- compiler.kfrontir.standard_diagnostic_families.implicit_trait_proof -->
+##### 17.2.4A.3 Implicit, trait, and proof-search diagnostics
+
+Family:
+
+```text
+kappa.implicit.unsolved
+```
+
+Used when an implicit argument cannot be synthesized.
+
+Payload MUST include:
+
+* implicit goal;
+* goal classifier;
+* binder or application site requiring the implicit;
+* local implicit candidates considered;
+* instance candidates considered when the goal is a trait constraint;
+* candidates rejected by head mismatch;
+* candidates rejected by failed premises;
+* candidates rejected by visibility, opacity, `unhide`, or `clarify` rules;
+* instance-search depth or cycle information when relevant;
+* boolean-normalization or equality-reflection attempts when relevant.
+
+Family:
+
+```text
+kappa.implicit.ambiguous
+```
+
+Used when implicit resolution finds more than one valid candidate.
+
+Payload MUST include:
+
+* implicit goal;
+* lexical scope level at which ambiguity occurred for local implicit search;
+* all ambiguous local candidates at that scope level, or all ambiguous instance candidates for trait search;
+* candidate origins;
+* projected supertrait candidates when relevant; and
+* a disambiguation hint when explicit implicit application or a local binding could select a candidate.
+
+Family:
+
+```text
+kappa.hole.unsolved
+```
+
+Used when an expression hole remains unsolved.
+
+Payload MUST include:
+
+* hole name or implementation-generated hole identifier;
+* expected type;
+* local explicit context;
+* local implicit context;
+* outstanding constraint goals;
+* all source occurrences for a named hole;
+* inhabitance summary when available; and
+* completion candidates when the inhabitance summary is `Contractible` or `Finite n` within the implementation's
+  completion threshold.
+
+<!-- compiler.kfrontir.standard_diagnostic_families.quantity_ownership -->
+##### 17.2.4A.4 Quantity and ownership diagnostics
+
+Family:
+
+```text
+kappa.quantity.unsatisfied
+```
+
+Used when a supplied capability does not satisfy a demanded quantity.
+
+Payload MUST include:
+
+* supplied expression;
+* supplied capability;
+* demanded quantity;
+* demand site;
+* quantity-satisfaction rule that failed;
+* whether borrow introduction was attempted;
+* whether arrow subsumption was attempted; and
+* any unsolved quantity metavariables that blocked the decision.
+
+Family:
+
+```text
+kappa.quantity.positive-lower-bound
+```
+
+Used when a positive lower-bound obligation is not satisfied.
+
+Payload MUST include:
+
+* binder;
+* declared quantity;
+* scope boundary;
+* failing completion path;
+* inferred usage interval on that path;
+* delayed-use classification when relevant;
+* branch, `return`, `break`, `continue`, or other completion construct that exits the scope;
+* obvious demand locations when available.
+
+Family:
+
+```text
+kappa.path.consumed
+```
+
+Used when a path is used after it has been consumed, moved, sunk, or otherwise made unavailable.
+
+Payload MUST include:
+
+* root;
+* consumed path;
+* consuming operation;
+* consuming origin;
+* attempted later use;
+* demanded operation for the later use;
+* path-restoration origin if one exists.
+
+<!-- compiler.kfrontir.standard_diagnostic_families.borrow_capture_region -->
+##### 17.2.4A.5 Borrow, capture, and region diagnostics
+
+Family:
+
+```text
+kappa.borrow.escape
+```
+
+Used when a borrowed value, `BorrowView`, closure, syntax value, package, record, or other value whose type or hidden
+environment mentions a rigid region escapes that region.
+
+Payload MUST include:
+
+* escaped region;
+* whether the region is anonymous or explicit;
+* region-introducing construct;
+* value or type mentioning the region;
+* inferred capture set;
+* demanded capture set, if checking against a capture-annotated type;
+* escape site;
+* whether explicit region binders could express the intended escape.
+
+Family:
+
+```text
+kappa.borrow.overlap
+```
+
+Used when borrow, move, open, fill, `inout`, projection-section update, projector application, or accessor-bundle
+application conflicts by footprint overlap.
+
+Payload MUST include:
+
+* first expression and origin;
+* second expression and origin;
+* root or roots;
+* static footprints;
+* overlapping path or dependency-expanded path;
+* whether overlap was caused by direct path equality, prefix overlap, dependency closure, or conservative computed
+  projection summary;
+* operation demanded by each expression.
+
+Family:
+
+```text
+kappa.capture.mismatch
+```
+
+Used when a value's inferred hidden region environment is not contained in the demanded capture annotation.
+
+Payload MUST include:
+
+* value expression;
+* inferred capture set;
+* demanded capture set;
+* regions missing from the demanded set;
+* origins introducing the missing regions;
+* enclosing interface or annotation that imposed the demanded capture set.
+
+<!-- compiler.kfrontir.standard_diagnostic_families.record_projection_accessor_inout -->
+##### 17.2.4A.6 Record, projection, accessor, and `inout` diagnostics
+
+Family:
+
+```text
+kappa.record.dependent-update-repair
+```
+
+Used when a record patch fails because an omitted copied field depends on an updated field and the copied projection no
+longer has the required type.
+
+Payload MUST include:
+
+* record patch origin;
+* updated field or path that changed the dependency;
+* omitted copied field;
+* copied expression;
+* expected type after substitution;
+* actual type of copied expression;
+* dependency path or field whose type was invalidated;
+* explicit repair suggestion when possible.
+
+Family:
+
+```text
+kappa.record.consumed-copy
+```
+
+Used when record reconstruction fails because an omitted filler path is consumed.
+
+Payload MUST include:
+
+* record patch origin;
+* consumed path;
+* origin that consumed it;
+* implicit copied filler expression;
+* field that must be supplied explicitly.
+
+Family:
+
+```text
+kappa.accessor.missing-capability
+```
+
+Used when a projection or accessor is used in a context requiring a capability it does not provide.
+
+Payload MUST include:
+
+* projection or accessor expression;
+* required capability among `read`, `borrow`, `open`, `set`, `sink`, or `fill`;
+* available descriptor fields or projection form;
+* use context requiring the missing capability;
+* descriptor origin.
+
+Family:
+
+```text
+kappa.inout.restoration
+```
+
+Used when an `inout` call fails because restoring the returned successor invalidates the enclosing type, path state, or
+dependent record reconstruction.
+
+Payload MUST include:
+
+* `~` argument;
+* opened path;
+* restored path;
+* predecessor type;
+* successor type;
+* enclosing field or dependent sibling invalidated by restoration;
+* expected restored type;
+* actual restored type;
+* explicit repair form when possible.
+
+<!-- compiler.kfrontir.standard_diagnostic_families.effect_row_variant -->
+##### 17.2.4A.7 Effect, row, and variant diagnostics
+
+Family:
+
+```text
+kappa.effect.row-mismatch
+```
+
+Used when an expression's effect row cannot be checked against the demanded effect row.
+
+Payload MUST include:
+
+* expected effect row;
+* actual effect row;
+* missing effect labels;
+* extra effect labels;
+* failed `ContainsEff`, `LacksEff`, or `SplitEff` constraints;
+* origin of the demanded row;
+* origin of the effect operation or handler that introduced the actual row.
+
+Family:
+
+```text
+kappa.row.lacks-failed
+```
+
+Used when a row-extension, variant injection, open row operation, or effect-row operation violates a lacks constraint.
+
+Payload MUST include:
+
+* row kind;
+* row expression;
+* offending label or member type;
+* existing entry origin when available;
+* operation that required absence.
+
+Family:
+
+```text
+kappa.variant.injection-ambiguous
+```
+
+Used when inferred variant injection cannot determine a unique member type.
+
+Payload MUST include:
+
+* injected expression;
+* candidate member types;
+* expected variant row when available;
+* annotation or explicit injection form that would disambiguate.
+
+<!-- compiler.kfrontir.standard_diagnostic_families.pattern_exhaustiveness_reachability -->
+##### 17.2.4A.8 Pattern, exhaustiveness, and reachability diagnostics
+
+Family:
+
+```text
+kappa.pattern.non-exhaustive
+```
+
+Used when a `match`, `try match`, function clause group, active-pattern chain, or equivalent pattern set is not
+exhaustive.
+
+Payload MUST include:
+
+* scrutinee type;
+* covered constructors, literals, variants, or row members;
+* uncovered constructors, literals, variants, residual rows, or inhabitance summaries;
+* guard information when guards prevent coverage;
+* suggested missing cases when finite and below the implementation's threshold.
+
+Family:
+
+```text
+kappa.pattern.unreachable
+```
+
+Used when a branch, case, or `impossible` assertion is unreachable or incorrectly claimed unreachable.
+
+Payload MUST include:
+
+* branch origin;
+* scrutinee type;
+* refinement facts;
+* reason the branch is unreachable, or reason the compiler cannot prove it unreachable;
+* preceding cases or guards that caused the reachability state.
+
+<!-- compiler.kfrontir.standard_diagnostic_families.termination -->
+##### 17.2.4A.9 Termination diagnostics
+
+Family:
+
+```text
+kappa.termination.failure
+```
+
+Used when the termination checker rejects a recursive definition or SCC.
+
+Payload MUST include:
+
+* recursive SCC members;
+* source order and hidden phase order when relevant;
+* recursive call sites considered;
+* attempted strategies;
+* selected structural parameters or visible measures;
+* caller and callee measures for each failed edge;
+* size-change matrices and failing cycles when available;
+* implementation limit status when failure was caused by a limit;
+* synthesized candidate `decreases` clause when available.
+
+<!-- compiler.kfrontir.standard_diagnostic_families.macro_elaboration -->
+##### 17.2.4A.10 Macro and elaboration-time diagnostics
+
+Family:
+
+```text
+kappa.macro.failure
+```
+
+Used when macro expansion, prefixed-string elaboration, splice execution, semantic reflection, or an `Elab` action fails.
+
+Payload MUST include:
+
+* macro, splice, prefixed string, comprehension hook, or elaboration action origin;
+* macro-defined diagnostic code when provided;
+* macro package or defining symbol when available;
+* expansion stack;
+* related syntax origins supplied by the macro;
+* whether failure occurred before or after generated syntax was elaborated.
+
+A macro-defined diagnostic may use a more specific implementation- or package-defined family, but it MUST still expose
+the expansion stack and origin information required here.
+
+<!-- compiler.kfrontir.standard_diagnostic_families.boundary_bridge_dynamic -->
+##### 17.2.4A.11 Boundary, bridge, and dynamic diagnostics
+
+Family:
+
+```text
+kappa.bridge.contract
+```
+
+Used when a bridge binding, bridge-supplied module, boundary contract, dynamic cast, marshalling step, or monitored
+higher-order boundary fails at compile time.
+
+Payload MUST include, when available:
+
+* boundary direction;
+* boundary precision;
+* bridge origin;
+* contract identity;
+* foreign module, namespace, member, or host object;
+* expected Kappa surface;
+* foreign or dynamic surface found;
+* exact, conservative, or lossy contract status;
+* relevant lockfile or provider identity.
+
+Family:
+
+```text
+kappa.dynamic.cast-representation
+```
+
+Used when a dynamic representation is unavailable, incompatible, or insufficient for a checked cast or dynamic boundary.
+
+Payload MUST include:
+
+* demanded `DynRep`;
+* available stored representation when statically known;
+* cast site;
+* explicit representation argument or `DynamicType` evidence origin;
+* reason representation comparison failed.
+
+<!-- compiler.kfrontir.standard_diagnostic_families.package_provider_reproducibility -->
+##### 17.2.4A.12 Package, provider, and reproducibility diagnostics
+
+Family:
+
+```text
+kappa.package.reproducibility
+```
+
+Used when package-mode reproducibility, URL pinning, lockfile identity, host-source identity, bridge provider identity,
+or macro transcript reproducibility fails.
+
+Payload MUST include:
+
+* resource kind;
+* source specifier;
+* expected immutable identity;
+* actual immutable identity when available;
+* lockfile or build artifact involved;
+* package/script mode;
+* repair hint, such as pinning, lockfile update, or explicit provider selection.
+
+Family:
+
+```text
+kappa.provider.collision
+```
+
+Used when multiple source, URL, package, host, or bridge providers claim the same effective module name.
+
+Payload MUST include:
+
+* effective module name;
+* all discovered providers;
+* mechanism by which each provider was introduced;
+* selected provider if build configuration selected one;
+* required disambiguation if none was selected.
+
+<!-- compiler.kfrontir.standard_diagnostic_families.query_internal -->
+##### 17.2.4A.13 Query and internal compiler diagnostics
+
+Family:
+
+```text
+kappa.query.cycle
+```
+
+Used when query evaluation detects a dependency cycle not already ruled out by source-language well-formedness.
+
+Payload MUST include:
+
+* query kinds in the cycle;
+* input keys, redacted when necessary for stability;
+* source declarations, modules, or phases involved when available;
+* whether the cycle is a user-facing source error or an internal compiler limitation.
+
+Family:
+
+```text
+kappa.internal.compiler
+```
+
+Used for implementation defects, violated compiler invariants, or unexpected failures.
+
+Payload MUST include:
+
+* failing compiler component;
+* stage or phase;
+* primary origin when available;
+* stable crash or invariant category when available;
+* whether compilation continued after recovery.
+
+Internal compiler diagnostics SHOULD avoid exposing unstable memory addresses, nondeterministic thread IDs, or raw host
+exceptions as the only explanation.
 
 <!-- compiler.kfrontir.tooling_facing_queries -->
 #### 17.2.5 Tooling-facing queries
