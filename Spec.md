@@ -8175,6 +8175,54 @@ warnElabWith :
     (related : List SyntaxOrigin) ->
     Elab Unit
 
+DiagnosticSeverity : Type
+DiagnosticFixApplicability : Type
+
+data DiagnosticSeverity : Type =
+    DiagnosticError
+    DiagnosticWarning
+    DiagnosticNote
+    DiagnosticInfo
+
+data DiagnosticFixApplicability : Type =
+    MachineApplicable
+    MaybeApplicable
+    Placeholder
+    Unsafe
+    NotMachineApplicable
+
+type ElabDiagnosticLabel : Type =
+    (origin : SyntaxOrigin,
+     role : String,
+     message : String)
+
+type ElabDiagnosticEdit : Type =
+    (origin : SyntaxOrigin,
+     replacement : String)
+
+type ElabDiagnosticFix : Type =
+    (title : String,
+     applicability : DiagnosticFixApplicability,
+     edits : List ElabDiagnosticEdit)
+
+type ElabDiagnostic : Type =
+    (code : String,
+     family : Option String,
+     severity : DiagnosticSeverity,
+     message : String,
+     labels : List ElabDiagnosticLabel,
+     related : List SyntaxOrigin,
+     notes : List String,
+     helps : List String,
+     fixes : List ElabDiagnosticFix)
+
+emitElabDiagnostic :
+    ElabDiagnostic -> Elab Unit
+
+failElabDiagnostic :
+    forall (@0 a : Type).
+    ElabDiagnostic -> Elab a
+
 asCoreGoal :
     forall (@0 g : ElabGoal) (@0 t : Type).
     Syntax t -> Elab (Core g.ctx t)
@@ -8207,9 +8255,46 @@ Rules:
   chain. It is shorthand for `warnElabWith` using an implementation-defined diagnostic code.
 * `failElab` aborts the current elaboration action with an elaboration-time error associated with the current source or
   synthetic-origin chain. It is shorthand for `failElabWith` using an implementation-defined diagnostic code.
+* `emitElabDiagnostic d` emits the structured diagnostic `d` at the current elaboration site.
+* `failElabDiagnostic d` emits the structured diagnostic `d` and aborts the current elaboration action.
+  If `d.severity` is not `DiagnosticError`, the emitted diagnostic is treated as `DiagnosticError`.
 * `failElabWith code message related` and `warnElabWith code message related` emit structured diagnostics. The `code`
   argument MUST satisfy the diagnostic-code requirements of §17.2.4. Each origin in `related` is attached as a related
   origin in the emitted diagnostic, subject to the source / synthetic-origin model of §17.2.1.
+* `failElabWith code message related` is shorthand for `failElabDiagnostic` with:
+  * `code = code`,
+  * `family = Some "kappa.macro.failure"` unless the implementation can assign a more specific family,
+  * `severity = DiagnosticError`,
+  * `message = message`,
+  * `labels = []`,
+  * `related = related`,
+  * `notes = []`,
+  * `helps = []`,
+  * `fixes = []`.
+* `warnElabWith code message related` is shorthand for `emitElabDiagnostic` with:
+  * `code = code`,
+  * `family = Some "kappa.macro.failure"` unless the implementation can assign a more specific family,
+  * `severity = DiagnosticWarning`,
+  * `message = message`,
+  * `labels = []`,
+  * `related = related`,
+  * `notes = []`,
+  * `helps = []`,
+  * `fixes = []`.
+* A diagnostic emitted by `Elab` MUST satisfy the diagnostic-code and diagnostic-family requirements of §17.2.4.
+* A diagnostic emitted by `Elab` MUST preserve the current source or synthetic-origin chain.
+* If a diagnostic emitted by `Elab` refers to syntax passed into the macro, prefixed-string handler, splice, or
+  comprehension hook, the macro SHOULD attach that syntax's `SyntaxOrigin` as a label or related origin.
+* A macro MUST NOT use generated syntax as the only primary diagnostic origin when a corresponding user-written origin
+  is available.
+* An `ElabDiagnosticFix` may edit only source origins. If the diagnostic concerns generated syntax, the macro or
+  implementation must map the edit back to a source origin before exposing it as a fix.
+* A fix marked `MachineApplicable` by an `Elab` diagnostic is subject to the same applicability requirements as a
+  compiler-generated machine-applicable fix in §17.2.4.4.
+* A macro package that emits public diagnostic codes SHOULD use a package-qualified diagnostic-code prefix or another
+  implementation-documented namespace mechanism to avoid collisions with compiler-owned diagnostic codes.
+* Diagnostics emitted by `Elab` actions are included in the diagnostic ordering, suppression, explanation, and JSON
+  output rules of §17.2.4.
 * Diagnostics emitted by `Elab` are deterministic. They do not affect typing, normalization, hashing, or interface
   identity except through their recorded origins and the explicit diagnostic records made available to tooling.
 * `asCoreGoal g s` elaborates `s` in the lexical context `g.ctx`. If `g.expected = Some T`, the implementation MUST use
@@ -21298,6 +21383,17 @@ Such queries SHOULD support at least:
 * emitted, solved, or unsolved modality predicates for a declaration or source position when a standardized
   modal/coeffect extension is enabled;
 * diagnostics for a file or declaration, even when the file is syntactically incomplete;
+* structured diagnostics for a file, declaration, source range, or synthetic-origin chain, including diagnostic code,
+  family, severity, payload, labels, related origins, notes, help, fixes, explanation key, and suppressed diagnostics;
+* diagnostic explanation lookup by diagnostic code or diagnostic family;
+* fix-it preview for a diagnostic, returning the exact source edits, applicability, conflicts with other edits, and the
+  source version to which the edits apply;
+* application of a selected machine-applicable fix in a source-preserving way, or a precise diagnostic explaining why
+  the fix no longer applies;
+* retrieval of the obligation provenance graph for a diagnostic when verbose or developer diagnostics are enabled;
+* retrieval of macro expansion chains and generated-origin mappings associated with a diagnostic;
+* retrieval of suppressed cascade diagnostics associated with a root diagnostic;
+* deterministic diagnostic ordering for a file, module, or whole compilation session;
 * for a recursive definition, the recursive SCC, the inferred termination strategy, the canonical visible measure (if
   any), any hidden phase components, and the recursive call edges together with the proved decrease relation on each
   edge;
@@ -21320,6 +21416,14 @@ Such queries SHOULD support at least:
 * browsing of interface artifacts or semantic object stores without reparsing source text;
 * retrieving the canonical interface view of a module or semantic object-store entry without reparsing source text; and
 * source-to-source refactoring that preserves unchanged concrete syntax and trivia where possible.
+
+A tooling diagnostic query MUST return the same structured diagnostics that batch compilation would produce for the same
+source inputs, build configuration, backend profile, macro transcript, and implementation version, modulo the requested
+query scope and incomplete-file recovery.
+
+A tooling implementation MUST NOT maintain a separate diagnostic engine whose results can disagree with batch
+compilation diagnostics except where the source is intentionally analyzed in an incomplete or recovery state. In that
+case, diagnostics MUST identify incomplete or recovery-derived facts as such.
 
 API names, packaging, and transport are implementation-defined.
 
@@ -21587,120 +21691,262 @@ ordering above had been respected.
 <!-- compiler.diagnostics.path_sensitive_diagnostics -->
 #### 17.2.13 Diagnostics for path-sensitive, dependency-sensitive, and borrow-sensitive failures
 
-Implementations MUST provide structured diagnostics for failures caused by path-sensitive usage, dependent-record
-reconstruction, borrow-region escape, `inout` restoration, and projection/accessor overlap.
+Implementations MUST provide structured diagnostics for failures caused by:
+
+* path-sensitive usage;
+* consumed paths;
+* dependent-record reconstruction;
+* borrow-region escape;
+* capture-set mismatch;
+* overlapping borrow, update, or `inout` footprints;
+* projection/accessor missing capabilities; and
+* `inout` restoration.
+
+Diagnostics in this section MUST use the corresponding standard diagnostic families of §17.2.4A when applicable.
 
 A diagnostic in this class MUST include, when applicable:
 
 * the root expression or binding name involved;
 * the selected path or computed projection/accessor expression;
-* whether the failing operation is read, borrow, move, open, fill, update, restore, or consume;
-* the relevant quantity or borrow region;
-* the consumed, borrowed, or unavailable path;
+* whether the failing operation is `read`, `borrow`, `move`, `open`, `fill`, `update`, `restore`, `sink`, or `consume`;
+* the relevant quantity, borrow region, or capture set;
+* the consumed, borrowed, unavailable, or overlapping path;
 * the expected type and actual type when the failure is type-based;
 * the dependency path or field whose type was invalidated;
 * the projected or copied filler expression that became ill-typed;
 * the conflicting footprints when the failure is overlap-based;
 * the source range of the original user-written expression; and
-* a repair hint when a local syntactic repair is evident.
+* a repair hint or fix-it when a local syntactic repair is evident.
 
-The following diagnostic classes are normative. Implementations may use different diagnostic codes, but MUST expose
-equivalent structured information.
-
-Dependent record update repair failure:
+<!-- compiler.diagnostics.path_sensitive_diagnostics.dependent_record_update_repair_failure -->
+##### 17.2.13.1 Dependent record update repair failure
 
 When a record patch fails because an omitted copied field depends on an updated field and the copied projection no
-longer has the required type, the diagnostic MUST identify:
+longer has the required type, the diagnostic MUST use family:
+
+```text
+kappa.record.dependent-update-repair
+```
+
+The diagnostic MUST identify:
 
 * the updated field or path that changed the dependency;
 * the omitted copied field;
 * the copied expression;
 * the expected type after substitution;
-* the actual type of the copied expression; and
-* a suggestion to supply the dependent field explicitly when possible.
+* the actual type of the copied expression;
+* the dependency path or field whose type was invalidated; and
+* a suggestion or fix-it to supply the dependent field explicitly when possible.
 
 Example diagnostic shape:
 
 ```text
-Updating `len` changed the expected type of copied field `buffer`.
-
-Copied field:
-    buffer = buf.buffer
-
-Expected:
-    Array 20 Byte
-
-Found:
-    Array 10 Byte
-
-Add an explicit repair:
-    buf.{ len = 20, buffer = ... }
+error[E_DEP_RECORD_REPAIR]: updating `len` changed the expected type of copied field `buffer`
+  --> src/buf.kp:12:16
+   |
+12 |     buf.{ len = 20 }
+   |                ^^ `len` changes the required type of `buffer`
+   |
+note: copied field:
+      buffer = buf.buffer
+note: expected after update:
+      Array 20 Byte
+note: found:
+      Array 10 Byte
+help: supply `buffer` explicitly in the same update
+   |
+12 |     buf.{ len = 20, buffer = ... }
+   |                  ++++++++++++++++
 ```
 
-Consumed-path update failure:
+<!-- compiler.diagnostics.path_sensitive_diagnostics.consumed_path_copy_failure -->
+##### 17.2.13.2 Consumed-path copy failure
 
-When a record patch fails because an omitted copied filler path is already consumed, the diagnostic MUST identify:
+When a record patch fails because an omitted copied filler path is already consumed, the diagnostic MUST use family:
+
+```text
+kappa.record.consumed-copy
+```
+
+The diagnostic MUST identify:
 
 * the consumed path;
-* the patch that attempted to copy it implicitly; and
+* the origin that consumed it;
+* the patch that attempted to copy it implicitly;
+* the implicit filler expression; and
 * the field that must be supplied explicitly.
 
 Example diagnostic shape:
 
 ```text
-Field `buf` cannot be copied during record update because path `r.buf` is already consumed.
-
-Supply `buf` explicitly in the update.
+error[E_RECORD_CONSUMED_COPY]: field `buf` cannot be copied because `r.buf` was already consumed
+  --> src/main.kp:18:13
+   |
+14 |     let old = r.buf
+   |               ----- consumed here
+...
+18 |     r.{ len = 20 }
+   |     ^^^^^^^^^^^^^^ update would implicitly copy `r.buf`
+   |
+help: supply `buf` explicitly in the update
 ```
 
-Borrow-region escape:
+<!-- compiler.diagnostics.path_sensitive_diagnostics.borrow_region_escape -->
+##### 17.2.13.3 Borrow-region escape
 
-When a borrowed value or a value whose type mentions a rigid region escapes its region scope, the diagnostic MUST
-identify:
+When a borrowed value or a value whose type or hidden environment mentions a rigid region escapes its region scope, the
+diagnostic MUST use family:
+
+```text
+kappa.borrow.escape
+```
+
+The diagnostic MUST identify:
 
 * the escaped region;
-* the value or type mentioning that region;
-* the region-introducing construct; and
+* whether the region is anonymous or explicit;
+* the value, closure, syntax value, package, record, or type mentioning that region;
+* the region-introducing construct;
+* the inferred capture set when applicable; and
 * the escaping use site.
 
-If the region could be made explicit in an enclosing interface, the diagnostic SHOULD mention that possibility.
+If the region could be expressed through an explicit region binder and capture annotation in an enclosing interface, the
+diagnostic SHOULD mention that possibility.
 
-Overlapping borrow or update footprints:
+Example diagnostic shape:
+
+```text
+error[E_BORROW_ESCAPE]: borrowed value escapes its region
+  --> src/cache.kp:9:5
+   |
+6  |     let & x = box.value
+   |           - borrow region starts here
+7  |     let get = \() -> x
+   |               -------- closure captures the borrow
+8  |
+9  |     get
+   |     ^^^ returned from the region where `x` is valid
+   |
+help: use an explicit `Region` binder and `captures (...)` if this borrow is meant to cross the interface
+```
+
+<!-- compiler.diagnostics.path_sensitive_diagnostics.overlapping_borrow_or_update_footprints -->
+##### 17.2.13.4 Overlapping borrow or update footprints
 
 When two borrows, `inout` arguments, projection-section updates, projector descriptor applications, or accessor-bundle
-applications conflict by footprint overlap, the diagnostic MUST identify:
+applications conflict by footprint overlap, the diagnostic MUST use family:
+
+```text
+kappa.borrow.overlap
+```
+
+The diagnostic MUST identify:
 
 * both source expressions;
 * their roots;
 * their static footprints;
-* the overlapping path or dependency-expanded path; and
-* whether the conflict is due to direct path equality, dependency closure, or conservative computed-projection summary.
+* the overlapping path or dependency-expanded path;
+* whether the conflict is due to direct path equality, prefix overlap, dependency closure, or conservative
+  computed-projection summary; and
+* the operation demanded by each expression.
 
-Projection/accessor missing capability:
+Example diagnostic shape:
 
-When a projection or accessor is used in a context requiring a capability it does not provide, the diagnostic MUST
-identify:
+```text
+error[E_BORROW_OVERLAP]: these operations require overlapping access to `r.buffer`
+  --> src/main.kp:22:18
+   |
+22 |     update (~r.buffer) (&r.len)
+   |             ---------  ------ this borrow overlaps through dependent field closure
+   |             |
+   |             opened for update here
+   |
+note: `buffer` depends on `len`, so their footprints are not disjoint
+```
 
-* the projection/accessor expression;
-* the required capability among read, borrow, open, set, sink, or fill;
-* the available descriptor fields or projection form; and
+<!-- compiler.diagnostics.path_sensitive_diagnostics.projection_or_accessor_missing_capability -->
+##### 17.2.13.5 Projection or accessor missing capability
+
+When a projection or accessor is used in a context requiring a capability it does not provide, the diagnostic MUST use
+family:
+
+```text
+kappa.accessor.missing-capability
+```
+
+The diagnostic MUST identify:
+
+* the projection or accessor expression;
+* the required capability among `read`, `borrow`, `open`, `set`, `sink`, or `fill`;
+* the available descriptor fields or projection form;
+* the descriptor origin; and
 * the use context that required the missing capability.
 
-`inout` restoration failure:
+Example diagnostic shape:
 
-When an `inout` call fails because restoring the returned successor invalidates the enclosing record type, the
-diagnostic MUST identify:
+```text
+error[E_ACCESSOR_MISSING_CAPABILITY]: `degrees` cannot be used as an update target
+  --> src/angle.kp:31:19
+   |
+31 |     angle.{ (.degrees) = 90.0 }
+   |                ^^^^^^^ update requires a `set` capability
+   |
+note: `degrees` provides only:
+      get : Getter (this : Angle,) Float
+help: add a `set` clause to the projection definition
+```
+
+<!-- compiler.diagnostics.path_sensitive_diagnostics.inout_restoration_failure -->
+##### 17.2.13.6 `inout` restoration failure
+
+When an `inout` call fails because restoring the returned successor invalidates the enclosing record type, path state, or
+dependent reconstruction, the diagnostic MUST use family:
+
+```text
+kappa.inout.restoration
+```
+
+The diagnostic MUST identify:
 
 * the `~` argument;
+* the opened path;
 * the restored path;
+* the predecessor type;
 * the successor type;
-* the enclosing field or dependent sibling invalidated by restoration; and
+* the enclosing field or dependent sibling invalidated by restoration;
+* the expected restored type;
+* the actual restored type; and
 * an explicit repair form when possible.
 
-Determinism:
+Example diagnostic shape:
 
-For fixed source inputs and configuration, diagnostics in this class MUST be emitted with deterministic primary ranges,
-secondary ranges, structured fields, and ordering, subject to the parallel-diagnostics determinism rules of §17.2.8.
+```text
+error[E_INOUT_RESTORATION]: restoring `buf.buffer` no longer satisfies the enclosing record type
+  --> src/buf.kp:27:21
+   |
+27 |     resizeBuffer (~buf.buffer) 20
+   |                   ----------- restored here
+   |
+note: field `buffer` is required to have type:
+      Array buf.len Byte
+note: after the call, the restored value has type:
+      Array 20 Byte
+help: update `len` and `buffer` together so the dependent fields agree
+```
+
+<!-- compiler.diagnostics.path_sensitive_diagnostics.determinism_requirements -->
+##### 17.2.13.7 Determinism requirements
+
+For fixed source inputs and configuration, diagnostics in this section MUST be emitted with deterministic:
+
+* primary ranges;
+* secondary ranges;
+* structured payload fields;
+* fix-it applicability;
+* suppression behavior; and
+* ordering,
+
+subject to the parallel-diagnostics determinism rules of §17.2.8.
 
 <!-- compiler.kcore -->
 ### 17.3 KCore
