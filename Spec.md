@@ -8244,8 +8244,9 @@ they invoke during elaboration-time execution run under the elaboration-time eva
 * Elaboration-time execution MUST be total.
 * Elaboration-time execution MUST be deterministic with respect to explicit inputs and any evaluator-supplied input
   transcript.
-* For a fixed set of arguments, call-site semantic environment, visibility/opacity state, and transcript, an
-  elaboration-time computation MUST produce the same `Syntax`, diagnostics, and reflected results.
+* For a fixed set of arguments, call-site semantic environment, visibility/opacity state, effective import environment,
+  imported-interface identities, provider identities, and transcript, an elaboration-time computation MUST produce the
+  same `Syntax`, diagnostics, and reflected results.
 * In package mode (§2.3.2), the elaboration-time evaluator provides no `IO` capability. Any attempt to perform
   observable side effects, including file-system access, network access, mutable global state, or equivalent
   implementation-defined effects, is a compile-time error.
@@ -8259,6 +8260,28 @@ they invoke during elaboration-time execution run under the elaboration-time eva
 * Semantic reflection queries over `Syntax` or `Core` are elaboration-time queries. They MUST use the same
   name-resolution, implicit-insertion, visibility, opacity, and definitional-equality rules as ordinary elaboration at
   the call site.
+
+Import stability for elaboration-time queries:
+
+Semantic reflection queries, normalization queries, definitional-equality queries, hole-goal queries, and
+type-of-syntax queries executed during `Elab` MUST be stable under semantically equivalent import environments.
+
+In particular, such queries MUST NOT observe:
+
+* the source order of unrelated imports;
+* the physical order in which imported interfaces were loaded;
+* whether an imported interface was freshly compiled or loaded from cache;
+* reload history in an interactive session when the reloaded interface identity is unchanged;
+* hash-map iteration order over visible imported declarations;
+* hash-map iteration order over instance candidates; or
+* parallel worker scheduling.
+
+If a macro wants to observe source import declarations as syntax, it may inspect the source syntax through the ordinary
+`Syntax` API where such syntax is available.
+
+Such source-syntax observation is presentation-level observation. It MUST NOT change the semantics of ordinary
+normalization, definitional equality, name resolution, implicit resolution, or typechecking except through explicit macro
+expansion output and the recorded macro transcript rules of this section.
 
 **Termination checking.** Macro definitions are subject to the same termination checking rules as ordinary top-level
 definitions (§6.4), including the unsafe/debug termination-assertion escapes of §16.4. The elaboration-time evaluator
