@@ -1,0 +1,10 @@
+module cases.e77_explicit_scope_forkin.main
+
+main : UIO Unit
+let main =
+    withScope \scope -> do
+        let _child <- forkIn scope (println "scoped child")
+        shutdownScope scope
+        println "scope closed"
+
+--! assertType cases.e77_explicit_scope_forkin.main.main UIO Unit

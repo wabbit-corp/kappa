@@ -1,0 +1,15 @@
+module cases.e58_row_extension.main
+
+result : Int
+let result = block
+    let base : (x : Int) = (x = 1)
+    let extended = base.{ y := 41 }
+    extended.x + extended.y
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e58_row_extension"
+
+--! assertType cases.e58_row_extension.main.result Int
+--! assertType cases.e58_row_extension.main.main UIO Unit

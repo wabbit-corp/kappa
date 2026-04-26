@@ -1,0 +1,27 @@
+module cases.e14_named_constructor_defaults.main
+
+data User : Type =
+    User {
+        name : String,
+        active : Bool = True,
+        age : Int = 0
+    }
+
+isActive : User -> Int
+let isActive user =
+    match user
+    case User { active = True } -> 1
+    case User { active = False } -> 0
+
+result : Int
+let result =
+    isActive (User { name = "Ada" })
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e14_named_constructor_defaults"
+
+--! assertType cases.e14_named_constructor_defaults.main.result Int
+--! assertType cases.e14_named_constructor_defaults.main.main UIO Unit

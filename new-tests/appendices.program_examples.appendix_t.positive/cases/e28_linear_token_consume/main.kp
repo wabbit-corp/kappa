@@ -1,0 +1,23 @@
+module cases.e28_linear_token_consume.main
+
+data TokenSpent : Type =
+    TokenSpent
+
+forget : (1 token : TokenSpent) -> Unit
+let forget token =
+    match token
+    case TokenSpent -> ()
+
+result : Int
+let result = block
+    let _ = forget TokenSpent
+    42
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e28_linear_token_consume"
+
+--! assertType cases.e28_linear_token_consume.main.result Int
+--! assertType cases.e28_linear_token_consume.main.main UIO Unit

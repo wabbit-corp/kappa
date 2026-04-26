@@ -1,0 +1,16 @@
+module main
+
+-- Source issues: inko#424, chapel#19285
+-- Spec: §2.7E
+import std.hash.(type HashCode)
+import std.hash.(term defaultHashSeed, term newHashState, term finishHashState)
+
+bad : HashCode
+let bad =
+    let state = newHashState defaultHashSeed
+    in
+        let _ = finishHashState state
+        in finishHashState state
+
+--! assertErrorCount 1
+--! assertDiagnosticCodes E_QTT_LINEAR_OVERUSE

@@ -1,0 +1,12 @@
+module main
+
+-- Source issues: chapel#4966, inko#375
+-- Spec: §2.7C, §14.8.4A
+import std.atomic.(ctor LoadSeqCst)
+import std.atomic.(term atomicLoad)
+
+bad : Ref Int -> UIO Int
+let bad cell = atomicLoad LoadSeqCst cell
+
+--! assertErrorCount 1
+--! assertDiagnosticMatch AtomicRef|Ref|atomic|cell

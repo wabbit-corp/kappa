@@ -1,1 +1,0 @@
-error: Checkpoint 'KBackendIR' requires unique function identities within module 'main', but 'I1' was duplicated.

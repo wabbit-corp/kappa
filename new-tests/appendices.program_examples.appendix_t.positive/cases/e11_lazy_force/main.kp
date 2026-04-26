@@ -1,0 +1,15 @@
+module cases.e11_lazy_force.main
+
+result : Int
+let result = block
+    let cached = lazy (21 * 2)
+    force cached
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e11_lazy_force"
+
+--! assertType cases.e11_lazy_force.main.result Int
+--! assertType cases.e11_lazy_force.main.main UIO Unit

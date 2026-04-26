@@ -1,0 +1,18 @@
+module cases.e66_short_circuit_boolean.main
+
+expensiveFalse : Unit -> Bool
+let expensiveFalse () =
+    False
+
+result : Int
+let result =
+    if True || expensiveFalse () then 42 else 0
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e66_short_circuit_boolean"
+
+--! assertType cases.e66_short_circuit_boolean.main.expensiveFalse Unit -> Bool
+--! assertType cases.e66_short_circuit_boolean.main.result Int
+--! assertType cases.e66_short_circuit_boolean.main.main UIO Unit

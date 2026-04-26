@@ -1,0 +1,19 @@
+module cases.e61_implicit_record_field_construction.main
+
+usesEq : (@_ : Eq Int) -> Int -> Bool
+let usesEq x =
+    x == x
+
+result : Int
+let result = block
+    let pkg : (@tc : Eq Int, value : Int) = (value = 42)
+    if usesEq pkg.value then pkg.value else 0
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e61_implicit_record_field_construction"
+
+--! assertType cases.e61_implicit_record_field_construction.main.usesEq (@_ : Eq Int) -> Int -> Bool
+--! assertType cases.e61_implicit_record_field_construction.main.result Int
+--! assertType cases.e61_implicit_record_field_construction.main.main UIO Unit

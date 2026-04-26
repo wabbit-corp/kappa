@@ -1,0 +1,14 @@
+module cases.e34_for_loop_control.main
+
+main : UIO Unit
+let main = do
+    for n in [1, 2, 3, 4] do
+        if n == 2 then
+            continue
+        if n == 4 then
+            break
+        println "loop body"
+
+    println "loop done"
+
+--! assertType cases.e34_for_loop_control.main.main UIO Unit

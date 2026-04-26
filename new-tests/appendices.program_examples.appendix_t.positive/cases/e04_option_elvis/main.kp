@@ -1,0 +1,19 @@
+module cases.e04_option_elvis.main
+
+fallback : Option Int -> Int
+let fallback value =
+    value ?: 10
+
+result : Int
+let result =
+    fallback None + fallback (Some 5)
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e04_option_elvis"
+
+--! assertType cases.e04_option_elvis.main.result Int
+--! assertType cases.e04_option_elvis.main.main UIO Unit
+--! assertExecute cases.e04_option_elvis.main.result 15

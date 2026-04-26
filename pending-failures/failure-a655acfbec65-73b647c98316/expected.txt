@@ -1,0 +1,1 @@
+run:interpreter:main.result: runtime error: Name 'i0' is not in scope.

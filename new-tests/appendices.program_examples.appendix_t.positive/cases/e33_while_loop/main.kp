@@ -1,0 +1,14 @@
+module cases.e33_while_loop.main
+
+main : UIO Unit
+let main = do
+    var n = 0
+
+    while !(readRef n) < 3 do
+        let current <- readRef n
+        n = current + 1
+
+    let final <- readRef n
+    if final == 3 then println "while ok" else println "while bad"
+
+--! assertType cases.e33_while_loop.main.main UIO Unit

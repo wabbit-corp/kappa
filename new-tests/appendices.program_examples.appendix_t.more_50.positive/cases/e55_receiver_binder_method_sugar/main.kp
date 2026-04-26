@@ -1,0 +1,18 @@
+module cases.e55_receiver_binder_method_sugar.main
+
+double : Int -> Int
+let double (this x : Int) : Int =
+    x + x
+
+result : Int
+let result = 21.double
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e55_receiver_binder_method_sugar"
+
+--! assertType cases.e55_receiver_binder_method_sugar.main.double Int -> Int
+--! assertType cases.e55_receiver_binder_method_sugar.main.result Int
+--! assertType cases.e55_receiver_binder_method_sugar.main.main UIO Unit
+--! assertExecute cases.e55_receiver_binder_method_sugar.main.result 42

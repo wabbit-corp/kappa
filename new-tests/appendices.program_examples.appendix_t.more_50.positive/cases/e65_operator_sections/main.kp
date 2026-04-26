@@ -1,0 +1,15 @@
+module cases.e65_operator_sections.main
+
+result : Int
+let result = block
+    let inc = (+ 1)
+    let addTen = (10 +)
+    addTen (inc 31)
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e65_operator_sections"
+
+--! assertType cases.e65_operator_sections.main.result Int
+--! assertType cases.e65_operator_sections.main.main UIO Unit

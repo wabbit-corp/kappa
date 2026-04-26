@@ -1,0 +1,18 @@
+module cases.e40_macro_elab_splice.main
+
+plusOneSyntax : Syntax Int -> Elab (Syntax Int)
+let plusOneSyntax e =
+    pure '{ ${e} + 1 }
+
+result : Int
+let result =
+    $(plusOneSyntax '{ 41 })
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e40_macro_elab_splice"
+
+--! assertType cases.e40_macro_elab_splice.main.result Int
+--! assertType cases.e40_macro_elab_splice.main.main UIO Unit

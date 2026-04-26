@@ -1,1 +1,0 @@
-error: Checkpoint 'KBackendIR' requires function 'main.i1' to have a calling convention arity matching its parameter count.

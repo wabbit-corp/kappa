@@ -12,6 +12,7 @@ from kappa_fuzz_lib import (
     backfill_traces,
     current_git_commit,
     export_weighted_training_samples,
+    fuzz_execution_oracle,
     fuzz_from_checkpoint,
     pipeline,
     promote_pending_failures,
@@ -24,12 +25,25 @@ from kappa_fuzz_lib import (
 )
 
 VERIFY_STAGES = ["verify:KBackendIR@dotnet-il", "verify:KBackendIR@zig"]
+DEFAULT_MODEL_DIR = "artifacts/fuzzball-kappa-weighted-current"
+ORACLE_MODEL_DIR = "artifacts/fuzzball-kappa-oracle-current"
 
 
 def add_common_paths(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--cli", default="src/Kappa.Compiler.Cli/bin/Release/net10.0/Kappa.Compiler.Cli")
     parser.add_argument("--corpus-db", default="artifacts/fuzzball-kappa/corpus.sqlite")
-    parser.add_argument("--model-dir", default="artifacts/fuzzball-kappa-weighted-current")
+    parser.add_argument("--model-dir", default=DEFAULT_MODEL_DIR)
+
+
+def resolve_model_dir_for_profile(repo_root: Path, model_dir_value: str, profile: str) -> Path:
+    if profile == "oracle" and model_dir_value == DEFAULT_MODEL_DIR:
+        return resolve_path(repo_root, ORACLE_MODEL_DIR)
+    return resolve_path(repo_root, model_dir_value)
+
+
+def default_weighted_samples_path(repo_root: Path, corpus_db: Path, profile: str) -> Path:
+    suffix = "oracle-weighted-training-samples.jsonl" if profile == "oracle" else "weighted-training-samples.jsonl"
+    return corpus_db.parent / suffix
 
 
 def main() -> None:
@@ -64,11 +78,13 @@ def main() -> None:
     add_common_paths(weights_parser)
     weights_parser.add_argument("--out", default=None)
     weights_parser.add_argument("--preferred-commit", default=None)
+    weights_parser.add_argument("--profile", choices=["default", "oracle"], default="default")
 
     train_parser = subparsers.add_parser("train", help="Train or retrain the latest model.")
     add_common_paths(train_parser)
     train_parser.add_argument("--steps", type=int, default=500)
     train_parser.add_argument("--weighted-samples", default=None)
+    train_parser.add_argument("--profile", choices=["default", "oracle"], default="default")
 
     fuzz_parser = subparsers.add_parser("fuzz", help="Generate programs from a checkpoint and run them through the compiler.")
     add_common_paths(fuzz_parser)
@@ -78,6 +94,15 @@ def main() -> None:
     fuzz_parser.add_argument("--sample-length", type=int, default=1000)
     fuzz_parser.add_argument("--checkpoint", default=None)
     fuzz_parser.add_argument("--out-dir", default=None)
+
+    oracle_parser = subparsers.add_parser("oracle", help="Generate runnable programs and compare interpreter, dotnet-il, and zig results.")
+    add_common_paths(oracle_parser)
+    oracle_parser.add_argument("--count", type=int, default=500)
+    oracle_parser.add_argument("--temperature", type=float, default=0.55)
+    oracle_parser.add_argument("--timeout-seconds", type=float, default=5.0)
+    oracle_parser.add_argument("--sample-length", type=int, default=700)
+    oracle_parser.add_argument("--checkpoint", default=None)
+    oracle_parser.add_argument("--out-dir", default=None)
 
     retest_parser = subparsers.add_parser("retest", help="Retest pending or saved cases on the current compiler.")
     retest_parser.add_argument("roots", nargs="+")
@@ -167,8 +192,19 @@ def main() -> None:
 
     if args.command == "weights":
         corpus_db = resolve_path(repo_root, args.corpus_db)
-        out_path = resolve_path(repo_root, args.out) if args.out else corpus_db.parent / "weighted-training-samples.jsonl"
-        print(json.dumps(export_weighted_training_samples(repo_root, db_path=corpus_db, out_path=out_path, preferred_commit=args.preferred_commit), indent=2))
+        out_path = resolve_path(repo_root, args.out) if args.out else default_weighted_samples_path(repo_root, corpus_db, args.profile)
+        print(
+            json.dumps(
+                export_weighted_training_samples(
+                    repo_root,
+                    db_path=corpus_db,
+                    out_path=out_path,
+                    preferred_commit=args.preferred_commit,
+                    profile=args.profile,
+                ),
+                indent=2,
+            )
+        )
         return
 
     if args.command == "reset":
@@ -187,8 +223,9 @@ def main() -> None:
 
     if args.command == "train":
         corpus_db = resolve_path(repo_root, args.corpus_db)
-        weighted = resolve_path(repo_root, args.weighted_samples) if args.weighted_samples else corpus_db.parent / "weighted-training-samples.jsonl"
-        print(json.dumps(train_model(repo_root, out_dir=resolve_path(repo_root, args.model_dir), weighted_samples_path=weighted, steps=args.steps), indent=2))
+        weighted = resolve_path(repo_root, args.weighted_samples) if args.weighted_samples else default_weighted_samples_path(repo_root, corpus_db, args.profile)
+        model_dir = resolve_model_dir_for_profile(repo_root, args.model_dir, args.profile)
+        print(json.dumps(train_model(repo_root, out_dir=model_dir, weighted_samples_path=weighted, steps=args.steps), indent=2))
         return
 
     if args.command == "fuzz":
@@ -216,6 +253,40 @@ def main() -> None:
                 indent=2,
             )
         )
+        return
+
+    if args.command == "oracle":
+        model_dir = resolve_model_dir_for_profile(repo_root, args.model_dir, "oracle")
+        checkpoint = resolve_path(repo_root, args.checkpoint) if args.checkpoint else model_dir / "kappa-char-lstm.pt"
+        compiler_commit = current_git_commit(repo_root)
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        out_dir = (
+            resolve_path(repo_root, args.out_dir)
+            if args.out_dir
+            else model_dir / f"fuzz-run-oracle-{timestamp}-{Path(checkpoint).stem}-{compiler_commit[:8]}-{args.count}"
+        )
+        corpus_db = resolve_path(repo_root, args.corpus_db)
+        oracle_summary = fuzz_execution_oracle(
+            repo_root,
+            checkpoint_path=checkpoint,
+            cli_path=resolve_path(repo_root, args.cli),
+            out_dir=out_dir,
+            count=args.count,
+            sample_length=args.sample_length,
+            temperature=args.temperature,
+            preamble_prime="module main\n\n",
+            seed=214421,
+            timeout_seconds=args.timeout_seconds,
+            max_ids=8,
+            keep_diagnostics=10,
+            keep_successes=5,
+        )
+        corpus = update_corpus_store(
+            repo_root,
+            db_path=corpus_db,
+            jsonl_path=corpus_db.with_suffix(".jsonl"),
+        )
+        print(json.dumps({"run_dir": str(out_dir), "oracle": oracle_summary, "corpus": corpus}, indent=2))
         return
 
     if args.command == "retest":

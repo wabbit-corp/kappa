@@ -1,0 +1,9 @@
+module main
+
+module False () I2 do
+      case Nil -> 0
+      case I0 :: i1 -> I0 + I0 i1
+main : IO Int
+let main = do
+    I0 <- pure 40
+    pure (I0 + 2)

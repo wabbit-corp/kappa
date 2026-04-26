@@ -1,0 +1,20 @@
+module cases.e26_borrowed_argument.main
+
+observe : (& n : Int) -> Int
+let observe n =
+    n + 1
+
+result : Int
+let result = block
+    let n : Int = 41
+    observe n
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e26_borrowed_argument"
+
+--! assertType cases.e26_borrowed_argument.main.result Int
+--! assertType cases.e26_borrowed_argument.main.main UIO Unit
+--! assertExecute cases.e26_borrowed_argument.main.result 42

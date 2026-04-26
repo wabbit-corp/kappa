@@ -1,0 +1,21 @@
+module cases.e27_path_sensitive_borrow.main
+
+readBorrowed : (& n : Int) -> Int
+let readBorrowed n =
+    n + 1
+
+result : Int
+let result = block
+    let rec : (left : Int, right : Int) = (left = 40, right = 1)
+    let l = readBorrowed rec.left
+    l + rec.right
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e27_path_sensitive_borrow"
+
+--! assertType cases.e27_path_sensitive_borrow.main.result Int
+--! assertType cases.e27_path_sensitive_borrow.main.main UIO Unit
+--! assertExecute cases.e27_path_sensitive_borrow.main.result 42

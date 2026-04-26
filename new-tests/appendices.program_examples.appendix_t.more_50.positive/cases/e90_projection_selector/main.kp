@@ -1,0 +1,23 @@
+module cases.e90_projection_selector.main
+
+type Editor =
+    (leftActive : Bool, left : Int, right : Int)
+
+projection activePane (place ed : Editor) : Int =
+    if ed.leftActive then
+        yield ed.left
+    else
+        yield ed.right
+
+result : Int
+let result = block
+    let ed : Editor = (leftActive = False, left = 0, right = 42)
+    activePane ed
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e90_projection_selector"
+
+--! assertType cases.e90_projection_selector.main.result Int
+--! assertType cases.e90_projection_selector.main.main UIO Unit

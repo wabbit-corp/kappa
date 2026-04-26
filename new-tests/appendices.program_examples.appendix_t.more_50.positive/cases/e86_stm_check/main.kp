@@ -1,0 +1,16 @@
+module cases.e86_stm_check.main
+
+transaction : STM Int
+let transaction = do
+    let cell <- newTVar 1
+    let n <- readTVar cell
+    check (n == 1)
+    pure (n + 41)
+
+main : UIO Unit
+let main = do
+    let n <- atomically transaction
+    if n == 42 then println "stm check ok" else println "stm check bad"
+
+--! assertType cases.e86_stm_check.main.transaction STM Int
+--! assertType cases.e86_stm_check.main.main UIO Unit

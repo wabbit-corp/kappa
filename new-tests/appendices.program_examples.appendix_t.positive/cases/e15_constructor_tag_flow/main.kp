@@ -1,0 +1,22 @@
+module cases.e15_constructor_tag_flow.main
+
+data Packet : Type =
+    Payload (value : Int)
+    Ping
+
+packetValue : Packet -> Int
+let packetValue packet =
+    if packet is Payload then packet.value else 0
+
+result : Int
+let result =
+    packetValue (Payload 42) + packetValue Ping
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e15_constructor_tag_flow"
+
+--! assertType cases.e15_constructor_tag_flow.main.result Int
+--! assertType cases.e15_constructor_tag_flow.main.main UIO Unit

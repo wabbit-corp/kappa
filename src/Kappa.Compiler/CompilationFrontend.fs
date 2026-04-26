@@ -629,6 +629,8 @@ module internal CompilationFrontend =
                 $"({operatorName} {render left} {render right})"
             | Elvis(left, right) ->
                 $"(?: {render left} {render right})"
+            | Comprehension comprehension ->
+                render comprehension.Lowered
             | PrefixedString(prefix, parts) ->
                 let partText =
                     parts

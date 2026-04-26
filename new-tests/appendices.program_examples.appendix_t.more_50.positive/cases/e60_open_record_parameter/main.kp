@@ -1,0 +1,12 @@
+module cases.e60_open_record_parameter.main
+
+describe : (name : String | r) -> String
+let describe person =
+    person.name
+
+main : UIO Unit
+let main = do
+    let label = describe (name = "Ada", age = 36)
+    println label
+
+--! assertType cases.e60_open_record_parameter.main.main UIO Unit

@@ -1,0 +1,9 @@
+module cases.e82_ensuring_finalizer.main
+
+main : UIO Unit
+let main =
+    ensuring
+        (println "body")
+        (println "finalizer")
+
+--! assertType cases.e82_ensuring_finalizer.main.main UIO Unit

@@ -1,0 +1,15 @@
+module cases.e10_thunk_force.main
+
+result : Int
+let result = block
+    let delayed = thunk (20 + 22)
+    force delayed
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e10_thunk_force"
+
+--! assertType cases.e10_thunk_force.main.result Int
+--! assertType cases.e10_thunk_force.main.main UIO Unit

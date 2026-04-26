@@ -1,0 +1,19 @@
+module main
+
+-- Source: idris-lang/Idris2#14
+-- Spec: §7.2.1, §7.3
+
+boxedId : Option ((@0 a : Type) -> a -> a)
+let boxedId =
+    Some (\(@0 a : Type) (x : a) -> x)
+
+result : Int
+let result =
+    match boxedId
+      case Some f -> f @Int 41
+      case None -> 0
+
+--! assertNoErrors
+--! assertType boxedId Option ((@0 a : Type) -> a -> a)
+--! assertType result Int
+--! x-assertEval result 41

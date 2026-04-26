@@ -1,3 +1,0 @@
-data I1 : Type =
-    I1 (i0 : Int)
-    I1 (i0 : Int)

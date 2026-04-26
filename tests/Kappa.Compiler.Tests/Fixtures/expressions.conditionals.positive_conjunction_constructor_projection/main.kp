@@ -4,7 +4,7 @@ data Payload : Type =
     Box (value : Int)
     Empty
 
--- Source issue: KT-146
+-- Source issues: KT-146, KT-592
 -- Spec: §7.1.2A, §7.4.1, §7.4.2, §2.8.3
 readValue : Payload -> Int
 let readValue p =

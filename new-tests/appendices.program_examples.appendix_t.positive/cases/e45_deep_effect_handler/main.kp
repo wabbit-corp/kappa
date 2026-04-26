@@ -1,0 +1,25 @@
+module cases.e45_deep_effect_handler.main
+
+result : Int
+let result = block
+    scoped effect Ask =
+        1 ask : Unit -> Int
+
+    computation : Eff <[Ask : Ask]> Int
+    let computation = do
+        let n <- Ask.ask ()
+        pure (n + 1)
+
+    runPure
+        (deep handle Ask computation with
+            case return x -> pure x
+            case ask () k -> k 41)
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e45_deep_effect_handler"
+
+--! assertType cases.e45_deep_effect_handler.main.result Int
+--! assertType cases.e45_deep_effect_handler.main.main UIO Unit

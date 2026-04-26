@@ -1,0 +1,18 @@
+module cases.e63_boolean_proposition_record.main
+
+type SelfEqual =
+    (n : Int, @ok : n == n)
+
+result : Int
+let result = block
+    let r : SelfEqual = (n = 42)
+    r.n
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e63_boolean_proposition_record"
+
+--! assertType cases.e63_boolean_proposition_record.main.result Int
+--! assertType cases.e63_boolean_proposition_record.main.main UIO Unit
+--! assertExecute cases.e63_boolean_proposition_record.main.result 42

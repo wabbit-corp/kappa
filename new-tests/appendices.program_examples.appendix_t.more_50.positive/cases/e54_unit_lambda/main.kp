@@ -1,0 +1,17 @@
+module cases.e54_unit_lambda.main
+
+tick : Unit -> Int
+let tick = \() -> 42
+
+result : Int
+let result = tick ()
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e54_unit_lambda"
+
+--! assertType cases.e54_unit_lambda.main.tick Unit -> Int
+--! assertType cases.e54_unit_lambda.main.result Int
+--! assertType cases.e54_unit_lambda.main.main UIO Unit
+--! assertExecute cases.e54_unit_lambda.main.result 42

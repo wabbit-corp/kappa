@@ -1,1 +1,0 @@
-error: Checkpoint 'KBackendIR' requires unique pattern binder names within 'main.i1', but 'i2' was duplicated.

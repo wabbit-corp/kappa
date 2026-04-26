@@ -1,0 +1,12 @@
+module cases.e39_fiber_ref.main
+
+main : UIO Unit
+let main = do
+    let label <- newFiberRef "start"
+    let before <- getFiberRef label
+    println before
+    setFiberRef label "end"
+    let after <- getFiberRef label
+    println after
+
+--! assertType cases.e39_fiber_ref.main.main UIO Unit

@@ -1,0 +1,25 @@
+module cases.e91_projection_section_update.main
+
+type Angle =
+    (degreesValue : Int)
+
+projection degrees (place this : Angle) : Int =
+    get -> this.degreesValue
+
+    set (new_value : Int) ->
+        this.{ degreesValue = new_value }
+
+result : Int
+let result = block
+    let a : Angle = (degreesValue = 10)
+    let b = a.{ (.degrees) = 42 }
+    b.degreesValue
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e91_projection_section_update"
+
+--! assertType cases.e91_projection_section_update.main.result Int
+--! assertType cases.e91_projection_section_update.main.main UIO Unit
+--! assertExecute cases.e91_projection_section_update.main.result 10

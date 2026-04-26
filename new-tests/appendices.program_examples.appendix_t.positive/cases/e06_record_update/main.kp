@@ -1,0 +1,19 @@
+module cases.e06_record_update.main
+
+type Counter = (value : Int, label : String)
+
+result : Int
+let result = block
+    let c : Counter = (value = 1, label = "clicks")
+    let c2 = c.{ value = c.value + 41 }
+    c2.value
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e06_record_update"
+
+--! assertType cases.e06_record_update.main.result Int
+--! assertType cases.e06_record_update.main.main UIO Unit
+--! assertExecute cases.e06_record_update.main.result 42

@@ -1,0 +1,20 @@
+module cases.e09_lambdas_operator_sections.main
+
+applyTwice : (Int -> Int) -> Int -> Int
+let applyTwice f x =
+    f (f x)
+
+result : Int
+let result = block
+    let inc = \x -> x + 1
+    let addTen = (+ 10)
+    applyTwice inc 5 + addTen 1
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e09_lambdas_operator_sections"
+
+--! assertType cases.e09_lambdas_operator_sections.main.result Int
+--! assertType cases.e09_lambdas_operator_sections.main.main UIO Unit

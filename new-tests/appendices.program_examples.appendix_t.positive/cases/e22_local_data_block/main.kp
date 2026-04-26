@@ -1,0 +1,20 @@
+module cases.e22_local_data_block.main
+
+result : Int
+let result = block
+    data Local : Type =
+        Local (value : Int)
+
+    let value = Local 42
+
+    match value
+    case Local n -> n
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e22_local_data_block"
+
+--! assertType cases.e22_local_data_block.main.result Int
+--! assertType cases.e22_local_data_block.main.main UIO Unit

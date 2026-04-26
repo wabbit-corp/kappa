@@ -1,0 +1,8 @@
+module cases.e84_defer_finalizer_order.main
+
+main : UIO Unit
+let main = do
+    defer println "leaving scope"
+    println "inside scope"
+
+--! assertType cases.e84_defer_finalizer_order.main.main UIO Unit

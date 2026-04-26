@@ -1,0 +1,4 @@
+module cases.e95_multifile_import_more.helper.math
+
+triple : Int -> Int
+let triple n = n + n + n

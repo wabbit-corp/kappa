@@ -1,0 +1,22 @@
+module cases.e74_try_except_multiple.main
+
+data Problem : Type =
+    Missing
+    BadInput
+
+recover : IO Problem Int
+let recover =
+    try
+        do
+            raise Missing
+    except Missing -> pure 42
+    except BadInput -> pure 0
+    finally -> pure ()
+
+main : IO Problem Unit
+let main = do
+    let n <- recover
+    if n == 42 then pure () else raise BadInput
+
+--! assertType cases.e74_try_except_multiple.main.recover IO cases.e74_try_except_multiple.main.Problem Int
+--! assertType cases.e74_try_except_multiple.main.main IO cases.e74_try_except_multiple.main.Problem Unit

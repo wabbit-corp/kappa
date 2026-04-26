@@ -1,0 +1,22 @@
+module cases.e08_record_parameter_named_application.main
+
+area : (width : Int, height : Int) -> Int
+let area (width : Int, height : Int) : Int =
+    width * height
+
+scale : (image : String) -> (width : Int) -> (height : Int) -> Int
+let scale image width height =
+    width * height
+
+result : Int
+let result =
+    area (height = 3, width = 4) + scale { image = "sprite", height = 5, width = 6 }
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e08_record_parameter_named_application"
+
+--! assertType cases.e08_record_parameter_named_application.main.result Int
+--! assertType cases.e08_record_parameter_named_application.main.main UIO Unit

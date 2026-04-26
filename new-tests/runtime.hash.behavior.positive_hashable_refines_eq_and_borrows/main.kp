@@ -1,0 +1,29 @@
+module main
+
+-- Source issues: inko#424, chapel#9182, chapel#19285
+-- Spec: §2.7E, §12.1
+import std.hash.(type HashSeed, type HashCode)
+import std.hash.(trait Hashable)
+import std.hash.(term defaultHashSeed, term hashWith)
+
+sameWithHashable : (@_ : Hashable a) -> a -> a -> Bool
+let sameWithHashable left right = left == right
+
+hashBorrowThenReturn : (@_ : Hashable a) -> HashSeed -> (1 value : a) -> a
+let hashBorrowThenReturn seed value =
+    let _ = hashWith seed value
+    in value
+
+hashOnce : (@_ : Hashable a) -> HashSeed -> (& value : a) -> HashCode
+let hashOnce seed value = hashWith seed value
+
+result : Int
+let result =
+    let value = hashBorrowThenReturn defaultHashSeed 42
+    in if sameWithHashable value 42 then value else 0
+
+--! assertNoErrors
+--! assertType sameWithHashable (@_ : Hashable a) -> a -> a -> Bool
+--! assertType hashBorrowThenReturn (@_ : Hashable a) -> HashSeed -> (1 value : a) -> a
+--! assertType hashOnce (@_ : Hashable a) -> HashSeed -> (& value : a) -> HashCode
+--! assertEval result 42

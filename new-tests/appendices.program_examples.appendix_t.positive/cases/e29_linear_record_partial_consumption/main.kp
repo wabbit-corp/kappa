@@ -1,0 +1,25 @@
+module cases.e29_linear_record_partial_consumption.main
+
+data Buffer : Type =
+    Buffer (size : Int)
+
+takeBuffer : (1 b : Buffer) -> Int
+let takeBuffer b =
+    match b
+    case Buffer n -> n
+
+result : Int
+let result = block
+    let rec : (1 buf : Buffer, len : Int) = (buf = Buffer 8, len = 34)
+    let used = takeBuffer rec.buf
+    used + rec.len
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e29_linear_record_partial_consumption"
+
+--! assertType cases.e29_linear_record_partial_consumption.main.result Int
+--! assertType cases.e29_linear_record_partial_consumption.main.main UIO Unit
+--! assertExecute cases.e29_linear_record_partial_consumption.main.result 42

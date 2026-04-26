@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import random
 import re
 import shutil
@@ -30,7 +31,7 @@ except ModuleNotFoundError:
     F = None
 
 
-BUCKETS = ("crashes", "timeouts", "diagnostics", "successes", "failures")
+BUCKETS = ("crashes", "timeouts", "diagnostics", "successes", "failures", "oracles")
 KIND_TO_BUCKET = {
     "ok": "successes",
     "success": "successes",
@@ -38,6 +39,7 @@ KIND_TO_BUCKET = {
     "crash": "crashes",
     "timeout": "timeouts",
     "failure": "failures",
+    "oracle": "oracles",
 }
 BUCKET_TO_KIND = {
     "successes": "success",
@@ -45,6 +47,7 @@ BUCKET_TO_KIND = {
     "crashes": "crash",
     "timeouts": "timeout",
     "failures": "failure",
+    "oracles": "oracle",
     "minimized-crashes": "crash",
     "minimized-failures": "failure",
     "minimized-timeouts": "timeout",
@@ -95,6 +98,35 @@ TRACE_LINE_PATTERN = re.compile(
 )
 TEMP_PATH_PATTERN = re.compile(r"/var/folders/[^ ]+/main\.kp")
 MAIN_SYMBOL_PATTERN = re.compile(r"\bmain\.([A-Za-z_][A-Za-z0-9_]*)(\[\d+\])?")
+MODULE_HEADER_PATTERN = re.compile(r"^(?:@PrivateByDefault\s+)?module\s+\S+\s*$")
+ORACLE_ENTRY_CUTOFF_PATTERN = re.compile(r"(?m)^(?:main\s*:|let\s+main\b|result\s*:|let\s+result\b)")
+RUNTIME_ASSERT_PATTERN = re.compile(r"(?m)^--!\s*assert(?:Execute|RunStdout|RunStderr)\b")
+RUNTIME_ENTRY_PATTERNS = {
+    "result-int": re.compile(r"(?m)^\s*let\s+result\b"),
+    "main-io-int": re.compile(r"(?m)^\s*main\s*:\s*IO\s+Int\b[\s\S]*?^\s*let\s+main\b"),
+    "main-io-unit": re.compile(r"(?m)^\s*main\s*:\s*IO\s+Unit\b[\s\S]*?^\s*let\s+main\b"),
+}
+RUNTIME_INLINE_FILE_HINTS = ("BackendTests", "ZigBackendTests", "Milestone", "ResourceModelTests", "HarnessExecution")
+
+EXECUTION_ORACLE_TEMPLATES = {
+    "result-int": {
+        "entry_point": "main.result",
+        "declaration": "result : Int\nlet result = ",
+        "fallback_body": "0",
+    },
+    "main-io-int": {
+        "entry_point": "main.main",
+        "declaration": "main : IO Int\nlet main = do\n    ",
+        "fallback_body": "pure 0",
+    },
+    "main-io-unit": {
+        "entry_point": "main.main",
+        "declaration": "main : IO Unit\nlet main = do\n    ",
+        "fallback_body": "pure ()",
+    },
+}
+DEFAULT_EXECUTION_ORACLE_TEMPLATES = ("result-int", "result-int", "main-io-int", "main-io-int", "main-io-unit")
+EXECUTION_ORACLE_BACKENDS = ("interpreter", "dotnet-il", "zig")
 
 
 @dataclass(frozen=True)
@@ -217,6 +249,33 @@ def current_git_commit(repo_root: Path) -> str:
         return "unknown"
 
 
+def resolve_repo_zig_executable(repo_root: Path) -> str:
+    configured = os.environ.get("KAPPA_ZIG_EXE", "").strip()
+    if configured:
+        if Path(configured).exists():
+            return configured
+        raise RuntimeError(f"Configured Zig executable '{configured}' does not exist.")
+
+    if sys.platform == "win32":
+        script = repo_root / "scripts" / "ensure-zig.ps1"
+        command = ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(script)]
+    else:
+        script = repo_root / "scripts" / "ensure-zig.sh"
+        command = ["sh", str(script)]
+
+    if not script.exists():
+        raise RuntimeError(f"Could not find repo Zig bootstrap script at {script}.")
+
+    result = subprocess.run(command, cwd=repo_root, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to resolve repo-local Zig toolchain: {result.stderr.strip() or result.stdout.strip() or '<empty>'}")
+
+    zig_path = result.stdout.strip()
+    if not zig_path:
+        raise RuntimeError("The repo-local Zig bootstrap script did not return an executable path.")
+    return zig_path
+
+
 def sample_sha1(text: str) -> str:
     return hashlib.sha1(text.encode("utf-8")).hexdigest()
 
@@ -287,6 +346,12 @@ def stage_to_args(stage: str) -> list[str]:
             args.extend(["--backend", backend])
         args.extend(["--verify", checkpoint])
         return args
+    if stage.startswith("run:"):
+        parts = stage.split(":", 2)
+        if len(parts) != 3:
+            raise ValueError(f"Unsupported run stage: {stage}")
+        _, backend, binding = parts
+        return ["--backend", backend, "--run", binding]
     raise ValueError(f"Unsupported stage: {stage}")
 
 
@@ -299,11 +364,23 @@ def build_cli_command(cli_path: Path, temp_root: Path, source_path: Path, *, sta
     return command
 
 
-def run_cli_source(cli_path: Path, repo_root: Path, source: str, *, stage: str, timeout_seconds: float, trace: bool = False) -> CaseRunResult:
+def run_cli_source(
+    cli_path: Path,
+    repo_root: Path,
+    source: str,
+    *,
+    stage: str,
+    timeout_seconds: float,
+    trace: bool = False,
+    environment: dict[str, str] | None = None,
+) -> CaseRunResult:
     with tempfile.TemporaryDirectory(prefix="kappa-fuzz-case-") as temp_dir:
         temp_root = Path(temp_dir)
         source_path = temp_root / "main.kp"
         source_path.write_text(source.rstrip() + "\n", encoding="utf-8")
+        env = os.environ.copy()
+        if environment:
+            env.update(environment)
 
         try:
             result = subprocess.run(
@@ -312,6 +389,7 @@ def run_cli_source(cli_path: Path, repo_root: Path, source: str, *, stage: str, 
                 capture_output=True,
                 text=True,
                 timeout=timeout_seconds,
+                env=env,
             )
             return CaseRunResult(
                 returncode=result.returncode,
@@ -345,6 +423,102 @@ def terminal_signature_from_run(run: CaseRunResult) -> str:
     return terminal
 
 
+def normalize_runtime_output(text: str) -> str:
+    return text.replace("\r\n", "\n").strip()
+
+
+def canonicalize_observed_text(text: str) -> str:
+    text = normalize_runtime_output(text)
+    text = TEMP_PATH_PATTERN.sub("<temp>/main.kp", text)
+    return MAIN_SYMBOL_PATTERN.sub(lambda match: f"main.<sym>{match.group(2) or ''}", text)
+
+
+def backend_name_from_stage(stage: str) -> str:
+    if stage.startswith("run:"):
+        parts = stage.split(":", 2)
+        if len(parts) == 3:
+            return parts[1]
+    return stage
+
+
+def format_execution_oracle_observation(backend: str, run: CaseRunResult) -> dict:
+    stdout = canonicalize_observed_text(run.stdout)
+    stderr = canonicalize_observed_text(run.stderr)
+    terminal = canonicalize_terminal_signature(last_nonblank_line(run.stderr) or last_nonblank_line(run.stdout) or "<empty>")
+    return {
+        "backend": backend,
+        "kind": run.kind,
+        "returncode": run.returncode,
+        "timed_out": run.timed_out,
+        "stdout": stdout,
+        "stderr": stderr,
+        "terminal_signature": terminal,
+        "stage": run.stage,
+    }
+
+
+def execution_oracle_signature(observations: list[dict]) -> str:
+    parts = []
+    for observation in observations:
+        details = [observation["kind"]]
+        if observation["timed_out"]:
+            details.append("timed_out=true")
+        if observation["returncode"] not in (None, 0):
+            details.append(f"rc={observation['returncode']}")
+        if observation["stdout"]:
+            details.append(f"stdout={json.dumps(observation['stdout'])}")
+        if observation["stderr"]:
+            details.append(f"stderr={json.dumps(observation['stderr'])}")
+        elif observation["terminal_signature"] not in {"<empty>", observation["stdout"]}:
+            details.append(f"terminal={json.dumps(observation['terminal_signature'])}")
+        parts.append(f"{observation['backend']}[{', '.join(details)}]")
+    return " | ".join(parts)
+
+
+def summarize_execution_oracle_results(results: dict[str, CaseRunResult]) -> dict:
+    observations = [format_execution_oracle_observation(backend, run) for backend, run in sorted(results.items())]
+    if not observations:
+        raise ValueError("Expected at least one backend result.")
+
+    observation_keys = {
+        (
+            observation["kind"],
+            observation["returncode"],
+            observation["timed_out"],
+            observation["stdout"],
+            observation["stderr"],
+            observation["terminal_signature"],
+        )
+        for observation in observations
+    }
+
+    if any(observation["kind"] == "crash" for observation in observations):
+        kind = "crash"
+    elif any(observation["kind"] == "timeout" for observation in observations):
+        kind = "timeout"
+    elif len(observation_keys) == 1:
+        kind = observations[0]["kind"]
+    else:
+        kind = "oracle"
+
+    if kind == "ok":
+        signature = observations[0]["stdout"] or "<empty>"
+    elif kind == "oracle" and all(observation["kind"] == "ok" for observation in observations):
+        signature = f"oracle: output mismatch {execution_oracle_signature(observations)}"
+    elif kind == "oracle":
+        signature = f"oracle: backend disagreement {execution_oracle_signature(observations)}"
+    else:
+        signature = observations[0]["terminal_signature"]
+        if len(observation_keys) > 1:
+            signature = f"oracle: backend disagreement {execution_oracle_signature(observations)}"
+
+    return {
+        "kind": kind,
+        "signature": signature,
+        "observations": observations,
+    }
+
+
 def kind_from_bucket_name(name: str) -> str:
     return BUCKET_TO_KIND.get(name, name)
 
@@ -362,7 +536,7 @@ def kind_from_case_dir(case_dir: Path) -> str:
             return kind
 
     meta_kind = str(load_json(case_dir / "meta.json").get("kind", "")).strip()
-    if meta_kind in {"failure", "crash", "timeout", "diagnostic", "ok", "success"}:
+    if meta_kind in {"failure", "crash", "timeout", "diagnostic", "ok", "success", "oracle"}:
         return "ok" if meta_kind == "success" else meta_kind
 
     expected = terminal_signature_from_case(case_dir)
@@ -544,6 +718,28 @@ def looks_like_kappa_program(text: str) -> bool:
         return True
 
     return sum(1 for line in lines if line.startswith(CODEISH_PREFIXES)) >= 2 and len(lines) >= 2
+
+
+def runnable_entry_kind(source: str) -> str | None:
+    normalized = source.replace("\r\n", "\n")
+    for kind, pattern in RUNTIME_ENTRY_PATTERNS.items():
+        if pattern.search(normalized):
+            return kind
+    return None
+
+
+def is_runtime_seed_source(path_hint: str, text: str) -> bool:
+    lowered_path = path_hint.replace("\\", "/").lower()
+    if "runtime_positive" in lowered_path:
+        return True
+    return bool(RUNTIME_ASSERT_PATTERN.search(text))
+
+
+def is_runtime_inline_seed(source_path: str, text: str) -> bool:
+    if runnable_entry_kind(text) is None:
+        return False
+    name = Path(source_path).name
+    return any(hint in name for hint in RUNTIME_INLINE_FILE_HINTS)
 
 
 def extract_inline_kappa_samples_from_fs(path: Path) -> list[InlineSample]:
@@ -924,6 +1120,44 @@ def canonicalize_terminal_signature(signature: str) -> str:
     return MAIN_SYMBOL_PATTERN.sub(lambda match: f"main.<sym>{match.group(2) or ''}", signature)
 
 
+def sanitize_execution_oracle_preamble(sampled_text: str) -> str:
+    text = sampled_text.replace("\r\n", "\n").strip()
+    lines = text.splitlines()
+
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    if lines and MODULE_HEADER_PATTERN.match(lines[0].strip()):
+        lines.pop(0)
+    while lines and not lines[0].strip():
+        lines.pop(0)
+
+    text = "\n".join(lines).strip()
+    cutoff = ORACLE_ENTRY_CUTOFF_PATTERN.search(text)
+    if cutoff is not None:
+        text = text[: cutoff.start()].rstrip()
+    return text.strip()
+
+
+def build_execution_oracle_prefix(template_name: str, sampled_preamble: str) -> str:
+    template = EXECUTION_ORACLE_TEMPLATES[template_name]
+    preamble = sanitize_execution_oracle_preamble(sampled_preamble)
+    parts = ["module main", ""]
+    if preamble:
+        parts.append(preamble.rstrip())
+        parts.append("")
+    prefix = "\n".join(parts) + template["declaration"]
+    return prefix
+
+
+def build_execution_oracle_source(template_name: str, sampled_preamble: str, sampled_body: str) -> str:
+    template = EXECUTION_ORACLE_TEMPLATES[template_name]
+    prefix = build_execution_oracle_prefix(template_name, sampled_preamble)
+    body = sampled_body.replace("\r\n", "\n").strip()
+    if not body:
+        body = str(template["fallback_body"])
+    return prefix + body + "\n"
+
+
 def load_corpus(files: list[Path]) -> str:
     chunks: list[str] = []
     for path in files:
@@ -958,6 +1192,7 @@ def compute_normalized_sample_weights(
     *,
     trace_records_by_sample: dict[str, list[dict]],
     preferred_commit: str,
+    profile: str = "default",
 ) -> dict[str, dict]:
     eligible_samples = [sample for sample in samples if sample.get("eligible", False)]
     if not eligible_samples:
@@ -1012,6 +1247,17 @@ def compute_normalized_sample_weights(
             keyword_score = default_keyword_score
 
         raw_score = novelty * keyword_score
+        runtime_multiplier = 1.0
+        if profile == "oracle":
+            if sample.get("runtime_seed", False):
+                runtime_multiplier *= 4.0
+            if sample.get("runtime_consensus_ok", False):
+                runtime_multiplier *= 8.0
+            elif sample.get("runtime_interpreter_codegen_ok", False):
+                runtime_multiplier *= 3.0
+            if sample.get("runnable_entry", False):
+                runtime_multiplier *= 2.0
+            raw_score *= runtime_multiplier
         max_raw_score = max(max_raw_score, raw_score)
         raw_scores[sample_sha1_value] = {
             "raw_weight": raw_score,
@@ -1021,6 +1267,7 @@ def compute_normalized_sample_weights(
             "keywords": sorted(keywords_by_sample[sample_sha1_value]),
             "normalized_trace_hashes": trace_hashes,
             "syntax_hash": syntax_hash_by_sample[sample_sha1_value],
+            "runtime_multiplier": runtime_multiplier,
         }
 
     scale = max_raw_score or 1.0
@@ -1290,6 +1537,30 @@ def add_static_corpus_root(connection: sqlite3.Connection, repo_root: Path, root
     return added
 
 
+def add_runtime_seed_root(connection: sqlite3.Connection, repo_root: Path, root: Path, source_group: str) -> int:
+    if not root.exists():
+        return 0
+    added = 0
+    for path in sorted(root.rglob("*.kp")):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        relative = repo_relative(repo_root, path)
+        if not is_runtime_seed_source(relative, text):
+            continue
+        sha1 = sample_sha1(text)
+        upsert_sample(connection, sha1, text)
+        add_provenance(
+            connection,
+            sample_sha1_value=sha1,
+            provenance_kind="runtime-seed",
+            source_group=source_group,
+            source_path=relative,
+            used_for_training=True,
+            metadata={"entry_kind": runnable_entry_kind(text)},
+        )
+        added += 1
+    return added
+
+
 def add_inline_test_sources(connection: sqlite3.Connection, repo_root: Path, tests_root: Path) -> int:
     if not tests_root.exists():
         return 0
@@ -1307,6 +1578,16 @@ def add_inline_test_sources(connection: sqlite3.Connection, repo_root: Path, tes
                 used_for_training=True,
                 metadata={"source_label": sample.source_label},
             )
+            if is_runtime_inline_seed(str(path), sample.text):
+                add_provenance(
+                    connection,
+                    sample_sha1_value=sha1,
+                    provenance_kind="runtime-seed",
+                    source_group="runtime-seeds",
+                    source_path=f"{repo_relative(repo_root, path)}:{sample.line}",
+                    used_for_training=True,
+                    metadata={"source_label": sample.source_label, "entry_kind": runnable_entry_kind(sample.text)},
+                )
             added += 1
     return added
 
@@ -1322,7 +1603,7 @@ def scan_fuzz_run(connection: sqlite3.Connection, repo_root: Path, run_root: Pat
     run_metadata = load_json(run_root / "run.json")
     compiler_commit = str(run_metadata.get("compiler_commit", "unknown"))
     added = 0
-    for bucket in ["failures", "crashes", "diagnostics", "successes", "timeouts"]:
+    for bucket in ["failures", "crashes", "diagnostics", "successes", "timeouts", "oracles"]:
         bucket_root = run_root / bucket
         if not bucket_root.exists():
             continue
@@ -1472,6 +1753,10 @@ def update_corpus_store(repo_root: Path, *, db_path: Path, jsonl_path: Path) -> 
             "fixtures": add_static_corpus_root(connection, repo_root, repo_root / "tests/Kappa.Compiler.Tests/Fixtures", "fixtures"),
             "new_tests": add_static_corpus_root(connection, repo_root, repo_root / "new-tests", "new-tests"),
             "inline_tests": add_inline_test_sources(connection, repo_root, repo_root / "tests"),
+            "runtime_seeds": (
+                add_runtime_seed_root(connection, repo_root, repo_root / "tests/Kappa.Compiler.Tests/Fixtures", "runtime-seeds")
+                + add_runtime_seed_root(connection, repo_root, repo_root / "new-tests", "runtime-seeds")
+            ),
             "recycled_seeds": sum(add_static_corpus_root(connection, repo_root, root, "recycled-seeds") for root in find_artifact_roots(repo_root, "recycled-seeds")),
             "crash_boosted_seeds": sum(add_static_corpus_root(connection, repo_root, root, "crash-boosted-seeds") for root in find_artifact_roots(repo_root, "crash-boosted-seeds")),
             "pending_failures": add_pending_failures(connection, repo_root, repo_root / "pending-failures"),
@@ -1484,7 +1769,14 @@ def update_corpus_store(repo_root: Path, *, db_path: Path, jsonl_path: Path) -> 
     return {"db": str(db_path), "jsonl": str(jsonl_path), "counts": counts, "export": export_summary}
 
 
-def export_weighted_training_samples(repo_root: Path, *, db_path: Path, out_path: Path, preferred_commit: str | None) -> dict:
+def export_weighted_training_samples(
+    repo_root: Path,
+    *,
+    db_path: Path,
+    out_path: Path,
+    preferred_commit: str | None,
+    profile: str = "default",
+) -> dict:
     preferred_commit = preferred_commit or current_git_commit(repo_root)
 
     connection = sqlite3.connect(db_path)
@@ -1520,6 +1812,20 @@ def export_weighted_training_samples(repo_root: Path, *, db_path: Path, out_path
         trace_records_by_sample[row["sample_sha1"]].append(record)
 
     test_result_counts: Counter[str] = Counter(row["sample_sha1"] for row in result_rows)
+    runtime_results_by_sample: dict[str, dict[str, bool]] = defaultdict(lambda: {"consensus_ok": False, "interpreter_codegen_ok": False})
+    for row in result_rows:
+        try:
+            meta = json.loads(row["meta_json"])
+        except Exception:
+            meta = {}
+        backend_results = meta.get("backend_results")
+        if not isinstance(backend_results, dict):
+            continue
+        backend_kinds = {str(backend): str(details.get("kind", "")) for backend, details in backend_results.items() if isinstance(details, dict)}
+        if backend_kinds.get("interpreter") == "ok" and all(backend_kinds.get(backend) == "ok" for backend in ("dotnet-il", "zig")):
+            runtime_results_by_sample[row["sample_sha1"]]["consensus_ok"] = True
+        if backend_kinds.get("interpreter") == "ok" and any(backend_kinds.get(backend) == "ok" for backend in ("dotnet-il", "zig")):
+            runtime_results_by_sample[row["sample_sha1"]]["interpreter_codegen_ok"] = True
 
     sample_inputs: list[dict] = []
     for row in sample_rows:
@@ -1528,14 +1834,26 @@ def export_weighted_training_samples(repo_root: Path, *, db_path: Path, out_path
         has_static_training = any(entry["used_for_training"] for entry in provenance)
         has_pending_failure = any(entry["kind"] == "pending-failure" for entry in provenance)
         has_test_results = test_result_counts[sample_sha1_value] > 0
+        runtime_seed = any(entry["kind"] == "runtime-seed" for entry in provenance)
+        runnable_entry = runnable_entry_kind(str(row["text"])) is not None
+        runtime_consensus_ok = runtime_results_by_sample[sample_sha1_value]["consensus_ok"]
+        runtime_interpreter_codegen_ok = runtime_results_by_sample[sample_sha1_value]["interpreter_codegen_ok"]
+        if profile == "oracle":
+            eligible = runtime_seed or runtime_consensus_ok or runtime_interpreter_codegen_ok
+        else:
+            eligible = has_static_training or has_pending_failure or has_test_results
         sample_inputs.append(
             {
                 "sample_sha1": sample_sha1_value,
                 "text": row["text"],
-                "eligible": has_static_training or has_pending_failure or has_test_results,
+                "eligible": eligible,
                 "has_static_training": has_static_training,
                 "has_pending_failure": has_pending_failure,
                 "test_result_count": test_result_counts[sample_sha1_value],
+                "runtime_seed": runtime_seed,
+                "runnable_entry": runnable_entry,
+                "runtime_consensus_ok": runtime_consensus_ok,
+                "runtime_interpreter_codegen_ok": runtime_interpreter_codegen_ok,
             }
         )
 
@@ -1543,6 +1861,7 @@ def export_weighted_training_samples(repo_root: Path, *, db_path: Path, out_path
         sample_inputs,
         trace_records_by_sample=trace_records_by_sample,
         preferred_commit=preferred_commit,
+        profile=profile,
     )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1564,12 +1883,17 @@ def export_weighted_training_samples(repo_root: Path, *, db_path: Path, out_path
                         "text": sample["text"],
                         "has_static_training": bool(sample["has_static_training"]),
                         "has_pending_failure": bool(sample["has_pending_failure"]),
+                        "runtime_seed": bool(sample["runtime_seed"]),
+                        "runnable_entry": bool(sample["runnable_entry"]),
+                        "runtime_consensus_ok": bool(sample["runtime_consensus_ok"]),
+                        "runtime_interpreter_codegen_ok": bool(sample["runtime_interpreter_codegen_ok"]),
                         "trace_group_size": int(weight_record["trace_group_size"]),
                         "syntax_group_size": int(weight_record["syntax_group_size"]),
                         "normalized_trace_hashes": list(weight_record["normalized_trace_hashes"]),
                         "syntax_hash": str(weight_record["syntax_hash"]),
                         "keywords": list(weight_record["keywords"]),
                         "keyword_score": round(float(weight_record["keyword_score"]), 6),
+                        "runtime_multiplier": round(float(weight_record["runtime_multiplier"]), 6),
                         "raw_weight": round(float(weight_record["raw_weight"]), 8),
                         "test_result_count": int(sample["test_result_count"]),
                     },
@@ -1585,6 +1909,7 @@ def export_weighted_training_samples(repo_root: Path, *, db_path: Path, out_path
         "db": str(db_path),
         "out": str(out_path),
         "preferred_commit": preferred_commit,
+        "profile": profile,
         "exported": exported,
         "top_weighted_samples": [{"sample_sha1": sha1, "weight": round(weight, 4)} for weight, sha1 in top_weights[:10]],
     }
@@ -1782,6 +2107,31 @@ def remap_identifiers(text: str, rng: random.Random, max_ids: int) -> str:
     return re.sub(r"\bi\d+\b", lambda match: mapping.get(match.group(0), match.group(0)), text)
 
 
+def sample_generated_text(
+    *,
+    model: CharRnn,
+    vocab: list[str],
+    char_to_id: dict[str, int],
+    keyword_codes: dict[str, str],
+    prime: str,
+    sample_length: int,
+    temperature: float,
+) -> dict:
+    code_to_keyword = {code: keyword for keyword, code in keyword_codes.items()}
+    encoded_prime = normalize_source(prime, keyword_codes) if keyword_codes else prime
+    prime_ids = [char_to_id[char] for char in encoded_prime if char in char_to_id] or [char_to_id["\n"]]
+    ids = model.sample(prime_ids=prime_ids, max_length=sample_length, temperature=temperature, device=torch.device("cpu"))
+    encoded_full = decode(ids, vocab).split("\1", 1)[0]
+    encoded_tail = encoded_full[len(encoded_prime) :] if encoded_full.startswith(encoded_prime) else encoded_full
+    return {
+        "encoded_prime": encoded_prime,
+        "encoded_full": encoded_full.strip(),
+        "encoded_tail": encoded_tail.strip(),
+        "decoded_full": decode_keywords(encoded_full, code_to_keyword).strip(),
+        "decoded_tail": decode_keywords(encoded_tail, code_to_keyword).strip(),
+    }
+
+
 def fuzz_from_checkpoint(
     repo_root: Path,
     *,
@@ -1930,6 +2280,348 @@ def fuzz_from_checkpoint(
             )
 
     (out_dir / "summary.json").write_text(json.dumps(stats, indent=2), encoding="utf-8")
+    return stats
+
+
+def fuzz_execution_oracle(
+    repo_root: Path,
+    *,
+    checkpoint_path: Path,
+    cli_path: Path,
+    out_dir: Path,
+    count: int,
+    sample_length: int,
+    temperature: float,
+    preamble_prime: str,
+    seed: int,
+    timeout_seconds: float,
+    max_ids: int,
+    keep_diagnostics: int,
+    keep_successes: int,
+    templates: tuple[str, ...] = DEFAULT_EXECUTION_ORACLE_TEMPLATES,
+    backends: tuple[str, ...] = EXECUTION_ORACLE_BACKENDS,
+) -> dict:
+    rng = random.Random(seed)
+    require_torch()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for name in BUCKETS:
+        (out_dir / name).mkdir(parents=True, exist_ok=True)
+
+    model, checkpoint = load_checkpoint(checkpoint_path)
+    compiler_commit = current_git_commit(repo_root)
+    vocab = checkpoint["vocab"]
+    char_to_id = checkpoint["char_to_id"]
+    keyword_codes = checkpoint.get("keyword_codes", {})
+    zig_environment = {"KAPPA_ZIG_EXE": resolve_repo_zig_executable(repo_root)} if "zig" in backends else {}
+
+    stats = {"ok": 0, "diagnostic": 0, "crash": 0, "timeout": 0, "failure": 0, "oracle": 0}
+    saved_diagnostics = 0
+    saved_successes = 0
+    preamble_length = max(128, int(sample_length * 0.6))
+    body_length = max(64, sample_length - preamble_length)
+
+    (out_dir / "run.json").write_text(
+        json.dumps(
+            {
+                "mode": "execution-oracle",
+                "compiler_commit": compiler_commit,
+                "checkpoint": str(checkpoint_path),
+                "cli": str(cli_path),
+                "count": count,
+                "sample_length": sample_length,
+                "temperature": temperature,
+                "preamble_prime": preamble_prime,
+                "seed": seed,
+                "timeout_seconds": timeout_seconds,
+                "max_ids": max_ids,
+                "templates": list(templates),
+                "backends": list(backends),
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    for index in range(1, count + 1):
+        template_name = rng.choice(list(templates))
+        template = EXECUTION_ORACLE_TEMPLATES[template_name]
+
+        preamble_sample = sample_generated_text(
+            model=model,
+            vocab=vocab,
+            char_to_id=char_to_id,
+            keyword_codes=keyword_codes,
+            prime=preamble_prime,
+            sample_length=preamble_length,
+            temperature=temperature,
+        )
+        prefix = build_execution_oracle_prefix(template_name, preamble_sample["decoded_full"])
+        body_sample = sample_generated_text(
+            model=model,
+            vocab=vocab,
+            char_to_id=char_to_id,
+            keyword_codes=keyword_codes,
+            prime=prefix,
+            sample_length=body_length,
+            temperature=temperature,
+        )
+
+        decoded = build_execution_oracle_source(template_name, preamble_sample["decoded_full"], body_sample["decoded_tail"])
+        decoded = remap_identifiers(decoded, rng, max_ids).strip()
+        digest = hashlib.sha1(decoded.encode("utf-8")).hexdigest()
+        started_at = time.time()
+
+        compile_run = run_cli_source(
+            cli_path,
+            repo_root,
+            decoded,
+            stage="compile",
+            timeout_seconds=timeout_seconds,
+        )
+        if compile_run.kind != "ok":
+            kind = compile_run.kind
+            stats[kind] += 1
+            should_save = False
+            target_dir = out_dir / "diagnostics"
+            if kind in {"crash", "timeout", "failure", "oracle"}:
+                should_save = True
+                target_dir = out_dir / bucket_for_kind(kind)
+            elif kind == "diagnostic" and saved_diagnostics < keep_diagnostics:
+                should_save = True
+                saved_diagnostics += 1
+                target_dir = out_dir / "diagnostics"
+
+            if should_save:
+                case_dir = target_dir / f"{kind}-{digest}"
+                case_dir.mkdir(parents=True, exist_ok=True)
+                (case_dir / "main.kp").write_text(decoded + "\n", encoding="utf-8")
+                (case_dir / "preamble.sample.kp").write_text(preamble_sample["decoded_full"] + "\n", encoding="utf-8")
+                (case_dir / "body.sample.kp").write_text(body_sample["decoded_tail"] + "\n", encoding="utf-8")
+                (case_dir / "stdout.txt").write_text(compile_run.stdout, encoding="utf-8")
+                (case_dir / "stderr.txt").write_text(compile_run.stderr, encoding="utf-8")
+                (case_dir / "expected.txt").write_text(terminal_signature_from_run(compile_run) + "\n", encoding="utf-8")
+                (case_dir / "meta.json").write_text(
+                    json.dumps(
+                        {
+                            "mode": "execution-oracle",
+                            "kind": kind,
+                            "sha1": digest,
+                            "returncode": compile_run.returncode,
+                            "timed_out": compile_run.timed_out,
+                            "elapsed_ms": int((time.time() - started_at) * 1000.0),
+                            "index": index,
+                            "temperature": temperature,
+                            "compiler_commit": compiler_commit,
+                            "checkpoint": str(checkpoint_path),
+                            "cli": str(cli_path),
+                            "stage": "compile",
+                            "entry_point": template["entry_point"],
+                            "template": template_name,
+                            "preamble_prime": preamble_prime,
+                            "backends": list(backends),
+                            "compile_result": {
+                                "kind": compile_run.kind,
+                                "returncode": compile_run.returncode,
+                                "timed_out": compile_run.timed_out,
+                                "terminal_signature": terminal_signature_from_run(compile_run),
+                            },
+                        },
+                        indent=2,
+                    ),
+                    encoding="utf-8",
+                )
+
+            if index == 1 or index % 25 == 0 or index == count:
+                print(
+                    f"sample={index} kind={kind} ok={stats['ok']} diag={stats['diagnostic']} "
+                    f"crash={stats['crash']} timeout={stats['timeout']} failure={stats['failure']} oracle={stats['oracle']}"
+                )
+            continue
+
+        interpreter_stage = f"run:interpreter:{template['entry_point']}"
+        interpreter_run = run_cli_source(
+            cli_path,
+            repo_root,
+            decoded,
+            stage=interpreter_stage,
+            timeout_seconds=timeout_seconds,
+        )
+        if interpreter_run.kind != "ok":
+            kind = interpreter_run.kind
+            stats[kind] += 1
+            should_save = False
+            target_dir = out_dir / "diagnostics"
+            if kind in {"crash", "timeout", "failure", "oracle"}:
+                should_save = True
+                target_dir = out_dir / bucket_for_kind(kind)
+            elif kind == "diagnostic" and saved_diagnostics < keep_diagnostics:
+                should_save = True
+                saved_diagnostics += 1
+                target_dir = out_dir / "diagnostics"
+
+            if should_save:
+                case_dir = target_dir / f"{kind}-{digest}"
+                case_dir.mkdir(parents=True, exist_ok=True)
+                (case_dir / "main.kp").write_text(decoded + "\n", encoding="utf-8")
+                (case_dir / "preamble.sample.kp").write_text(preamble_sample["decoded_full"] + "\n", encoding="utf-8")
+                (case_dir / "body.sample.kp").write_text(body_sample["decoded_tail"] + "\n", encoding="utf-8")
+                (case_dir / "stdout.txt").write_text(interpreter_run.stdout, encoding="utf-8")
+                (case_dir / "stderr.txt").write_text(interpreter_run.stderr, encoding="utf-8")
+                (case_dir / "expected.txt").write_text(terminal_signature_from_run(interpreter_run) + "\n", encoding="utf-8")
+                (case_dir / "interpreter.stdout.txt").write_text(interpreter_run.stdout, encoding="utf-8")
+                (case_dir / "interpreter.stderr.txt").write_text(interpreter_run.stderr, encoding="utf-8")
+                (case_dir / "meta.json").write_text(
+                    json.dumps(
+                        {
+                            "mode": "execution-oracle",
+                            "kind": kind,
+                            "sha1": digest,
+                            "returncode": interpreter_run.returncode,
+                            "timed_out": interpreter_run.timed_out,
+                            "elapsed_ms": int((time.time() - started_at) * 1000.0),
+                            "index": index,
+                            "temperature": temperature,
+                            "compiler_commit": compiler_commit,
+                            "checkpoint": str(checkpoint_path),
+                            "cli": str(cli_path),
+                            "stage": interpreter_stage,
+                            "entry_point": template["entry_point"],
+                            "template": template_name,
+                            "preamble_prime": preamble_prime,
+                            "backends": list(backends),
+                            "compile_result": {
+                                "kind": compile_run.kind,
+                                "returncode": compile_run.returncode,
+                                "timed_out": compile_run.timed_out,
+                                "terminal_signature": terminal_signature_from_run(compile_run),
+                            },
+                            "backend_results": {
+                                "interpreter": {
+                                    "kind": interpreter_run.kind,
+                                    "returncode": interpreter_run.returncode,
+                                    "timed_out": interpreter_run.timed_out,
+                                    "stage": interpreter_run.stage,
+                                    "terminal_signature": terminal_signature_from_run(interpreter_run),
+                                }
+                            },
+                        },
+                        indent=2,
+                    ),
+                    encoding="utf-8",
+                )
+
+            if index == 1 or index % 25 == 0 or index == count:
+                print(
+                    f"sample={index} kind={kind} ok={stats['ok']} diag={stats['diagnostic']} "
+                    f"crash={stats['crash']} timeout={stats['timeout']} failure={stats['failure']} oracle={stats['oracle']}"
+                )
+            continue
+
+        backend_results: dict[str, CaseRunResult] = {}
+        backend_results["interpreter"] = interpreter_run
+        for backend in backends:
+            if backend == "interpreter":
+                continue
+            stage = f"run:{backend}:{template['entry_point']}"
+            environment = zig_environment if backend == "zig" else None
+            backend_results[backend] = run_cli_source(
+                cli_path,
+                repo_root,
+                decoded,
+                stage=stage,
+                timeout_seconds=timeout_seconds,
+                environment=environment,
+            )
+
+        oracle_summary = summarize_execution_oracle_results(backend_results)
+        kind = str(oracle_summary["kind"])
+        stats[kind] += 1
+
+        should_save = False
+        target_dir = out_dir / "diagnostics"
+        if kind in {"crash", "timeout", "failure", "oracle"}:
+            should_save = True
+            target_dir = out_dir / bucket_for_kind(kind)
+        elif kind == "diagnostic" and saved_diagnostics < keep_diagnostics:
+            should_save = True
+            saved_diagnostics += 1
+            target_dir = out_dir / "diagnostics"
+        elif kind == "ok" and saved_successes < keep_successes:
+            should_save = True
+            saved_successes += 1
+            target_dir = out_dir / "successes"
+
+        if should_save:
+            case_dir = target_dir / f"{kind}-{digest}"
+            case_dir.mkdir(parents=True, exist_ok=True)
+
+            primary_backend = oracle_summary["observations"][0]["backend"]
+            if kind in {"crash", "timeout", "failure"}:
+                for backend in backends:
+                    if backend_results[backend].kind == kind:
+                        primary_backend = backend
+                        break
+            primary_run = backend_results[primary_backend]
+
+            (case_dir / "main.kp").write_text(decoded + "\n", encoding="utf-8")
+            (case_dir / "preamble.sample.kp").write_text(preamble_sample["decoded_full"] + "\n", encoding="utf-8")
+            (case_dir / "body.sample.kp").write_text(body_sample["decoded_tail"] + "\n", encoding="utf-8")
+            (case_dir / "stdout.txt").write_text(primary_run.stdout, encoding="utf-8")
+            (case_dir / "stderr.txt").write_text(primary_run.stderr, encoding="utf-8")
+            (case_dir / "expected.txt").write_text(str(oracle_summary["signature"]) + "\n", encoding="utf-8")
+            for backend in backends:
+                run = backend_results[backend]
+                (case_dir / f"{backend}.stdout.txt").write_text(run.stdout, encoding="utf-8")
+                (case_dir / f"{backend}.stderr.txt").write_text(run.stderr, encoding="utf-8")
+            (case_dir / "meta.json").write_text(
+                json.dumps(
+                    {
+                        "kind": kind,
+                        "sha1": digest,
+                        "returncode": primary_run.returncode,
+                        "timed_out": primary_run.timed_out,
+                        "elapsed_ms": int((time.time() - started_at) * 1000.0),
+                        "index": index,
+                        "temperature": temperature,
+                        "compiler_commit": compiler_commit,
+                        "checkpoint": str(checkpoint_path),
+                        "cli": str(cli_path),
+                        "stage": primary_run.stage,
+                        "mode": "execution-oracle",
+                        "entry_point": template["entry_point"],
+                        "template": template_name,
+                        "preamble_prime": preamble_prime,
+                        "backends": list(backends),
+                        "compile_result": {
+                            "kind": compile_run.kind,
+                            "returncode": compile_run.returncode,
+                            "timed_out": compile_run.timed_out,
+                            "terminal_signature": terminal_signature_from_run(compile_run),
+                        },
+                        "oracle_signature": oracle_summary["signature"],
+                        "backend_results": {
+                            backend: {
+                                "kind": run.kind,
+                                "returncode": run.returncode,
+                                "timed_out": run.timed_out,
+                                "stage": run.stage,
+                                "terminal_signature": terminal_signature_from_run(run),
+                            }
+                            for backend, run in backend_results.items()
+                        },
+                        "observations": oracle_summary["observations"],
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+
+        if index == 1 or index % 25 == 0 or index == count:
+            print(
+                f"sample={index} kind={kind} ok={stats['ok']} diag={stats['diagnostic']} "
+                f"crash={stats['crash']} timeout={stats['timeout']} failure={stats['failure']} oracle={stats['oracle']}"
+            )
+
     return stats
 
 
@@ -2385,21 +3077,62 @@ def backfill_traces(
     }
 
 
+def promotion_source_roots(run_root: Path) -> list[dict]:
+    plans: list[dict] = []
+    minimized_buckets = [
+        ("failures", "minimized-failures"),
+        ("crashes", "minimized-crashes"),
+        ("timeouts", "minimized-timeouts"),
+    ]
+    for bucket_name, minimized_name in minimized_buckets:
+        bucket_dir = run_root / bucket_name
+        if not bucket_dir.exists() or not any(path.is_dir() and (path / "main.kp").exists() for path in bucket_dir.iterdir()):
+            continue
+        plans.append(
+            {
+                "bucket_name": bucket_name,
+                "source_dir": bucket_dir,
+                "minimized_dir": run_root / minimized_name,
+                "seed_dir": run_root / "recycled-seeds",
+            }
+        )
+
+    oracle_dir = run_root / "oracles"
+    if oracle_dir.exists() and any(path.is_dir() and (path / "main.kp").exists() for path in oracle_dir.iterdir()):
+        plans.append(
+            {
+                "bucket_name": "oracles",
+                "source_dir": oracle_dir,
+                "minimized_dir": None,
+                "seed_dir": None,
+            }
+        )
+
+    return plans
+
+
 def promote_pending_failures(repo_root: Path, *, roots: list[Path], cli_path: Path, pending_dir: Path, timeout_seconds: float) -> dict:
     pending_dir.mkdir(parents=True, exist_ok=True)
-    minimized_roots: list[Path] = []
+    promotion_roots: list[Path] = []
 
     for run_root in roots:
-        for bucket_name, minimized_name in [("failures", "minimized-failures"), ("crashes", "minimized-crashes"), ("timeouts", "minimized-timeouts")]:
-            bucket_dir = run_root / bucket_name
-            minimized_dir = run_root / minimized_name
-            if not bucket_dir.exists() or not any(path.is_dir() and (path / "main.kp").exists() for path in bucket_dir.iterdir()):
+        for plan in promotion_source_roots(run_root):
+            minimized_dir = plan["minimized_dir"]
+            if minimized_dir is None:
+                promotion_roots.append(plan["source_dir"])
                 continue
-            minimize_cases(repo_root, in_dir=bucket_dir, out_dir=minimized_dir, seed_dir=run_root / "recycled-seeds", cli_path=cli_path, timeout_seconds=timeout_seconds)
+            minimize_cases(
+                repo_root,
+                in_dir=plan["source_dir"],
+                out_dir=minimized_dir,
+                seed_dir=plan["seed_dir"],
+                cli_path=cli_path,
+                timeout_seconds=timeout_seconds,
+            )
             if any(path.is_dir() and (path / "main.kp").exists() for path in minimized_dir.iterdir()):
-                minimized_roots.append(minimized_dir)
+                promotion_roots.append(minimized_dir)
 
-    cluster_roots = list(minimized_roots)
+    cluster_roots = list(promotion_roots)
     if has_case_dirs(pending_dir):
         cluster_roots.append(pending_dir)
 

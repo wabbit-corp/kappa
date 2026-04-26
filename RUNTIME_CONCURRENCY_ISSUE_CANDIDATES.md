@@ -22,19 +22,74 @@ semantics; this note covers runtime-owned concurrency and cleanup observables.
 
 | Repo | Manifest / artifact paths | Search coverage | Direct reads | PR / test coverage | Next pass |
 | --- | --- | --- | --- | --- | --- |
-| `chapel` | `repos/github-chapel-lang-chapel/manifest.json`, `issues.json`, `pulls.json`, `tests/manifest.json` | issue search: `fiber`, `task`, `thread`, `async`, `await`, `cancel`, `interrupt`, `mask`, `supervisor`, `scope`, `defer`, `finally`, `cleanup`, `resource`, `atomic`, `race`, `timeout`, `scheduler`, `stm`; manifest counts: 7,432 issues, 21,212 PRs, 324 docs, 48,656 tests | `#5608`, `#5751`, `#6316`, `#6334` | no PR/test reads yet | read Chapel tests around `begin`, `sync`, `coforall`, `deinit`, and task-private variables; then PRs for `#5608` / `#6334` if linked |
-| `ponyc` | `repos/github-ponylang-ponyc/manifest.json`, `issues.json`, `pulls.json`, `tests/manifest.json` | issue search: same runtime regex plus `actor`; manifest counts: 2,120 issues, 3,052 PRs, 1 doc, 548 tests | `#34`, `#205`, `#224`, `#344`, `#350` | no PR/test reads yet | read tests around finalizers, actor monitoring, scheduler response, and stdio blocking behavior |
+| `chapel` | `repos/github-chapel-lang-chapel/manifest.json`, `issues.json`, `pulls.json`, `tests/manifest.json` | issue search: `fiber`, `task`, `thread`, `async`, `await`, `cancel`, `interrupt`, `mask`, `supervisor`, `scope`, `defer`, `finally`, `cleanup`, `resource`, `atomic`, `race`, `timeout`, `scheduler`, `stm`, `memory order`, `fence`; manifest counts: 7,432 issues, 21,212 PRs, 324 docs, 48,656 tests | `#4966`, `#5037`, `#5482`, `#5608`, `#5751`, `#5796`, `#6223`, `#6316`, `#6334` | no PR/test reads yet | read Chapel tests around `begin`, `sync`, `coforall`, `deinit`, task-private variables, and atomics; then PRs for `#5608`, `#6334`, and atomic fixes if linked |
+| `ponyc` | `repos/github-ponylang-ponyc/manifest.json`, `issues.json`, `pulls.json`, `tests/manifest.json` | issue search: same runtime regex plus `actor`, `monitor`, `compare exchange`, `acq_rel`, `atomic`; manifest counts: 2,120 issues, 3,052 PRs, 1 doc, 548 tests | `#34`, `#126`, `#205`, `#224`, `#344`, `#350` | no PR/test reads yet | read tests around finalizers, actor monitoring, scheduler response, atomic memory orders, and stdio blocking behavior |
 | `encore` | `repos/github-parapluu-encore/manifest.json`, `issues.json`, `pulls.json`, `tests/manifest.json` | issue search: same runtime regex plus `future`, `active object`, `get`, `blocking`; manifest counts: 361 issues, 519 PRs, 1 doc, 1,087 tests | `#184`, `#274`, `#412`, `#429`, `#758`, `#802`, `#880` | no PR/test reads yet | read tests around futures, active objects, `get`, `await`, finalisers, and task module behavior |
 | `elixir` | `repos/github-elixir-lang-elixir/manifest.json`, legacy `../../elixir-issues.json`, `pulls.json`, `tests/manifest.json` | issue search: same runtime regex plus `gen_server`, `supervisor`, `assert_receive`; manifest counts: 5,962 issues, 9,303 PRs, 1 doc, 350 tests | `#392`, `#849`, `#869`, `#982`, `#1566`, `#1724` | no PR/test reads yet | read ExUnit / supervisor / receive tests; separate test-framework ergonomics from Kappa runtime semantics |
-| `inko` | `repos/github-inko-lang-inko/manifest.json`, `issues.json`, `pulls.json`, `docs/manifest.json`, `tests/manifest.json` | issue search: `process`, `async`, `recover`, `throw`, `panic`, `fiber`, `actor`, `timeout`, `scheduler`, `drop`, `resource`, `future`, `task`, `thread`, `cancel`, `interrupt`; manifest counts: 884 issues, 73 PRs, 112 docs, 293 tests | `#110`, `#112`, `#113`, `#213`, `#216`, `#254`, `#256`, `#278`, `#316`, `#321`, `#332`, `#339` | harvested test path scan found `tests/std/test/compiler/test_async_await.inko`, `tests/std/test/compiler/test_drop.inko`, `tests/std/test/std/test_process.inko`, `tests/std/test/std/test_signal.inko`, `tests/std/test/std/test_sync.inko`, `tests/std/test/std/test_io.inko`, `tests/std/fixtures/fmt/async_await/input.inko`, and escape/drop diagnostics fixtures; files not read yet | read Inko `test_async_await`, `test_process`, `test_drop`, `test_sync`, and PRs `#378`, `#380`, `#397`, `#406`, `#449`, `#490`, `#495` |
+| `inko` | `repos/github-inko-lang-inko/manifest.json`, `issues.json`, `pulls.json`, `docs/manifest.json`, `tests/manifest.json` | issue search: `process`, `async`, `recover`, `throw`, `panic`, `fiber`, `actor`, `timeout`, `scheduler`, `drop`, `resource`, `future`, `task`, `thread`, `cancel`, `interrupt`, `atomic`, `race`, `concurrent`; manifest counts: 884 issues, 73 PRs, 112 docs, 293 tests | `#110`, `#112`, `#113`, `#213`, `#216`, `#254`, `#256`, `#278`, `#316`, `#321`, `#332`, `#339`, `#375`, `#398`, `#416` | harvested test path scan found `tests/std/test/compiler/test_async_await.inko`, `tests/std/test/compiler/test_drop.inko`, `tests/std/test/std/test_process.inko`, `tests/std/test/std/test_signal.inko`, `tests/std/test/std/test_sync.inko`, `tests/std/test/std/test_io.inko`, `tests/std/fixtures/fmt/async_await/input.inko`, and escape/drop diagnostics fixtures; files not read yet | read Inko `test_async_await`, `test_process`, `test_drop`, `test_sync`, atomic/concurrency tests, and PRs `#378`, `#380`, `#397`, `#406`, `#449`, `#490`, `#495` |
 
 ## Staged Tests Added
 
-No runtime/concurrency fixtures have been staged from this note yet. The first batch should wait until we decide whether
-the current runtime surface in the local implementation can parse the standard `fork`, `await`, `Scope`, `Monitor`,
-`timeout`, `race`, `defer`, and `using` examples from Spec.md.
+| Fixture root | Source evidence | Spec refs | Purpose |
+| --- | --- | --- | --- |
+| `new-tests/runtime.atomic.behavior.runtime_positive_exchange_and_fetch_add_return_old` | `chapel#4966`, `chapel#5037`, `inko#375` | §2.7C, §14.8.4A, §17.13 | Runtime check that `atomicExchange` and `atomicFetchAdd` return the old value and leave the cell with the updated value. |
+| `new-tests/runtime.atomic.behavior.runtime_positive_compare_exchange_success_failure` | `ponyc#126`, `chapel#4966`, `inko#398` | §2.7C, §14.8.4A, §17.13 | Runtime check that successful CAS replaces the cell and failed CAS leaves the cell unchanged while returning the observed current value. |
+| `new-tests/runtime.atomic.behavior.negative_atomic_ref_not_ordinary_ref` | `chapel#4966`, `inko#375` | §2.7C, §14.8.4A | Negative check that ordinary `Ref` cells cannot be used as `AtomicRef` cells. |
+| `new-tests/runtime.supervisor.behavior.runtime_positive_shutdown_idempotent_await_success` | `elixir#392`, `elixir#869`, `elixir#982`, `ponyc#350` | §2.7D, §8.1.3D, §14.8.4C | Runtime check that supervisor shutdown is idempotent and `awaitSupervisor` reports successful shutdown. |
 
 ## Candidate Records
+
+### `chapel#4966` / `chapel#5037`: atomic operations and initialization
+
+- URLs: https://github.com/chapel-lang/chapel/issues/4966, https://github.com/chapel-lang/chapel/issues/5037
+- Artifact path: `repos/github-chapel-lang-chapel/issues.json`
+- Artifact state: `issue-only`
+- Bucket: `runtime_concurrency_resources`
+- Spec refs: §2.7C, §14.8.4A, §17.13
+- Fit: `accepted-now` for atomic operation behavior; `accepted-later` for optimizer and memory-order conformance.
+- Current coverage: `partial`
+- Proposed fixture roots: `runtime.atomic.behavior.runtime_positive_exchange_and_fetch_add_return_old`,
+  `runtime.atomic.behavior.negative_atomic_ref_not_ordinary_ref`, later
+  `runtime.atomic.trace_negative_optimizer_respects_atomic_fence`
+- Expected outcome: `positive-run`, `negative-diagnostic`, later `trace` or backend conformance.
+- Notes: The direct Kappa obligation now covered is that atomic operations are not ordinary mutable refs and that
+  read-modify-write operations return old values while updating one modification-ordered cell. The remaining
+  issue-shaped obligation is backend/optimizer conformance: atomic operations must not be treated as reorderable
+  ordinary reads/writes.
+
+### `ponyc#126`: compare-and-exchange acquire/release support
+
+- URL: https://github.com/ponylang/ponyc/issues/126
+- Artifact path: `repos/github-ponylang-ponyc/issues.json`
+- Artifact state: `issue-only`
+- Bucket: `runtime_concurrency_resources`
+- Spec refs: §2.7C, §14.8.4A, §17.13
+- Fit: `accepted-now` for compare-exchange behavior; `accepted-later` for backend-width portability.
+- Current coverage: `partial`
+- Proposed fixture roots: `runtime.atomic.behavior.runtime_positive_compare_exchange_success_failure`, later
+  `runtime.atomic.backend_negative_unsupported_compare_exchange_width_is_diagnostic`
+- Expected outcome: `positive-run`, later `negative-diagnostic` or backend conformance.
+- Notes: Kappa standardizes successful and failed compare-exchange observables. Backend support for particular widths
+  remains capability/profile-shaped, so a later backend fixture should reject unsupported atomic widths explicitly instead
+  of failing in target code generation.
+
+### `inko#375` / `inko#398` / `inko#416`: atomics used to remove races and coarse locks
+
+- URLs: https://github.com/inko-lang/inko/issues/375, https://github.com/inko-lang/inko/issues/398,
+  https://github.com/inko-lang/inko/issues/416
+- Artifact path: `repos/github-inko-lang-inko/issues.json`
+- Artifact state: `issue-only`
+- Bucket: `runtime_concurrency_resources`
+- Spec refs: §2.7C, §14.8.4A, §17.13
+- Fit: `accepted-now` for atomic operation behavior; `accepted-later` for race/conformance traces.
+- Current coverage: `partial`
+- Proposed fixture roots: `runtime.atomic.behavior.runtime_positive_exchange_and_fetch_add_return_old`,
+  `runtime.atomic.behavior.runtime_positive_compare_exchange_success_failure`,
+  `runtime.atomic.behavior.negative_atomic_ref_not_ordinary_ref`, later
+  `runtime.atomic.runtime_positive_compare_exchange_loop_publishes_value`
+- Expected outcome: `positive-run`, `negative-diagnostic`, later `runtime-positive`.
+- Notes: These are runtime implementation issues rather than source-syntax features, but they validate Kappa's choice to
+  expose atomics as capability-gated cells with observable old-value, compare-exchange, and cell-kind semantics.
 
 ### `chapel#5608`: explicit synchronization for `begin` tasks that capture outer variables
 
@@ -102,11 +157,12 @@ the current runtime surface in the local implementation can parse the standard `
 - Bucket: `runtime_concurrency_resources`
 - Spec refs: §8.1.3D, §2.7D, §14.8.4C
 - Fit: `accepted-later`
-- Current coverage: `none`
+- Current coverage: `partial`
 - Proposed fixture root: `effects.fibers.runtime_positive_monitor_observes_completion_without_ownership`
 - Expected outcome: `positive-run`
 - Notes: Kappa's `monitor` observes a fiber's terminal `Exit` without making it a child and without changing ownership or
-  shutdown behavior. This is a clean monitor/supervision analogue.
+  shutdown behavior. The staged supervisor shutdown fixture covers basic supervisor lifecycle behavior; the
+  monitor-specific runtime behavior still needs a future runnable fixture.
 
 ### `ponyc#205`: runtime leaves stdio in nonblocking mode
 
@@ -178,6 +234,21 @@ the current runtime surface in the local implementation can parse the standard `
 - Notes: Kappa specifies `await`, `join`, `race`, and supervision, but does not currently specify a collection-oriented
   `awaitAll` / `joinAll` combinator. Track as a possible standard-library ergonomic addition.
 
+### `elixir#392`: supervisor tree and app behavior
+
+- URL: https://github.com/elixir-lang/elixir/issues/392
+- Artifact path: legacy `elixir-issues.json`
+- Artifact state: `issue-only`
+- Bucket: `runtime_concurrency_resources`
+- Spec refs: §2.7D, §8.1.3D, §14.8.4C
+- Fit: `accepted-now` for supervisor shutdown behavior; `accepted-later` for restart-policy runtime behavior.
+- Current coverage: `partial`
+- Proposed fixture roots: `runtime.supervisor.behavior.runtime_positive_shutdown_idempotent_await_success`, later
+  `effects.supervisor.runtime_positive_restart_policy_tracks_child_exit`
+- Expected outcome: `positive-run`, later `runtime-positive`.
+- Notes: This issue is test-framework-shaped upstream, but the reusable Kappa obligation is supervisor lifecycle behavior:
+  start, idempotent shutdown, awaitable terminal exit, and later child-spec restart policy behavior.
+
 ### `elixir#869` / `elixir#982`: application / process startup failure should stop dependent tests
 
 - URLs: https://github.com/elixir-lang/elixir/issues/869, https://github.com/elixir-lang/elixir/issues/982
@@ -186,11 +257,12 @@ the current runtime surface in the local implementation can parse the standard `
 - Bucket: `runtime_concurrency_resources`
 - Spec refs: §8.1.2, §8.1.3D, §2.7D, §14.8.4C
 - Fit: `accepted-later`
-- Current coverage: `none`
+- Current coverage: `partial`
 - Proposed fixture root: `effects.supervisor.runtime_negative_child_start_failure_not_silent_success`
 - Expected outcome: `runtime-negative`
 - Notes: Kappa supervisors and scopes must surface child startup failure as `Exit` / `Cause` information and must not
-  continue dependent work as if startup succeeded.
+  continue dependent work as if startup succeeded. The staged supervisor shutdown fixture covers lifecycle termination;
+  startup-failure propagation still needs a future runnable fixture.
 
 ### `elixir#1566`: interrupt from shell control sequence is ignored
 

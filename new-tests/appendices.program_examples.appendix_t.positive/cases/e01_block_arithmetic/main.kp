@@ -1,0 +1,17 @@
+module cases.e01_block_arithmetic.main
+
+result : Int
+let result = block
+    let base : Int = 40
+    let delta : Int = 2
+    base + delta
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e01_block_arithmetic"
+
+--! assertType cases.e01_block_arithmetic.main.result Int
+--! assertType cases.e01_block_arithmetic.main.main UIO Unit
+--! assertExecute cases.e01_block_arithmetic.main.result 42

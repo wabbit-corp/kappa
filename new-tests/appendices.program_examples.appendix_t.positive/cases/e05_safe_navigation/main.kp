@@ -1,0 +1,22 @@
+module cases.e05_safe_navigation.main
+
+type Address = (city : String, zip : Int)
+type User = (name : String, address : Option Address)
+
+zipOrZero : User -> Int
+let zipOrZero user =
+    user.address?.zip ?: 0
+
+result : Int
+let result = block
+    let ada : User = (name = "Ada", address = Some (city = "Paris", zip = 75000))
+    zipOrZero ada
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e05_safe_navigation"
+
+--! assertType cases.e05_safe_navigation.main.result Int
+--! assertType cases.e05_safe_navigation.main.main UIO Unit

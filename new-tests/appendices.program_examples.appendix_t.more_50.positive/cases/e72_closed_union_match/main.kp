@@ -1,0 +1,18 @@
+module cases.e72_closed_union_match.main
+
+tag : (| Int | String |) -> Int
+let tag v =
+    match v
+    case (| n : Int |) -> n
+    case (| _ : String |) -> 0
+
+result : Int
+let result = tag (| 42 : Int |)
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e72_closed_union_match"
+
+--! assertType cases.e72_closed_union_match.main.result Int
+--! assertType cases.e72_closed_union_match.main.main UIO Unit

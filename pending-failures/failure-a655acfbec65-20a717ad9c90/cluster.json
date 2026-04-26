@@ -1,0 +1,19 @@
+{
+  "cluster_key": "a655acfbec652f93dfb02a6453324e5274423af5:run:interpreter:main.<sym>: runtime error: Name 'i1' is not in scope.",
+  "count": 1,
+  "trace_hash": "a655acfbec652f93dfb02a6453324e5274423af5",
+  "alpha_source_hash": "f75027eb9ee32b63d9debf20770656c7193d4efc",
+  "trace_step_count": 18,
+  "kinds": {
+    "failure": 1
+  },
+  "terminal_signatures": {
+    "run:interpreter:main.main: runtime error: Name 'i1' is not in scope.": 1
+  },
+  "canonical_terminal_signatures": {
+    "run:interpreter:main.<sym>: runtime error: Name 'i1' is not in scope.": 1
+  },
+  "representative_case": "failure-a99a1dcd54c10fcfa859f897ef828df1ad1b5e8a",
+  "representative_path": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-oracle-current/fuzz-run-oracle-20260426-013936-kappa-char-lstm-f80a569b-500/minimized-failures/failure-a99a1dcd54c10fcfa859f897ef828df1ad1b5e8a",
+  "source_case_dir": "/Users/wabbit/ws/kappa/artifacts/fuzzball-kappa-oracle-current/fuzz-run-oracle-20260426-013936-kappa-char-lstm-f80a569b-500/minimized-failures/failure-a99a1dcd54c10fcfa859f897ef828df1ad1b5e8a"
+}

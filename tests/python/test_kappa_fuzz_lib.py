@@ -3,15 +3,21 @@ import unittest
 from pathlib import Path
 
 from scripts.kappa_fuzz_lib import (
+    CaseRunResult,
     alpha_normalize_source,
     build_cli_command,
+    build_execution_oracle_source,
     canonicalize_terminal_signature,
     classify_result,
     compute_normalized_sample_weights,
     extract_inline_kappa_samples_from_fs,
     extract_kappa_keywords,
+    is_runtime_seed_source,
     kind_from_case_dir,
+    promotion_source_roots,
     reset_fuzz_state,
+    runnable_entry_kind,
+    summarize_execution_oracle_results,
     trace_steps_from_stdout,
 )
 
@@ -99,6 +105,18 @@ let result = match value
         self.assertEqual({"module", "main", "trait", "Show", "handler", "let", "result", "match"}, keywords)
 
 
+class RuntimeSeedTests(unittest.TestCase):
+    def test_detects_runnable_entry_kind(self) -> None:
+        self.assertEqual("result-int", runnable_entry_kind("module main\nlet result = 42"))
+        self.assertEqual("main-io-int", runnable_entry_kind("module main\nmain : IO Int\nlet main = do\n    pure 42"))
+        self.assertEqual("main-io-unit", runnable_entry_kind("module main\nmain : IO Unit\nlet main = do\n    pure ()"))
+
+    def test_detects_runtime_seed_sources(self) -> None:
+        self.assertTrue(is_runtime_seed_source("tests/foo.runtime_positive.bar/main.kp", "module main\nlet result = 42"))
+        self.assertTrue(is_runtime_seed_source("tests/foo/main.kp", "module main\nlet result = 42\n--! assertExecute result 42"))
+        self.assertFalse(is_runtime_seed_source("tests/foo/main.kp", "module main\nlet result = 42"))
+
+
 class CanonicalizationTests(unittest.TestCase):
     def test_alpha_normalize_source_preserves_keywords_and_renames_identifiers(self) -> None:
         left = """
@@ -165,6 +183,33 @@ class WeightingTests(unittest.TestCase):
         self.assertEqual(weights["c"]["syntax_group_size"], 1)
         self.assertLess(weights["a"]["weight"], weights["c"]["weight"])
 
+    def test_oracle_weighting_prefers_runtime_consensus_programs(self) -> None:
+        samples = [
+            {
+                "sample_sha1": "a",
+                "text": "module main\nlet result = 42",
+                "eligible": True,
+                "runtime_seed": True,
+                "runnable_entry": True,
+                "runtime_consensus_ok": True,
+                "runtime_interpreter_codegen_ok": True,
+            },
+            {
+                "sample_sha1": "b",
+                "text": "module main\nlet result = value",
+                "eligible": True,
+                "runtime_seed": False,
+                "runnable_entry": True,
+                "runtime_consensus_ok": False,
+                "runtime_interpreter_codegen_ok": False,
+            },
+        ]
+
+        weights = compute_normalized_sample_weights(samples, trace_records_by_sample={}, preferred_commit="head", profile="oracle")
+
+        self.assertAlmostEqual(1.0, weights["a"]["weight"])
+        self.assertGreater(weights["a"]["runtime_multiplier"], weights["b"]["runtime_multiplier"])
+
 
 class ResetTests(unittest.TestCase):
     def test_reset_clears_generated_state_but_keeps_checkpoint(self) -> None:
@@ -193,6 +238,41 @@ class ResetTests(unittest.TestCase):
         self.assertEqual([], list(pending.iterdir()))
 
 
+class PromotionPlanningTests(unittest.TestCase):
+    def test_promotion_sources_include_raw_oracles(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        run_root = Path(temp_dir.name)
+
+        failure_case = run_root / "failures" / "failure-demo"
+        failure_case.mkdir(parents=True)
+        (failure_case / "main.kp").write_text("module main\nlet result = 42\n", encoding="utf-8")
+
+        oracle_case = run_root / "oracles" / "oracle-demo"
+        oracle_case.mkdir(parents=True)
+        (oracle_case / "main.kp").write_text("module main\nlet result = 42\n", encoding="utf-8")
+
+        plans = promotion_source_roots(run_root)
+
+        self.assertEqual(
+            [
+                {
+                    "bucket_name": "failures",
+                    "source_dir": run_root / "failures",
+                    "minimized_dir": run_root / "minimized-failures",
+                    "seed_dir": run_root / "recycled-seeds",
+                },
+                {
+                    "bucket_name": "oracles",
+                    "source_dir": run_root / "oracles",
+                    "minimized_dir": None,
+                    "seed_dir": None,
+                },
+            ],
+            plans,
+        )
+
+
 class TraceReplayTests(unittest.TestCase):
     def test_build_cli_command_includes_trace_when_requested(self) -> None:
         command = build_cli_command(Path("/cli"), Path("/tmp/root"), Path("/tmp/root/main.kp"), stage="verify:KBackendIR", trace=True)
@@ -205,6 +285,13 @@ class TraceReplayTests(unittest.TestCase):
         command = build_cli_command(Path("/cli"), Path("/tmp/root"), Path("/tmp/root/main.kp"), stage="verify:KBackendIR@dotnet-il", trace=False)
         self.assertEqual(
             ["/cli", "--source-root", "/tmp/root", "--backend", "dotnet-il", "--verify", "KBackendIR", "/tmp/root/main.kp"],
+            command,
+        )
+
+    def test_build_cli_command_supports_runtime_stage(self) -> None:
+        command = build_cli_command(Path("/cli"), Path("/tmp/root"), Path("/tmp/root/main.kp"), stage="run:zig:main.main", trace=False)
+        self.assertEqual(
+            ["/cli", "--source-root", "/tmp/root", "--backend", "zig", "--run", "main.main", "/tmp/root/main.kp"],
             command,
         )
 
@@ -222,6 +309,101 @@ advancePhase module KFrontIR.RAW -> KFrontIR.IMPORTS changed=true verify=KBacken
             ],
             steps,
         )
+
+
+class ExecutionOracleTests(unittest.TestCase):
+    def test_build_execution_oracle_source_inserts_entry_after_preamble(self) -> None:
+        source = build_execution_oracle_source(
+            "main-io-unit",
+            "module main\n\ntwice : Int -> Int\nlet twice value = value * 2\nlet main = do\n    printInt 0",
+            "let total = twice 21\n    printInt total",
+        )
+
+        self.assertEqual(
+            "\n".join(
+                [
+                    "module main",
+                    "",
+                    "twice : Int -> Int",
+                    "let twice value = value * 2",
+                    "main : IO Unit",
+                    "let main = do",
+                    "    let total = twice 21",
+                    "    printInt total",
+                    "",
+                ]
+            ),
+            source,
+        )
+
+    def test_execution_oracle_flags_output_mismatch(self) -> None:
+        summary = summarize_execution_oracle_results(
+            {
+                "interpreter": CaseRunResult(0, "42\n", "", False, "ok", "run:interpreter:main.result"),
+                "dotnet-il": CaseRunResult(0, "43\n", "", False, "ok", "run:dotnet-il:main.result"),
+                "zig": CaseRunResult(0, "42\n", "", False, "ok", "run:zig:main.result"),
+            }
+        )
+
+        self.assertEqual("oracle", summary["kind"])
+        self.assertIn("output mismatch", summary["signature"])
+        self.assertIn("dotnet-il", summary["signature"])
+
+    def test_execution_oracle_flags_backend_disagreement(self) -> None:
+        summary = summarize_execution_oracle_results(
+            {
+                "interpreter": CaseRunResult(0, "42\n", "", False, "ok", "run:interpreter:main.result"),
+                "dotnet-il": CaseRunResult(1, "\nDiagnostics\nerror", "", False, "diagnostic", "run:dotnet-il:main.result"),
+                "zig": CaseRunResult(0, "42\n", "", False, "ok", "run:zig:main.result"),
+            }
+        )
+
+        self.assertEqual("oracle", summary["kind"])
+        self.assertIn("backend disagreement", summary["signature"])
+
+    def test_execution_oracle_treats_single_backend_crash_as_crash(self) -> None:
+        summary = summarize_execution_oracle_results(
+            {
+                "interpreter": CaseRunResult(0, "42\n", "", False, "ok", "run:interpreter:main.result"),
+                "dotnet-il": CaseRunResult(134, "", "Stack overflow.", False, "crash", "run:dotnet-il:main.result"),
+                "zig": CaseRunResult(0, "42\n", "", False, "ok", "run:zig:main.result"),
+            }
+        )
+
+        self.assertEqual("crash", summary["kind"])
+        self.assertIn("backend disagreement", summary["signature"])
+
+    def test_execution_oracle_normalizes_temp_paths_in_diagnostics(self) -> None:
+        summary = summarize_execution_oracle_results(
+            {
+                "interpreter": CaseRunResult(
+                    1,
+                    "Diagnostics\n/var/folders/a/main.kp(1,1): error: nope",
+                    "",
+                    False,
+                    "diagnostic",
+                    "run:interpreter:main.main",
+                ),
+                "dotnet-il": CaseRunResult(
+                    1,
+                    "Diagnostics\n/var/folders/b/main.kp(1,1): error: nope",
+                    "",
+                    False,
+                    "diagnostic",
+                    "run:dotnet-il:main.main",
+                ),
+                "zig": CaseRunResult(
+                    1,
+                    "Diagnostics\n/var/folders/c/main.kp(1,1): error: nope",
+                    "",
+                    False,
+                    "diagnostic",
+                    "run:zig:main.main",
+                ),
+            }
+        )
+
+        self.assertEqual("diagnostic", summary["kind"])
 
 
 if __name__ == "__main__":

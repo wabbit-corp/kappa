@@ -1,0 +1,20 @@
+module cases.e38_stm_transaction.main
+
+transaction : STM Int
+let transaction = do
+    let cell <- newTVar 0
+    writeTVar cell 42
+    readTVar cell
+
+resultIO : UIO Int
+let resultIO =
+    atomically transaction
+
+main : UIO Unit
+let main = do
+    let value <- resultIO
+    if value == 42 then println "stm ok" else println "stm bad"
+
+--! assertType cases.e38_stm_transaction.main.transaction STM Int
+--! assertType cases.e38_stm_transaction.main.resultIO UIO Int
+--! assertType cases.e38_stm_transaction.main.main UIO Unit

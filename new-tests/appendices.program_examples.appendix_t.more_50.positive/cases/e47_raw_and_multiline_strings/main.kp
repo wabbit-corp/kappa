@@ -1,0 +1,13 @@
+module cases.e47_raw_and_multiline_strings.main
+
+main : UIO Unit
+let main = do
+    let raw : String = #"C:\tmp\kappa\file.txt"#
+    let msg : String = """
+        first line
+        second line
+    """
+    println raw
+    println msg
+
+--! assertType cases.e47_raw_and_multiline_strings.main.main UIO Unit

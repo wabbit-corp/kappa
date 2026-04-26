@@ -1,0 +1,20 @@
+module cases.e19_set_map_literals.main
+
+type Bag = (values : Set Int, lookup : Map String Int, count : Int)
+
+bag : Bag
+let bag =
+    (values = {|1, 2, 3|}, lookup = { "a": 1, "b": 2 }, count = 42)
+
+result : Int
+let result =
+    bag.count
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e19_set_map_literals"
+
+--! assertType cases.e19_set_map_literals.main.result Int
+--! assertType cases.e19_set_map_literals.main.main UIO Unit

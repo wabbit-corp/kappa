@@ -1,0 +1,19 @@
+module cases.e30_implicit_local_context.main
+
+type Env = (prefix : String)
+
+pickPrefix : (@ω env : Env) -> String
+let pickPrefix (@ω env : Env) : String =
+    env.prefix
+
+resultText : String
+let resultText = block
+    let (@ω env : Env) = (prefix = "implicit")
+    pickPrefix
+
+main : UIO Unit
+let main = do
+    println resultText
+
+--! assertType cases.e30_implicit_local_context.main.resultText String
+--! assertType cases.e30_implicit_local_context.main.main UIO Unit

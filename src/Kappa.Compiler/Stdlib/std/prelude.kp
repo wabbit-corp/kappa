@@ -128,7 +128,26 @@ data Map (k : Type) (v : Type) : Type =
 expect type Dict (c : Constraint)
 expect type WellFounded (a : Type) (rel : a -> a -> Type)
 expect type Acc (a : Type) (rel : a -> a -> Type) (x : a)
-expect type Query (a : Type)
+data QueryUse : Type =
+    Reusable
+    OneShot
+
+data QueryCard : Type =
+    QZero
+    QOne
+    QZeroOrOne
+    QOneOrMore
+    QZeroOrMore
+
+data QueryMode : Type =
+    QueryMode (use : QueryUse) (card : QueryCard)
+
+expect type QueryCore (@0 mode : QueryMode) (@0 itemQuantity : Quantity) (item : Type)
+type Query (a : Type) = QueryCore (QueryMode Reusable QZeroOrMore) ω a
+type OnceQuery (a : Type) = QueryCore (QueryMode OneShot QZeroOrMore) ω a
+type OptionalQuery (a : Type) = QueryCore (QueryMode Reusable QZeroOrOne) ω a
+type NonEmptyQuery (a : Type) = QueryCore (QueryMode Reusable QOneOrMore) ω a
+type SingletonQuery (a : Type) = QueryCore (QueryMode Reusable QOne) ω a
 expect type RawComprehension (a : Type)
 expect type ComprehensionPlan (a : Type)
 expect type IO (e : Type) (a : Type)
@@ -169,6 +188,7 @@ trait InterpolatedMacro (t : Type) =
 trait Lift (a : Type) =
     liftCode : a -> Code a
 trait IntoQuery (src : Type)
+trait BorrowIntoQuery (src : Type)
 trait FromComprehensionPlan (c : Type)
 trait FromComprehensionRaw (c : Type)
 trait WellFoundedRelation (a : Type)

@@ -1,0 +1,18 @@
+module cases.e46_integer_literal_suffixes.main
+
+tag : Integer -> Integer
+let tag n = n
+
+result : Integer
+let result = block
+    let a : Integer = 40tag
+    let b : Integer = 2tag
+    a + b
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e46_integer_literal_suffixes"
+
+--! assertType cases.e46_integer_literal_suffixes.main.result Integer
+--! assertType cases.e46_integer_literal_suffixes.main.main UIO Unit

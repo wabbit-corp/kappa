@@ -1,0 +1,14 @@
+module cases.e67_lazy_force_shareable.main
+
+result : Int
+let result = block
+    let delayed = lazy (40 + 2)
+    force delayed
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e67_lazy_force_shareable"
+
+--! assertType cases.e67_lazy_force_shareable.main.result Int
+--! assertType cases.e67_lazy_force_shareable.main.main UIO Unit

@@ -1,0 +1,15 @@
+module cases.e43_hash_standard_module.main
+
+import std.hash.(type HashCode, defaultHashSeed, hashWith)
+
+hashValue : HashCode
+let hashValue =
+    hashWith defaultHashSeed "abc"
+
+main : UIO Unit
+let main = do
+    let _ = hashValue
+    println "hash ok"
+
+--! assertType cases.e43_hash_standard_module.main.hashValue HashCode
+--! assertType cases.e43_hash_standard_module.main.main UIO Unit

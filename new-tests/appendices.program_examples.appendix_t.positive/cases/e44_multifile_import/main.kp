@@ -1,0 +1,15 @@
+module cases.e44_multifile_import.main
+
+import cases.e44_multifile_import.lib.math.(add3)
+
+result : Int
+let result =
+    add3 39
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "multifile"
+
+--! assertType cases.e44_multifile_import.main.result Int
+--! assertType cases.e44_multifile_import.main.main UIO Unit

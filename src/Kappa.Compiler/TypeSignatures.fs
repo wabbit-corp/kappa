@@ -689,6 +689,54 @@ module TypeSignatures =
                 | _ ->
                     None
 
+        member private this.TryParseQuantityAtom() =
+            let quantityExpr quantity =
+                TypeName([ Quantity.toSurfaceText quantity ], [])
+
+            match this.Current with
+            | Some { Kind = IntegerLiteral; Text = "0" } ->
+                this.Advance() |> ignore
+                Some(quantityExpr QuantityZero)
+            | Some { Kind = IntegerLiteral; Text = "1" } ->
+                this.Advance() |> ignore
+                Some(quantityExpr QuantityOne)
+            | Some token when Token.isName token && String.Equals(SyntaxFacts.trimIdentifierQuotes token.Text, "\u03c9", StringComparison.Ordinal) ->
+                this.Advance() |> ignore
+                Some(quantityExpr QuantityOmega)
+            | Some token when Token.isName token && String.Equals(SyntaxFacts.trimIdentifierQuotes token.Text, "omega", StringComparison.Ordinal) ->
+                this.Advance() |> ignore
+                Some(quantityExpr QuantityOmega)
+            | Some { Kind = Operator; Text = "<=" } ->
+                match this.Peek(1) with
+                | Some { Kind = IntegerLiteral; Text = "1" } ->
+                    this.Advance() |> ignore
+                    this.Advance() |> ignore
+                    Some(quantityExpr QuantityAtMostOne)
+                | _ ->
+                    None
+            | Some { Kind = Operator; Text = ">=" } ->
+                match this.Peek(1) with
+                | Some { Kind = IntegerLiteral; Text = "1" } ->
+                    this.Advance() |> ignore
+                    this.Advance() |> ignore
+                    Some(quantityExpr QuantityAtLeastOne)
+                | _ ->
+                    None
+            | Some { Kind = Operator; Text = "&" } ->
+                match this.Peek(1), this.Peek(2), this.Peek(3) with
+                | Some { Kind = LeftBracket }, Some regionToken, Some { Kind = RightBracket } when Token.isName regionToken ->
+                    this.Advance() |> ignore
+                    this.Advance() |> ignore
+                    let regionName = SyntaxFacts.trimIdentifierQuotes regionToken.Text
+                    this.Advance() |> ignore
+                    this.Advance() |> ignore
+                    Some(quantityExpr (QuantityBorrow(Some regionName)))
+                | _ ->
+                    this.Advance() |> ignore
+                    Some(quantityExpr (QuantityBorrow None))
+            | _ ->
+                None
+
         member private this.ParseAtom() =
             match this.Current with
             | Some { Kind = LeftParen } ->
@@ -730,6 +778,10 @@ module TypeSignatures =
                 None
 
         member private this.ParseGroupedOrAtomicType() =
+            match this.TryParseQuantityAtom() with
+            | Some quantityType ->
+                Some quantityType
+            | None ->
             match this.Current with
             | Some { Kind = Operator; Text = "*" } ->
                 this.Advance() |> ignore
@@ -775,6 +827,16 @@ module TypeSignatures =
             match this.Current with
             | Some { Kind = LeftParen } -> true
             | Some { Kind = LeftEffectRow } -> true
+            | Some { Kind = IntegerLiteral; Text = ("0" | "1") } -> true
+            | Some { Kind = Operator; Text = "&" } -> true
+            | Some { Kind = Operator; Text = "<=" } ->
+                match this.Peek(1) with
+                | Some { Kind = IntegerLiteral; Text = "1" } -> true
+                | _ -> false
+            | Some { Kind = Operator; Text = ">=" } ->
+                match this.Peek(1) with
+                | Some { Kind = IntegerLiteral; Text = "1" } -> true
+                | _ -> false
             | Some token when Token.isName token ->
                 not (String.Equals(SyntaxFacts.trimIdentifierQuotes token.Text, "captures", StringComparison.Ordinal))
             | _ -> false
@@ -833,11 +895,14 @@ module TypeSignatures =
             | None -> None
             | Some head ->
                 let arguments = ResizeArray<TypeExpr>()
+                let mutable keepParsingArguments = true
 
-                while this.CanStartAtom() do
+                while keepParsingArguments && this.CanStartAtom() do
                     match this.ParsePostfix() with
-                    | Some argument -> arguments.Add(argument)
-                    | None -> ()
+                    | Some argument ->
+                        arguments.Add(argument)
+                    | None ->
+                        keepParsingArguments <- false
 
                 let withCaptures parsed =
                     match this.TryParseCaptureSuffix() with

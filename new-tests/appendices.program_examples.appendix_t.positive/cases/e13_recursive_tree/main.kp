@@ -1,0 +1,24 @@
+module cases.e13_recursive_tree.main
+
+data Tree : Type =
+    Leaf (value : Int)
+    Branch (left : Tree) (right : Tree)
+
+treeSize : Tree -> Int
+let treeSize tree decreases structural tree =
+    match tree
+    case Leaf _ -> 1
+    case Branch left right -> treeSize left + treeSize right
+
+result : Int
+let result =
+    treeSize (Branch (Leaf 1) (Branch (Leaf 2) (Leaf 3)))
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e13_recursive_tree"
+
+--! assertType cases.e13_recursive_tree.main.result Int
+--! assertType cases.e13_recursive_tree.main.main UIO Unit

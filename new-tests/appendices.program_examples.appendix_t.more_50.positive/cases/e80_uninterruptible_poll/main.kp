@@ -1,0 +1,9 @@
+module cases.e80_uninterruptible_poll.main
+
+main : UIO Unit
+let main =
+    uninterruptible do
+        poll
+        println "polled inside uninterruptible"
+
+--! assertType cases.e80_uninterruptible_poll.main.main UIO Unit

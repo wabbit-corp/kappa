@@ -1,0 +1,22 @@
+module cases.e41_staged_code_run.main
+
+program : Code Int
+let program =
+    .< 40 + 2 >.
+
+closedProgram : Option (ClosedCode Int)
+let closedProgram =
+    closeCode program
+
+main : UIO Unit
+let main = do
+    match closedProgram
+    case Some cc ->
+        let value <- runCode cc
+        if value == 42 then println "code ok" else println "code bad"
+    case None ->
+        println "code was open"
+
+--! assertType cases.e41_staged_code_run.main.program Code Int
+--! assertType cases.e41_staged_code_run.main.closedProgram Option (ClosedCode Int)
+--! assertType cases.e41_staged_code_run.main.main UIO Unit

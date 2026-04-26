@@ -1,0 +1,20 @@
+module cases.e50_match_guards.main
+
+classify : Int -> Int
+let classify n =
+    match n
+    case x if x < 0 -> -1
+    case 0 -> 0
+    case _ -> 1
+
+result : Int
+let result = classify 12 + classify 0 + classify (-1) + 41
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e50_match_guards"
+
+--! assertType cases.e50_match_guards.main.classify Int -> Int
+--! assertType cases.e50_match_guards.main.result Int
+--! assertType cases.e50_match_guards.main.main UIO Unit

@@ -1,0 +1,11 @@
+module cases.e79_fiber_label_local.main
+
+main : UIO Unit
+let main =
+    locallyFiberLabel (Some "worker") do
+        let label <- getFiberLabel
+        match label
+        case Some s -> println s
+        case None -> println "unlabeled"
+
+--! assertType cases.e79_fiber_label_local.main.main UIO Unit

@@ -1236,24 +1236,10 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
 
             pattern
 
-type private CollectionKind =
-    | ListCollection
-    | SetCollection
-
 type private CollectionOrderedness =
     | KnownOrdered
     | KnownUnordered
     | UnknownOrderedness
-
-type private CollectionClause =
-    | ForClause of SurfaceBindPattern * SurfaceExpression
-    | LetClause of SurfaceBindPattern * SurfaceExpression
-    | IfClause of SurfaceExpression
-    | OrderByClause of SurfaceExpression
-    | DistinctClause
-    | DistinctByClause of SurfaceExpression
-    | SkipClause of SurfaceExpression
-    | YieldClause of SurfaceExpression
 
 type private ExpressionParser
     (
@@ -1420,7 +1406,10 @@ type private ExpressionParser
 
         List.ofSeq innerTokens
 
-    member private this.ParseCollectionExpression(kind: CollectionKind, innerTokens: Token list) =
+    member private this.ParseCollectionExpression(kind: SurfaceCollectionKind, innerTokens: Token list) =
+        let isContextualName name (token: Token) =
+            Token.isName token && String.Equals(SyntaxFacts.trimIdentifierQuotes token.Text, name, StringComparison.Ordinal)
+
         let listNil = Name [ "Nil" ]
         let boolTrue = Name [ "True" ]
         let boolFalse = Name [ "False" ]
@@ -1506,6 +1495,19 @@ type private ExpressionParser
 
         let wrapPatternBindings binding value body =
             LocalLet(binding, value, body)
+
+        let makePatternMatch value success failure =
+            Match(
+                value,
+                [
+                    { Pattern = success
+                      Guard = None
+                      Body = boolTrue }
+                    { Pattern = WildcardPattern
+                      Guard = None
+                      Body = boolFalse }
+                ]
+            )
 
         let wrapRowBindings rowNames rowExpression body =
             match rowNames with
@@ -1906,14 +1908,14 @@ type private ExpressionParser
         let parseClause (clauseTokens: Token list) =
             match clauseTokens with
             | yieldToken :: rest when Token.isKeyword Keyword.Yield yieldToken ->
-                Some(YieldClause(this.ParseStandaloneExpression(rest)))
+                Some(Choice1Of2(this.ParseStandaloneExpression(rest)))
             | forToken :: rest when Token.isKeyword Keyword.For forToken ->
                 match tryFindTopLevelToken (fun token -> Token.isKeyword Keyword.In token) rest with
                 | Some inIndex ->
                     let tokenArray = rest |> List.toArray
                     let patternTokens = tokenArray[0 .. inIndex - 1] |> Array.toList
                     let sourceTokens = tokenArray[inIndex + 1 ..] |> Array.toList
-                    Some(ForClause(this.ParseBindPatternFromTokens patternTokens, this.ParseStandaloneExpression(sourceTokens)))
+                    Some(Choice2Of2(ForClause(false, false, this.ParseBindPatternFromTokens patternTokens, this.ParseStandaloneExpression(sourceTokens))))
                 | None ->
                     diagnostics.AddError(DiagnosticCode.ParseError, "Expected 'in' in the comprehension generator.", source.GetLocation(forToken.Span))
                     None
@@ -1923,20 +1925,61 @@ type private ExpressionParser
                     let tokenArray = rest |> List.toArray
                     let bindingTokens = tokenArray[0 .. equalsIndex - 1] |> Array.toList
                     let valueTokens = tokenArray[equalsIndex + 1 ..] |> Array.toList
-                    Some(LetClause(this.ParseBindPatternFromTokens bindingTokens, this.ParseStandaloneExpression(valueTokens)))
+                    Some(Choice2Of2(LetClause(false, this.ParseBindPatternFromTokens bindingTokens, this.ParseStandaloneExpression(valueTokens))))
                 | None ->
                     diagnostics.AddError(DiagnosticCode.ParseError, "Expected '=' in the comprehension let clause.", source.GetLocation(letToken.Span))
                     None
             | ifToken :: rest when Token.isKeyword Keyword.If ifToken ->
-                Some(IfClause(this.ParseStandaloneExpression(rest)))
+                Some(Choice2Of2(IfClause(this.ParseStandaloneExpression(rest))))
             | orderToken :: byToken :: rest when Token.isKeyword Keyword.Order orderToken && Token.isKeyword Keyword.By byToken ->
-                Some(OrderByClause(this.ParseStandaloneExpression(rest)))
+                Some(Choice2Of2(OrderByClause(this.ParseStandaloneExpression(rest))))
             | distinctToken :: byToken :: rest when Token.isKeyword Keyword.Distinct distinctToken && Token.isKeyword Keyword.By byToken ->
-                Some(DistinctByClause(this.ParseStandaloneExpression(rest)))
+                Some(Choice2Of2(DistinctByClause(this.ParseStandaloneExpression(rest))))
             | distinctToken :: [] when Token.isKeyword Keyword.Distinct distinctToken ->
-                Some DistinctClause
+                Some(Choice2Of2 DistinctClause)
             | skipToken :: rest when Token.isKeyword Keyword.Skip skipToken ->
-                Some(SkipClause(this.ParseStandaloneExpression(rest)))
+                Some(Choice2Of2(SkipClause(this.ParseStandaloneExpression(rest))))
+            | takeToken :: rest when Token.isKeyword Keyword.Take takeToken ->
+                Some(Choice2Of2(TakeClause(this.ParseStandaloneExpression(rest))))
+            | leftToken :: joinToken :: rest when Token.isKeyword Keyword.Left leftToken && Token.isKeyword Keyword.Join joinToken ->
+                match
+                    tryFindTopLevelToken (fun token -> Token.isKeyword Keyword.In token) rest,
+                    tryFindTopLevelToken (isContextualName "on") rest,
+                    tryFindTopLevelToken (isContextualName "into") rest
+                with
+                | Some inIndex, Some onIndex, Some intoIndex when inIndex > 0 && onIndex > inIndex + 1 && intoIndex > onIndex + 1 ->
+                    let tokenArray = rest |> List.toArray
+                    let patternTokens = tokenArray[0 .. inIndex - 1] |> Array.toList
+                    let sourceTokens = tokenArray[inIndex + 1 .. onIndex - 1] |> Array.toList
+                    let conditionTokens = tokenArray[onIndex + 1 .. intoIndex - 1] |> Array.toList
+                    let intoTokens = tokenArray[intoIndex + 1 ..] |> Array.toList
+
+                    match intoTokens with
+                    | [ intoName ] when Token.isName intoName ->
+                        Some(
+                            Choice2Of2(
+                                LeftJoinClause(
+                                    this.ParseBindPatternFromTokens patternTokens,
+                                    this.ParseStandaloneExpression(sourceTokens),
+                                    this.ParseStandaloneExpression(conditionTokens),
+                                    SyntaxFacts.trimIdentifierQuotes intoName.Text
+                                )
+                            )
+                        )
+                    | _ ->
+                        diagnostics.AddError(
+                            DiagnosticCode.ParseError,
+                            "Expected a single binder name after 'into' in the left-join clause.",
+                            source.GetLocation(leftToken.Span)
+                        )
+                        None
+                | _ ->
+                    diagnostics.AddError(
+                        DiagnosticCode.ParseError,
+                        "Expected 'left join <pat> in <source> on <condition> into <name>' in the comprehension clause.",
+                        source.GetLocation(leftToken.Span)
+                    )
+                    None
             | token :: _ ->
                 diagnostics.AddError(DiagnosticCode.ParseError, "Unsupported comprehension clause.", source.GetLocation(token.Span))
                 None
@@ -2173,6 +2216,120 @@ type private ExpressionParser
                 ))
                 (applyName loopName [ rowsExpression; countExpression ])
 
+        let transformTakeClause rowsExpression orderedness countExpression =
+            let takeToken =
+                innerTokens
+                |> List.tryFind (Token.isKeyword Keyword.Take)
+                |> Option.defaultValue { Kind = Keyword Keyword.Take; Text = "take"; Span = eofSpan }
+
+            if orderedness = KnownUnordered then
+                diagnostics.AddError(
+                    DiagnosticCode.ParseError,
+                    "skip and take require an ordered query pipeline; the current pipeline is unordered.",
+                    source.GetLocation(takeToken.Span)
+                )
+
+            let loopName = this.FreshSyntheticName "__query_take_loop"
+            let remainingRowsName = this.FreshSyntheticName "__query_take_rows"
+            let remainingCountName = this.FreshSyntheticName "__query_take_count"
+            let rowName = this.FreshSyntheticName "__query_take_row"
+            let rowTailName = this.FreshSyntheticName "__query_take_row_tail"
+
+            bindName
+                loopName
+                (Lambda(
+                    [ makeParameter remainingRowsName; makeParameter remainingCountName ],
+                    makeListMatch
+                        (Name [ remainingRowsName ])
+                        rowName
+                        rowTailName
+                        (IfThenElse(
+                            Binary(Name [ remainingCountName ], ">", NumericLiteral(SurfaceIntegerLiteral(0I, "0", None))),
+                            cons
+                                (Name [ rowName ])
+                                (applyName
+                                    loopName
+                                    [ Name [ rowTailName ]
+                                      Binary(
+                                          Name [ remainingCountName ],
+                                          "-",
+                                          NumericLiteral(SurfaceIntegerLiteral(1I, "1", None))
+                                      ) ]),
+                            listNil
+                        ))
+                        listNil
+                ))
+                (applyName loopName [ rowsExpression; countExpression ])
+
+        let transformLeftJoinClause
+            (rowNames: string list)
+            (rowsExpression: SurfaceExpression)
+            (binding: SurfaceBindPattern)
+            (sourceExpression: SurfaceExpression)
+            (conditionExpression: SurfaceExpression)
+            intoName
+            =
+            let nextRowNames = extendRowNames rowNames [ intoName ]
+            let enumeratedSourceExpression, _ = unwrapEnumeratedSource sourceExpression
+            let loopRowsName = this.FreshSyntheticName "__query_left_join_rows"
+            let remainingRowsName = this.FreshSyntheticName "__query_left_join_remaining_rows"
+            let rowName = this.FreshSyntheticName "__query_left_join_row"
+            let rowTailName = this.FreshSyntheticName "__query_left_join_row_tail"
+            let innerLoopName = this.FreshSyntheticName "__query_left_join_inner"
+            let sourceItemsName = this.FreshSyntheticName "__query_left_join_items"
+            let itemName = this.FreshSyntheticName "__query_left_join_item"
+            let itemTailName = this.FreshSyntheticName "__query_left_join_item_tail"
+
+            let transformedExpression =
+                bindName
+                    loopRowsName
+                    (Lambda(
+                        [ makeParameter remainingRowsName ],
+                        makeListMatch
+                            (Name [ remainingRowsName ])
+                            rowName
+                            rowTailName
+                            (wrapRowBindings
+                                rowNames
+                                (Name [ rowName ])
+                                (bindName
+                                    innerLoopName
+                                    (Lambda(
+                                        [ makeParameter sourceItemsName ],
+                                        makeListMatch
+                                            (Name [ sourceItemsName ])
+                                            itemName
+                                            itemTailName
+                                            (Match(
+                                                Name [ itemName ],
+                                                [
+                                                    { Pattern = binding.Pattern
+                                                      Guard = None
+                                                      Body =
+                                                        IfThenElse(
+                                                            conditionExpression,
+                                                            cons (Name [ itemName ]) (applyName innerLoopName [ Name [ itemTailName ] ]),
+                                                            applyName innerLoopName [ Name [ itemTailName ] ]
+                                                        ) }
+                                                    { Pattern = WildcardPattern
+                                                      Guard = None
+                                                      Body = applyName innerLoopName [ Name [ itemTailName ] ] }
+                                                ]
+                                            ))
+                                            listNil
+                                    ))
+                                    (bindName
+                                        intoName
+                                        (applyName innerLoopName [ enumeratedSourceExpression ])
+                                        (cons
+                                            (makeRowExpression nextRowNames)
+                                            (applyName loopRowsName [ Name [ rowTailName ] ])))))
+                            listNil
+                    ))
+                    (applyName loopRowsName [ rowsExpression ])
+
+            transformedExpression, nextRowNames
+
         let transformOrderByClause rowNames rowsExpression keyExpression =
             let insertName = this.FreshSyntheticName "__query_order_insert"
             let sortName = this.FreshSyntheticName "__query_order_sort"
@@ -2285,19 +2442,24 @@ type private ExpressionParser
             | SetCollection ->
                 makeSetExpression items
         else
-            let clauses =
+            let parsedClauses =
                 splitCollectionClauses innerTokens
                 |> List.choose parseClause
 
-            match List.rev clauses with
-            | YieldClause yielded :: reversedPrefix ->
-                let rowClauses = List.rev reversedPrefix
+            match List.rev parsedClauses with
+            | Choice1Of2 yielded :: reversedPrefix ->
+                let rowClauses =
+                    reversedPrefix
+                    |> List.rev
+                    |> List.choose (function
+                        | Choice2Of2 clause -> Some clause
+                        | Choice1Of2 _ -> None)
 
                 let rowsExpression, rowNames, orderedness =
                     List.fold
                         (fun (currentRows, currentNames, currentOrderedness) clause ->
                         match clause with
-                        | ForClause(binding, sourceExpression) ->
+                        | ForClause(_, _, binding, sourceExpression) ->
                             let transformedRows, nextNames, sourceOrderedness =
                                 transformForClause currentNames currentRows binding sourceExpression
 
@@ -2309,7 +2471,7 @@ type private ExpressionParser
                                 | _ -> UnknownOrderedness
 
                             transformedRows, nextNames, nextOrderedness
-                        | LetClause(binding, valueExpression) ->
+                        | LetClause(_, binding, valueExpression) ->
                             let transformedRows, nextNames =
                                 transformLetClause currentNames currentRows binding valueExpression
 
@@ -2324,16 +2486,27 @@ type private ExpressionParser
                             transformOrderByClause currentNames currentRows keyExpression, currentNames, KnownOrdered
                         | SkipClause countExpression ->
                             transformSkipClause currentRows currentOrderedness countExpression, currentNames, currentOrderedness
-                        | YieldClause _ ->
-                            currentRows, currentNames, currentOrderedness)
+                        | TakeClause countExpression ->
+                            transformTakeClause currentRows currentOrderedness countExpression, currentNames, currentOrderedness
+                        | LeftJoinClause(binding, sourceExpression, conditionExpression, intoName) ->
+                            let transformedRows, nextNames =
+                                transformLeftJoinClause currentNames currentRows binding sourceExpression conditionExpression intoName
+
+                            transformedRows, nextNames, currentOrderedness)
                         (buildInitialRows (), [], KnownOrdered)
                         rowClauses
 
                 let yieldedRows = mapYield rowNames rowsExpression yielded
+                let lowered =
+                    match kind with
+                    | ListCollection -> yieldedRows
+                    | SetCollection -> Apply(Name [ "Set" ], [ yieldedRows ])
 
-                match kind with
-                | ListCollection -> yieldedRows
-                | SetCollection -> Apply(Name [ "Set" ], [ yieldedRows ])
+                Comprehension
+                    { CollectionKind = kind
+                      Clauses = rowClauses
+                      Yield = yielded
+                      Lowered = lowered }
             | _ ->
                 diagnostics.AddError(DiagnosticCode.ParseError, "A comprehension must end with a yield clause.", source.GetLocation(eofSpan))
 

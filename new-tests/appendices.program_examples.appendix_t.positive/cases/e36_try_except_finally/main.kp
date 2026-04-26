@@ -1,0 +1,22 @@
+module cases.e36_try_except_finally.main
+
+data AppError : Type =
+    Bad
+    Ugly
+
+recover : IO AppError Int
+let recover =
+    try
+        do
+            raise Bad
+    except Bad -> pure 10
+    except Ugly -> pure 20
+    finally -> pure ()
+
+main : IO AppError Unit
+let main = do
+    let n <- recover
+    if n == 10 then pure () else raise Ugly
+
+--! assertType cases.e36_try_except_finally.main.recover IO cases.e36_try_except_finally.main.AppError Int
+--! assertType cases.e36_try_except_finally.main.main IO cases.e36_try_except_finally.main.AppError Unit

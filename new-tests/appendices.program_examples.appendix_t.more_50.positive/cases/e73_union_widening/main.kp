@@ -1,0 +1,23 @@
+module cases.e73_union_widening.main
+
+small : (| Int |)
+let small = (| 42 : Int |)
+
+big : (| Int | String |)
+let big = small
+
+result : Int
+let result =
+    match big
+    case (| n : Int |) -> n
+    case (| _ : String |) -> 0
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e73_union_widening"
+
+--! assertType cases.e73_union_widening.main.small (| Int |)
+--! assertType cases.e73_union_widening.main.big (| Int | String |)
+--! assertType cases.e73_union_widening.main.result Int
+--! assertType cases.e73_union_widening.main.main UIO Unit

@@ -1,0 +1,26 @@
+module cases.e88_effect_label_rebind.main
+
+result : Int
+let result = block
+    scoped effect Ask =
+        1 ask : Unit -> Int
+
+    let label = Ask
+
+    program : Eff <[label : Ask]> Int
+    let program = do
+        let n <- label.ask ()
+        pure (n + 1)
+
+    runPure
+        (deep handle label program with
+            case return x -> pure x
+            case ask () k -> k 41)
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e88_effect_label_rebind"
+
+--! assertType cases.e88_effect_label_rebind.main.result Int
+--! assertType cases.e88_effect_label_rebind.main.main UIO Unit

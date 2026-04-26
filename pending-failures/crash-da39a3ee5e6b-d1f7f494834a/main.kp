@@ -1,2 +1,0 @@
-type I1 = (left : I1)
-let I5 : I1 = ()

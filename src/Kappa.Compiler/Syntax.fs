@@ -369,7 +369,29 @@ type SurfaceExpression =
     | Unary of operatorName: string * SurfaceExpression
     | Binary of SurfaceExpression * operatorName: string * SurfaceExpression
     | Elvis of SurfaceExpression * SurfaceExpression
+    | Comprehension of SurfaceComprehension
     | PrefixedString of prefix: string * parts: SurfaceInterpolatedStringPart list
+
+and SurfaceCollectionKind =
+    | ListCollection
+    | SetCollection
+
+and SurfaceComprehension =
+    { CollectionKind: SurfaceCollectionKind
+      Clauses: SurfaceComprehensionClause list
+      Yield: SurfaceExpression
+      Lowered: SurfaceExpression }
+
+and SurfaceComprehensionClause =
+    | ForClause of isBorrowed: bool * isRefutable: bool * binding: SurfaceBindPattern * source: SurfaceExpression
+    | LetClause of isRefutable: bool * binding: SurfaceBindPattern * value: SurfaceExpression
+    | IfClause of SurfaceExpression
+    | OrderByClause of SurfaceExpression
+    | DistinctClause
+    | DistinctByClause of SurfaceExpression
+    | SkipClause of SurfaceExpression
+    | TakeClause of SurfaceExpression
+    | LeftJoinClause of binding: SurfaceBindPattern * source: SurfaceExpression * condition: SurfaceExpression * intoName: string
 
 and SurfaceEffectHandlerClause =
     { OperationName: string
@@ -456,6 +478,66 @@ and SurfaceDoStatement =
 and SurfaceLetQuestionFailure =
     { ResiduePattern: SurfaceBindPattern
       Body: SurfaceDoStatement list }
+
+module SurfaceComprehensionOps =
+    let mapExpressions (mapper: SurfaceExpression -> SurfaceExpression) (comprehension: SurfaceComprehension) =
+        let mapClause clause =
+            match clause with
+            | ForClause(isBorrowed, isRefutable, binding, source) ->
+                ForClause(isBorrowed, isRefutable, binding, mapper source)
+            | LetClause(isRefutable, binding, value) ->
+                LetClause(isRefutable, binding, mapper value)
+            | IfClause condition ->
+                IfClause(mapper condition)
+            | OrderByClause key ->
+                OrderByClause(mapper key)
+            | DistinctClause ->
+                DistinctClause
+            | DistinctByClause key ->
+                DistinctByClause(mapper key)
+            | SkipClause count ->
+                SkipClause(mapper count)
+            | TakeClause count ->
+                TakeClause(mapper count)
+            | LeftJoinClause(binding, source, condition, intoName) ->
+                LeftJoinClause(binding, mapper source, mapper condition, intoName)
+
+        { CollectionKind = comprehension.CollectionKind
+          Clauses = comprehension.Clauses |> List.map mapClause
+          Yield = mapper comprehension.Yield
+          Lowered = mapper comprehension.Lowered }
+
+    let iterExpressions (visitor: SurfaceExpression -> unit) (comprehension: SurfaceComprehension) =
+        let visitClause clause =
+            match clause with
+            | ForClause(_, _, _, source) ->
+                visitor source
+            | LetClause(_, _, value) ->
+                visitor value
+            | IfClause condition ->
+                visitor condition
+            | OrderByClause key ->
+                visitor key
+            | DistinctClause ->
+                ()
+            | DistinctByClause key ->
+                visitor key
+            | SkipClause count ->
+                visitor count
+            | TakeClause count ->
+                visitor count
+            | LeftJoinClause(_, source, condition, _) ->
+                visitor source
+                visitor condition
+
+        comprehension.Clauses |> List.iter visitClause
+        visitor comprehension.Yield
+        visitor comprehension.Lowered
+
+    let collectExpressions (comprehension: SurfaceComprehension) =
+        let expressions = ResizeArray<SurfaceExpression>()
+        iterExpressions expressions.Add comprehension
+        List.ofSeq expressions
 
 type ExpectedTypeDeclaration =
     { Name: string

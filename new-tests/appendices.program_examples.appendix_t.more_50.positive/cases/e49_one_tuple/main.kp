@@ -1,0 +1,16 @@
+module cases.e49_one_tuple.main
+
+result : Int
+let result = block
+    let single : (Int,) = (41,)
+    let (x,) = single
+    x + 1
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e49_one_tuple"
+
+--! assertType cases.e49_one_tuple.main.result Int
+--! assertType cases.e49_one_tuple.main.main UIO Unit
+--! assertExecute cases.e49_one_tuple.main.result 42

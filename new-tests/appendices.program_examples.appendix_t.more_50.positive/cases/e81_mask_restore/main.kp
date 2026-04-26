@@ -1,0 +1,9 @@
+module cases.e81_mask_restore.main
+
+main : UIO Unit
+let main =
+    mask \restore -> do
+        restore (println "restored interruption")
+        println "masked again"
+
+--! assertType cases.e81_mask_restore.main.main UIO Unit

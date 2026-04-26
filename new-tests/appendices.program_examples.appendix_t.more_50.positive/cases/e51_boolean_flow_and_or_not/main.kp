@@ -1,0 +1,19 @@
+module cases.e51_boolean_flow_and_or_not.main
+
+choose : Bool -> Bool -> Int
+let choose a b =
+    if a && not b then 40
+    elif a || b then 41
+    else 0
+
+result : Int
+let result = choose True False + 2
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e51_boolean_flow_and_or_not"
+
+--! assertType cases.e51_boolean_flow_and_or_not.main.choose Bool -> Bool -> Int
+--! assertType cases.e51_boolean_flow_and_or_not.main.result Int
+--! assertType cases.e51_boolean_flow_and_or_not.main.main UIO Unit

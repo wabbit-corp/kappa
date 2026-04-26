@@ -1,0 +1,20 @@
+module main
+
+-- Source: idris-lang/Idris2#20
+-- Spec: §3.4, §6.3.1
+
+add : Int -> Int -> Int
+let add x y = x + y
+
+result : Int
+let result =
+    block
+        let u =
+            add
+                20
+                22
+        u
+
+--! assertNoErrors
+--! assertType result Int
+--! x-assertEval result 42

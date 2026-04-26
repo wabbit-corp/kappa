@@ -1,0 +1,21 @@
+module cases.e94_local_type_alias_and_data.main
+
+result : Int
+let result = block
+    type Small = Int
+
+    data Wrapper : Type =
+        Wrap (value : Small)
+
+    let w : Wrapper = Wrap 42
+
+    match w
+    case Wrap n -> n
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e94_local_type_alias_and_data"
+
+--! assertType cases.e94_local_type_alias_and_data.main.result Int
+--! assertType cases.e94_local_type_alias_and_data.main.main UIO Unit

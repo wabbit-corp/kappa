@@ -9,6 +9,11 @@ material or a new ergonomic requirement, it should not be tracked here.
 
 ### Diagnostics and explicit spec hooks
 
+- Reconsider the blanket ban on portable operations for `HashCode`.
+  - shape: keep `HashCode` opaque by forbidding numeric conversion, serialization, printed form, and stable cross-run identity, but consider allowing `Eq HashCode` and `Ord HashCode` if they are specified as same-execution opaque-token operations that do not expose representation
+  - motivation: equality or ordering on opaque runtime tokens can be useful for caching, profiling, and deterministic data structures; the important rule is still that hash-code equality or ordering cannot prove key equality and hash collisions remain semantically invisible
+  - related spec: §2.7E, §12.1
+
 - Add a standard diagnostic code for the generic `?.` ambiguity case.
   - motivation: the semantics are already specified, but the absence of a stable code makes negative conformance tests less precise than they should be
   - related spec: §7.1.1.2
@@ -121,6 +126,14 @@ material or a new ergonomic requirement, it should not be tracked here.
   - motivation: Agda- and Lean-style `with` / helper-lowering failures are exactly this class of bug
   - related spec: §6.4.5, §17.3.1.4
 
+- Add an explicit statement, with example, about whether ruled-out constructor facts participate in branch-local normalization.
+  - shape: clarify whether a residual branch such as `case LT -> ...; case _ -> ...` may treat a scrutinee-dependent boolean
+    defined by that case split as definitionally equal to `True` in the residual branch, and whether the same principle applies
+    to multi-argument clause-style definitions once earlier patterns have been ruled out
+  - motivation: Idris2 issues `#26` and `#27` show that users expect ruled-out-pattern information to help not only projection
+    and reachability, but also compile-time proof normalization
+  - related spec: §7.4.1, §7.5.4, §14.3, §17.3.1.8
+
 ### Local declarations and captured generic context
 
 - Add a worked example where a block-local declaration captures an outer generic or compile-time parameter.
@@ -142,7 +155,7 @@ material or a new ergonomic requirement, it should not be tracked here.
 These are not necessarily v0.1 requirements, but they are worth tracking while importing issue families.
 
 - Consider whether `?.` should eventually gain a less annotation-heavy story in fully generic code.
-  - current v0.1 design is explicit and coherent, but Kotlin-style use cases may produce recurring friction
+  - current v0.1 design is explicit and coherent, but Kotlin-style use cases such as `KT-600` and `KT-636` may produce recurring friction around generic optional unwrapping helpers, expected result types, and whether portable receiver-oriented `Option` helper functions should exist in the standard library
   - related spec: §7.1.1.2
 
 - Consider a future refinement rule that treats successful safe-navigation/elvis boolean conditions as evidence that the receiver is present.
@@ -157,18 +170,18 @@ These are not necessarily v0.1 requirements, but they are worth tracking while i
 
 - Consider specifying the portable `Array` construction and convenience-member surface more fully.
   - shape: standardize how users construct an `Array a`, query its length, index/update it, test membership, sort/search it, obtain range-like views such as `indices` or `lastIndex`, and whether any multi-index accessor/update forms are intended to be portable prelude members
-  - motivation: Kotlin issues `KT-199`, `KT-200`, `KT-326`, `KT-331`, `KT-346`, `KT-347`, `KT-348`, `KT-376`, `KT-417`, `KT-425`, `KT-579`, `KT-580`, and `KT-581` point at the same gap: `Array a` is a prelude type in Kappa, but the current spec does not define a user-facing constructor, indexing/update behavior, membership/sorting/search helpers, range-like views, or common accessor vocabulary
+  - motivation: Kotlin issues `KT-199`, `KT-200`, `KT-326`, `KT-331`, `KT-346`, `KT-347`, `KT-348`, `KT-376`, `KT-417`, `KT-425`, `KT-579`, `KT-580`, `KT-581`, `KT-602`, and `KT-632` point at the same gap: `Array a` is a prelude type in Kappa, but the current spec does not define a user-facing constructor, indexing/update behavior, membership/sorting/search helpers, range-like views, or common accessor vocabulary
   - related spec: §2.6, §2.8.3, §2.8.4, §17.1
+
+- Clarify the portable encounter-order story for ordinary `Set` / `Map` iteration and transformations.
+  - shape: specify whether plain `Set` / `Map` iteration is ordered, insertion-ordered, sorted-by-structure, or explicitly unordered, and if future surface operations such as union/difference/filter/mapping are portable, specify whether they preserve left-input encounter order or deliberately yield unordered results
+  - motivation: Kotlin issue `KT-647` highlights that users rely on stable order from collection transforms, but Kappa currently specifies orderedness mainly for query/comprehension pipelines and separately forbids backend hash-table iteration order from changing source semantics; the ordinary `Set` / `Map` surface still needs an explicit portability story
+  - related spec: §10.3.2, §10.6, §17.1
 
 - Clarify the portable range surface and endpoint-overflow behavior.
   - shape: standardize which prelude scalar types have `Rangeable` evidence, whether exact-width integer and `Char` ranges share one canonical range representation or distinct representations, and how inclusive ranges near maximum endpoints terminate without overflow
   - motivation: Kotlin issues `KT-489`, `KT-492`, and `KT-580` show that numeric and character range APIs need an explicit portability story, especially when an inclusive range reaches the maximum representable endpoint or when a range endpoint comes from an array accessor helper
   - related spec: §4.4, §10.2, §10.10.1A, §17.4
-
-- Consider a portable `Hash` / `Hashable` story for hash-oriented collection APIs.
-  - shape: decide whether standard hash-based collection constructors or adapters require an explicit `Hash a` / `Hashable a` constraint, or whether built-in `Set` / `Map` remain specified only by `Eq` with hashing as an implementation optimization
-  - motivation: Kotlin issue `KT-578` asks that `HashSet` / `HashMap` be available only for hashable types; Kappa currently specifies observable set/map behavior in terms of `Eq` and says hashing may be used only when equivalent to those semantics, but it does not expose a portable hashability constraint or identity-hash strategy surface
-  - related spec: §10.5.1, §10.8, §10.10.1A, §12
 
 - Consider explicitly accepting or rejecting unary plus as numeric-expression sugar.
   - shape: decide whether `+n` should be a standard prefix operator analogous to unary `-`, whether it is only ordinary user-defined prefix syntax when imported, or whether it should remain absent from v0.1 numeric literal conventions
@@ -202,7 +215,7 @@ These are not necessarily v0.1 requirements, but they are worth tracking while i
 
 - Consider permitting a line break before a dotted-form suffix as an expression-continuation context.
   - shape: allow a chain such as `value` followed by an indented `.member` / `?.member` suffix on the next line, with the same semantics as `value.member`
-  - motivation: Kotlin issue `KT-337` captures a common formatting expectation for long fluent chains; Kappa's §3.4 continuation list currently mentions infix operators but not a leading dotted suffix
+  - motivation: Kotlin issues `KT-337` and `KT-621` capture a common formatting expectation for long fluent chains; Kappa's §3.4 continuation list currently mentions infix operators but not a leading dotted suffix
   - related spec: §3.4, §2.8.3, §7.1.1
 
 - Consider a procedure/function type shorthand for `Unit` results.
@@ -217,7 +230,7 @@ These are not necessarily v0.1 requirements, but they are worth tracking while i
 
 - Consider augmented assignment and increment/decrement sugar as a future ergonomic extension.
   - shape: if added, it should be explicit about whether `x += y`, `x++`, and similar forms require a mutable `var`/place, whether they desugar through named receiver-marked functions or trait members, and whether immutable bindings may call mutating methods on their internal state without rebinding the binding itself
-  - motivation: Kotlin issues `KT-469`, `KT-471`, `KT-512`, `KT-556`, and `KT-575` show recurring pressure for user-defined compound assignment and increment protocols; Kappa currently keeps mutation explicit through `var`, references, `inout`, and ordinary function calls
+  - motivation: Kotlin issues `KT-469`, `KT-471`, `KT-512`, `KT-556`, `KT-575`, and `KT-613` show recurring pressure for user-defined compound assignment and increment protocols, including backend fragility around increment lowering on mutable places; Kappa currently keeps mutation explicit through `var`, references, `inout`, and ordinary function calls
   - related spec: §3.5, §8.2, §8.8, §12
 
 - Consider optional collection / iterator sources as explicit iteration sugar.

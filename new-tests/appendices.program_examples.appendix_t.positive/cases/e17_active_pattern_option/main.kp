@@ -1,0 +1,19 @@
+module cases.e17_active_pattern_option.main
+
+pattern Positive (& n : Int) : Option Int =
+    if n > 0 then Some (n + 0) else None
+
+result : Int
+let result =
+    match 42
+    case Positive (x) -> x
+    case _ -> 0
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e17_active_pattern_option"
+
+--! assertType cases.e17_active_pattern_option.main.result Int
+--! assertType cases.e17_active_pattern_option.main.main UIO Unit

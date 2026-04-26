@@ -1,0 +1,23 @@
+module main
+
+import std.prelude.(type Option, ctor Some, ctor None)
+
+-- Source issue: Idris2#27
+-- Kappa analogue: a residual catch-all branch after excluding `None` may use the remaining visible constructor refinement.
+-- Spec: §7.4.1, §7.5.4, §2.8.3
+readPresent : Option Int -> Int
+let readPresent opt =
+    match opt
+      case None -> 0
+      case _ -> opt.value
+
+fromSome : Int
+let fromSome = readPresent (Some 41)
+
+fromNone : Int
+let fromNone = readPresent None
+
+--! assertNoErrors
+--! assertType readPresent Option Int -> Int
+--! assertEval fromSome 41
+--! assertEval fromNone 0

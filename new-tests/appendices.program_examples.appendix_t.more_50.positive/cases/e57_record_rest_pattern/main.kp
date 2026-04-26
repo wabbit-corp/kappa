@@ -1,0 +1,15 @@
+module cases.e57_record_rest_pattern.main
+
+result : Int
+let result = block
+    let r : (a : Int, b : Int, c : Int) = (a = 1, b = 2, c = 39)
+    let (a = first, ..rest) = r
+    first + rest.b + rest.c
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e57_record_rest_pattern"
+
+--! assertType cases.e57_record_rest_pattern.main.result Int
+--! assertType cases.e57_record_rest_pattern.main.main UIO Unit

@@ -1,1 +1,0 @@
-error: Checkpoint 'KBackendIR' requires imported backend module 'I0.I0' to be present for module 'main'.

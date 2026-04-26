@@ -1,0 +1,19 @@
+module cases.e64_local_fixity_operator.main
+
+infix left 60 (<+>)
+
+(<+>) : Int -> Int -> Int
+let (<+>) (a : Int) (b : Int) : Int =
+    a + b
+
+result : Int
+let result = 1 <+> 2 <+> 39
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e64_local_fixity_operator"
+
+--! assertType cases.e64_local_fixity_operator.main.result Int
+--! assertType cases.e64_local_fixity_operator.main.main UIO Unit
+--! assertExecute cases.e64_local_fixity_operator.main.result 42

@@ -1,0 +1,19 @@
+module cases.e71_active_match_residue.main
+
+pattern TakePositive (n : Int) : Match Int Int =
+    if n > 0 then Hit n else Miss n
+
+result : Int
+let result =
+    match (-1)
+    case TakePositive (x) -> x
+    case TakePositive (y) -> y
+    case z -> z + 43
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e71_active_match_residue"
+
+--! assertType cases.e71_active_match_residue.main.result Int
+--! assertType cases.e71_active_match_residue.main.main UIO Unit

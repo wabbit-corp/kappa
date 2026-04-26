@@ -1,0 +1,26 @@
+module cases.e89_operation_value_rebind.main
+
+result : Int
+let result = block
+    scoped effect Ask =
+        1 ask : Unit -> Int
+
+    let askNow = Ask.ask
+
+    program : Eff <[Ask : Ask]> Int
+    let program = do
+        let n <- askNow ()
+        pure (n + 1)
+
+    runPure
+        (deep handle Ask program with
+            case return x -> pure x
+            case ask () k -> k 41)
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e89_operation_value_rebind"
+
+--! assertType cases.e89_operation_value_rebind.main.result Int
+--! assertType cases.e89_operation_value_rebind.main.main UIO Unit

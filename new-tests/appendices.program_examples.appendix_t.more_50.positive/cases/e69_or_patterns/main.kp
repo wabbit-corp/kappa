@@ -1,0 +1,24 @@
+module cases.e69_or_patterns.main
+
+data Traffic : Type =
+    Red
+    Yellow
+    Green
+
+warnLevel : Traffic -> Int
+let warnLevel light =
+    match light
+    case Red | Yellow -> 1
+    case Green -> 42
+
+result : Int
+let result = warnLevel Green
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e69_or_patterns"
+
+--! assertType cases.e69_or_patterns.main.result Int
+--! assertType cases.e69_or_patterns.main.main UIO Unit
+--! assertExecute cases.e69_or_patterns.main.result 42

@@ -80,6 +80,23 @@ Direct reads completed through 2026-04-24:
 - `KT-568`, `KT-569`, `KT-570`, `KT-571`, `KT-572`
 - `KT-573`, `KT-574`, `KT-575`, `KT-576`, `KT-577`
 - `KT-578`, `KT-579`, `KT-580`, `KT-581`; `KT-582` was absent from the current local corpus snapshot
+- `KT-585`, `KT-586`, `KT-587`, `KT-588`, `KT-589`, `KT-590`, `KT-591`, `KT-592`; `KT-583` and `KT-584` were absent from the current local corpus snapshot
+- `KT-593`, `KT-594`, `KT-597`; `KT-595` and `KT-596` were absent from the current local corpus snapshot
+- `KT-598`, `KT-600`, `KT-602`; `KT-599` and `KT-601` were absent from the current local corpus snapshot
+- `KT-603`, `KT-604`, `KT-605`, `KT-606`, `KT-607`
+- `KT-608`, `KT-609`, `KT-610`, `KT-611`, `KT-612`
+- `KT-613`, `KT-614`, `KT-615`, `KT-616`, `KT-617`
+- `KT-618`, `KT-619`, `KT-620`, `KT-621`, `KT-622`
+- `KT-623`, `KT-624`, `KT-625`, `KT-626`, `KT-627`
+- `KT-628`, `KT-629`, `KT-630`, `KT-631`, `KT-632`
+- `KT-633`, `KT-634`, `KT-635`, `KT-636`, `KT-637`
+- `KT-638`, `KT-639`, `KT-640`, `KT-641`, `KT-642`
+- `KT-643`, `KT-644`, `KT-645`, `KT-646`, `KT-647`
+- `KT-648`, `KT-649`, `KT-650`, `KT-651`, `KT-652`
+- `KT-653`, `KT-654`, `KT-655`, `KT-656`, `KT-657`
+- `KT-658`, `KT-659`, `KT-660`, `KT-661`, `KT-662`
+- `KT-663`, `KT-664`, `KT-665`, `KT-666`, `KT-667`
+- `KT-668`, `KT-669`, `KT-670`, `KT-671`, `KT-672`
 
 Purpose: collect Kotlin nullability, safe-navigation, Elvis, and smart-cast issues that map cleanly onto Kappa's
 Chapter 7 rules without importing JVM interop or Kotlin's OO-specific surface.
@@ -1390,7 +1407,7 @@ Chapter 7 rules without importing JVM interop or Kotlin's OO-specific surface.
   - direct Kappa fit for rejecting Elvis on a non-optional left operand; staged as `new-tests/expressions.elvis.negative_non_optional_left`.
 
 - `KT-578`
-  - hash-based collection constraint evidence; folded into `SPEC_ADDITIONS.md` as a question about whether Kappa should expose a portable `Hash` / `Hashable` trait for hash-oriented collection APIs, while keeping built-in `Set` / `Map` semantics specified by `Eq`.
+  - current-spec coverage now that `Spec.md` explicitly defines `std.hash.Hashable` as a performance trait and explicitly says `Set` / `Map` well-formedness must not depend on it; no new staged test or spec-addition note is needed here.
 
 - `KT-579`
   - array literal / vararg diagnostic background. It reinforces the existing portable `Array` construction and convenience-member note, but Kappa does not currently have Kotlin-style array literal or vararg source syntax to stage.
@@ -1403,6 +1420,276 @@ Chapter 7 rules without importing JVM interop or Kotlin's OO-specific surface.
 
 - `KT-582`
   - absent from the current local corpus snapshot.
+
+- `KT-583`
+  - absent from the current local corpus snapshot.
+
+- `KT-584`
+  - absent from the current local corpus snapshot.
+
+- `KT-585`
+  - Kotlin multiple-inheritance / final-property override background only. Kappa does not import JVM field inheritance or Kotlin class-member override rules into the Wave 5 flow-typing tranche.
+
+- `KT-586`
+  - Kotlin class-object initialization / nested nominal resolution background only. Kappa has reified static-object facets, but not Kotlin `class object` surface or its JVM-specific initialization rules.
+
+- `KT-587`
+  - same bucket as `KT-586`: nested Kotlin class-object name-resolution background, not a clean Kappa fixture import.
+
+- `KT-588`
+  - Kotlin static-method qualification background only. Kappa's qualified access and reified static-object lookup rules are explicit and do not mirror unqualified static-member lookup from instance methods.
+
+- `KT-589`
+  - anonymous object-expression parser background only. Kappa has records, packages, signatures, and traits, but no Kotlin object-expression surface to import here.
+
+- `KT-590`
+  - receiver-lambda parser background only. Kappa already stages optional function-type precedence directly, but it does not have Kotlin extension-function / nullable-receiver lambda surface.
+
+- `KT-591`
+  - labeled receiver-lambda background only. Kappa has labeled returns, but not Kotlin `this@label` receiver resolution inside nested extension lambdas.
+
+- `KT-592`
+  - already covered by existing boolean-refinement coverage: `tests/Kappa.Compiler.Tests/Fixtures/expressions.conditionals.positive_conjunction_constructor_projection` checks that the right operand of `&&` is typed in the success environment of the left operand and that the resulting success branch may project the refined constructor payload.
+
+- `KT-593`
+  - adjacent operator/fixity-gating background only. Kappa already restricts operator-position usage to operator tokens with matching fixity in scope under `§3.5.3`; it does not have Kotlin's separate "alphabetic method marked infix" surface.
+
+- `KT-594`
+  - backend crash around nullable array mutation via safe navigation. Kappa's portable source obligations here are already represented by `?.` staging plus the open `Array` surface note; this does not add a distinct current fixture.
+
+- `KT-595`
+  - absent from the current local corpus snapshot.
+
+- `KT-596`
+  - absent from the current local corpus snapshot.
+
+- `KT-597`
+  - nullable-array extension / Kotlin type-inference background only. Kappa does not import Kotlin nullable-receiver extension methods, and the transferable array ergonomics concerns are already captured by the portable `Array` note.
+
+- `KT-598`
+  - Kotlin backing-field / qualified-`this` / object-expression background only. Kappa does not have Kotlin backing-field syntax or `Outer.this` receiver forms to import here.
+
+- `KT-599`
+  - absent from the current local corpus snapshot.
+
+- `KT-600`
+  - generic optional-unwrapping ergonomics evidence; folded into the existing `SPEC_ADDITIONS.md` note about whether `?.` should eventually gain a less annotation-heavy story in fully generic code, rather than staged as a current fixture.
+
+- `KT-601`
+  - absent from the current local corpus snapshot.
+
+- `KT-602`
+  - Array constructor / tooling background; folded into the existing portable `Array` construction and convenience-member note rather than staged as a current fixture.
+
+- `KT-603`
+  - Kotlin root-namespace import syntax background only. Kappa's module/import model already has explicit module paths and existing import/module fixtures cover the transferable name-resolution obligations without importing Kotlin `namespace` syntax.
+
+- `KT-604`
+  - receiver-lambda / dotted-call frontend-crash background only. Kappa's direct current obligations in this area are already represented by the staged receiver-marked method-sugar fixtures.
+
+- `KT-605`
+  - Kotlin long-literal plus class-object parser background only. Kappa's numeric-literal edge cases are already tracked separately, and it does not have Kotlin `0L` suffix syntax or `class object` surface.
+
+- `KT-606`
+  - already covered by existing receiver-call coverage: the transferable obligation is that receiver-marked functions elaborate correctly through dotted method-call sugar, which is already staged in `new-tests/expressions.application.positive_generic_receiver_method_sugar`, `new-tests/expressions.application.positive_generic_receiver_method_infers_argument`, and `new-tests/expressions.application.positive_receiver_method_explicit_call`.
+
+- `KT-607`
+  - already covered by existing assignment-target coverage: `new-tests/effects.do_blocks.negative_assignment_requires_var` already rejects assignment to immutable/read-only targets rather than only mutable `var` bindings.
+
+- `KT-608`
+  - Kotlin backing-field / custom-accessor background only. Kappa does not have Kotlin property-accessor bodies or `$field` backing-field syntax, so this does not yield a current fixture.
+
+- `KT-609`
+  - unused-parameter / unused-assignment analysis background only. This is tooling and warning-policy material rather than a current Kappa source-semantics fixture.
+
+- `KT-610`
+  - same bucket as `KT-609`: diagnostic granularity for "unused variable" versus "assigned but never accessed" is a tooling-quality concern, not a new current-spec test.
+
+- `KT-611`
+  - unresolved-name diagnostic background around Kotlin `for` binding analysis only. Kappa's transferable source obligation for `for` loops is already represented by the staged iterator-protocol fixture.
+
+- `KT-612`
+  - poor fit: Kappa's `is` tests constructors only, not erased parameterized runtime types, so this generic runtime type-test complaint does not translate into a current Kappa fixture.
+
+- `KT-613`
+  - increment-lowering backend evidence; folded into the existing `SPEC_ADDITIONS.md` augmented-assignment / increment ergonomics note rather than staged as current behavior, because Kappa intentionally keeps mutation explicit and does not currently expose `++`.
+
+- `KT-614`
+  - nullable-type-test warning background only. Kappa models optionality through constructors rather than raw nullable types, so this is diagnostic-policy noise rather than a current fixture.
+
+- `KT-615`
+  - backend optimization background for nullable runtime type checks. Same poor-fit family as `KT-614`; Kappa does not import Kotlin nullable-type `is T?` behavior.
+
+- `KT-616`
+  - Web IDE / build-info tooling background only.
+
+- `KT-617`
+  - Kotlin backing-field syntax in superclass constructor calls background only. Kappa has no `$field` surface or Kotlin superclass-constructor syntax analogue here.
+
+- `KT-618`
+  - overloaded assignment / `Unit`-result operator policy evidence; folded into the existing `SPEC_ADDITIONS.md` augmented-assignment / increment ergonomics note rather than staged as current behavior, because Kappa does not currently expose overloaded assignment sugar.
+
+- `KT-619`
+  - Kotlin override-result inference background only. Kappa trait members and defaults elaborate through dictionaries rather than Kotlin class override tables, so this does not produce a Wave 5 fixture.
+
+- `KT-620`
+  - general operator-overloading signature-restriction background. Kappa already treats operator tokens as ordinary declarations plus fixity and does not import Kotlin's declaration-site operator-annotation policy.
+
+- `KT-621`
+  - formatting ergonomics evidence for the existing line-break-before-dotted-suffix note in `SPEC_ADDITIONS.md`, not a current fixture.
+
+- `KT-622`
+  - Kotlin `when`-without-subject syntax background only. Kappa already has `if` / `elif` chains and guarded match cases, so this does not imply a new current fixture.
+
+- `KT-623`
+  - recursive F-bounded OO dispatch/inference background only. Kappa's trait/member model does not import Kotlin class recursion and nullable member-access resolution here.
+
+- `KT-624`
+  - erased-cast runtime-type-information evidence; folded into the existing `SPEC_ADDITIONS.md` `DynamicType` / `DynRep` portability note rather than staged as a current fixture.
+
+- `KT-625`
+  - analyzer/performance background only. The sample mixes recursive classes, loops, and optional calls, but the actual issue is analysis cost rather than a new source-semantic obligation.
+
+- `KT-626`
+  - nullable-assertion / helper-function background only. Kappa models optionality through `Option` and explicit matching / monadic failure, not a Kotlin `npe()` / `!!`-style intrinsic.
+
+- `KT-627`
+  - too underspecified to import as a fixture; treat as stray Kotlin syntax/tooling background unless a fuller upstream context later shows a transferable rule.
+
+- `KT-628`
+  - nullable-assertion feature background only. Kappa intentionally models optionality through `Option`, matching, and monadic failure rather than a Kotlin `!!` / `npe()` operator.
+
+- `KT-629`
+  - already covered by the existing assignment-expression divergence note: Kappa's mutation surfaces are statement-level and return explicit `Unit`, rather than allowing assignment expressions inside boolean or return expressions.
+
+- `KT-630`
+  - same family as `KT-628`: nullable-assertion helper background only. Kappa has no `npe()` / `!!`-style raw unwrap operator to infer through.
+
+- `KT-631`
+  - incomplete-code IDE robustness background only.
+
+- `KT-632`
+  - Array constructor / descriptor tooling evidence; folded into the existing portable `Array` construction and convenience-member note rather than staged as a current fixture.
+
+- `KT-633`
+  - increment-lowering / postfix-on-index-expression backend evidence; folded into the existing `SPEC_ADDITIONS.md` augmented-assignment / increment ergonomics note rather than staged as current behavior, because Kappa intentionally keeps mutation explicit and does not currently expose `++`.
+
+- `KT-634`
+  - same family as `KT-633`: overloaded increment plus indexed-assignment lowering evidence, not a distinct current Kappa fixture.
+
+- `KT-635`
+  - absent in the current local Kotlin corpus snapshot.
+
+- `KT-636`
+  - nullable-receiver helper-library ergonomics evidence; folded into the existing `SPEC_ADDITIONS.md` note about making `?.` less annotation-heavy in generic code rather than staged as a current fixture.
+
+- `KT-637`
+  - absent in the current local Kotlin corpus snapshot.
+
+- `KT-638`
+  - absent in the current local Kotlin corpus snapshot.
+
+- `KT-639`
+  - absent in the current local Kotlin corpus snapshot.
+
+- `KT-640`
+  - backend verify-error background around Kotlin class objects, nullable generics, and old companion initialization lowering only. Kappa does not import this class-object surface.
+
+- `KT-641`
+  - absent in the current local Kotlin corpus snapshot.
+
+- `KT-642`
+  - Kotlin inner-class class-object syntax restriction background only. Kappa has no Kotlin `class object` surface here.
+
+- `KT-643`
+  - absent in the current local Kotlin corpus snapshot.
+
+- `KT-644`
+  - raw-null plus Kotlin `when` background only. Kappa models optionality through `Option` constructors and pattern matching rather than `null` checks in Kotlin `when` syntax.
+
+- `KT-645`
+  - overload-resolution background only. Kappa does not import Kotlin same-name overload resolution across nullable numeric parameter types.
+
+- `KT-646`
+  - absent in the current local Kotlin corpus snapshot.
+
+- `KT-647`
+  - useful spec-addition material for collection encounter-order portability. Kappa already specifies orderedness for query pipelines, but the ordinary `Set` / `Map` transformation surface does not yet say whether portable operations preserve encounter order or are explicitly unordered.
+
+- `KT-648`
+  - absent in the current local Kotlin corpus snapshot.
+
+- `KT-649`
+  - absent in the current local Kotlin corpus snapshot.
+
+- `KT-650`
+  - Kotlin nominal class / default-constructor surface background only. Kappa does not import Kotlin class declarations or implicit no-arg class-constructor rules here.
+
+- `KT-651`
+  - Kotlin trait-plus-class-requirement syntax background only. Kappa traits elaborate through dictionaries and explicit constraints rather than nominal "trait requires class" syntax.
+
+- `KT-652`
+  - absent in the current local Kotlin corpus snapshot.
+
+- `KT-653`
+  - Java / nominal supertype background only. Kappa has `String` as a core prelude type, but not Kotlin/JVM `CharSequence` subtyping obligations.
+
+- `KT-654`
+  - direct Kappa parser fit for branch-result expressions: staged as `new-tests/expressions.match.positive_lambda_application_branch_rhs` to ensure a `match` branch may begin with a parenthesized anonymous-function application.
+
+- `KT-655`
+  - Java abstract-class / object-expression inheritance background only. Kappa does not import Kotlin anonymous-object inheritance over JVM collection classes here.
+
+- `KT-656`
+  - absent in the current local Kotlin corpus snapshot.
+
+- `KT-657`
+  - same syntax-background family as `KT-622`: Kappa already has `if` / `elif` chains, guarded match cases, and no Kotlin `when`-without-subject surface to validate here.
+
+- `KT-658`
+  - absent in the current local Kotlin corpus snapshot.
+
+- `KT-659`
+  - already covered by existing type-constructor term-facet coverage: Kappa explicitly makes named type constructors first-class, and the closest obligations are already represented by `tests/Kappa.Compiler.Tests/Fixtures/static_objects.kind_accept_type_constructor_with_parameter` and `tests/Kappa.Compiler.Tests/Fixtures/modules.names.reified_type_object_local_rebinding.positive`.
+
+- `KT-660`
+  - documentation/example-indentation background only. Kappa's transferable layout and loop-body obligations are already covered elsewhere.
+
+- `KT-661`
+  - typo / documentation background only.
+
+- `KT-662`
+  - raw-null optimization background only. Kappa models optionality via constructors and `Option`, not JVM-special-cased `== null` lowering.
+
+- `KT-663`
+  - Kotlin `class object` execution / backend background only. Kappa has no Kotlin companion/class-object inheritance surface here.
+
+- `KT-664`
+  - Kotlin brace-free `for` body / parser-scope background only. Kappa's portable loop and layout obligations are already covered by its distinct `for ... do` surface and existing iterator/layout fixtures.
+
+- `KT-665`
+  - backend verifier failure around ordinary function default arguments and `Long` recursion only. Kappa deliberately does not support ordinary function defaults in v0.1, so this stays in the intentional-divergence / backend bucket.
+
+- `KT-666`
+  - Kotlin overload-specificity background only. Kappa does not import same-name overload resolution over nominal subtype and generic-bounded candidates.
+
+- `KT-667`
+  - absent in the current local Kotlin corpus snapshot.
+
+- `KT-668`
+  - direct Kappa fit for contextual lambda inference plus receiver-method-style use in the lambda body: staged as `new-tests/expressions.application.positive_contextual_lambda_receiver_body_inference`.
+
+- `KT-669`
+  - absent in the current local Kotlin corpus snapshot.
+
+- `KT-670`
+  - absent in the current local Kotlin corpus snapshot.
+
+- `KT-671`
+  - absent in the current local Kotlin corpus snapshot.
+
+- `KT-672`
+  - absent in the current local Kotlin corpus snapshot.
 
 - `KT-93`
   - poor fit: nullable arrays, initialization discipline, and collection element nullability are collection-surface design issues rather than a clean Kappa Chapter 7 import.
@@ -1570,6 +1857,9 @@ Chapter 7 rules without importing JVM interop or Kotlin's OO-specific surface.
 - `new-tests/expressions.application.positive_generic_receiver_method_infers_argument`
   - sources: `KT-258`, `KT-262`, `KT-442`; a generic receiver-marked function should infer its container type from the receiver and apply that same type to later explicit arguments
 
+- `new-tests/expressions.application.positive_contextual_lambda_receiver_body_inference`
+  - source: `KT-668`; a higher-order generic call should infer the lambda binder type from a later ordinary argument so receiver-method sugar inside the lambda body typechecks without explicit annotations
+
 - `new-tests/effects.return.runtime_positive_labeled_lambda_local_return`
   - source: `KT-139`; a labeled lambda should admit a local `return@label` that exits that lambda rather than forcing an outer-function return
 
@@ -1584,6 +1874,9 @@ Chapter 7 rules without importing JVM interop or Kotlin's OO-specific surface.
 
 - `new-tests/expressions.conditionals.positive_conjunction_constructor_projection`
   - source: `KT-146`; the right operand of `&&` should be checked under the success facts of the left operand, so constructor-field projection is valid there
+
+- `new-tests/expressions.match.positive_lambda_application_branch_rhs`
+  - source: `KT-654`; a `match` branch body may begin with a parenthesized anonymous-function application and must still parse as an ordinary branch result expression
 
 - `new-tests/expressions.patterns.positive_or_pattern_shared_binders`
   - adjacent source: `KT-89`; multiple successful alternatives in one branch should preserve the shared binder/refinement environment
@@ -1698,10 +1991,10 @@ Chapter 7 rules without importing JVM interop or Kotlin's OO-specific surface.
 
 ## Next Focused Pass
 
-- `KT-583`
-- `KT-584`
-- `KT-585`
-- `KT-586`
-- `KT-587`
+- `KT-673`
+- `KT-674`
+- `KT-675`
+- `KT-676`
+- `KT-677`
 
 These are the next exact IDs to read if Wave 5 resumes immediately after the current staged batch.

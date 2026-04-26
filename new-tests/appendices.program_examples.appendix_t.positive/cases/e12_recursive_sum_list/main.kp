@@ -1,0 +1,20 @@
+module cases.e12_recursive_sum_list.main
+
+sumList : List Int -> Int
+let sumList xs decreases structural xs =
+    match xs
+    case Nil -> 0
+    case h :: t -> h + sumList t
+
+result : Int
+let result =
+    sumList [1, 2, 3, 4, 32]
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e12_recursive_sum_list"
+
+--! assertType cases.e12_recursive_sum_list.main.result Int
+--! assertType cases.e12_recursive_sum_list.main.main UIO Unit

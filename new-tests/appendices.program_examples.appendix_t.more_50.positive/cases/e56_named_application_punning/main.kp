@@ -1,0 +1,20 @@
+module cases.e56_named_application_punning.main
+
+mix : Int -> Int -> Int
+let mix (a : Int) (b : Int) : Int =
+    a + b
+
+result : Int
+let result = block
+    let a : Int = 10
+    mix { a, b = 32 }
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e56_named_application_punning"
+
+--! assertType cases.e56_named_application_punning.main.mix Int -> Int -> Int
+--! assertType cases.e56_named_application_punning.main.result Int
+--! assertType cases.e56_named_application_punning.main.main UIO Unit
+--! assertExecute cases.e56_named_application_punning.main.result 42

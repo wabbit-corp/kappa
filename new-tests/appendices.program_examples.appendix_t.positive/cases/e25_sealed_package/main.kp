@@ -1,0 +1,29 @@
+module cases.e25_sealed_package.main
+
+type CounterSig : Type =
+    (opaque Counter : Type,
+     zero : this.Counter,
+     inc : this.Counter -> this.Counter,
+     get : this.Counter -> Int)
+
+counterModule : CounterSig
+let counterModule =
+    seal
+        (Counter = Int,
+         zero = 0,
+         inc = \x -> x + 1,
+         get = \x -> x)
+    as CounterSig
+
+result : Int
+let result =
+    counterModule.get (counterModule.inc counterModule.zero) + 41
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e25_sealed_package"
+
+--! assertType cases.e25_sealed_package.main.result Int
+--! assertType cases.e25_sealed_package.main.main UIO Unit

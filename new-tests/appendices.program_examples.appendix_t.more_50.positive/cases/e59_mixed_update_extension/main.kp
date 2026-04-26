@@ -1,0 +1,15 @@
+module cases.e59_mixed_update_extension.main
+
+result : Int
+let result = block
+    let base : (x : Int, y : Int) = (x = 1, y = 2)
+    let next = base.{ x = 20, z := 22 }
+    next.x + next.z
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e59_mixed_update_extension"
+
+--! assertType cases.e59_mixed_update_extension.main.result Int
+--! assertType cases.e59_mixed_update_extension.main.main UIO Unit

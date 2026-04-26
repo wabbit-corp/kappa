@@ -1,0 +1,16 @@
+module main
+
+-- Source issues: chapel#9182, chapel#18234, inko#424
+-- Spec: §2.7E, §10.8
+data Key : Type =
+    Key Int
+
+emptySet : Set Key
+let emptySet = Set Nil
+
+emptyMap : Map Key Int
+let emptyMap = Map Nil
+
+--! assertNoErrors
+--! assertType emptySet Set Key
+--! assertType emptyMap Map Key Int

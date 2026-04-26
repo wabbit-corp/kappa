@@ -1,0 +1,14 @@
+module cases.e95_multifile_import_more.main
+
+import cases.e95_multifile_import_more.helper.math.(triple)
+
+result : Int
+let result = triple 14
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e95_multifile_import_more"
+
+--! assertType cases.e95_multifile_import_more.main.result Int
+--! assertType cases.e95_multifile_import_more.main.main UIO Unit

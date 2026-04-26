@@ -1,0 +1,22 @@
+module cases.e83_acquire_release_borrow_use.main
+
+data Handle : Type =
+    Handle
+
+releaseHandle : (1 h : Handle) -> UIO Unit
+let releaseHandle h =
+    match h
+    case Handle -> pure ()
+
+useHandle : (& h : Handle) -> UIO Unit
+let useHandle h =
+    println "using handle"
+
+main : UIO Unit
+let main =
+    acquireRelease
+        (pure Handle)
+        releaseHandle
+        useHandle
+
+--! assertType cases.e83_acquire_release_borrow_use.main.main UIO Unit

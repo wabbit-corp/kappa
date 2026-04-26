@@ -1,0 +1,26 @@
+module cases.e42_gradual_dynamic.main
+
+import std.gradual.(type Dyn, type CastBlame, toDyn, checkedCast)
+
+dynValue : Dyn
+let dynValue =
+    toDyn 42
+
+casted : Result CastBlame Int
+let casted =
+    checkedCast @Int dynValue
+
+result : Int
+let result =
+    match casted
+    case Ok n -> n
+    case Err _ -> 0
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e42_gradual_dynamic"
+
+--! assertType cases.e42_gradual_dynamic.main.result Int
+--! assertType cases.e42_gradual_dynamic.main.main UIO Unit

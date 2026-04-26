@@ -1,0 +1,19 @@
+module cases.e21_local_function_block.main
+
+result : Int
+let result = block
+    add : Int -> Int -> Int
+    let add x y = x + y
+
+    let double : Int -> Int = \x -> add x x
+
+    double 21
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e21_local_function_block"
+
+--! assertType cases.e21_local_function_block.main.result Int
+--! assertType cases.e21_local_function_block.main.main UIO Unit

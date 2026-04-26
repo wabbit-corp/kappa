@@ -1,0 +1,5 @@
+module cases.e44_multifile_import.lib.math
+
+add3 : Int -> Int
+let add3 x =
+    x + 3

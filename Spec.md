@@ -20102,6 +20102,10 @@ It may contain:
 * unresolved references,
 * placeholder expressions,
 * unknown type references,
+* unsolved obligations,
+* partially elaborated spines,
+* failed macro-expansion placeholders,
+* failed import/provider placeholders,
 * or other implementation-defined partial semantic nodes
 
 corresponding to incomplete or invalid source programs.
@@ -20111,32 +20115,486 @@ Resolution is conceptually side-effect-free:
 * it enriches KFrontIR with semantic information;
 * it may record resolution failures inside KFrontIR nodes or in implementation-defined side tables associated with those
   nodes;
+* it may record unsolved obligations, rejected candidates, failed solver branches, and recovery choices; and
 * it does not directly emit user diagnostics.
 
 Diagnostics are produced in `CHECKERS`, or on demand from information that would be available by `CHECKERS`, and are
-always attached to source origins from KFrontIR.
+always attached to source or synthetic origins from KFrontIR.
 
-A conforming implementation MUST additionally support machine-readable diagnostic output in JSON.
+An implementation MAY physically emit diagnostics earlier for implementation convenience, but the observable diagnostics
+MUST be equivalent to diagnostics produced from the corresponding KFrontIR origins, obligations, recovery state, and
+checker facts.
 
-Such diagnostic records MUST identify at least:
+A conforming implementation MUST support both:
 
-* diagnostic code;
+1. a human-readable diagnostic renderer; and
+2. machine-readable diagnostic output in JSON.
+
+Diagnostics are structured records. A human-readable message is only one rendering of such a record.
+
+A conforming implementation MUST NOT require tools, editors, test harnesses, or macro systems to parse human-readable
+diagnostic prose in order to recover diagnostic code, severity, source ranges, related origins, fix-its, or diagnostic
+family.
+
+<!-- compiler.kfrontir.diagnostics_records -->
+##### 17.2.4.1 Diagnostic records
+
+A diagnostic record has at least the following conceptual fields:
+
+```text
+Diagnostic =
+    (schemaVersion : Nat,
+     code          : DiagnosticCode,
+     family        : DiagnosticFamily,
+     severity      : DiagnosticSeverity,
+     stage         : CompilationStage,
+     phase         : Option KFrontIRPhase,
+     primary       : Origin,
+     message       : DiagnosticMessage,
+     labels        : List DiagnosticLabel,
+     notes         : List DiagnosticNote,
+     helps         : List DiagnosticHelp,
+     fixes         : List DiagnosticFix,
+     related       : List RelatedOrigin,
+     payload       : DiagnosticPayload,
+     explain       : Option DiagnosticExplainKey,
+     suppressed    : List SuppressedDiagnosticSummary)
+```
+
+A conforming implementation MAY use a different internal representation, but the JSON output MUST expose fields
+observationally equivalent to the fields above.
+
+Required meanings:
+
+* `schemaVersion` identifies the diagnostic JSON schema version.
+* `code` is the implementation's stable diagnostic code.
+* `family` is the standardized Kappa diagnostic family, when the diagnostic belongs to one of the families in
+  §17.2.4A.
+* `severity` classifies the diagnostic as `error`, `warning`, `note`, or `info`.
+* `stage` identifies the compilation stage that produced the diagnostic.
+* `phase` identifies the KFrontIR phase when the diagnostic is tied to a KFrontIR phase; otherwise it is absent.
+* `primary` is the principal source or synthetic origin blamed by the diagnostic.
+* `message` contains the primary human-readable message.
+* `labels` contain source-range labels rendered around source snippets.
+* `notes` contain factual additional explanations.
+* `helps` contain suggested user actions.
+* `fixes` contain source edits, if any.
+* `related` contains related origins with stable roles.
+* `payload` contains family-specific structured data.
+* `explain` identifies a longer explanation entry under §17.2.4.8.
+* `suppressed` summarizes lower-priority diagnostics that were not emitted separately because this diagnostic explains
+  them.
+
+A diagnostic whose severity is `error` makes compilation fail unless the enclosing command explicitly requests
+diagnostic-only analysis over incomplete or invalid source.
+
+A diagnostic whose severity is `warning`, `note`, or `info` MUST NOT change source-language semantics, interface
+identity, hashing, normalization, or backend output, except through implementation-defined warning-as-error build policy.
+
+<!-- compiler.kfrontir.diagnostic_codes_families -->
+##### 17.2.4.2 Diagnostic codes and families
+
+A `DiagnosticCode` is a stable, human-readable identifier unique within the implementation's diagnostic code space.
+
+A diagnostic code:
+
+* MUST NOT consist solely of digits;
+* SHOULD be written in a readable symbolic form such as `E_TYPE_MISMATCH`, `E_BORROW_ESCAPE`, or `W_UNUSED_BINDING`;
+* MUST remain stable across implementation versions once released as part of a public diagnostic surface;
+* MUST NOT be reused for a materially different diagnostic meaning; and
+* SHOULD be associated with a long-form explanation entry.
+
+An implementation MAY change the human-readable rendering of a diagnostic without changing its code, provided the
+underlying diagnostic meaning and payload shape remain compatible.
+
+A `DiagnosticFamily` is a standardized, implementation-independent family identifier used by tooling, portable tests,
+documentation, and macro-generated diagnostics.
+
+Family identifiers use lowercase dotted spelling:
+
+```text
+kappa.type.mismatch
+kappa.implicit.unsolved
+kappa.borrow.escape
+```
+
+If a diagnostic corresponds to a family defined by this specification, the JSON diagnostic MUST include that family
+identifier, even if the implementation's rendered diagnostic code is different.
+
+If a diagnostic is implementation-defined and has no standardized family, its family MUST be absent or must use an
+implementation-reserved prefix that cannot collide with `kappa.`.
+
+<!-- compiler.kfrontir.origins_ranges_labels -->
+##### 17.2.4.3 Origins, ranges, and labels
+
+An `Origin` identifies either a source range or a synthetic origin.
+
+A source origin MUST identify at least:
+
+* source path or source identity;
+* start line;
+* start column;
+* end line;
+* end column; and
+* enough file identity to distinguish files with equal display paths under different source roots.
+
+Line and column numbers in JSON diagnostic output are 1-based.
+
+Implementations MAY additionally expose 0-based byte offsets, UTF-8 byte offsets, UTF-16 code-unit offsets, or Unicode
+scalar offsets, but such offsets MUST be clearly named.
+
+A synthetic origin MUST identify:
+
+* the generated construct;
+* the nearest user-written origin from which it was generated;
+* the expansion, desugaring, or insertion step that produced it, when known; and
+* the origin chain from generated syntax back to user-written syntax, when available.
+
+Generated nodes may arise from:
+
+* implicit prelude imports;
+* desugarings;
+* expected-type-directed insertion;
+* implicit insertion;
+* equality transport insertion;
+* macro expansion;
+* prefixed-string elaboration;
+* comprehension sink elaboration;
+* projection/accessor lowering;
+* record-update reconstruction;
+* bridge binding generation; or
+* other implementation-defined frontend rewrites.
+
+If a diagnostic is caused by generated code and a corresponding user-written origin is available, the primary origin
+MUST be the user-written origin unless that would be actively misleading.
+
+Generated origins SHOULD be rendered as related origins or expansion notes rather than as the sole primary blame site.
+
+A `DiagnosticLabel` has:
+
+```text
+DiagnosticLabel =
+    (origin  : Origin,
+     role    : DiagnosticLabelRole,
+     message : String)
+```
+
+Common label roles include:
+
+```text
+primary
+expected
+actual
+introduced-here
+declared-here
+required-here
+used-here
+borrow-start
+borrow-use
+escape-site
+consumed-here
+copied-here
+generated-here
+candidate
+rejected-candidate
+```
+
+Implementations MAY add roles, but standardized roles MUST preserve their meanings.
+
+<!-- compiler.kfrontir.messages_notes_help_fixits -->
+##### 17.2.4.4 Messages, notes, help, and fix-its
+
+The primary diagnostic message SHOULD be a short concrete sentence that describes the user-visible failure.
+
+The primary message SHOULD NOT expose compiler-internal implementation terms such as unification metavariable IDs,
+constraint-solver node IDs, KCore binder IDs, or query keys unless no more user-facing rendering is available.
+
+A `note` records an explanatory fact.
+
+A `help` records a possible user action.
+
+A `fix` records a concrete edit or edit set.
+
+A `DiagnosticFix` has at least:
+
+```text
+DiagnosticFix =
+    (title         : String,
+     applicability : FixApplicability,
+     edits         : List SourceEdit)
+```
+
+A `SourceEdit` has at least:
+
+```text
+SourceEdit =
+    (origin      : Origin,
+     replacement : String)
+```
+
+The `origin` of a source edit MUST be a source origin. A fix MUST NOT directly edit a synthetic-only origin.
+
+If a fix arises from generated code, it must be mapped back to a valid user-written source origin before it is exposed as
+an edit.
+
+`FixApplicability` is one of:
+
+```text
+machine-applicable
+maybe-applicable
+placeholder
+unsafe
+not-machine-applicable
+```
+
+Rules:
+
+* `machine-applicable` means the edit set contains no placeholders, applies cleanly to the source version used for the
+  diagnostic, and is intended to preserve the programmer's likely meaning.
+* `maybe-applicable` means the edit is concrete but may not preserve intent in all cases.
+* `placeholder` means at least one replacement contains a placeholder or schematic term that requires user input.
+* `unsafe` means the edit may change behavior, erase proof obligations, loosen checking, use an unsafe/debug escape, or
+  otherwise require deliberate review.
+* `not-machine-applicable` means the fix is informational only.
+
+A fix marked `machine-applicable` MUST be accepted by the standard diagnostic-fix test mode of Appendix T when that fix
+is covered by a standard test.
+
+A diagnostic MAY contain multiple fixes. If fixes conflict by overlapping edit ranges, the diagnostic record MUST make
+each fix a separate alternative rather than one combined edit set.
+
+<!-- compiler.kfrontir.human_readable_rendering -->
+##### 17.2.4.5 Human-readable rendering
+
+A human-readable diagnostic renderer MUST display at least:
+
 * severity;
-* stage or phase;
-* primary origin; and
-* any related origins.
+* diagnostic code;
+* primary message;
+* primary source range when available;
+* labeled source excerpt when available; and
+* notes, help, and fixes when present.
 
-A diagnostic code MUST be a stable, human-readable identifier that is unique within the implementation's diagnostic
-space, and it MUST NOT consist solely of digits.
-Implementations SHOULD use readable identifier forms such as `E_IMPORT_CYCLE`, `E_TYPE_MISMATCH`, or
-`W_UNUSED_BINDING` rather than bare numeric codes.
+A renderer SHOULD:
+
+* use user-written syntax rather than canonical internal syntax where doing so is faithful;
+* preserve visible type aliases, module aliases, import aliases, field labels, operator spellings, and user-written
+  binder names where possible;
+* selectively reveal canonical or unfolded forms only when they explain the error;
+* render expected and actual types using a common local naming environment;
+* display type differences structurally when raw pretty-printing would be too large;
+* avoid printing anonymous rigid regions, metavariables, generated binders, or internal names without also explaining
+  their user-facing meaning;
+* show macro expansion traces only to the depth needed to explain the diagnostic by default; and
+* provide a verbose mode that can show full canonical types, solver obligations, expansion chains, and internal IDs.
+
+If a diagnostic concerns a type mismatch involving aliases or opaque names, the renderer SHOULD preserve the alias by
+default and MAY show the unfolded form as an `aka` note when that helps explain the mismatch.
+
+If a diagnostic concerns a macro expansion, the renderer MUST point first at the macro invocation, splice, prefixed
+string, or generated construct in user source, and SHOULD show generated syntax only as a related expansion note.
+
+<!-- compiler.kfrontir.diagnostic_payloads -->
+##### 17.2.4.6 Diagnostic payloads
+
+A `DiagnosticPayload` contains structured family-specific information.
+
+The payload MUST contain at least:
+
+```text
+(kind : String)
+```
+
+where `kind` is stable within the diagnostic schema.
+
+For diagnostics whose `family` is standardized by §17.2.4A, the payload MUST contain all fields required by that family,
+unless a field is impossible to compute because the source program is too incomplete. In that case, the field must be
+absent or null, and the diagnostic SHOULD explain which information was unavailable if that absence affects user
+comprehension.
+
+Implementations MAY add implementation-specific payload fields. Tools MUST ignore unknown payload fields unless they
+explicitly opt into an implementation-specific schema.
+
+The following kinds of information SHOULD be structured in payloads rather than available only in prose:
+
+* expected type;
+* actual type;
+* expected quantity;
+* actual or inferred quantity;
+* expected effect row;
+* actual effect row;
+* implicit goal;
+* rejected implicit candidates;
+* local implicit context summary;
+* trait-instance search trace summary;
+* borrow region;
+* capture set;
+* consumed path;
+* borrowed path;
+* static footprint;
+* dependency path;
+* recursive SCC;
+* recursive call edge;
+* termination strategy;
+* macro expansion stack;
+* bridge origin;
+* boundary contract identity;
+* fix-it applicability; and
+* explanation key.
+
+<!-- compiler.kfrontir.obligation_provenance_diagnostic_selection -->
+##### 17.2.4.7 Obligation provenance and diagnostic selection
+
+Elaboration and checking MUST preserve enough provenance to explain failed obligations.
+
+For each obligation that may produce a user diagnostic, the implementation MUST behave as if it records:
+
+```text
+Obligation =
+    (id             : ObligationId,
+     kind           : ObligationKind,
+     primaryOrigin  : Origin,
+     relatedOrigins : List RelatedOrigin,
+     introducedBy   : ObligationIntroduction,
+     dependencies   : List ObligationId,
+     expected       : Option RenderableTerm,
+     actual         : Option RenderableTerm,
+     candidates     : List ObligationCandidate,
+     recovery       : Option RecoveryChoice)
+```
+
+`ObligationKind` includes at least:
+
+```text
+type-equality
+subsumption
+implicit-goal
+quantity
+borrow
+capture
+effect-row
+record-reconstruction
+pattern-coverage
+termination
+modality
+macro-expansion
+bridge-contract
+query-cycle
+```
+
+`ObligationIntroduction` includes at least:
+
+```text
+user-annotation
+application
+implicit-insertion
+expected-type-directed-insertion
+equality-transport
+record-update-reconstruction
+macro-expansion
+desugaring
+imported-interface
+trait-instance-search
+borrow-introduction
+projection-elimination
+termination-checking
+bridge-boundary
+```
+
+Diagnostic selection SHOULD prefer:
+
+* user-written origins over generated origins;
+* local source code over imported library declarations;
+* explicit user annotations over inferred constraints when the annotation caused the mismatch;
+* concrete expressions over inserted implicits;
+* the smallest connected set of obligations that explains the failure;
+* root causes over cascade failures; and
+* domain-specific diagnostics over generic type mismatch diagnostics.
+
+If one root diagnostic explains several downstream failures, the downstream failures SHOULD be suppressed and listed in
+the root diagnostic's `suppressed` field, rather than emitted as independent errors.
+
+Suppression MUST NOT hide diagnostics that are independent root causes.
+
+For fixed source inputs, build configuration, backend profile, macro transcript, and implementation version, diagnostic
+selection and suppression MUST be deterministic.
+
+<!-- compiler.kfrontir.error_explanations -->
+##### 17.2.4.8 Error explanations
+
+A conforming implementation SHOULD provide a long-form diagnostic explanation facility.
+
+The command-line spelling is implementation-defined, but implementations SHOULD support:
+
+```text
+kappa explain <diagnostic-code>
+kappa explain <diagnostic-family>
+```
+
+An explanation entry SHOULD include:
+
+* the diagnostic code or family;
+* a short explanation;
+* a minimal invalid example;
+* a corrected example;
+* the relevant source-language rule;
+* common causes;
+* notes about misleading or cascade cases;
+* fix-it applicability guidance when relevant; and
+* links or references to the relevant specification sections.
+
+If a diagnostic record contains an `explain` key, the human-readable renderer SHOULD display how to request the
+corresponding long-form explanation.
+
+Explanation text is documentation. It MUST NOT affect typing, elaboration, normalization, hashing, interface identity,
+or backend output.
+
+<!-- compiler.kfrontir.recovery_salvage_mode -->
+##### 17.2.4.9 Recovery and salvage mode
+
+An implementation SHOULD continue analysis after recoverable frontend failures in order to produce useful additional
+diagnostics, editor results, and tool queries.
+
+Recovery MUST NOT cause an invalid program to be accepted.
+
+If recovery inserts placeholder terms, unknown types, failed obligations, or synthetic nodes, those nodes MUST carry
+origins and recovery metadata sufficient to avoid misleading later diagnostics.
+
+A diagnostic produced from recovered state SHOULD identify the original root recovery diagnostic when that root explains
+the later failure.
+
+A typechecker, implicit solver, quantity checker, borrow checker, effect-row checker, or termination checker MAY use
+salvage-mode solving to collect additional facts after an obligation fails. Salvage mode is diagnostic-only. It MUST NOT
+change the accepted elaboration of a valid program.
+
+<!-- compiler.kfrontir.incomplete_files_tooling_diagnostics -->
+##### 17.2.4.10 Incomplete files and tooling diagnostics
+
+Tooling queries over syntactically incomplete files are valid.
+
+Where possible, they MUST return partial results rather than failing wholesale merely because the surrounding file is
+incomplete.
+
+Diagnostics over incomplete files SHOULD distinguish:
+
+* syntax that is definitely invalid;
+* syntax that is merely incomplete;
+* obligations blocked by missing syntax;
+* obligations blocked by unresolved imports or unavailable interfaces; and
+* obligations blocked by macro execution that could not run because its input was incomplete.
+
+A missing token, missing node, placeholder expression, or unknown type inserted for recovery MUST have a source or
+synthetic origin suitable for diagnostic rendering and editor navigation.
+
+<!-- compiler.kfrontir.termination_modality_diagnostics -->
+##### 17.2.4.11 Termination and modality diagnostics
 
 When termination checking fails, diagnostics MUST include:
 
 * the recursive SCC;
 * each recursive call site considered;
 * the attempted strategy or strategies;
-* for structural checking, the selected structural parameter(s) and why each failed call is not smaller;
+* for structural checking, the selected structural parameter or parameters and why each failed call is not smaller;
 * for measure checking, the caller and callee measures;
 * for size-change checking, the call matrix and the failing cycle when available;
 * for inferred measures, the best candidate measure if one was found but failed; and
@@ -20152,7 +20610,8 @@ When a standardized modal/coeffect extension is enabled and modality solving fai
 * the primary origin of each contributing obligation; and
 * any related origins used to explain the conflict.
 
-Positive lower-bound diagnostics:
+<!-- compiler.kfrontir.positive_lower_bound_diagnostics -->
+##### 17.2.4.12 Positive lower-bound diagnostics
 
 When compilation rejects a program because a positive lower-bound obligation is not satisfied, the diagnostic MUST
 identify:
@@ -20161,60 +20620,40 @@ identify:
 * the declared quantity of that binder;
 * the completion path or branch on which the lower bound was not met;
 * the inferred lower usage on that path;
-* the source construct that caused the path to leave the binder's scope;
-* and at least one source location where the binder could have been demanded on that path, when such a location is
-  obvious.
+* the source construct that caused the path to leave the binder's scope; and
+* at least one source location where the binder could have been demanded on that path, when such a location is obvious.
 
 For delayed uses, the diagnostic MUST distinguish:
 
 * use inside an uncalled closure;
 * use inside an unforced thunk;
 * use inside a lazy value;
-* use inside a deferred action;
+* use inside a deferred action; and
 * use inside a higher-order argument whose callee may ignore it.
 
 Example diagnostic shape:
 
 ```text
-Quantity error: `x` is declared `>=1`, but this branch may leave its scope
-without demanding it.
-
-Declared here:
-    let >=1 x = ...
-
-Escaping path:
-    return ()
-
-The only occurrence of `x` is inside closure `f`, but `f` is not demanded
-on this path.
+error[E_QUANTITY_POSITIVE_LOWER_BOUND]: `x` may leave this scope without being demanded
+  --> src/demo.kp:7:13
+   |
+2  | let f (>=1 x : Token) (b : Bool) : Unit =
+   |             - declared `>=1` here
+...
+7  |             return ()
+   |             ^^^^^^^^^ this path exits without demanding `x`
+   |
+note: the only occurrence of `x` on this path is inside closure `g`
+help: call `g`, demand `x` directly, or change the declared quantity if ignoring it is intended
 ```
 
-Macro and elaboration-time phase diagnostics:
+<!-- compiler.kfrontir.standard_diagnostic_families -->
+#### 17.2.4A Standard diagnostic families
 
-When compilation rejects a program because an `Elab` action, macro, prefixed-string handler, or comprehension hook
-attempts to use an object-phase runtime value, the diagnostic MUST identify:
+This subsection is reserved for standardized diagnostic-family definitions and their required payload shapes.
 
-* the elaboration-time computation being checked;
-* the object-phase value that would have been captured or inspected;
-* the source construct that attempted the phase crossing; and
-* the nearest valid reflection boundary, if one exists, such as quotation to `Syntax` or semantic reflection to `Core`.
-
-When compilation rejects a `Syntax` value because its hidden syntax-scope metadata would escape, the diagnostic MUST
-identify:
-
-* the `Syntax` value or quote that carries the escaping reference;
-* the referenced binder, borrow region, or local nominal token;
-* the scope that introduced it; and
-* the return, storage, package, splice, or rebinding site that would cause the escape.
-
-When compilation rejects a splice because generated code violates quantity or borrowing rules, the diagnostic MUST
-identify both:
-
-* the macro expansion or splice site; and
-* the generated use site responsible for the object-level quantity, borrow, or region violation.
-
-Tooling queries over syntactically incomplete files are valid. Where possible, they MUST return partial results rather
-than failing wholesale merely because the surrounding file is incomplete.
+Until a later revision of this specification populates this subsection, no diagnostic-family payload shape is mandated
+beyond the generic rules of §17.2.4.
 
 <!-- compiler.kfrontir.tooling_facing_queries -->
 #### 17.2.5 Tooling-facing queries

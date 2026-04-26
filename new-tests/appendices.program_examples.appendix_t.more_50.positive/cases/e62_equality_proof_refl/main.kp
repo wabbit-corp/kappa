@@ -1,0 +1,18 @@
+module cases.e62_equality_proof_refl.main
+
+sameInt : (x : Int) -> x = x
+let sameInt x =
+    refl
+
+result : Int
+let result = block
+    let _ = sameInt 42
+    42
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e62_equality_proof_refl"
+
+--! assertType cases.e62_equality_proof_refl.main.result Int
+--! assertType cases.e62_equality_proof_refl.main.main UIO Unit

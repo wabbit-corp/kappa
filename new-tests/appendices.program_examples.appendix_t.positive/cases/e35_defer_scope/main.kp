@@ -1,0 +1,8 @@
+module cases.e35_defer_scope.main
+
+main : UIO Unit
+let main = do
+    defer (println "cleanup")
+    println "body"
+
+--! assertType cases.e35_defer_scope.main.main UIO Unit

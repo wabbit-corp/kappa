@@ -1,0 +1,24 @@
+module cases.e87_shallow_effect_handler_abortive.main
+
+result : Int
+let result = block
+    scoped effect Ask =
+        1 ask : Unit -> Int
+
+    program : Eff <[Ask : Ask]> Int
+    let program = do
+        let n <- Ask.ask ()
+        pure (n + 1)
+
+    runPure
+        (handle Ask program with
+            case return x -> pure x
+            case ask () k -> pure 42)
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e87_shallow_effect_handler_abortive"
+
+--! assertType cases.e87_shallow_effect_handler_abortive.main.result Int
+--! assertType cases.e87_shallow_effect_handler_abortive.main.main UIO Unit

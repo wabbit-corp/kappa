@@ -1,0 +1,13 @@
+module cases.e32_var_assignment_ref.main
+
+main : UIO Unit
+let main = do
+    var count = 0
+    count = 41
+    let now <- readRef count
+    let next = now + 1
+    count = next
+    let final <- readRef count
+    if final == 42 then println "var ok" else println "var bad"
+
+--! assertType cases.e32_var_assignment_ref.main.main UIO Unit

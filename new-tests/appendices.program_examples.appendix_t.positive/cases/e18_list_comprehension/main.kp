@@ -1,0 +1,24 @@
+module cases.e18_list_comprehension.main
+
+sumList : List Int -> Int
+let sumList xs decreases structural xs =
+    match xs
+    case Nil -> 0
+    case h :: t -> h + sumList t
+
+values : List Int
+let values =
+    [ for x in [1, 2, 3, 4, 5], let y = x * 2, if y > 5, yield y ]
+
+result : Int
+let result =
+    sumList values
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e18_list_comprehension"
+
+--! assertType cases.e18_list_comprehension.main.result Int
+--! assertType cases.e18_list_comprehension.main.main UIO Unit

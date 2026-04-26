@@ -1,0 +1,18 @@
+module cases.e85_stm_or_else.main
+
+transaction : STM Int
+let transaction =
+    retry <|> pure 42
+
+resultIO : UIO Int
+let resultIO =
+    atomically transaction
+
+main : UIO Unit
+let main = do
+    let n <- resultIO
+    if n == 42 then println "stm choice ok" else println "stm choice bad"
+
+--! assertType cases.e85_stm_or_else.main.transaction STM Int
+--! assertType cases.e85_stm_or_else.main.resultIO UIO Int
+--! assertType cases.e85_stm_or_else.main.main UIO Unit

@@ -1,0 +1,19 @@
+module cases.e07_nested_record_update.main
+
+type Pos = (x : Int, y : Int)
+type Player = (name : String, pos : Pos)
+
+result : Int
+let result = block
+    let p : Player = (name = "Kai", pos = (x = 1, y = 2))
+    let moved = p.{ pos.x = 40 }
+    moved.pos.x + moved.pos.y
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e07_nested_record_update"
+
+--! assertType cases.e07_nested_record_update.main.result Int
+--! assertType cases.e07_nested_record_update.main.main UIO Unit

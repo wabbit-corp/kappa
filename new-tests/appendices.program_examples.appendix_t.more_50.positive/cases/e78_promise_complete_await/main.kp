@@ -1,0 +1,10 @@
+module cases.e78_promise_complete_await.main
+
+main : UIO Unit
+let main = do
+    let p <- newPromise
+    let ok <- completePromise p (Success 42)
+    let n <- awaitPromise p
+    if ok && n == 42 then println "promise ok" else println "promise bad"
+
+--! assertType cases.e78_promise_complete_await.main.main UIO Unit

@@ -1,0 +1,16 @@
+module cases.e48_tuple_destructure.main
+
+result : Int
+let result = block
+    let pair : (Int, Int) = (10, 32)
+    let (a, b) = pair
+    a + b
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e48_tuple_destructure"
+
+--! assertType cases.e48_tuple_destructure.main.result Int
+--! assertType cases.e48_tuple_destructure.main.main UIO Unit
+--! assertExecute cases.e48_tuple_destructure.main.result 42

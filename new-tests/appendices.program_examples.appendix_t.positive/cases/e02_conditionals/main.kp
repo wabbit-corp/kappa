@@ -1,0 +1,18 @@
+module cases.e02_conditionals.main
+
+choose : Bool -> Int -> Int -> Int
+let choose flag left right =
+    if flag then left elif left > right then left else right
+
+result : Int
+let result =
+    choose False 9 4
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e02_conditionals"
+
+--! assertType cases.e02_conditionals.main.result Int
+--! assertType cases.e02_conditionals.main.main UIO Unit

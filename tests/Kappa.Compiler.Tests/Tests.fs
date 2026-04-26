@@ -1424,6 +1424,14 @@ let ``type signatures parse effect row surface syntax and normalize entry order`
     )
 
 [<Fact>]
+let ``type signatures reject unterminated effect rows without hanging`` () =
+    let source = createSource "__unterminated_effect_row_signature__.kp" "I9 <[I5] ["
+    let lexed = Lexer.tokenize source
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.True(TypeSignatures.parseScheme lexed.Tokens |> Option.isNone)
+
+[<Fact>]
 let ``parser gives built in safe navigation and elvis their spec precedence`` () =
     let source = createSource "__safe_navigation_precedence__.kp" "a?.b ?: fallback"
     let lexed = Lexer.tokenize source

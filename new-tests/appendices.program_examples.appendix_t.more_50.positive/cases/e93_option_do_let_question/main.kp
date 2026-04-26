@@ -1,0 +1,15 @@
+module cases.e93_option_do_let_question.main
+
+result : Option Int
+let result = do
+    let? Some x = Some 42
+    pure x
+
+main : UIO Unit
+let main = do
+    match result
+    case Some n -> if n == 42 then println "option do ok" else println "option do bad"
+    case None -> println "option do none"
+
+--! assertType cases.e93_option_do_let_question.main.result Option Int
+--! assertType cases.e93_option_do_let_question.main.main UIO Unit

@@ -1,2 +1,0 @@
-type I1 = (I1 : I0, I2 : Int)
-let i3 = i3 I1

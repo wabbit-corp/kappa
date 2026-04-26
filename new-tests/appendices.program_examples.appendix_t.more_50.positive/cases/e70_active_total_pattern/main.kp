@@ -1,0 +1,26 @@
+module cases.e70_active_total_pattern.main
+
+data SignView : Type =
+    Neg
+    Zero
+    Pos
+
+pattern Sign (n : Int) : SignView =
+    if n < 0 then Neg
+    elif n == 0 then Zero
+    else Pos
+
+result : Int
+let result =
+    match 12
+    case Sign (Pos) -> 42
+    case Sign (Zero) -> 0
+    case Sign (Neg) -> -1
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e70_active_total_pattern"
+
+--! assertType cases.e70_active_total_pattern.main.result Int
+--! assertType cases.e70_active_total_pattern.main.main UIO Unit

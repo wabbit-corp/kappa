@@ -1,0 +1,25 @@
+module cases.e68_adt_nested_match.main
+
+data Traffic : Type =
+    Red
+    Yellow
+    Green
+
+score : Traffic -> Int
+let score light =
+    match light
+    case Red -> 40
+    case Yellow -> 41
+    case Green -> 42
+
+result : Int
+let result = score Green
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e68_adt_nested_match"
+
+--! assertType cases.e68_adt_nested_match.main.result Int
+--! assertType cases.e68_adt_nested_match.main.main UIO Unit
+--! assertExecute cases.e68_adt_nested_match.main.result 42

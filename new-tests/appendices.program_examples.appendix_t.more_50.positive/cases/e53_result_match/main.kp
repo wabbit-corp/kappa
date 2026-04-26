@@ -1,0 +1,20 @@
+module cases.e53_result_match.main
+
+fromResult : Result String Int -> Int
+let fromResult r =
+    match r
+    case Ok n -> n
+    case Err _ -> 0
+
+result : Int
+let result = fromResult (Ok 42)
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e53_result_match"
+
+--! assertType cases.e53_result_match.main.fromResult Result String Int -> Int
+--! assertType cases.e53_result_match.main.result Int
+--! assertType cases.e53_result_match.main.main UIO Unit
+--! assertExecute cases.e53_result_match.main.result 42

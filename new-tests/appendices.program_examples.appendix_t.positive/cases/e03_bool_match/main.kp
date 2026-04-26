@@ -1,0 +1,20 @@
+module cases.e03_bool_match.main
+
+boolScore : Bool -> Int
+let boolScore b =
+    match b
+    case True -> 1
+    case False -> 0
+
+result : Int
+let result =
+    boolScore (not False)
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e03_bool_match"
+
+--! assertType cases.e03_bool_match.main.result Int
+--! assertType cases.e03_bool_match.main.main UIO Unit

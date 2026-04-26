@@ -1,0 +1,23 @@
+module cases.e92_list_comprehension_filter_take.main
+
+sumList : List Int -> Int
+let sumList xs decreases structural xs =
+    match xs
+    case Nil -> 0
+    case h :: t -> h + sumList t
+
+values : List Int
+let values =
+    [ for x in [1, 2, 3, 4, 5], if x >= 2, take 3, yield x + 10 ]
+
+result : Int
+let result = sumList values
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e92_list_comprehension_filter_take"
+
+--! assertType cases.e92_list_comprehension_filter_take.main.values List Int
+--! assertType cases.e92_list_comprehension_filter_take.main.result Int
+--! assertType cases.e92_list_comprehension_filter_take.main.main UIO Unit

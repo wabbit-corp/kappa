@@ -1,0 +1,8 @@
+module cases.e31_monadic_splice.main
+
+main : UIO Unit
+let main = do
+    let message = !(pure "monadic splice")
+    println message
+
+--! assertType cases.e31_monadic_splice.main.main UIO Unit

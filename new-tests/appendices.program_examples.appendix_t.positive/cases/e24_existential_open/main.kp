@@ -1,0 +1,21 @@
+module cases.e24_existential_open.main
+
+hidden : exists (a : Type). a
+let hidden =
+    seal
+        (a = Int, value = 42)
+    as exists (a : Type). a
+
+result : Int
+let result =
+    open hidden as exists (a). value in
+        42
+
+
+main : UIO Unit
+let main = do
+    let _ = result
+    println "e24_existential_open"
+
+--! assertType cases.e24_existential_open.main.result Int
+--! assertType cases.e24_existential_open.main.main UIO Unit
