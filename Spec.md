@@ -14240,7 +14240,7 @@ Example:
 
 The **clauses** appear before `yield` and may include:
 
-* `for` / `for?` clauses
+* `for` / `for?` clauses, including borrowed generator forms `for &` / `for? &`
 * `let` / `let?` clauses
 * `if` filters
 * `order by ...`
@@ -14278,6 +14278,9 @@ Comprehension detection:
 * All other clause forms require an existing row stream and therefore cannot appear first. In particular, `let`, `let?`,
   `if`, `order`, `skip`, `take`, `distinct`, `group`, `join`, and `left join` may appear only after an initial `for` /
   `for?` clause or after a deliberately introduced future syntax that establishes an initial row stream.
+
+The borrowed generator forms `for & pat in src` and `for? & pat in src` begin with the same initial tokens `for` and
+`for?`; no additional comprehension-start token is introduced.
 
 This rule applies equally when the bracketed form is prefixed with a custom carrier (§10.9).
 
@@ -14382,6 +14385,28 @@ Examples:
     * In `for pat in collection`, `pat` must be **irrefutable** for the element type of `collection` (§6.1.2). If it is
       refutable, it is a compile-time error; use `for? pat in collection` (§10.4.1) instead.
 
+Borrowed generator:
+
+* `for & pat in collection` borrows `collection`, converts it through `BorrowIntoQuery`, and binds borrowed views of its
+  items.
+
+    * The source expression must be borrowable under the ordinary borrow-introduction rules of §§5.1.5-5.1.7. If it is
+      not already a borrowable stable place, the implementation may introduce a hidden temporary exactly as for
+      borrowed local bindings under §5.1.6.
+    * If `BorrowIntoQuery src` provides associated item type `A`, then the item matched by `pat` is treated as a
+      borrowed item of type `A` under the borrow region of the source.
+    * Variables introduced by `pat` are borrowed row entries under that same region.
+    * The borrowed bindings may not escape the borrow region. If a later `yield`, closure, first-class query,
+      aggregate, or collection result would allow such a borrowed binding to escape, the ordinary `captures (...)` and
+      skolem-escape rules reject the program unless the escaping type explicitly records a live region that is still in
+      scope.
+    * In `for & pat in collection`, `pat` must be irrefutable for the borrowed item type. Use `for? & pat in
+      collection` for refutable borrowed matching.
+
+* `for? & pat in collection` is the refutable borrowed-generator form. It keeps only borrowed items matching `pat`.
+  Dropping a non-matching borrowed item is permitted because the item itself is not owned by the row, but dropping the
+  current outer row is still subject to the quantitative row-droppability rules of §10.10.2B.
+
 * `let pat = expr` creates derived values within the comprehension.
 
     * `pat` must be irrefutable (§6.1.2).
@@ -14412,11 +14437,11 @@ Comprehensions support refutable generators and refutable bindings:
 
 **Refutable generator.** `for? pat in collection` iterates `collection` and keeps only elements matching `pat`.
 Variables bound by `pat` are in scope in subsequent clauses. This form is ill-formed if dropping a non-matching element
-would discard any component carrying a positive owned lower-bound obligation.
+would discard any component carrying a positive lower-bound obligation.
 
 **Refutable binding.** `let? pat = expr` matches `expr` against `pat`. On success, pattern variables are bound and the
 comprehension continues. On failure, the current row is dropped. This form is ill-formed if the discarded failure
-residue would carry any positive owned lower-bound obligation.
+residue would carry any positive lower-bound obligation.
 
 For both forms, discarded values are droppable only when all discarded components carry quantities `0`, `&`, `<=1`, or
 `ω`. Quantities `1` and `>=1` are not droppable here.
@@ -14427,6 +14452,10 @@ such proof, the compiler MUST conservatively reject the clause.
 
 Normative lowering per §10.10 uses query-level refutable filtering / filter-map over the current row environment. The
 carrier-specific trait factoring is not part of the surface semantics.
+
+The droppability checks in this subsection are instances of the general quantitative row rules of §10.10.2B. In
+particular, refutable forms may also drop the incoming row. The row residue on the failure path must therefore be
+row-droppable, not merely the unmatched source item or refutation residue.
 
 <!-- collections.map_comprehensions -->
 ### 10.5 Map comprehensions and `:` vs type ascription
@@ -15122,6 +15151,23 @@ Consequences:
 * `{ yield keyExpr : valueExpr }` is well-formed and lowers from a singleton `Query Unit`.
 
 In these forms, `valueExpr`, `keyExpr`, and `valueExpr` are elaborated in the empty row environment.
+
+<!-- collections.lowering.quantitative_row_obligations -->
+#### 10.10.2B Quantitative row obligations
+
+Before `yield`, clause lowering tracks quantitative obligations both for newly introduced source items and for the
+incoming row environment.
+
+Rules:
+
+* A clause path that drops the current row is well-formed only when every runtime-relevant component discarded from that
+  row is row-droppable.
+* Row droppability is determined by the ordinary quantity rules of §5.1.5A and §5.1.5B, applied to the
+  runtime-relevant components of the current row environment.
+* Borrowed source items that are not owned by the row may be dropped without discharging an ownership obligation for the
+  borrowed item itself, but dropping the surrounding row remains subject to row-droppability.
+* A clause that may emit more than one output row for one input row is well-formed only when the duplicated
+  runtime-relevant row components satisfy the ordinary quantity rules for duplication.
 
 <!-- collections.lowering.clause_lowering -->
 #### 10.10.3 Clause lowering
