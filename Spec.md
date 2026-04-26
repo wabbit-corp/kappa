@@ -3286,22 +3286,31 @@ Operator precedence rules determine association (see expressions).
 This section applies to numeric literals **without** a suffix. If a numeric literal has a suffix, §4.1.6 takes priority
 instead.
 
-**Integer literals (without suffix)**: An integer literal `n` has elaborated type `T` where `T` is a type for which an
-instance `FromInteger T` is in scope (§2.6.2). The literal elaborates to `FromInteger.fromInteger @T n` where `n :
-Integer` is the integer value denoted by the literal.
+The literal traits are:
 
-The trait is (conceptually):
-```
+```kappa
 trait FromInteger (t : Type) =
-  fromInteger : Integer -> t
+    fromInteger : Nat -> t
+
+trait FromFloat (t : Type) =
+    fromFloat : Double -> t
+
+trait FromString (t : Type) =
+    fromString : String -> t
 ```
-where `Integer` is the ordinary arbitrary-precision integer type exported by `std.prelude`.
 
-Float literals (without suffix): Analogous: `FromFloat`, with `fromFloat : Double -> t`, where `Double` is the ordinary
-IEEE-754 binary64 floating-point type exported by `std.prelude`.
+Integer literals are lexically nonnegative. The leading `-` in `-123` is parsed as the ordinary prefix operator
+`negate`, not as part of the literal token (§4.1.4). Therefore the payload passed to `fromInteger` is a `Nat`, not an
+`Integer`.
 
-String literals (non-prefixed): Analogous: `FromString`, with `fromString : String -> t`. `String` itself has an
-identity `FromString` instance.
+Consequences:
+
+* `123 : Nat` may elaborate through `FromInteger Nat`.
+* `-123 : Integer` elaborates as `negate (fromInteger 123)`.
+* `-123 : Nat` is rejected unless an explicitly imported nonportable `Negatable Nat` instance exists. The portable
+  prelude MUST NOT provide such an instance.
+* `FromInteger` is not a general signed conversion operation. Signed conversions, checked narrowing, and parsing live in
+  ordinary library functions outside literal elaboration.
 
 Char literals: Char literals have type `Char`.
 
@@ -3326,11 +3335,17 @@ suffix          ::= identifier
 
 Suffix priority and desugaring:
 
-If a numeric literal has a suffix `suf`, elaboration is `suf litVal`, where `litVal : Integer` for integer literals and
-`litVal : Double` for float literals. The suffix path takes priority over the `FromInteger` / `FromFloat` elaboration of
-§4.1.5.
+If a numeric literal has a suffix `suf`, elaboration is `suf litVal`, where `litVal : Nat` for integer literals and
+`litVal : Double` for float literals. The suffix path takes priority over the `FromInteger` / `FromFloat` elaboration
+of §4.1.5.
 
-* `12px` elaborates to `px n`, where `n : Integer` is the value denoted by the literal `12`.
+For an integer literal suffix, the suffix term receives the nonnegative literal payload as `Nat`.
+
+* `12px` elaborates to `px n`, where `n : Nat` is the value denoted by the literal `12`.
+* `0xFFu32` elaborates to `u32 n`, where `n : Nat` is `255`.
+
+A leading `-` is still parsed as prefix `negate`; it is not passed to the suffix handler.
+
 * `3.14rad` elaborates to `rad d`, where `d : Double` is the value denoted by the literal `3.14`.
 * Hex, octal, and binary integer literals may also take suffixes, e.g. `0xFFu32` and `0b1010nat`, with the same
   integer-literal desugaring.
@@ -3338,7 +3353,7 @@ If a numeric literal has a suffix `suf`, elaboration is `suf litVal`, where `lit
 Resolution rules:
 
 * The suffix identifier MUST resolve to a term in scope at the use site.
-* For an integer literal suffix, that term MUST have a function type whose argument type is `Integer`.
+* For an integer literal suffix, that term MUST have a function type whose argument type is `Nat`.
 * For a float literal suffix, that term MUST have a function type whose argument type is `Double`.
 * If the user prefers typeclass-mediated construction, they may define a term such as `px = FromInteger.fromInteger
   @Length`; then `12px` works by ordinary name resolution.
