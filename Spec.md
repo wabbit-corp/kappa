@@ -17737,6 +17737,18 @@ In `std.prelude`, `Ord` refines `Eq`, not `Equiv`. Its `compare` operation is no
 by borrow. Any `Ord a` instance MUST also supply an `Eq a` instance for the same `a`, and its equality classes MUST
 agree with `(==)`.
 
+Opaque-token instances:
+
+A type may have `Eq` or `Ord` instances even when its representation is opaque, provided the instance operations compare
+only the abstract values of that type and do not expose representation.
+
+For such a type, `Eq.eqSound` proves propositional equality of the opaque values themselves.
+It does not prove equality of any source values, handles, resources, foreign objects, or inputs from which those opaque
+values may have been produced, unless the type's own specification explicitly states such a connection.
+
+For example, `Eq HashCode` proves equality of `HashCode` values only. It does not prove equality of the values that were
+hashed to produce those hash codes.
+
 Consequences for collections and queries:
 
 * equality-keyed operations such as set collection, map collection, `distinct`, `distinct by`, `group by`, and joins
