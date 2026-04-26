@@ -20,7 +20,15 @@ type RuntimeValue =
     | FloatValue of double
     | BooleanValue of bool
     | StringValue of string
-    | CharacterValue of char
+    | CharacterValue of string
+    | GraphemeValue of string
+    | ByteValue of byte
+    | BytesValue of byte array
+    | UnicodeVersionValue of string
+    | NormalizationFormValue of UnicodeText.NormalizationFormName
+    | HashSeedValue of int64
+    | HashStateValue of int64
+    | HashCodeValue of int64
     | UnitValue
     | ConstructorFunctionValue of RuntimeConstructor * RuntimeValue list
     | ConstructedValue of RuntimeConstructed
@@ -75,6 +83,25 @@ module RuntimeValue =
         | BooleanValue false -> "False"
         | StringValue value -> $"\"{value}\""
         | CharacterValue value -> $"'{value}'"
+        | GraphemeValue value -> $"g'{value}'"
+        | ByteValue value -> $"b'\\x{int value:X2}'"
+        | BytesValue bytes ->
+            let body =
+                bytes
+                |> Array.map (fun value -> sprintf "%02X" value)
+                |> String.concat " "
+
+            $"#bytes[{body}]"
+        | UnicodeVersionValue value -> value
+        | NormalizationFormValue value ->
+            match value with
+            | UnicodeText.NFC -> "NFC"
+            | UnicodeText.NFD -> "NFD"
+            | UnicodeText.NFKC -> "NFKC"
+            | UnicodeText.NFKD -> "NFKD"
+        | HashSeedValue value -> $"HashSeed({value})"
+        | HashStateValue value -> $"HashState({value})"
+        | HashCodeValue value -> $"HashCode({value})"
         | UnitValue -> "()"
         | ConstructorFunctionValue(constructor, arguments) ->
             $"<constructor {constructor.Name}/{constructor.Arity} [{arguments.Length}]>"
@@ -126,6 +153,8 @@ module Interpreter =
         | LiteralValue.Float value -> FloatValue value
         | LiteralValue.String value -> StringValue value
         | LiteralValue.Character value -> CharacterValue value
+        | LiteralValue.Grapheme value -> GraphemeValue value
+        | LiteralValue.Byte value -> ByteValue value
         | LiteralValue.Unit -> UnitValue
 
     let private buildContextWithOutput (output: RuntimeOutput) (workspace: WorkspaceCompilation) =
@@ -180,6 +209,70 @@ module Interpreter =
 
         let context = { Modules = moduleRuntimes }
 
+        let tryFindConstructor moduleName constructorName =
+            context.Modules
+            |> Map.tryFind moduleName
+            |> Option.bind (fun runtimeModule -> runtimeModule.Constructors |> Map.tryFind constructorName)
+
+        let constructValue moduleName constructorName fields =
+            match tryFindConstructor moduleName constructorName with
+            | Some constructor when List.length fields = constructor.Arity ->
+                ok
+                    (ConstructedValue
+                        { Constructor = constructor
+                          Fields = fields })
+            | Some constructor ->
+                error
+                    $"Constructor '{moduleName}.{constructorName}' expected {constructor.Arity} fields but received {List.length fields}."
+            | None ->
+                error $"Constructor '{moduleName}.{constructorName}' is not available at runtime."
+
+        let constructPreludeValue constructorName fields =
+            constructValue Stdlib.PreludeModuleText constructorName fields
+
+        let optionValue value =
+            match value with
+            | Some inner -> constructPreludeValue "Some" [ inner ]
+            | None -> constructPreludeValue "None" []
+
+        let resultOk value = constructPreludeValue "Ok" [ value ]
+        let resultError value = constructPreludeValue "Error" [ value ]
+
+        let orderingValue comparison =
+            if comparison < 0 then
+                constructPreludeValue "LT" []
+            elif comparison > 0 then
+                constructPreludeValue "GT" []
+            else
+                constructPreludeValue "EQ" []
+
+        let compareByteArrays (left: byte array) (right: byte array) =
+            let mutable comparison = 0
+            let mutable index = 0
+            let maxShared = min left.Length right.Length
+
+            while comparison = 0 && index < maxShared do
+                comparison <- compare left[index] right[index]
+                index <- index + 1
+
+            if comparison <> 0 then
+                comparison
+            else
+                compare left.Length right.Length
+
+        let tryCompareValues left right =
+            match left, right with
+            | IntegerValue left, IntegerValue right -> Some(compare left right)
+            | FloatValue left, FloatValue right -> Some(compare left right)
+            | BooleanValue left, BooleanValue right -> Some(compare left right)
+            | StringValue left, StringValue right -> Some(String.CompareOrdinal(left, right))
+            | CharacterValue left, CharacterValue right -> Some(String.CompareOrdinal(left, right))
+            | GraphemeValue left, GraphemeValue right -> Some(String.CompareOrdinal(left, right))
+            | ByteValue left, ByteValue right -> Some(compare left right)
+            | BytesValue left, BytesValue right -> Some(compareByteArrays left right)
+            | HashCodeValue left, HashCodeValue right -> Some(compare left right)
+            | _ -> None
+
         let tryCreateBuiltinFunction name =
             if IntrinsicCatalog.isBuiltinBinaryOperator name then
                 Some(BuiltinFunctionValue { Name = name; Arguments = [] })
@@ -189,6 +282,8 @@ module Interpreter =
         let tryCreateIntrinsicTermValue moduleName name =
             let isPreludeModule =
                 String.Equals(moduleName, Stdlib.PreludeModuleText, StringComparison.Ordinal)
+            let isUnicodeModule = String.Equals(moduleName, "std.unicode", StringComparison.Ordinal)
+            let isHashModule = String.Equals(moduleName, "std.hash", StringComparison.Ordinal)
 
             match name with
             | "True" when isPreludeModule -> Some(BooleanValue true)
@@ -204,6 +299,8 @@ module Interpreter =
             | "print"
             | "printInt"
             | "printString"
+            | "printlnString"
+            | "compare"
             | "primitiveIntToString"
             | "unsafeConsume"
             | "newRef"
@@ -214,6 +311,49 @@ module Interpreter =
             | "primitiveReadData"
             | "readData"
             | "primitiveCloseFile" ->
+                Some(BuiltinFunctionValue { Name = name; Arguments = [] })
+            | "unicodeVersion" when isUnicodeModule ->
+                Some(UnicodeVersionValue "15.1.0")
+            | "NFC" when isUnicodeModule ->
+                Some(NormalizationFormValue UnicodeText.NFC)
+            | "NFD" when isUnicodeModule ->
+                Some(NormalizationFormValue UnicodeText.NFD)
+            | "NFKC" when isUnicodeModule ->
+                Some(NormalizationFormValue UnicodeText.NFKC)
+            | "NFKD" when isUnicodeModule ->
+                Some(NormalizationFormValue UnicodeText.NFKD)
+            | ("utf8Bytes"
+              | "decodeUtf8"
+              | "decodeUtf8Lossy"
+              | "byteLength"
+              | "scalarCount"
+              | "graphemeCount"
+              | "scalarValue"
+              | "unicodeScalarFromValue"
+              | "scalarToString"
+              | "graphemeToString"
+              | "graphemeFromString"
+              | "normalize"
+              | "isNormalized"
+              | "canonicalEquivalent"
+              | "show") when isUnicodeModule ->
+                Some(BuiltinFunctionValue { Name = name; Arguments = [] })
+            | "defaultHashSeed" when isHashModule ->
+                Some(HashSeedValue 1469598103934665603L)
+            | ("newHashState"
+              | "finishHashState"
+              | "hashUnit"
+              | "hashBool"
+              | "hashChar"
+              | "hashString"
+              | "hashBytes"
+              | "hashInt"
+              | "hashInteger"
+              | "hashFloatRaw"
+              | "hashDoubleRaw"
+              | "hashNatTag"
+              | "hashField"
+              | "hashWith") when isHashModule ->
                 Some(BuiltinFunctionValue { Name = name; Arguments = [] })
             | _ ->
                 None
@@ -248,6 +388,22 @@ module Interpreter =
             | StringValue left, StringValue right ->
                 left = right
             | CharacterValue left, CharacterValue right ->
+                left = right
+            | GraphemeValue left, GraphemeValue right ->
+                left = right
+            | ByteValue left, ByteValue right ->
+                left = right
+            | BytesValue left, BytesValue right ->
+                compareByteArrays left right = 0
+            | UnicodeVersionValue left, UnicodeVersionValue right ->
+                left = right
+            | NormalizationFormValue left, NormalizationFormValue right ->
+                left = right
+            | HashSeedValue left, HashSeedValue right ->
+                left = right
+            | HashStateValue left, HashStateValue right ->
+                left = right
+            | HashCodeValue left, HashCodeValue right ->
                 left = right
             | UnitValue, UnitValue ->
                 true
@@ -299,6 +455,20 @@ module Interpreter =
                 ok (BooleanValue(left > right))
             | ">=", FloatValue left, FloatValue right ->
                 ok (BooleanValue(left >= right))
+            | ("<" | "<=" | ">" | ">=") as operatorName, left, right ->
+                match tryCompareValues left right with
+                | Some comparison ->
+                    let result =
+                        match operatorName with
+                        | "<" -> comparison < 0
+                        | "<=" -> comparison <= 0
+                        | ">" -> comparison > 0
+                        | ">=" -> comparison >= 0
+                        | _ -> false
+
+                    ok (BooleanValue result)
+                | None ->
+                    error $"Operator '{operatorName}' is not supported for {RuntimeValue.format left} and {RuntimeValue.format right}."
             | "&&", BooleanValue left, BooleanValue right ->
                 ok (BooleanValue(left && right))
             | "||", BooleanValue left, BooleanValue right ->
@@ -320,6 +490,15 @@ module Interpreter =
             | BooleanValue false -> ok "False"
             | StringValue value -> ok value
             | CharacterValue value -> ok (string value)
+            | GraphemeValue value -> ok value
+            | ByteValue value -> ok (string value)
+            | BytesValue value ->
+                ok (RuntimeValue.format (BytesValue value))
+            | UnicodeVersionValue value -> ok value
+            | NormalizationFormValue value -> ok (RuntimeValue.format (NormalizationFormValue value))
+            | HashSeedValue value -> ok (string value)
+            | HashStateValue value -> ok (string value)
+            | HashCodeValue value -> ok (string value)
             | UnitValue -> ok "()"
             | ConstructedValue _
             | ConstructorFunctionValue _
@@ -812,6 +991,24 @@ module Interpreter =
                 error $"Intrinsic 'printString' expects a String, but got {RuntimeValue.format value}."
             | "printString", _ ->
                 error "Intrinsic 'printString' received too many arguments."
+            | "printlnString", [ StringValue value ] ->
+                toUnitIoAction (fun () -> output.WriteLine(value))
+            | "printlnString", arguments when List.length arguments < 1 ->
+                ok None
+            | "printlnString", [ value ] ->
+                error $"Intrinsic 'printlnString' expects a String, but got {RuntimeValue.format value}."
+            | "printlnString", _ ->
+                error "Intrinsic 'printlnString' received too many arguments."
+            | "compare", [ left; right ] ->
+                match tryCompareValues left right with
+                | Some comparison ->
+                    orderingValue comparison |> Result.map Some
+                | None ->
+                    error $"Intrinsic 'compare' is not supported for {RuntimeValue.format left} and {RuntimeValue.format right}."
+            | "compare", arguments when List.length arguments < 2 ->
+                ok None
+            | "compare", _ ->
+                error "Intrinsic 'compare' received too many arguments."
             | "primitiveIntToString", [ IntegerValue value ] ->
                 ok (Some(StringValue(string value)))
             | "primitiveIntToString", arguments when List.length arguments < 1 ->
@@ -873,6 +1070,175 @@ module Interpreter =
                 error $"Intrinsic 'writeRef' expects a Ref as the first argument, but got {RuntimeValue.format referenceValue}."
             | "writeRef", _ ->
                 error "Intrinsic 'writeRef' received too many arguments."
+            | "utf8Bytes", [ StringValue value ] ->
+                ok (Some(BytesValue(UnicodeText.encodeUtf8 value)))
+            | "utf8Bytes", arguments when List.length arguments < 1 ->
+                ok None
+            | "utf8Bytes", [ value ] ->
+                error $"Intrinsic 'utf8Bytes' expects a String, but got {RuntimeValue.format value}."
+            | "utf8Bytes", _ ->
+                error "Intrinsic 'utf8Bytes' received too many arguments."
+            | "decodeUtf8", [ BytesValue bytes ] ->
+                UnicodeText.decodeUtf8Strict bytes
+                |> function
+                    | Result.Ok text ->
+                        resultOk (StringValue text) |> Result.map Some
+                    | Result.Error message ->
+                        resultError (StringValue message) |> Result.map Some
+            | "decodeUtf8", arguments when List.length arguments < 1 ->
+                ok None
+            | "decodeUtf8", [ value ] ->
+                error $"Intrinsic 'decodeUtf8' expects Bytes, but got {RuntimeValue.format value}."
+            | "decodeUtf8", _ ->
+                error "Intrinsic 'decodeUtf8' received too many arguments."
+            | "decodeUtf8Lossy", [ BytesValue bytes ] ->
+                ok (Some(StringValue(System.Text.Encoding.UTF8.GetString(bytes))))
+            | "decodeUtf8Lossy", arguments when List.length arguments < 1 ->
+                ok None
+            | "decodeUtf8Lossy", [ value ] ->
+                error $"Intrinsic 'decodeUtf8Lossy' expects Bytes, but got {RuntimeValue.format value}."
+            | "decodeUtf8Lossy", _ ->
+                error "Intrinsic 'decodeUtf8Lossy' received too many arguments."
+            | "byteLength", [ StringValue value ] ->
+                ok (Some(IntegerValue(UnicodeText.byteLength value)))
+            | "byteLength", arguments when List.length arguments < 1 ->
+                ok None
+            | "byteLength", [ value ] ->
+                error $"Intrinsic 'byteLength' expects a String, but got {RuntimeValue.format value}."
+            | "byteLength", _ ->
+                error "Intrinsic 'byteLength' received too many arguments."
+            | "scalarCount", [ StringValue value ] ->
+                ok (Some(IntegerValue(int64 (UnicodeText.scalarCount value))))
+            | "scalarCount", arguments when List.length arguments < 1 ->
+                ok None
+            | "scalarCount", [ value ] ->
+                error $"Intrinsic 'scalarCount' expects a String, but got {RuntimeValue.format value}."
+            | "scalarCount", _ ->
+                error "Intrinsic 'scalarCount' received too many arguments."
+            | "graphemeCount", [ StringValue value ] ->
+                ok (Some(IntegerValue(int64 (UnicodeText.graphemeCount value))))
+            | "graphemeCount", arguments when List.length arguments < 1 ->
+                ok None
+            | "graphemeCount", [ value ] ->
+                error $"Intrinsic 'graphemeCount' expects a String, but got {RuntimeValue.format value}."
+            | "graphemeCount", _ ->
+                error "Intrinsic 'graphemeCount' received too many arguments."
+            | "scalarValue", [ CharacterValue value ] ->
+                match UnicodeText.trySingleScalar value with
+                | Some rune -> ok (Some(IntegerValue(UnicodeText.scalarValue rune)))
+                | None -> error $"Intrinsic 'scalarValue' expected a valid Unicode scalar, but got {RuntimeValue.format (CharacterValue value)}."
+            | "scalarValue", arguments when List.length arguments < 1 ->
+                ok None
+            | "scalarValue", [ value ] ->
+                error $"Intrinsic 'scalarValue' expects a UnicodeScalar, but got {RuntimeValue.format value}."
+            | "scalarValue", _ ->
+                error "Intrinsic 'scalarValue' received too many arguments."
+            | "unicodeScalarFromValue", [ IntegerValue value ] ->
+                UnicodeText.tryScalarFromValue value
+                |> Option.map (fun rune -> CharacterValue(UnicodeText.scalarToString rune))
+                |> optionValue
+                |> Result.map Some
+            | "unicodeScalarFromValue", arguments when List.length arguments < 1 ->
+                ok None
+            | "unicodeScalarFromValue", [ value ] ->
+                error $"Intrinsic 'unicodeScalarFromValue' expects an Int, but got {RuntimeValue.format value}."
+            | "unicodeScalarFromValue", _ ->
+                error "Intrinsic 'unicodeScalarFromValue' received too many arguments."
+            | "scalarToString", [ CharacterValue value ] ->
+                ok (Some(StringValue value))
+            | "scalarToString", arguments when List.length arguments < 1 ->
+                ok None
+            | "scalarToString", [ value ] ->
+                error $"Intrinsic 'scalarToString' expects a UnicodeScalar, but got {RuntimeValue.format value}."
+            | "scalarToString", _ ->
+                error "Intrinsic 'scalarToString' received too many arguments."
+            | "graphemeToString", [ GraphemeValue value ] ->
+                ok (Some(StringValue value))
+            | "graphemeToString", arguments when List.length arguments < 1 ->
+                ok None
+            | "graphemeToString", [ value ] ->
+                error $"Intrinsic 'graphemeToString' expects a Grapheme, but got {RuntimeValue.format value}."
+            | "graphemeToString", _ ->
+                error "Intrinsic 'graphemeToString' received too many arguments."
+            | "graphemeFromString", [ StringValue value ] ->
+                UnicodeText.trySingleGrapheme value
+                |> Option.map GraphemeValue
+                |> optionValue
+                |> Result.map Some
+            | "graphemeFromString", arguments when List.length arguments < 1 ->
+                ok None
+            | "graphemeFromString", [ value ] ->
+                error $"Intrinsic 'graphemeFromString' expects a String, but got {RuntimeValue.format value}."
+            | "graphemeFromString", _ ->
+                error "Intrinsic 'graphemeFromString' received too many arguments."
+            | "normalize", [ NormalizationFormValue form; StringValue value ] ->
+                ok (Some(StringValue(UnicodeText.normalize form value)))
+            | "normalize", arguments when List.length arguments < 2 ->
+                ok None
+            | "normalize", [ form; value ] ->
+                error $"Intrinsic 'normalize' expects (NormalizationForm, String), but got {RuntimeValue.format form} and {RuntimeValue.format value}."
+            | "normalize", _ ->
+                error "Intrinsic 'normalize' received too many arguments."
+            | "isNormalized", [ NormalizationFormValue form; StringValue value ] ->
+                ok (Some(BooleanValue(UnicodeText.isNormalized form value)))
+            | "isNormalized", arguments when List.length arguments < 2 ->
+                ok None
+            | "isNormalized", [ form; value ] ->
+                error $"Intrinsic 'isNormalized' expects (NormalizationForm, String), but got {RuntimeValue.format form} and {RuntimeValue.format value}."
+            | "isNormalized", _ ->
+                error "Intrinsic 'isNormalized' received too many arguments."
+            | "canonicalEquivalent", [ StringValue left; StringValue right ] ->
+                ok (Some(BooleanValue(UnicodeText.canonicalEquivalent left right)))
+            | "canonicalEquivalent", arguments when List.length arguments < 2 ->
+                ok None
+            | "canonicalEquivalent", [ left; right ] ->
+                error $"Intrinsic 'canonicalEquivalent' expects String arguments, but got {RuntimeValue.format left} and {RuntimeValue.format right}."
+            | "canonicalEquivalent", _ ->
+                error "Intrinsic 'canonicalEquivalent' received too many arguments."
+            | "show", [ value ] ->
+                ok (Some(StringValue(RuntimeValue.format value)))
+            | "show", arguments when List.length arguments < 1 ->
+                ok None
+            | "show", _ ->
+                error "Intrinsic 'show' received too many arguments."
+            | "newHashState", [ HashSeedValue seed ] ->
+                ok (Some(HashStateValue seed))
+            | "newHashState", arguments when List.length arguments < 1 ->
+                ok None
+            | "newHashState", [ value ] ->
+                error $"Intrinsic 'newHashState' expects a HashSeed, but got {RuntimeValue.format value}."
+            | "newHashState", _ ->
+                error "Intrinsic 'newHashState' received too many arguments."
+            | "finishHashState", [ HashStateValue state ] ->
+                ok (Some(HashCodeValue state))
+            | "finishHashState", arguments when List.length arguments < 1 ->
+                ok None
+            | "finishHashState", [ value ] ->
+                error $"Intrinsic 'finishHashState' expects a HashState, but got {RuntimeValue.format value}."
+            | "finishHashState", _ ->
+                error "Intrinsic 'finishHashState' received too many arguments."
+            | "hashWith", [ HashSeedValue seed; StringValue value ] ->
+                ok (Some(HashCodeValue(UnicodeText.hashBytesWithSeed seed (UnicodeText.encodeUtf8 value))))
+            | "hashWith", [ HashSeedValue seed; BytesValue value ] ->
+                ok (Some(HashCodeValue(UnicodeText.hashBytesWithSeed seed value)))
+            | "hashWith", [ HashSeedValue seed; CharacterValue value ] ->
+                ok (Some(HashCodeValue(UnicodeText.hashBytesWithSeed seed (UnicodeText.encodeUtf8 value))))
+            | "hashWith", [ HashSeedValue seed; GraphemeValue value ] ->
+                ok (Some(HashCodeValue(UnicodeText.hashBytesWithSeed seed (UnicodeText.encodeUtf8 value))))
+            | "hashWith", [ HashSeedValue seed; ByteValue value ] ->
+                ok (Some(HashCodeValue(UnicodeText.hashBytesWithSeed seed [| value |])))
+            | "hashWith", [ HashSeedValue seed; IntegerValue value ] ->
+                ok (Some(HashCodeValue(UnicodeText.hashBytesWithSeed seed (BitConverter.GetBytes value))))
+            | "hashWith", [ HashSeedValue seed; BooleanValue value ] ->
+                ok (Some(HashCodeValue(UnicodeText.hashBytesWithSeed seed [| if value then 1uy else 0uy |])))
+            | "hashWith", [ HashSeedValue seed; UnitValue ] ->
+                ok (Some(HashCodeValue(UnicodeText.hashBytesWithSeed seed [||])))
+            | "hashWith", arguments when List.length arguments < 2 ->
+                ok None
+            | "hashWith", [ seed; value ] ->
+                error $"Intrinsic 'hashWith' is not supported for {RuntimeValue.format seed} and {RuntimeValue.format value}."
+            | "hashWith", _ ->
+                error "Intrinsic 'hashWith' received too many arguments."
             | name, [ left; right ] when IntrinsicCatalog.isBuiltinBinaryOperator name ->
                 applyBuiltinBinary name left right
                 |> Result.map Some

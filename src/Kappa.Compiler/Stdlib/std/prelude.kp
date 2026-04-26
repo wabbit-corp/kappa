@@ -8,6 +8,8 @@ infix 40 (<)
 infix 40 (<=)
 infix 40 (>)
 infix 40 (>=)
+infix 45 (..)
+infix 45 (..<)
 infix right 50 (::)
 prefix 80 (-)
 infix left 60 (+)
@@ -105,7 +107,10 @@ data RaceResult (a : Type) (b : Type) : Type =
 data (=) (a : Type) (x : a) : a -> Type =
     refl
 
-expect type Char
+expect type UnicodeScalar
+expect type Grapheme
+expect type Byte
+type Char = UnicodeScalar
 expect type String
 expect type Int
 expect type Nat
@@ -190,6 +195,9 @@ trait Traversable (f : Type -> Type)
 trait Filterable (f : Type -> Type)
 trait FilterMap (f : Type -> Type)
 trait Monoid (a : Type)
+trait Rangeable (v : Type) =
+    Range : Type
+    range : (from : v) -> (to : v) -> (exclusive : Bool) -> Range
 trait Iterator (it : Type)
 trait InterpolatedMacro (t : Type) =
     buildInterpolated : List SyntaxFragment -> Elab (Syntax t)
@@ -225,6 +233,9 @@ expect term False : Bool
 expect term not : Bool -> Bool
 expect term and : Bool -> Bool -> Bool
 expect term or : Bool -> Bool -> Bool
+expect term compare : a -> a -> Ordering
+expect term (..) : forall (v : Type). (@_ : Rangeable v) -> v -> v -> Rangeable.Range v
+expect term (..<) : forall (v : Type). (@_ : Rangeable v) -> v -> v -> Rangeable.Range v
 expect term force : Thunk a -> a
 expect term captureBorrow : forall (rho : Region) (a : Type). (&[rho] x : a) -> BorrowView rho a
 expect term withBorrowView : forall (rho : Region) (a : Type) (r : Type). BorrowView rho a -> (((&[rho] x : a) -> r)) -> r
@@ -307,6 +318,7 @@ expect term re : Elab (Dict (InterpolatedMacro String))
 expect term b : Elab (Dict (InterpolatedMacro String))
 expect term type : Elab (Dict (InterpolatedMacro Type))
 expect term println : String -> UIO Unit
+expect term printlnString : String -> UIO Unit
 expect term print : String -> UIO Unit
 expect term printInt : Int -> UIO Unit
 expect term printString : String -> UIO Unit

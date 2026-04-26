@@ -9,6 +9,9 @@ open HarnessFixtureParser
 let private fixturesRoot =
     Path.Combine(__SOURCE_DIRECTORY__, "Fixtures")
 
+let private supportedCapabilities =
+    Set.ofList [ "pipelineTrace"; "incremental"; "runTask" ]
+
 let discoverKpFixtureCases () =
     if not (Directory.Exists(fixturesRoot)) then
         []
@@ -46,10 +49,13 @@ let discoverKpFixtureCases () =
                             | AssertionDirective assertion -> Some assertion
                             | _ -> None)
 
-                    Some
-                        { Name = Path.GetFileName(caseDirectory)
-                          Root = caseDirectory
-                          SourceFiles = sourceFiles
-                          Configuration = configuration
-                          Assertions = assertions })
+                    if Set.isSubset configuration.RequiredCapabilities supportedCapabilities then
+                        Some
+                            { Name = Path.GetFileName(caseDirectory)
+                              Root = caseDirectory
+                              SourceFiles = sourceFiles
+                              Configuration = configuration
+                              Assertions = assertions }
+                    else
+                        None)
         |> Seq.toList

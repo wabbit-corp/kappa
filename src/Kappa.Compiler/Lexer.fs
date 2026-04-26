@@ -397,6 +397,14 @@ module Lexer =
                             emitAbsolute RightBrace "}" currentAbsoluteIndex
                             braceDepth <- max 0 (braceDepth - 1)
                             currentAbsoluteIndex <- currentAbsoluteIndex + 1
+                        | '.' when currentAbsoluteIndex + 2 < text.Length
+                                 && text[currentAbsoluteIndex + 1] = '.'
+                                 && text[currentAbsoluteIndex + 2] = '<' ->
+                            emitAbsolute Operator "..<" currentAbsoluteIndex
+                            currentAbsoluteIndex <- currentAbsoluteIndex + 3
+                        | '.' when currentAbsoluteIndex + 1 < text.Length && text[currentAbsoluteIndex + 1] = '.' ->
+                            emitAbsolute Operator ".." currentAbsoluteIndex
+                            currentAbsoluteIndex <- currentAbsoluteIndex + 2
                         | '.' ->
                             emitAbsolute Dot "." currentAbsoluteIndex
                             currentAbsoluteIndex <- currentAbsoluteIndex + 1
@@ -869,6 +877,14 @@ module Lexer =
                         emit RightBrace "}" currentIndex
                         braceDepth <- max 0 (braceDepth - 1)
                         currentIndex <- currentIndex + 1
+                    | '.' when currentIndex + 2 < lineText.Length
+                             && lineText[currentIndex + 1] = '.'
+                             && lineText[currentIndex + 2] = '<' ->
+                        emit Operator "..<" currentIndex
+                        currentIndex <- currentIndex + 3
+                    | '.' when currentIndex + 1 < lineText.Length && lineText[currentIndex + 1] = '.' ->
+                        emit Operator ".." currentIndex
+                        currentIndex <- currentIndex + 2
                     | '.' ->
                         emit Dot "." currentIndex
                         currentIndex <- currentIndex + 1
@@ -1005,6 +1021,14 @@ module Lexer =
                     emit RightBrace "}" index
                     delimiterDepth <- max 0 (delimiterDepth - 1)
                     index <- index + 1
+                | '.' when index + 2 < lineText.Length
+                         && lineText[index + 1] = '.'
+                         && lineText[index + 2] = '<' ->
+                    emit Operator "..<" index
+                    index <- index + 3
+                | '.' when index + 1 < lineText.Length && lineText[index + 1] = '.' ->
+                    emit Operator ".." index
+                    index <- index + 2
                 | '.' ->
                     emit Dot "." index
                     index <- index + 1

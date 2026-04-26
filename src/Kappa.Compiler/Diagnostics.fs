@@ -57,6 +57,13 @@ type DiagnosticCode =
     | SealOpaqueUnfolding
     | TypeEqualityMismatch
     | NumericLiteralOutOfRange
+    | UnicodeInvalidScalarLiteral
+    | UnicodeInvalidGraphemeLiteral
+    | UnicodeInvalidByteLiteral
+    | UnicodeInvalidUtf8
+    | UnicodeBidiControl
+    | UnicodeConfusableIdentifier
+    | UnicodeNonNormalizedSourceText
     | UnexpectedIndentation
     | UnterminatedBacktickIdentifier
     | UnterminatedStringLiteral
@@ -128,6 +135,13 @@ module DiagnosticCode =
         | SealOpaqueUnfolding -> "E_SEAL_OPAQUE_UNFOLDING"
         | TypeEqualityMismatch -> "E_TYPE_EQUALITY_MISMATCH"
         | NumericLiteralOutOfRange -> "E_NUMERIC_LITERAL_OUT_OF_RANGE"
+        | UnicodeInvalidScalarLiteral -> "E_UNICODE_INVALID_SCALAR_LITERAL"
+        | UnicodeInvalidGraphemeLiteral -> "E_UNICODE_INVALID_GRAPHEME_LITERAL"
+        | UnicodeInvalidByteLiteral -> "E_UNICODE_INVALID_BYTE_LITERAL"
+        | UnicodeInvalidUtf8 -> "E_UNICODE_INVALID_UTF8"
+        | UnicodeBidiControl -> "W_UNICODE_BIDI_CONTROL"
+        | UnicodeConfusableIdentifier -> "W_UNICODE_CONFUSABLE_IDENTIFIER"
+        | UnicodeNonNormalizedSourceText -> "W_UNICODE_NON_NORMALIZED_SOURCE_TEXT"
         | UnexpectedIndentation -> "E_UNEXPECTED_INDENTATION"
         | UnterminatedBacktickIdentifier -> "E_UNTERMINATED_BACKTICK_IDENTIFIER"
         | UnterminatedStringLiteral -> "E_UNTERMINATED_STRING_LITERAL"
@@ -197,7 +211,16 @@ module DiagnosticCode =
         | "E_SEAL_OPEN_RECORD_ASCRIPTION" -> Some SealOpenRecordAscription
         | "E_SEAL_OPAQUE_UNFOLDING" -> Some SealOpaqueUnfolding
         | "E_TYPE_EQUALITY_MISMATCH" -> Some TypeEqualityMismatch
+        | "E_TYPE_MISMATCH" -> Some TypeEqualityMismatch
         | "E_NUMERIC_LITERAL_OUT_OF_RANGE" -> Some NumericLiteralOutOfRange
+        | "E_UNSOLVED_IMPLICIT" -> Some TypeEqualityMismatch
+        | "E_UNICODE_INVALID_SCALAR_LITERAL" -> Some UnicodeInvalidScalarLiteral
+        | "E_UNICODE_INVALID_GRAPHEME_LITERAL" -> Some UnicodeInvalidGraphemeLiteral
+        | "E_UNICODE_INVALID_BYTE_LITERAL" -> Some UnicodeInvalidByteLiteral
+        | "E_UNICODE_INVALID_UTF8" -> Some UnicodeInvalidUtf8
+        | "W_UNICODE_BIDI_CONTROL" -> Some UnicodeBidiControl
+        | "W_UNICODE_CONFUSABLE_IDENTIFIER" -> Some UnicodeConfusableIdentifier
+        | "W_UNICODE_NON_NORMALIZED_SOURCE_TEXT" -> Some UnicodeNonNormalizedSourceText
         | "E_UNEXPECTED_INDENTATION" -> Some UnexpectedIndentation
         | "E_UNTERMINATED_BACKTICK_IDENTIFIER" -> Some UnterminatedBacktickIdentifier
         | "E_UNTERMINATED_STRING_LITERAL" -> Some UnterminatedStringLiteral
@@ -215,6 +238,39 @@ module DiagnosticCode =
         | "E_QTT_INOUT_THREADED_FIELD_MISSING" -> Some QttInoutThreadedFieldMissing
         | "E_CONTROL_FLOW_INVALID_ESCAPE" -> Some ControlFlowInvalidEscape
         | _ -> None
+
+    let tryGetExplanation code =
+        match code with
+        | LexicalError ->
+            Some "The source text contains a token or character sequence that is not valid Kappa syntax."
+        | ParseError ->
+            Some "The token stream is well-formed lexically, but it does not match the grammar expected at that source position."
+        | NameUnresolved ->
+            Some "A referenced name is not in lexical, module, or imported scope."
+        | TypeEqualityMismatch ->
+            Some "Two types that must agree after normalization do not definitionally equal one another."
+        | NumericLiteralOutOfRange ->
+            Some "A numeric literal cannot be represented at the target numeric type required by the surrounding typing context."
+        | UnicodeInvalidScalarLiteral ->
+            Some "A Unicode scalar literal must decode to exactly one valid Unicode scalar value and must not contain surrogate or out-of-range code points."
+        | UnicodeInvalidGraphemeLiteral ->
+            Some "A grapheme literal must decode to exactly one extended grapheme cluster with valid Unicode scalar content."
+        | UnicodeInvalidByteLiteral ->
+            Some "A byte literal must decode to exactly one byte value in the inclusive range 0x00 through 0xFF."
+        | UnicodeInvalidUtf8 ->
+            Some "Kappa source files are UTF-8 text. Ill-formed UTF-8 input is rejected before lexing."
+        | UnicodeBidiControl ->
+            Some "Bidirectional control characters can obscure visual source order and should be reviewed or removed."
+        | UnicodeConfusableIdentifier ->
+            Some "An identifier uses Unicode characters that are visually confusable with characters from other scripts."
+        | UnicodeNonNormalizedSourceText ->
+            Some "The source contains Unicode text that is not in the implementation's preferred normalization form."
+        | UnterminatedStringLiteral ->
+            Some "A string literal reached the end of its line or file before a matching closing delimiter."
+        | UnterminatedCharacterLiteral ->
+            Some "A character-like literal reached the end of its line or file before a matching closing delimiter."
+        | _ ->
+            None
 
 type DiagnosticRelatedLocation =
     { Message: string

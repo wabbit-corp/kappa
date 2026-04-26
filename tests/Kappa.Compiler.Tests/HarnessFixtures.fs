@@ -3,6 +3,7 @@ module HarnessFixtureParser
 
 open System
 open System.IO
+open System.Text
 open HarnessFixtureModel
 open Kappa.Compiler
 
@@ -83,7 +84,10 @@ let private parseFixtureRelation (filePath: string) lineNumber (value: string) =
 let private parseFixtureCapability (filePath: string) lineNumber (value: string) =
     match value.Trim() with
     | "pipelineTrace"
-    | "incremental" as capability ->
+    | "incremental"
+    | "runTask"
+    | "legacyCharAlias"
+    | "unicodeSourceWarnings" as capability ->
         capability
     | other ->
         invalidOp $"Unsupported fixture capability '{other}' ({filePath}:{lineNumber})."
@@ -166,6 +170,17 @@ let private parseSingleStringLiteralArgument (directiveName: string) (filePath: 
         invalidOp $"{directiveName} expects a string literal ({filePath}:{lineNumber})."
     | _ ->
         invalidOp $"{directiveName} expects exactly one string literal ({filePath}:{lineNumber})."
+
+let private parseSingleBareArgument (directiveName: string) (filePath: string) lineNumber (directiveBody: string) =
+    let trimmed = directiveBody.Trim()
+
+    if String.IsNullOrWhiteSpace(trimmed) then
+        invalidOp $"{directiveName} expects a single argument ({filePath}:{lineNumber})."
+
+    if trimmed.Contains(" ") || trimmed.Contains("\t") then
+        invalidOp $"{directiveName} expects exactly one argument ({filePath}:{lineNumber})."
+
+    trimmed
 
 type KpFixtureDirective =
     | SetMode of KpFixtureMode * filePath: string * lineNumber: int
@@ -298,6 +313,40 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
             Some(AssertionDirective(AssertErrorCount(parseNonNegativeInt directiveName filePath lineNumber directiveBody, filePath, lineNumber)))
         | "assertWarningCount" ->
             Some(AssertionDirective(AssertWarningCount(parseNonNegativeInt directiveName filePath lineNumber directiveBody, filePath, lineNumber)))
+        | "assertDiagnostic" ->
+            let tokens =
+                directiveBody.Split([| ' '; '\t' |], StringSplitOptions.RemoveEmptyEntries)
+
+            if tokens.Length <> 2 then
+                invalidOp $"assertDiagnostic expects '<severity> <code>' ({filePath}:{lineNumber})."
+
+            Some(
+                AssertionDirective(
+                    AssertDiagnostic(
+                        parseFixtureDiagnosticSeverity filePath lineNumber tokens[0],
+                        parseFixtureDiagnosticCode filePath lineNumber tokens[1],
+                        filePath,
+                        lineNumber
+                    )
+                )
+            )
+        | "assertDiagnosticNext" ->
+            let tokens =
+                directiveBody.Split([| ' '; '\t' |], StringSplitOptions.RemoveEmptyEntries)
+
+            if tokens.Length <> 2 then
+                invalidOp $"assertDiagnosticNext expects '<severity> <code>' ({filePath}:{lineNumber})."
+
+            Some(
+                AssertionDirective(
+                    AssertDiagnosticNext(
+                        parseFixtureDiagnosticSeverity filePath lineNumber tokens[0],
+                        parseFixtureDiagnosticCode filePath lineNumber tokens[1],
+                        filePath,
+                        lineNumber
+                    )
+                )
+            )
         | "assertDiagnosticMatch" ->
             if String.IsNullOrWhiteSpace(directiveBody) then
                 invalidOp $"assertDiagnosticMatch expects a regular expression ({filePath}:{lineNumber})."
@@ -348,6 +397,19 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
                     )
                 )
             )
+        | "assertDiagnosticExplainExists" ->
+            if String.IsNullOrWhiteSpace(directiveBody) then
+                invalidOp $"assertDiagnosticExplainExists expects '<code>' ({filePath}:{lineNumber})."
+
+            Some(
+                AssertionDirective(
+                    AssertDiagnosticExplainExists(
+                        parseFixtureDiagnosticCode filePath lineNumber directiveBody,
+                        filePath,
+                        lineNumber
+                    )
+                )
+            )
         | "assertType" ->
             let targetAndType =
                 directiveBody.Split([| ' '; '\t' |], 2, StringSplitOptions.RemoveEmptyEntries)
@@ -386,6 +448,16 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
                 AssertionDirective(
                     AssertStdout(
                         parseSingleStringLiteralArgument directiveName filePath lineNumber directiveBody,
+                        filePath,
+                        lineNumber
+                    )
+                )
+            )
+        | "assertStdoutFile" ->
+            Some(
+                AssertionDirective(
+                    AssertStdoutFile(
+                        parseSingleBareArgument directiveName filePath lineNumber directiveBody,
                         filePath,
                         lineNumber
                     )
@@ -526,7 +598,21 @@ let private parseFixtureDirective (sourceKind: KpFixtureDirectiveSource) (filePa
             invalidOp $"Unsupported fixture assertion '{other}' at {filePath}:{lineNumber}."
 
 let loadFixtureDirectives (sourceKind: KpFixtureDirectiveSource) (filePath: string) =
-    File.ReadAllLines(filePath)
+    let lines =
+        match sourceKind with
+        | KpFixtureDirectiveSource.SuiteDirectiveFile ->
+            File.ReadAllLines(filePath)
+        | KpFixtureDirectiveSource.KpSourceFile ->
+            let utf8Strict = UTF8Encoding(false, true)
+
+            try
+                File.ReadAllBytes(filePath)
+                |> utf8Strict.GetString
+                |> fun text -> text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n')
+            with :? DecoderFallbackException ->
+                [||]
+
+    lines
     |> Array.mapi (fun index lineText ->
         let lineNumber = index + 1
         let trimmed = lineText.Trim()

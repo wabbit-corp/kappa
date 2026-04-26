@@ -1,0 +1,27 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+checkScalarA : Option UnicodeScalar -> UIO Unit
+let checkScalarA opt =
+    match opt
+        case Some c -> check (c == 'A') "from-65-ok" "from-65-fail"
+        case None -> printlnString "from-65-fail"
+
+main : UIO Unit
+let main =
+    do
+        check (scalarValue 'A' == 65) "scalar-value-A-ok" "scalar-value-A-fail"
+        check (scalarValue '\u{1F642}' == 128578) "scalar-value-emoji-ok" "scalar-value-emoji-fail"
+        checkScalarA (unicodeScalarFromValue 65)
+
+        match unicodeScalarFromValue 0xD800
+            case Some _ -> printlnString "surrogate-rejected-fail"
+            case None -> printlnString "surrogate-rejected-ok"
+
+        match unicodeScalarFromValue 0x110000
+            case Some _ -> printlnString "out-of-range-rejected-fail"
+            case None -> printlnString "out-of-range-rejected-ok"

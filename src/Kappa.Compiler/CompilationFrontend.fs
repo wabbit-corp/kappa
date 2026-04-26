@@ -62,7 +62,24 @@ module internal CompilationFrontend =
 
     let private readSource (fileSystem: IFileSystem) filePath =
         let fullPath = fileSystem.GetFullPath(filePath)
-        SourceText.From(fullPath, fileSystem.ReadAllText(fullPath))
+        let bytes = fileSystem.ReadAllBytes(fullPath)
+
+        match UnicodeText.decodeUtf8Strict bytes with
+        | Result.Ok text ->
+            SourceText.From(fullPath, text), []
+        | Result.Error message ->
+            let source = SourceText.From(fullPath, "")
+
+            let diagnostic =
+                { Severity = DiagnosticSeverity.Error
+                  Code = DiagnosticCode.UnicodeInvalidUtf8
+                  Stage = Some "source"
+                  Phase = Some(KFrontIRPhase.phaseName RAW)
+                  Message = $"Source file is not valid UTF-8: {message}"
+                  Location = Some(source.GetLocation(TextSpan.FromBounds(0, 0)))
+                  RelatedLocations = [] }
+
+            source, [ diagnostic ]
 
     let private validateModuleName (options: CompilationOptions) (document: ParsedDocument) =
         let diagnostics = DiagnosticBag()
@@ -106,7 +123,7 @@ module internal CompilationFrontend =
 
     let parseFile (options: CompilationOptions) filePath =
         let initialFixities = Parser.bootstrapFixities ()
-        let source = readSource options.FileSystem filePath
+        let source, sourceDiagnostics = readSource options.FileSystem filePath
         let inferredModuleName = tryInferModuleName options.FileSystem options.SourceRoot source.FilePath
         let lexed = Lexer.tokenize source
         let parsed = Parser.parseWithInitialFixities initialFixities source lexed.Tokens
@@ -115,13 +132,13 @@ module internal CompilationFrontend =
             { Source = source
               InferredModuleName = inferredModuleName
               Syntax = parsed.Syntax
-              Diagnostics = lexed.Diagnostics @ parsed.Diagnostics }
+              Diagnostics = sourceDiagnostics @ lexed.Diagnostics @ parsed.Diagnostics }
 
         { document with
             Diagnostics = document.Diagnostics @ validateModuleName options document }
 
     let private parseFileWithFixities (options: CompilationOptions) initialFixities filePath =
-        let source = readSource options.FileSystem filePath
+        let source, sourceDiagnostics = readSource options.FileSystem filePath
         let inferredModuleName = tryInferModuleName options.FileSystem options.SourceRoot source.FilePath
         let lexed = Lexer.tokenize source
         let parsed = Parser.parseWithInitialFixities initialFixities source lexed.Tokens
@@ -130,7 +147,7 @@ module internal CompilationFrontend =
             { Source = source
               InferredModuleName = inferredModuleName
               Syntax = parsed.Syntax
-              Diagnostics = lexed.Diagnostics @ parsed.Diagnostics }
+              Diagnostics = sourceDiagnostics @ lexed.Diagnostics @ parsed.Diagnostics }
 
         { document with
             Diagnostics = document.Diagnostics @ validateModuleName options document }
@@ -141,6 +158,10 @@ module internal CompilationFrontend =
         resolveImportedFixities
         (document: ParsedDocument)
         =
+        let sourceDiagnostics =
+            document.Diagnostics
+            |> List.filter (fun diagnostic -> diagnostic.Stage = Some "source")
+
         let lexed = Lexer.tokenize document.Source
         let parsed =
             Parser.parseWithImportedFixityResolver initialFixities resolveImportedFixities document.Source lexed.Tokens
@@ -148,7 +169,7 @@ module internal CompilationFrontend =
         let reparsed =
             { document with
                 Syntax = parsed.Syntax
-                Diagnostics = lexed.Diagnostics @ parsed.Diagnostics }
+                Diagnostics = sourceDiagnostics @ lexed.Diagnostics @ parsed.Diagnostics }
 
         { reparsed with
             Diagnostics = reparsed.Diagnostics @ validateModuleName options reparsed }
@@ -371,6 +392,8 @@ module internal CompilationFrontend =
             | LiteralPattern(LiteralValue.Float value) -> string value
             | LiteralPattern(LiteralValue.String value) -> $"\"{value}\""
             | LiteralPattern(LiteralValue.Character value) -> $"'{value}'"
+            | LiteralPattern(LiteralValue.Grapheme value) -> $"g'{value}'"
+            | LiteralPattern(LiteralValue.Byte value) -> $"b'\\x{int value:X2}'"
             | LiteralPattern LiteralValue.Unit -> "()"
             | ConstructorPattern(name, arguments) ->
                 let nameText = String.concat "." name
@@ -444,6 +467,8 @@ module internal CompilationFrontend =
             | Literal(LiteralValue.Float value) -> string value
             | Literal(LiteralValue.String value) -> $"\"{value}\""
             | Literal(LiteralValue.Character value) -> $"'{value}'"
+            | Literal(LiteralValue.Grapheme value) -> $"g'{value}'"
+            | Literal(LiteralValue.Byte value) -> $"b'\\x{int value:X2}'"
             | Literal LiteralValue.Unit -> "()"
             | NumericLiteral literal -> SurfaceNumericLiteral.toSurfaceText literal
             | Name segments -> String.concat "." segments
@@ -784,7 +809,7 @@ module internal CompilationFrontend =
             items |> List.exists (exceptMatches namespaceName name)
 
         let standardModuleInventories =
-            [ "std.gradual",
+            ([ "std.gradual",
               inventory
                   [ "toDynWith"; "checkedCastWith"; "sameDynRep"; "toDyn"; "checkedCast" ]
                   [ "Dyn"; "DynRep"; "CastBlame" ]
@@ -878,6 +903,25 @@ module internal CompilationFrontend =
                   [ "Hashable" ]
                   []
                   [] ]
+             @ (StandardModules.all
+                |> List.filter (fun description ->
+                    not (
+                        String.Equals(description.ModuleName, "std.hash", StringComparison.Ordinal)
+                        || String.Equals(description.ModuleName, "std.gradual", StringComparison.Ordinal)
+                        || String.Equals(description.ModuleName, "std.ffi", StringComparison.Ordinal)
+                        || String.Equals(description.ModuleName, "std.ffi.c", StringComparison.Ordinal)
+                        || String.Equals(description.ModuleName, "std.bridge", StringComparison.Ordinal)
+                        || String.Equals(description.ModuleName, "std.atomic", StringComparison.Ordinal)
+                        || String.Equals(description.ModuleName, "std.supervisor", StringComparison.Ordinal)
+                    ))
+                |> List.map (fun description ->
+                    description.ModuleName,
+                    inventory
+                        (description.Terms |> List.map (fun term -> term.Name))
+                        description.Types
+                        (description.Traits |> List.map (fun traitInfo -> traitInfo.Name))
+                        []
+                        [] )))
             |> Map.ofList
 
         let itemExportsTermName (item: ImportItem) =

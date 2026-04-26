@@ -1,0 +1,15 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+main : UIO Unit
+let main =
+    do
+        check (not ("\u{00E9}" == "e\u{301}")) "string-exact-different-ok" "string-exact-different-fail"
+        check (canonicalEquivalent "\u{00E9}" "e\u{301}") "canonical-equivalent-ok" "canonical-equivalent-fail"
+        check (normalize NFC "e\u{301}" == "\u{00E9}") "nfc-ok" "nfc-fail"
+        check (normalize NFD "\u{00E9}" == "e\u{301}") "nfd-ok" "nfd-fail"
+        check (not (g'\u{00E9}' == g'e\u{301}')) "grapheme-exact-different-ok" "grapheme-exact-different-fail"

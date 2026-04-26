@@ -207,7 +207,11 @@ module internal ZigCcBackendSupport =
         | String value ->
             $"kappa_box_string(\"{cStringLiteral value}\")"
         | Character value ->
-            $"kappa_box_char({int value})"
+            $"kappa_box_string(\"{cStringLiteral value}\")"
+        | Grapheme value ->
+            $"kappa_box_string(\"{cStringLiteral value}\")"
+        | Byte value ->
+            $"kappa_box_int({value}LL)"
         | Unit ->
             "kappa_unit()"
 
@@ -221,7 +225,11 @@ module internal ZigCcBackendSupport =
         | String value ->
             $"kappa_is_string_value({expression}, \"{cStringLiteral value}\")"
         | Character value ->
-            $"kappa_is_char_value({expression}, {int value})"
+            $"kappa_is_string_value({expression}, \"{cStringLiteral value}\")"
+        | Grapheme value ->
+            $"kappa_is_string_value({expression}, \"{cStringLiteral value}\")"
+        | Byte value ->
+            $"kappa_is_int_value({expression}, {value}LL)"
         | Unit ->
             $"kappa_is_unit({expression})"
 

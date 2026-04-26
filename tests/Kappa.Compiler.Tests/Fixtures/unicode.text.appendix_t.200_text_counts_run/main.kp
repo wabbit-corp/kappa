@@ -1,0 +1,20 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+main : UIO Unit
+let main =
+    do
+        check (byteLength "a" == 1) "byte-ascii-ok" "byte-ascii-fail"
+        check (byteLength "\u03BB" == 2) "byte-lambda-ok" "byte-lambda-fail"
+        check (byteLength "\u{4E66}" == 3) "byte-cjk-ok" "byte-cjk-fail"
+        check (byteLength "\u{1F642}" == 4) "byte-emoji-ok" "byte-emoji-fail"
+        check (byteLength "e\u{301}" == 3) "byte-decomposed-ok" "byte-decomposed-fail"
+        check (scalarCount "e\u{301}" == 2) "scalar-decomposed-ok" "scalar-decomposed-fail"
+        check (graphemeCount "e\u{301}" == 1) "grapheme-decomposed-ok" "grapheme-decomposed-fail"
+        check (byteLength "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}" == 25) "byte-family-ok" "byte-family-fail"
+        check (scalarCount "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}" == 7) "scalar-family-ok" "scalar-family-fail"
+        check (graphemeCount "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}" == 1) "grapheme-family-ok" "grapheme-family-fail"

@@ -1,0 +1,20 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+checkDecode : String -> UIO Unit
+let checkDecode s =
+    match decodeUtf8 (utf8Bytes s)
+    case Ok out -> check (out == s) "decode-ok" "decode-fail"
+    case Err _ -> printlnString "decode-fail"
+
+main : UIO Unit
+let main =
+    do
+        checkDecode "\u03BB"
+        check (utf8Bytes "abc" == utf8Bytes "abc") "bytes-eq-ok" "bytes-eq-fail"
+        check (not (utf8Bytes "abc" == utf8Bytes "abd")) "bytes-neq-ok" "bytes-neq-fail"
+        check (byteLength "\u03BB" == 2) "lambda-byte-length-ok" "lambda-byte-length-fail"

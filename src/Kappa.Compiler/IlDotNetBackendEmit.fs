@@ -25,7 +25,13 @@ module internal IlDotNetBackendEmit =
             il.Emit(OpCodes.Ldstr, value)
             Result.Ok()
         | LiteralValue.Character value ->
-            il.Emit(OpCodes.Ldc_I4, int value)
+            il.Emit(OpCodes.Ldstr, value)
+            Result.Ok()
+        | LiteralValue.Grapheme value ->
+            il.Emit(OpCodes.Ldstr, value)
+            Result.Ok()
+        | LiteralValue.Byte value ->
+            il.Emit(OpCodes.Ldc_I8, int64 value)
             Result.Ok()
         | LiteralValue.Unit ->
             let unitLocal = il.DeclareLocal(typeof<ValueTuple>)
@@ -239,7 +245,9 @@ module internal IlDotNetBackendEmit =
                         | LiteralValue.Integer _ -> IlPrimitive IlInt64
                         | LiteralValue.Float _ -> IlPrimitive IlFloat64
                         | LiteralValue.String _ -> IlPrimitive IlString
-                        | LiteralValue.Character _ -> IlPrimitive IlChar
+                        | LiteralValue.Character _
+                        | LiteralValue.Grapheme _ -> IlPrimitive IlString
+                        | LiteralValue.Byte _ -> IlPrimitive IlInt64
                         | LiteralValue.Unit -> IlNamed("std.prelude", "Unit", [])
 
                     if literalType = expectedType then
@@ -394,8 +402,11 @@ module internal IlDotNetBackendEmit =
                     ensureExpected (IlPrimitive IlFloat64)
                 | KRuntimeLiteral(LiteralValue.String _) ->
                     ensureExpected (IlPrimitive IlString)
-                | KRuntimeLiteral(LiteralValue.Character _) ->
-                    ensureExpected (IlPrimitive IlChar)
+                | KRuntimeLiteral(LiteralValue.Character _)
+                | KRuntimeLiteral(LiteralValue.Grapheme _) ->
+                    ensureExpected (IlPrimitive IlString)
+                | KRuntimeLiteral(LiteralValue.Byte _) ->
+                    ensureExpected (IlPrimitive IlInt64)
                 | KRuntimeLiteral LiteralValue.Unit ->
                     ensureExpected unitIlType
                 | KRuntimeName [ "True" ]

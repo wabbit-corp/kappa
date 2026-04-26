@@ -31,7 +31,9 @@ module internal KBackendLowering =
         | LiteralValue.Integer _ -> BackendRepInt64
         | LiteralValue.Float _ -> BackendRepFloat64
         | LiteralValue.String _ -> BackendRepString
-        | LiteralValue.Character _ -> BackendRepChar
+        | LiteralValue.Character _
+        | LiteralValue.Grapheme _ -> BackendRepString
+        | LiteralValue.Byte _ -> BackendRepInt64
         | LiteralValue.Unit -> BackendRepUnit
 
     let private backendOpaqueRepresentation name =
@@ -49,7 +51,10 @@ module internal KBackendLowering =
         | Some "Float" -> Some BackendRepFloat64
         | Some "Bool" -> Some BackendRepBoolean
         | Some "String" -> Some BackendRepString
-        | Some "Char" -> Some BackendRepChar
+        | Some "Char"
+        | Some "UnicodeScalar"
+        | Some "Grapheme" -> Some BackendRepString
+        | Some "Byte" -> Some BackendRepInt64
         | Some "Unit" -> Some BackendRepUnit
         | Some head when head.StartsWith("__kappa_dict_", StringComparison.Ordinal) ->
             Some(BackendRepDictionary(head.Substring("__kappa_dict_".Length)))

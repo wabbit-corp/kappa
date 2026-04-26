@@ -81,6 +81,10 @@ type InMemoryFileSystem(files: (string * string) list) =
         member _.ReadAllText(path: string) =
             fileMap[normalize path]
 
+        member _.ReadAllBytes(path: string) =
+            fileMap[normalize path]
+            |> System.Text.Encoding.UTF8.GetBytes
+
 let compileInMemoryWorkspace (rootName: string) (files: (string * string) list) =
     let root = rootPath rootName
 

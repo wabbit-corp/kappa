@@ -482,6 +482,7 @@ module internal CompilationMetadata =
 
         let backendFingerprints =
             workspace.KBackendIR
+            |> List.filter (fun backendModule -> interfaceFingerprintByFile.ContainsKey(backendModule.SourceFile))
             |> List.sortBy (fun backendModule -> backendModule.SourceFile)
             |> List.map (fun backendModule ->
                 let interfaceDependency = interfaceFingerprintByFile[backendModule.SourceFile].Id
@@ -657,6 +658,7 @@ module internal CompilationMetadata =
 
         let kBackendUnits =
             workspace.KBackendIR
+            |> List.filter (fun backendModule -> kCoreUnitByFile.ContainsKey(backendModule.SourceFile))
             |> List.sortBy (fun backendModule -> backendModule.SourceFile)
             |> List.map (fun backendModule ->
                 incrementalUnit

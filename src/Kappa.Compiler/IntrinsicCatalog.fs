@@ -128,6 +128,7 @@ module internal IntrinsicCatalog =
         | "pure"
         | "print"
         | "println"
+        | "printlnString"
         | "printInt"
         | "printString"
         | "primitiveIntToString"
@@ -140,14 +141,55 @@ module internal IntrinsicCatalog =
         | "readData"
         | "primitiveCloseFile"
         | "newRef"
-        | "readRef" ->
+        | "readRef"
+        | "unicodeVersion"
+        | "defaultHashSeed"
+        | "NFC"
+        | "NFD"
+        | "NFKC"
+        | "NFKD"
+        | "utf8Bytes"
+        | "decodeUtf8"
+        | "decodeUtf8Lossy"
+        | "byteLength"
+        | "scalarCount"
+        | "graphemeCount"
+        | "scalars"
+        | "graphemes"
+        | "words"
+        | "sentences"
+        | "scalarValue"
+        | "unicodeScalarFromValue"
+        | "scalarToString"
+        | "graphemeToString"
+        | "graphemeFromString"
+        | "show"
+        | "newHashState"
+        | "finishHashState" ->
             1
         | "and"
         | "or"
         | "writeRef"
         | ">>="
-        | ">>" ->
+        | ">>"
+        | "compare"
+        | "normalize"
+        | "isNormalized"
+        | "canonicalEquivalent"
+        | "hashWith"
+        | "hashUnit"
+        | "hashBool"
+        | "hashChar"
+        | "hashString"
+        | "hashBytes"
+        | "hashInt"
+        | "hashInteger"
+        | "hashFloatRaw"
+        | "hashDoubleRaw"
+        | "hashNatTag" ->
             2
+        | "hashField" ->
+            3
         | _ when isBuiltinBinaryOperator name ->
             2
         | _ ->
@@ -164,6 +206,62 @@ module internal IntrinsicCatalog =
             Some BackendRepBoolean
         | "primitiveIntToString" ->
             Some BackendRepString
+        | "compare" ->
+            Some(BackendRepOpaque(Some "Ordering"))
+        | "printlnString" ->
+            Some BackendRepIOAction
+        | "utf8Bytes" ->
+            Some(BackendRepOpaque(Some "Bytes"))
+        | "decodeUtf8" ->
+            Some(BackendRepOpaque(Some "Result"))
+        | "decodeUtf8Lossy" ->
+            Some BackendRepString
+        | "byteLength"
+        | "scalarCount"
+        | "graphemeCount"
+        | "scalarValue" ->
+            Some BackendRepInt64
+        | "scalars"
+        | "graphemes"
+        | "words"
+        | "sentences" ->
+            Some(BackendRepOpaque(Some "Query"))
+        | "unicodeScalarFromValue"
+        | "graphemeFromString" ->
+            Some(BackendRepOpaque(Some "Option"))
+        | "scalarToString"
+        | "graphemeToString"
+        | "show"
+        | "normalize" ->
+            Some BackendRepString
+        | "isNormalized"
+        | "canonicalEquivalent" ->
+            Some BackendRepBoolean
+        | "unicodeVersion" ->
+            Some(BackendRepOpaque(Some "UnicodeVersion"))
+        | "NFC"
+        | "NFD"
+        | "NFKC"
+        | "NFKD" ->
+            Some(BackendRepOpaque(Some "NormalizationForm"))
+        | "defaultHashSeed" ->
+            Some(BackendRepOpaque(Some "HashSeed"))
+        | "newHashState"
+        | "hashField" ->
+            Some(BackendRepOpaque(Some "HashState"))
+        | "finishHashState"
+        | "hashUnit"
+        | "hashBool"
+        | "hashChar"
+        | "hashString"
+        | "hashBytes"
+        | "hashInt"
+        | "hashInteger"
+        | "hashFloatRaw"
+        | "hashDoubleRaw"
+        | "hashNatTag"
+        | "hashWith" ->
+            Some(BackendRepOpaque(Some "HashCode"))
         | "unsafeConsume" ->
             Some BackendRepUnit
         | "openFile"
@@ -172,6 +270,7 @@ module internal IntrinsicCatalog =
         | "primitiveCloseFile"
         | "print"
         | "println"
+        | "printlnString"
         | "printInt"
         | "printString"
         | "newRef"

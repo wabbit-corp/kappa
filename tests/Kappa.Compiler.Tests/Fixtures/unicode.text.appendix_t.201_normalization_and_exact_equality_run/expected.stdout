@@ -1,0 +1,5 @@
+string-exact-different-ok
+canonical-equivalent-ok
+nfc-ok
+nfd-ok
+grapheme-exact-different-ok

@@ -608,7 +608,7 @@ type private TokenParser
         && this.Peek(1).Kind = Colon
         || (this.Current.Kind = LeftParen && this.Peek(1).Kind = Operator && this.Peek(2).Kind = RightParen && this.Peek(3).Kind = Colon)
 
-    member private this.IsProbableTopLevelStart(token: Token, nextToken: Token option) =
+    member private _.IsProbableTopLevelStart(token: Token, nextToken: Token option, thirdToken: Token option, fourthToken: Token option) =
         match token.Kind with
         | Keyword Keyword.Import
         | Keyword Keyword.Export
@@ -634,6 +634,11 @@ type private TokenParser
             match nextToken with
                | Some next -> next.Kind = Colon
                | None -> false
+        | LeftParen ->
+            match nextToken, thirdToken, fourthToken with
+            | Some next, Some third, Some fourth ->
+                next.Kind = Operator && third.Kind = RightParen && fourth.Kind = Colon
+            | _ -> false
         | _ -> false
 
     member private this.NextNonLayout(offset: int) =
@@ -725,10 +730,12 @@ type private TokenParser
             | Newline when localIndents = 0 ->
                 let next = this.NextNonLayout(1)
                 let afterNext = this.NextNonLayout(2)
+                let afterAfterNext = this.NextNonLayout(3)
+                let afterAfterAfterNext = this.NextNonLayout(4)
 
                 if this.Peek(1).Kind = Indent && shouldContinueAcrossNewline (Some next) then
                     collected.Add(this.Advance())
-                elif this.IsProbableTopLevelStart(next, Some afterNext) then
+                elif this.IsProbableTopLevelStart(next, Some afterNext, Some afterAfterNext, Some afterAfterAfterNext) then
                     keepCollecting <- false
                 else
                     collected.Add(this.Advance())
@@ -742,8 +749,10 @@ type private TokenParser
                 if localIndents = 0 then
                     let next = this.NextNonLayout(0)
                     let afterNext = this.NextNonLayout(1)
+                    let afterAfterNext = this.NextNonLayout(2)
+                    let afterAfterAfterNext = this.NextNonLayout(3)
 
-                    if this.IsProbableTopLevelStart(next, Some afterNext) then
+                    if this.IsProbableTopLevelStart(next, Some afterNext, Some afterAfterNext, Some afterAfterAfterNext) then
                         keepCollecting <- false
             | _ ->
                 collected.Add(this.Advance())
@@ -832,6 +841,12 @@ type private TokenParser
             match this.Current.Kind, this.Peek(1).Kind, this.Peek(2).Kind, this.Peek(3).Kind with
             | LeftParen, Dot, Dot, RightParen ->
                 this.Advance() |> ignore
+                this.Advance() |> ignore
+                this.Advance() |> ignore
+                this.Advance() |> ignore
+                true
+            | LeftParen, Operator, RightParen, _
+                when this.Peek(1).Text = ".." ->
                 this.Advance() |> ignore
                 this.Advance() |> ignore
                 this.Advance() |> ignore

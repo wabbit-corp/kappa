@@ -33,6 +33,10 @@ module KpFixtureConfiguration =
 
 let private rootedFilePath = HarnessSupport.rootedFilePath
 
+let private rootedSiblingPath (filePath: string) (relativePath: string) =
+    let directory = Path.GetDirectoryName(filePath)
+    Path.Combine(directory, relativePath) |> Path.GetFullPath
+
 type ProcessResult = HarnessSupport.ProcessResult
 type LoadedManagedAssembly = HarnessSupport.LoadedManagedAssembly
 
@@ -686,6 +690,8 @@ let rec private fixturePatternText pattern =
     | LiteralPattern(LiteralValue.Float value) -> string value
     | LiteralPattern(LiteralValue.String value) -> $"\"{value}\""
     | LiteralPattern(LiteralValue.Character value) -> $"'{value}'"
+    | LiteralPattern(LiteralValue.Grapheme value) -> $"g'{value}'"
+    | LiteralPattern(LiteralValue.Byte value) -> $"b'\\x{int value:X2}'"
     | LiteralPattern LiteralValue.Unit -> "()"
     | ConstructorPattern(name, arguments) ->
         let nameText = String.concat "." name
@@ -918,6 +924,8 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
         |> List.exists (function
             | AssertErrorCount(expectedCount, _, _) when expectedCount > 0 -> true
             | AssertWarningCount(expectedCount, _, _) when expectedCount > 0 -> true
+            | AssertDiagnostic _
+            | AssertDiagnosticNext _
             | AssertDiagnosticCodes _ -> true
             | AssertDiagnosticAt _ -> true
             | AssertDiagnosticMatch _ -> true
@@ -930,6 +938,7 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
         )
 
     let runResult = lazy (executeFixtureRun fixtureCase workspace)
+    let mutable nextDiagnosticIndex = 0
 
     let requireRunMode assertionName =
         if fixtureCase.Configuration.Mode <> KpFixtureMode.Run then
@@ -945,6 +954,29 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
             Assert.Equal(expectedCount, countDiagnosticsBySeverity DiagnosticSeverity.Error workspace.Diagnostics)
         | AssertWarningCount(expectedCount, _, _) ->
             Assert.Equal(expectedCount, countDiagnosticsBySeverity DiagnosticSeverity.Warning workspace.Diagnostics)
+        | AssertDiagnostic(severity, code, _, lineNumber) ->
+            Assert.True(
+                workspace.Diagnostics |> List.exists (fun diagnostic -> diagnostic.Severity = severity && diagnostic.Code = code),
+                $"Could not find diagnostic {severity} {DiagnosticCode.toIdentifier code} ({fixtureCase.Name}:{lineNumber}). Actual diagnostics:{Environment.NewLine}{formatDiagnostics workspace.Diagnostics}"
+            )
+        | AssertDiagnosticNext(severity, code, _, lineNumber) ->
+            let remainingDiagnostics =
+                workspace.Diagnostics
+                |> List.skip nextDiagnosticIndex
+
+            match remainingDiagnostics with
+            | diagnostic :: _ ->
+                Assert.True(
+                    diagnostic.Severity = severity && diagnostic.Code = code,
+                    $"Expected next diagnostic {severity} {DiagnosticCode.toIdentifier code} but found {diagnostic.Severity} {DiagnosticCode.toIdentifier diagnostic.Code} ({fixtureCase.Name}:{lineNumber}). Actual diagnostics:{Environment.NewLine}{formatDiagnostics workspace.Diagnostics}"
+                )
+
+                nextDiagnosticIndex <- nextDiagnosticIndex + 1
+            | [] ->
+                Assert.True(
+                    false,
+                    $"Expected next diagnostic {severity} {DiagnosticCode.toIdentifier code}, but there were no remaining diagnostics ({fixtureCase.Name}:{lineNumber})."
+                )
         | AssertDiagnosticCodes(expectedCodes, _, _) ->
             let actual = workspace.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code)
             Assert.Equal<DiagnosticCode list>(expectedCodes, actual)
@@ -984,6 +1016,13 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
                 workspace.Diagnostics
                 |> List.exists (fun item -> regex.IsMatch(item.Message)),
                 $"Could not find diagnostic matching /{pattern}/ ({fixtureCase.Name}:{lineNumber}). Actual diagnostics:{Environment.NewLine}{formatDiagnostics workspace.Diagnostics}"
+            )
+        | AssertDiagnosticExplainExists(code, _, lineNumber) ->
+            let explanation = DiagnosticCode.tryGetExplanation code
+
+            Assert.True(
+                explanation |> Option.exists (String.IsNullOrWhiteSpace >> not),
+                $"Expected diagnostic explanation for {DiagnosticCode.toIdentifier code} ({fixtureCase.Name}:{lineNumber})."
             )
         | AssertType(target, expectedTypeText, filePath, lineNumber) ->
             let expectedTokens = tokenizeAssertionTypeText expectedTypeText
@@ -1093,6 +1132,15 @@ let runKpFixtureCase (fixtureCase: KpFixtureCase) =
                 normalizeLineEndings expectedOutputText,
                 runResult.Value.StandardOutput
             )
+        | AssertStdoutFile(relativePath, filePath, _) ->
+            requireRunMode "assertStdoutFile"
+
+            let expectedOutputText =
+                rootedSiblingPath filePath relativePath
+                |> File.ReadAllText
+                |> normalizeLineEndings
+
+            Assert.Equal(expectedOutputText, runResult.Value.StandardOutput)
         | AssertStdoutContains(expectedOutputText, _, _) ->
             requireRunMode "assertStdoutContains"
 

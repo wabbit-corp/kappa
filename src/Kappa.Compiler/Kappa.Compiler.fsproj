@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <Compile Include="Text.fs" />
+    <Compile Include="UnicodeText.fs" />
     <Compile Include="Diagnostics.fs" />
     <Compile Include="Syntax.fs" />
     <Compile Include="CoreParsing.fs" />
@@ -22,6 +23,7 @@
     <Compile Include="TypeSignatures.fs" />
     <Compile Include="Parser.fs" />
     <Compile Include="IntrinsicCatalog.fs" />
+    <Compile Include="StandardModules.fs" />
     <Compile Include="Stdlib.fs" />
     <Compile Include="HostBindings.fs" />
     <Compile Include="KCore.fs" />

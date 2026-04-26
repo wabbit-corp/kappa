@@ -612,6 +612,48 @@ module SurfaceElaboration =
             | _ ->
                 ()
 
+        let stripLeadingForall startIndex =
+            if startIndex >= tokenArray.Length then
+                startIndex
+            else
+                match tokenArray[startIndex] with
+                | token when Token.isKeyword Keyword.Forall token ->
+                    let mutable index = startIndex + 1
+                    let mutable parsed = true
+                    let mutable bodyIndex = startIndex
+                    let mutable foundDot = false
+
+                    while parsed && not foundDot && index < tokenArray.Length do
+                        match tokenArray[index] with
+                        | token when Token.isName token ->
+                            index <- index + 1
+                        | { Kind = LeftParen } ->
+                            let mutable depth = 1
+                            let mutable innerIndex = index + 1
+
+                            while depth > 0 && innerIndex < tokenArray.Length do
+                                match tokenArray[innerIndex].Kind with
+                                | LeftParen -> depth <- depth + 1
+                                | RightParen -> depth <- depth - 1
+                                | _ -> ()
+
+                                innerIndex <- innerIndex + 1
+
+                            if depth = 0 then
+                                index <- innerIndex
+                            else
+                                parsed <- false
+                        | { Kind = Dot } ->
+                            bodyIndex <- index + 1
+                            foundDot <- true
+                        | _ ->
+                            parsed <- false
+
+                    if parsed && foundDot then bodyIndex else startIndex
+                | _ ->
+                    startIndex
+
+        bodyStart <- stripLeadingForall bodyStart
         List.ofArray tokenArray[bodyStart..]
 
     let private splitSignatureParameterTokens (tokens: Token list) =
@@ -683,6 +725,17 @@ module SurfaceElaboration =
 
         parameterLayouts
         |> Option.map (List.filter (isForallLayoutParameter >> not))
+
+    let private parameterLayoutNeedsApplicationMetadata (parameter: Parameter) =
+        parameter.IsImplicit
+        || parameter.IsInout
+        || (parameter.TypeTokens
+            |> Option.bind TypeSignatures.parseType
+            |> Option.exists (function
+                | TypeUniverse _ -> true
+                | TypeIntrinsic _ -> true
+                | TypeName([ "Type" ], []) -> true
+                | _ -> false))
 
     let private tryResolveVisibleConstructorInfo
         (environment: BindingLoweringEnvironment)
@@ -1557,8 +1610,14 @@ module SurfaceElaboration =
     let private stringType =
         TypeName([ "String" ], [])
 
-    let private charType =
-        TypeName([ "Char" ], [])
+    let private unicodeScalarType =
+        TypeName([ "UnicodeScalar" ], [])
+
+    let private graphemeType =
+        TypeName([ "Grapheme" ], [])
+
+    let private byteType =
+        TypeName([ "Byte" ], [])
 
     let private syntaxType argumentType =
         TypeName([ "Syntax" ], [ argumentType ])
@@ -2184,15 +2243,31 @@ module SurfaceElaboration =
                           ConstructorTypeName = None
                           DefaultArguments = Map.empty })
                 | ExpectDeclarationNode (ExpectTermDeclaration declaration) ->
+                    let signatureParameterLayouts =
+                        declaration.TypeTokens
+                        |> splitSignatureParameterTokens
+                        |> function
+                            | [] -> None
+                            | parameterTokens -> Some(parameterTokens |> List.map tryParseSignatureParameterLayout)
+
                     TypeSignatures.parseScheme declaration.TypeTokens
                     |> Option.map (fun scheme ->
+                        let parameterLayouts =
+                            mergeParameterLayouts signatureParameterLayouts None
+                            |> stripForallOnlyParameterLayouts scheme
+                            |> Option.bind (fun layouts ->
+                                if layouts |> List.exists parameterLayoutNeedsApplicationMetadata then
+                                    Some layouts
+                                else
+                                    None)
+
                         declaration.Name,
                         { ModuleName = moduleName
                           Name = declaration.Name
                           IsPattern = false
                           Scheme = scheme
                           TypeTokens = declaration.TypeTokens
-                          ParameterLayouts = None
+                          ParameterLayouts = parameterLayouts
                           ConstructorTypeName = None
                           DefaultArguments = Map.empty })
                 | LetDeclaration definition
@@ -2465,6 +2540,75 @@ module SurfaceElaboration =
           ExportedTypes = description.Types |> List.map (fun exportedType -> exportedType.Name) |> Set.ofList
           ExportedTraits = Set.empty }
 
+    let private buildStandardModuleSurfaceInfo (description: StandardModules.StandardModuleDescription) =
+        let bindingSchemes =
+            description.Terms
+            |> List.choose (fun binding ->
+                tryParseTypeText binding.TypeText
+                |> Option.map (fun bodyType ->
+                    binding.Name,
+                    { ModuleName = description.ModuleName
+                      Name = binding.Name
+                      IsPattern = false
+                      Scheme =
+                        { Forall = []
+                          Constraints = []
+                          Body = bodyType }
+                      TypeTokens = typeTextTokens binding.TypeText
+                      ParameterLayouts = None
+                      ConstructorTypeName = None
+                      DefaultArguments = Map.empty }))
+            |> Map.ofList
+
+        let typeFacets =
+            description.Types
+            |> List.map (fun typeName ->
+                typeName,
+                { ModuleName = description.ModuleName
+                  Name = typeName
+                  Scheme =
+                    { Forall = []
+                      Constraints = []
+                      Body = typeObjectType } })
+            |> Map.ofList
+
+        let traits =
+            description.Traits
+            |> List.map (fun traitInfo ->
+                let members =
+                    traitInfo.Members
+                    |> List.choose (fun memberInfo ->
+                        TypeSignatures.parseScheme (typeTextTokens memberInfo.TypeText)
+                        |> Option.map (fun scheme ->
+                            memberInfo.Name,
+                            { Name = memberInfo.Name
+                              Scheme = scheme
+                              DefaultDefinition = None }))
+                    |> Map.ofList
+
+                traitInfo.Name,
+                { ModuleName = description.ModuleName
+                  Name = traitInfo.Name
+                  TypeParameters = [ for index in 1 .. traitInfo.TypeParameterCount -> $"t{index}" ]
+                  Supertraits = []
+                  Members = members })
+            |> Map.ofList
+
+        { TypeAliases = Map.empty
+          TypeFacets = typeFacets
+          RecordTypes = Map.empty
+          BindingSchemes = bindingSchemes
+          Constructors = Map.empty
+          Projections = Map.empty
+          Traits = traits
+          Instances = []
+          Imports = []
+          ExportedTerms = description.Terms |> List.map (fun binding -> binding.Name) |> Set.ofList
+          ExportedConstructors = Set.empty
+          ExportedConstructorsByType = Map.empty
+          ExportedTypes = description.Types |> Set.ofList
+          ExportedTraits = description.Traits |> List.map (fun traitInfo -> traitInfo.Name) |> Set.ofList }
+
     let private mergeSurfaceInfoMaps
         (left: Map<string, 'value>)
         (right: Map<string, 'value>)
@@ -2521,9 +2665,13 @@ module SurfaceElaboration =
         let hostSurfaceIndex =
             hostModules |> Map.map (fun _ description -> buildHostModuleSurfaceInfo description)
 
+        let standardSurfaceIndex =
+            StandardModules.byName |> Map.map (fun _ description -> buildStandardModuleSurfaceInfo description)
+
         let directIndex =
-            hostSurfaceIndex
-            |> Map.fold (fun state moduleName moduleInfo -> Map.add moduleName moduleInfo state) directUserSurfaceIndex
+            directUserSurfaceIndex
+            |> fun state -> standardSurfaceIndex |> Map.fold (fun current moduleName moduleInfo -> Map.add moduleName moduleInfo current) state
+            |> fun state -> hostSurfaceIndex |> Map.fold (fun current moduleName moduleInfo -> Map.add moduleName moduleInfo current) state
 
         let addReexportedItem (importedModule: ModuleSurfaceInfo) (moduleInfo: ModuleSurfaceInfo) (item: ImportItem) =
             let exportedName = item.Name
@@ -2615,8 +2763,9 @@ module SurfaceElaboration =
                     |> List.fold (applyReexportSpec surfaceIndex) directModuleInfo)
 
             let nextSurfaceIndex =
-                hostSurfaceIndex
-                |> Map.fold (fun state moduleName moduleInfo -> Map.add moduleName moduleInfo state) updatedUserSurfaceIndex
+                updatedUserSurfaceIndex
+                |> fun state -> standardSurfaceIndex |> Map.fold (fun current moduleName moduleInfo -> Map.add moduleName moduleInfo current) state
+                |> fun state -> hostSurfaceIndex |> Map.fold (fun current moduleName moduleInfo -> Map.add moduleName moduleInfo current) state
 
             if nextSurfaceIndex = surfaceIndex then
                 surfaceIndex
@@ -3525,7 +3674,9 @@ module SurfaceElaboration =
         | LiteralValue.Integer _ -> intType
         | LiteralValue.Float _ -> floatType
         | LiteralValue.String _ -> stringType
-        | LiteralValue.Character _ -> charType
+        | LiteralValue.Character _ -> unicodeScalarType
+        | LiteralValue.Grapheme _ -> graphemeType
+        | LiteralValue.Byte _ -> byteType
         | LiteralValue.Unit -> unitType
 
     let private inferSurfaceNumericLiteralType literal =
@@ -7933,6 +8084,28 @@ module SurfaceElaboration =
                 | _ ->
                     []
 
+            let textBinaryExpectedBodyDiagnostics =
+                let isTextBinarySurfaceType typeExpr =
+                    match normalizeTypeAliases environment.VisibleTypeAliases typeExpr with
+                    | TypeName(([ "String" ] | [ "std"; "prelude"; "String" ]), [])
+                    | TypeName(([ "Bytes" ] | [ "std"; "prelude"; "Bytes" ]), [])
+                    | TypeName(([ "Byte" ] | [ "std"; "prelude"; "Byte" ]), [])
+                    | TypeName(([ "UnicodeScalar" ] | [ "std"; "prelude"; "UnicodeScalar" ]), [])
+                    | TypeName(([ "Grapheme" ] | [ "std"; "prelude"; "Grapheme" ]), [])
+                    | TypeName(([ "Char" ] | [ "std"; "prelude"; "Char" ]), []) ->
+                        true
+                    | _ ->
+                        false
+
+                match expectedBodyType, inferValidationExpressionType environment freshCounter locals body with
+                | Some expectedType, Some actualType
+                    when isTextBinarySurfaceType expectedType
+                         && isTextBinarySurfaceType actualType
+                         && not (expectedTypeAccepts locals Map.empty expectedType actualType) ->
+                    [ expectedMismatchDiagnostic locals Map.empty "Definition body" expectedType actualType ]
+                | _ ->
+                    []
+
             let generalExpectedBodyDiagnostics =
                 match expectedBodyType with
                 | Some expectedType
@@ -7946,7 +8119,8 @@ module SurfaceElaboration =
                          && List.isEmpty constructorAsStaticObjectDiagnostics
                          && List.isEmpty expectedUnionDiagnostics
                          && List.isEmpty contextualNumericBodyDiagnostics
-                         && List.isEmpty macroExpectedBodyDiagnostics ->
+                         && List.isEmpty macroExpectedBodyDiagnostics
+                         && List.isEmpty textBinaryExpectedBodyDiagnostics ->
                     expectedTypeDiagnostics locals Map.empty "Definition body" expectedType body
                 | Some expectedType
                     when (match body with
@@ -7958,7 +8132,8 @@ module SurfaceElaboration =
                          && List.isEmpty constructorAsStaticObjectDiagnostics
                          && List.isEmpty expectedUnionDiagnostics
                          && List.isEmpty contextualNumericBodyDiagnostics
-                         && List.isEmpty macroExpectedBodyDiagnostics ->
+                         && List.isEmpty macroExpectedBodyDiagnostics
+                         && List.isEmpty textBinaryExpectedBodyDiagnostics ->
                     match inferValidationExpressionType environment freshCounter locals body with
                     | Some actualType when isSimpleExpectedBodyType locals actualType ->
                         expectedTypeDiagnostics locals Map.empty "Definition body" expectedType body
@@ -7976,6 +8151,7 @@ module SurfaceElaboration =
             @ expectedUnionDiagnostics
             @ contextualNumericBodyDiagnostics
             @ macroExpectedBodyDiagnostics
+            @ textBinaryExpectedBodyDiagnostics
             @ generalExpectedBodyDiagnostics
 
         let applicationExpectedArgumentDiagnostics locals refinements (bindingInfo: BindingSchemeInfo) arguments =
@@ -10137,6 +10313,8 @@ module SurfaceElaboration =
                                         []
                                     | TypeArrow _ ->
                                         []
+                                    | TypeLambda _ ->
+                                        []
                                     | TypeName(([ "Projector" ] | [ "std"; "prelude"; "Projector" ]), _) ->
                                         []
                                     | _ ->
@@ -10201,8 +10379,139 @@ module SurfaceElaboration =
                     diagnostics
                     @ operandDiagnostics "left-hand side" left
                     @ operandDiagnostics "right-hand side" right
+                | "=="
+                | "!="
+                | "<"
+                | ">"
+                | "<="
+                | ">=" ->
+                    diagnostics
+                | ".."
+                | "..<" ->
+                    let rangeConstraintDiagnostics =
+                        match
+                            inferValidationExpressionType environment freshCounter locals left,
+                            inferValidationExpressionType environment freshCounter locals right
+                        with
+                        | Some leftType, Some rightType ->
+                            let normalizedLeftType = normalizeTypeAliases environment.VisibleTypeAliases leftType
+                            let normalizedRightType = normalizeTypeAliases environment.VisibleTypeAliases rightType
+
+                            if
+                                not
+                                    (TypeSignatures.definitionallyEqual
+                                        normalizedLeftType
+                                        normalizedRightType)
+                            then
+                                [ expectedMismatchDiagnostic locals refinements "Range operator operands" leftType rightType ]
+                            else
+                                let constraintInfo =
+                                    { TraitName = "Rangeable"
+                                      Arguments = [ normalizedLeftType ] }
+
+                                match resolveConstraintInstanceDetailedWithSubstitution environment constraintInfo with
+                                | ConstraintResolved _ ->
+                                    []
+                                | ConstraintUnresolved ->
+                                    [
+                                        makeDiagnostic
+                                            DiagnosticCode.TypeEqualityMismatch
+                                            $"Trait constraint '{renderTraitConstraint environment constraintInfo}' could not be resolved."
+                                    ]
+                                | ConstraintAmbiguous(ambiguousGoal, candidates) ->
+                                    let candidateText =
+                                        candidates
+                                        |> List.map renderInstanceCandidate
+                                        |> String.concat ", "
+
+                                    [
+                                        makeDiagnostic
+                                            DiagnosticCode.TraitInstanceAmbiguous
+                                            $"Multiple instance candidates survive for constraint '{renderTraitConstraint environment ambiguousGoal}': {candidateText}."
+                                    ]
+                        | _ ->
+                            []
+
+                    diagnostics @ rangeConstraintDiagnostics
+                | "+" | "-" | "*" | "/" ->
+                    let operandDiagnostics operandLabel operand =
+                        match operand with
+                        | Name [ name ]
+                            when not (Map.containsKey name locals)
+                                 && not (
+                                     definition.Name
+                                     |> Option.exists (fun definitionName -> String.Equals(name, definitionName, StringComparison.Ordinal))
+                                 ) ->
+                            match topLevelDefinitionsByName |> Map.tryFind name with
+                            | Some bindingInfo when not (List.isEmpty bindingInfo.Parameters) ->
+                                    [
+                                        makeDiagnostic
+                                            DiagnosticCode.TypeEqualityMismatch
+                                            $"Arithmetic operator {operandLabel} must be a numeric value, but '{name}' resolves to a callable binding."
+                                    ]
+                            | None ->
+                                []
+                            | Some _ ->
+                                []
+                        | _ ->
+                            []
+
+                    let numericTypeDiagnostics =
+                        let isSupportedArithmeticType normalizedTypeExpr =
+                            match normalizedTypeExpr with
+                            | TypeName(([ "Int" ] | [ "std"; "prelude"; "Int" ]), [])
+                            | TypeName(([ "Float" ] | [ "std"; "prelude"; "Float" ]), [])
+                            | TypeName(([ "Double" ] | [ "std"; "prelude"; "Double" ]), []) ->
+                                true
+                            | _ ->
+                                false
+
+                        let isUnicodeTextNonNumericType normalizedTypeExpr =
+                            match normalizedTypeExpr with
+                            | TypeName(([ "String" ] | [ "std"; "prelude"; "String" ]), [])
+                            | TypeName(([ "Bytes" ] | [ "std"; "prelude"; "Bytes" ]), [])
+                            | TypeName(([ "Byte" ] | [ "std"; "prelude"; "Byte" ]), [])
+                            | TypeName(([ "UnicodeScalar" ] | [ "std"; "prelude"; "UnicodeScalar" ]), [])
+                            | TypeName(([ "Grapheme" ] | [ "std"; "prelude"; "Grapheme" ]), [])
+                            | TypeName(([ "Char" ] | [ "std"; "prelude"; "Char" ]), []) ->
+                                true
+                            | _ ->
+                                false
+
+                        match
+                            inferValidationExpressionType environment freshCounter locals left,
+                            inferValidationExpressionType environment freshCounter locals right
+                        with
+                        | Some leftType, Some rightType ->
+                            let normalizedLeftType = normalizeTypeAliases environment.VisibleTypeAliases leftType
+                            let normalizedRightType = normalizeTypeAliases environment.VisibleTypeAliases rightType
+
+                            match normalizedLeftType, normalizedRightType with
+                            | TypeVariable _, _
+                            | _, TypeVariable _ ->
+                                []
+                            | _ when isSupportedArithmeticType normalizedLeftType && isSupportedArithmeticType normalizedRightType ->
+                                []
+                            | _ when isUnicodeTextNonNumericType normalizedLeftType || isUnicodeTextNonNumericType normalizedRightType ->
+                                [ expectedMismatchDiagnostic locals refinements "Arithmetic operator operands" leftType rightType ]
+                            | _ ->
+                                []
+                        | _ ->
+                            []
+
+                    diagnostics
+                    @ operandDiagnostics "left-hand side" left
+                    @ operandDiagnostics "right-hand side" right
+                    @ numericTypeDiagnostics
                 | _ ->
                     diagnostics
+                    @ (validateExpressionWithFlow
+                        locals
+                        refinements
+                        lexicalNames
+                        aliases
+                        constructorFacts
+                        (Apply(Name [ operatorName ], [ left; right ])))
             | PrefixedString(prefix, parts) ->
                 prefixedStringPrefixDiagnostics locals lexicalNames prefix
                 @ (tryResolvePrefixedStringFailureDiagnostic prefix

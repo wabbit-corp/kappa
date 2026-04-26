@@ -737,8 +737,8 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
             match SyntaxFacts.tryDecodeCharacterLiteral token.Text with
             | Result.Ok value -> LiteralPattern(LiteralValue.Character value)
             | Result.Error message ->
-                diagnostics.AddError(DiagnosticCode.ParseError, message, source.GetLocation(token.Span))
-                LiteralPattern(LiteralValue.Character '\000')
+                diagnostics.AddError(DiagnosticCode.UnicodeInvalidScalarLiteral, message, source.GetLocation(token.Span))
+                LiteralPattern(LiteralValue.Character "\u0000")
         | _ ->
             diagnostics.AddError(DiagnosticCode.ParseError, "Expected a literal pattern.", source.GetLocation(token.Span))
             LiteralPattern LiteralValue.Unit
@@ -876,6 +876,8 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                 match body with
                 | [ { Kind = Dot }; { Kind = Dot }; nameToken ] when this.IsNameToken(nameToken) ->
                     Some(VariantPattern(RestVariantPattern(SyntaxFacts.trimIdentifierQuotes nameToken.Text)))
+                | [ { Kind = Operator; Text = ".." }; nameToken ] when this.IsNameToken(nameToken) ->
+                    Some(VariantPattern(RestVariantPattern(SyntaxFacts.trimIdentifierQuotes nameToken.Text)))
                 | [ { Kind = Underscore } ] ->
                     Some(VariantPattern(WildcardVariantPattern None))
                 | [ nameToken ] when this.IsNameToken(nameToken) ->
@@ -926,6 +928,8 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
             match fieldTokens with
             | { Kind = Dot } :: { Kind = Dot } :: [] -> true
             | { Kind = Dot } :: { Kind = Dot } :: nameToken :: [] when this.IsNameToken(nameToken) -> true
+            | { Kind = Operator; Text = ".." } :: [] -> true
+            | { Kind = Operator; Text = ".." } :: nameToken :: [] when this.IsNameToken(nameToken) -> true
             | _ -> false
 
         let fieldGroups =
@@ -978,6 +982,12 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
                             rest <- Some DiscardRecordPatternRest
                             None
                         | { Kind = Dot } :: { Kind = Dot } :: nameToken :: [] when this.IsNameToken(nameToken) ->
+                            rest <- Some(BindRecordPatternRest(SyntaxFacts.trimIdentifierQuotes nameToken.Text))
+                            None
+                        | { Kind = Operator; Text = ".." } :: [] ->
+                            rest <- Some DiscardRecordPatternRest
+                            None
+                        | { Kind = Operator; Text = ".." } :: nameToken :: [] when this.IsNameToken(nameToken) ->
                             rest <- Some(BindRecordPatternRest(SyntaxFacts.trimIdentifierQuotes nameToken.Text))
                             None
                         | _ ->
@@ -1349,8 +1359,36 @@ type private ExpressionParser
         | Result.Ok value ->
             value
         | Result.Error message ->
-            diagnostics.AddError(DiagnosticCode.ParseError, message, source.GetLocation(token.Span))
-            '\000'
+            diagnostics.AddError(DiagnosticCode.UnicodeInvalidScalarLiteral, message, source.GetLocation(token.Span))
+            "\u0000"
+
+    member private this.DecodeGraphemeLiteral(prefixToken: Token, token: Token) =
+        let location =
+            source.GetLocation(TextSpan.FromBounds(prefixToken.Span.Start, token.Span.End))
+
+        match SyntaxFacts.tryDecodeGraphemeLiteral token.Text with
+        | Result.Ok value ->
+            value
+        | Result.Error message ->
+            diagnostics.AddError(DiagnosticCode.UnicodeInvalidGraphemeLiteral, message, location)
+            "\u0000"
+
+    member private this.DecodeByteLiteral(prefixToken: Token, token: Token) =
+        let location =
+            source.GetLocation(TextSpan.FromBounds(prefixToken.Span.Start, token.Span.End))
+
+        match SyntaxFacts.tryDecodeByteLiteral token.Text with
+        | Result.Ok value ->
+            value
+        | Result.Error message ->
+            diagnostics.AddError(DiagnosticCode.UnicodeInvalidByteLiteral, message, location)
+            0uy
+
+    member private this.IsAdjacentPrefixedCharacterLiteral(prefix: string) =
+        this.Current.Kind = Identifier
+        && String.Equals(this.Current.Text, prefix, StringComparison.Ordinal)
+        && this.Peek(1).Kind = CharacterLiteral
+        && this.Current.Span.End = this.Peek(1).Span.Start
 
     member private this.CollectBracketedTokens(errorMessage: string) =
         let start = this.Current
@@ -5592,6 +5630,14 @@ type private ExpressionParser
         | StringLiteral ->
             let token = this.Advance()
             Literal(LiteralValue.String(this.DecodeStringLiteral token))
+        | _ when this.IsAdjacentPrefixedCharacterLiteral("g") ->
+            let prefixToken = this.Advance()
+            let token = this.Advance()
+            Literal(LiteralValue.Grapheme(this.DecodeGraphemeLiteral(prefixToken, token)))
+        | _ when this.IsAdjacentPrefixedCharacterLiteral("b") ->
+            let prefixToken = this.Advance()
+            let token = this.Advance()
+            Literal(LiteralValue.Byte(this.DecodeByteLiteral(prefixToken, token)))
         | InterpolatedStringStart ->
             this.ParseInterpolatedString()
         | CharacterLiteral ->

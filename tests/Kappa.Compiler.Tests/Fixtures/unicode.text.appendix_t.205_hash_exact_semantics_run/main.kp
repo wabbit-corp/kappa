@@ -1,0 +1,18 @@
+module main
+import std.hash.*
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+main : UIO Unit
+let main =
+    do
+        let h1 = hashWith defaultHashSeed "e\u{301}"
+        let h2 = hashWith defaultHashSeed "e\u{301}"
+        let hn1 = hashWith defaultHashSeed (normalize NFC "e\u{301}")
+        let hn2 = hashWith defaultHashSeed "\u{00E9}"
+        check (h1 == h2) "same-exact-string-hash-ok" "same-exact-string-hash-fail"
+        check (hn1 == hn2) "normalized-string-hash-ok" "normalized-string-hash-fail"
+        check (compare h1 h1 == EQ) "hashcode-ord-eq-class-ok" "hashcode-ord-eq-class-fail"

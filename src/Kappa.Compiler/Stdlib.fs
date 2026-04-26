@@ -150,16 +150,26 @@ module Stdlib =
             Set.empty
 
     let runtimeIntrinsicTermNamesFor backendProfile moduleName =
+        let moduleNameText = SyntaxFacts.moduleNameToText moduleName
+
         if moduleName = PreludeModuleName then
             (intrinsicSetForBackendProfile backendProfile).RuntimeTermNames
         else
-            Set.empty
+            StandardModules.byName
+            |> Map.tryFind moduleNameText
+            |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList)
+            |> Option.defaultValue Set.empty
 
     let runtimeIntrinsicTermNamesForCompilation backendProfile allowUnsafeConsume moduleName =
+        let moduleNameText = SyntaxFacts.moduleNameToText moduleName
+
         if moduleName = PreludeModuleName then
             (intrinsicSetForCompilation backendProfile allowUnsafeConsume).RuntimeTermNames
         else
-            Set.empty
+            StandardModules.byName
+            |> Map.tryFind moduleNameText
+            |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList)
+            |> Option.defaultValue Set.empty
 
     let targetCheckpointNamesFor backendProfile =
         match normalizeBackendProfile backendProfile with
@@ -180,7 +190,13 @@ module Stdlib =
         if isPreludeExpectation moduleName then
             intrinsicSet.PreludeTermNames
         else
-            intrinsicSet.ModuleLocalTermNames
+            moduleName
+            |> SyntaxFacts.moduleNameToText
+            |> fun moduleNameText ->
+                StandardModules.byName
+                |> Map.tryFind moduleNameText
+                |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList)
+                |> Option.defaultValue intrinsicSet.ModuleLocalTermNames
 
     let intrinsicTermNamesAvailableInModuleText backendProfile moduleName =
         let intrinsicSet = intrinsicSetForBackendProfile backendProfile
@@ -188,7 +204,10 @@ module Stdlib =
         if moduleName = PreludeModuleText then
             intrinsicSet.PreludeTermNames
         else
-            intrinsicSet.ModuleLocalTermNames
+            StandardModules.byName
+            |> Map.tryFind moduleName
+            |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList)
+            |> Option.defaultValue intrinsicSet.ModuleLocalTermNames
 
     let intrinsicTermNamesAvailableInModuleForCompilation backendProfile allowUnsafeConsume moduleName =
         let intrinsicSet = intrinsicSetForCompilation backendProfile allowUnsafeConsume
@@ -196,7 +215,13 @@ module Stdlib =
         if moduleName = PreludeModuleName then
             intrinsicSet.PreludeTermNames
         else
-            intrinsicSet.ModuleLocalTermNames
+            moduleName
+            |> SyntaxFacts.moduleNameToText
+            |> fun moduleNameText ->
+                StandardModules.byName
+                |> Map.tryFind moduleNameText
+                |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList)
+                |> Option.defaultValue intrinsicSet.ModuleLocalTermNames
 
     let intrinsicTermNamesAvailableInModuleTextForCompilation backendProfile allowUnsafeConsume moduleName =
         let intrinsicSet = intrinsicSetForCompilation backendProfile allowUnsafeConsume
@@ -204,7 +229,10 @@ module Stdlib =
         if moduleName = PreludeModuleText then
             intrinsicSet.PreludeTermNames
         else
-            intrinsicSet.ModuleLocalTermNames
+            StandardModules.byName
+            |> Map.tryFind moduleName
+            |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList)
+            |> Option.defaultValue intrinsicSet.ModuleLocalTermNames
 
     let intrinsicallySatisfiesExpect backendProfile moduleName declaration =
         let intrinsicSet = intrinsicSetForBackendProfile backendProfile

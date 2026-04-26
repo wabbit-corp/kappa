@@ -1,0 +1,12 @@
+module main
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+main : UIO Unit
+let main =
+    do
+        check ("Z" < "a") "Z-before-a-ok" "Z-before-a-fail"
+        check (not ("a" < "Z")) "a-not-before-Z-ok" "a-not-before-Z-fail"
+        check ("abc" < "abd") "lexicographic-ok" "lexicographic-fail"

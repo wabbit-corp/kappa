@@ -252,7 +252,9 @@ type LiteralValue =
     | Integer of int64
     | Float of double
     | String of string
-    | Character of char
+    | Character of string
+    | Grapheme of string
+    | Byte of byte
     | Unit
 
 type SurfaceNumericLiteral =
@@ -1066,14 +1068,19 @@ module SyntaxFacts =
         let mutable index = 0
         let mutable error = None
 
-        let appendCodePoint (codePointText: string) =
+        let appendRuneFromValue escapePrefix (value: int) =
+            match UnicodeText.tryScalarFromValue value with
+            | Some rune ->
+                builder.Append(rune.ToString()) |> ignore
+            | None ->
+                error <- Some $"Invalid Unicode escape '{escapePrefix}'."
+
+        let appendHexScalar escapePrefix (codePointText: string) =
             match Int32.TryParse(codePointText, Globalization.NumberStyles.HexNumber, null) with
-            | true, value when value > int Char.MaxValue || Char.IsSurrogate(char value) ->
-                error <- Some $"Invalid Unicode escape '\\u{codePointText}'."
             | true, value ->
-                builder.Append(char value) |> ignore
+                appendRuneFromValue escapePrefix value
             | _ ->
-                error <- Some $"Invalid Unicode escape '\\u{codePointText}'."
+                error <- Some $"Invalid Unicode escape '{escapePrefix}'."
 
         while index < value.Length && error.IsNone do
             if value[index] <> '\\' then
@@ -1107,8 +1114,27 @@ module SyntaxFacts =
                 | 'b' ->
                     builder.Append('\b') |> ignore
                     index <- index + 2
+                | 'x' when index + 3 < value.Length ->
+                    appendHexScalar ($"\\x{value.Substring(index + 2, 2)}") (value.Substring(index + 2, 2))
+                    index <- index + 4
+                | 'u' when index + 2 < value.Length && value[index + 2] = '{' ->
+                    let closingBrace = value.IndexOf('}', index + 3)
+
+                    if closingBrace < 0 then
+                        error <- Some "Unterminated Unicode escape sequence."
+                        index <- value.Length
+                    else
+                        let codePointText = value.Substring(index + 3, closingBrace - (index + 3))
+
+                        if String.IsNullOrWhiteSpace(codePointText) || codePointText.Length > 6 then
+                            error <- Some $"Invalid Unicode escape '\\u{{{codePointText}}}'."
+                        else
+                            appendHexScalar ($"\\u{{{codePointText}}}") codePointText
+
+                        index <- closingBrace + 1
                 | 'u' when index + 5 < value.Length ->
-                    appendCodePoint (value.Substring(index + 2, 4))
+                    let codePointText = value.Substring(index + 2, 4)
+                    appendHexScalar ($"\\u{codePointText}") codePointText
                     index <- index + 6
                 | other ->
                     error <- Some $"Unknown escape sequence '\\{other}'."
@@ -1215,17 +1241,41 @@ module SyntaxFacts =
             trimStringQuotes value
             |> tryDecodeOrdinary
 
-    let tryDecodeCharacterLiteral (value: string) =
+    let private tryDecodeQuotedLiteralBody prefix (value: string) =
         if value.Length >= 2 && value[0] = '\'' && value[value.Length - 1] = '\'' then
-            match tryUnescapeStringContent (value.Substring(1, value.Length - 2)) with
-            | Result.Ok text when text.Length = 1 ->
-                Result.Ok text[0]
-            | Result.Ok _ ->
-                Result.Error "Character literals must decode to exactly one character."
-            | Result.Error message ->
-                Result.Error message
+            tryUnescapeStringContent (value.Substring(1, value.Length - 2))
         else
-            Result.Error "Invalid character literal."
+            Result.Error $"Invalid {prefix} literal."
+
+    let tryDecodeCharacterLiteral (value: string) =
+        tryDecodeQuotedLiteralBody "Unicode scalar" value
+        |> Result.bind (fun text ->
+            match UnicodeText.trySingleScalar text with
+            | Some rune ->
+                Result.Ok(rune.ToString())
+            | None ->
+                Result.Error "Unicode scalar literals must decode to exactly one valid Unicode scalar."
+        )
+
+    let tryDecodeGraphemeLiteral (value: string) =
+        tryDecodeQuotedLiteralBody "grapheme" value
+        |> Result.bind (fun text ->
+            match UnicodeText.trySingleGrapheme text with
+            | Some grapheme ->
+                Result.Ok grapheme
+            | None ->
+                Result.Error "Grapheme literals must decode to exactly one extended grapheme cluster."
+        )
+
+    let tryDecodeByteLiteral (value: string) =
+        tryDecodeQuotedLiteralBody "byte" value
+        |> Result.bind (fun text ->
+            match UnicodeText.trySingleByte text with
+            | Some value ->
+                Result.Ok value
+            | None ->
+                Result.Error "Byte literals must decode to exactly one byte value."
+        )
 
     let moduleNameToText (segments: string seq) = String.Join(".", segments)
 

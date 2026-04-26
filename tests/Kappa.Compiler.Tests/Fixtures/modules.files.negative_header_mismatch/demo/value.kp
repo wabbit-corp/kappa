@@ -1,3 +1,6 @@
+-- Source issue: Idris2#276
+-- Kappa analogue: package-mode module headers are checked against the source-root-relative path-derived module name.
+-- Spec: §2.1
 module demo.wrong
 
 value : Int

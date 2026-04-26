@@ -130,7 +130,10 @@ module Compilation =
         let kRuntimeIR =
             kCore
             |> List.map KRuntimeLowering.lowerKRuntimeModule
-            |> fun loweredModules -> loweredModules @ (hostBindingModules |> Map.values |> Seq.map HostBindings.toRuntimeModule |> Seq.toList)
+            |> fun loweredModules ->
+                loweredModules
+                @ (hostBindingModules |> Map.values |> Seq.map HostBindings.toRuntimeModule |> Seq.toList)
+                @ (StandardModules.all |> List.map StandardModules.toRuntimeModule)
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
         let kBackendIR, backendLoweringDiagnostics =

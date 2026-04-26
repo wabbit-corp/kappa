@@ -1,0 +1,10 @@
+byte-ascii-ok
+byte-lambda-ok
+byte-cjk-ok
+byte-emoji-ok
+byte-decomposed-ok
+scalar-decomposed-ok
+grapheme-decomposed-ok
+byte-family-ok
+scalar-family-ok
+grapheme-family-ok

@@ -49,9 +49,12 @@ type KpFixtureAssertion =
     | AssertNoWarnings of filePath: string * lineNumber: int
     | AssertErrorCount of expectedCount: int * filePath: string * lineNumber: int
     | AssertWarningCount of expectedCount: int * filePath: string * lineNumber: int
+    | AssertDiagnostic of severity: DiagnosticSeverity * code: DiagnosticCode * filePath: string * lineNumber: int
+    | AssertDiagnosticNext of severity: DiagnosticSeverity * code: DiagnosticCode * filePath: string * lineNumber: int
     | AssertDiagnosticCodes of expectedCodes: DiagnosticCode list * filePath: string * lineNumber: int
     | AssertDiagnosticAt of relativePath: string * severity: DiagnosticSeverity * code: DiagnosticCode * expectedLine: int * expectedColumn: int option * filePath: string * lineNumber: int
     | AssertDiagnosticMatch of regexPattern: string * filePath: string * lineNumber: int
+    | AssertDiagnosticExplainExists of code: DiagnosticCode * filePath: string * lineNumber: int
     | AssertType of target: string * expectedTypeText: string * filePath: string * lineNumber: int
     | AssertFileDeclarationKinds of relativePath: string * expectedKinds: string list * filePath: string * lineNumber: int
     | AssertEval of target: string * expectedValueText: string * filePath: string * lineNumber: int
@@ -59,6 +62,7 @@ type KpFixtureAssertion =
     | AssertExecute of target: string * expectedValueText: string * filePath: string * lineNumber: int
     | AssertRunStdout of target: string * expectedOutputText: string * filePath: string * lineNumber: int
     | AssertStdout of expectedOutputText: string * filePath: string * lineNumber: int
+    | AssertStdoutFile of relativePath: string * filePath: string * lineNumber: int
     | AssertStdoutContains of expectedOutputText: string * filePath: string * lineNumber: int
     | AssertStderrContains of expectedOutputText: string * filePath: string * lineNumber: int
     | AssertExitCode of expectedCode: int * filePath: string * lineNumber: int

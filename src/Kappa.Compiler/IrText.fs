@@ -12,6 +12,8 @@ module internal IrText =
         | KCoreLiteralPattern(LiteralValue.Float value) -> string value
         | KCoreLiteralPattern(LiteralValue.String value) -> $"\"{value}\""
         | KCoreLiteralPattern(LiteralValue.Character value) -> $"'{value}'"
+        | KCoreLiteralPattern(LiteralValue.Grapheme value) -> $"g'{value}'"
+        | KCoreLiteralPattern(LiteralValue.Byte value) -> $"b'\\x{int value:X2}'"
         | KCoreLiteralPattern LiteralValue.Unit -> "()"
         | KCoreConstructorPattern(name, arguments) ->
             let nameText = String.concat "." name
@@ -41,6 +43,8 @@ module internal IrText =
         | KCoreLiteral(LiteralValue.Float value) -> string value
         | KCoreLiteral(LiteralValue.String value) -> $"\"{value}\""
         | KCoreLiteral(LiteralValue.Character value) -> $"'{value}'"
+        | KCoreLiteral(LiteralValue.Grapheme value) -> $"g'{value}'"
+        | KCoreLiteral(LiteralValue.Byte value) -> $"b'\\x{int value:X2}'"
         | KCoreLiteral LiteralValue.Unit -> "()"
         | KCoreName segments -> String.concat "." segments
         | KCoreStaticObject staticObject ->
@@ -145,6 +149,8 @@ module internal IrText =
         | KRuntimeLiteralPattern(LiteralValue.Float value) -> string value
         | KRuntimeLiteralPattern(LiteralValue.String value) -> $"\"{value}\""
         | KRuntimeLiteralPattern(LiteralValue.Character value) -> $"'{value}'"
+        | KRuntimeLiteralPattern(LiteralValue.Grapheme value) -> $"g'{value}'"
+        | KRuntimeLiteralPattern(LiteralValue.Byte value) -> $"b'\\x{int value:X2}'"
         | KRuntimeLiteralPattern LiteralValue.Unit -> "()"
         | KRuntimeConstructorPattern(name, arguments) ->
             let nameText = String.concat "." name
@@ -174,6 +180,8 @@ module internal IrText =
         | KRuntimeLiteral(LiteralValue.Float value) -> string value
         | KRuntimeLiteral(LiteralValue.String value) -> $"\"{value}\""
         | KRuntimeLiteral(LiteralValue.Character value) -> $"'{value}'"
+        | KRuntimeLiteral(LiteralValue.Grapheme value) -> $"g'{value}'"
+        | KRuntimeLiteral(LiteralValue.Byte value) -> $"b'\\x{int value:X2}'"
         | KRuntimeLiteral LiteralValue.Unit -> "()"
         | KRuntimeName segments -> String.concat "." segments
         | KRuntimeClosure(parameters, body) ->
@@ -308,6 +316,10 @@ module internal IrText =
             $"\"{value}\":{backendRepresentationText representation}"
         | BackendLiteralPattern(LiteralValue.Character value, representation) ->
             $"'{value}':{backendRepresentationText representation}"
+        | BackendLiteralPattern(LiteralValue.Grapheme value, representation) ->
+            $"g'{value}':{backendRepresentationText representation}"
+        | BackendLiteralPattern(LiteralValue.Byte value, representation) ->
+            $"b'\\x{int value:X2}':{backendRepresentationText representation}"
         | BackendLiteralPattern(LiteralValue.Unit, representation) ->
             $"():{backendRepresentationText representation}"
         | BackendConstructorPattern(moduleName, typeName, constructorName, tag, fieldPatterns) ->
@@ -331,6 +343,10 @@ module internal IrText =
             $"\"{value}\":{backendRepresentationText representation}"
         | BackendLiteral(LiteralValue.Character value, representation) ->
             $"'{value}':{backendRepresentationText representation}"
+        | BackendLiteral(LiteralValue.Grapheme value, representation) ->
+            $"g'{value}':{backendRepresentationText representation}"
+        | BackendLiteral(LiteralValue.Byte value, representation) ->
+            $"b'\\x{int value:X2}':{backendRepresentationText representation}"
         | BackendLiteral(LiteralValue.Unit, representation) ->
             $"():{backendRepresentationText representation}"
         | BackendName resolvedName ->

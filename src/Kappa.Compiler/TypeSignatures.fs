@@ -320,6 +320,31 @@ module TypeSignatures =
 
             loop 0 0
 
+        member private _.FindTopLevelEquals(tokens: Token list) =
+            let rec loop depth index =
+                if index >= tokens.Length then
+                    None
+                else
+                    match tokens[index].Kind with
+                    | LeftParen
+                    | LeftBracket
+                    | LeftEffectRow
+                    | LeftBrace
+                    | LeftSetBrace ->
+                        loop (depth + 1) (index + 1)
+                    | RightParen
+                    | RightBracket
+                    | RightEffectRow
+                    | RightBrace
+                    | RightSetBrace ->
+                        loop (max 0 (depth - 1)) (index + 1)
+                    | Equals when depth = 0 ->
+                        Some index
+                    | _ ->
+                        loop depth (index + 1)
+
+            loop 0 0
+
         member private this.TryParseNamedBinder(tokens: Token list, defaultQuantity: Quantity) =
             match this.FindTopLevelColon(tokens) with
             | Some colonIndex when colonIndex > 0 && colonIndex + 1 < tokens.Length ->
@@ -445,18 +470,51 @@ module TypeSignatures =
             | None ->
                 None
 
+        member private this.TryParseRecordValueField(tokens: Token list) =
+            match this.FindTopLevelEquals(tokens) with
+            | Some equalsIndex when equalsIndex > 0 && equalsIndex + 1 < tokens.Length ->
+                let labelTokens = tokens |> List.take equalsIndex
+                let valueTokens = tokens |> List.skip (equalsIndex + 1)
+
+                match labelTokens with
+                | [ nameToken ] when Token.isName nameToken ->
+                    let nestedParser = Parser(valueTokens)
+
+                    nestedParser.ParseCompleteType()
+                    |> Option.map (fun fieldValue ->
+                        { Name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
+                          Quantity = QuantityOmega
+                          Type = fieldValue })
+                | _ ->
+                    None
+            | _ ->
+                None
+
         member private this.TryParseRecordType(innerTokens: Token list) =
             let groups, sawTopLevelComma = this.SplitTopLevelCommaGroups(innerTokens)
             let nonEmptyGroups =
                 groups
                 |> List.filter (List.isEmpty >> not)
 
-            let fields =
+            let binderFields =
                 nonEmptyGroups
                 |> List.map this.TryParseRecordField
 
-            if (sawTopLevelComma || List.length nonEmptyGroups = 1) && fields |> List.forall Option.isSome then
-                fields
+            let valueFields =
+                nonEmptyGroups
+                |> List.map this.TryParseRecordValueField
+
+            let canBeRecordValue =
+                sawTopLevelComma || List.length nonEmptyGroups > 1
+
+            if (sawTopLevelComma || List.length nonEmptyGroups = 1) && binderFields |> List.forall Option.isSome then
+                binderFields
+                |> List.choose id
+                |> function
+                    | [] -> None
+                    | parsedFields -> Some(TypeRecord parsedFields)
+            elif canBeRecordValue && valueFields |> List.forall Option.isSome then
+                valueFields
                 |> List.choose id
                 |> function
                     | [] -> None
@@ -800,28 +858,46 @@ module TypeSignatures =
                 |> Option.map (fun name ->
                     let terminalSegment = name |> List.last
                     let collapsedName = SyntaxFacts.moduleNameToText name
+                    let projectionChain =
+                        match name with
+                        | head :: tail when not (List.isEmpty tail) ->
+                            let terminalIsLowercase =
+                                terminalSegment.Length > 0 && Char.IsLower(terminalSegment[0])
 
-                    match tryIntrinsicClassifier name with
-                    | Some classifier ->
-                        TypeIntrinsic classifier
-                    | None when name = [ "Type" ] ->
-                        TypeUniverse None
-                    | None when name.Length = 1 && terminalSegment.StartsWith("Type", StringComparison.Ordinal) ->
-                        let suffix = terminalSegment.Substring("Type".Length)
+                            if String.Equals(head, "this", StringComparison.Ordinal) || terminalIsLowercase then
+                                tail
+                                |> List.fold (fun current fieldName -> TypeProject(current, fieldName)) (TypeVariable head)
+                                |> Some
+                            else
+                                None
+                        | _ ->
+                            None
 
-                        match Int32.TryParse suffix with
-                        | true, level ->
-                            TypeUniverse(Some(TypeLevelLiteral level))
-                        | false, _ ->
+                    match projectionChain with
+                    | Some projected ->
+                        projected
+                    | None ->
+                        match tryIntrinsicClassifier name with
+                        | Some classifier ->
+                            TypeIntrinsic classifier
+                        | None when name = [ "Type" ] ->
+                            TypeUniverse None
+                        | None when name.Length = 1 && terminalSegment.StartsWith("Type", StringComparison.Ordinal) ->
+                            let suffix = terminalSegment.Substring("Type".Length)
+
+                            match Int32.TryParse suffix with
+                            | true, level ->
+                                TypeUniverse(Some(TypeLevelLiteral level))
+                            | false, _ ->
+                                if terminalSegment.Length > 0 && Char.IsLower(terminalSegment[0]) then
+                                    TypeVariable collapsedName
+                                else
+                                    TypeName(name, [])
+                        | None ->
                             if terminalSegment.Length > 0 && Char.IsLower(terminalSegment[0]) then
                                 TypeVariable collapsedName
                             else
-                                TypeName(name, [])
-                    | None ->
-                        if terminalSegment.Length > 0 && Char.IsLower(terminalSegment[0]) then
-                            TypeVariable collapsedName
-                        else
-                            TypeName(name, []))
+                                TypeName(name, []))
 
         member private this.CanStartAtom() =
             match this.Current with
@@ -846,6 +922,16 @@ module TypeSignatures =
             | None -> None
             | Some head ->
                 let mutable parsed = head
+                let mutable keepParsingProjections = true
+
+                while keepParsingProjections do
+                    match this.Current, this.Peek(1) with
+                    | Some { Kind = Dot }, Some nextToken when Token.isName nextToken ->
+                        this.Advance() |> ignore
+                        let memberToken = this.Advance().Value
+                        parsed <- TypeProject(parsed, SyntaxFacts.trimIdentifierQuotes memberToken.Text)
+                    | _ ->
+                        keepParsingProjections <- false
 
                 while this.MatchOperator("?") do
                     parsed <- optionTypeExpr parsed
@@ -938,13 +1024,74 @@ module TypeSignatures =
                 | Some left ->
                     Some left
 
+        member private this.ParseForallType() =
+            let parseForallBinder binderTokens =
+                match this.TryParseNamedBinder(binderTokens, QuantityZero) with
+                | Some(_, binderName, typeTokens) ->
+                    let binderParser = Parser(typeTokens)
+
+                    binderParser.ParseCompleteType()
+                    |> Option.map (fun binderSort -> binderName, binderSort)
+                | None ->
+                    None
+
+            match this.Current with
+            | Some token when Token.isKeyword Keyword.Forall token ->
+                this.Advance() |> ignore
+
+                let binders = ResizeArray<string * TypeExpr>()
+                let mutable keepReading = true
+                let mutable parsed = true
+
+                while keepReading && parsed do
+                    match this.Current with
+                    | Some token when Token.isName token ->
+                        binders.Add(SyntaxFacts.trimIdentifierQuotes token.Text, TypeUniverse None)
+                        this.Advance() |> ignore
+                    | Some { Kind = LeftParen } ->
+                        match this.FindMatchingIndex(LeftParen, RightParen, position) with
+                        | Some rightParenIndex ->
+                            let binderTokens =
+                                tokenArray[position + 1 .. rightParenIndex - 1]
+                                |> Array.toList
+
+                            position <- rightParenIndex + 1
+
+                            match parseForallBinder binderTokens with
+                            | Some binder ->
+                                binders.Add(binder)
+                            | None ->
+                                parsed <- false
+                        | None ->
+                            parsed <- false
+                    | Some { Kind = Dot } ->
+                        this.Advance() |> ignore
+                        keepReading <- false
+                    | _ ->
+                        parsed <- false
+
+                if parsed && binders.Count > 0 then
+                    this.ParseType()
+                    |> Option.map (fun body ->
+                        binders
+                        |> Seq.rev
+                        |> Seq.fold (fun current (binderName, binderSort) -> TypeLambda(binderName, binderSort, current)) body)
+                else
+                    None
+            | _ ->
+                None
+
         member this.ParseType() =
-            match this.ParseArrow() with
-            | Some left when this.MatchKind Equals ->
-                this.ParseType()
-                |> Option.map (fun right -> TypeEquality(left, right))
-            | some ->
-                some
+            match this.ParseForallType() with
+            | Some parsed ->
+                Some parsed
+            | None ->
+                match this.ParseArrow() with
+                | Some left when this.MatchKind Equals ->
+                    this.ParseType()
+                    |> Option.map (fun right -> TypeEquality(left, right))
+                | some ->
+                    some
 
         member this.ParseScheme() =
             let parseForallBinder binderTokens =

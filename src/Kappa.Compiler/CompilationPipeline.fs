@@ -9,6 +9,7 @@ type IFileSystem =
     abstract member DirectoryExists: string -> bool
     abstract member EnumerateFiles: string * string * SearchOption -> seq<string>
     abstract member ReadAllText: string -> string
+    abstract member ReadAllBytes: string -> byte array
 
 module FileSystem =
     let defaultImplementation =
@@ -20,7 +21,8 @@ module FileSystem =
             member _.EnumerateFiles(path: string, searchPattern: string, searchOption: SearchOption) =
                 Directory.EnumerateFiles(path, searchPattern, searchOption)
 
-            member _.ReadAllText(path: string) = File.ReadAllText(path) }
+            member _.ReadAllText(path: string) = File.ReadAllText(path)
+            member _.ReadAllBytes(path: string) = File.ReadAllBytes(path) }
 
 type CompilationOptions =
     { SourceRoot: string

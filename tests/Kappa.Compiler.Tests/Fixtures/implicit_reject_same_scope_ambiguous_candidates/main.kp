@@ -1,6 +1,8 @@
 @PrivateByDefault module main
 
-
+-- Source issue: Idris2#270
+-- Kappa analogue: two same-scope implicit candidates for one ordinary goal must be rejected as ambiguous.
+-- Spec: §7.3.3, §17.2.4A.3
 data Env : Type =
     Env (bias : Int)
 

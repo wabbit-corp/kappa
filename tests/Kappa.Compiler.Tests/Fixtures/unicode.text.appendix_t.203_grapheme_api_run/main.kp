@@ -1,0 +1,29 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+main : UIO Unit
+let main =
+    do
+        match graphemeFromString "a"
+            case Some g -> check (graphemeToString g == "a") "ascii-ok" "ascii-fail"
+            case None -> printlnString "ascii-fail"
+
+        match graphemeFromString "e\u{301}"
+            case Some g -> check (graphemeToString g == "e\u{301}") "decomposed-ok" "decomposed-fail"
+            case None -> printlnString "decomposed-fail"
+
+        match graphemeFromString "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}"
+            case Some g -> check (graphemeToString g == "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}") "family-ok" "family-fail"
+            case None -> printlnString "family-fail"
+
+        match graphemeFromString ""
+            case Some _ -> printlnString "empty-fail"
+            case None -> printlnString "empty-ok"
+
+        match graphemeFromString "ab"
+            case Some _ -> printlnString "two-clusters-fail"
+            case None -> printlnString "two-clusters-ok"

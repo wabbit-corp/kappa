@@ -876,7 +876,9 @@ module ResourceChecking =
                 None
 
         let stringType = TypeSignatures.TypeName([ "String" ], [])
-        let charType = TypeSignatures.TypeName([ "Char" ], [])
+        let unicodeScalarType = TypeSignatures.TypeName([ "UnicodeScalar" ], [])
+        let graphemeType = TypeSignatures.TypeName([ "Grapheme" ], [])
+        let byteType = TypeSignatures.TypeName([ "Byte" ], [])
         let unitType = TypeSignatures.TypeName([ "Unit" ], [])
         let intType = TypeSignatures.TypeName([ "Int" ], [])
         let doubleType = TypeSignatures.TypeName([ "Double" ], [])
@@ -907,7 +909,11 @@ module ResourceChecking =
             | Literal(String _) ->
                 Some stringType
             | Literal(Character _) ->
-                Some charType
+                Some unicodeScalarType
+            | Literal(Grapheme _) ->
+                Some graphemeType
+            | Literal(Byte _) ->
+                Some byteType
             | Literal(Unit) ->
                 Some unitType
             | NumericLiteral(SurfaceIntegerLiteral(_, _, None)) ->
