@@ -19608,11 +19608,27 @@ The elaboration-time evaluator operates on KCore or an observationally equivalen
 
 It is used for:
 
-* macro execution;
+* executing `Elab` actions;
+* macro execution through `$(...)`;
 * elaboration of prefixed-string handlers such as `type"..."`;
+* execution of comprehension sink hooks;
 * compile-time reflection over `Syntax`;
 * semantic reflection over `Core`;
+* construction and inspection of `RawComprehension` and `ComprehensionPlan`; and
 * any other elaboration-time computation required by this specification.
+
+Elaboration-time evaluation is meta-phase evaluation.
+
+It may compute ordinary values such as `String`, `Bool`, `List a`, `Option a`, records, and dictionaries, but those
+values are meta-phase values. They are erased unless explicitly reified through a runtime carrier.
+
+Elaboration-time evaluation MUST NOT directly evaluate, inspect, borrow, consume, store, or capture object-phase runtime
+values.
+
+If a meta-phase computation mentions object-language code, it must do so through specified reflection carriers such as
+`Syntax t`, `Core Γ t`, `RawComprehension a`, or `ComprehensionPlan a`.
+
+The `pure` operation for `Elab` lifts only meta-phase values.
 
 Elaboration-time evaluation is backend-independent except insofar as the effective build configuration exposes
 elaboration-available backend intrinsics under §17.6.1.
@@ -19620,13 +19636,17 @@ elaboration-available backend intrinsics under §17.6.1.
 If elaboration-time evaluation encounters:
 
 * an unsatisfied backend intrinsic,
-* a backend intrinsic that is not elaboration-available, or
-* a foreign capability with no compile-time meaning,
+* a backend intrinsic that is not elaboration-available,
+* a foreign capability with no compile-time meaning, or
+* an attempted dependency on an object-phase runtime value,
 
 then compilation fails.
 
 The evaluator MAY memoize, partially normalize, or reuse cached results, provided the observable result is the same as
 semantic elaboration-time evaluation under the restrictions of §5.8.6.
+
+Memoization MUST be keyed by enough semantic environment information to preserve visibility, opacity, `unhide`,
+`clarify`, implicit-resolution, region, and syntax-scope behavior at the original elaboration site.
 
 <!-- compiler.kcore.semantic_object_identities -->
 #### 17.3.4 Semantic object identities
