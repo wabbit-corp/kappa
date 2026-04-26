@@ -14639,6 +14639,16 @@ Evaluation:
 * In `order by ...`, each ordering key expression is evaluated exactly once per row. Implementations may cache keys for
   sorting.
 
+Quantity and borrowing:
+
+* Ordering key expressions are checked in a non-consuming context with respect to row entries that remain available
+  after the `order by` clause.
+* An ordering key expression MUST NOT consume a row entry that is still part of the post-`order by` row.
+* Temporary key values retained for sorting must be droppable after the sort unless the implementation proves that they
+  are not materialized or that their ownership obligations are otherwise discharged.
+* The `Ord` operation used for key comparison is non-consuming; it receives its operands by borrow as specified in
+  §12.1.
+
 <!-- collections.ordering.skip_take -->
 #### 10.6.2 `skip` and `take`
 
@@ -14656,6 +14666,13 @@ Notes:
 
 * After `group by` orderedness is Unordered until another `order by` is applied.
 * After `distinct`, orderedness is preserved only if the input was Ordered.
+
+Quantity and borrowing:
+
+* `skip` and `take` may discard rows.
+* Every row discarded by `skip`, or by `take` after the retained prefix, must be row-droppable under §10.10.2B.
+* If the current row contains a non-droppable entry, `skip` or `take` is rejected unless the compiler proves that no
+  such row can be discarded.
 
 <!-- collections.ordering.distinct_distinct -->
 #### 10.6.3 `distinct` / `distinct by`
@@ -14695,6 +14712,18 @@ Representative choice:
 * If the input pipeline is Unordered, the chosen representative is deterministic in package mode under §10.3.2, but not
   user-visible or specified.
 
+Quantity and borrowing:
+
+* `distinct` and `distinct by` may discard duplicate rows.
+* Any row discarded as a duplicate must be row-droppable under §10.10.2B.
+* `distinct` requires the current row record to be comparable by borrowed equality. The equality operation itself must
+  not consume row entries.
+* `distinct by keyExpr` checks `keyExpr` in a non-consuming context with respect to row entries that remain available
+  after the clause.
+* The temporary key value produced by `keyExpr` must be droppable after deduplication unless it is transferred into a
+  surviving result by an explicitly specified carrier.
+* If the compiler cannot prove that rows containing non-droppable entries are never discarded, the clause is rejected.
+
 <!-- collections.grouping -->
 ### 10.7 Grouping
 
@@ -14717,8 +14746,11 @@ Form:
 
 Aggregate field form:
 
-* `field = valueExpr using Wrapper`
-* `field = valueExpr` (optional; aggregates directly using `Monoid` on the type of `valueExpr`)
+* `[quantity] field = valueExpr using Wrapper`
+* `[quantity] field = valueExpr` (optional; aggregates directly using `Monoid` on the type of `valueExpr`)
+
+If the aggregate field quantity is omitted, it defaults to `ω`.
+The aggregate field quantity becomes the quantity of the corresponding field in the group record bound by `into`.
 
 Well-formedness:
 
@@ -14732,8 +14764,8 @@ Then `group by keyExpr ...` requires an implicit `Eq K` instance.
 
 Aggregate field forms:
 
-* `field = valueExpr using Wrapper`
-* `field = valueExpr`
+* `[quantity] field = valueExpr using Wrapper`
+* `[quantity] field = valueExpr`
 
 For `field = valueExpr using Wrapper`:
 
@@ -14764,6 +14796,28 @@ Scoping:
 * Names bound before the `group by` clause are not in scope in later clauses except through values captured into
   `name`'s aggregate fields.
 
+Quantity and borrowing:
+
+* Grouping is a many-to-one row transformation. After `group by`, the pre-group row environment is replaced by the
+  singleton row containing the `into` binder.
+* `keyExpr` is checked in a non-consuming context with respect to pre-group row entries unless the implementation
+  provides a more precise consuming grouping form. Portable v1 grouping keys do not consume row entries.
+* The key value retained for the group record is transferred into `name.key`. Duplicate key values computed for later
+  rows in the same equality class may be discarded; therefore key values must be droppable unless the compiler proves
+  that no duplicate key value can be discarded.
+* Aggregate `valueExpr`s are checked jointly for each input row. Their combined demands on pre-group row entries must
+  satisfy the ordinary quantity rules.
+* Every non-droppable pre-group row entry must be consumed exactly once by the aggregate expressions, transferred into
+  an aggregate result whose field quantity preserves that obligation, or otherwise explicitly discharged by ordinary
+  consuming code.
+* A non-droppable pre-group row entry that is neither consumed nor transferred into the group result makes the grouping
+  clause ill-formed.
+* If two aggregate expressions both consume the same linear row entry for the same input row, ordinary quantity
+  checking rejects the grouping clause.
+* If an aggregate expression captures a borrowed row entry into the group result, the resulting group-record type must
+  carry the corresponding `captures (...)` annotation, or the program is rejected by the ordinary region-escape rules.
+* `Eq K` used for group-key comparison is non-consuming and receives keys by borrow as specified in §12.1.
+
 The bound name:
 
 * The bound name `name` is a record containing:
@@ -14771,6 +14825,11 @@ The bound name:
   * one field per aggregate declaration in the aggregation block.
 * The group record always contains a field `key`.
 * Declaring an aggregate field named `key` is a compile-time error.
+
+The field quantities of the group record are:
+
+* `key : K` at quantity `ω`, unless a future extension standardizes key-quantity syntax; and
+* each aggregate field at the quantity written on that aggregate field, defaulting to `ω`.
 
 Semantics:
 
