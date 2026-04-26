@@ -1133,12 +1133,38 @@ and `+0.0` equals `-0.0`). It is not the default `(==)` for `Float`.
 
 Traits (constraint namespace, restricted to trait):
 ```
+-- equality, ordering, display, sharing
 Equiv, Eq, Ord, Show, Shareable,
+
+-- operational numeric traits
+Zero, One, Add, Mul, Negatable,
+CheckedSub, CheckedDiv, CheckedMod,
+
+-- lawful algebraic numeric traits
+AdditiveMonoid, AdditiveGroup,
+MultiplicativeMonoid,
+Semiring, Ring,
+EuclideanSemiring, FieldLike,
+OrderedAdditive, OrderedSemiring,
+
+-- functorial / monadic
 Functor, Applicative, Monad, Alternative,
-Foldable, Traversable, Filterable, FilterMap, Monoid, Iterator, InterpolatedMacro,
+
+-- containers and traversals
+Foldable, Traversable, Filterable, FilterMap, Monoid, Iterator, Rangeable,
+
+-- interpolation, comprehensions, literals
+InterpolatedMacro,
 IntoQuery, BorrowIntoQuery, FromComprehensionPlan, FromComprehensionRaw,
 FromInteger, FromFloat, FromString,
+
+-- staging
+Lift,
+
+-- termination / well-foundedness
 WellFoundedRelation,
+
+-- runtime effects and resources
 MonadError, MonadFinally, MonadResource, MonadRef, Releasable
 ```
 
@@ -1146,6 +1172,10 @@ MonadError, MonadFinally, MonadResource, MonadRef, Releasable
 
 This is intentional. Ordinary equality-keyed APIs use `Eq`; hashing is an optional acceleration facility. Code that
 defines, derives, or explicitly requests hashing imports `std.hash`.
+
+The prelude numeric traits are likewise split between operational traits and lawful algebraic traits. Floating-point
+types may support operational arithmetic without claiming lawful semiring, ring, or field structure under raw-bit
+`Eq`.
 
 Canonical declarations:
 
