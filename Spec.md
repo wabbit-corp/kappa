@@ -3817,6 +3817,118 @@ bidirectional-control diagnostics.
 These security operations are library analyses. They do not change the lexical grammar of standard identifiers unless a
 later section explicitly says so.
 
+<!-- modules.bytes -->
+### 2.7G Standard byte-sequence support module `std.bytes`
+
+Implementations MUST provide a standard module `std.bytes`.
+
+`std.bytes` is not implicitly imported.
+
+The module provides portable operations over `Byte` and `Bytes`.
+
+Types:
+
+```kappa
+expect data BytesBuilder : Type
+expect data BytesDecodeError : Type
+```
+
+Core operations:
+
+```kappa
+emptyBytes :
+    Bytes
+
+singletonByte :
+    Byte -> Bytes
+
+bytesLength :
+    Bytes -> Nat
+
+bytesIsEmpty :
+    Bytes -> Bool
+
+bytesGet :
+    Bytes -> Nat -> Option Byte
+
+bytesIndex :
+    (bs : Bytes) ->
+    (i : Nat) ->
+    (@_ : (i < bytesLength bs) = True) ->
+    Byte
+
+bytesAppend :
+    Bytes -> Bytes -> Bytes
+
+bytesConcat :
+    List Bytes -> Bytes
+
+bytesSlice :
+    (bs : Bytes) ->
+    (start : Nat) ->
+    (len : Nat) ->
+    (@_ : (start + len <= bytesLength bs) = True) ->
+    Bytes
+
+bytesTake :
+    Nat -> Bytes -> Bytes
+
+bytesDrop :
+    Nat -> Bytes -> Bytes
+
+bytesStartsWith :
+    Bytes -> Bytes -> Bool
+
+bytesEndsWith :
+    Bytes -> Bytes -> Bool
+
+bytesContains :
+    Bytes -> Bytes -> Bool
+
+bytesFind :
+    Byte -> Bytes -> Option Nat
+
+bytesBreakOn :
+    Bytes -> Bytes -> Option (prefix : Bytes, suffix : Bytes)
+
+bytesToList :
+    Bytes -> List Byte
+
+bytesFromList :
+    List Byte -> Bytes
+```
+
+Extensional semantics:
+
+* `bytesLength bs` is the number of bytes in `bs`.
+* `bytesIndex bs i` returns the byte at offset `i`.
+* `Eq Bytes` compares exact byte sequences.
+* `Ord Bytes` orders lexicographically by byte value.
+* `Hashable Bytes` hashes according to exact `Eq Bytes`.
+* `bytesAppend` is associative with identity `emptyBytes`.
+* `bytesSlice bs start len` denotes the contiguous subsequence beginning at byte offset `start` and containing `len`
+  bytes.
+
+Representation and sharing:
+
+* `bytesSlice`, `bytesTake`, and `bytesDrop` MAY share storage with the source `Bytes`.
+* Sharing is not observable except through implementation-defined profiling/debug APIs.
+* A long-lived slice may retain a larger underlying allocation.
+* `bytesCompact` forces a representation that does not retain unrelated bytes from a larger source allocation.
+
+```kappa
+bytesCompact :
+    Bytes -> Bytes
+```
+
+Rules for `bytesCompact`:
+
+* `bytesCompact bs == bs`.
+* `bytesCompact` MUST NOT change the observable byte sequence.
+* `bytesCompact` SHOULD release retention of unrelated source storage when possible.
+* An implementation MAY return `bs` unchanged when it can prove no unrelated storage is retained or when compaction is
+  not meaningful for that backend.
+
 ---
 
 <!-- modules.names -->
