@@ -26,6 +26,15 @@ Kappa is a small, statically typed, dependently typed language. The primary desi
   opened, and projected according to their elaborated types.
   Contextual declaration kinds control name resolution and syntactic admissibility; they do not by themselves make the
   underlying semantic object non-first-class.
+- Diagnostics are part of the language contract.
+  A compile-time error is not merely an implementation failure report; it is a source-level explanation of which
+  language rule could not be satisfied, where the relevant obligation came from, and what local repair is available
+  when one is evident.
+- Human-readable diagnostics and machine-readable diagnostics are two renderings of the same structured diagnostic
+  record.
+  Tools must not be required to parse prose.
+- Generated code, macro expansion, implicit insertion, desugaring, and elaboration recovery must preserve enough origin
+  information to blame user-written source rather than generated artifacts whenever that is faithful.
 
 <!-- design.boundary_honesty -->
 ### 1.1 Boundary honesty and progressive precision
@@ -18992,6 +19001,18 @@ The semantic hashes of this chapter are not, by themselves, the required increme
 implementation; compiler fingerprints for that purpose are defined separately in §17.1.2.
 Compiler observability artifacts such as stage dumps, pipeline traces, and reproducer bundles are not part of those
 hashing inputs.
+
+Diagnostics and semantic identity:
+
+Diagnostic records, diagnostic ordering, human-readable diagnostic prose, explanation text, and fix-it text are not part
+of source-language semantics, definitional equality, interface identity, Easy Hashes, Hard Hashes, or backend output.
+
+The facts from which diagnostics are derived may be part of those identities when specified elsewhere. For example,
+macro input transcripts, selected provider identities, lockfile identities, exported signatures, and generated KCore
+remain governed by their ordinary hashing rules.
+
+Changing only the wording, labels, notes, help text, explanation pages, or fix-it titles of a diagnostic MUST NOT change
+the semantic hash of a valid program.
 
 In package mode, hashes are deterministic functions of the source and dependency graph, because package-mode macros have
 no `IO` capability (§5.8.6). Canonical hashes are computed from the perspective of the defining module, using that
