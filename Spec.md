@@ -887,7 +887,12 @@ Implementations MUST also provide the projector and accessor declarations refere
 
 Types (type namespace):
 ```
-Unit, Void, Bool, Char, String, Int, Nat, Integer, Float, Double, Real, Bytes, Ordering, SyntaxFragment,
+Unit, Void, Bool, Char, String, Int, Nat, Integer, Float, Double, Real, Bytes, Ordering,
+
+Syntax a, SyntaxOrigin, SyntaxFragment,
+Elab a, ElabGoal,
+CoreCtx, Core Γ a, CoreEq x y, Symbol,
+
 Query a, RawComprehension a, ComprehensionPlan a,
 Option a, Result e a, List a, Array a, Set a, Map k v,
 Res a r, Match a r, Dec p, Dict c,
@@ -1244,9 +1249,36 @@ trait Iterator (it : Type) =
     Item : Type
     next : (1 this : it) -> Option (item : Item, rest : it)
 
+Syntax : Type -> Type
+SyntaxOrigin : Type
+
+data SyntaxFragment : Type =
+    Lit       (s : String)
+    Interp    (@t : Type) (e : Syntax t)
+    InterpFmt (@t : Type) (e : Syntax t) (fmt : String)
+
+Elab : Type -> Type
+
+type ElabGoal : Type =
+    (ctx : CoreCtx,
+     expected : Option (Core this.ctx Type))
+
+CoreCtx : Type
+Core    : CoreCtx -> Type -> Type
+
+CoreEq  :
+    forall (@0 Γ : CoreCtx) (@0 a : Type) (@0 b : Type).
+    Core Γ a -> Core Γ b -> Type
+
+Symbol : Type
+
 Query : Type -> Type
 RawComprehension : Type -> Type
 ComprehensionPlan : Type -> Type
+
+trait InterpolatedMacro (t : Type) =
+    buildInterpolated :
+        List SyntaxFragment -> Elab (Syntax t)
 
 trait IntoQuery (src : Type) =
     Item : Type
@@ -1254,23 +1286,29 @@ trait IntoQuery (src : Type) =
 
 trait FromComprehensionPlan (c : Type) =
     Item : Type
-    fromComprehensionPlan : ComprehensionPlan Item -> Syntax c
+    fromComprehensionPlan :
+        ComprehensionPlan Item -> Elab (Syntax c)
 
 trait FromComprehensionRaw (c : Type) =
     Item : Type
-    fromComprehensionRaw : RawComprehension Item -> Syntax c
+    fromComprehensionRaw :
+        RawComprehension Item -> Elab (Syntax c)
 ```
+
+`Syntax`, `SyntaxOrigin`, `SyntaxFragment`, `Elab`, `ElabGoal`, `CoreCtx`, `Core`, `CoreEq`, `Symbol`,
+`RawComprehension`, and `ComprehensionPlan` are compile-time-only types.
 
 The comprehension sink hooks `fromComprehensionPlan` and `fromComprehensionRaw` are elaboration-time hooks.
 
 They are not ordinary runtime conversion functions.
 
-When the compiler selects one of these hooks under §10.9, it evaluates that hook during elaboration under the same
-elaboration-time evaluator and restrictions as §5.8.6.
+When the compiler selects one of these hooks under §10.9, it invokes the selected method as an `Elab` action during
+elaboration under the evaluator and restrictions of §5.8.6.
 
-The returned `Syntax c` is then elaborated at the original comprehension site, using the same lexical context,
-expected-type information, name-resolution, implicit-insertion, visibility, opacity, `unhide`, and `clarify` rules
-that would apply to an ordinary splice at that site.
+The `Syntax c` produced by that action is then elaborated at the original comprehension site, using the same lexical
+context, expected-type information, name-resolution, implicit-insertion, quantity checking, borrow checking,
+region-escape checking, visibility, opacity, `unhide`, and `clarify` rules that would apply to an ordinary splice at
+that site.
 
 Primitive suspension types:
 
