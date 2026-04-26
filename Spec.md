@@ -3235,11 +3235,17 @@ The compiler does not interpret the contents of the format specifier.
 <!-- literals.string_literals.prefixed_strings.resolution_typing -->
 ##### Resolution and typing
 
-* Let `prefix` resolve to a term `p` in scope at the use site.
-* Any prefixed string literal requires `p` to resolve to a term of type `Dict (InterpolatedMacro t)` for some result
-  type `t`.
-* If resolution fails, or if the resolved term does not have a compatible type, compilation fails with a compile-time
-  error.
+Let `prefix` resolve to a term `p` in scope at the literal occurrence.
+
+A prefixed string literal requires `p` to elaborate to one of the following:
+
+* `Elab (Dict (InterpolatedMacro t))` for some result type `t`; or
+* a meta-phase value of type `Dict (InterpolatedMacro t)`, in which case it is treated as `pure p`.
+
+An object-phase runtime value of type `Dict (InterpolatedMacro t)` does not qualify as a prefixed-string handler.
+
+If resolution fails, or if the resolved term does not have one of the admissible types above, compilation fails with a
+compile-time error.
 
 The prelude provides:
 
@@ -3250,8 +3256,12 @@ data SyntaxFragment : Type =
     InterpFmt (@t : Type) (e : Syntax t) (fmt : String)
 
 trait InterpolatedMacro (t : Type) =
-    buildInterpolated : List SyntaxFragment -> Syntax t
+    buildInterpolated :
+        List SyntaxFragment -> Elab (Syntax t)
 ```
+
+`SyntaxFragment` values are meta-phase values. Their `String` fields are ordinary `String` values at the meta phase,
+not runtime strings captured by the compiler.
 
 <!-- literals.string_literals.prefixed_strings.fragment_construction_rules -->
 ##### Fragment construction rules
