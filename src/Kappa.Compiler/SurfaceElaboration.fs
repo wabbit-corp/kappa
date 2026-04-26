@@ -112,6 +112,7 @@ module SurfaceElaboration =
           VisibleProjections: Map<string, ProjectionInfo>
           VisibleTraits: Map<string, TraitInfo>
           VisibleInstances: InstanceInfo list
+          ElaborationAvailableBindings: Set<string>
           ConstrainedMembers: Map<string, string * string> }
 
     type private PreparedCallArgument =
@@ -1547,6 +1548,9 @@ module SurfaceElaboration =
     let private syntaxType argumentType =
         TypeName([ "Syntax" ], [ argumentType ])
 
+    let private elabType argumentType =
+        TypeName([ "Elab" ], [ argumentType ])
+
     let private codeType argumentType =
         TypeName([ "Code" ], [ argumentType ])
 
@@ -2731,6 +2735,27 @@ module SurfaceElaboration =
 
         loop Set.empty
 
+    let private tryUnwrapElabType aliases typeExpr =
+        let normalize = normalizeTypeAliases aliases
+
+        match normalize typeExpr with
+        | TypeName(([ "Elab" ] | [ "std"; "prelude"; "Elab" ]), [ inner ]) -> Some inner
+        | _ -> None
+
+    let private tryUnwrapSyntaxType aliases typeExpr =
+        let normalize = normalizeTypeAliases aliases
+
+        match normalize typeExpr with
+        | TypeName(([ "Syntax" ] | [ "std"; "prelude"; "Syntax" ]), [ inner ]) -> Some inner
+        | _ -> None
+
+    let private tryUnwrapTopLevelSyntaxSpliceType aliases typeExpr =
+        tryUnwrapSyntaxType aliases typeExpr
+        |> Option.orElseWith (fun () ->
+            typeExpr
+            |> tryUnwrapElabType aliases
+            |> Option.bind (tryUnwrapSyntaxType aliases))
+
     let private tryCanonicalRecordType
         (aliases: Map<string, TypeAliasInfo>)
         typeExpr
@@ -3333,16 +3358,34 @@ module SurfaceElaboration =
         | _ ->
             None
 
+    let private tryElabInterpolatedMacroResultType
+        (aliases: Map<string, TypeAliasInfo>)
+        (typeExpr: TypeExpr)
+        =
+        typeExpr
+        |> tryUnwrapElabType aliases
+        |> Option.bind (tryInterpolatedMacroResultType aliases)
+
     let private tryInferPrefixedStringMacroResultType
         (environment: BindingLoweringEnvironment)
         (freshCounter: int ref)
         (localTypes: Map<string, TypeExpr>)
         prefix
         =
-        localTypes
-        |> Map.tryFind prefix
-        |> Option.orElseWith (fun () -> instantiateVisibleBindingResultType environment freshCounter prefix)
-        |> Option.bind (tryInterpolatedMacroResultType environment.VisibleTypeAliases)
+        let tryResolve allowPlainDictionary resolvedType =
+            tryElabInterpolatedMacroResultType environment.VisibleTypeAliases resolvedType
+            |> Option.orElseWith (fun () ->
+                if allowPlainDictionary then
+                    tryInterpolatedMacroResultType environment.VisibleTypeAliases resolvedType
+                else
+                    None)
+
+        match localTypes |> Map.tryFind prefix with
+        | Some localType ->
+            tryResolve false localType
+        | None ->
+            instantiateVisibleBindingResultType environment freshCounter prefix
+            |> Option.bind (tryResolve (Set.contains prefix environment.ElaborationAvailableBindings))
 
     let private tryInferVisibleAppliedType
         (aliases: Map<string, TypeAliasInfo>)
@@ -4222,14 +4265,10 @@ module SurfaceElaboration =
             |> Option.map syntaxType
         | SyntaxSplice inner ->
             inferValidationExpressionType environment freshCounter localTypes inner
-            |> Option.bind (function
-                | TypeName([ "Syntax" ], [ innerType ]) -> Some innerType
-                | _ -> None)
+            |> Option.bind (tryUnwrapSyntaxType environment.VisibleTypeAliases)
         | TopLevelSyntaxSplice inner ->
             inferValidationExpressionType environment freshCounter localTypes inner
-            |> Option.bind (function
-                | TypeName([ "Syntax" ], [ innerType ]) -> Some innerType
-                | _ -> None)
+            |> Option.bind (tryUnwrapTopLevelSyntaxSpliceType environment.VisibleTypeAliases)
         | CodeQuote inner ->
             inferValidationExpressionType environment freshCounter localTypes inner
             |> Option.map codeType
@@ -4652,6 +4691,7 @@ module SurfaceElaboration =
         (environment: BindingLoweringEnvironment)
         (knownSurfaceTermNames: Set<string>)
         (allowUnresolvedCallDiagnostics: bool)
+        (topLevelDefinitionsByName: Map<string, LetDefinition>)
         (definition: LetDefinition)
         (scheme: TypeScheme option)
         =
@@ -4763,9 +4803,526 @@ module SurfaceElaboration =
                 |> Map.tryFind name
                 |> Option.map instantiate)
 
+        let typeIsMetaPhaseTransferType typeExpr =
+            let normalized = normalizeTypeAliases environment.VisibleTypeAliases typeExpr
+
+            match normalized with
+            | TypeName(([ "Syntax" ] | [ "std"; "prelude"; "Syntax" ]), [ _ ])
+            | TypeName(([ "SyntaxOrigin" ] | [ "std"; "prelude"; "SyntaxOrigin" ]), [])
+            | TypeName(([ "SyntaxFragment" ] | [ "std"; "prelude"; "SyntaxFragment" ]), [])
+            | TypeName(([ "Elab" ] | [ "std"; "prelude"; "Elab" ]), [ _ ])
+            | TypeName(([ "ElabGoal" ] | [ "std"; "prelude"; "ElabGoal" ]), [])
+            | TypeName(([ "Code" ] | [ "std"; "prelude"; "Code" ]), [ _ ])
+            | TypeName(([ "ClosedCode" ] | [ "std"; "prelude"; "ClosedCode" ]), [ _ ])
+            | TypeName(([ "RawComprehension" ] | [ "std"; "prelude"; "RawComprehension" ]), [ _ ])
+            | TypeName(([ "ComprehensionPlan" ] | [ "std"; "prelude"; "ComprehensionPlan" ]), [ _ ]) ->
+                true
+            | _ ->
+                isCompileTimeArgumentType environment.VisibleTypeAliases normalized
+
+        let rec typeMentionsMacroReflectionType typeExpr =
+            let normalized = normalizeTypeAliases environment.VisibleTypeAliases typeExpr
+
+            match normalized with
+            | TypeName(([ "Syntax" ] | [ "std"; "prelude"; "Syntax" ]), [ _ ])
+            | TypeName(([ "SyntaxOrigin" ] | [ "std"; "prelude"; "SyntaxOrigin" ]), [])
+            | TypeName(([ "SyntaxFragment" ] | [ "std"; "prelude"; "SyntaxFragment" ]), [])
+            | TypeName(([ "Elab" ] | [ "std"; "prelude"; "Elab" ]), [ _ ])
+            | TypeName(([ "ElabGoal" ] | [ "std"; "prelude"; "ElabGoal" ]), [])
+            | TypeName(([ "Code" ] | [ "std"; "prelude"; "Code" ]), [ _ ])
+            | TypeName(([ "ClosedCode" ] | [ "std"; "prelude"; "ClosedCode" ]), [ _ ]) ->
+                true
+            | TypeArrow(_, parameterType, resultType) ->
+                typeMentionsMacroReflectionType parameterType
+                || typeMentionsMacroReflectionType resultType
+            | TypeApply(callee, arguments) ->
+                typeMentionsMacroReflectionType callee
+                || (arguments |> List.exists typeMentionsMacroReflectionType)
+            | TypeLambda(_, parameterSort, body) ->
+                typeMentionsMacroReflectionType parameterSort
+                || typeMentionsMacroReflectionType body
+            | TypeDelay inner
+            | TypeMemo inner
+            | TypeForce inner ->
+                typeMentionsMacroReflectionType inner
+            | TypeProject(receiver, _) ->
+                typeMentionsMacroReflectionType receiver
+            | TypeCapture(baseType, _) ->
+                typeMentionsMacroReflectionType baseType
+            | TypeRecord fields ->
+                fields |> List.exists (fun field -> typeMentionsMacroReflectionType field.Type)
+            | TypeEffectRow(entries, tail) ->
+                (entries
+                 |> List.exists (fun entry ->
+                     typeMentionsMacroReflectionType entry.Label
+                     || typeMentionsMacroReflectionType entry.Effect))
+                || (tail |> Option.exists typeMentionsMacroReflectionType)
+            | TypeUnion options ->
+                options |> List.exists typeMentionsMacroReflectionType
+            | TypeEquality(left, right) ->
+                typeMentionsMacroReflectionType left
+                || typeMentionsMacroReflectionType right
+            | TypeName(_, arguments) ->
+                arguments |> List.exists typeMentionsMacroReflectionType
+            | TypeVariable _
+            | TypeLevelLiteral _
+            | TypeUniverse _
+            | TypeIntrinsic _ ->
+                false
+
+        let tryInferPureElabResultType locals expression =
+            let isPureElabPayloadType typeExpr =
+                match normalizeTypeAliases environment.VisibleTypeAliases typeExpr with
+                | TypeName(([ "Syntax" ] | [ "std"; "prelude"; "Syntax" ]), [ _ ])
+                | TypeName(([ "SyntaxOrigin" ] | [ "std"; "prelude"; "SyntaxOrigin" ]), [])
+                | TypeName(([ "SyntaxFragment" ] | [ "std"; "prelude"; "SyntaxFragment" ]), [])
+                | TypeName(([ "Code" ] | [ "std"; "prelude"; "Code" ]), [ _ ])
+                | TypeName(([ "ClosedCode" ] | [ "std"; "prelude"; "ClosedCode" ]), [ _ ]) ->
+                    true
+                | _ ->
+                    false
+
+            match expression with
+            | Apply(Name [ "pure" ], [ argument ]) ->
+                inferValidationExpressionType environment freshCounter locals argument
+                |> Option.filter isPureElabPayloadType
+                |> Option.map elabType
+            | _ ->
+                None
+
+        let tryInferMacroAwareValidationType locals expression =
+            tryInferPureElabResultType locals expression
+            |> Option.orElseWith (fun () -> inferValidationExpressionType environment freshCounter locals expression)
+
+        let tryInferTopLevelSpliceResultType locals expression =
+            inferValidationExpressionType environment freshCounter locals expression
+            |> Option.bind (tryUnwrapTopLevelSyntaxSpliceType environment.VisibleTypeAliases)
+            |> Option.orElseWith (fun () ->
+                tryInferPureElabResultType locals expression
+                |> Option.bind (tryUnwrapTopLevelSyntaxSpliceType environment.VisibleTypeAliases))
+
+        let tryResolveVisibleCallable name =
+            environment.VisibleBindings
+            |> Map.tryFind name
+            |> Option.orElseWith (fun () -> environment.VisibleConstructors |> Map.tryFind name)
+
+        let tryInstantiateVisibleCallableScheme name =
+            tryResolveVisibleCallable name
+            |> Option.map (fun bindingInfo ->
+                let probe = ref freshCounter.Value
+                TypeSignatures.instantiate "v" probe.Value bindingInfo.Scheme)
+
+        let tryInferCallableElabResult name =
+            tryInstantiateVisibleCallableScheme name
+            |> Option.bind (fun instantiated ->
+                instantiated
+                |> TypeSignatures.schemeParts
+                |> snd
+                |> tryUnwrapElabType environment.VisibleTypeAliases)
+
+        let syntaxCarrierEscapeDiagnostics visibleNames valueType valueExpression =
+            let unwrapSyntaxCarrier typeExpr =
+                tryUnwrapSyntaxType environment.VisibleTypeAliases typeExpr
+                |> Option.orElseWith (fun () ->
+                    typeExpr
+                    |> tryUnwrapElabType environment.VisibleTypeAliases
+                    |> Option.bind (tryUnwrapSyntaxType environment.VisibleTypeAliases))
+
+            let rec quotedVisibleNames visible current =
+                seq {
+                    match current with
+                    | Name(root :: _) when Set.contains root visible ->
+                        yield root
+                    | Name [] ->
+                        ()
+                    | SyntaxQuote inner
+                    | SyntaxSplice inner
+                    | TopLevelSyntaxSplice inner
+                    | CodeQuote inner
+                    | CodeSplice inner
+                    | MonadicSplice inner
+                    | ExplicitImplicitArgument inner
+                    | InoutArgument inner
+                    | Unary(_, inner) ->
+                        yield! quotedVisibleNames visible inner
+                    | LocalLet(binding, value, body) ->
+                        yield! quotedVisibleNames visible value
+
+                        let nextVisible =
+                            collectPatternNames binding.Pattern
+                            |> Set.ofList
+                            |> Set.union visible
+
+                        yield! quotedVisibleNames nextVisible body
+                    | LocalSignature(declaration, body) ->
+                        yield! quotedVisibleNames (Set.add declaration.Name visible) body
+                    | LocalTypeAlias(_, body) ->
+                        yield! quotedVisibleNames visible body
+                    | LocalScopedEffect(declaration, body) ->
+                        yield! quotedVisibleNames (Set.add declaration.Name visible) body
+                    | Lambda(parameters, body) ->
+                        let nextVisible =
+                            parameters
+                            |> List.map (fun parameter -> parameter.Name)
+                            |> Set.ofList
+                            |> Set.union visible
+
+                        yield! quotedVisibleNames nextVisible body
+                    | Handle(_, label, body, returnClause, operationClauses) ->
+                        yield! quotedVisibleNames visible label
+                        yield! quotedVisibleNames visible body
+
+                        let addClauseNames (clause: SurfaceEffectHandlerClause) visibleNames =
+                            let argumentNames =
+                                clause.ArgumentTokens
+                                |> List.choose (fun tokens ->
+                                    match significantTokens tokens with
+                                    | [ token ] when Token.isName token ->
+                                        Some(SyntaxFacts.trimIdentifierQuotes token.Text)
+                                    | _ ->
+                                        None)
+                                |> Set.ofList
+
+                            let resumptionNames =
+                                clause.ResumptionName |> Option.toList |> Set.ofList
+
+                            visibleNames
+                            |> Set.union argumentNames
+                            |> Set.union resumptionNames
+
+                        yield! quotedVisibleNames (addClauseNames returnClause visible) returnClause.Body
+
+                        for clause in operationClauses do
+                            yield! quotedVisibleNames (addClauseNames clause visible) clause.Body
+                    | IfThenElse(condition, whenTrue, whenFalse) ->
+                        yield! quotedVisibleNames visible condition
+                        yield! quotedVisibleNames visible whenTrue
+                        yield! quotedVisibleNames visible whenFalse
+                    | Match(scrutinee, cases) ->
+                        yield! quotedVisibleNames visible scrutinee
+
+                        for caseClause in cases do
+                            let caseVisible =
+                                collectPatternNames caseClause.Pattern
+                                |> Set.ofList
+                                |> Set.union visible
+
+                            match caseClause.Guard with
+                            | Some guard -> yield! quotedVisibleNames caseVisible guard
+                            | None -> ()
+
+                            yield! quotedVisibleNames caseVisible caseClause.Body
+                    | RecordLiteral fields ->
+                        for field in fields do
+                            yield! quotedVisibleNames visible field.Value
+                    | Seal(value, _) ->
+                        yield! quotedVisibleNames visible value
+                    | RecordUpdate(receiver, fields) ->
+                        yield! quotedVisibleNames visible receiver
+
+                        for field in fields do
+                            yield! quotedVisibleNames visible field.Value
+                    | MemberAccess(receiver, _, arguments) ->
+                        yield! quotedVisibleNames visible receiver
+
+                        for argument in arguments do
+                            yield! quotedVisibleNames visible argument
+                    | SafeNavigation(receiver, navigation) ->
+                        yield! quotedVisibleNames visible receiver
+
+                        for argument in navigation.Arguments do
+                            yield! quotedVisibleNames visible argument
+                    | TagTest(receiver, _) ->
+                        yield! quotedVisibleNames visible receiver
+                    | Do statements ->
+                        for statement in statements do
+                            match statement with
+                            | DoLet(binding, expression)
+                            | DoBind(binding, expression)
+                            | DoUsing(binding, expression) ->
+                                yield! quotedVisibleNames visible expression
+
+                                let nextVisible =
+                                    collectPatternNames binding.Pattern
+                                    |> Set.ofList
+                                    |> Set.union visible
+
+                                yield! quotedVisibleNames nextVisible (Literal LiteralValue.Unit)
+                            | DoLetQuestion(binding, expression, failure) ->
+                                yield! quotedVisibleNames visible expression
+
+                                match failure with
+                                | Some failure ->
+                                    let failureVisible =
+                                        collectPatternNames failure.ResiduePattern.Pattern
+                                        |> Set.ofList
+                                        |> Set.union visible
+
+                                    for failureStatement in failure.Body do
+                                        match failureStatement with
+                                        | DoExpression inner
+                                        | DoReturn inner
+                                        | DoDefer inner
+                                        | DoVar(_, inner)
+                                        | DoAssign(_, inner) ->
+                                            yield! quotedVisibleNames failureVisible inner
+                                        | _ ->
+                                            ()
+                                | None ->
+                                    ()
+
+                                let nextVisible =
+                                    collectPatternNames binding.Pattern
+                                    |> Set.ofList
+                                    |> Set.union visible
+
+                                yield! quotedVisibleNames nextVisible (Literal LiteralValue.Unit)
+                            | DoVar(_, inner)
+                            | DoAssign(_, inner)
+                            | DoDefer inner
+                            | DoExpression inner
+                            | DoReturn inner ->
+                                yield! quotedVisibleNames visible inner
+                            | DoIf(condition, whenTrue, whenFalse) ->
+                                yield! quotedVisibleNames visible condition
+
+                                for nested in whenTrue @ whenFalse do
+                                    match nested with
+                                    | DoExpression inner
+                                    | DoReturn inner
+                                    | DoDefer inner
+                                    | DoVar(_, inner)
+                                    | DoAssign(_, inner) ->
+                                        yield! quotedVisibleNames visible inner
+                                    | _ ->
+                                        ()
+                            | DoWhile(condition, body) ->
+                                yield! quotedVisibleNames visible condition
+
+                                for nested in body do
+                                    match nested with
+                                    | DoExpression inner
+                                    | DoReturn inner
+                                    | DoDefer inner
+                                    | DoVar(_, inner)
+                                    | DoAssign(_, inner) ->
+                                        yield! quotedVisibleNames visible inner
+                                    | _ ->
+                                        ()
+                    | Apply(callee, arguments) ->
+                        yield! quotedVisibleNames visible callee
+
+                        for argument in arguments do
+                            yield! quotedVisibleNames visible argument
+                    | NamedApplicationBlock fields ->
+                        for field in fields do
+                            yield! quotedVisibleNames visible field.Value
+                    | Binary(left, _, right)
+                    | Elvis(left, right) ->
+                        yield! quotedVisibleNames visible left
+                        yield! quotedVisibleNames visible right
+                    | PrefixedString(_, parts) ->
+                        for part in parts do
+                            match part with
+                            | StringText _ -> ()
+                            | StringInterpolation(inner, _) -> yield! quotedVisibleNames visible inner
+                    | Literal _
+                    | NumericLiteral _
+                    | KindQualifiedName _ ->
+                        ()
+                    | _ ->
+                        ()
+                }
+
+            let rec escapedCapturedNames bindingVisible currentVisible current =
+                seq {
+                    match current with
+                    | SyntaxQuote inner ->
+                        yield!
+                            quotedVisibleNames currentVisible inner
+                            |> Seq.filter (fun name -> not (Set.contains name bindingVisible))
+                    | SyntaxSplice inner
+                    | TopLevelSyntaxSplice inner
+                    | CodeQuote inner
+                    | CodeSplice inner
+                    | MonadicSplice inner
+                    | ExplicitImplicitArgument inner
+                    | InoutArgument inner
+                    | Unary(_, inner) ->
+                        yield! escapedCapturedNames bindingVisible currentVisible inner
+                    | LocalLet(binding, value, body) ->
+                        yield! escapedCapturedNames bindingVisible currentVisible value
+
+                        let nextVisible =
+                            collectPatternNames binding.Pattern
+                            |> Set.ofList
+                            |> Set.union currentVisible
+
+                        yield! escapedCapturedNames bindingVisible nextVisible body
+                    | LocalSignature(declaration, body) ->
+                        yield! escapedCapturedNames bindingVisible (Set.add declaration.Name currentVisible) body
+                    | LocalTypeAlias(_, body) ->
+                        yield! escapedCapturedNames bindingVisible currentVisible body
+                    | LocalScopedEffect(declaration, body) ->
+                        yield! escapedCapturedNames bindingVisible (Set.add declaration.Name currentVisible) body
+                    | Lambda(parameters, body) ->
+                        let nextVisible =
+                            parameters
+                            |> List.map (fun parameter -> parameter.Name)
+                            |> Set.ofList
+                            |> Set.union currentVisible
+
+                        yield! escapedCapturedNames bindingVisible nextVisible body
+                    | Handle(_, label, body, returnClause, operationClauses) ->
+                        yield! escapedCapturedNames bindingVisible currentVisible label
+                        yield! escapedCapturedNames bindingVisible currentVisible body
+                        yield! escapedCapturedNames bindingVisible currentVisible returnClause.Body
+
+                        for clause in operationClauses do
+                            yield! escapedCapturedNames bindingVisible currentVisible clause.Body
+                    | IfThenElse(condition, whenTrue, whenFalse) ->
+                        yield! escapedCapturedNames bindingVisible currentVisible condition
+                        yield! escapedCapturedNames bindingVisible currentVisible whenTrue
+                        yield! escapedCapturedNames bindingVisible currentVisible whenFalse
+                    | Match(scrutinee, cases) ->
+                        yield! escapedCapturedNames bindingVisible currentVisible scrutinee
+
+                        for caseClause in cases do
+                            let nextVisible =
+                                collectPatternNames caseClause.Pattern
+                                |> Set.ofList
+                                |> Set.union currentVisible
+
+                            match caseClause.Guard with
+                            | Some guard -> yield! escapedCapturedNames bindingVisible nextVisible guard
+                            | None -> ()
+
+                            yield! escapedCapturedNames bindingVisible nextVisible caseClause.Body
+                    | RecordLiteral fields ->
+                        for field in fields do
+                            yield! escapedCapturedNames bindingVisible currentVisible field.Value
+                    | Seal(value, _) ->
+                        yield! escapedCapturedNames bindingVisible currentVisible value
+                    | RecordUpdate(receiver, fields) ->
+                        yield! escapedCapturedNames bindingVisible currentVisible receiver
+
+                        for field in fields do
+                            yield! escapedCapturedNames bindingVisible currentVisible field.Value
+                    | MemberAccess(receiver, _, arguments) ->
+                        yield! escapedCapturedNames bindingVisible currentVisible receiver
+
+                        for argument in arguments do
+                            yield! escapedCapturedNames bindingVisible currentVisible argument
+                    | SafeNavigation(receiver, navigation) ->
+                        yield! escapedCapturedNames bindingVisible currentVisible receiver
+
+                        for argument in navigation.Arguments do
+                            yield! escapedCapturedNames bindingVisible currentVisible argument
+                    | TagTest(receiver, _) ->
+                        yield! escapedCapturedNames bindingVisible currentVisible receiver
+                    | Do statements ->
+                        for statement in statements do
+                            match statement with
+                            | DoLet(binding, expression)
+                            | DoBind(binding, expression)
+                            | DoUsing(binding, expression) ->
+                                yield! escapedCapturedNames bindingVisible currentVisible expression
+
+                                let nextVisible =
+                                    collectPatternNames binding.Pattern
+                                    |> Set.ofList
+                                    |> Set.union currentVisible
+
+                                yield! escapedCapturedNames bindingVisible nextVisible (Literal LiteralValue.Unit)
+                            | DoLetQuestion(binding, expression, _) ->
+                                yield! escapedCapturedNames bindingVisible currentVisible expression
+
+                                let nextVisible =
+                                    collectPatternNames binding.Pattern
+                                    |> Set.ofList
+                                    |> Set.union currentVisible
+
+                                yield! escapedCapturedNames bindingVisible nextVisible (Literal LiteralValue.Unit)
+                            | DoVar(_, inner)
+                            | DoAssign(_, inner)
+                            | DoDefer inner
+                            | DoExpression inner
+                            | DoReturn inner ->
+                                yield! escapedCapturedNames bindingVisible currentVisible inner
+                            | DoIf(condition, whenTrue, whenFalse) ->
+                                yield! escapedCapturedNames bindingVisible currentVisible condition
+
+                                for nested in whenTrue @ whenFalse do
+                                    match nested with
+                                    | DoExpression inner
+                                    | DoReturn inner
+                                    | DoDefer inner
+                                    | DoVar(_, inner)
+                                    | DoAssign(_, inner) ->
+                                        yield! escapedCapturedNames bindingVisible currentVisible inner
+                                    | _ ->
+                                        ()
+                            | DoWhile(condition, body) ->
+                                yield! escapedCapturedNames bindingVisible currentVisible condition
+
+                                for nested in body do
+                                    match nested with
+                                    | DoExpression inner
+                                    | DoReturn inner
+                                    | DoDefer inner
+                                    | DoVar(_, inner)
+                                    | DoAssign(_, inner) ->
+                                        yield! escapedCapturedNames bindingVisible currentVisible inner
+                                    | _ ->
+                                        ()
+                    | Apply(callee, arguments) ->
+                        yield! escapedCapturedNames bindingVisible currentVisible callee
+
+                        for argument in arguments do
+                            yield! escapedCapturedNames bindingVisible currentVisible argument
+                    | NamedApplicationBlock fields ->
+                        for field in fields do
+                            yield! escapedCapturedNames bindingVisible currentVisible field.Value
+                    | Binary(left, _, right)
+                    | Elvis(left, right) ->
+                        yield! escapedCapturedNames bindingVisible currentVisible left
+                        yield! escapedCapturedNames bindingVisible currentVisible right
+                    | PrefixedString(_, parts) ->
+                        for part in parts do
+                            match part with
+                            | StringText _ -> ()
+                            | StringInterpolation(inner, _) ->
+                                yield! escapedCapturedNames bindingVisible currentVisible inner
+                    | Literal _
+                    | NumericLiteral _
+                    | KindQualifiedName _
+                    | Name _ ->
+                        ()
+                }
+
+            match unwrapSyntaxCarrier valueType with
+            | Some _ ->
+                let escapedNames =
+                    escapedCapturedNames visibleNames visibleNames valueExpression
+                    |> Seq.distinct
+                    |> Seq.toList
+
+                if List.isEmpty escapedNames then
+                    []
+                else
+                    let escapedText = String.concat ", " escapedNames
+
+                    [
+                        makeDiagnostic
+                            DiagnosticCode.TypeEqualityMismatch
+                            $"Syntax value captures binder(s) '{escapedText}' that do not remain in scope at the binding site; captured locals and borrows cannot escape through Syntax."
+                    ]
+            | None ->
+                []
+
         let prefixedStringPrefixDiagnostics locals lexicalNames prefix =
             let mismatchMessage =
-                $"Prefixed string prefix '{prefix}' must resolve to a term of type 'Dict (InterpolatedMacro t)' for some 't'."
+                $"Prefixed string prefix '{prefix}' must resolve to a term of type 'Elab (Dict (InterpolatedMacro t))' for some 't', or to an elaboration-time dictionary value."
 
             let prefixType =
                 locals
@@ -4774,7 +5331,18 @@ module SurfaceElaboration =
 
             match prefixType with
             | Some resolvedType ->
-                match tryInterpolatedMacroResultType environment.VisibleTypeAliases resolvedType with
+                let allowPlainDictionary =
+                    not (Map.containsKey prefix locals) && Set.contains prefix environment.ElaborationAvailableBindings
+
+                let resolvedResultType =
+                    tryElabInterpolatedMacroResultType environment.VisibleTypeAliases resolvedType
+                    |> Option.orElseWith (fun () ->
+                        if allowPlainDictionary then
+                            tryInterpolatedMacroResultType environment.VisibleTypeAliases resolvedType
+                        else
+                            None)
+
+                match resolvedResultType with
                 | Some _ -> []
                 | None -> [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch mismatchMessage ]
             | None when Set.contains prefix lexicalNames ->
@@ -6070,6 +6638,21 @@ module SurfaceElaboration =
                 | None, _ ->
                     []
 
+            let macroExpectedBodyDiagnostics =
+                match expectedBodyType, tryInferMacroAwareValidationType locals body with
+                | Some expectedType, Some actualType
+                    when (match body with
+                          | Name _
+                          | Apply _
+                          | PrefixedString _ -> true
+                          | _ -> false)
+                         && (typeMentionsMacroReflectionType expectedType
+                             || typeMentionsMacroReflectionType actualType)
+                         && not (expectedTypeAccepts locals Map.empty expectedType actualType) ->
+                    [ expectedMismatchDiagnostic locals Map.empty "Definition body" expectedType actualType ]
+                | _ ->
+                    []
+
             directSignatureLiteralDiagnostic
             @ sealAscriptionDiagnostics
             @ opaqueUnfoldingDiagnostics
@@ -6078,6 +6661,7 @@ module SurfaceElaboration =
             @ constructorAsStaticObjectDiagnostics
             @ expectedUnionDiagnostics
             @ contextualNumericBodyDiagnostics
+            @ macroExpectedBodyDiagnostics
 
         let applicationExpectedArgumentDiagnostics locals refinements (bindingInfo: BindingSchemeInfo) arguments =
             let inferArgumentTypeForParameter parameterType argument =
@@ -6346,10 +6930,571 @@ module SurfaceElaboration =
                 | Name _ ->
                     false
 
+            let quoteSpliceDiagnostics inner =
+                match inferValidationExpressionType environment freshCounter locals inner with
+                | Some actualType ->
+                    match tryUnwrapSyntaxType environment.VisibleTypeAliases actualType with
+                    | Some _ ->
+                        []
+                    | None ->
+                        match
+                            actualType
+                            |> tryUnwrapElabType environment.VisibleTypeAliases
+                            |> Option.bind (tryUnwrapSyntaxType environment.VisibleTypeAliases)
+                        with
+                        | Some _ ->
+                            [
+                                makeDiagnostic
+                                    DiagnosticCode.TypeEqualityMismatch
+                                    "Quote splice `${...}` requires `Syntax t`; `Elab (Syntax t)` is not run implicitly inside a quote."
+                            ]
+                        | None ->
+                            [
+                                makeDiagnostic
+                                    DiagnosticCode.TypeEqualityMismatch
+                                    $"Quote splice `${{...}}` requires `Syntax t`, but found '{TypeSignatures.toText actualType}'."
+                            ]
+                | None ->
+                    []
+
+            let topLevelSpliceTypeDiagnostics inner =
+                match tryInferTopLevelSpliceResultType locals inner with
+                | Some _ ->
+                    []
+                | None ->
+                    match tryInferMacroAwareValidationType locals inner with
+                    | Some actualType ->
+                        [
+                            makeDiagnostic
+                                DiagnosticCode.TypeEqualityMismatch
+                                $"Top-level splice `$(...)` requires `Syntax t` or `Elab (Syntax t)`, but found '{TypeSignatures.toText actualType}'."
+                        ]
+                    | None ->
+                        []
+
+            let rec substituteSyntaxArguments substitutions shadowed current =
+                let rewrite = substituteSyntaxArguments substitutions shadowed
+
+                match current with
+                | Name [ name ] when not (Set.contains name shadowed) ->
+                    substitutions |> Map.tryFind name |> Option.defaultValue current
+                | SyntaxQuote inner ->
+                    SyntaxQuote(rewrite inner)
+                | SyntaxSplice inner ->
+                    SyntaxSplice(rewrite inner)
+                | TopLevelSyntaxSplice inner ->
+                    TopLevelSyntaxSplice(rewrite inner)
+                | CodeQuote inner ->
+                    CodeQuote(rewrite inner)
+                | CodeSplice inner ->
+                    CodeSplice(rewrite inner)
+                | Handle(isDeep, label, body, returnClause, operationClauses) ->
+                    let rewriteClause (clause: SurfaceEffectHandlerClause) =
+                        { clause with
+                            Body = rewrite clause.Body }
+
+                    Handle(
+                        isDeep,
+                        rewrite label,
+                        rewrite body,
+                        rewriteClause returnClause,
+                        operationClauses |> List.map rewriteClause
+                    )
+                | Apply(callee, arguments) ->
+                    Apply(rewrite callee, arguments |> List.map rewrite)
+                | LocalLet(binding, value, body) ->
+                    let nextShadowed =
+                        collectPatternNames binding.Pattern
+                        |> Set.ofList
+                        |> Set.union shadowed
+
+                    LocalLet(binding, rewrite value, substituteSyntaxArguments substitutions nextShadowed body)
+                | LocalSignature(declaration, body) ->
+                    LocalSignature(declaration, substituteSyntaxArguments substitutions (Set.add declaration.Name shadowed) body)
+                | LocalTypeAlias(declaration, body) ->
+                    LocalTypeAlias(declaration, rewrite body)
+                | LocalScopedEffect(declaration, body) ->
+                    LocalScopedEffect(declaration, substituteSyntaxArguments substitutions (Set.add declaration.Name shadowed) body)
+                | Lambda(parameters, body) ->
+                    let nextShadowed =
+                        parameters
+                        |> List.map (fun parameter -> parameter.Name)
+                        |> Set.ofList
+                        |> Set.union shadowed
+
+                    Lambda(parameters, substituteSyntaxArguments substitutions nextShadowed body)
+                | IfThenElse(condition, whenTrue, whenFalse) ->
+                    IfThenElse(rewrite condition, rewrite whenTrue, rewrite whenFalse)
+                | Match(scrutinee, cases) ->
+                    Match(
+                        rewrite scrutinee,
+                        cases
+                        |> List.map (fun caseClause ->
+                            let caseShadowed =
+                                collectPatternNames caseClause.Pattern
+                                |> Set.ofList
+                                |> Set.union shadowed
+
+                            { caseClause with
+                                Guard = caseClause.Guard |> Option.map (substituteSyntaxArguments substitutions caseShadowed)
+                                Body = substituteSyntaxArguments substitutions caseShadowed caseClause.Body })
+                    )
+                | RecordLiteral fields ->
+                    RecordLiteral(fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+                | Seal(value, ascriptionTokens) ->
+                    Seal(rewrite value, ascriptionTokens)
+                | RecordUpdate(receiver, fields) ->
+                    RecordUpdate(rewrite receiver, fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+                | MemberAccess(receiver, segments, arguments) ->
+                    MemberAccess(rewrite receiver, segments, arguments |> List.map rewrite)
+                | SafeNavigation(receiver, navigation) ->
+                    SafeNavigation(rewrite receiver, { navigation with Arguments = navigation.Arguments |> List.map rewrite })
+                | TagTest(receiver, constructorName) ->
+                    TagTest(rewrite receiver, constructorName)
+                | Do statements ->
+                    Do statements
+                | MonadicSplice inner ->
+                    MonadicSplice(rewrite inner)
+                | ExplicitImplicitArgument inner ->
+                    ExplicitImplicitArgument(rewrite inner)
+                | NamedApplicationBlock fields ->
+                    NamedApplicationBlock(fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+                | InoutArgument inner ->
+                    InoutArgument(rewrite inner)
+                | Unary(operatorName, inner) ->
+                    Unary(operatorName, rewrite inner)
+                | Binary(left, operatorName, right) ->
+                    Binary(rewrite left, operatorName, rewrite right)
+                | Elvis(left, right) ->
+                    Elvis(rewrite left, rewrite right)
+                | PrefixedString(prefix, parts) ->
+                    PrefixedString(
+                        prefix,
+                        parts
+                        |> List.map (function
+                            | StringText text -> StringText text
+                            | StringInterpolation(inner, format) -> StringInterpolation(rewrite inner, format))
+                    )
+                | Literal _
+                | NumericLiteral _
+                | KindQualifiedName _
+                | Name _ ->
+                    current
+
+            let rec inlineSyntaxQuoteSplices current =
+                let rewrite = inlineSyntaxQuoteSplices
+
+                match current with
+                | SyntaxSplice(SyntaxQuote inner) ->
+                    rewrite inner
+                | SyntaxQuote inner ->
+                    SyntaxQuote(rewrite inner)
+                | SyntaxSplice inner ->
+                    SyntaxSplice(rewrite inner)
+                | TopLevelSyntaxSplice inner ->
+                    TopLevelSyntaxSplice(rewrite inner)
+                | CodeQuote inner ->
+                    CodeQuote(rewrite inner)
+                | CodeSplice inner ->
+                    CodeSplice(rewrite inner)
+                | Apply(callee, arguments) ->
+                    Apply(rewrite callee, arguments |> List.map rewrite)
+                | Handle(isDeep, label, body, returnClause, operationClauses) ->
+                    let rewriteClause (clause: SurfaceEffectHandlerClause) =
+                        { clause with
+                            Body = rewrite clause.Body }
+
+                    Handle(
+                        isDeep,
+                        rewrite label,
+                        rewrite body,
+                        rewriteClause returnClause,
+                        operationClauses |> List.map rewriteClause
+                    )
+                | LocalLet(binding, value, body) ->
+                    LocalLet(binding, rewrite value, rewrite body)
+                | LocalSignature(declaration, body) ->
+                    LocalSignature(declaration, rewrite body)
+                | LocalTypeAlias(declaration, body) ->
+                    LocalTypeAlias(declaration, rewrite body)
+                | LocalScopedEffect(declaration, body) ->
+                    LocalScopedEffect(declaration, rewrite body)
+                | Lambda(parameters, body) ->
+                    Lambda(parameters, rewrite body)
+                | IfThenElse(condition, whenTrue, whenFalse) ->
+                    IfThenElse(rewrite condition, rewrite whenTrue, rewrite whenFalse)
+                | Match(scrutinee, cases) ->
+                    Match(
+                        rewrite scrutinee,
+                        cases
+                        |> List.map (fun caseClause ->
+                            { caseClause with
+                                Guard = caseClause.Guard |> Option.map rewrite
+                                Body = rewrite caseClause.Body })
+                    )
+                | RecordLiteral fields ->
+                    RecordLiteral(fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+                | Seal(value, ascriptionTokens) ->
+                    Seal(rewrite value, ascriptionTokens)
+                | RecordUpdate(receiver, fields) ->
+                    RecordUpdate(rewrite receiver, fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+                | MemberAccess(receiver, segments, arguments) ->
+                    MemberAccess(rewrite receiver, segments, arguments |> List.map rewrite)
+                | SafeNavigation(receiver, navigation) ->
+                    SafeNavigation(rewrite receiver, { navigation with Arguments = navigation.Arguments |> List.map rewrite })
+                | TagTest(receiver, constructorName) ->
+                    TagTest(rewrite receiver, constructorName)
+                | Do statements ->
+                    Do statements
+                | MonadicSplice inner ->
+                    MonadicSplice(rewrite inner)
+                | ExplicitImplicitArgument inner ->
+                    ExplicitImplicitArgument(rewrite inner)
+                | NamedApplicationBlock fields ->
+                    NamedApplicationBlock(fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+                | InoutArgument inner ->
+                    InoutArgument(rewrite inner)
+                | Unary(operatorName, inner) ->
+                    Unary(operatorName, rewrite inner)
+                | Binary(left, operatorName, right) ->
+                    Binary(rewrite left, operatorName, rewrite right)
+                | Elvis(left, right) ->
+                    Elvis(rewrite left, rewrite right)
+                | PrefixedString(prefix, parts) ->
+                    PrefixedString(
+                        prefix,
+                        parts
+                        |> List.map (function
+                            | StringText text -> StringText text
+                            | StringInterpolation(inner, format) -> StringInterpolation(rewrite inner, format))
+                    )
+                | Literal _
+                | NumericLiteral _
+                | KindQualifiedName _
+                | Name _ ->
+                    current
+
+            let rec tryExpandDirectSyntaxProducer visited current =
+                match current with
+                | SyntaxQuote inner ->
+                    Some(inlineSyntaxQuoteSplices inner)
+                | Apply(Name [ "pure" ], [ SyntaxQuote inner ]) ->
+                    Some(inlineSyntaxQuoteSplices inner)
+                | Apply(Name [ macroName ], arguments) when not (Set.contains macroName visited) ->
+                    topLevelDefinitionsByName
+                    |> Map.tryFind macroName
+                    |> Option.bind (fun macroDefinition ->
+                        match macroDefinition.Body with
+                        | Some macroBody when List.length macroDefinition.Parameters = List.length arguments ->
+                            let substitutions =
+                                List.zip macroDefinition.Parameters arguments
+                                |> List.map (fun (parameter, argument) -> parameter.Name, argument)
+                                |> Map.ofList
+
+                            let substitutedBody =
+                                substituteSyntaxArguments substitutions Set.empty macroBody
+
+                            tryExpandDirectSyntaxProducer (Set.add macroName visited) substitutedBody
+                        | _ ->
+                            None)
+                | _ ->
+                    None
+
+            let rec countNameUses target shadowed current =
+                let recurseCount = countNameUses target shadowed
+
+                match current with
+                | Name [ name ] when String.Equals(name, target, StringComparison.Ordinal) && not (Set.contains name shadowed) ->
+                    1
+                | Name _ ->
+                    0
+                | SyntaxQuote inner
+                | SyntaxSplice inner
+                | TopLevelSyntaxSplice inner
+                | CodeQuote inner
+                | CodeSplice inner
+                | MonadicSplice inner
+                | ExplicitImplicitArgument inner
+                | InoutArgument inner
+                | Unary(_, inner) ->
+                    recurseCount inner
+                | LocalLet(binding, value, body) ->
+                    recurseCount value
+                    + countNameUses
+                        target
+                        (Set.union shadowed (collectPatternNames binding.Pattern |> Set.ofList))
+                        body
+                | LocalSignature(declaration, body) ->
+                    countNameUses target (Set.add declaration.Name shadowed) body
+                | LocalTypeAlias(_, body) ->
+                    recurseCount body
+                | LocalScopedEffect(declaration, body) ->
+                    countNameUses target (Set.add declaration.Name shadowed) body
+                | Lambda(parameters, body) ->
+                    let nextShadowed =
+                        parameters
+                        |> List.map (fun parameter -> parameter.Name)
+                        |> Set.ofList
+                        |> Set.union shadowed
+
+                    countNameUses target nextShadowed body
+                | Handle(_, label, body, returnClause, operationClauses) ->
+                    recurseCount label
+                    + recurseCount body
+                    + countNameUses target (Set.union shadowed (clauseBoundNames returnClause)) returnClause.Body
+                    + (operationClauses
+                       |> List.sumBy (fun clause ->
+                           countNameUses target (Set.union shadowed (clauseBoundNames clause)) clause.Body))
+                | IfThenElse(condition, whenTrue, whenFalse) ->
+                    recurseCount condition + recurseCount whenTrue + recurseCount whenFalse
+                | Match(scrutinee, cases) ->
+                    recurseCount scrutinee
+                    + (cases
+                       |> List.sumBy (fun caseClause ->
+                           let caseShadowed =
+                               Set.union shadowed (collectPatternNames caseClause.Pattern |> Set.ofList)
+
+                           let guardCount =
+                               caseClause.Guard
+                               |> Option.map (countNameUses target caseShadowed)
+                               |> Option.defaultValue 0
+
+                           guardCount + countNameUses target caseShadowed caseClause.Body))
+                | RecordLiteral fields ->
+                    fields |> List.sumBy (fun field -> recurseCount field.Value)
+                | Seal(value, _) ->
+                    recurseCount value
+                | RecordUpdate(receiver, fields) ->
+                    recurseCount receiver + (fields |> List.sumBy (fun field -> recurseCount field.Value))
+                | MemberAccess(receiver, _, arguments) ->
+                    recurseCount receiver + (arguments |> List.sumBy recurseCount)
+                | SafeNavigation(receiver, navigation) ->
+                    recurseCount receiver + (navigation.Arguments |> List.sumBy recurseCount)
+                | TagTest(receiver, _) ->
+                    recurseCount receiver
+                | Do statements ->
+                    statements
+                    |> List.sumBy (function
+                        | DoLet(binding, value)
+                        | DoBind(binding, value)
+                        | DoUsing(binding, value) ->
+                            recurseCount value
+                            + countNameUses
+                                target
+                                (Set.union shadowed (collectPatternNames binding.Pattern |> Set.ofList))
+                                (Literal LiteralValue.Unit)
+                        | DoLetQuestion(binding, value, failure) ->
+                            let failureCount =
+                                failure
+                                |> Option.map (fun failure ->
+                                    let failureShadowed =
+                                        Set.union shadowed (collectPatternNames failure.ResiduePattern.Pattern |> Set.ofList)
+
+                                    failure.Body
+                                    |> List.sumBy (function
+                                        | DoExpression inner
+                                        | DoReturn inner
+                                        | DoDefer inner
+                                        | DoVar(_, inner)
+                                        | DoAssign(_, inner) -> countNameUses target failureShadowed inner
+                                        | _ -> 0))
+                                |> Option.defaultValue 0
+
+                            recurseCount value
+                            + failureCount
+                            + countNameUses
+                                target
+                                (Set.union shadowed (collectPatternNames binding.Pattern |> Set.ofList))
+                                (Literal LiteralValue.Unit)
+                        | DoVar(_, inner)
+                        | DoAssign(_, inner)
+                        | DoDefer inner
+                        | DoExpression inner
+                        | DoReturn inner -> recurseCount inner
+                        | DoIf(condition, whenTrue, whenFalse) ->
+                            recurseCount condition
+                            + (whenTrue |> List.sumBy (function DoExpression inner | DoReturn inner -> recurseCount inner | _ -> 0))
+                            + (whenFalse |> List.sumBy (function DoExpression inner | DoReturn inner -> recurseCount inner | _ -> 0))
+                        | DoWhile(condition, body) ->
+                            recurseCount condition
+                            + (body |> List.sumBy (function DoExpression inner | DoReturn inner -> recurseCount inner | _ -> 0)))
+                | Apply(callee, arguments) ->
+                    recurseCount callee + (arguments |> List.sumBy recurseCount)
+                | NamedApplicationBlock fields ->
+                    fields |> List.sumBy (fun field -> recurseCount field.Value)
+                | Binary(left, _, right)
+                | Elvis(left, right) ->
+                    recurseCount left + recurseCount right
+                | PrefixedString(_, parts) ->
+                    parts
+                    |> List.sumBy (function
+                        | StringText _ -> 0
+                        | StringInterpolation(inner, _) -> recurseCount inner)
+                | Literal _
+                | NumericLiteral _
+                | KindQualifiedName _ ->
+                    0
+
+            let topLevelSpliceLinearityDiagnostics inner =
+                match tryExpandDirectSyntaxProducer Set.empty inner with
+                | Some expandedBody ->
+                    let linearParameters =
+                        definition.Name
+                        |> Option.bind (fun name ->
+                            environment.VisibleBindings
+                            |> Map.tryFind name
+                            |> Option.bind (fun bindingInfo -> bindingInfo.ParameterLayouts))
+                        |> Option.defaultValue definition.Parameters
+
+                    linearParameters
+                    |> List.collect (fun parameter ->
+                        match parameter.Quantity with
+                        | Some QuantityOne
+                        | Some QuantityAtMostOne ->
+                            if countNameUses parameter.Name Set.empty expandedBody > 1 then
+                                [
+                                    makeDiagnostic
+                                        DiagnosticCode.QttLinearOveruse
+                                        $"Macro-expanded syntax uses linear binder '{parameter.Name}' more than once."
+                                ]
+                            else
+                                []
+                        | _ ->
+                            [])
+                | None ->
+                    []
+
+            let topLevelSpliceElabPhaseDiagnostics inner =
+                let rec loop current =
+                    let recurseCurrent = loop
+
+                    match current with
+                    | Apply(Name [ calleeName ], arguments) ->
+                        let nestedDiagnostics = arguments |> List.collect recurseCurrent
+
+                        match tryInferCallableElabResult calleeName with
+                        | Some _ ->
+                            let argumentDiagnostics =
+                                arguments
+                                |> List.collect (fun argument ->
+                                    match inferValidationExpressionType environment freshCounter locals argument with
+                                    | Some argumentType when not (typeIsMetaPhaseTransferType argumentType) ->
+                                        [
+                                            makeDiagnostic
+                                                DiagnosticCode.TypeEqualityMismatch
+                                                $"Object-phase/runtime value of type '{TypeSignatures.toText argumentType}' cannot be passed directly to Elab action '{calleeName}'. Use Syntax or another reflection carrier."
+                                        ]
+                                    | _ ->
+                                        [])
+
+                            nestedDiagnostics @ argumentDiagnostics
+                        | None ->
+                            nestedDiagnostics
+                    | Apply(callee, arguments) ->
+                        recurseCurrent callee @ (arguments |> List.collect recurseCurrent)
+                    | SyntaxQuote nested
+                    | SyntaxSplice nested
+                    | TopLevelSyntaxSplice nested
+                    | CodeQuote nested
+                    | CodeSplice nested
+                    | MonadicSplice nested
+                    | ExplicitImplicitArgument nested
+                    | InoutArgument nested
+                    | Unary(_, nested) ->
+                        recurseCurrent nested
+                    | Handle(_, label, body, returnClause, operationClauses) ->
+                        recurseCurrent label
+                        @ recurseCurrent body
+                        @ recurseCurrent returnClause.Body
+                        @ (operationClauses |> List.collect (fun clause -> recurseCurrent clause.Body))
+                    | LocalLet(_, value, body) ->
+                        recurseCurrent value @ recurseCurrent body
+                    | LocalSignature(_, body) ->
+                        recurseCurrent body
+                    | LocalTypeAlias(_, body) ->
+                        recurseCurrent body
+                    | LocalScopedEffect(_, body) ->
+                        recurseCurrent body
+                    | Lambda(_, body) ->
+                        recurseCurrent body
+                    | IfThenElse(condition, whenTrue, whenFalse) ->
+                        recurseCurrent condition @ recurseCurrent whenTrue @ recurseCurrent whenFalse
+                    | Match(scrutinee, cases) ->
+                        recurseCurrent scrutinee
+                        @ (cases
+                           |> List.collect (fun caseClause ->
+                               (caseClause.Guard |> Option.map recurseCurrent |> Option.defaultValue [])
+                               @ recurseCurrent caseClause.Body))
+                    | RecordLiteral fields ->
+                        fields |> List.collect (fun field -> recurseCurrent field.Value)
+                    | Seal(value, _) ->
+                        recurseCurrent value
+                    | RecordUpdate(receiver, fields) ->
+                        recurseCurrent receiver @ (fields |> List.collect (fun field -> recurseCurrent field.Value))
+                    | MemberAccess(receiver, _, arguments) ->
+                        recurseCurrent receiver @ (arguments |> List.collect recurseCurrent)
+                    | SafeNavigation(receiver, navigation) ->
+                        recurseCurrent receiver @ (navigation.Arguments |> List.collect recurseCurrent)
+                    | TagTest(receiver, _) ->
+                        recurseCurrent receiver
+                    | Do statements ->
+                        statements
+                        |> List.collect (function
+                            | DoLet(_, value)
+                            | DoBind(_, value)
+                            | DoUsing(_, value)
+                            | DoVar(_, value)
+                            | DoAssign(_, value)
+                            | DoDefer value
+                            | DoExpression value
+                            | DoReturn value -> recurseCurrent value
+                            | DoLetQuestion(_, value, failure) ->
+                                recurseCurrent value
+                                @ (failure
+                                   |> Option.map (fun failure ->
+                                       failure.Body
+                                       |> List.collect (function
+                                           | DoExpression inner
+                                           | DoReturn inner
+                                           | DoDefer inner
+                                           | DoVar(_, inner)
+                                           | DoAssign(_, inner) -> recurseCurrent inner
+                                           | _ -> []))
+                                   |> Option.defaultValue [])
+                            | DoIf(condition, whenTrue, whenFalse) ->
+                                recurseCurrent condition
+                                @ validateDoStatements locals refinements lexicalNames whenTrue
+                                @ validateDoStatements locals refinements lexicalNames whenFalse
+                            | DoWhile(condition, body) ->
+                                recurseCurrent condition @ validateDoStatements locals refinements lexicalNames body)
+                    | NamedApplicationBlock fields ->
+                        fields |> List.collect (fun field -> recurseCurrent field.Value)
+                    | Binary(left, _, right)
+                    | Elvis(left, right) ->
+                        recurseCurrent left @ recurseCurrent right
+                    | PrefixedString(_, parts) ->
+                        parts
+                        |> List.collect (function
+                            | StringText _ -> []
+                            | StringInterpolation(inner, _) -> recurseCurrent inner)
+                    | Literal _
+                    | NumericLiteral _
+                    | KindQualifiedName _
+                    | Name _ ->
+                        []
+
+                loop inner
+
             match expression with
-            | SyntaxQuote inner
-            | SyntaxSplice inner
-            | TopLevelSyntaxSplice inner
+            | SyntaxQuote inner ->
+                recurse inner
+            | SyntaxSplice inner ->
+                recurse inner @ quoteSpliceDiagnostics inner
+            | TopLevelSyntaxSplice inner ->
+                recurse inner
+                @ topLevelSpliceTypeDiagnostics inner
+                @ topLevelSpliceElabPhaseDiagnostics inner
+                @ topLevelSpliceLinearityDiagnostics inner
             | CodeQuote inner
             | CodeSplice inner ->
                 recurse inner
@@ -6452,8 +7597,13 @@ module SurfaceElaboration =
             | Name _ ->
                 []
             | LocalLet(binding, value, body) ->
+                let valueType =
+                    binding.TypeTokens
+                    |> Option.bind TypeSignatures.parseType
+                    |> Option.orElseWith (fun () -> tryInferMacroAwareValidationType locals value)
+
                 let nextLocals =
-                    match inferValidationExpressionType environment freshCounter locals value with
+                    match valueType with
                     | Some valueType ->
                         extendBindingLocalTypes environment freshCounter locals binding (Some valueType)
                     | None ->
@@ -6591,7 +7741,16 @@ module SurfaceElaboration =
                     |> Set.ofList
                     |> Set.union lexicalNames
 
-                recurse value @ validateExpression nextLocals refinements nextLexicalNames bodyForValidation
+                let visibleBindingSiteNames =
+                    lexicalNames
+                    |> Set.union parameterNames
+                    |> Set.union (locals |> Map.keys |> Set.ofSeq)
+
+                recurse value
+                @ (valueType
+                   |> Option.map (fun inferredType -> syntaxCarrierEscapeDiagnostics visibleBindingSiteNames inferredType value)
+                   |> Option.defaultValue [])
+                @ validateExpression nextLocals refinements nextLexicalNames bodyForValidation
             | LocalSignature(declaration, body) ->
                 let nextLocals =
                     declaration.TypeTokens
@@ -7767,6 +8926,11 @@ module SurfaceElaboration =
                   VisibleProjections = mergeVisibleProjections surfaceIndex moduleName
                   VisibleTraits = mergeVisibleTraits surfaceIndex moduleName
                   VisibleInstances = visibleInstances surfaceIndex moduleName
+                  ElaborationAvailableBindings =
+                    mergeVisibleBindings surfaceIndex moduleName
+                    |> Map.keys
+                    |> Set.ofSeq
+                    |> Set.intersect (IntrinsicCatalog.elaborationAvailableIntrinsicTermNames ())
                   ConstrainedMembers = Map.empty }
 
             let environment =
@@ -8655,10 +9819,22 @@ module SurfaceElaboration =
                             |> Option.bind (fun name -> Map.tryFind name environment.VisibleBindings)
                             |> Option.map (fun bindingInfo -> bindingInfo.Scheme)
 
+                        let moduleTopLevelDefinitionsByName =
+                            frontendModule.Declarations
+                            |> List.choose (function
+                                | LetDeclaration candidate ->
+                                    match candidate.Name, candidate.Body with
+                                    | Some name, Some _ -> Some(name, candidate)
+                                    | _ -> None
+                                | _ ->
+                                    None)
+                            |> Map.ofList
+
                         validateBuiltInExpressionsForBinding
                             environment
                             knownSurfaceTermNames
                             allowUnresolvedCallDiagnostics
+                            moduleTopLevelDefinitionsByName
                             definition
                             scheme
                         @ (definition.Body
@@ -11557,6 +12733,11 @@ module SurfaceElaboration =
               VisibleProjections = visibleProjections
               VisibleTraits = visibleTraits
               VisibleInstances = visibleInstances surfaceIndex moduleName
+              ElaborationAvailableBindings =
+                visibleBindings
+                |> Map.keys
+                |> Set.ofSeq
+                |> Set.intersect (IntrinsicCatalog.elaborationAvailableIntrinsicTermNames ())
               ConstrainedMembers = Map.empty }
 
         let defaultBodyEnvironment =
@@ -11660,6 +12841,11 @@ module SurfaceElaboration =
                   VisibleProjections = mergeVisibleProjections surfaceIndex moduleName
                   VisibleTraits = mergeVisibleTraits surfaceIndex moduleName
                   VisibleInstances = visibleInstances surfaceIndex moduleName
+                  ElaborationAvailableBindings =
+                    mergeVisibleBindings surfaceIndex moduleName
+                    |> Map.keys
+                    |> Set.ofSeq
+                    |> Set.intersect (IntrinsicCatalog.elaborationAvailableIntrinsicTermNames ())
                   ConstrainedMembers = Map.empty }
 
             let environment =

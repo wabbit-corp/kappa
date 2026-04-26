@@ -2136,21 +2136,39 @@ let ``KCore lowers calls as application spines with explicit arguments`` () =
         failwithf "Expected KCore app spine for answer, got %A" other
 
 [<Fact>]
-let ``prefixed strings infer their macro result type from the prefix dictionary`` () =
+let ``prefixed strings elaborate through Elab-backed prelude handlers`` () =
     let workspace =
         compileInMemoryWorkspace
-            "memory-prefixed-string-macro-result-root"
+            "memory-prefixed-string-elab-handler-root"
             [
                 "main.kp",
                 [
                     "module main"
-                    "value : Dict (InterpolatedMacro Int) -> Int"
-                    "let value num = num\"123\""
+                    "value : String"
+                    "let value = f\"123\""
                 ]
                 |> String.concat "\n"
             ]
 
-    Assert.False(workspace.HasErrors, $"Expected prefixed string macro result inference to succeed, got {workspace.Diagnostics}.")
+    Assert.False(workspace.HasErrors, $"Expected Elab-backed prefixed string elaboration to succeed, got {workspace.Diagnostics}.")
+
+[<Fact>]
+let ``prefixed strings reject runtime dictionary parameters as handlers`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-prefixed-string-runtime-handler-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "value : Dict (InterpolatedMacro String) -> String"
+                    "let value prefix = prefix\"123\""
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected runtime dictionary parameters to be rejected as prefixed-string handlers.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.TypeEqualityMismatch && diagnostic.Message.Contains("Elab", StringComparison.Ordinal))
 
 [<Fact>]
 let ``prefixed strings reject unresolved interpolation names and non-macro prefixes`` () =
@@ -2255,6 +2273,41 @@ let ``KCore lowers prefixed strings through buildInterpolated macro splices`` ()
             failwithf "Unexpected macro fragment list: %A" other
     | other ->
         failwithf "Expected prefixed string lowering through top-level macro splice, got %A" other
+
+[<Fact>]
+let ``syntax quotes defer linearity checking until splice elaboration`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-syntax-quote-defers-linearity-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "quoted : (1 x : Int) -> Syntax Int"
+                    "let quoted (1 x : Int) = '{ x + x }"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, $"Expected linearity inside an unspliced syntax quote to be deferred, got {workspace.Diagnostics}.")
+
+[<Fact>]
+let ``top level syntax splices still charge quoted linear uses at the splice site`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-top-level-splice-linearity-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "bad : (1 x : Int) -> Int"
+                    "let bad (1 x : Int) = $('{ x + x })"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected splicing duplicated linear use to fail at the splice site.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttLinearOveruse)
 
 [<Fact>]
 let ``backend profile aliases normalize to the effective backend identity`` () =
@@ -2376,7 +2429,9 @@ let ``bundled bootstrap prelude exposes the normative minimum surface and IO sha
               "Real"
               "Bytes"
               "Ordering"
+              "Syntax"
               "SyntaxFragment"
+              "Elab"
               "Query"
               "RawComprehension"
               "ComprehensionPlan"
@@ -2394,6 +2449,8 @@ let ``bundled bootstrap prelude exposes the normative minimum surface and IO sha
               "Acc"
               "IO"
               "UIO"
+              "Code"
+              "ClosedCode"
               "Fiber"
               "FiberId"
               "InterruptTag"
@@ -2435,6 +2492,7 @@ let ``bundled bootstrap prelude exposes the normative minimum surface and IO sha
               "Monoid"
               "Iterator"
               "InterpolatedMacro"
+              "Lift"
               "IntoQuery"
               "FromComprehensionPlan"
               "FromComprehensionRaw"
@@ -2531,6 +2589,9 @@ let ``bundled bootstrap prelude exposes the normative minimum surface and IO sha
               "printInt"
               "printString"
               "primitiveIntToString"
+              "closeCode"
+              "genlet"
+              "runCode"
               "newRef"
               "readRef"
               "writeRef" ]
@@ -2613,6 +2674,22 @@ let ``bundled bootstrap prelude exposes the normative minimum surface and IO sha
                 None)
         |> Map.ofList
 
+    let traitMemberTypes =
+        preludeDocument.Syntax.Declarations
+        |> List.choose (function
+            | TraitDeclarationNode declaration ->
+                Some(
+                    declaration.Name,
+                    declaration.Members
+                    |> List.choose (fun memberDeclaration ->
+                        memberDeclaration.Name
+                        |> Option.map (fun memberName -> memberName, tokensText memberDeclaration.Tokens))
+                    |> Map.ofList
+                )
+            | _ ->
+                None)
+        |> Map.ofList
+
     let uioAliasHeaderText, uioAliasBodyText =
         preludeDocument.Syntax.Declarations
         |> List.pick (function
@@ -2626,6 +2703,14 @@ let ``bundled bootstrap prelude exposes the normative minimum surface and IO sha
     Assert.Equal("( e : Type ) ( a : Type )", ioHeaderText)
     Assert.Equal("( a : Type )", uioAliasHeaderText)
     Assert.Equal("IO Void a", uioAliasBodyText)
+    Assert.Equal("buildInterpolated : List SyntaxFragment -> Elab ( Syntax t )", traitMemberTypes["InterpolatedMacro"]["buildInterpolated"])
+    Assert.Equal("Elab ( Dict ( InterpolatedMacro String ) )", expectTermTypes["f"])
+    Assert.Equal("Elab ( Dict ( InterpolatedMacro String ) )", expectTermTypes["re"])
+    Assert.Equal("Elab ( Dict ( InterpolatedMacro String ) )", expectTermTypes["b"])
+    Assert.Equal("Elab ( Dict ( InterpolatedMacro Type ) )", expectTermTypes["type"])
+    Assert.Equal("forall ( @ 0 t : Type ) . Code t -> Option ( ClosedCode t )", expectTermTypes["closeCode"])
+    Assert.Equal("forall ( @ 0 t : Type ) . Code t -> Code t", expectTermTypes["genlet"])
+    Assert.Equal("ClosedCode t -> UIO t", expectTermTypes["runCode"])
     Assert.Equal("( 1 value : a ) -> UIO a", expectTermTypes["pure"])
     Assert.Equal("UIO a -> ( a -> UIO b ) -> UIO b", expectTermTypes[">>="])
     Assert.Equal("UIO a -> UIO b -> UIO b", expectTermTypes[">>"])

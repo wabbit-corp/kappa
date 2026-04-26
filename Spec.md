@@ -14989,21 +14989,45 @@ Empty `{}` denotes an empty map; empty set uses `{| |}`.
 <!-- collections.ranges -->
 ### 10.2 Range operators
 
-`..` and `..<` are ordinary operator identifiers whose fixities are expected to be provided by `std.prelude`.
+`..` and `..<` are ordinary operator identifiers whose fixities are provided by `std.prelude`.
 
-They are defined conceptually in terms of a trait such as:
+They are defined by the prelude trait:
 
 ```kappa
 trait Rangeable (v : Type) =
     Range : Type
-    range : (from : v) -> (to : v) -> (exclusive : Bool) -> Range
+
+    range :
+        (from : v) ->
+        (to : v) ->
+        (exclusive : Bool) ->
+        Range
+
+(..) :
+    forall (v : Type).
+    (@_ : Rangeable v) ->
+    v -> v -> Rangeable.Range v
+
+let (..) from to =
+    range from to False
+
+(..<) :
+    forall (v : Type).
+    (@_ : Rangeable v) ->
+    v -> v -> Rangeable.Range v
+
+let (..<) from to =
+    range from to True
 ```
 
-Prelude implementation:
+Rules:
 
-* `from .. to`  ≡  `range from to False`
-* `from ..< to` ≡  `range from to True`
+* `from .. to` elaborates to `range from to False`.
+* `from ..< to` elaborates to `range from to True`.
 * For coherent `Rangeable v` evidence, the result type is `Rangeable.Range v`.
+* Range construction is pure. Iterating a range is governed by `IntoQuery` or another explicit consumer instance.
+* The portable prelude MUST provide `Rangeable` instances for `Nat`, `Int`, `Integer`, and `Char`.
+* A `Rangeable Float` or `Rangeable Double` instance is not part of the portable minimum.
 
 <!-- collections.comprehensions -->
 ### 10.3 Comprehensions: general shape

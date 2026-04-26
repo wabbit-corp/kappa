@@ -475,6 +475,14 @@ module ResourceChecking =
         collectPatternNames binding.Pattern
         |> List.tryPick (bindPatternNameLocation document binding)
 
+    let private tryDirectSyntaxSpliceBody expression =
+        match expression with
+        | TopLevelSyntaxSplice(SyntaxQuote inner)
+        | TopLevelSyntaxSplice(SyntaxSplice inner) ->
+            Some inner
+        | _ ->
+            None
+
     let rec private expressionNames (expression: SurfaceExpression) =
         seq {
             match expression with
@@ -483,9 +491,15 @@ module ResourceChecking =
             | KindQualifiedName _ -> ()
             | Name(root :: _) -> yield root
             | Name [] -> ()
-            | SyntaxQuote inner
-            | SyntaxSplice inner
-            | TopLevelSyntaxSplice inner
+            | SyntaxQuote _
+            | SyntaxSplice _ ->
+                ()
+            | TopLevelSyntaxSplice inner ->
+                match tryDirectSyntaxSpliceBody expression with
+                | Some quotedBody ->
+                    yield! expressionNames quotedBody
+                | None ->
+                    yield! expressionNames inner
             | CodeQuote inner
             | CodeSplice inner ->
                 yield! expressionNames inner
@@ -2865,9 +2879,13 @@ module ResourceChecking =
         match expression with
         | Apply(Name [ name ], [ rootsArgument ]) when String.Equals(name, aliasName, StringComparison.Ordinal) ->
             1 + recurse rootsArgument
-        | SyntaxQuote inner
-        | SyntaxSplice inner
-        | TopLevelSyntaxSplice inner
+        | SyntaxQuote _
+        | SyntaxSplice _ ->
+            0
+        | TopLevelSyntaxSplice inner ->
+            match tryDirectSyntaxSpliceBody expression with
+            | Some quotedBody -> recurse quotedBody
+            | None -> recurse inner
         | CodeQuote inner
         | CodeSplice inner ->
             recurse inner
@@ -3557,9 +3575,13 @@ module ResourceChecking =
 
     let rec private expressionResultMayCarryBorrow state expression =
         match expression with
-        | SyntaxQuote inner
-        | SyntaxSplice inner
-        | TopLevelSyntaxSplice inner
+        | SyntaxQuote _
+        | SyntaxSplice _ ->
+            false
+        | TopLevelSyntaxSplice inner ->
+            match tryDirectSyntaxSpliceBody expression with
+            | Some quotedBody -> expressionResultMayCarryBorrow state quotedBody
+            | None -> false
         | CodeQuote inner
         | CodeSplice inner ->
             expressionResultMayCarryBorrow state inner
@@ -3628,9 +3650,13 @@ module ResourceChecking =
 
     let rec private expressionMayCarryEscapingBorrow expression =
         match expression with
-        | SyntaxQuote inner
-        | SyntaxSplice inner
-        | TopLevelSyntaxSplice inner
+        | SyntaxQuote _
+        | SyntaxSplice _ ->
+            false
+        | TopLevelSyntaxSplice inner ->
+            match tryDirectSyntaxSpliceBody expression with
+            | Some quotedBody -> expressionMayCarryEscapingBorrow quotedBody
+            | None -> false
         | CodeQuote inner
         | CodeSplice inner ->
             expressionMayCarryEscapingBorrow inner
@@ -3692,9 +3718,13 @@ module ResourceChecking =
 
     let rec private checkResultEscapeAtBoundary allowedRegions (document: ParsedDocument) expression state =
         match expression with
-        | SyntaxQuote inner
-        | SyntaxSplice inner
-        | TopLevelSyntaxSplice inner
+        | SyntaxQuote _
+        | SyntaxSplice _ ->
+            state
+        | TopLevelSyntaxSplice inner ->
+            match tryDirectSyntaxSpliceBody expression with
+            | Some quotedBody -> checkResultEscapeAtBoundary allowedRegions document quotedBody state
+            | None -> state
         | CodeQuote inner
         | CodeSplice inner ->
             checkResultEscapeAtBoundary allowedRegions document inner state
@@ -4198,9 +4228,16 @@ module ResourceChecking =
             state
             |> checkEscape document expression
             |> fun next -> checkExpression projectionSummaries document signatures localTypes next inner
-        | SyntaxQuote inner
-        | SyntaxSplice inner
-        | TopLevelSyntaxSplice inner
+        | SyntaxQuote inner ->
+            expressionNames inner
+            |> Seq.distinct
+            |> Seq.fold (fun current name -> addNonConsumingDemand document name current) state
+        | SyntaxSplice _ ->
+            state
+        | TopLevelSyntaxSplice inner ->
+            match tryDirectSyntaxSpliceBody expression with
+            | Some quotedBody -> checkExpression projectionSummaries document signatures localTypes state quotedBody
+            | None -> checkExpression projectionSummaries document signatures localTypes state inner
         | CodeSplice inner ->
             checkExpression projectionSummaries document signatures localTypes state inner
         | Handle(_, label, body, returnClause, operationClauses) ->
@@ -5825,9 +5862,13 @@ module ResourceChecking =
                         || (navigation.Arguments |> List.exists containsEscapingAbruptControl)
                     | TagTest(receiver, _) ->
                         containsEscapingAbruptControl receiver
-                    | SyntaxQuote inner
-                    | SyntaxSplice inner
-                    | TopLevelSyntaxSplice inner
+                    | SyntaxQuote _
+                    | SyntaxSplice _ ->
+                        false
+                    | TopLevelSyntaxSplice inner ->
+                        match tryDirectSyntaxSpliceBody expression with
+                        | Some quotedBody -> containsEscapingAbruptControl quotedBody
+                        | None -> containsEscapingAbruptControl inner
                     | CodeQuote inner
                     | CodeSplice inner ->
                         containsEscapingAbruptControl inner

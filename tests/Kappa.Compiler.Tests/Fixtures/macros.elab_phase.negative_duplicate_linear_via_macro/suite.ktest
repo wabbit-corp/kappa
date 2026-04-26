@@ -1,0 +1,4 @@
+-- Appendix T directory suite.
+--! mode check
+--! packageMode
+--! assertDiagnosticMatch (linear|quantity|duplicate|twice|uses.*more|used.*twice)
