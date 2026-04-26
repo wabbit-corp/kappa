@@ -3679,6 +3679,37 @@ Rules:
   which SHOULD use U+FFFD REPLACEMENT CHARACTER.
 * `byteLength s` is the length of `utf8Bytes s`.
 
+Text builders:
+
+```kappa
+expect data StringBuilder : Type
+
+newStringBuilder :
+    StringBuilder
+
+stringBuilderString :
+    String -> (1 builder : StringBuilder) -> StringBuilder
+
+stringBuilderScalar :
+    UnicodeScalar -> (1 builder : StringBuilder) -> StringBuilder
+
+stringBuilderGrapheme :
+    Grapheme -> (1 builder : StringBuilder) -> StringBuilder
+
+finishStringBuilder :
+    (1 builder : StringBuilder) -> String
+```
+
+Rules:
+
+* `StringBuilder` is a linear construction accumulator for valid UTF-8 `String` values.
+* Appending a `UnicodeScalar` appends its UTF-8 encoding.
+* Appending a `Grapheme` appends its exact scalar sequence.
+* Appending a `String` appends its exact scalar sequence.
+* `finishStringBuilder` returns a valid `String`.
+* Builder operations are exact; they do not perform normalization, case folding, locale collation, or grapheme
+  segmentation unless explicitly stated by a separate API.
+
 Required scalar operations:
 
 ```kappa
@@ -3897,6 +3928,34 @@ bytesToList :
 bytesFromList :
     List Byte -> Bytes
 ```
+
+Byte builders:
+
+```kappa
+newBytesBuilder :
+    BytesBuilder
+
+bytesBuilderByte :
+    Byte -> (1 builder : BytesBuilder) -> BytesBuilder
+
+bytesBuilderBytes :
+    Bytes -> (1 builder : BytesBuilder) -> BytesBuilder
+
+bytesBuilderSizedArray :
+    forall (n : Nat).
+    SizedArray n Byte -> (1 builder : BytesBuilder) -> BytesBuilder
+
+finishBytesBuilder :
+    (1 builder : BytesBuilder) -> Bytes
+```
+
+Rules:
+
+* `BytesBuilder` is a linear construction accumulator.
+* A `BytesBuilder` value must be consumed exactly once.
+* `finishBytesBuilder` returns the concatenation of the bytes appended to the builder in source order.
+* Builders are intended for efficient construction. Their representation and growth strategy are implementation-defined.
+* Builder operations MUST NOT mutate any already-created `Bytes` value.
 
 Dependent views:
 
