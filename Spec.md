@@ -1843,6 +1843,121 @@ Rules:
   `saturatingSub`, `unsafeDiv`, or `truncateDiv` in non-prelude modules, but those names are not part of the portable
   prelude minimum.
 
+<!-- modules.prelude.numeric_lawful_traits -->
+##### Lawful algebraic numeric traits
+
+The following traits refine operational numeric traits with erased laws.
+
+The law members are compile-time-only proof obligations. They are part of coherent instance checking and interface
+identity, but they are erased at runtime unless explicitly reified by a nonstandard mechanism.
+
+```kappa
+trait (Eq a, Zero a, Add a) => AdditiveMonoid (a : Type) =
+    0 addAssoc :
+        forall (x : a) (y : a) (z : a).
+        add (add x y) z = add x (add y z)
+
+    0 addLeftIdentity :
+        forall (x : a).
+        add zero x = x
+
+    0 addRightIdentity :
+        forall (x : a).
+        add x zero = x
+
+trait (AdditiveMonoid a, Negatable a) => AdditiveGroup (a : Type) =
+    0 addLeftInverse :
+        forall (x : a).
+        add (negate x) x = zero
+
+    0 addRightInverse :
+        forall (x : a).
+        add x (negate x) = zero
+
+trait (Eq a, One a, Mul a) => MultiplicativeMonoid (a : Type) =
+    0 mulAssoc :
+        forall (x : a) (y : a) (z : a).
+        multiply (multiply x y) z = multiply x (multiply y z)
+
+    0 mulLeftIdentity :
+        forall (x : a).
+        multiply one x = x
+
+    0 mulRightIdentity :
+        forall (x : a).
+        multiply x one = x
+
+trait (AdditiveMonoid a, MultiplicativeMonoid a) => Semiring (a : Type) =
+    0 mulLeftZero :
+        forall (x : a).
+        multiply zero x = zero
+
+    0 mulRightZero :
+        forall (x : a).
+        multiply x zero = zero
+
+    0 leftDistribute :
+        forall (x : a) (y : a) (z : a).
+        multiply x (add y z) = add (multiply x y) (multiply x z)
+
+    0 rightDistribute :
+        forall (x : a) (y : a) (z : a).
+        multiply (add x y) z = add (multiply x z) (multiply y z)
+
+trait (Semiring a, AdditiveGroup a, CheckedSub a) => Ring (a : Type) =
+    0 subDefinedAlways :
+        forall (x : a) (y : a).
+        subDefined x y = True
+
+    0 subtractAsAddInverse :
+        forall (x : a) (y : a) (@p : subDefined x y = True).
+        subtract x y @p = add x (negate y)
+
+trait (Semiring a, Ord a, CheckedDiv a, CheckedMod a) => EuclideanSemiring (a : Type) =
+    0 divAndModSameDomain :
+        forall (x : a) (y : a).
+        divDefined x y = modDefined x y
+
+    0 divModIdentity :
+        forall (x : a) (y : a)
+               (@pd : divDefined x y = True)
+               (@pm : modDefined x y = True).
+        add (multiply (divide x y @pd) y) (modulo x y @pm) = x
+
+trait (Ring a, CheckedDiv a) => FieldLike (a : Type) =
+    0 divisionRightInverse :
+        forall (x : a) (y : a) (@p : divDefined x y = True).
+        multiply (divide x y @p) y = x
+
+trait (Ord a, AdditiveMonoid a) => OrderedAdditive (a : Type) =
+    0 addMonotoneLeft :
+        forall (x : a) (y : a) (z : a).
+        (x <= y) = True -> (add z x <= add z y) = True
+
+    0 addMonotoneRight :
+        forall (x : a) (y : a) (z : a).
+        (x <= y) = True -> (add x z <= add y z) = True
+
+trait (OrderedAdditive a, Semiring a) => OrderedSemiring (a : Type) =
+    0 mulNonnegativeMonotone :
+        forall (x : a) (y : a) (z : a).
+        (zero <= z) = True ->
+        (x <= y) = True ->
+        (multiply z x <= multiply z y) = True
+```
+
+Rules:
+
+* Operational arithmetic and lawful algebraic structure are intentionally separate.
+* A type may implement `Add`, `Mul`, `CheckedDiv`, or related operational traits without implementing the corresponding
+  lawful traits.
+* Algorithms that require laws SHOULD request the lawful traits, such as `Semiring`, `Ring`, `EuclideanSemiring`, or
+  `FieldLike`, rather than merely requesting operational arithmetic.
+* `Float` and `Double` MUST NOT receive portable `Semiring`, `Ring`, or `FieldLike` instances under the raw-bit `Eq`
+  semantics of §4.1.3.
+* `Real` MAY receive `FieldLike` if the implementation provides exact real/decimal semantics satisfying the stated laws.
+* `Nat` MUST NOT receive `Negatable`, `AdditiveGroup`, `Ring`, or `FieldLike`.
+
 Fixities: Implementations MUST provide fixity declarations, or fixed built-in parsing precedences for reserved
 operator-like syntax. The following minimum table is normative:
 
