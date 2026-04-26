@@ -6926,15 +6926,17 @@ Normative meaning:
 <!-- types.macros.restrictions_macro_effects -->
 #### 5.8.6 Restrictions on macro effects
 
-Macros, and any helper functions they invoke during elaboration-time execution, run under the elaboration-time
-evaluator.
+`Elab` actions, macros, prefixed-string handlers, comprehension sink hooks, reflection queries, and any helper functions
+they invoke during elaboration-time execution run under the elaboration-time evaluator.
 
-* Macros MUST be total.
-* Macros MUST be deterministic with respect to their explicit inputs and any evaluator-supplied input transcript: the
-  same arguments and the same transcript MUST produce the same `Syntax`.
+* Elaboration-time execution MUST be total.
+* Elaboration-time execution MUST be deterministic with respect to explicit inputs and any evaluator-supplied input
+  transcript.
+* For a fixed set of arguments, call-site semantic environment, visibility/opacity state, and transcript, an
+  elaboration-time computation MUST produce the same `Syntax`, diagnostics, and reflected results.
 * In package mode (§2.3.2), the elaboration-time evaluator provides no `IO` capability. Any attempt to perform
-  observable side effects (including file-system access, network access, mutable global state, or equivalent
-  implementation-defined effects) is a compile-time error.
+  observable side effects, including file-system access, network access, mutable global state, or equivalent
+  implementation-defined effects, is a compile-time error.
 * In script mode, the evaluator MAY provide a restricted elaboration-time `IO` capability. Effects performed there are
   permitted but discouraged, and are not guaranteed to be deterministic or reproducible across compilations.
 * When script-mode macro execution observes external inputs, the evaluator MUST record a macro input transcript
@@ -6942,8 +6944,9 @@ evaluator.
   configuration values consulted by the macro, together with the contents or cryptographic digests of files, network
   resources, and other external data read during elaboration. This transcript is part of the hashing input described in
   §15.
-* Semantic reflection queries over `Core` are pure elaboration-time queries. They MUST use the same name-resolution,
-  implicit-insertion, visibility, opacity, and definitional-equality rules as ordinary elaboration at the call site.
+* Semantic reflection queries over `Syntax` or `Core` are elaboration-time queries. They MUST use the same
+  name-resolution, implicit-insertion, visibility, opacity, and definitional-equality rules as ordinary elaboration at
+  the call site.
 
 **Termination checking.** Macro definitions are subject to the same termination checking rules as ordinary top-level
 definitions (§6.4), including the unsafe/debug termination-assertion escapes of §16.4. The elaboration-time evaluator
