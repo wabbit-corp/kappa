@@ -2456,15 +2456,7 @@ module SurfaceElaboration =
                     let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
                     surfaceIndex
                     |> Map.tryFind importedModuleName
-                    |> Option.map (fun importedModule -> spec, importedModule))
-            |> List.distinctBy (fun (_, importedModule) ->
-                importedModule.BindingSchemes.Keys |> Seq.toList,
-                importedModule.Constructors.Keys |> Seq.toList,
-                importedModule.Projections.Keys |> Seq.toList,
-                importedModule.Traits.Keys |> Seq.toList,
-                importedModule.TypeAliases.Keys |> Seq.toList,
-                importedModule.TypeFacets.Keys |> Seq.toList,
-                importedModule.RecordTypes.Keys |> Seq.toList))
+                    |> Option.map (fun importedModule -> spec, importedModule)))
         |> Option.defaultValue []
 
     let private mergeVisibleBindings (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =

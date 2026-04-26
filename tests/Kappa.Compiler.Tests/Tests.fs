@@ -1569,6 +1569,80 @@ let ``compilation reports import cycles across module fragments`` () =
     Assert.True(cycleDiagnostic.IsSome, sprintf "Expected an import-cycle diagnostic from fragment imports, got %A" workspace.Diagnostics)
 
 [<Fact>]
+let ``multiple import specs from the same module preserve distinct selections`` () =
+    let libSource =
+        [
+            "module lib"
+            "alpha : Int"
+            "let alpha = 1"
+            "beta : Int"
+            "let beta = 2"
+        ]
+        |> String.concat "\n"
+
+    let mainSource =
+        [
+            "module main"
+            "import lib.(alpha), lib.(beta)"
+            "result : Int"
+            "let result = alpha + beta"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-duplicate-import-spec-root"
+            "main.result"
+            [
+                "lib.kp", libSource
+                "main.kp", mainSource
+            ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected both import specs to remain visible, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("3", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected both import specs to remain usable, got %A" issue
+
+[<Fact>]
+let ``type imports from modules with identical export shapes stay distinct`` () =
+    let leftSource =
+        [
+            "module left"
+            "type T = Int"
+        ]
+        |> String.concat "\n"
+
+    let rightSource =
+        [
+            "module right"
+            "type T = Int"
+        ]
+        |> String.concat "\n"
+
+    let mainSource =
+        [
+            "module main"
+            "import left.(type T as LeftT), right.(type T as RightT)"
+            "result : LeftT -> RightT -> Int"
+            "let result left right = left + right"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-identical-import-shapes-root"
+            [
+                "left.kp", leftSource
+                "right.kp", rightSource
+                "main.kp", mainSource
+            ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected aliased type imports from distinct modules to stay visible, got %A" workspace.Diagnostics)
+
+[<Fact>]
 let ``parser captures expect declarations including soft keyword names and operator terms`` () =
     let sourceText =
         [
