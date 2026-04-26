@@ -1485,6 +1485,84 @@ println :
 let println value =
     printlnString (show value)
 
+trait Monoid (m : Type) =
+    empty : m
+    append : m -> m -> m
+
+    0 appendAssoc :
+        forall (x : m) (y : m) (z : m).
+        append (append x y) z = append x (append y z)
+
+    0 appendLeftIdentity :
+        forall (x : m).
+        append empty x = x
+
+    0 appendRightIdentity :
+        forall (x : m).
+        append x empty = x
+
+(++) :
+    forall (m : Type).
+    (@_ : Monoid m) ->
+    m -> m -> m
+
+let (++) x y = append x y
+
+trait Foldable (t : Type -> Type) =
+    foldr :
+        forall (a : Type) (b : Type).
+        (a -> b -> b) -> b -> t a -> b
+
+    foldl :
+        forall (a : Type) (b : Type).
+        (b -> a -> b) -> b -> t a -> b
+
+    foldMap :
+        forall (a : Type) (m : Type).
+        (@_ : Monoid m) ->
+        (a -> m) -> t a -> m
+
+trait (Functor t, Foldable t) => Traversable (t : Type -> Type) =
+    traverse :
+        forall (f : Type -> Type) (a : Type) (b : Type).
+        (@_ : Applicative f) ->
+        (a -> f b) -> t a -> f (t b)
+
+trait Filterable (t : Type -> Type) =
+    filter :
+        forall (a : Type).
+        (a -> Bool) -> t a -> t a
+
+trait FilterMap (t : Type -> Type) =
+    filterMap :
+        forall (a : Type) (b : Type).
+        (a -> Option b) -> t a -> t b
+
+for_ :
+    forall (t : Type -> Type) (m : Type -> Type) (a : Type).
+    (@_ : Foldable t) ->
+    (@_ : Applicative m) ->
+    t a -> (a -> m Unit) -> m Unit
+
+sequence :
+    forall (t : Type -> Type) (m : Type -> Type) (a : Type).
+    (@_ : Traversable t) ->
+    (@_ : Applicative m) ->
+    t (m a) -> m (t a)
+
+sequence_ :
+    forall (t : Type -> Type) (m : Type -> Type) (a : Type).
+    (@_ : Foldable t) ->
+    (@_ : Applicative m) ->
+    t (m a) -> m Unit
+
+The portable prelude MUST provide coherent instances of `Foldable`, `Traversable`, `Filterable`, and `FilterMap` for
+`List` and `Array`.
+
+`Set` and `Map` MAY provide such instances only where the operation's encounter-order and equality-keyed semantics are
+defined by Chapter 10. A `Foldable Set` or `Foldable Map` instance must obey the Ordered/Unordered rules of §10.3.2 and
+must not expose hash-bucket order as portable behavior.
+
 trait Alternative (f : Type -> Type) =
     empty : f a
     (<|>) : f a -> f a -> f a
