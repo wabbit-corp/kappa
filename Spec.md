@@ -3653,21 +3653,33 @@ Runtime erasure is governed as follows:
   when needed, but there is no implicit runtime reflection.
 
 <!-- types.universes.erasure_elaboration_time.compile_time_bindings_fields -->
-##### 5.1.4.1 Compile-time bindings and fields
+##### 5.1.4.1 Compile-time bindings, fields, and meta-phase locals
 
-A binder, record field, argument, or package member is compile-time exactly when it is meta-phase under §5.1.4.
+A binder, record field, package member, or local binding is compile-time if either:
 
-Such bindings and fields:
+1. it is introduced while checking a meta-phase expression, including the body of an `Elab` action; or
+
+2. its annotation elaborates to one of the intrinsic compile-time types of §5.1.3, to `Type u`, to `Syntax t`,
+   `SyntaxOrigin`, `SyntaxFragment`, one of the elaboration-time reflection types of §5.8.5, `RawComprehension a` or
+   `ComprehensionPlan a` of §5.8.5, `Elab a` or `ElabGoal` of §5.8.7, or to a compile-time function space as defined
+   by §5.1.4.
+
+Compile-time bindings and fields:
 
 * may carry any quantity annotation otherwise admitted by the surrounding grammar;
-* may be named, rebound, projected, packaged, sealed, opened, and returned within the phase where they are valid;
+* may be named, rebound, projected, packaged, sealed, opened, and returned within a phase where their scope is valid;
 * participate in ordinary source-level typing, definitional equality, hashing, and interface identity; and
-* are erased according to §5.1.4 and §14.4 unless preserved by an explicit reified carrier.
+* are erased according to §§5.1.4 and 14.4 unless preserved by an explicit reified carrier.
 
-Writing `let y = x` where `x` is meta-phase simply binds `y` to the same meta-phase value.
+Writing `let y = x` where `x` is compile-time simply binds `y` to the same compile-time value.
 
-Packaging or rebinding a meta-phase value does not discharge region escape. If a compile-time value mentions a fresh
-anonymous rigid region introduced by a local borrow, the ordinary skolem-escape rule of §5.1.6 still applies.
+Packaging or rebinding a compile-time value does not discharge region escape, syntax-scope escape, or local
+nominal-scope escape. If a compile-time value mentions a fresh anonymous rigid region introduced by a local borrow, or a
+scoped local nominal token introduced by §6.3.1.1, the ordinary skolem-escape or nominal-scope escape rule still
+applies.
+
+For a binding introduced inside an `Elab` action, the binding is meta-phase even when its ordinary type is runtime-
+capable. For example, a local binding of type `String` inside an `Elab` action is a meta-phase string and is erased.
 
 <!-- types.universes.erasure_elaboration_time.static_object_positions -->
 ##### 5.1.4.2 Static-object expression positions
@@ -3690,6 +3702,52 @@ to the syntactic restrictions of the surrounding grammar.
 
 Static-object expression positions are meta-phase only unless the surrounding type explicitly uses a runtime reified
 carrier such as `Dict`.
+
+<!-- types.universes.erasure_elaboration_time.phase_separation_elab -->
+##### 5.1.4.3 Phase separation for `Elab`
+
+Source expressions are checked in the object phase by default.
+
+The body of an `Elab` computation is checked in the meta phase.
+
+A meta-phase expression may use:
+
+* meta-phase bindings;
+* compile-time-only values;
+* ordinary values introduced inside the same meta-phase computation;
+* closed compile-time constants and primitive elaboration operations supplied by the implementation; and
+* object-language code only through explicit reflection carriers such as `Syntax t`, `Core Γ t`,
+  `RawComprehension a`, or `ComprehensionPlan a`.
+
+A meta-phase expression MUST NOT directly inspect, consume, borrow, store, or capture an object-phase runtime value.
+
+The following are therefore distinct:
+
+```kappa
+let x : String = "runtime"
+```
+
+which introduces an object-phase `String` in ordinary code, and:
+
+```kappa
+do
+    let x : String = "meta"
+    ...
+```
+
+inside an `Elab` computation, which introduces a meta-phase `String`.
+
+The monadic operation `pure : a -> Elab a`, when specialized to `Elab`, lifts only a meta-phase value into an
+elaboration action. It is not a cross-phase persistence operator and MUST NOT be used to smuggle object-phase runtime
+values into elaboration.
+
+Object-phase identifiers may occur inside syntax quotation. In that case the resulting `Syntax` value records hygienic
+references to those identifiers rather than evaluating or capturing their runtime values.
+
+The only standardized ways for meta-phase computation to re-enter object-language code are:
+
+* producing `Syntax t` for a `$(...)` splice; and
+* reifying semantic reflection values back to `Syntax t` and then splicing that syntax.
 
 <!-- types.universes.quantities -->
 #### 5.1.5 Quantities
