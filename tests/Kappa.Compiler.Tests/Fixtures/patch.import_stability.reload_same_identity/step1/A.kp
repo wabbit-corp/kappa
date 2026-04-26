@@ -1,0 +1,7 @@
+module A
+
+nonLT : Ordering -> Bool
+let nonLT o =
+    match o
+    case LT -> False
+    case _  -> True

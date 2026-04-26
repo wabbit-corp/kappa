@@ -1,0 +1,4 @@
+module B
+
+unusedButImported : Int
+let unusedButImported = 7

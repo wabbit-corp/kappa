@@ -298,7 +298,10 @@ expect term check : Bool -> STM Unit
 expect term syntaxOrigin : forall (@0 t : Type). Syntax t -> Elab SyntaxOrigin
 expect term renderSyntax : forall (@0 t : Type). Syntax t -> Elab String
 expect term normalizeSyntax : forall (@0 t : Type). Syntax t -> Elab (Syntax t)
+expect term failElab : forall (@0 a : Type). String -> Elab a
+expect term failElabWith : forall (@0 a : Type). String -> String -> List SyntaxOrigin -> Elab a
 expect term warnElab : String -> Elab Unit
+expect term warnElabWith : String -> String -> List SyntaxOrigin -> Elab Unit
 expect term f : Elab (Dict (InterpolatedMacro String))
 expect term re : Elab (Dict (InterpolatedMacro String))
 expect term b : Elab (Dict (InterpolatedMacro String))

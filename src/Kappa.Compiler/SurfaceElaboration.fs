@@ -4310,6 +4310,32 @@ module SurfaceElaboration =
             tryTraitConstraintFromType environment localType
             |> Option.map (fun constraintInfo -> name, constraintInfo))
 
+    let private buildConstrainedMembers
+        (environment: BindingLoweringEnvironment)
+        (constraints: TraitConstraint list)
+        =
+        let addConstraintMembers state dictionaryParameterName constraintInfo =
+            reachableTraitConstraints environment constraintInfo
+            |> List.fold (fun current reachableConstraint ->
+                environment.VisibleTraits
+                |> Map.tryFind reachableConstraint.TraitName
+                |> Option.map (fun traitInfo ->
+                    traitInfo.Members
+                    |> Map.toList
+                    |> List.fold (fun innerState (memberName, _) ->
+                        if Map.containsKey memberName innerState then
+                            innerState
+                        else
+                            Map.add memberName (reachableConstraint.TraitName, dictionaryParameterName) innerState) current)
+                |> Option.defaultValue current) state
+
+        constraints
+        |> List.mapi (fun index constraintInfo ->
+            let dictionaryParameterName = $"__kappa_dict_{constraintInfo.TraitName}_{index}"
+            constraintInfo, dictionaryParameterName)
+        |> List.fold (fun state (constraintInfo, dictionaryParameterName) ->
+            addConstraintMembers state dictionaryParameterName constraintInfo) Map.empty
+
     let private renderTraitConstraint (environment: BindingLoweringEnvironment) (constraintInfo: TraitConstraint) =
         let normalizedArguments =
             constraintInfo.Arguments
@@ -5739,6 +5765,11 @@ module SurfaceElaboration =
                 match current with
                 | Apply(Name [ "failElabWith" ], [ Literal(LiteralValue.String code); Literal(LiteralValue.String message); _ ]) ->
                     Some($"{code}: {message}")
+                | Apply(Name [ calleeName ], arguments) ->
+                    topLevelDefinitionsByName
+                    |> Map.tryFind calleeName
+                    |> Option.bind (fun definition -> definition.Body |> Option.bind fromExpression)
+                    |> Option.orElseWith (fun () -> arguments |> List.tryPick fromExpression)
                 | Apply(callee, arguments) ->
                     fromExpression callee
                     |> Option.orElseWith (fun () -> arguments |> List.tryPick fromExpression)
@@ -6825,6 +6856,198 @@ module SurfaceElaboration =
 
         let trueTermType = TypeName([ "True" ], [])
         let falseTermType = TypeName([ "False" ], [])
+        let emptyStableAliases: Map<string, string> = Map.empty
+        let emptyConstructorFacts: Map<string, string option * Set<string>> = Map.empty
+
+        let canonicalStableRoot aliases name =
+            let rec loop seen current =
+                if Set.contains current seen then
+                    current
+                else
+                    match Map.tryFind current aliases with
+                    | Some next -> loop (Set.add current seen) next
+                    | None -> current
+
+            loop Set.empty name
+
+        let removeShadowedAliases aliases names =
+            names |> List.fold (fun state name -> Map.remove name state) aliases
+
+        let tryLocalRootType aliases locals root =
+            Map.tryFind root locals
+            |> Option.orElseWith (fun () ->
+                let canonicalRoot = canonicalStableRoot aliases root
+                Map.tryFind canonicalRoot locals)
+
+        let visibleConstructorsForType typeExpr =
+            match normalizeTypeAliases environment.VisibleTypeAliases typeExpr with
+            | TypeName(nameSegments, _) ->
+                match List.tryLast nameSegments with
+                | Some typeName ->
+                    environment.VisibleConstructors
+                    |> Map.values
+                    |> Seq.filter (fun info ->
+                        info.ConstructorTypeName
+                        |> Option.exists (fun constructorTypeName ->
+                            String.Equals(constructorTypeName, typeName, StringComparison.Ordinal)))
+                    |> Seq.toList
+                | None ->
+                    []
+            | _ ->
+                []
+
+        let tryVisibleConstructorFieldType (constructorInfo: BindingSchemeInfo) fieldName =
+            constructorInfo.ParameterLayouts
+            |> Option.bind (fun layouts ->
+                layouts
+                |> List.tryPick (fun parameter ->
+                    if parameter.IsImplicit || parameter.IsReceiver then
+                        None
+                    elif String.Equals(parameter.Name, fieldName, StringComparison.Ordinal) then
+                        parameter.TypeTokens |> Option.bind TypeSignatures.parseType
+                    else
+                        None))
+
+        let possibleConstructorsForRoot aliases constructorFacts locals root =
+            tryLocalRootType aliases locals root
+            |> Option.bind (fun rootType ->
+                let visibleConstructors = visibleConstructorsForType rootType
+
+                if List.isEmpty visibleConstructors then
+                    None
+                else
+                    let canonicalRoot = canonicalStableRoot aliases root
+
+                    let filteredConstructors =
+                        match Map.tryFind canonicalRoot constructorFacts with
+                        | Some(Some positiveConstructor, _) ->
+                            visibleConstructors
+                            |> List.filter (fun info ->
+                                String.Equals(info.Name, positiveConstructor, StringComparison.Ordinal))
+                        | Some(None, excludedConstructors) ->
+                            visibleConstructors
+                            |> List.filter (fun info ->
+                                not (Set.contains info.Name excludedConstructors))
+                        | None ->
+                            visibleConstructors
+
+                    Some filteredConstructors)
+
+        let addPositiveConstructorFact aliases constructorFacts root constructorName =
+            let canonicalRoot = canonicalStableRoot aliases root
+            Map.add canonicalRoot (Some constructorName, Set.empty) constructorFacts
+
+        let addNegativeConstructorFact aliases constructorFacts root constructorName =
+            let canonicalRoot = canonicalStableRoot aliases root
+
+            let positiveConstructor, excludedConstructors =
+                Map.tryFind canonicalRoot constructorFacts
+                |> Option.defaultValue (None, Set.empty)
+
+            Map.add canonicalRoot (positiveConstructor, Set.add constructorName excludedConstructors) constructorFacts
+
+        let rec conditionConstructorFacts aliases constructorFacts (condition: SurfaceExpression) =
+            match condition with
+            | TagTest(Name [ root ], constructorNameSegments) ->
+                match List.tryLast constructorNameSegments with
+                | Some constructorName ->
+                    [ addPositiveConstructorFact aliases constructorFacts root constructorName ],
+                    [ addNegativeConstructorFact aliases constructorFacts root constructorName ]
+                | None ->
+                    [ constructorFacts ], [ constructorFacts ]
+            | Unary("not", inner) ->
+                let whenTrue, whenFalse = conditionConstructorFacts aliases constructorFacts inner
+                whenFalse, whenTrue
+            | Binary(left, "&&", right) ->
+                let leftTrue, leftFalse = conditionConstructorFacts aliases constructorFacts left
+
+                let rightTrue =
+                    leftTrue
+                    |> List.collect (fun currentFacts ->
+                        conditionConstructorFacts aliases currentFacts right |> fst)
+
+                let rightFalse =
+                    leftTrue
+                    |> List.collect (fun currentFacts ->
+                        conditionConstructorFacts aliases currentFacts right |> snd)
+
+                rightTrue, leftFalse @ rightFalse
+            | Binary(left, "||", right) ->
+                let leftTrue, leftFalse = conditionConstructorFacts aliases constructorFacts left
+
+                let rightTrue =
+                    leftFalse
+                    |> List.collect (fun currentFacts ->
+                        conditionConstructorFacts aliases currentFacts right |> fst)
+
+                let rightFalse =
+                    leftFalse
+                    |> List.collect (fun currentFacts ->
+                        conditionConstructorFacts aliases currentFacts right |> snd)
+
+                leftTrue @ rightTrue, rightFalse
+            | _ ->
+                [ constructorFacts ], [ constructorFacts ]
+
+        let rec tryTopLevelSurfaceConstructorPatternName (pattern: SurfacePattern) =
+            match pattern with
+            | ConstructorPattern(nameSegments, _)
+            | NamedConstructorPattern(nameSegments, _) ->
+                List.tryLast nameSegments
+            | AsPattern(_, inner)
+            | TypedPattern(inner, _) ->
+                tryTopLevelSurfaceConstructorPatternName inner
+            | _ ->
+                None
+
+        let rec doBlockDefinitelyTerminal (statements: SurfaceDoStatement list) =
+            match statements |> List.tryLast with
+            | Some(DoReturn _) ->
+                true
+            | Some(DoExpression(Do nestedStatements)) ->
+                doBlockDefinitelyTerminal nestedStatements
+            | Some(DoIf(_, whenTrue, whenFalse)) ->
+                doBlockDefinitelyTerminal whenTrue && doBlockDefinitelyTerminal whenFalse
+            | _ ->
+                false
+
+        let extendStableAliases aliases (binding: SurfaceBindPattern) (value: SurfaceExpression) =
+            let shadowedNames = collectPatternNames binding.Pattern
+            let clearedAliases = removeShadowedAliases aliases shadowedNames
+
+            match binding.Pattern, value with
+            | NamePattern aliasName, Name [ targetName ] ->
+                Map.add aliasName (canonicalStableRoot clearedAliases targetName) clearedAliases
+            | _ ->
+                clearedAliases
+
+        let constructorProjectionDiagnostics aliases constructorFacts locals root fieldName =
+            match tryRecordInfoForRoot locals root with
+            | Some recordInfo ->
+                if
+                    recordInfo.Fields
+                    |> List.exists (fun field -> String.Equals(field.Name, fieldName, StringComparison.Ordinal))
+                then
+                    []
+                else
+                    [ makeDiagnostic DiagnosticCode.RecordProjectionMissingField $"Record type has no field named '{fieldName}'." ]
+            | None ->
+                match possibleConstructorsForRoot aliases constructorFacts locals root with
+                | Some [] ->
+                    []
+                | Some [ constructorInfo ] ->
+                    match tryVisibleConstructorFieldType constructorInfo fieldName with
+                    | Some _
+                    | None ->
+                        []
+                | Some _ ->
+                    [
+                        makeDiagnostic
+                            DiagnosticCode.TypeEqualityMismatch
+                            $"Constructor-field projection '{root}.{fieldName}' requires a unique constructor refinement in this branch."
+                    ]
+                | None ->
+                    []
 
         let applyRefinements refinements typeExpr =
             TypeSignatures.applySubstitution refinements typeExpr
@@ -7070,6 +7293,21 @@ module SurfaceElaboration =
                         [ expectedMismatchDiagnostic locals refinements context expectedType actualType ]
                     | _ ->
                         []
+
+        let isSimpleExpectedBodyType locals typeExpr =
+            match normalizeTypeAliases environment.VisibleTypeAliases typeExpr with
+            | TypeIntrinsic _ ->
+                true
+            | TypeName(root :: _, []) ->
+                not (
+                    Map.containsKey root locals
+                    || environment.VisibleBindings.ContainsKey(root)
+                    || environment.VisibleConstructors.ContainsKey(root)
+                )
+            | TypeName([], []) ->
+                true
+            | _ ->
+                false
 
         let fieldTypeReferences (recordInfo: RecordSurfaceInfo) (tokens: Token list) =
             let fieldNames = recordSurfaceFieldNames recordInfo
@@ -7695,6 +7933,40 @@ module SurfaceElaboration =
                 | _ ->
                     []
 
+            let generalExpectedBodyDiagnostics =
+                match expectedBodyType with
+                | Some expectedType
+                    when (match body with
+                          | Literal _
+                          | NumericLiteral _ -> true
+                          | _ -> false)
+                         && isSimpleExpectedBodyType locals (normalizeExpectedType Map.empty expectedType)
+                         && List.isEmpty projectionTypeMismatchDiagnostics
+                         && List.isEmpty staticObjectResultDiagnostics
+                         && List.isEmpty constructorAsStaticObjectDiagnostics
+                         && List.isEmpty expectedUnionDiagnostics
+                         && List.isEmpty contextualNumericBodyDiagnostics
+                         && List.isEmpty macroExpectedBodyDiagnostics ->
+                    expectedTypeDiagnostics locals Map.empty "Definition body" expectedType body
+                | Some expectedType
+                    when (match body with
+                          | Name [ _ ] -> true
+                          | _ -> false)
+                         && isSimpleExpectedBodyType locals (normalizeExpectedType Map.empty expectedType)
+                         && List.isEmpty projectionTypeMismatchDiagnostics
+                         && List.isEmpty staticObjectResultDiagnostics
+                         && List.isEmpty constructorAsStaticObjectDiagnostics
+                         && List.isEmpty expectedUnionDiagnostics
+                         && List.isEmpty contextualNumericBodyDiagnostics
+                         && List.isEmpty macroExpectedBodyDiagnostics ->
+                    match inferValidationExpressionType environment freshCounter locals body with
+                    | Some actualType when isSimpleExpectedBodyType locals actualType ->
+                        expectedTypeDiagnostics locals Map.empty "Definition body" expectedType body
+                    | _ ->
+                        []
+                | _ ->
+                    []
+
             directSignatureLiteralDiagnostic
             @ sealAscriptionDiagnostics
             @ opaqueUnfoldingDiagnostics
@@ -7704,6 +7976,7 @@ module SurfaceElaboration =
             @ expectedUnionDiagnostics
             @ contextualNumericBodyDiagnostics
             @ macroExpectedBodyDiagnostics
+            @ generalExpectedBodyDiagnostics
 
         let applicationExpectedArgumentDiagnostics locals refinements (bindingInfo: BindingSchemeInfo) arguments =
             let inferArgumentTypeForParameter parameterType argument =
@@ -7830,8 +8103,8 @@ module SurfaceElaboration =
 
                         List.ofSeq diagnostics
 
-        let rec validateExpression locals refinements lexicalNames expression =
-            let recurse = validateExpression locals refinements lexicalNames
+        let rec validateExpressionWithFlow locals refinements lexicalNames aliases constructorFacts expression =
+            let recurse = validateExpressionWithFlow locals refinements lexicalNames aliases constructorFacts
 
             let queryUseText useMode =
                 match useMode with
@@ -8025,10 +8298,10 @@ module SurfaceElaboration =
                 let validateYield currentLocals currentLexical =
                     match comprehension.Yield with
                     | YieldValue value ->
-                        validateExpression currentLocals refinements currentLexical value
+                        validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts value
                     | YieldKeyValue(key, value) ->
-                        validateExpression currentLocals refinements currentLexical key
-                        @ validateExpression currentLocals refinements currentLexical value
+                        validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts key
+                        @ validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts value
 
                 let rec loop currentLocals currentLexical clauses =
                     match clauses with
@@ -8038,7 +8311,7 @@ module SurfaceElaboration =
                         match clause with
                         | ForClause(_, isRefutable, binding, source) ->
                             let sourceDiagnostics =
-                                validateExpression currentLocals refinements currentLexical source
+                                validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts source
 
                             let refutableDiagnostics =
                                 if not isRefutable && not (patternIsDefinitelyIrrefutable binding.Pattern) then
@@ -8063,7 +8336,7 @@ module SurfaceElaboration =
                             sourceDiagnostics @ refutableDiagnostics @ loop nextLocals nextLexical rest
                         | JoinClause(binding, source, condition) ->
                             let sourceDiagnostics =
-                                validateExpression currentLocals refinements currentLexical source
+                                validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts source
 
                             let nextLocals =
                                 inferValidationExpressionType environment freshCounter currentLocals source
@@ -8076,12 +8349,12 @@ module SurfaceElaboration =
                                 Set.union currentLexical (collectPatternNames binding.Pattern |> Set.ofList)
 
                             let conditionDiagnostics =
-                                validateExpression nextLocals refinements nextLexical condition
+                                validateExpressionWithFlow nextLocals refinements nextLexical aliases constructorFacts condition
 
                             sourceDiagnostics @ conditionDiagnostics @ loop nextLocals nextLexical rest
                         | LetClause(_, binding, value) ->
                             let valueDiagnostics =
-                                validateExpression currentLocals refinements currentLexical value
+                                validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts value
 
                             let nextLocals =
                                 inferValidationExpressionType environment freshCounter currentLocals value
@@ -8094,39 +8367,39 @@ module SurfaceElaboration =
 
                             valueDiagnostics @ loop nextLocals nextLexical rest
                         | IfClause condition ->
-                            validateExpression currentLocals refinements currentLexical condition
+                            validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts condition
                             @ loop currentLocals currentLexical rest
                         | GroupByClause(key, aggregations, intoName) ->
                             let aggregationDiagnostics =
                                 aggregations
                                 |> List.collect (fun field ->
-                                    validateExpression currentLocals refinements currentLexical field.Value)
+                                    validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts field.Value)
 
                             let nextLocals =
                                 Map.add intoName (TypeSignatures.TypeVariable $"__kappa_group_{intoName}") Map.empty
 
                             let nextLexical = Set.singleton intoName
 
-                            validateExpression currentLocals refinements currentLexical key
+                            validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts key
                             @ aggregationDiagnostics
                             @ loop nextLocals nextLexical rest
                         | OrderByClause(_, key) ->
-                            validateExpression currentLocals refinements currentLexical key
+                            validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts key
                             @ loop currentLocals currentLexical rest
                         | DistinctClause ->
                             loop currentLocals currentLexical rest
                         | DistinctByClause key ->
-                            validateExpression currentLocals refinements currentLexical key
+                            validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts key
                             @ loop currentLocals currentLexical rest
                         | SkipClause count ->
-                            validateExpression currentLocals refinements currentLexical count
+                            validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts count
                             @ loop currentLocals currentLexical rest
                         | TakeClause count ->
-                            validateExpression currentLocals refinements currentLexical count
+                            validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts count
                             @ loop currentLocals currentLexical rest
                         | LeftJoinClause(binding, source, condition, intoName) ->
                             let sourceDiagnostics =
-                                validateExpression currentLocals refinements currentLexical source
+                                validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts source
 
                             let joinLocals =
                                 inferValidationExpressionType environment freshCounter currentLocals source
@@ -8139,7 +8412,7 @@ module SurfaceElaboration =
                                 Set.union currentLexical (collectPatternNames binding.Pattern |> Set.ofList)
 
                             let conditionDiagnostics =
-                                validateExpression joinLocals refinements joinLexical condition
+                                validateExpressionWithFlow joinLocals refinements joinLexical aliases constructorFacts condition
 
                             let nextLocals =
                                 Map.add intoName (TypeSignatures.TypeVariable $"__kappa_left_join_{intoName}") currentLocals
@@ -8903,10 +9176,10 @@ module SurfaceElaboration =
                                    |> Option.defaultValue [])
                             | DoIf(condition, whenTrue, whenFalse) ->
                                 recurseCurrent condition
-                                @ validateDoStatements locals refinements lexicalNames whenTrue
-                                @ validateDoStatements locals refinements lexicalNames whenFalse
+                                @ validateDoStatementsWithFlow locals refinements lexicalNames aliases constructorFacts whenTrue
+                                @ validateDoStatementsWithFlow locals refinements lexicalNames aliases constructorFacts whenFalse
                             | DoWhile(condition, body) ->
-                                recurseCurrent condition @ validateDoStatements locals refinements lexicalNames body)
+                                recurseCurrent condition @ validateDoStatementsWithFlow locals refinements lexicalNames aliases constructorFacts body)
                     | NamedApplicationBlock fields ->
                         fields |> List.collect (fun field -> recurseCurrent field.Value)
                     | Binary(left, _, right)
@@ -8937,6 +9210,9 @@ module SurfaceElaboration =
                 @ topLevelSpliceTypeDiagnostics inner
                 @ topLevelSpliceElabPhaseDiagnostics inner
                 @ topLevelSpliceLinearityDiagnostics inner
+                @ (tryExtractFailElabDiagnosticMessage inner
+                   |> Option.map (fun message -> [ makeDiagnostic DiagnosticCode.FrontendValidation message ])
+                   |> Option.defaultValue [])
             | CodeQuote inner
             | CodeSplice inner ->
                 recurse inner
@@ -8980,11 +9256,11 @@ module SurfaceElaboration =
 
                 recurse label
                 @ recurse body
-                @ validateExpression locals refinements returnClauseLexicalNames returnClause.Body
+                @ validateExpressionWithFlow locals refinements returnClauseLexicalNames aliases constructorFacts returnClause.Body
                 @ (operationClauses
                    |> List.collect (fun clause ->
                        let clauseLexicalNames = Set.union lexicalNames (clauseBoundNames clause)
-                       validateExpression locals refinements clauseLexicalNames clause.Body))
+                       validateExpressionWithFlow locals refinements clauseLexicalNames aliases constructorFacts clause.Body))
                 @ handlerDiagnostics
             | Literal _ ->
                 []
@@ -9016,7 +9292,7 @@ module SurfaceElaboration =
                                  |> not ->
                             [ makeDiagnostic DiagnosticCode.RecordProjectionMissingField $"Record type has no field named '{fieldName}'." ]
                         | _ ->
-                            []
+                            constructorProjectionDiagnostics aliases constructorFacts locals root fieldName
                 let staticMemberDiagnostics =
                         match expression with
                         | Name segments ->
@@ -9201,6 +9477,9 @@ module SurfaceElaboration =
                     |> Set.ofList
                     |> Set.union lexicalNames
 
+                let nextAliases =
+                    extendStableAliases aliases binding value
+
                 let visibleBindingSiteNames =
                     lexicalNames
                     |> Set.union parameterNames
@@ -9210,7 +9489,7 @@ module SurfaceElaboration =
                 @ (valueType
                    |> Option.map (fun inferredType -> syntaxCarrierEscapeDiagnostics visibleBindingSiteNames inferredType value)
                    |> Option.defaultValue [])
-                @ validateExpression nextLocals refinements nextLexicalNames bodyForValidation
+                @ validateExpressionWithFlow nextLocals refinements nextLexicalNames nextAliases constructorFacts bodyForValidation
             | LocalSignature(declaration, body) ->
                 let nextLocals =
                     declaration.TypeTokens
@@ -9218,12 +9497,30 @@ module SurfaceElaboration =
                     |> Option.map (fun declarationType -> Map.add declaration.Name declarationType locals)
                     |> Option.defaultValue locals
 
-                validateExpression nextLocals refinements (Set.add declaration.Name lexicalNames) body
+                validateExpressionWithFlow
+                    nextLocals
+                    refinements
+                    (Set.add declaration.Name lexicalNames)
+                    (Map.remove declaration.Name aliases)
+                    constructorFacts
+                    body
             | LocalTypeAlias(declaration, body) ->
-                validateExpression locals refinements (Set.add declaration.Name lexicalNames) body
+                validateExpressionWithFlow
+                    locals
+                    refinements
+                    (Set.add declaration.Name lexicalNames)
+                    (Map.remove declaration.Name aliases)
+                    constructorFacts
+                    body
             | LocalScopedEffect(declaration, body) ->
                 withScopedEffectDeclaration declaration (fun () ->
-                    validateExpression locals refinements (Set.add declaration.Name lexicalNames) body)
+                    validateExpressionWithFlow
+                        locals
+                        refinements
+                        (Set.add declaration.Name lexicalNames)
+                        (Map.remove declaration.Name aliases)
+                        constructorFacts
+                        body)
             | Lambda(parameters, body) ->
                 let nextLocals =
                     parameters
@@ -9240,7 +9537,7 @@ module SurfaceElaboration =
                     |> Set.ofList
                     |> Set.union lexicalNames
 
-                validateExpression nextLocals refinements nextLexicalNames body
+                validateExpressionWithFlow nextLocals refinements nextLexicalNames (removeShadowedAliases aliases (parameters |> List.map (fun parameter -> parameter.Name))) constructorFacts body
             | IfThenElse(condition, whenTrue, whenFalse) ->
                 let trueRefinements, falseRefinements =
                     match condition with
@@ -9253,16 +9550,30 @@ module SurfaceElaboration =
                     | _ ->
                         refinements, refinements
 
+                let trueConstructorFacts, falseConstructorFacts =
+                    conditionConstructorFacts aliases constructorFacts condition
+
                 recurse condition
-                @ validateExpression locals trueRefinements lexicalNames whenTrue
-                @ validateExpression locals falseRefinements lexicalNames whenFalse
+                @ (trueConstructorFacts
+                   |> List.collect (fun branchFacts ->
+                       validateExpressionWithFlow locals trueRefinements lexicalNames aliases branchFacts whenTrue))
+                @ (falseConstructorFacts
+                   |> List.collect (fun branchFacts ->
+                       validateExpressionWithFlow locals falseRefinements lexicalNames aliases branchFacts whenFalse))
             | Match(scrutinee, cases) ->
                 let scrutineeType =
                     inferValidationExpressionType environment freshCounter locals scrutinee
 
-                let caseDiagnostics =
-                    cases
-                    |> List.collect (fun caseClause ->
+                let scrutineeRoot =
+                    match scrutinee with
+                    | Name [ root ] -> Some root
+                    | _ -> None
+
+                let rec validateCases residualFacts (remainingCases: SurfaceMatchCase list) =
+                    match remainingCases with
+                    | [] ->
+                        []
+                    | caseClause :: restCases ->
                         let caseLocals =
                             extendPatternLocalTypes environment freshCounter locals scrutineeType caseClause.Pattern
 
@@ -9271,15 +9582,44 @@ module SurfaceElaboration =
                             |> Set.ofList
                             |> Set.union lexicalNames
 
-                        validatePatternHead caseClause.Pattern
-                        @ staticPatternIdentityDiagnostics locals caseClause.Pattern
-                        @ activePatternLinearityDiagnostics caseClause.Pattern "match case"
-                        @ (caseClause.Guard
-                           |> Option.map (validateExpression caseLocals refinements caseLexicalNames)
-                           |> Option.defaultValue [])
-                        @ validateExpression caseLocals refinements caseLexicalNames caseClause.Body)
+                        let caseAliases =
+                            removeShadowedAliases aliases (collectPatternNames caseClause.Pattern)
 
-                recurse scrutinee @ caseDiagnostics
+                        let caseFacts =
+                            match scrutineeRoot, tryTopLevelSurfaceConstructorPatternName caseClause.Pattern with
+                            | Some root, Some constructorName ->
+                                addPositiveConstructorFact aliases residualFacts root constructorName
+                            | _ ->
+                                residualFacts
+
+                        let bodyFactSets =
+                            match caseClause.Guard with
+                            | Some guard ->
+                                conditionConstructorFacts caseAliases caseFacts guard |> fst
+                            | None ->
+                                [ caseFacts ]
+
+                        let caseDiagnostics =
+                            validatePatternHead caseClause.Pattern
+                            @ staticPatternIdentityDiagnostics locals caseClause.Pattern
+                            @ activePatternLinearityDiagnostics caseClause.Pattern "match case"
+                            @ (caseClause.Guard
+                               |> Option.map (validateExpressionWithFlow caseLocals refinements caseLexicalNames caseAliases caseFacts)
+                               |> Option.defaultValue [])
+                            @ (bodyFactSets
+                               |> List.collect (fun bodyFacts ->
+                                   validateExpressionWithFlow caseLocals refinements caseLexicalNames caseAliases bodyFacts caseClause.Body))
+
+                        let nextResidualFacts =
+                            match scrutineeRoot, tryTopLevelSurfaceConstructorPatternName caseClause.Pattern, caseClause.Guard with
+                            | Some root, Some constructorName, None ->
+                                addNegativeConstructorFact aliases residualFacts root constructorName
+                            | _ ->
+                                residualFacts
+
+                        caseDiagnostics @ validateCases nextResidualFacts restCases
+
+                recurse scrutinee @ validateCases constructorFacts cases
             | RecordLiteral fields ->
                 validateRecordLiteral fields @ (fields |> List.collect (fun field -> recurse field.Value))
             | Seal(value, _) ->
@@ -9353,7 +9693,14 @@ module SurfaceElaboration =
                             | _ ->
                                 []
 
-                        receiverStaticDiagnostics @ receiverMethodDiagnostics
+                        let receiverProjectionDiagnostics =
+                            match receiver, arguments with
+                            | Name [ root ], [] ->
+                                constructorProjectionDiagnostics aliases constructorFacts locals root memberName
+                            | _ ->
+                                []
+
+                        receiverStaticDiagnostics @ receiverMethodDiagnostics @ receiverProjectionDiagnostics
                     | _ ->
                         []
 
@@ -9393,7 +9740,7 @@ module SurfaceElaboration =
             | TagTest(receiver, _) ->
                 recurse receiver
             | Do statements ->
-                validateDoStatements locals refinements lexicalNames statements
+                validateDoStatementsWithFlow locals refinements lexicalNames aliases constructorFacts statements
             | MonadicSplice inner
             | ExplicitImplicitArgument inner
             | InoutArgument inner
@@ -9637,7 +9984,7 @@ module SurfaceElaboration =
                                         |> Map.tryFind calleeName
                                         |> Option.orElseWith (fun () -> environment.VisibleConstructors |> Map.tryFind calleeName)
 
-                                let resolvesAsTraitMemberCall () =
+                                let resolvesAsTraitMemberCall =
                                     tryPrepareVisibleTraitMemberCall
                                         environment
                                         (ref freshCounter.Value)
@@ -9646,14 +9993,38 @@ module SurfaceElaboration =
                                         arguments
                                     |> Option.isSome
 
+                                let traitMemberOwners =
+                                    environment.VisibleTraits
+                                    |> Map.values
+                                    |> Seq.filter (fun traitInfo -> traitInfo.Members.ContainsKey(calleeName))
+                                    |> Seq.toList
+
+                                let rec traitOrSupertraitProvidesMember traitName memberName =
+                                    environment.VisibleTraits
+                                    |> Map.tryFind traitName
+                                    |> Option.exists (fun traitInfo ->
+                                        traitInfo.Members.ContainsKey(memberName)
+                                        || (traitInfo.Supertraits
+                                            |> List.exists (fun supertrait ->
+                                                traitOrSupertraitProvidesMember supertrait.TraitName memberName)))
+
+                                let localConstraintProjectionAvailable =
+                                    locals
+                                    |> Map.values
+                                    |> Seq.exists (fun localType ->
+                                        tryTraitConstraintFromType environment localType
+                                        |> Option.exists (fun constraintInfo ->
+                                            traitOrSupertraitProvidesMember constraintInfo.TraitName calleeName))
+
                                 let isKnownVisibleCallee =
                                     isLexicallyBoundName
                                     || (Set.contains calleeName knownSurfaceTermNames)
                                     || (Set.contains calleeName knownValueNames)
                                     || environment.VisibleProjections.ContainsKey(calleeName)
-                                    || (environment.VisibleTraits |> Map.exists (fun _ traitInfo -> traitInfo.Members.ContainsKey(calleeName)))
+                                    || not (List.isEmpty traitMemberOwners)
                                     || environment.ConstrainedMembers.ContainsKey(calleeName)
-                                    || resolvesAsTraitMemberCall ()
+                                    || localConstraintProjectionAvailable
+                                    || resolvesAsTraitMemberCall
 
                                 match bindingInfo with
                                 | Some bindingInfo ->
@@ -9702,6 +10073,29 @@ module SurfaceElaboration =
                                                [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch message ])
                                     | None ->
                                         expectedArgumentDiagnostics
+                                | None
+                                    when not resolvesAsTraitMemberCall
+                                         && not (List.isEmpty traitMemberOwners)
+                                         && not (environment.ConstrainedMembers.ContainsKey(calleeName))
+                                         && not localConstraintProjectionAvailable ->
+                                    let inferredArgumentTypes =
+                                        arguments
+                                        |> List.map (fun argument ->
+                                            inferValidationExpressionType environment (ref freshCounter.Value) locals argument
+                                            |> Option.map TypeSignatures.toText
+                                            |> Option.defaultValue "_")
+                                        |> String.concat ", "
+
+                                    let traitOwnerText =
+                                        traitMemberOwners
+                                        |> List.map (fun traitInfo -> traitInfo.Name)
+                                        |> String.concat ", "
+
+                                    [
+                                        makeDiagnostic
+                                            DiagnosticCode.TypeEqualityMismatch
+                                            $"Overloaded trait member '{calleeName}' from [{traitOwnerText}] could not be resolved for argument types '{inferredArgumentTypes}'."
+                                    ]
                                 | None
                                     when allowUnresolvedCallDiagnostics
                                          && not isKnownVisibleCallee ->
@@ -9769,7 +10163,26 @@ module SurfaceElaboration =
                 | _ ->
                     diagnostics
             | Binary(left, operatorName, right) ->
-                let diagnostics = recurse left @ recurse right
+                let diagnostics =
+                    match operatorName with
+                    | "&&" ->
+                        let rightFacts =
+                            conditionConstructorFacts aliases constructorFacts left |> fst
+
+                        recurse left
+                        @ (rightFacts
+                           |> List.collect (fun branchFacts ->
+                               validateExpressionWithFlow locals refinements lexicalNames aliases branchFacts right))
+                    | "||" ->
+                        let rightFacts =
+                            conditionConstructorFacts aliases constructorFacts left |> snd
+
+                        recurse left
+                        @ (rightFacts
+                           |> List.collect (fun branchFacts ->
+                               validateExpressionWithFlow locals refinements lexicalNames aliases branchFacts right))
+                    | _ ->
+                        recurse left @ recurse right
 
                 match operatorName with
                 | "&&"
@@ -9800,7 +10213,7 @@ module SurfaceElaboration =
                        | StringText _ -> []
                        | StringInterpolation(inner, _) -> recurse inner))
 
-        and validateDoStatements locals refinements lexicalNames statements =
+        and validateDoStatementsWithFlow locals refinements lexicalNames aliases constructorFacts statements =
             match statements with
             | [] ->
                 []
@@ -9826,8 +10239,11 @@ module SurfaceElaboration =
                         | Do rewritten -> rewritten
                         | _ -> rest
 
-                    validateExpression locals refinements lexicalNames expression
-                    @ validateDoStatements nextLocals refinements nextLexicalNames restForValidation
+                    let nextAliases =
+                        extendStableAliases aliases binding expression
+
+                    validateExpressionWithFlow locals refinements lexicalNames aliases constructorFacts expression
+                    @ validateDoStatementsWithFlow nextLocals refinements nextLexicalNames nextAliases constructorFacts restForValidation
                 | DoBind(binding, expression) ->
                     let nextLexicalNames =
                         collectPatternNames binding.Pattern
@@ -9842,8 +10258,11 @@ module SurfaceElaboration =
                         | None ->
                             locals
 
-                    validateExpression locals refinements lexicalNames expression
-                    @ validateDoStatements nextLocals refinements nextLexicalNames rest
+                    let nextAliases =
+                        removeShadowedAliases aliases (collectPatternNames binding.Pattern)
+
+                    validateExpressionWithFlow locals refinements lexicalNames aliases constructorFacts expression
+                    @ validateDoStatementsWithFlow nextLocals refinements nextLexicalNames nextAliases constructorFacts rest
                 | DoLetQuestion(binding, expression, failure) ->
                     let nextLexicalNames =
                         collectPatternNames binding.Pattern
@@ -9858,6 +10277,9 @@ module SurfaceElaboration =
                         | None ->
                             locals
 
+                    let nextAliases =
+                        removeShadowedAliases aliases (collectPatternNames binding.Pattern)
+
                     let failureDiagnostics =
                         match failure with
                         | Some failure ->
@@ -9866,14 +10288,14 @@ module SurfaceElaboration =
                                 |> Set.ofList
                                 |> Set.union lexicalNames
 
-                            validateDoStatements locals refinements failureLexicalNames failure.Body
+                            validateDoStatementsWithFlow locals refinements failureLexicalNames aliases constructorFacts failure.Body
                         | None -> []
 
-                    validateExpression locals refinements lexicalNames expression
+                    validateExpressionWithFlow locals refinements lexicalNames aliases constructorFacts expression
                     @ validatePatternHead binding.Pattern
                     @ activePatternLinearityDiagnostics binding.Pattern "let?"
                     @ failureDiagnostics
-                    @ validateDoStatements nextLocals refinements nextLexicalNames rest
+                    @ validateDoStatementsWithFlow nextLocals refinements nextLexicalNames nextAliases constructorFacts rest
                 | DoUsing(binding, expression) ->
                     let nextLexicalNames =
                         collectPatternNames binding.Pattern
@@ -9885,32 +10307,63 @@ module SurfaceElaboration =
                         | NamePattern bindingName, Some valueType -> Map.add bindingName (unwrapIoType valueType) locals
                         | _ -> locals
 
-                    validateExpression locals refinements lexicalNames expression
-                    @ validateDoStatements nextLocals refinements nextLexicalNames rest
+                    let nextAliases =
+                        removeShadowedAliases aliases (collectPatternNames binding.Pattern)
+
+                    validateExpressionWithFlow locals refinements lexicalNames aliases constructorFacts expression
+                    @ validateDoStatementsWithFlow nextLocals refinements nextLexicalNames nextAliases constructorFacts rest
                 | DoVar(bindingName, expression) ->
                     let nextLocals =
                         match inferValidationExpressionType environment freshCounter locals expression with
                         | Some valueType -> Map.add bindingName (refType valueType) locals
                         | None -> locals
 
-                    validateExpression locals refinements lexicalNames expression
-                    @ validateDoStatements nextLocals refinements (Set.add bindingName lexicalNames) rest
+                    validateExpressionWithFlow locals refinements lexicalNames aliases constructorFacts expression
+                    @ validateDoStatementsWithFlow nextLocals refinements (Set.add bindingName lexicalNames) (Map.remove bindingName aliases) constructorFacts rest
                 | DoAssign(_, expression)
                 | DoDefer expression
                 | DoExpression expression ->
-                    validateExpression locals refinements lexicalNames expression
-                    @ validateDoStatements locals refinements lexicalNames rest
+                    validateExpressionWithFlow locals refinements lexicalNames aliases constructorFacts expression
+                    @ validateDoStatementsWithFlow locals refinements lexicalNames aliases constructorFacts rest
                 | DoIf(condition, whenTrue, whenFalse) ->
-                    validateExpression locals refinements lexicalNames condition
-                    @ validateDoStatements locals refinements lexicalNames whenTrue
-                    @ validateDoStatements locals refinements lexicalNames whenFalse
-                    @ validateDoStatements locals refinements lexicalNames rest
+                    let trueConstructorFacts, falseConstructorFacts =
+                        conditionConstructorFacts aliases constructorFacts condition
+
+                    let restDiagnostics =
+                        match doBlockDefinitelyTerminal whenTrue, doBlockDefinitelyTerminal whenFalse with
+                        | false, true ->
+                            trueConstructorFacts
+                            |> List.collect (fun branchFacts ->
+                                validateDoStatementsWithFlow locals refinements lexicalNames aliases branchFacts rest)
+                        | true, false ->
+                            falseConstructorFacts
+                            |> List.collect (fun branchFacts ->
+                                validateDoStatementsWithFlow locals refinements lexicalNames aliases branchFacts rest)
+                        | _ ->
+                            validateDoStatementsWithFlow locals refinements lexicalNames aliases constructorFacts rest
+
+                    validateExpressionWithFlow locals refinements lexicalNames aliases constructorFacts condition
+                    @ (trueConstructorFacts
+                       |> List.collect (fun branchFacts ->
+                           validateDoStatementsWithFlow locals refinements lexicalNames aliases branchFacts whenTrue))
+                    @ (falseConstructorFacts
+                       |> List.collect (fun branchFacts ->
+                           validateDoStatementsWithFlow locals refinements lexicalNames aliases branchFacts whenFalse))
+                    @ restDiagnostics
                 | DoWhile(condition, body) ->
-                    validateExpression locals refinements lexicalNames condition
-                    @ validateDoStatements locals refinements lexicalNames body
-                    @ validateDoStatements locals refinements lexicalNames rest
+                    let trueConstructorFacts, _ =
+                        conditionConstructorFacts aliases constructorFacts condition
+
+                    validateExpressionWithFlow locals refinements lexicalNames aliases constructorFacts condition
+                    @ (trueConstructorFacts
+                       |> List.collect (fun branchFacts ->
+                           validateDoStatementsWithFlow locals refinements lexicalNames aliases branchFacts body))
+                    @ validateDoStatementsWithFlow locals refinements lexicalNames aliases constructorFacts rest
                 | DoReturn expression ->
-                    validateExpression locals refinements lexicalNames expression
+                    validateExpressionWithFlow locals refinements lexicalNames aliases constructorFacts expression
+
+        let validateExpression locals refinements lexicalNames expression =
+            validateExpressionWithFlow locals refinements lexicalNames emptyStableAliases emptyConstructorFacts expression
 
         let rec validateInoutPlacement insideDo expression =
             let recurse = validateInoutPlacement insideDo
@@ -11612,6 +12065,14 @@ module SurfaceElaboration =
                             |> Option.bind (fun name -> Map.tryFind name environment.VisibleBindings)
                             |> Option.map (fun bindingInfo -> bindingInfo.Scheme)
 
+                        let bodyEnvironment =
+                            match scheme with
+                            | Some scheme when not (List.isEmpty scheme.Constraints) ->
+                                { environment with
+                                    ConstrainedMembers = buildConstrainedMembers environment scheme.Constraints }
+                            | _ ->
+                                environment
+
                         let moduleTopLevelDefinitionsByName =
                             frontendModule.Declarations
                             |> List.choose (function
@@ -11624,7 +12085,7 @@ module SurfaceElaboration =
                             |> Map.ofList
 
                         validateBuiltInExpressionsForBinding
-                            environment
+                            bodyEnvironment
                             knownSurfaceTermNames
                             allowUnresolvedCallDiagnostics
                             moduleTopLevelDefinitionsByName
@@ -14433,28 +14894,10 @@ module SurfaceElaboration =
                     scheme.Constraints
                     |> List.mapi (fun index constraintInfo ->
                         let dictionaryParameterName = $"__kappa_dict_{constraintInfo.TraitName}_{index}"
-
                         constraintInfo, dictionaryParameterName)
 
-                let addConstrainedMembers state constraintInfo dictionaryParameterName =
-                    reachableTraitConstraints environment constraintInfo
-                    |> List.fold (fun current reachableConstraint ->
-                        environment.VisibleTraits
-                        |> Map.tryFind reachableConstraint.TraitName
-                        |> Option.map (fun traitInfo ->
-                            traitInfo.Members
-                            |> Map.toList
-                            |> List.fold (fun innerState (memberName, _) ->
-                                if Map.containsKey memberName innerState then
-                                    innerState
-                                else
-                                    Map.add memberName (reachableConstraint.TraitName, dictionaryParameterName) innerState) current)
-                        |> Option.defaultValue current) state
-
                 let constrainedMembers =
-                    memberEntries
-                    |> List.fold (fun state (constraintInfo, dictionaryParameterName) ->
-                        addConstrainedMembers state constraintInfo dictionaryParameterName) Map.empty
+                    buildConstrainedMembers environment scheme.Constraints
 
                 constrainedMembers, memberEntries
             | _ ->

@@ -76,7 +76,21 @@ module internal IntrinsicCatalog =
         Set.ofList [ "&&"; "||"; "=="; "!="; "<"; "<="; ">"; ">=" ]
 
     let private elaborationAvailablePreludeTermNames =
-        Set.ofList [ "True"; "False"; "not"; "and"; "or"; "negate"; "f"; "re"; "b"; "type" ]
+        Set.ofList
+            [ "True"
+              "False"
+              "not"
+              "and"
+              "or"
+              "negate"
+              "f"
+              "re"
+              "b"
+              "type"
+              "failElab"
+              "failElabWith"
+              "warnElab"
+              "warnElabWith" ]
 
     let elaborationAvailableIntrinsicTermNames () =
         let contract = bundledPreludeExpectContract ()

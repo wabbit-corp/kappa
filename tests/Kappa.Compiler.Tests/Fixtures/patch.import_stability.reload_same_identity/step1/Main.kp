@@ -1,0 +1,15 @@
+module Main
+
+import C.*
+import A.*
+import B.*
+
+stableProof :
+    (o : Ordering) ->
+    match o
+    case LT -> Unit
+    case _  -> nonLT (idOrdering o) = True
+let stableProof o =
+    match o
+    case LT -> ()
+    case _  -> refl

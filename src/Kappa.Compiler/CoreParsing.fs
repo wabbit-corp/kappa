@@ -469,7 +469,7 @@ module private SurfaceEffectParsing =
             lineTokens
             |> List.skipWhile isLeadingLayoutToken
             |> List.rev
-            |> List.skipWhile (fun token -> token.Kind = Newline)
+            |> List.skipWhile isLeadingLayoutToken
             |> List.rev
 
         match trimLineTokens lineTokens with
@@ -5183,6 +5183,359 @@ type private ExpressionParser
 
         Handle(isDeep, label, handledBody, returnClause, operationClauses)
 
+    member private this.ParseLetExpression() =
+        let trimLineTokens lineTokens =
+            let isLayoutToken token =
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent -> true
+                | _ -> false
+
+            lineTokens
+            |> List.skipWhile isLayoutToken
+            |> List.rev
+            |> List.skipWhile isLayoutToken
+            |> List.rev
+
+        let tryFindTopLevelEquals tokens =
+            let tokenArray = List.toArray tokens
+            let mutable depth = 0
+            let mutable index = 0
+            let mutable result = None
+
+            while index < tokenArray.Length && result.IsNone do
+                match tokenArray[index].Kind with
+                | LeftParen
+                | LeftBracket
+                | LeftBrace
+                | LeftSetBrace ->
+                    depth <- depth + 1
+                | RightParen
+                | RightBracket
+                | RightBrace
+                | RightSetBrace ->
+                    depth <- max 0 (depth - 1)
+                | Equals when depth = 0 ->
+                    result <- Some index
+                | _ ->
+                    ()
+
+                index <- index + 1
+
+            result
+
+        let stripBindingTypeAnnotation tokens =
+            let tokenArray = List.toArray tokens
+            let mutable depth = 0
+            let mutable index = 0
+            let mutable splitIndex = -1
+
+            while index < tokenArray.Length && splitIndex < 0 do
+                match tokenArray[index].Kind with
+                | LeftParen
+                | LeftBracket
+                | LeftBrace
+                | LeftSetBrace ->
+                    depth <- depth + 1
+                | RightParen
+                | RightBracket
+                | RightBrace
+                | RightSetBrace ->
+                    depth <- max 0 (depth - 1)
+                | Colon when depth = 0 ->
+                    splitIndex <- index
+                | _ ->
+                    ()
+
+                index <- index + 1
+
+            if splitIndex >= 0 then
+                tokenArray[0 .. splitIndex - 1] |> Array.toList
+            else
+                tokens
+
+        let parseNamedLocalBinding headerTokens valueTokens =
+            let headerTokens =
+                headerTokens
+                |> List.filter (fun token ->
+                    match token.Kind with
+                    | Newline
+                    | Indent
+                    | Dedent
+                    | EndOfFile -> false
+                    | _ -> true)
+
+            let bindingName, bindingNameSpan, parameterHeaderTokens =
+                match headerTokens with
+                | nameToken :: rest ->
+                    SyntaxFacts.trimIdentifierQuotes nameToken.Text, nameToken.Span, rest
+                | [] ->
+                    "<missing>", TextSpan.FromBounds(source.Length, source.Length), []
+
+            let splitReturnTypeTokens tokens =
+                let tokenArray = List.toArray tokens
+                let mutable depth = 0
+                let mutable splitIndex = -1
+                let mutable index = 0
+
+                while index < tokenArray.Length && splitIndex < 0 do
+                    match tokenArray[index].Kind with
+                    | LeftParen
+                    | LeftBracket
+                    | LeftBrace
+                    | LeftSetBrace ->
+                        depth <- depth + 1
+                    | RightParen
+                    | RightBracket
+                    | RightBrace
+                    | RightSetBrace ->
+                        depth <- max 0 (depth - 1)
+                    | Colon when depth = 0 ->
+                        splitIndex <- index
+                    | _ ->
+                        ()
+
+                    index <- index + 1
+
+                if splitIndex >= 0 then
+                    tokenArray[0 .. splitIndex - 1] |> Array.toList,
+                    Some(tokenArray[splitIndex + 1 ..] |> Array.toList)
+                else
+                    tokens, None
+
+            let parameterTokens, _ =
+                splitReturnTypeTokens parameterHeaderTokens
+
+            let tokenArray = List.toArray parameterTokens
+            let parameters = ResizeArray<Parameter>()
+            let mutable index = 0
+
+            while index < tokenArray.Length do
+                match tokenArray[index].Kind with
+                | AtSign ->
+                    if index + 1 >= tokenArray.Length then
+                        diagnostics.AddError(
+                            DiagnosticCode.ParseError,
+                            "Expected an implicit parameter after '@' in the local function header.",
+                            source.GetLocation(tokenArray[index].Span)
+                        )
+
+                        index <- tokenArray.Length
+                    else
+                        match tokenArray[index + 1].Kind with
+                        | Identifier
+                        | Keyword _ ->
+                            parameters.Add(
+                                SurfaceBinderParsing.makeParameter
+                                    (SyntaxFacts.trimIdentifierQuotes tokenArray[index + 1].Text)
+                                    None
+                                    None
+                                    true
+                                    false
+                            )
+
+                            index <- index + 2
+                        | LeftParen ->
+                            let startToken = tokenArray[index + 1]
+                            let mutable depth = 1
+                            let mutable endIndex = index + 2
+
+                            while endIndex < tokenArray.Length && depth > 0 do
+                                match tokenArray[endIndex].Kind with
+                                | LeftParen -> depth <- depth + 1
+                                | RightParen -> depth <- depth - 1
+                                | _ -> ()
+
+                                endIndex <- endIndex + 1
+
+                            if depth > 0 then
+                                diagnostics.AddError(
+                                    DiagnosticCode.ParseError,
+                                    "Unterminated implicit parameter binder in local function header.",
+                                    source.GetLocation(startToken.Span)
+                                )
+
+                                index <- tokenArray.Length
+                            else
+                                let innerTokens = List.ofArray tokenArray[index + 2 .. endIndex - 2]
+
+                                match SurfaceBinderParsing.parseParameterFromTokens diagnostics source startToken.Span innerTokens with
+                                | Some parameter -> parameters.Add({ parameter with IsImplicit = true })
+                                | None -> ()
+
+                                index <- endIndex
+                        | _ ->
+                            diagnostics.AddError(
+                                DiagnosticCode.ParseError,
+                                "Unsupported implicit parameter syntax in local function header.",
+                                source.GetLocation(tokenArray[index + 1].Span)
+                            )
+
+                            index <- index + 2
+                | Identifier
+                | Keyword _ ->
+                    parameters.Add(
+                        SurfaceBinderParsing.makeParameter
+                            (SyntaxFacts.trimIdentifierQuotes tokenArray[index].Text)
+                            None
+                            None
+                            false
+                            false
+                    )
+
+                    index <- index + 1
+                | Underscore ->
+                    parameters.Add(
+                        SurfaceBinderParsing.makeParameter
+                            (SurfaceBinderParsing.wildcardParameterName tokenArray[index].Span)
+                            None
+                            None
+                            false
+                            false
+                    )
+
+                    index <- index + 1
+                | LeftParen ->
+                    let startToken = tokenArray[index]
+                    let mutable depth = 1
+                    let mutable endIndex = index + 1
+
+                    while endIndex < tokenArray.Length && depth > 0 do
+                        match tokenArray[endIndex].Kind with
+                        | LeftParen -> depth <- depth + 1
+                        | RightParen -> depth <- depth - 1
+                        | _ -> ()
+
+                        endIndex <- endIndex + 1
+
+                    if depth > 0 then
+                        diagnostics.AddError(
+                            DiagnosticCode.ParseError,
+                            "Unterminated parameter binder in local function header.",
+                            source.GetLocation(startToken.Span)
+                        )
+
+                        index <- tokenArray.Length
+                    else
+                        let innerTokens = List.ofArray tokenArray[index + 1 .. endIndex - 2]
+
+                        if List.isEmpty innerTokens then
+                            parameters.Add(
+                                SurfaceBinderParsing.makeParameter
+                                    (SurfaceBinderParsing.wildcardParameterName startToken.Span)
+                                    None
+                                    None
+                                    false
+                                    false
+                            )
+                        else
+                            match SurfaceBinderParsing.parseParameterFromTokens diagnostics source startToken.Span innerTokens with
+                            | Some parameter -> parameters.Add(parameter)
+                            | None -> ()
+
+                        index <- endIndex
+                | _ ->
+                    diagnostics.AddError(
+                        DiagnosticCode.ParseError,
+                        "Unsupported local function header syntax.",
+                        source.GetLocation(tokenArray[index].Span)
+                    )
+
+                    index <- index + 1
+
+            let value =
+                match List.ofSeq parameters with
+                | [] ->
+                    this.ParseStandaloneExpression(valueTokens)
+                | parsedParameters ->
+                    Lambda(parsedParameters, this.ParseStandaloneExpression(valueTokens))
+
+            let binding =
+                { Pattern = NamePattern bindingName
+                  Quantity = None
+                  IsImplicit = false
+                  TypeTokens = None
+                  BinderSpans = Map.ofList [ bindingName, [ bindingNameSpan ] ] }
+
+            binding, value
+
+        this.ExpectKeyword(Keyword.Let, "Expected 'let'.") |> ignore
+
+        let bindingAndValueTokens = ResizeArray<Token>()
+        let mutable bracketDepth = 0
+        let mutable layoutDepth = 0
+        let mutable foundIn = false
+
+        while not foundIn && this.Current.Kind <> EndOfFile do
+            if bracketDepth = 0 && layoutDepth = 0 && Token.isKeyword Keyword.In this.Current then
+                foundIn <- true
+            else
+                match this.Current.Kind with
+                | LeftParen
+                | LeftBracket
+                | LeftBrace
+                | LeftSetBrace ->
+                    bracketDepth <- bracketDepth + 1
+                    bindingAndValueTokens.Add(this.Advance())
+                | RightParen
+                | RightBracket
+                | RightBrace
+                | RightSetBrace ->
+                    bracketDepth <- max 0 (bracketDepth - 1)
+                    bindingAndValueTokens.Add(this.Advance())
+                | Indent when bracketDepth = 0 ->
+                    layoutDepth <- layoutDepth + 1
+                    bindingAndValueTokens.Add(this.Advance())
+                | Dedent when bracketDepth = 0 && layoutDepth > 0 ->
+                    layoutDepth <- layoutDepth - 1
+                    bindingAndValueTokens.Add(this.Advance())
+                | _ ->
+                    bindingAndValueTokens.Add(this.Advance())
+
+        if this.Current.Kind = EndOfFile then
+            diagnostics.AddError(
+                DiagnosticCode.ParseError,
+                "Expected 'in' after the local let binding.",
+                source.GetLocation(eofSpan)
+            )
+
+            Literal LiteralValue.Unit
+        else
+            this.Advance() |> ignore
+
+            let trimmedBindingAndValueTokens =
+                bindingAndValueTokens |> Seq.toList |> trimLineTokens
+
+            match tryFindTopLevelEquals trimmedBindingAndValueTokens with
+            | Some index ->
+                let tokenArray = List.toArray trimmedBindingAndValueTokens
+                let headerTokens = tokenArray[0 .. index - 1] |> Array.toList
+                let valueTokens = tokenArray[index + 1 ..] |> Array.toList |> trimLineTokens
+
+                let binding, value =
+                    match headerTokens with
+                    | nameToken :: restHeader
+                        when this.IsNameToken(nameToken)
+                             && not (List.isEmpty restHeader)
+                             && restHeader.Head.Kind <> Colon ->
+                        parseNamedLocalBinding headerTokens valueTokens
+                    | _ ->
+                        let bindingTokens = stripBindingTypeAnnotation headerTokens
+                        this.ParseBindPatternFromTokens bindingTokens,
+                        this.ParseStandaloneExpression(valueTokens)
+
+                let body = this.ParseExpression(0)
+                LocalLet(binding, value, body)
+            | None ->
+                diagnostics.AddError(
+                    DiagnosticCode.ParseError,
+                    "Expected '=' in the local let binding.",
+                    source.GetLocation(eofSpan)
+                )
+
+                Literal LiteralValue.Unit
+
     member private this.ParsePrimaryExpression() =
         this.SkipLayout()
 
@@ -5200,6 +5553,8 @@ type private ExpressionParser
             this.ParseDoExpression()
         | Keyword Keyword.If ->
             this.ParseIfExpression()
+        | Keyword Keyword.Let ->
+            this.ParseLetExpression()
         | Keyword Keyword.Seal ->
             this.ParseSealExpression()
         | _ when this.IsHandleExpressionStart() ->
@@ -6758,7 +7113,51 @@ module CoreParsing =
 
         let tryParseLetInExpression rest =
             match splitIndentedLines rest with
-            | Some bindingLines ->
+            | Some lines ->
+                let trimmedLines =
+                    lines |> List.map trimLineTokens
+
+                let bindingLines =
+                    trimmedLines |> List.takeWhile (parseSimpleLocalBindingLine >> Option.isSome)
+
+                let remainingLines =
+                    trimmedLines |> List.skipWhile (parseSimpleLocalBindingLine >> Option.isSome)
+
+                match remainingLines with
+                | inLine :: bodyLines
+                    when not (List.isEmpty bindingLines) ->
+                    match inLine with
+                    | inToken :: bodyStartTokens when Token.isKeyword Keyword.In inToken ->
+                        let bodyTokens =
+                            bodyStartTokens
+                            @ (bodyLines
+                               |> List.mapi (fun index line ->
+                                   if index = 0 || List.isEmpty line then
+                                       line
+                                   else
+                                       { Kind = Newline
+                                         Text = ""
+                                         Span = line.Head.Span }
+                                       :: line)
+                               |> List.concat)
+
+                        Some(buildNestedExpression parseSimpleLocalBindingLine bindingLines bodyTokens)
+                    | _ ->
+                        let afterBindings =
+                            rest
+                            |> List.skipWhile (fun token -> token.Kind <> Dedent)
+                            |> function
+                                | _ :: remaining -> trimLeadingLayout remaining
+                                | [] -> []
+
+                        match afterBindings with
+                        | inToken :: bodyTokens
+                            when Token.isKeyword Keyword.In inToken
+                                 && (bindingLines |> List.forall (parseSimpleLocalBindingLine >> Option.isSome)) ->
+                            Some(buildNestedExpression parseSimpleLocalBindingLine bindingLines bodyTokens)
+                        | _ ->
+                            None
+                | _ ->
                 let afterBindings =
                     rest
                     |> List.skipWhile (fun token -> token.Kind <> Dedent)
@@ -6777,10 +7176,13 @@ module CoreParsing =
             | None ->
                 match splitTopLevelAtKeyword Keyword.In rest with
                 | Some(bindingTokens, bodyTokens) ->
-                    match parseBindingLineTokens bindingTokens with
+                    let trimmedBindingTokens = trimLineTokens bindingTokens
+                    let trimmedBodyTokens = trimLineTokens bodyTokens
+
+                    match parseBindingLineTokens trimmedBindingTokens with
                     | Some(binding, value) ->
                         let body =
-                            parseExpression fixities source diagnostics bodyTokens
+                            parseExpression fixities source diagnostics trimmedBodyTokens
                             |> Option.defaultValue (Literal LiteralValue.Unit)
 
                         Some(LocalLet(binding, value, body))

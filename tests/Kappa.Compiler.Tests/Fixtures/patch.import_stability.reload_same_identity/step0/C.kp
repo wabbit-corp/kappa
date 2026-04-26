@@ -1,0 +1,4 @@
+module C
+
+idOrdering : Ordering -> Ordering
+let idOrdering o = o

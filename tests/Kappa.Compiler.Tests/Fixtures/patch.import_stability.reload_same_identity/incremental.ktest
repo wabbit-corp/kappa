@@ -1,0 +1,5 @@
+--! requires capability incremental
+--! assertStepNoErrors 0
+--! assertStepNoErrors 1
+--! assertStepWarningCount 0 0
+--! assertStepWarningCount 1 0
