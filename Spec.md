@@ -6598,19 +6598,19 @@ SyntaxOrigin : Type
 
 syntaxOrigin :
     forall (@0 t : Type).
-    Syntax t -> SyntaxOrigin
+    Syntax t -> Elab SyntaxOrigin
 
 withSyntaxOrigin :
     forall (@0 t : Type).
-    SyntaxOrigin -> Syntax t -> Syntax t
+    SyntaxOrigin -> Syntax t -> Elab (Syntax t)
 ```
 
 Normative meaning:
 
-* `syntaxOrigin s` returns the current origin information of `s`, corresponding to the source-origin / synthetic-origin
-  model of §17.2.1.
-* `withSyntaxOrigin o s` returns syntax observationally equal to `s` except that diagnostics, navigation, and rendered
-  output treat `o` as the nearest origin of the resulting syntax.
+* `syntaxOrigin s` returns, during elaboration, the current origin information of `s`, corresponding to the
+  source-origin / synthetic-origin model of §17.2.1.
+* `withSyntaxOrigin o s` returns, during elaboration, syntax observationally equal to `s` except that diagnostics,
+  navigation, and rendered output treat `o` as the nearest origin of the resulting syntax.
 * Surface syntax inspection MUST preserve hygiene and MUST NOT expose mutable parser internals, unstable node IDs, or
   implementation-defined memory identities as part of the portable contract.
 
@@ -6659,39 +6659,39 @@ Implementations MUST provide elaboration-time operations equivalent to:
 ```kappa
 asCore :
     forall (@0 t : Type).
-    Syntax t -> exists (Γ : CoreCtx). Core Γ t
+    Syntax t -> Elab (exists (Γ : CoreCtx). Core Γ t)
 
 asCoreIn :
     forall (@0 Γ : CoreCtx) (@0 t : Type).
-    Syntax t -> Core Γ t
+    Syntax t -> Elab (Core Γ t)
 
 reifyCore :
     forall (@0 Γ : CoreCtx) (@0 t : Type).
-    Core Γ t -> Syntax t
+    Core Γ t -> Elab (Syntax t)
 
 inferType :
     forall (@0 Γ : CoreCtx) (@0 t : Type).
-    Core Γ t -> Core Γ Type
+    Core Γ t -> Elab (Core Γ Type)
 
 whnf :
     forall (@0 Γ : CoreCtx) (@0 t : Type).
-    Core Γ t -> Core Γ t
+    Core Γ t -> Elab (Core Γ t)
 
 normalize :
     forall (@0 Γ : CoreCtx) (@0 t : Type).
-    Core Γ t -> Core Γ t
+    Core Γ t -> Elab (Core Γ t)
 
 tryProveDefEq :
     forall (@0 Γ : CoreCtx) (@0 a : Type) (@0 b : Type).
-    (x : Core Γ a) -> (y : Core Γ b) -> Option (CoreEq x y)
+    (x : Core Γ a) -> (y : Core Γ b) -> Elab (Option (CoreEq x y))
 
 proveDefEq :
     forall (@0 Γ : CoreCtx) (@0 a : Type) (@0 b : Type).
-    (x : Core Γ a) -> (y : Core Γ b) -> CoreEq x y
+    (x : Core Γ a) -> (y : Core Γ b) -> Elab (CoreEq x y)
 
 defEq :
     forall (@0 Γ : CoreCtx) (@0 a : Type) (@0 b : Type).
-    Core Γ a -> Core Γ b -> Bool
+    Core Γ a -> Core Γ b -> Elab Bool
 
 reflCoreEq :
     forall (@0 Γ : CoreCtx) (@0 a : Type) (@0 x : Core Γ a).
@@ -6717,7 +6717,7 @@ substCoreEq :
 
 headSymbol :
     forall (@0 Γ : CoreCtx) (@0 t : Type).
-    Core Γ t -> Option Symbol
+    Core Γ t -> Elab (Option Symbol)
 
 sameSymbol :
     Symbol -> Symbol -> Bool
@@ -6725,13 +6725,13 @@ sameSymbol :
 
 Normative meaning:
 
-* `asCore` elaborates and typechecks its input using the ordinary elaborator and returns the resulting lexical context
-  together with the elaborated core term.
+* `asCore` elaborates and typechecks its input using the ordinary elaborator at the current elaboration site and returns
+  the resulting lexical context together with the elaborated core term.
 * `asCoreIn` elaborates and typechecks its input using exactly the supplied lexical context `Γ`. If the syntax value is
   ill-scoped in `Γ`, or if ordinary elaboration at that source site would require a different lexical context,
   compilation fails with an elaboration-time error.
-* `reifyCore` reifies a core term back to hygienic `Syntax`. Consequently `$(reifyCore e)` is the canonical way to
-  splice the result of semantic reflection.
+* `reifyCore` reifies a core term back to hygienic `Syntax`.
+* Consequently `$(reifyCore e)` is the canonical way to splice the result of semantic reflection.
 * `inferType`, `whnf`, `normalize`, `tryProveDefEq`, `defEq`, and `proveDefEq` use the same elaboration, normalization,
   and definitional-equality machinery that ordinary Kappa elaboration would use at that source site.
 * `tryProveDefEq x y` returns `Some p` iff the elaborator judges the reflected core terms `x` and `y` definitionally
@@ -6740,8 +6740,8 @@ Normative meaning:
 * `proveDefEq x y` succeeds iff `tryProveDefEq x y` would return `Some p`, and returns such a witness. Otherwise it is
   an elaboration-time error.
 * `defEq x y = True` iff `tryProveDefEq x y` would return `Some _`.
-* `reflCoreEq`, `symCoreEq`, `transCoreEq`, and `substCoreEq` are the witness-level exact-equality operations for
-  semantic reflection.
+* `reflCoreEq`, `symCoreEq`, `transCoreEq`, and `substCoreEq` are structural witness-level exact-equality operations
+  over already-produced semantic-reflection witnesses. They do not by themselves inspect the compiler environment.
 * `substCoreEq reflCoreEq v` reduces to `v`.
 * `headSymbol` returns `Some s` only when the weak-head-normal form of the given core term has a global declaration
   head. It returns `None` for variables, binders, locals, literals, and other non-global heads.
