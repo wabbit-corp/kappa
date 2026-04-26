@@ -1399,6 +1399,34 @@ instance (WellFoundedRelation a, WellFoundedRelation b)
 expect data IO (e : Type) (a : Type) : Type
 type UIO (a : Type) = IO Void a
 
+trait MonadFinally (m : Type -> Type) =
+    finally :
+        forall (a : Type).
+        m a -> m Unit -> m a
+
+trait MonadFinally m => MonadError (m : Type -> Type) =
+    Error : Type
+    throwError : Error -> m a
+    catchError : m a -> (Error -> m a) -> m a
+
+trait MonadFinally m => MonadResource (m : Type -> Type) =
+    bracket :
+        forall (a : Type) (b : Type).
+        (1 acquire : m a) ->
+        (1 release : (1 r : a) -> m Unit) ->
+        (1 use : (& r : a) -> m b) ->
+        m b
+
+trait MonadRef (m : Type -> Type) =
+    Ref : Type -> Type
+    newRef   : a -> m (Ref a)
+    readRef  : Ref a -> m a
+    writeRef : Ref a -> a -> m Unit
+
+trait Releasable (m : Type -> Type) (a : Type) =
+    release :
+        (1 resource : a) -> m Unit
+
 runPure :
     forall (a : Type).
     Eff <[ ]> a -> a
@@ -1810,6 +1838,9 @@ trait FromComprehensionRaw (c : Type) =
     fromComprehensionRaw :
         RawComprehension Item -> Elab (Syntax c)
 ```
+
+The semantic rules for `MonadFinally`, `MonadError`, `MonadResource`, `MonadRef`, and `Releasable` are specified in
+§§8.1.11, 8.5.1, and 9.1-9.5. The declarations here are the prelude surface.
 
 `Syntax`, `SyntaxOrigin`, `SyntaxFragment`, `Elab`, `ElabGoal`, `CoreCtx`, `Core`, `CoreEq`, `Symbol`,
 `RawComprehension`, and `ComprehensionPlan` are compile-time-only types.
