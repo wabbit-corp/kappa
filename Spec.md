@@ -23582,6 +23582,59 @@ semantic elaboration-time evaluation under the restrictions of §5.8.6.
 Memoization MUST be keyed by enough semantic environment information to preserve visibility, opacity, `unhide`,
 `clarify`, implicit-resolution, region, and syntax-scope behavior at the original elaboration site.
 
+<!-- compiler.kcore.elaboration_time_evaluator.import_stability -->
+##### 17.3.3.1 Import stability of elaboration-time evaluation
+
+The elaboration-time evaluator runs inside a semantic environment.
+
+That semantic environment includes:
+
+* the lexical KCore context;
+* the current expected type, expected quantity, expected effect row, and expected capture set when available;
+* active branch-refinement facts;
+* local implicit context;
+* global instance environment induced by the module closure;
+* current visibility and opacity environment;
+* active `unhide` and `clarify` effects;
+* imported module-interface identities and fingerprints;
+* provider identities for non-source module providers;
+* selected backend profile and backend-intrinsic set when relevant; and
+* macro-input transcript state when relevant.
+
+The evaluator MUST treat this environment semantically.
+
+It MUST NOT distinguish two environments that are semantically equivalent under §2.3.5 merely because:
+
+* imports were written in a different unrelated order;
+* imported modules were loaded or reloaded in a different order;
+* the implementation found an imported interface in a different cache;
+* semantic objects were inserted into tables in a different order;
+* global instances were enumerated in a different order;
+* declaration maps or symbol tables used a different internal iteration order; or
+* queries completed in a different parallel schedule.
+
+For semantically equivalent environments, elaboration-time evaluation MUST produce the same:
+
+* generated `Syntax`;
+* reflected `Core`;
+* normal forms;
+* weak-head normal forms;
+* definitional-equality answers;
+* `headSymbol` answers;
+* inferred types;
+* solved implicit arguments;
+* selected coherent instance representatives, modulo the canonical representative rule of §12.3.1;
+* hole-goal answers;
+* diagnostics, modulo presentation-only source-position changes; and
+* accepted/rejected status.
+
+If an elaboration-time computation depends on a semantic query over imported interfaces, the evaluator MUST record that
+dependency in the ordinary query-dependency graph or in an observationally equivalent macro-result cache key.
+
+A macro-result cache key that includes physical import order, loader order, cache insertion order, or interface reload
+history without also canonicalizing to semantic interface identities is non-conforming if those details can change the
+cached result.
+
 <!-- compiler.kcore.semantic_object_identities -->
 #### 17.3.4 Semantic object identities
 
