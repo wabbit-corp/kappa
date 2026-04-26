@@ -28,6 +28,7 @@ type Keyword =
     | Export
     | Finally
     | For
+    | ForQuestion
     | Forall
     | Group
     | If
@@ -99,6 +100,7 @@ module Keyword =
             "export", Export
             "finally", Finally
             "for", For
+            "for?", ForQuestion
             "forall", Forall
             "group", Group
             "if", If
@@ -375,18 +377,36 @@ type SurfaceExpression =
 and SurfaceCollectionKind =
     | ListCollection
     | SetCollection
+    | MapCollection
+
+and SurfaceOrderDirection =
+    | Ascending
+    | Descending
+
+and SurfaceComprehensionYield =
+    | YieldValue of SurfaceExpression
+    | YieldKeyValue of key: SurfaceExpression * value: SurfaceExpression
+
+and SurfaceMapConflictPolicy =
+    | KeepLast
+    | KeepFirst
+    | CombineUsing of string list
+    | CombineWith of SurfaceExpression
 
 and SurfaceComprehension =
     { CollectionKind: SurfaceCollectionKind
       Clauses: SurfaceComprehensionClause list
-      Yield: SurfaceExpression
+      Yield: SurfaceComprehensionYield
+      ConflictPolicy: SurfaceMapConflictPolicy option
       Lowered: SurfaceExpression }
 
 and SurfaceComprehensionClause =
     | ForClause of isBorrowed: bool * isRefutable: bool * binding: SurfaceBindPattern * source: SurfaceExpression
+    | JoinClause of binding: SurfaceBindPattern * source: SurfaceExpression * condition: SurfaceExpression
     | LetClause of isRefutable: bool * binding: SurfaceBindPattern * value: SurfaceExpression
     | IfClause of SurfaceExpression
-    | OrderByClause of SurfaceExpression
+    | GroupByClause of key: SurfaceExpression * aggregations: SurfaceRecordLiteralField list * intoName: string
+    | OrderByClause of direction: SurfaceOrderDirection option * SurfaceExpression
     | DistinctClause
     | DistinctByClause of SurfaceExpression
     | SkipClause of SurfaceExpression
@@ -485,12 +505,23 @@ module SurfaceComprehensionOps =
             match clause with
             | ForClause(isBorrowed, isRefutable, binding, source) ->
                 ForClause(isBorrowed, isRefutable, binding, mapper source)
+            | JoinClause(binding, source, condition) ->
+                JoinClause(binding, mapper source, mapper condition)
             | LetClause(isRefutable, binding, value) ->
                 LetClause(isRefutable, binding, mapper value)
             | IfClause condition ->
                 IfClause(mapper condition)
-            | OrderByClause key ->
-                OrderByClause(mapper key)
+            | GroupByClause(key, aggregations, intoName) ->
+                GroupByClause(
+                    mapper key,
+                    aggregations
+                    |> List.map (fun field ->
+                        { field with
+                            Value = mapper field.Value }),
+                    intoName
+                )
+            | OrderByClause(direction, key) ->
+                OrderByClause(direction, mapper key)
             | DistinctClause ->
                 DistinctClause
             | DistinctByClause key ->
@@ -502,9 +533,25 @@ module SurfaceComprehensionOps =
             | LeftJoinClause(binding, source, condition, intoName) ->
                 LeftJoinClause(binding, mapper source, mapper condition, intoName)
 
+        let mappedYield =
+            match comprehension.Yield with
+            | YieldValue value ->
+                YieldValue(mapper value)
+            | YieldKeyValue(key, value) ->
+                YieldKeyValue(mapper key, mapper value)
+
+        let mappedConflict =
+            comprehension.ConflictPolicy
+            |> Option.map (function
+                | KeepLast -> KeepLast
+                | KeepFirst -> KeepFirst
+                | CombineUsing name -> CombineUsing name
+                | CombineWith expression -> CombineWith(mapper expression))
+
         { CollectionKind = comprehension.CollectionKind
           Clauses = comprehension.Clauses |> List.map mapClause
-          Yield = mapper comprehension.Yield
+          Yield = mappedYield
+          ConflictPolicy = mappedConflict
           Lowered = mapper comprehension.Lowered }
 
     let iterExpressions (visitor: SurfaceExpression -> unit) (comprehension: SurfaceComprehension) =
@@ -512,11 +559,17 @@ module SurfaceComprehensionOps =
             match clause with
             | ForClause(_, _, _, source) ->
                 visitor source
+            | JoinClause(_, source, condition) ->
+                visitor source
+                visitor condition
             | LetClause(_, _, value) ->
                 visitor value
             | IfClause condition ->
                 visitor condition
-            | OrderByClause key ->
+            | GroupByClause(key, aggregations, _) ->
+                visitor key
+                aggregations |> List.iter (fun field -> visitor field.Value)
+            | OrderByClause(_, key) ->
                 visitor key
             | DistinctClause ->
                 ()
@@ -531,7 +584,19 @@ module SurfaceComprehensionOps =
                 visitor condition
 
         comprehension.Clauses |> List.iter visitClause
-        visitor comprehension.Yield
+        match comprehension.Yield with
+        | YieldValue value ->
+            visitor value
+        | YieldKeyValue(key, value) ->
+            visitor key
+            visitor value
+
+        match comprehension.ConflictPolicy with
+        | Some(CombineWith expression) ->
+            visitor expression
+        | _ ->
+            ()
+
         visitor comprehension.Lowered
 
     let collectExpressions (comprehension: SurfaceComprehension) =

@@ -1,0 +1,7 @@
+-- Appendix T directory suite.
+-- Normalized-plan sink for an export backend that does not need raw clause syntax.
+--! mode check
+--! packageMode
+--! assertNoErrors
+--! assertNoWarnings
+--! assertType paidUsers dsl.json_export.JsonExport (id : Int, name : String)

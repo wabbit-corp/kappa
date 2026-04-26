@@ -1,0 +1,37 @@
+module dsl.web
+
+data Html : Type =
+    Html (source : String)
+
+data Route : Type =
+    Route (pattern : String)
+
+data JsonTemplate : Type =
+    JsonTemplate (source : String)
+
+summonDict : (c : Constraint) -> (@v : c) -> Dict c
+let summonDict c @v = v
+
+instance InterpolatedMacro Html =
+    let buildInterpolated fragments =
+        pure '{ Html "compiled-html-template" }
+
+instance InterpolatedMacro Route =
+    let buildInterpolated fragments =
+        pure '{ Route "compiled-route-template" }
+
+instance InterpolatedMacro JsonTemplate =
+    let buildInterpolated fragments =
+        pure '{ JsonTemplate "compiled-json-template" }
+
+html : Elab (Dict (InterpolatedMacro Html))
+let html =
+    pure (summonDict (InterpolatedMacro Html))
+
+route : Elab (Dict (InterpolatedMacro Route))
+let route =
+    pure (summonDict (InterpolatedMacro Route))
+
+json : Elab (Dict (InterpolatedMacro JsonTemplate))
+let json =
+    pure (summonDict (InterpolatedMacro JsonTemplate))

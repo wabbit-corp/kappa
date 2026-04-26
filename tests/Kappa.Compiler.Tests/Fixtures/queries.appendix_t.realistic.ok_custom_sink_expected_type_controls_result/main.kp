@@ -1,0 +1,19 @@
+module main
+
+import model.data.*
+
+data Report (row : Type) : Type =
+    Report (description : String)
+
+instance FromComprehensionPlan (Report row) =
+    let Item = row
+    let fromComprehensionPlan plan =
+        pure '{ Report "report-plan" }
+
+paidOrderReport : Report (id : Int, total : Int)
+let paidOrderReport =
+    Report [
+        for o in orders
+        if o.status == "paid"
+        yield (id = o.id, total = o.total)
+    ]

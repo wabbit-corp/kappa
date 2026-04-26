@@ -1,0 +1,7 @@
+-- Appendix T directory suite.
+-- Unary carrier prefix plus expected type selects a realistic custom report sink.
+--! mode check
+--! packageMode
+--! assertNoErrors
+--! assertNoWarnings
+--! assertType paidOrderReport main.Report (id : Int, total : Int)

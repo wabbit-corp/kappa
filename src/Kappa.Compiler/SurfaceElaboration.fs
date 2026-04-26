@@ -2651,9 +2651,10 @@ module SurfaceElaboration =
             importedModuleInfos surfaceIndex moduleName
             |> List.collect (fun (spec, importedModule) ->
                 importedModule.Instances
-                |> List.filter (fun instanceInfo ->
-                    selectionImportedName ImportNamespace.Trait importedModule.ExportedTraits itemImportsTraitName spec.Selection instanceInfo.TraitName
-                    |> Option.isSome))
+                |> List.filter (fun _instanceInfo ->
+                    match spec.Selection with
+                    | QualifiedOnly -> false
+                    | _ -> true))
 
         let moduleInstances =
             surfaceIndex
@@ -3635,18 +3636,25 @@ module SurfaceElaboration =
             =
             match clauses with
             | [] ->
-                inferExpressionType currentLocals comprehension.Yield
-                |> Option.map (fun itemType ->
-                    let itemQuantity =
-                        match comprehension.Yield with
-                        | Name [ name ] ->
-                            currentQuantities |> Map.tryFind name |> Option.defaultValue ResourceQuantity.omega
-                        | _ ->
-                            ResourceQuantity.omega
+                let inferYield expression =
+                    inferExpressionType currentLocals expression
+                    |> Option.map (fun itemType ->
+                        let itemQuantity =
+                            match expression with
+                            | Name [ name ] ->
+                                currentQuantities |> Map.tryFind name |> Option.defaultValue ResourceQuantity.omega
+                            | _ ->
+                                ResourceQuantity.omega
 
-                    { InferredMode = currentMode
-                      InferredItemQuantity = itemQuantity
-                      InferredItemType = itemType })
+                        { InferredMode = currentMode
+                          InferredItemQuantity = itemQuantity
+                          InferredItemType = itemType })
+
+                match comprehension.Yield with
+                | YieldValue value ->
+                    inferYield value
+                | YieldKeyValue(_, value) ->
+                    inferYield value
             | clause :: rest ->
                 match clause with
                 | ForClause(_, _, binding, source) ->
@@ -3680,8 +3688,27 @@ module SurfaceElaboration =
                         addPatternQuantities quantity binding currentQuantities
 
                     loop currentMode nextLocals nextQuantities rest
+                | JoinClause(binding, source, _) ->
+                    trySourceInfo currentLocals source
+                    |> Option.bind (fun sourceInfo ->
+                        let nextLocals =
+                            extendPatternLocalTypes environment freshCounter currentLocals (Some sourceInfo.Query.ItemType) binding.Pattern
+
+                        let nextQuantities =
+                            addPatternQuantities sourceInfo.Query.ItemQuantity binding currentQuantities
+
+                        let nextMode : QuerySemantics.QueryModeInfo =
+                            { Use = QuerySemantics.composeUse currentMode.Use sourceInfo.Query.Mode.Use
+                              Card = QuerySemantics.multiplyCard currentMode.Card sourceInfo.Query.Mode.Card }
+
+                        loop { nextMode with Card = QuerySemantics.filterCard nextMode.Card } nextLocals nextQuantities rest)
                 | IfClause _ ->
                     loop { currentMode with Card = QuerySemantics.filterCard currentMode.Card } currentLocals currentQuantities rest
+                | GroupByClause(_, _, intoName) ->
+                    let nextLocals =
+                        Map.add intoName (TypeVariable $"__kappa_group_{intoName}") Map.empty
+
+                    loop currentMode nextLocals Map.empty rest
                 | OrderByClause _ ->
                     loop currentMode currentLocals currentQuantities rest
                 | DistinctClause
@@ -3878,7 +3905,7 @@ module SurfaceElaboration =
             | _ ->
                 None)
 
-    let private resolveConstraintInstance
+    let private resolveConstraintInstanceWithSubstitution
         (environment: BindingLoweringEnvironment)
         (constraintInfo: TraitConstraint)
         =
@@ -3912,11 +3939,18 @@ module SurfaceElaboration =
                                 |> List.map (TypeSignatures.applyConstraintSubstitution substitution)
 
                             if instantiatedPremises |> List.forall (solve visited >> Option.isSome) then
-                                Some instanceInfo
+                                Some(instanceInfo, substitution)
                             else
                                 None))
 
         solve Set.empty constraintInfo
+
+    let private resolveConstraintInstance
+        (environment: BindingLoweringEnvironment)
+        (constraintInfo: TraitConstraint)
+        =
+        resolveConstraintInstanceWithSubstitution environment constraintInfo
+        |> Option.map fst
 
     let private matchesBuiltinNumericTarget
         (aliases: Map<string, TypeAliasInfo>)
@@ -5201,6 +5235,8 @@ module SurfaceElaboration =
                 | TypeName(([ "Code" ] | [ "std"; "prelude"; "Code" ]), [ _ ])
                 | TypeName(([ "ClosedCode" ] | [ "std"; "prelude"; "ClosedCode" ]), [ _ ]) ->
                     true
+                | _ when tryInterpolatedMacroResultType environment.VisibleTypeAliases typeExpr |> Option.isSome ->
+                    true
                 | _ ->
                     false
 
@@ -5241,6 +5277,273 @@ module SurfaceElaboration =
                 |> TypeSignatures.schemeParts
                 |> snd
                 |> tryUnwrapElabType environment.VisibleTypeAliases)
+
+        let rec patternIsDefinitelyIrrefutable pattern =
+            match pattern with
+            | WildcardPattern
+            | NamePattern _ ->
+                true
+            | AsPattern(_, inner)
+            | TypedPattern(inner, _) ->
+                patternIsDefinitelyIrrefutable inner
+            | TuplePattern elements ->
+                elements |> List.forall patternIsDefinitelyIrrefutable
+            | AnonymousRecordPattern(fields, rest) ->
+                let fieldsIrrefutable =
+                    fields |> List.forall (fun field -> patternIsDefinitelyIrrefutable field.Pattern)
+
+                let restIrrefutable =
+                    match rest with
+                    | Some DiscardRecordPatternRest
+                    | Some(BindRecordPatternRest _) -> true
+                    | None -> true
+
+                fieldsIrrefutable && restIrrefutable
+            | LiteralPattern _
+            | ConstructorPattern _
+            | NamedConstructorPattern _
+            | VariantPattern _
+            | OrPattern _ ->
+                false
+
+        let tryResolveTraitConstraint typeExpr traitName =
+            resolveConstraintInstanceWithSubstitution environment { TraitName = traitName; Arguments = [ typeExpr ] }
+            |> Option.map (fun (instanceInfo, substitution) ->
+                instanceInfo,
+                substitution)
+
+        let tryParseInstanceAssociatedType substitution (instanceInfo: InstanceInfo) memberName =
+            instanceInfo.Members
+            |> Map.tryFind memberName
+            |> Option.bind (fun memberDefinition ->
+                memberDefinition.ReturnTypeTokens
+                |> Option.bind TypeSignatures.parseType
+                |> Option.orElseWith (fun () -> TypeSignatures.parseType memberDefinition.BodyTokens))
+            |> Option.map (TypeSignatures.applySubstitution substitution)
+
+        let tryParseInterpolatedMacroGoal body =
+            let rec loop current =
+                match current with
+                | Apply(Name [ "pure" ], [ inner ]) ->
+                    loop inner
+                | Apply(Name [ "summonDict" ], [ argument ]) ->
+                    tryParseTypeLikeSurfaceExpression argument
+                    |> Option.bind (function
+                        | TypeName(nameSegments, [ resultType ]) when nameSegments |> List.tryLast = Some "InterpolatedMacro" ->
+                            Some resultType
+                        | _ ->
+                            None)
+                | _ ->
+                    None
+
+            loop body
+
+        let tryExtractFailElabDiagnosticMessage body =
+            let rec fromExpression current =
+                match current with
+                | Apply(Name [ "failElabWith" ], [ Literal(LiteralValue.String code); Literal(LiteralValue.String message); _ ]) ->
+                    Some($"{code}: {message}")
+                | Apply(callee, arguments) ->
+                    fromExpression callee
+                    |> Option.orElseWith (fun () -> arguments |> List.tryPick fromExpression)
+                | Do statements ->
+                    statements |> List.tryPick fromDoStatement
+                | LocalLet(_, value, inner) ->
+                    fromExpression value |> Option.orElseWith (fun () -> fromExpression inner)
+                | LocalSignature(_, inner)
+                | LocalTypeAlias(_, inner)
+                | LocalScopedEffect(_, inner)
+                | SyntaxQuote inner
+                | SyntaxSplice inner
+                | TopLevelSyntaxSplice inner
+                | CodeQuote inner
+                | CodeSplice inner
+                | MonadicSplice inner
+                | ExplicitImplicitArgument inner
+                | InoutArgument inner
+                | Unary(_, inner) ->
+                    fromExpression inner
+                | IfThenElse(condition, whenTrue, whenFalse) ->
+                    fromExpression condition
+                    |> Option.orElseWith (fun () -> fromExpression whenTrue)
+                    |> Option.orElseWith (fun () -> fromExpression whenFalse)
+                | Handle(_, label, handledBody, returnClause, operationClauses) ->
+                    fromExpression label
+                    |> Option.orElseWith (fun () -> fromExpression handledBody)
+                    |> Option.orElseWith (fun () -> fromExpression returnClause.Body)
+                    |> Option.orElseWith (fun () -> operationClauses |> List.tryPick (fun clause -> fromExpression clause.Body))
+                | Match(scrutinee, cases) ->
+                    fromExpression scrutinee
+                    |> Option.orElseWith (fun () ->
+                        cases
+                        |> List.tryPick (fun caseClause ->
+                            caseClause.Guard
+                            |> Option.bind fromExpression
+                            |> Option.orElseWith (fun () -> fromExpression caseClause.Body)))
+                | RecordLiteral fields ->
+                    fields |> List.tryPick (fun field -> fromExpression field.Value)
+                | RecordUpdate(receiver, fields) ->
+                    fromExpression receiver
+                    |> Option.orElseWith (fun () -> fields |> List.tryPick (fun field -> fromExpression field.Value))
+                | MemberAccess(receiver, _, arguments) ->
+                    fromExpression receiver
+                    |> Option.orElseWith (fun () -> arguments |> List.tryPick fromExpression)
+                | SafeNavigation(receiver, navigation) ->
+                    fromExpression receiver
+                    |> Option.orElseWith (fun () -> navigation.Arguments |> List.tryPick fromExpression)
+                | NamedApplicationBlock fields ->
+                    fields |> List.tryPick (fun field -> fromExpression field.Value)
+                | Binary(left, _, right)
+                | Elvis(left, right) ->
+                    fromExpression left |> Option.orElseWith (fun () -> fromExpression right)
+                | Comprehension comprehension ->
+                    fromExpression comprehension.Lowered
+                | PrefixedString(_, parts) ->
+                    parts
+                    |> List.tryPick (function
+                        | StringText _ -> None
+                        | StringInterpolation(inner, _) -> fromExpression inner)
+                | Lambda(_, inner)
+                | Seal(inner, _)
+                | TagTest(inner, _) ->
+                    fromExpression inner
+                | Literal _
+                | NumericLiteral _
+                | KindQualifiedName _
+                | Name _ ->
+                    None
+
+            and fromDoStatement statement =
+                match statement with
+                | DoLet(_, value)
+                | DoBind(_, value)
+                | DoUsing(_, value)
+                | DoVar(_, value)
+                | DoAssign(_, value)
+                | DoDefer value
+                | DoReturn value
+                | DoExpression value ->
+                    fromExpression value
+                | DoLetQuestion(_, value, failure) ->
+                    fromExpression value
+                    |> Option.orElseWith (fun () ->
+                        failure
+                        |> Option.bind (fun failureBlock -> failureBlock.Body |> List.tryPick fromDoStatement))
+                | DoIf(condition, whenTrue, whenFalse) ->
+                    fromExpression condition
+                    |> Option.orElseWith (fun () -> whenTrue |> List.tryPick fromDoStatement)
+                    |> Option.orElseWith (fun () -> whenFalse |> List.tryPick fromDoStatement)
+                | DoWhile(condition, body) ->
+                    fromExpression condition
+                    |> Option.orElseWith (fun () -> body |> List.tryPick fromDoStatement)
+
+            fromExpression body
+
+        let tryResolvePrefixedStringFailureDiagnostic prefix =
+            topLevelDefinitionsByName
+            |> Map.tryFind prefix
+            |> Option.bind (fun prefixDefinition ->
+                prefixDefinition.Body
+                |> Option.bind tryParseInterpolatedMacroGoal
+                |> Option.bind (fun resultType ->
+                    tryResolveTraitConstraint resultType "InterpolatedMacro"
+                    |> Option.bind (fun (instanceInfo, _) ->
+                        instanceInfo.Members
+                        |> Map.tryFind "buildInterpolated"
+                        |> Option.bind (fun memberDefinition ->
+                            memberDefinition.Body |> Option.bind tryExtractFailElabDiagnosticMessage))))
+
+        let comprehensionSinkItemTypesEqual expectedItemType actualItemType =
+            let normalize = normalizeTypeAliases environment.VisibleTypeAliases
+
+            let rec canonicalize typeExpr =
+                let normalized = normalize typeExpr
+
+                match QuerySemantics.tryParseQueryType normalize normalized with
+                | Some queryType ->
+                    let useName =
+                        match queryType.Mode.Use with
+                        | QuerySemantics.Reusable -> "Reusable"
+                        | QuerySemantics.OneShot -> "OneShot"
+
+                    let cardName =
+                        match queryType.Mode.Card with
+                        | QuerySemantics.QZero -> "QZero"
+                        | QuerySemantics.QOne -> "QOne"
+                        | QuerySemantics.QZeroOrOne -> "QZeroOrOne"
+                        | QuerySemantics.QOneOrMore -> "QOneOrMore"
+                        | QuerySemantics.QZeroOrMore -> "QZeroOrMore"
+
+                    TypeName(
+                        [ "QueryCore" ],
+                        [
+                            TypeName([ "QueryMode" ], [ TypeName([ useName ], []); TypeName([ cardName ], []) ])
+                            TypeName([ ResourceQuantity.toSurfaceText queryType.ItemQuantity ], [])
+                            canonicalize queryType.ItemType
+                        ]
+                    )
+                | None ->
+                    match normalized with
+                    | TypeName(nameSegments, arguments) ->
+                        TypeName(nameSegments, arguments |> List.map canonicalize)
+                    | TypeApply(callee, arguments) ->
+                        TypeApply(canonicalize callee, arguments |> List.map canonicalize)
+                    | TypeLambda(name, parameterSort, body) ->
+                        TypeLambda(name, canonicalize parameterSort, canonicalize body)
+                    | TypeDelay inner ->
+                        TypeDelay(canonicalize inner)
+                    | TypeMemo inner ->
+                        TypeMemo(canonicalize inner)
+                    | TypeForce inner ->
+                        TypeForce(canonicalize inner)
+                    | TypeProject(receiver, memberName) ->
+                        TypeProject(canonicalize receiver, memberName)
+                    | TypeArrow(quantity, parameterType, resultType) ->
+                        TypeArrow(quantity, canonicalize parameterType, canonicalize resultType)
+                    | TypeEquality(left, right) ->
+                        TypeEquality(canonicalize left, canonicalize right)
+                    | TypeCapture(inner, captures) ->
+                        TypeCapture(canonicalize inner, captures)
+                    | TypeEffectRow(entries, tail) ->
+                        TypeEffectRow(
+                            entries
+                            |> List.map (fun entry ->
+                                { Label = canonicalize entry.Label
+                                  Effect = canonicalize entry.Effect }),
+                            tail |> Option.map canonicalize
+                        )
+                    | TypeRecord fields ->
+                        TypeRecord(
+                            fields
+                            |> List.map (fun field ->
+                                { field with
+                                    Type = canonicalize field.Type })
+                        )
+                    | TypeUnion options ->
+                        TypeUnion(options |> List.map canonicalize)
+                    | TypeVariable _
+                    | TypeLevelLiteral _
+                    | TypeUniverse _
+                    | TypeIntrinsic _ ->
+                        normalized
+
+            let sameQueryShape =
+                match
+                    QuerySemantics.tryParseQueryType normalize expectedItemType,
+                    QuerySemantics.tryParseQueryType normalize actualItemType
+                with
+                | Some expectedQuery, Some actualQuery ->
+                    expectedQuery.Mode = actualQuery.Mode
+                    && expectedQuery.ItemQuantity = actualQuery.ItemQuantity
+                    && expectedQuery.CaptureSet = actualQuery.CaptureSet
+                    && TypeSignatures.definitionallyEqual
+                        (normalize expectedQuery.ItemType)
+                        (normalize actualQuery.ItemType)
+                | _ ->
+                    false
+
+            sameQueryShape
+            || TypeSignatures.definitionallyEqual (canonicalize expectedItemType) (canonicalize actualItemType)
 
         let syntaxCarrierEscapeDiagnostics visibleNames valueType valueExpression =
             let unwrapSyntaxCarrier typeExpr =
@@ -7147,16 +7450,222 @@ module SurfaceElaboration =
                 | QuerySemantics.QOneOrMore -> "QOneOrMore"
                 | QuerySemantics.QZeroOrMore -> "QZeroOrMore"
 
+            let rec comprehensionRemainderReferencesName target shadowed (comprehension: SurfaceComprehension) =
+                let rec expressionReferences currentShadowed current =
+                    match current with
+                    | Name(root :: _) ->
+                        String.Equals(root, target, StringComparison.Ordinal)
+                        && not (Set.contains root currentShadowed)
+                    | Name [] ->
+                        false
+                    | SyntaxQuote inner
+                    | SyntaxSplice inner
+                    | TopLevelSyntaxSplice inner
+                    | CodeQuote inner
+                    | CodeSplice inner
+                    | MonadicSplice inner
+                    | ExplicitImplicitArgument inner
+                    | InoutArgument inner
+                    | Unary(_, inner) ->
+                        expressionReferences currentShadowed inner
+                    | LocalLet(binding, value, body) ->
+                        expressionReferences currentShadowed value
+                        || expressionReferences
+                            (Set.union currentShadowed (collectPatternNames binding.Pattern |> Set.ofList))
+                            body
+                    | LocalSignature(declaration, body) ->
+                        expressionReferences (Set.add declaration.Name currentShadowed) body
+                    | LocalTypeAlias(_, body)
+                    | LocalScopedEffect(_, body)
+                    | Lambda(_, body) ->
+                        expressionReferences currentShadowed body
+                    | Handle(_, label, body, returnClause, operationClauses) ->
+                        expressionReferences currentShadowed label
+                        || expressionReferences currentShadowed body
+                        || expressionReferences currentShadowed returnClause.Body
+                        || (operationClauses |> List.exists (fun clause -> expressionReferences currentShadowed clause.Body))
+                    | IfThenElse(condition, whenTrue, whenFalse) ->
+                        expressionReferences currentShadowed condition
+                        || expressionReferences currentShadowed whenTrue
+                        || expressionReferences currentShadowed whenFalse
+                    | Match(scrutinee, cases) ->
+                        expressionReferences currentShadowed scrutinee
+                        || (cases
+                            |> List.exists (fun caseClause ->
+                                let caseShadowed =
+                                    Set.union currentShadowed (collectPatternNames caseClause.Pattern |> Set.ofList)
+
+                                (caseClause.Guard |> Option.exists (expressionReferences caseShadowed))
+                                || expressionReferences caseShadowed caseClause.Body))
+                    | RecordLiteral fields ->
+                        fields |> List.exists (fun field -> expressionReferences currentShadowed field.Value)
+                    | Seal(value, _) ->
+                        expressionReferences currentShadowed value
+                    | RecordUpdate(receiver, fields) ->
+                        expressionReferences currentShadowed receiver
+                        || (fields |> List.exists (fun field -> expressionReferences currentShadowed field.Value))
+                    | MemberAccess(receiver, _, arguments) ->
+                        expressionReferences currentShadowed receiver
+                        || (arguments |> List.exists (expressionReferences currentShadowed))
+                    | SafeNavigation(receiver, navigation) ->
+                        expressionReferences currentShadowed receiver
+                        || (navigation.Arguments |> List.exists (expressionReferences currentShadowed))
+                    | TagTest(receiver, _) ->
+                        expressionReferences currentShadowed receiver
+                    | Do statements ->
+                        statements
+                        |> List.exists (function
+                            | DoLet(binding, value)
+                            | DoBind(binding, value)
+                            | DoUsing(binding, value) ->
+                                expressionReferences currentShadowed value
+                                || expressionReferences
+                                    (Set.union currentShadowed (collectPatternNames binding.Pattern |> Set.ofList))
+                                    (Literal LiteralValue.Unit)
+                            | DoLetQuestion(binding, value, failure) ->
+                                expressionReferences currentShadowed value
+                                || (failure
+                                    |> Option.exists (fun failure ->
+                                        failure.Body
+                                        |> List.exists (function
+                                            | DoExpression inner
+                                            | DoReturn inner
+                                            | DoDefer inner
+                                            | DoVar(_, inner)
+                                            | DoAssign(_, inner) -> expressionReferences currentShadowed inner
+                                            | _ -> false)))
+                                || expressionReferences
+                                    (Set.union currentShadowed (collectPatternNames binding.Pattern |> Set.ofList))
+                                    (Literal LiteralValue.Unit)
+                            | DoVar(_, value)
+                            | DoAssign(_, value)
+                            | DoDefer value
+                            | DoExpression value
+                            | DoReturn value -> expressionReferences currentShadowed value
+                            | DoIf(condition, whenTrue, whenFalse) ->
+                                expressionReferences currentShadowed condition
+                                || (whenTrue |> List.exists (function DoExpression inner | DoReturn inner -> expressionReferences currentShadowed inner | _ -> false))
+                                || (whenFalse |> List.exists (function DoExpression inner | DoReturn inner -> expressionReferences currentShadowed inner | _ -> false))
+                            | DoWhile(condition, body) ->
+                                expressionReferences currentShadowed condition
+                                || (body |> List.exists (function DoExpression inner | DoReturn inner -> expressionReferences currentShadowed inner | _ -> false)))
+                    | Apply(callee, arguments) ->
+                        expressionReferences currentShadowed callee
+                        || (arguments |> List.exists (expressionReferences currentShadowed))
+                    | NamedApplicationBlock fields ->
+                        fields |> List.exists (fun field -> expressionReferences currentShadowed field.Value)
+                    | Binary(left, _, right)
+                    | Elvis(left, right) ->
+                        expressionReferences currentShadowed left
+                        || expressionReferences currentShadowed right
+                    | Comprehension nested ->
+                        comprehensionRemainderReferencesName target currentShadowed nested
+                    | PrefixedString(_, parts) ->
+                        parts
+                        |> List.exists (function
+                            | StringText _ -> false
+                            | StringInterpolation(inner, _) -> expressionReferences currentShadowed inner)
+                    | Literal _
+                    | NumericLiteral _
+                    | KindQualifiedName _
+                    | Name _ ->
+                        false
+
+                let yieldReferences currentShadowed =
+                    match comprehension.Yield with
+                    | YieldValue value ->
+                        expressionReferences currentShadowed value
+                    | YieldKeyValue(key, value) ->
+                        expressionReferences currentShadowed key
+                        || expressionReferences currentShadowed value
+
+                let rec loop currentShadowed clauses =
+                    match clauses with
+                    | [] ->
+                        yieldReferences currentShadowed
+                    | clause :: rest ->
+                        match clause with
+                        | ForClause(_, _, binding, source) ->
+                            expressionReferences currentShadowed source
+                            || loop (Set.union currentShadowed (collectPatternNames binding.Pattern |> Set.ofList)) rest
+                        | JoinClause(binding, source, condition) ->
+                            let nextShadowed =
+                                Set.union currentShadowed (collectPatternNames binding.Pattern |> Set.ofList)
+
+                            expressionReferences currentShadowed source
+                            || expressionReferences nextShadowed condition
+                            || loop nextShadowed rest
+                        | LetClause(_, binding, value) ->
+                            expressionReferences currentShadowed value
+                            || loop (Set.union currentShadowed (collectPatternNames binding.Pattern |> Set.ofList)) rest
+                        | IfClause condition ->
+                            expressionReferences currentShadowed condition || loop currentShadowed rest
+                        | GroupByClause(key, aggregations, intoName) ->
+                            expressionReferences currentShadowed key
+                            || (aggregations |> List.exists (fun field -> expressionReferences currentShadowed field.Value))
+                            || loop (Set.singleton intoName) rest
+                        | OrderByClause(_, key) ->
+                            expressionReferences currentShadowed key || loop currentShadowed rest
+                        | DistinctClause ->
+                            loop currentShadowed rest
+                        | DistinctByClause key ->
+                            expressionReferences currentShadowed key || loop currentShadowed rest
+                        | SkipClause count ->
+                            expressionReferences currentShadowed count || loop currentShadowed rest
+                        | TakeClause count ->
+                            expressionReferences currentShadowed count || loop currentShadowed rest
+                        | LeftJoinClause(binding, source, condition, intoName) ->
+                            let joinShadowed =
+                                Set.union currentShadowed (collectPatternNames binding.Pattern |> Set.ofList)
+
+                            expressionReferences currentShadowed source
+                            || expressionReferences joinShadowed condition
+                            || loop (Set.add intoName currentShadowed) rest
+
+                loop shadowed comprehension.Clauses
+
             let recurseComprehension (comprehension: SurfaceComprehension) =
                 let normalizeVisibleType = normalizeTypeAliases environment.VisibleTypeAliases
+                let validateYield currentLocals currentLexical =
+                    match comprehension.Yield with
+                    | YieldValue value ->
+                        validateExpression currentLocals refinements currentLexical value
+                    | YieldKeyValue(key, value) ->
+                        validateExpression currentLocals refinements currentLexical key
+                        @ validateExpression currentLocals refinements currentLexical value
 
                 let rec loop currentLocals currentLexical clauses =
                     match clauses with
                     | [] ->
-                        validateExpression currentLocals refinements currentLexical comprehension.Yield
+                        validateYield currentLocals currentLexical
                     | clause :: rest ->
                         match clause with
-                        | ForClause(_, _, binding, source) ->
+                        | ForClause(_, isRefutable, binding, source) ->
+                            let sourceDiagnostics =
+                                validateExpression currentLocals refinements currentLexical source
+
+                            let refutableDiagnostics =
+                                if not isRefutable && not (patternIsDefinitelyIrrefutable binding.Pattern) then
+                                    [
+                                        makeDiagnostic
+                                            DiagnosticCode.TypeEqualityMismatch
+                                            "Refutable generator patterns must use 'for?'; plain 'for' requires an irrefutable pattern."
+                                    ]
+                                else
+                                    []
+
+                            let nextLocals =
+                                inferValidationExpressionType environment freshCounter currentLocals source
+                                |> Option.bind (QuerySemantics.tryInferBuiltinQuerySource normalizeVisibleType)
+                                |> Option.map (fun sourceInfo ->
+                                    extendBindingLocalTypes environment freshCounter currentLocals binding (Some sourceInfo.Query.ItemType))
+                                |> Option.defaultValue (extendBindingLocalTypes environment freshCounter currentLocals binding None)
+
+                            let nextLexical =
+                                Set.union currentLexical (collectPatternNames binding.Pattern |> Set.ofList)
+
+                            sourceDiagnostics @ refutableDiagnostics @ loop nextLocals nextLexical rest
+                        | JoinClause(binding, source, condition) ->
                             let sourceDiagnostics =
                                 validateExpression currentLocals refinements currentLexical source
 
@@ -7170,7 +7679,10 @@ module SurfaceElaboration =
                             let nextLexical =
                                 Set.union currentLexical (collectPatternNames binding.Pattern |> Set.ofList)
 
-                            sourceDiagnostics @ loop nextLocals nextLexical rest
+                            let conditionDiagnostics =
+                                validateExpression nextLocals refinements nextLexical condition
+
+                            sourceDiagnostics @ conditionDiagnostics @ loop nextLocals nextLexical rest
                         | LetClause(_, binding, value) ->
                             let valueDiagnostics =
                                 validateExpression currentLocals refinements currentLexical value
@@ -7188,7 +7700,21 @@ module SurfaceElaboration =
                         | IfClause condition ->
                             validateExpression currentLocals refinements currentLexical condition
                             @ loop currentLocals currentLexical rest
-                        | OrderByClause key ->
+                        | GroupByClause(key, aggregations, intoName) ->
+                            let aggregationDiagnostics =
+                                aggregations
+                                |> List.collect (fun field ->
+                                    validateExpression currentLocals refinements currentLexical field.Value)
+
+                            let nextLocals =
+                                Map.add intoName (TypeSignatures.TypeVariable $"__kappa_group_{intoName}") Map.empty
+
+                            let nextLexical = Set.singleton intoName
+
+                            validateExpression currentLocals refinements currentLexical key
+                            @ aggregationDiagnostics
+                            @ loop nextLocals nextLexical rest
+                        | OrderByClause(_, key) ->
                             validateExpression currentLocals refinements currentLexical key
                             @ loop currentLocals currentLexical rest
                         | DistinctClause ->
@@ -7223,8 +7749,26 @@ module SurfaceElaboration =
                                 Map.add intoName (TypeSignatures.TypeVariable $"__kappa_left_join_{intoName}") currentLocals
 
                             let nextLexical = Set.add intoName currentLexical
+                            let remainderComprehension =
+                                { comprehension with
+                                    Clauses = rest }
 
-                            sourceDiagnostics @ conditionDiagnostics @ loop nextLocals nextLexical rest
+                            let leakDiagnostics =
+                                collectPatternNames binding.Pattern
+                                |> List.distinct
+                                |> List.choose (fun bindingName ->
+                                    if Set.contains bindingName currentLexical then
+                                        None
+                                    elif comprehensionRemainderReferencesName bindingName currentLexical remainderComprehension then
+                                        Some(
+                                            makeDiagnostic
+                                                DiagnosticCode.NameUnresolved
+                                                $"Left-join binder '{bindingName}' is not in scope after the clause; only '{intoName}' remains available."
+                                        )
+                                    else
+                                        None)
+
+                            sourceDiagnostics @ conditionDiagnostics @ leakDiagnostics @ loop nextLocals nextLexical rest
 
                 loop locals lexicalNames comprehension.Clauses
 
@@ -7249,21 +7793,41 @@ module SurfaceElaboration =
                 let recurseName = expressionReferencesName target shadowed
 
                 let rec comprehensionReferencesName shadowed (comprehension: SurfaceComprehension) =
+                    let yieldReferences currentShadowed =
+                        match comprehension.Yield with
+                        | YieldValue value ->
+                            expressionReferencesName target currentShadowed value
+                        | YieldKeyValue(key, value) ->
+                            expressionReferencesName target currentShadowed key
+                            || expressionReferencesName target currentShadowed value
+
                     let rec loop currentShadowed clauses =
                         match clauses with
                         | [] ->
-                            expressionReferencesName target currentShadowed comprehension.Yield
+                            yieldReferences currentShadowed
                         | clause :: rest ->
                             match clause with
                             | ForClause(_, _, binding, source) ->
                                 expressionReferencesName target currentShadowed source
                                 || loop (Set.union currentShadowed (collectPatternNames binding.Pattern |> Set.ofList)) rest
+                            | JoinClause(binding, source, condition) ->
+                                let nextShadowed =
+                                    Set.union currentShadowed (collectPatternNames binding.Pattern |> Set.ofList)
+
+                                expressionReferencesName target currentShadowed source
+                                || expressionReferencesName target nextShadowed condition
+                                || loop nextShadowed rest
                             | LetClause(_, binding, value) ->
                                 expressionReferencesName target currentShadowed value
                                 || loop (Set.union currentShadowed (collectPatternNames binding.Pattern |> Set.ofList)) rest
                             | IfClause condition ->
                                 expressionReferencesName target currentShadowed condition || loop currentShadowed rest
-                            | OrderByClause key ->
+                            | GroupByClause(key, aggregations, intoName) ->
+                                expressionReferencesName target currentShadowed key
+                                || (aggregations
+                                    |> List.exists (fun field -> expressionReferencesName target currentShadowed field.Value))
+                                || loop (Set.singleton intoName) rest
+                            | OrderByClause(_, key) ->
                                 expressionReferencesName target currentShadowed key || loop currentShadowed rest
                             | DistinctClause ->
                                 loop currentShadowed rest
@@ -8444,6 +9008,23 @@ module SurfaceElaboration =
             | Apply _ as application ->
                 match tryMatchQueryCarrierShape application with
                 | Some carrier ->
+                    let metadataDiagnostics =
+                        match carrier.Comprehension.CollectionKind with
+                        | ListCollection ->
+                            []
+                        | MapCollection ->
+                            [
+                                makeDiagnostic
+                                    DiagnosticCode.TypeEqualityMismatch
+                                    "Query carrier is ill-formed for a map comprehension; Query cannot silently discard map metadata."
+                            ]
+                        | SetCollection ->
+                            [
+                                makeDiagnostic
+                                    DiagnosticCode.TypeEqualityMismatch
+                                    "Query carrier is ill-formed for a set comprehension; Query cannot silently discard set metadata."
+                            ]
+
                     let compatibilityDiagnostics =
                         match
                             tryInferComprehensionPlanShape
@@ -8469,10 +9050,50 @@ module SurfaceElaboration =
                         | _ ->
                             []
 
-                    recurseComprehension carrier.Comprehension @ compatibilityDiagnostics
+                    recurseComprehension carrier.Comprehension @ metadataDiagnostics @ compatibilityDiagnostics
                 | None ->
                     match application with
                     | Apply(callee, arguments) ->
+                        let comprehensionSinkDiagnostics =
+                            match arguments with
+                            | [ Comprehension comprehension ] ->
+                                let sinkType =
+                                    inferValidationExpressionType environment freshCounter locals application
+                                    |> Option.orElseWith (fun () ->
+                                        match definition.Body, scheme with
+                                        | Some bodyExpression, Some bindingScheme when bodyExpression = application ->
+                                            Some(bindingScheme |> TypeSignatures.schemeParts |> snd)
+                                        | _ ->
+                                            None)
+
+                                sinkType
+                                |> Option.bind (fun sinkType ->
+                                    tryResolveTraitConstraint sinkType "FromComprehensionRaw"
+                                    |> Option.orElseWith (fun () -> tryResolveTraitConstraint sinkType "FromComprehensionPlan"))
+                                |> Option.bind (fun (instanceInfo, substitution) ->
+                                    tryParseInstanceAssociatedType substitution instanceInfo "Item"
+                                    |> Option.bind (fun expectedItemType ->
+                                        tryInferComprehensionPlanShape
+                                            environment
+                                            freshCounter
+                                            locals
+                                            (fun currentLocals currentExpression ->
+                                                inferValidationExpressionType environment freshCounter currentLocals currentExpression)
+                                            comprehension
+                                        |> Option.map (fun plan -> expectedItemType, plan.InferredItemType)))
+                                |> Option.map (fun (expectedItemType, actualItemType) ->
+                                    if comprehensionSinkItemTypesEqual expectedItemType actualItemType then
+                                        []
+                                    else
+                                        [
+                                            makeDiagnostic
+                                                DiagnosticCode.TypeEqualityMismatch
+                                                $"Selected comprehension sink expects Item '{TypeSignatures.toText expectedItemType}', but the yielded item type is '{TypeSignatures.toText actualItemType}'."
+                                        ])
+                                |> Option.defaultValue []
+                            | _ ->
+                                []
+
                         let argumentDiagnostics =
                             (match callee with
                              | Name [ _ ] -> []
@@ -8668,7 +9289,7 @@ module SurfaceElaboration =
                                 | None ->
                                     []
 
-                        argumentDiagnostics @ applicationDiagnostics @ nonCallableDiagnostics
+                        comprehensionSinkDiagnostics @ argumentDiagnostics @ applicationDiagnostics @ nonCallableDiagnostics
                     | _ ->
                         []
             | Elvis(left, right) ->
@@ -8706,6 +9327,9 @@ module SurfaceElaboration =
                     diagnostics
             | PrefixedString(prefix, parts) ->
                 prefixedStringPrefixDiagnostics locals lexicalNames prefix
+                @ (tryResolvePrefixedStringFailureDiagnostic prefix
+                   |> Option.map (fun message -> [ makeDiagnostic DiagnosticCode.FrontendValidation message ])
+                   |> Option.defaultValue [])
                 @ (parts
                    |> List.collect (function
                        | StringText _ -> []
@@ -10361,6 +10985,61 @@ module SurfaceElaboration =
                     | _ ->
                         [])
 
+            let instanceMemberSignatureDiagnostics =
+                let traitInfoByName =
+                    environment.VisibleTraits
+
+                frontendModule.Declarations
+                |> List.collect (function
+                    | InstanceDeclarationNode declaration ->
+                        tryParseInstanceHeader declaration
+                        |> Option.toList
+                        |> List.collect (fun (traitName, _, headTypes) ->
+                            traitInfoByName
+                            |> Map.tryFind traitName
+                            |> Option.toList
+                            |> List.collect (fun traitInfo ->
+                                let traitSubstitution =
+                                    if List.length traitInfo.TypeParameters = List.length headTypes then
+                                        List.zip traitInfo.TypeParameters headTypes |> Map.ofList
+                                    else
+                                        Map.empty
+
+                                declaration.Members
+                                |> List.collect (fun memberDeclaration ->
+                                    match memberDeclaration.Name with
+                                    | None ->
+                                        []
+                                    | Some memberName ->
+                                        match traitInfo.Members |> Map.tryFind memberName with
+                                        | None ->
+                                            []
+                                        | Some memberInfo ->
+                                            match memberDeclaration.ReturnTypeTokens |> Option.bind TypeSignatures.parseType with
+                                            | None ->
+                                                []
+                                            | Some declaredReturnType ->
+                                                let expectedReturnType =
+                                                    memberInfo.Scheme
+                                                    |> TypeSignatures.applySchemeSubstitution traitSubstitution
+                                                    |> TypeSignatures.schemeParts
+                                                    |> snd
+
+                                                if
+                                                    TypeSignatures.definitionallyEqual
+                                                        (normalizeTypeAliases environment.VisibleTypeAliases declaredReturnType)
+                                                        (normalizeTypeAliases environment.VisibleTypeAliases expectedReturnType)
+                                                then
+                                                    []
+                                                else
+                                                    [
+                                                        makeDiagnostic
+                                                            DiagnosticCode.TypeEqualityMismatch
+                                                            $"Instance member '{memberName}' for trait '{traitName}' must return '{TypeSignatures.toText expectedReturnType}', but declares '{TypeSignatures.toText declaredReturnType}'."
+                                                    ])))
+                    | _ ->
+                        [])
+
             let structuralDiagnostics =
                 duplicateDeclarationDiagnostics
                 @ totalityAssertionDiagnostics
@@ -10369,6 +11048,7 @@ module SurfaceElaboration =
                 @ unsignedRecursiveBindingDiagnostics
                 @ trivialRecursiveCycleDiagnostics
                 @ constructorDefaultDiagnostics
+                @ instanceMemberSignatureDiagnostics
 
             if not (List.isEmpty typeAliasCycleDiagnostics) then
                 structuralDiagnostics

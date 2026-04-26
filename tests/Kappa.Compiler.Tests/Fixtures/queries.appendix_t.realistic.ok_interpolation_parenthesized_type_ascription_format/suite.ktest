@@ -1,0 +1,7 @@
+-- Appendix T directory suite.
+-- A top-level colon used for type ascription inside interpolation must be parenthesized before format parsing.
+--! mode check
+--! packageMode
+--! assertNoErrors
+--! assertNoWarnings
+--! assertType typedParam Int -> dsl.sql.PreparedSql model.data.User

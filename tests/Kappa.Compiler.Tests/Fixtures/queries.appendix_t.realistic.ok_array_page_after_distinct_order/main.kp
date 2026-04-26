@@ -1,0 +1,14 @@
+module main
+
+import model.data.*
+
+page : Array User
+let page =
+    Array [
+        for u in users
+        distinct by u.id
+        order by asc u.name
+        skip 1
+        take 2
+        yield u
+    ]

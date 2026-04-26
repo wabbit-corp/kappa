@@ -45,19 +45,42 @@ module internal ResourceCheckingSurface =
 
     let rec expressionNames (expression: SurfaceExpression) =
         let expressionNamesInComprehension (comprehension: SurfaceComprehension) =
+            let yieldNames shadowed =
+                seq {
+                    match comprehension.Yield with
+                    | YieldValue value ->
+                        for name in expressionNames value do
+                            if not (Set.contains name shadowed) then
+                                yield name
+                    | YieldKeyValue(key, value) ->
+                        for expression in [ key; value ] do
+                            for name in expressionNames expression do
+                                if not (Set.contains name shadowed) then
+                                    yield name
+                }
+
             let rec loop shadowed clauses =
                 seq {
                     match clauses with
                     | [] ->
-                        for name in expressionNames comprehension.Yield do
-                            if not (Set.contains name shadowed) then
-                                yield name
+                        yield! yieldNames shadowed
                     | clause :: rest ->
                         match clause with
                         | ForClause(_, _, binding, source) ->
                             for name in expressionNames source do
                                 if not (Set.contains name shadowed) then
                                     yield name
+
+                            let nextShadowed =
+                                shadowed
+                                |> Set.union (collectPatternNames binding.Pattern |> Set.ofList)
+
+                            yield! loop nextShadowed rest
+                        | JoinClause(binding, source, condition) ->
+                            for expression in [ source; condition ] do
+                                for name in expressionNames expression do
+                                    if not (Set.contains name shadowed) then
+                                        yield name
 
                             let nextShadowed =
                                 shadowed
@@ -79,7 +102,16 @@ module internal ResourceCheckingSurface =
                                 if not (Set.contains name shadowed) then
                                     yield name
                             yield! loop shadowed rest
-                        | OrderByClause key ->
+                        | GroupByClause(key, aggregations, intoName) ->
+                            for name in expressionNames key do
+                                if not (Set.contains name shadowed) then
+                                    yield name
+                            for field in aggregations do
+                                for name in expressionNames field.Value do
+                                    if not (Set.contains name shadowed) then
+                                        yield name
+                            yield! loop (Set.singleton intoName) rest
+                        | OrderByClause(_, key) ->
                             for name in expressionNames key do
                                 if not (Set.contains name shadowed) then
                                     yield name

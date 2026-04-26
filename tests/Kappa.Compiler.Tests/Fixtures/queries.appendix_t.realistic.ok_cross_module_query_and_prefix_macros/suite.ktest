@@ -1,0 +1,8 @@
+-- Appendix T directory suite.
+-- Cross-module query sink and prefixed-string macro exports remain ordinary imported terms.
+--! mode check
+--! packageMode
+--! assertNoErrors
+--! assertNoWarnings
+--! assertType q dsl.sql.SqlQuery (id : Int, name : String, orders : List model.data.Order)
+--! assertType p Int -> dsl.sql.PreparedSql model.data.Order

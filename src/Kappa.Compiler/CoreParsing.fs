@@ -1423,6 +1423,32 @@ type private ExpressionParser
         let makeSetExpression (items: SurfaceExpression list) =
             Apply(Name [ "Set" ], [ makeListExpression items ])
 
+        let makeMapExpression (entries: (SurfaceExpression * SurfaceExpression) list) =
+            let entryExpressions =
+                entries
+                |> List.map (fun (key, value) -> Apply(Name [ ":&" ], [ key; value ]))
+
+            Apply(Name [ "Map" ], [ makeListExpression entryExpressions ])
+
+        let rec patternIsDefinitelyIrrefutable pattern =
+            match pattern with
+            | WildcardPattern
+            | NamePattern _ ->
+                true
+            | AsPattern(_, inner)
+            | TypedPattern(inner, _) ->
+                patternIsDefinitelyIrrefutable inner
+            | TuplePattern elements ->
+                elements |> List.forall patternIsDefinitelyIrrefutable
+            | AnonymousRecordPattern(fields, _) ->
+                fields |> List.forall (fun field -> patternIsDefinitelyIrrefutable field.Pattern)
+            | LiteralPattern _
+            | ConstructorPattern _
+            | NamedConstructorPattern _
+            | VariantPattern _
+            | OrPattern _ ->
+                false
+
         let patternBoundNames pattern =
             let rec loop current =
                 match current with
@@ -1905,42 +1931,341 @@ type private ExpressionParser
 
             result
 
+        let tryFindTopLevelTokenFrom startIndex predicate (tokens: Token list) =
+            if startIndex >= List.length tokens then
+                None
+            else
+                tokens[startIndex..]
+                |> tryFindTopLevelToken predicate
+                |> Option.map ((+) startIndex)
+
+        let tryFindMatchingRightBrace (tokens: Token list) leftBraceIndex =
+            let tokenArray = tokens |> List.toArray
+            let mutable depth = 0
+            let mutable index = leftBraceIndex
+            let mutable result = None
+
+            while index < tokenArray.Length && result.IsNone do
+                match tokenArray[index].Kind with
+                | LeftBrace ->
+                    depth <- depth + 1
+                | RightBrace ->
+                    depth <- depth - 1
+
+                    if depth = 0 then
+                        result <- Some index
+                | _ ->
+                    ()
+
+                index <- index + 1
+
+            result
+
+        let tryFindTopLevelLeftBrace (tokens: Token list) =
+            let tokenArray = tokens |> List.toArray
+            let mutable parenDepth = 0
+            let mutable bracketDepth = 0
+            let mutable effectRowDepth = 0
+            let mutable braceDepth = 0
+            let mutable setBraceDepth = 0
+            let mutable layoutDepth = 0
+            let mutable index = 0
+            let mutable result = None
+
+            while index < tokenArray.Length && result.IsNone do
+                let token = tokenArray[index]
+
+                match token.Kind with
+                | LeftParen ->
+                    parenDepth <- parenDepth + 1
+                | RightParen ->
+                    parenDepth <- max 0 (parenDepth - 1)
+                | LeftBracket ->
+                    bracketDepth <- bracketDepth + 1
+                | RightBracket ->
+                    bracketDepth <- max 0 (bracketDepth - 1)
+                | LeftEffectRow ->
+                    effectRowDepth <- effectRowDepth + 1
+                | RightEffectRow ->
+                    effectRowDepth <- max 0 (effectRowDepth - 1)
+                | LeftSetBrace ->
+                    setBraceDepth <- setBraceDepth + 1
+                | RightSetBrace ->
+                    setBraceDepth <- max 0 (setBraceDepth - 1)
+                | Indent ->
+                    layoutDepth <- layoutDepth + 1
+                | Dedent ->
+                    layoutDepth <- max 0 (layoutDepth - 1)
+                | LeftBrace
+                    when parenDepth = 0
+                         && bracketDepth = 0
+                         && effectRowDepth = 0
+                         && braceDepth = 0
+                         && setBraceDepth = 0
+                         && layoutDepth = 0 ->
+                    result <- Some index
+                    braceDepth <- braceDepth + 1
+                | LeftBrace ->
+                    braceDepth <- braceDepth + 1
+                | RightBrace ->
+                    braceDepth <- max 0 (braceDepth - 1)
+                | _ ->
+                    ()
+
+                index <- index + 1
+
+            result
+
+        let parseGroupAggregationFields (tokens: Token list) =
+            let parseField (fieldTokens: Token list) =
+                let trimmed =
+                    fieldTokens
+                    |> List.filter (fun token ->
+                        match token.Kind with
+                        | Newline
+                        | Indent
+                        | Dedent
+                        | EndOfFile -> false
+                        | _ -> true)
+
+                match tryFindTopLevelToken (fun token -> token.Kind = Equals) trimmed with
+                | Some equalsIndex when equalsIndex > 0 ->
+                    let tokenArray = trimmed |> List.toArray
+                    let nameTokens = tokenArray[0 .. equalsIndex - 1] |> Array.toList
+                    let valueTokens = tokenArray[equalsIndex + 1 ..] |> Array.toList
+
+                    match nameTokens with
+                    | [ nameToken ] when Token.isName nameToken ->
+                        Some
+                            { Name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
+                              IsImplicit = false
+                              Value = this.ParseStandaloneExpression(valueTokens) }
+                    | _ ->
+                        diagnostics.AddError(
+                            DiagnosticCode.ParseError,
+                            "Expected a named aggregation of the form 'name = expr' in the group clause.",
+                            source.GetLocation((trimmed |> List.tryHead |> Option.defaultValue { Kind = EndOfFile; Text = ""; Span = eofSpan }).Span)
+                        )
+                        None
+                | _ ->
+                    diagnostics.AddError(
+                        DiagnosticCode.ParseError,
+                        "Expected '=' in the group aggregation.",
+                        source.GetLocation((trimmed |> List.tryHead |> Option.defaultValue { Kind = EndOfFile; Text = ""; Span = eofSpan }).Span)
+                    )
+                    None
+
+            splitTopLevelItems tokens |> List.choose parseField
+
+        let parseQualifiedNameTokens (tokens: Token list) =
+            let trimmed =
+                tokens
+                |> List.filter (fun token ->
+                    match token.Kind with
+                    | Newline
+                    | Indent
+                    | Dedent
+                    | EndOfFile -> false
+                    | _ -> true)
+
+            let rec loop current remaining =
+                match remaining with
+                | [] ->
+                    Some(List.rev current)
+                | [ nameToken ] when Token.isName nameToken ->
+                    Some(List.rev (SyntaxFacts.trimIdentifierQuotes nameToken.Text :: current))
+                | nameToken :: dotToken :: rest when Token.isName nameToken && dotToken.Kind = Dot ->
+                    loop (SyntaxFacts.trimIdentifierQuotes nameToken.Text :: current) rest
+                | _ ->
+                    None
+
+            loop [] trimmed
+
+        let parseGeneratorClause isRefutable (generatorToken: Token) remainingTokens =
+            match tryFindTopLevelToken (fun token -> Token.isKeyword Keyword.In token) remainingTokens with
+            | Some inIndex ->
+                let tokenArray = remainingTokens |> List.toArray
+                let rawPatternTokens = tokenArray[0 .. inIndex - 1] |> Array.toList
+                let sourceTokens = tokenArray[inIndex + 1 ..] |> Array.toList
+                let isBorrowed, patternTokens =
+                    match rawPatternTokens with
+                    | borrowToken :: rest when borrowToken.Kind = Operator && borrowToken.Text = "&" ->
+                        true, rest
+                    | _ ->
+                        false, rawPatternTokens
+
+                Some(
+                    Choice3Of3(
+                        ForClause(
+                            isBorrowed,
+                            isRefutable,
+                            this.ParseBindPatternFromTokens patternTokens,
+                            this.ParseStandaloneExpression(sourceTokens)
+                        )
+                    )
+                )
+            | None ->
+                diagnostics.AddError(DiagnosticCode.ParseError, "Expected 'in' in the comprehension generator.", source.GetLocation(generatorToken.Span))
+                None
+
+        let parseYieldClause (remainingTokens: Token list) =
+            match kind with
+            | MapCollection ->
+                match tryFindTopLevelToken (fun token -> token.Kind = Colon) remainingTokens with
+                | Some colonIndex ->
+                    let tokenArray = remainingTokens |> List.toArray
+                    let keyTokens = tokenArray[0 .. colonIndex - 1] |> Array.toList
+                    let valueTokens = tokenArray[colonIndex + 1 ..] |> Array.toList
+
+                    Some(Choice1Of3(YieldKeyValue(this.ParseStandaloneExpression(keyTokens), this.ParseStandaloneExpression(valueTokens))))
+                | None ->
+                    Some(Choice1Of3(YieldValue(this.ParseStandaloneExpression(remainingTokens))))
+            | _ ->
+                Some(Choice1Of3(YieldValue(this.ParseStandaloneExpression(remainingTokens))))
+
+        let parseConflictClause (startToken: Token) remainingTokens =
+            match remainingTokens with
+            | keepToken :: lastToken :: []
+                when isContextualName "keep" keepToken && isContextualName "last" lastToken ->
+                Some(Choice2Of3 KeepLast)
+            | keepToken :: firstToken :: []
+                when isContextualName "keep" keepToken && isContextualName "first" firstToken ->
+                Some(Choice2Of3 KeepFirst)
+            | combineToken :: withToken :: expressionTokens
+                when isContextualName "combine" combineToken && isContextualName "with" withToken ->
+                Some(Choice2Of3(CombineWith(this.ParseStandaloneExpression(expressionTokens))))
+            | combineToken :: usingToken :: nameTokens
+                when isContextualName "combine" combineToken && isContextualName "using" usingToken ->
+                match parseQualifiedNameTokens nameTokens with
+                | Some nameSegments ->
+                    Some(Choice2Of3(CombineUsing nameSegments))
+                | None ->
+                    diagnostics.AddError(
+                        DiagnosticCode.ParseError,
+                        "Expected a qualified name after 'on conflict combine using'.",
+                        source.GetLocation(startToken.Span)
+                    )
+                    None
+            | _ ->
+                diagnostics.AddError(
+                    DiagnosticCode.ParseError,
+                    "Expected 'on conflict keep last', 'on conflict keep first', 'on conflict combine using <name>', or 'on conflict combine with <expr>'.",
+                    source.GetLocation(startToken.Span)
+                )
+                None
+
         let parseClause (clauseTokens: Token list) =
             match clauseTokens with
             | yieldToken :: rest when Token.isKeyword Keyword.Yield yieldToken ->
-                Some(Choice1Of2(this.ParseStandaloneExpression(rest)))
+                parseYieldClause rest
             | forToken :: rest when Token.isKeyword Keyword.For forToken ->
-                match tryFindTopLevelToken (fun token -> Token.isKeyword Keyword.In token) rest with
-                | Some inIndex ->
-                    let tokenArray = rest |> List.toArray
-                    let patternTokens = tokenArray[0 .. inIndex - 1] |> Array.toList
-                    let sourceTokens = tokenArray[inIndex + 1 ..] |> Array.toList
-                    Some(Choice2Of2(ForClause(false, false, this.ParseBindPatternFromTokens patternTokens, this.ParseStandaloneExpression(sourceTokens))))
-                | None ->
-                    diagnostics.AddError(DiagnosticCode.ParseError, "Expected 'in' in the comprehension generator.", source.GetLocation(forToken.Span))
-                    None
+                parseGeneratorClause false forToken rest
+            | forQuestionToken :: rest when Token.isKeyword Keyword.ForQuestion forQuestionToken ->
+                parseGeneratorClause true forQuestionToken rest
             | letToken :: rest when Token.isKeyword Keyword.Let letToken ->
                 match tryFindTopLevelToken (fun token -> token.Kind = Equals) rest with
                 | Some equalsIndex ->
                     let tokenArray = rest |> List.toArray
                     let bindingTokens = tokenArray[0 .. equalsIndex - 1] |> Array.toList
                     let valueTokens = tokenArray[equalsIndex + 1 ..] |> Array.toList
-                    Some(Choice2Of2(LetClause(false, this.ParseBindPatternFromTokens bindingTokens, this.ParseStandaloneExpression(valueTokens))))
+                    Some(Choice3Of3(LetClause(false, this.ParseBindPatternFromTokens bindingTokens, this.ParseStandaloneExpression(valueTokens))))
                 | None ->
                     diagnostics.AddError(DiagnosticCode.ParseError, "Expected '=' in the comprehension let clause.", source.GetLocation(letToken.Span))
                     None
             | ifToken :: rest when Token.isKeyword Keyword.If ifToken ->
-                Some(Choice2Of2(IfClause(this.ParseStandaloneExpression(rest))))
+                Some(Choice3Of3(IfClause(this.ParseStandaloneExpression(rest))))
+            | joinToken :: rest when Token.isKeyword Keyword.Join joinToken ->
+                match
+                    tryFindTopLevelToken (fun token -> Token.isKeyword Keyword.In token) rest,
+                    tryFindTopLevelToken (isContextualName "on") rest
+                with
+                | Some inIndex, Some onIndex when inIndex > 0 && onIndex > inIndex + 1 ->
+                    let tokenArray = rest |> List.toArray
+                    let patternTokens = tokenArray[0 .. inIndex - 1] |> Array.toList
+                    let sourceTokens = tokenArray[inIndex + 1 .. onIndex - 1] |> Array.toList
+                    let conditionTokens = tokenArray[onIndex + 1 ..] |> Array.toList
+
+                    Some(
+                        Choice3Of3(
+                            JoinClause(
+                                this.ParseBindPatternFromTokens patternTokens,
+                                this.ParseStandaloneExpression(sourceTokens),
+                                this.ParseStandaloneExpression(conditionTokens)
+                            )
+                        )
+                    )
+                | _ ->
+                    diagnostics.AddError(
+                        DiagnosticCode.ParseError,
+                        "Expected 'join <pat> in <source> on <condition>' in the comprehension clause.",
+                        source.GetLocation(joinToken.Span)
+                    )
+                    None
+            | groupToken :: byToken :: rest when Token.isKeyword Keyword.Group groupToken && Token.isKeyword Keyword.By byToken ->
+                match tryFindTopLevelLeftBrace rest with
+                | Some leftBraceIndex ->
+                    match tryFindMatchingRightBrace rest leftBraceIndex with
+                    | Some rightBraceIndex ->
+                        let tokenArray = rest |> List.toArray
+                        let keyTokens = tokenArray[0 .. leftBraceIndex - 1] |> Array.toList
+                        let aggregationTokens = tokenArray[leftBraceIndex + 1 .. rightBraceIndex - 1] |> Array.toList
+                        let tailTokens =
+                            if rightBraceIndex + 1 < tokenArray.Length then
+                                tokenArray[rightBraceIndex + 1 ..] |> Array.toList
+                            else
+                                []
+
+                        match tailTokens with
+                        | intoToken :: [ nameToken ] when isContextualName "into" intoToken && Token.isName nameToken ->
+                            Some(
+                                Choice3Of3(
+                                    GroupByClause(
+                                        this.ParseStandaloneExpression(keyTokens),
+                                        parseGroupAggregationFields aggregationTokens,
+                                        SyntaxFacts.trimIdentifierQuotes nameToken.Text
+                                    )
+                                )
+                            )
+                        | _ ->
+                            diagnostics.AddError(
+                                DiagnosticCode.ParseError,
+                                "Expected 'into <name>' after the group aggregation block.",
+                                source.GetLocation(groupToken.Span)
+                            )
+                            None
+                    | None ->
+                        diagnostics.AddError(
+                            DiagnosticCode.ParseError,
+                            "Expected '}' to close the group aggregation block.",
+                            source.GetLocation(groupToken.Span)
+                        )
+                        None
+                | None ->
+                    diagnostics.AddError(
+                        DiagnosticCode.ParseError,
+                        "Expected '{ ... }' after 'group by <expr>'.",
+                        source.GetLocation(groupToken.Span)
+                    )
+                    None
             | orderToken :: byToken :: rest when Token.isKeyword Keyword.Order orderToken && Token.isKeyword Keyword.By byToken ->
-                Some(Choice2Of2(OrderByClause(this.ParseStandaloneExpression(rest))))
+                let direction, keyTokens =
+                    match rest with
+                    | ascToken :: tail when Token.isKeyword Keyword.Asc ascToken ->
+                        Some Ascending, tail
+                    | descToken :: tail when Token.isKeyword Keyword.Desc descToken ->
+                        Some Descending, tail
+                    | _ ->
+                        None, rest
+
+                Some(Choice3Of3(OrderByClause(direction, this.ParseStandaloneExpression(keyTokens))))
             | distinctToken :: byToken :: rest when Token.isKeyword Keyword.Distinct distinctToken && Token.isKeyword Keyword.By byToken ->
-                Some(Choice2Of2(DistinctByClause(this.ParseStandaloneExpression(rest))))
+                Some(Choice3Of3(DistinctByClause(this.ParseStandaloneExpression(rest))))
             | distinctToken :: [] when Token.isKeyword Keyword.Distinct distinctToken ->
-                Some(Choice2Of2 DistinctClause)
+                Some(Choice3Of3 DistinctClause)
             | skipToken :: rest when Token.isKeyword Keyword.Skip skipToken ->
-                Some(Choice2Of2(SkipClause(this.ParseStandaloneExpression(rest))))
+                Some(Choice3Of3(SkipClause(this.ParseStandaloneExpression(rest))))
             | takeToken :: rest when Token.isKeyword Keyword.Take takeToken ->
-                Some(Choice2Of2(TakeClause(this.ParseStandaloneExpression(rest))))
+                Some(Choice3Of3(TakeClause(this.ParseStandaloneExpression(rest))))
             | leftToken :: joinToken :: rest when Token.isKeyword Keyword.Left leftToken && Token.isKeyword Keyword.Join joinToken ->
                 match
                     tryFindTopLevelToken (fun token -> Token.isKeyword Keyword.In token) rest,
@@ -1957,7 +2282,7 @@ type private ExpressionParser
                     match intoTokens with
                     | [ intoName ] when Token.isName intoName ->
                         Some(
-                            Choice2Of2(
+                            Choice3Of3(
                                 LeftJoinClause(
                                     this.ParseBindPatternFromTokens patternTokens,
                                     this.ParseStandaloneExpression(sourceTokens),
@@ -1980,6 +2305,8 @@ type private ExpressionParser
                         source.GetLocation(leftToken.Span)
                     )
                     None
+            | onToken :: conflictToken :: rest when isContextualName "on" onToken && isContextualName "conflict" conflictToken ->
+                parseConflictClause onToken rest
             | token :: _ ->
                 diagnostics.AddError(DiagnosticCode.ParseError, "Unsupported comprehension clause.", source.GetLocation(token.Span))
                 None
@@ -2017,6 +2344,9 @@ type private ExpressionParser
                         listNil
                 ))
                 (applyName loopName [ rowsExpression ])
+
+        let mapYieldEntries rowNames rowsExpression keyExpression valueExpression =
+            mapYield rowNames rowsExpression (Apply(Name preludeResConstructorName, [ keyExpression; valueExpression ]))
 
         let transformForClause
             (rowNames: string list)
@@ -2071,6 +2401,49 @@ type private ExpressionParser
                     (applyName loopRowsName [ rowsExpression ])
 
             transformedExpression, nextRowNames, sourceOrderedness
+
+        let transformGroupByClause
+            (rowNames: string list)
+            (rowsExpression: SurfaceExpression)
+            (keyExpression: SurfaceExpression)
+            (aggregations: SurfaceRecordLiteralField list)
+            intoName
+            =
+            let loopName = this.FreshSyntheticName "__query_group_loop"
+            let remainingRowsName = this.FreshSyntheticName "__query_group_rows"
+            let rowName = this.FreshSyntheticName "__query_group_row"
+            let rowTailName = this.FreshSyntheticName "__query_group_row_tail"
+            let groupedValue =
+                RecordLiteral(
+                    { Name = "key"
+                      IsImplicit = false
+                      Value = keyExpression }
+                    :: aggregations
+                )
+
+            let transformedExpression =
+                bindName
+                    loopName
+                    (Lambda(
+                        [ makeParameter remainingRowsName ],
+                        makeListMatch
+                            (Name [ remainingRowsName ])
+                            rowName
+                            rowTailName
+                            (wrapRowBindings
+                                rowNames
+                                (Name [ rowName ])
+                                (bindName
+                                    intoName
+                                    groupedValue
+                                    (cons
+                                        (makeRowExpression [ intoName ])
+                                        (applyName loopName [ Name [ rowTailName ] ]))))
+                            listNil
+                    ))
+                    (applyName loopName [ rowsExpression ])
+
+            transformedExpression, [ intoName ]
 
         let transformLetClause
             (rowNames: string list)
@@ -2330,7 +2703,7 @@ type private ExpressionParser
 
             transformedExpression, nextRowNames
 
-        let transformOrderByClause rowNames rowsExpression keyExpression =
+        let transformOrderByClause rowNames rowsExpression direction keyExpression =
             let insertName = this.FreshSyntheticName "__query_order_insert"
             let sortName = this.FreshSyntheticName "__query_order_sort"
             let projectName = this.FreshSyntheticName "__query_order_project"
@@ -2346,11 +2719,19 @@ type private ExpressionParser
             let existingKeyName = this.FreshSyntheticName "__query_order_existing_key"
             let existingRowValueName = this.FreshSyntheticName "__query_order_existing_row"
             let orderedBeforeExisting =
-                Binary(
-                    Binary(Name [ currentKeyName ], "<", Name [ existingKeyName ]),
-                    "||",
-                    Binary(Name [ currentKeyName ], "==", Name [ existingKeyName ])
-                )
+                match direction with
+                | Some Descending ->
+                    Binary(
+                        Binary(Name [ currentKeyName ], ">", Name [ existingKeyName ]),
+                        "||",
+                        Binary(Name [ currentKeyName ], "==", Name [ existingKeyName ])
+                    )
+                | _ ->
+                    Binary(
+                        Binary(Name [ currentKeyName ], "<", Name [ existingKeyName ]),
+                        "||",
+                        Binary(Name [ currentKeyName ], "==", Name [ existingKeyName ])
+                    )
 
             let pairBinding name keyName rowValueName =
                 SurfaceBinderParsing.makeBindPattern
@@ -2429,7 +2810,8 @@ type private ExpressionParser
                 | _ -> true)
             |> Option.exists (fun token ->
                 Token.isKeyword Keyword.Yield token
-                || Token.isKeyword Keyword.For token)
+                || Token.isKeyword Keyword.For token
+                || Token.isKeyword Keyword.ForQuestion token)
 
         if not startsComprehension then
             let items =
@@ -2441,19 +2823,32 @@ type private ExpressionParser
                 makeListExpression items
             | SetCollection ->
                 makeSetExpression items
+            | MapCollection ->
+                makeMapExpression []
         else
             let parsedClauses =
                 splitCollectionClauses innerTokens
                 |> List.choose parseClause
 
-            match List.rev parsedClauses with
-            | Choice1Of2 yielded :: reversedPrefix ->
+            let reversedClauses = List.rev parsedClauses
+            let trailingConflict, reversedEntries =
+                match reversedClauses with
+                | Choice2Of3 conflict :: rest ->
+                    Some conflict, rest
+                | _ ->
+                    None, reversedClauses
+
+            match reversedEntries with
+            | Choice1Of3 yielded :: reversedPrefix ->
                 let rowClauses =
                     reversedPrefix
                     |> List.rev
                     |> List.choose (function
-                        | Choice2Of2 clause -> Some clause
-                        | Choice1Of2 _ -> None)
+                        | Choice3Of3 clause -> Some clause
+                        | _ -> None)
+
+                let conflictPolicy =
+                    trailingConflict
 
                 let rowsExpression, rowNames, orderedness =
                     List.fold
@@ -2471,6 +2866,21 @@ type private ExpressionParser
                                 | _ -> UnknownOrderedness
 
                             transformedRows, nextNames, nextOrderedness
+                        | JoinClause(binding, sourceExpression, conditionExpression) ->
+                            let transformedRows, nextNames, sourceOrderedness =
+                                transformForClause currentNames currentRows binding sourceExpression
+
+                            let filteredRows =
+                                transformIfClause nextNames transformedRows conditionExpression
+
+                            let nextOrderedness =
+                                match currentOrderedness, sourceOrderedness with
+                                | KnownUnordered, _
+                                | _, KnownUnordered -> KnownUnordered
+                                | KnownOrdered, KnownOrdered -> KnownOrdered
+                                | _ -> UnknownOrderedness
+
+                            filteredRows, nextNames, nextOrderedness
                         | LetClause(_, binding, valueExpression) ->
                             let transformedRows, nextNames =
                                 transformLetClause currentNames currentRows binding valueExpression
@@ -2478,12 +2888,17 @@ type private ExpressionParser
                             transformedRows, nextNames, currentOrderedness
                         | IfClause conditionExpression ->
                             transformIfClause currentNames currentRows conditionExpression, currentNames, currentOrderedness
+                        | GroupByClause(keyExpression, aggregations, intoName) ->
+                            let transformedRows, nextNames =
+                                transformGroupByClause currentNames currentRows keyExpression aggregations intoName
+
+                            transformedRows, nextNames, KnownUnordered
                         | DistinctClause ->
                             transformDistinctClause currentNames currentRows (makeRowExpression currentNames), currentNames, currentOrderedness
                         | DistinctByClause keyExpression ->
                             transformDistinctClause currentNames currentRows keyExpression, currentNames, currentOrderedness
-                        | OrderByClause keyExpression ->
-                            transformOrderByClause currentNames currentRows keyExpression, currentNames, KnownOrdered
+                        | OrderByClause(direction, keyExpression) ->
+                            transformOrderByClause currentNames currentRows direction keyExpression, currentNames, KnownOrdered
                         | SkipClause countExpression ->
                             transformSkipClause currentRows currentOrderedness countExpression, currentNames, currentOrderedness
                         | TakeClause countExpression ->
@@ -2496,16 +2911,24 @@ type private ExpressionParser
                         (buildInitialRows (), [], KnownOrdered)
                         rowClauses
 
-                let yieldedRows = mapYield rowNames rowsExpression yielded
+                let yieldedRows =
+                    match yielded with
+                    | YieldValue valueExpression ->
+                        mapYield rowNames rowsExpression valueExpression
+                    | YieldKeyValue(keyExpression, valueExpression) ->
+                        mapYieldEntries rowNames rowsExpression keyExpression valueExpression
+
                 let lowered =
                     match kind with
                     | ListCollection -> yieldedRows
                     | SetCollection -> Apply(Name [ "Set" ], [ yieldedRows ])
+                    | MapCollection -> Apply(Name [ "Map" ], [ yieldedRows ])
 
                 Comprehension
                     { CollectionKind = kind
                       Clauses = rowClauses
                       Yield = yielded
+                      ConflictPolicy = conflictPolicy
                       Lowered = lowered }
             | _ ->
                 diagnostics.AddError(DiagnosticCode.ParseError, "A comprehension must end with a yield clause.", source.GetLocation(eofSpan))
@@ -2513,6 +2936,7 @@ type private ExpressionParser
                 match kind with
                 | ListCollection -> listNil
                 | SetCollection -> Apply(Name [ "Set" ], [ listNil ])
+                | MapCollection -> Apply(Name [ "Map" ], [ listNil ])
 
     member private this.DecodeStringTextSegment(token: Token) =
         match SyntaxFacts.tryUnescapeStringContent token.Text with
@@ -4326,74 +4750,25 @@ type private ExpressionParser
     member private this.ParseNamedApplicationBlockArgument() =
         let tokens =
             this.CollectBracedTokens("Expected '}' to close the named application block.")
-            |> List.filter (fun token ->
+
+        let startsComprehension =
+            tokens
+            |> List.tryFind (fun token ->
                 match token.Kind with
                 | Newline
                 | Indent
                 | Dedent -> false
                 | _ -> true)
+            |> Option.exists (fun token ->
+                Token.isKeyword Keyword.Yield token
+                || Token.isKeyword Keyword.For token
+                || Token.isKeyword Keyword.ForQuestion token)
 
-        let splitTopLevelCommas (fieldTokens: Token list) =
-            let tokenArray = List.toArray fieldTokens
-            let items = ResizeArray<Token list>()
-            let current = ResizeArray<Token>()
-            let mutable depth = 0
-
-            for token in tokenArray do
-                match token.Kind with
-                | LeftParen
-                | LeftBracket
-                | LeftBrace
-                | LeftSetBrace ->
-                    depth <- depth + 1
-                    current.Add(token)
-                | RightParen
-                | RightBracket
-                | RightBrace
-                | RightSetBrace ->
-                    depth <- max 0 (depth - 1)
-                    current.Add(token)
-                | Comma when depth = 0 ->
-                    items.Add(List.ofSeq current)
-                    current.Clear()
-                | _ ->
-                    current.Add(token)
-
-            if current.Count > 0 then
-                items.Add(List.ofSeq current)
-
-            List.ofSeq items
-
-        let tryFindTopLevelEquals (fieldTokens: Token list) =
-            let tokenArray = List.toArray fieldTokens
-            let mutable depth = 0
-            let mutable index = 0
-            let mutable result = None
-
-            while index < tokenArray.Length && result.IsNone do
-                match tokenArray[index].Kind with
-                | LeftParen
-                | LeftBracket
-                | LeftBrace
-                | LeftSetBrace ->
-                    depth <- depth + 1
-                | RightParen
-                | RightBracket
-                | RightBrace
-                | RightSetBrace ->
-                    depth <- max 0 (depth - 1)
-                | Equals when depth = 0 ->
-                    result <- Some index
-                | _ ->
-                    ()
-
-                index <- index + 1
-
-            result
-
-        let parseField (fieldTokens: Token list) =
-            let trimmedField =
-                fieldTokens
+        if startsComprehension then
+            this.ParseCollectionExpression(MapCollection, tokens)
+        else
+            let tokens =
+                tokens
                 |> List.filter (fun token ->
                     match token.Kind with
                     | Newline
@@ -4401,66 +4776,134 @@ type private ExpressionParser
                     | Dedent -> false
                     | _ -> true)
 
-            let isImplicit, remaining =
-                match trimmedField with
-                | { Kind = AtSign } :: rest -> true, rest
-                | _ -> false, trimmedField
+            let splitTopLevelCommas (fieldTokens: Token list) =
+                let tokenArray = List.toArray fieldTokens
+                let items = ResizeArray<Token list>()
+                let current = ResizeArray<Token>()
+                let mutable depth = 0
 
-            match tryFindTopLevelEquals remaining with
-            | Some index ->
-                let tokenArray = List.toArray remaining
-                let labelTokens = tokenArray[0 .. index - 1] |> Array.toList
-                let valueTokens = tokenArray[index + 1 ..] |> Array.toList
+                for token in tokenArray do
+                    match token.Kind with
+                    | LeftParen
+                    | LeftBracket
+                    | LeftBrace
+                    | LeftSetBrace ->
+                        depth <- depth + 1
+                        current.Add(token)
+                    | RightParen
+                    | RightBracket
+                    | RightBrace
+                    | RightSetBrace ->
+                        depth <- max 0 (depth - 1)
+                        current.Add(token)
+                    | Comma when depth = 0 ->
+                        items.Add(List.ofSeq current)
+                        current.Clear()
+                    | _ ->
+                        current.Add(token)
 
-                match labelTokens with
-                | [ labelToken ] when this.IsNameToken(labelToken) ->
-                    { Name = SyntaxFacts.trimIdentifierQuotes labelToken.Text
-                      IsImplicit = isImplicit
-                      Value = this.ParseStandaloneExpression(valueTokens) }
-                | labelToken :: _ ->
-                    diagnostics.AddError(DiagnosticCode.ParseError, "Expected a named application field label.", source.GetLocation(labelToken.Span))
-                    { Name = "<missing>"
-                      IsImplicit = isImplicit
-                      Value = Literal LiteralValue.Unit }
-                | [] ->
-                    diagnostics.AddError(DiagnosticCode.ParseError, "Expected a named application field label.", source.GetLocation(eofSpan))
-                    { Name = "<missing>"
-                      IsImplicit = isImplicit
-                      Value = Literal LiteralValue.Unit }
-            | None ->
-                match remaining with
-                | [ labelToken ] when not isImplicit && this.IsNameToken(labelToken) ->
-                    let fieldName = SyntaxFacts.trimIdentifierQuotes labelToken.Text
+                if current.Count > 0 then
+                    items.Add(List.ofSeq current)
 
-                    { Name = fieldName
-                      IsImplicit = false
-                      Value = Name [ fieldName ] }
-                | token :: _ ->
-                    diagnostics.AddError(
-                        DiagnosticCode.ParseError,
-                        "Expected a named application field of the form 'name = expr' or a punned field name.",
-                        source.GetLocation(token.Span)
-                    )
+                List.ofSeq items
 
-                    { Name = "<missing>"
-                      IsImplicit = isImplicit
-                      Value = Literal LiteralValue.Unit }
-                | [] ->
-                    diagnostics.AddError(
-                        DiagnosticCode.ParseError,
-                        "Expected a named application field of the form 'name = expr' or a punned field name.",
-                        source.GetLocation(eofSpan)
-                    )
+            let tryFindTopLevelEquals (fieldTokens: Token list) =
+                let tokenArray = List.toArray fieldTokens
+                let mutable depth = 0
+                let mutable index = 0
+                let mutable result = None
 
-                    { Name = "<missing>"
-                      IsImplicit = isImplicit
-                      Value = Literal LiteralValue.Unit }
+                while index < tokenArray.Length && result.IsNone do
+                    match tokenArray[index].Kind with
+                    | LeftParen
+                    | LeftBracket
+                    | LeftBrace
+                    | LeftSetBrace ->
+                        depth <- depth + 1
+                    | RightParen
+                    | RightBracket
+                    | RightBrace
+                    | RightSetBrace ->
+                        depth <- max 0 (depth - 1)
+                    | Equals when depth = 0 ->
+                        result <- Some index
+                    | _ ->
+                        ()
 
-        tokens
-        |> splitTopLevelCommas
-        |> List.filter (List.isEmpty >> not)
-        |> List.map parseField
-        |> NamedApplicationBlock
+                    index <- index + 1
+
+                result
+
+            let parseField (fieldTokens: Token list) =
+                let trimmedField =
+                    fieldTokens
+                    |> List.filter (fun token ->
+                        match token.Kind with
+                        | Newline
+                        | Indent
+                        | Dedent -> false
+                        | _ -> true)
+
+                let isImplicit, remaining =
+                    match trimmedField with
+                    | { Kind = AtSign } :: rest -> true, rest
+                    | _ -> false, trimmedField
+
+                match tryFindTopLevelEquals remaining with
+                | Some index ->
+                    let tokenArray = List.toArray remaining
+                    let labelTokens = tokenArray[0 .. index - 1] |> Array.toList
+                    let valueTokens = tokenArray[index + 1 ..] |> Array.toList
+
+                    match labelTokens with
+                    | [ labelToken ] when this.IsNameToken(labelToken) ->
+                        { Name = SyntaxFacts.trimIdentifierQuotes labelToken.Text
+                          IsImplicit = isImplicit
+                          Value = this.ParseStandaloneExpression(valueTokens) }
+                    | labelToken :: _ ->
+                        diagnostics.AddError(DiagnosticCode.ParseError, "Expected a named application field label.", source.GetLocation(labelToken.Span))
+                        { Name = "<missing>"
+                          IsImplicit = isImplicit
+                          Value = Literal LiteralValue.Unit }
+                    | [] ->
+                        diagnostics.AddError(DiagnosticCode.ParseError, "Expected a named application field label.", source.GetLocation(eofSpan))
+                        { Name = "<missing>"
+                          IsImplicit = isImplicit
+                          Value = Literal LiteralValue.Unit }
+                | None ->
+                    match remaining with
+                    | [ labelToken ] when not isImplicit && this.IsNameToken(labelToken) ->
+                        let fieldName = SyntaxFacts.trimIdentifierQuotes labelToken.Text
+
+                        { Name = fieldName
+                          IsImplicit = false
+                          Value = Name [ fieldName ] }
+                    | token :: _ ->
+                        diagnostics.AddError(
+                            DiagnosticCode.ParseError,
+                            "Expected a named application field of the form 'name = expr' or a punned field name.",
+                            source.GetLocation(token.Span)
+                        )
+
+                        { Name = "<missing>"
+                          IsImplicit = isImplicit
+                          Value = Literal LiteralValue.Unit }
+                    | [] ->
+                        diagnostics.AddError(
+                            DiagnosticCode.ParseError,
+                            "Expected a named application field of the form 'name = expr' or a punned field name.",
+                            source.GetLocation(eofSpan)
+                        )
+
+                        { Name = "<missing>"
+                          IsImplicit = isImplicit
+                          Value = Literal LiteralValue.Unit }
+
+            tokens
+            |> splitTopLevelCommas
+            |> List.filter (List.isEmpty >> not)
+            |> List.map parseField
+            |> NamedApplicationBlock
 
     member private this.ParseKindQualifiedName(selector: KindSelector, selectorDescription: string) =
         this.Advance() |> ignore
@@ -4807,6 +5250,38 @@ type private ExpressionParser
             Name [ "_" ]
         | LeftParen ->
             let innerTokens = this.CollectParenthesizedTokens()
+            let tryParseTypedExpression (tokens: Token list) =
+                let tokenArray = tokens |> List.toArray
+                let mutable depth = 0
+                let mutable splitIndex = -1
+                let mutable index = 0
+
+                while index < tokenArray.Length && splitIndex < 0 do
+                    match tokenArray[index].Kind with
+                    | LeftParen
+                    | LeftBracket
+                    | LeftBrace
+                    | LeftSetBrace ->
+                        depth <- depth + 1
+                    | RightParen
+                    | RightBracket
+                    | RightBrace
+                    | RightSetBrace ->
+                        depth <- max 0 (depth - 1)
+                    | Colon when depth = 0 ->
+                        splitIndex <- index
+                    | _ ->
+                        ()
+
+                    index <- index + 1
+
+                match splitIndex with
+                | colonIndex when colonIndex > 0 && colonIndex + 1 < tokenArray.Length ->
+                    let valueTokens = tokenArray[0 .. colonIndex - 1] |> Array.toList
+
+                    this.TryParseStandaloneExpression valueTokens
+                | _ ->
+                    None
 
             match innerTokens with
             | [] ->
@@ -4822,19 +5297,26 @@ type private ExpressionParser
                     | Some expression ->
                         expression
                     | None ->
-                        match this.TryParseRecordLiteral innerTokens with
+                        match tryParseTypedExpression innerTokens with
                         | Some expression ->
                             expression
                         | None ->
-                            match this.TryParseStandaloneExpression innerTokens with
+                            match this.TryParseRecordLiteral innerTokens with
                             | Some expression ->
                                 expression
                             | None ->
-                                diagnostics.AddError(DiagnosticCode.ParseError, "Expected an expression inside parentheses.", source.GetLocation(this.Current.Span))
-                                Literal Unit
+                                match this.TryParseStandaloneExpression innerTokens with
+                                | Some expression ->
+                                    expression
+                                | None ->
+                                    diagnostics.AddError(DiagnosticCode.ParseError, "Expected an expression inside parentheses.", source.GetLocation(this.Current.Span))
+                                    Literal Unit
         | LeftBracket ->
             let innerTokens = this.CollectBracketedTokens("Expected ']' to close the list expression.")
             this.ParseCollectionExpression(ListCollection, innerTokens)
+        | LeftBrace ->
+            let innerTokens = this.CollectBracedTokens("Expected '}' to close the map expression.")
+            this.ParseCollectionExpression(MapCollection, innerTokens)
         | LeftSetBrace ->
             let innerTokens = this.CollectSetBracedTokens("Expected '|}' to close the set expression.")
             this.ParseCollectionExpression(SetCollection, innerTokens)

@@ -1,0 +1,7 @@
+-- Appendix T directory suite.
+-- Built-in Array collection after distinct/order/paging over a first-class Query source.
+--! mode check
+--! packageMode
+--! assertNoErrors
+--! assertNoWarnings
+--! assertType page Array model.data.User

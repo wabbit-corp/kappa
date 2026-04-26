@@ -1,0 +1,15 @@
+module main
+
+import model.data.*
+import dsl.json_export.*
+
+paidUsers : JsonExport (id : Int, name : String)
+let paidUsers =
+    JsonExport [
+        for u in users
+        join o in orders on o.userId == u.id
+        if o.status == "paid"
+        distinct by u.id
+        order by u.name
+        yield (id = u.id, name = u.name)
+    ]

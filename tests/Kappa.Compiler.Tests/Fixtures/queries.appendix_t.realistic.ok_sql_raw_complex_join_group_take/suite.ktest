@@ -1,0 +1,8 @@
+-- Appendix T directory suite.
+-- Raw custom SQL sink sees a realistic join/filter/group/order/take query.
+--! mode check
+--! packageMode
+--! assertNoErrors
+--! assertNoWarnings
+--! assertType bigRevenue dsl.sql.SqlQuery (region : String, orders : List model.data.Order)
+--! assertFileDeclKinds main.kp import, import, signature, let

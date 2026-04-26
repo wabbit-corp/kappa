@@ -960,6 +960,72 @@ let ``parser preserves prefixed string format specifiers`` () =
         failwithf "Unexpected parsed prefixed string with format specifiers: %A" other
 
 [<Fact>]
+let ``lexer and parser support raw multiline prefixed interpolation with formats`` () =
+    let sourceText =
+        [
+            "module main"
+            "let query = sql#\"\"\""
+            "    select *"
+            "    from users"
+            "    where id = #{userId : param}"
+            "      and region = #{region : ident}"
+            "\"\"\"#"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "main.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Empty(parsed.Diagnostics)
+
+    match parsed.Syntax.Declarations with
+    | [ LetDeclaration { Body = Some(PrefixedString("sql", parts)) } ] ->
+        Assert.Equal<SurfaceInterpolatedStringPart list>(
+            [
+                StringText "\n    select *\n    from users\n    where id = "
+                StringInterpolation(Name [ "userId" ], Some "param")
+                StringText "\n      and region = "
+                StringInterpolation(Name [ "region" ], Some "ident")
+                StringText "\n"
+            ],
+            parts
+        )
+    | other ->
+        failwithf "Unexpected parsed raw multiline prefixed string: %A" other
+
+[<Fact>]
+let ``parser preserves parenthesized interpolation type ascriptions before format parsing`` () =
+    let sourceText =
+        [
+            "module main"
+            "let query = sql\"select * from users where id = ${(userId : Int) : param}\""
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "main.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Empty(parsed.Diagnostics)
+
+    match parsed.Syntax.Declarations with
+    | [ LetDeclaration { Body = Some(PrefixedString("sql", parts)) } ] ->
+        Assert.Equal<SurfaceInterpolatedStringPart list>(
+            [
+                StringText "select * from users where id = "
+                StringInterpolation(Name [ "userId" ], Some "param")
+            ],
+            parts
+        )
+    | other ->
+        failwithf "Unexpected parsed interpolation type ascription: %A" other
+
+[<Fact>]
 let ``parser preserves suffixed numeric literals as exact surface literals`` () =
     let sourceText =
         [

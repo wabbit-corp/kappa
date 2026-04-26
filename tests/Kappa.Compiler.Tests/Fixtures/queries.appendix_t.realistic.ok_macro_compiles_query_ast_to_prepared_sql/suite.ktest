@@ -1,0 +1,8 @@
+-- Appendix T directory suite.
+-- A macro consumes quoted query syntax, uses an Elab reflection query, and returns prepared SQL syntax.
+--! mode check
+--! packageMode
+--! assertNoErrors
+--! assertNoWarnings
+--! assertType compileQueryText Syntax (dsl.sql.SqlQuery row) -> Elab (Syntax (dsl.sql.PreparedSql row))
+--! assertType preparedTopCustomers dsl.sql.PreparedSql (id : Int, name : String)

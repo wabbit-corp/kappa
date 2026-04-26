@@ -1,0 +1,7 @@
+-- Appendix T directory suite.
+-- Map terminal metadata carries a realistic conflict policy instead of disappearing into Query.
+--! mode check
+--! packageMode
+--! assertNoErrors
+--! assertNoWarnings
+--! assertType revenueByRegion Map String Int

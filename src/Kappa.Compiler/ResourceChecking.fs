@@ -485,19 +485,42 @@ module ResourceChecking =
 
     let rec private expressionNames (expression: SurfaceExpression) =
         let expressionNamesInComprehension (comprehension: SurfaceComprehension) =
+            let yieldNames shadowed =
+                seq {
+                    match comprehension.Yield with
+                    | YieldValue value ->
+                        for name in expressionNames value do
+                            if not (Set.contains name shadowed) then
+                                yield name
+                    | YieldKeyValue(key, value) ->
+                        for expression in [ key; value ] do
+                            for name in expressionNames expression do
+                                if not (Set.contains name shadowed) then
+                                    yield name
+                }
+
             let rec loop shadowed clauses =
                 seq {
                     match clauses with
                     | [] ->
-                        for name in expressionNames comprehension.Yield do
-                            if not (Set.contains name shadowed) then
-                                yield name
+                        yield! yieldNames shadowed
                     | clause :: rest ->
                         match clause with
                         | ForClause(_, _, binding, source) ->
                             for name in expressionNames source do
                                 if not (Set.contains name shadowed) then
                                     yield name
+
+                            let nextShadowed =
+                                shadowed
+                                |> Set.union (collectPatternNames binding.Pattern |> Set.ofList)
+
+                            yield! loop nextShadowed rest
+                        | JoinClause(binding, source, condition) ->
+                            for expression in [ source; condition ] do
+                                for name in expressionNames expression do
+                                    if not (Set.contains name shadowed) then
+                                        yield name
 
                             let nextShadowed =
                                 shadowed
@@ -519,7 +542,16 @@ module ResourceChecking =
                                 if not (Set.contains name shadowed) then
                                     yield name
                             yield! loop shadowed rest
-                        | OrderByClause key ->
+                        | GroupByClause(key, aggregations, intoName) ->
+                            for name in expressionNames key do
+                                if not (Set.contains name shadowed) then
+                                    yield name
+                            for field in aggregations do
+                                for name in expressionNames field.Value do
+                                    if not (Set.contains name shadowed) then
+                                        yield name
+                            yield! loop (Set.singleton intoName) rest
+                        | OrderByClause(_, key) ->
                             for name in expressionNames key do
                                 if not (Set.contains name shadowed) then
                                     yield name
@@ -4509,9 +4541,17 @@ module ResourceChecking =
         let rec checkComprehensionClauses currentLocals current (comprehension: SurfaceComprehension) clauses =
             match clauses with
             | [] ->
-                current
-                |> noteValueDemandingNameUse document comprehension.Yield
-                |> fun next -> checkExpression projectionSummaries document signatures currentLocals next comprehension.Yield
+                let applyYield current expression =
+                    current
+                    |> noteValueDemandingNameUse document expression
+                    |> fun next -> checkExpression projectionSummaries document signatures currentLocals next expression
+
+                match comprehension.Yield with
+                | YieldValue value ->
+                    applyYield current value
+                | YieldKeyValue(key, value) ->
+                    applyYield current key
+                    |> fun next -> applyYield next value
             | clause :: rest ->
                 match clause with
                 | ForClause(_, _, binding, source) ->
@@ -4598,6 +4638,48 @@ module ResourceChecking =
                         extendBindingLocalTypes signatures currentLocals valueType binding
 
                     checkComprehensionClauses nextLocals nextState comprehension rest
+                | JoinClause(binding, source, condition) ->
+                    let current =
+                        current
+                        |> noteValueDemandingNameUse document source
+                        |> fun next -> checkExpression projectionSummaries document signatures currentLocals next source
+
+                    let valueType =
+                        inferQuerySourceInfo currentLocals source |> Option.map (fun sourceInfo -> sourceInfo.Query.ItemType)
+
+                    let declaredQuantity =
+                        inferQuerySourceInfo currentLocals source
+                        |> Option.map (fun sourceInfo -> sourceInfo.Query.ItemQuantity)
+
+                    let capturedRegions =
+                        inferQuerySourceInfo currentLocals source
+                        |> Option.map (fun sourceInfo -> sourceInfo.Query.CaptureSet)
+                        |> Option.defaultValue Set.empty
+
+                    let nextState =
+                        addPatternBindings
+                            document
+                            binding
+                            declaredQuantity
+                            None
+                            None
+                            capturedRegions
+                            []
+                            (declaredQuantity |> Option.exists ResourceQuantity.requiresUse)
+                            None
+                            None
+                            current
+
+                    let nextLocals =
+                        extendBindingLocalTypes signatures currentLocals valueType binding
+
+                    let conditionedState =
+                        nextState
+                        |> noteValueDemandingNameUse document condition
+                        |> fun next -> checkExpression projectionSummaries document signatures nextLocals next condition
+                        |> addDropDiagnostic "join" condition
+
+                    checkComprehensionClauses nextLocals conditionedState comprehension rest
                 | IfClause condition ->
                     let current =
                         current
@@ -4606,11 +4688,33 @@ module ResourceChecking =
                         |> addDropDiagnostic "if" condition
 
                     checkComprehensionClauses currentLocals current comprehension rest
-                | OrderByClause key ->
+                | GroupByClause(key, aggregations, intoName) ->
+                    let current =
+                        current
+                        |> checkNonConsumingRowExpression "group by" key currentLocals
+                        |> addDropDiagnostic "group by" key
+
+                    let current =
+                        aggregations
+                        |> List.fold (fun state field ->
+                            state
+                            |> noteValueDemandingNameUse document field.Value
+                            |> fun next -> checkExpression projectionSummaries document signatures currentLocals next field.Value) current
+
+                    let nextLocals =
+                        Map.add intoName (TypeSignatures.TypeVariable $"__kappa_group_{intoName}") Map.empty
+
+                    checkComprehensionClauses nextLocals current comprehension rest
+                | OrderByClause(_, key) ->
                     let current = checkNonConsumingRowExpression "order by" key currentLocals current
                     checkComprehensionClauses currentLocals current comprehension rest
                 | DistinctClause ->
-                    let current = addDropDiagnostic "distinct" comprehension.Yield current
+                    let distinctKey =
+                        match comprehension.Yield with
+                        | YieldValue value -> value
+                        | YieldKeyValue(key, _) -> key
+
+                    let current = addDropDiagnostic "distinct" distinctKey current
                     checkComprehensionClauses currentLocals current comprehension rest
                 | DistinctByClause key ->
                     let current =

@@ -1,0 +1,7 @@
+-- Appendix T directory suite.
+-- Raw multiline prefixed string with param and identifier formatted interpolations.
+--! mode check
+--! packageMode
+--! assertNoErrors
+--! assertNoWarnings
+--! assertType queryByAccount Int -> Int -> dsl.sql.PreparedSql model.data.User

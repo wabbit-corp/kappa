@@ -276,9 +276,7 @@ module Lexer =
             emittedCode <- true
             tokens.Add(token kind text absoluteStartIndex)
 
-        let scanStringLiteral startOffset =
-            let absoluteStartIndex = lineStart + startOffset
-
+        let scanAbsoluteStringLiteral absoluteStartIndex =
             let scanned =
                 tryScanStringLiteral source.Content absoluteStartIndex
                 |> Option.defaultValue
@@ -295,98 +293,420 @@ module Lexer =
 
             emitAbsolute StringLiteral (source.Slice(TextSpan.FromBounds(absoluteStartIndex, scanned.EndIndex))) absoluteStartIndex
             consumedUntilAbsoluteIndex <- max consumedUntilAbsoluteIndex scanned.EndIndex
+            scanned.EndIndex
 
-            if scanned.EndIndex <= lineStart + lineText.Length then
-                scanned.EndIndex - lineStart
+        let scanStringLiteral startOffset =
+            let absoluteStartIndex = lineStart + startOffset
+            let endIndex = scanAbsoluteStringLiteral absoluteStartIndex
+
+            if endIndex <= lineStart + lineText.Length then
+                endIndex - lineStart
             else
                 lineText.Length
 
         let rec scanPrefixedString prefixText prefixStart prefixEnd hashCount =
-            emit InterpolatedStringStart (SyntaxFacts.encodePrefixedStringStart prefixText hashCount) prefixStart
+            let absolutePrefixStart = lineStart + prefixStart
+            let absolutePrefixEnd = lineStart + prefixEnd
+            let quoteAbsoluteIndex = absolutePrefixEnd + hashCount
+            let isMultiline =
+                quoteAbsoluteIndex + 2 < source.Length
+                && source.Content[quoteAbsoluteIndex] = '"'
+                && source.Content[quoteAbsoluteIndex + 1] = '"'
+                && source.Content[quoteAbsoluteIndex + 2] = '"'
 
-            let mutable currentIndex =
-                if hashCount = 0 then
-                    prefixEnd + 1
-                else
-                    prefixEnd + hashCount + 1
-            let mutable segmentStart = currentIndex
-            let mutable closed = false
+            let rec scanInterpolationExpressionAbsolute startAbsoluteIndex =
+                let text = source.Content
+                let mutable currentAbsoluteIndex = startAbsoluteIndex
+                let mutable blockCommentDepth = 0
+                let mutable braceDepth = 0
+                let mutable setBraceDepth = 0
+                let mutable terminated = false
 
-            let emitPendingSegment endIndex =
-                if endIndex > segmentStart then
-                    emit StringTextSegment (lineText.Substring(segmentStart, endIndex - segmentStart)) segmentStart
+                let endOfLineFrom index =
+                    let mutable cursor = index
 
-            while currentIndex < lineText.Length && not closed do
-                if hashCount = 0 && lineText[currentIndex] = '\\' then
-                    currentIndex <- min lineText.Length (currentIndex + 2)
-                elif hashCount = 0 && lineText[currentIndex] = '"' then
-                    emitPendingSegment currentIndex
-                    emit InterpolatedStringEnd "\"" currentIndex
-                    currentIndex <- currentIndex + 1
-                    closed <- true
-                elif hashCount > 0
-                     && lineText[currentIndex] = '"'
-                     && currentIndex + hashCount < lineText.Length
-                     && countLeadingHashes lineText (currentIndex + 1) = hashCount then
-                    emitPendingSegment currentIndex
-                    emit InterpolatedStringEnd ("\"" + String('#', hashCount)) currentIndex
-                    currentIndex <- currentIndex + 1 + hashCount
-                    closed <- true
-                elif hashCount = 0 && currentIndex + 1 < lineText.Length && lineText[currentIndex] = '$' && lineText[currentIndex + 1] = '{' then
-                    emitPendingSegment currentIndex
-                    emit InterpolationStart "${" currentIndex
+                    while cursor < text.Length && text[cursor] <> '\n' && text[cursor] <> '\r' do
+                        cursor <- cursor + 1
 
-                    let expressionEnd, terminated = scanInterpolationExpression (currentIndex + 2)
+                    cursor
 
-                    if terminated then
-                        emit InterpolationEnd "}" expressionEnd
-                        currentIndex <- expressionEnd + 1
-                        segmentStart <- currentIndex
+                while currentAbsoluteIndex < text.Length && not terminated do
+                    if blockCommentDepth > 0 then
+                        if isBlockCommentStart text currentAbsoluteIndex then
+                            blockCommentDepth <- blockCommentDepth + 1
+                            currentAbsoluteIndex <- currentAbsoluteIndex + 2
+                        elif isBlockCommentEnd text currentAbsoluteIndex then
+                            blockCommentDepth <- blockCommentDepth - 1
+                            currentAbsoluteIndex <- currentAbsoluteIndex + 2
+                        else
+                            currentAbsoluteIndex <- currentAbsoluteIndex + 1
+                    elif braceDepth = 0 && setBraceDepth = 0 && text[currentAbsoluteIndex] = '}' then
+                        terminated <- true
                     else
-                        currentIndex <- expressionEnd
-                elif hashCount = 0 && currentIndex + 1 < lineText.Length && lineText[currentIndex] = '$' && lineText[currentIndex + 1] = '`' then
-                    emitPendingSegment currentIndex
-                    emit InterpolationStart "$" currentIndex
+                        let current = text[currentAbsoluteIndex]
 
-                    let endIndex = scanSimpleBacktickName (currentIndex + 1)
-                    tokens.Add(zeroLengthToken InterpolationEnd (lineStart + endIndex))
-                    currentIndex <- endIndex
-                    segmentStart <- currentIndex
-                elif hashCount = 0 && currentIndex + 1 < lineText.Length && lineText[currentIndex] = '$' && SyntaxFacts.isIdentifierStart lineText[currentIndex + 1] then
-                    emitPendingSegment currentIndex
-                    emit InterpolationStart "$" currentIndex
+                        match current with
+                        | ' '
+                        | '\n'
+                        | '\r' ->
+                            currentAbsoluteIndex <- currentAbsoluteIndex + 1
+                        | '\t' ->
+                            diagnostics.AddError(
+                                DiagnosticCode.LexicalError,
+                                "Tabs are not permitted.",
+                                source.GetLocation(TextSpan.FromBounds(currentAbsoluteIndex, currentAbsoluteIndex + 1))
+                            )
 
-                    let endIndex = scanSimpleName (currentIndex + 1)
-                    tokens.Add(zeroLengthToken InterpolationEnd (lineStart + endIndex))
-                    currentIndex <- endIndex
-                    segmentStart <- currentIndex
-                elif hashCount > 0
-                     && currentIndex + hashCount < lineText.Length
-                     && lineText.Substring(currentIndex, hashCount) = String('#', hashCount)
-                     && lineText[currentIndex + hashCount] = '{' then
-                    emitPendingSegment currentIndex
-                    emit InterpolationStart (String('#', hashCount) + "{") currentIndex
+                            currentAbsoluteIndex <- currentAbsoluteIndex + 1
+                        | '-' when isLineComment text currentAbsoluteIndex ->
+                            currentAbsoluteIndex <- endOfLineFrom currentAbsoluteIndex
+                        | '{' when isBlockCommentStart text currentAbsoluteIndex ->
+                            blockCommentDepth <- blockCommentDepth + 1
+                            currentAbsoluteIndex <- currentAbsoluteIndex + 2
+                        | '{' when currentAbsoluteIndex + 1 < text.Length && text[currentAbsoluteIndex + 1] = '|' ->
+                            emitAbsolute LeftSetBrace "{|" currentAbsoluteIndex
+                            setBraceDepth <- setBraceDepth + 1
+                            currentAbsoluteIndex <- currentAbsoluteIndex + 2
+                        | '|' when currentAbsoluteIndex + 1 < text.Length && text[currentAbsoluteIndex + 1] = '}' && setBraceDepth > 0 ->
+                            emitAbsolute RightSetBrace "|}" currentAbsoluteIndex
+                            setBraceDepth <- setBraceDepth - 1
+                            currentAbsoluteIndex <- currentAbsoluteIndex + 2
+                        | '(' ->
+                            emitAbsolute LeftParen "(" currentAbsoluteIndex
+                            currentAbsoluteIndex <- currentAbsoluteIndex + 1
+                        | ')' ->
+                            emitAbsolute RightParen ")" currentAbsoluteIndex
+                            currentAbsoluteIndex <- currentAbsoluteIndex + 1
+                        | '<' when currentAbsoluteIndex + 1 < text.Length && text[currentAbsoluteIndex + 1] = '[' ->
+                            emitAbsolute LeftEffectRow "<[" currentAbsoluteIndex
+                            currentAbsoluteIndex <- currentAbsoluteIndex + 2
+                        | ']' when currentAbsoluteIndex + 1 < text.Length && text[currentAbsoluteIndex + 1] = '>' ->
+                            emitAbsolute RightEffectRow "]>" currentAbsoluteIndex
+                            currentAbsoluteIndex <- currentAbsoluteIndex + 2
+                        | '[' ->
+                            emitAbsolute LeftBracket "[" currentAbsoluteIndex
+                            currentAbsoluteIndex <- currentAbsoluteIndex + 1
+                        | ']' ->
+                            emitAbsolute RightBracket "]" currentAbsoluteIndex
+                            currentAbsoluteIndex <- currentAbsoluteIndex + 1
+                        | '{' ->
+                            emitAbsolute LeftBrace "{" currentAbsoluteIndex
+                            braceDepth <- braceDepth + 1
+                            currentAbsoluteIndex <- currentAbsoluteIndex + 1
+                        | '}' ->
+                            emitAbsolute RightBrace "}" currentAbsoluteIndex
+                            braceDepth <- max 0 (braceDepth - 1)
+                            currentAbsoluteIndex <- currentAbsoluteIndex + 1
+                        | '.' ->
+                            emitAbsolute Dot "." currentAbsoluteIndex
+                            currentAbsoluteIndex <- currentAbsoluteIndex + 1
+                        | ',' ->
+                            emitAbsolute Comma "," currentAbsoluteIndex
+                            currentAbsoluteIndex <- currentAbsoluteIndex + 1
+                        | ':' ->
+                            if currentAbsoluteIndex + 1 < text.Length && text[currentAbsoluteIndex + 1] = ':' then
+                                emitAbsolute Operator "::" currentAbsoluteIndex
+                                currentAbsoluteIndex <- currentAbsoluteIndex + 2
+                            else
+                                emitAbsolute Colon ":" currentAbsoluteIndex
+                                currentAbsoluteIndex <- currentAbsoluteIndex + 1
+                        | '@' ->
+                            emitAbsolute AtSign "@" currentAbsoluteIndex
+                            currentAbsoluteIndex <- currentAbsoluteIndex + 1
+                        | '\\' ->
+                            emitAbsolute Backslash "\\" currentAbsoluteIndex
+                            currentAbsoluteIndex <- currentAbsoluteIndex + 1
+                        | '=' ->
+                            if currentAbsoluteIndex + 1 < text.Length && text[currentAbsoluteIndex + 1] = '=' then
+                                emitAbsolute Operator "==" currentAbsoluteIndex
+                                currentAbsoluteIndex <- currentAbsoluteIndex + 2
+                            else
+                                emitAbsolute Equals "=" currentAbsoluteIndex
+                                currentAbsoluteIndex <- currentAbsoluteIndex + 1
+                        | '-' when currentAbsoluteIndex + 1 < text.Length && text[currentAbsoluteIndex + 1] = '>' ->
+                            emitAbsolute Arrow "->" currentAbsoluteIndex
+                            currentAbsoluteIndex <- currentAbsoluteIndex + 2
+                        | '"' ->
+                            currentAbsoluteIndex <- scanAbsoluteStringLiteral currentAbsoluteIndex
+                        | '#' when
+                            let nestedHashCount = countLeadingHashes text currentAbsoluteIndex
+                            currentAbsoluteIndex + nestedHashCount < text.Length && text[currentAbsoluteIndex + nestedHashCount] = '"' ->
+                            currentAbsoluteIndex <- scanAbsoluteStringLiteral currentAbsoluteIndex
+                        | '\'' ->
+                            if currentAbsoluteIndex + 1 < text.Length && text[currentAbsoluteIndex + 1] = '{' then
+                                emitAbsolute Operator "'" currentAbsoluteIndex
+                                currentAbsoluteIndex <- currentAbsoluteIndex + 1
+                            else
+                                let endIndex, closed = readQuotedLiteral text currentAbsoluteIndex '\''
 
-                    let expressionEnd, terminated = scanInterpolationExpression (currentIndex + hashCount + 1)
+                                if not closed then
+                                    diagnostics.AddError(
+                                        DiagnosticCode.UnterminatedCharacterLiteral,
+                                        "Unterminated character literal.",
+                                        source.GetLocation(TextSpan.FromBounds(currentAbsoluteIndex, endIndex))
+                                    )
 
-                    if terminated then
-                        emit InterpolationEnd "}" expressionEnd
-                        currentIndex <- expressionEnd + 1
-                        segmentStart <- currentIndex
+                                emitAbsolute CharacterLiteral (text.Substring(currentAbsoluteIndex, endIndex - currentAbsoluteIndex)) currentAbsoluteIndex
+                                currentAbsoluteIndex <- endIndex
+                        | '`' ->
+                            let endIndex, closed = readBacktickIdentifier text currentAbsoluteIndex
+
+                            if not closed then
+                                diagnostics.AddError(
+                                    DiagnosticCode.UnterminatedBacktickIdentifier,
+                                    "Unterminated backtick identifier.",
+                                    source.GetLocation(TextSpan.FromBounds(currentAbsoluteIndex, endIndex))
+                                )
+
+                            emitAbsolute Identifier (text.Substring(currentAbsoluteIndex, endIndex - currentAbsoluteIndex)) currentAbsoluteIndex
+                            currentAbsoluteIndex <- endIndex
+                        | _ when Char.IsDigit(current) ->
+                            let kind, endIndex =
+                                SyntaxFacts.tryReadNumericLiteral text currentAbsoluteIndex
+                                |> Option.defaultValue (IntegerLiteral, currentAbsoluteIndex + 1)
+
+                            emitAbsolute kind (text.Substring(currentAbsoluteIndex, endIndex - currentAbsoluteIndex)) currentAbsoluteIndex
+                            currentAbsoluteIndex <- endIndex
+                        | _ when SyntaxFacts.isIdentifierStart current ->
+                            let endIndex = readIdentifier text currentAbsoluteIndex
+                            let identifierText = text.Substring(currentAbsoluteIndex, endIndex - currentAbsoluteIndex)
+
+                            if identifierText = "let" && endIndex < text.Length && text[endIndex] = '?' then
+                                emitAbsolute (Keyword Keyword.LetQuestion) "let?" currentAbsoluteIndex
+                                currentAbsoluteIndex <- endIndex + 1
+                            elif identifierText = "for" && endIndex < text.Length && text[endIndex] = '?' then
+                                emitAbsolute (Keyword Keyword.ForQuestion) "for?" currentAbsoluteIndex
+                                currentAbsoluteIndex <- endIndex + 1
+                            else
+                                let kind =
+                                    if identifierText = "_" then
+                                        Underscore
+                                    else
+                                        match Keyword.tryParse identifierText with
+                                        | Some keyword -> Keyword keyword
+                                        | None -> Identifier
+
+                                emitAbsolute kind identifierText currentAbsoluteIndex
+                                currentAbsoluteIndex <- endIndex
+                        | _ when SyntaxFacts.isOperatorCharacter current ->
+                            let mutable endIndex = currentAbsoluteIndex + 1
+
+                            while endIndex < text.Length && SyntaxFacts.isOperatorCharacter text[endIndex] do
+                                endIndex <- endIndex + 1
+
+                            emitAbsolute Operator (text.Substring(currentAbsoluteIndex, endIndex - currentAbsoluteIndex)) currentAbsoluteIndex
+                            currentAbsoluteIndex <- endIndex
+                        | _ ->
+                            diagnostics.AddError(
+                                DiagnosticCode.LexicalError,
+                                $"Unrecognized character '{current}'.",
+                                source.GetLocation(TextSpan.FromBounds(currentAbsoluteIndex, currentAbsoluteIndex + 1))
+                            )
+
+                            tokens.Add(token BadToken (string current) currentAbsoluteIndex)
+                            currentAbsoluteIndex <- currentAbsoluteIndex + 1
+
+                if blockCommentDepth > 0 || not terminated then
+                    diagnostics.AddError(
+                        DiagnosticCode.LexicalError,
+                        "Unterminated string interpolation.",
+                        source.GetLocation(TextSpan.FromBounds(startAbsoluteIndex, currentAbsoluteIndex))
+                    )
+
+                currentAbsoluteIndex, terminated
+
+            let scanMultilinePrefixedStringAbsolute () =
+                let text = source.Content
+                let quoteLength = 3
+                let openingLength = hashCount + quoteLength
+                let openingQuoteStart = absolutePrefixEnd
+                let contentStart = openingQuoteStart + openingLength
+                let closingDelimiter = "\"\"\"" + String('#', hashCount)
+                emitAbsolute InterpolatedStringStart (SyntaxFacts.encodePrefixedStringStart prefixText hashCount) absolutePrefixStart
+
+                let mutable currentAbsoluteIndex = contentStart
+                let mutable segmentStart = contentStart
+                let mutable closed = false
+
+                let emitPendingSegment endAbsoluteIndex =
+                    if endAbsoluteIndex > segmentStart then
+                        emitAbsolute
+                            StringTextSegment
+                            (source.Slice(TextSpan.FromBounds(segmentStart, endAbsoluteIndex)))
+                            segmentStart
+
+                while currentAbsoluteIndex < text.Length && not closed do
+                    if text.AsSpan(currentAbsoluteIndex).StartsWith(closingDelimiter.AsSpan(), StringComparison.Ordinal) then
+                        emitPendingSegment currentAbsoluteIndex
+                        emitAbsolute InterpolatedStringEnd closingDelimiter currentAbsoluteIndex
+                        currentAbsoluteIndex <- currentAbsoluteIndex + closingDelimiter.Length
+                        closed <- true
+                    elif hashCount = 0 && currentAbsoluteIndex + 1 < text.Length && text[currentAbsoluteIndex] = '$' && text[currentAbsoluteIndex + 1] = '{' then
+                        emitPendingSegment currentAbsoluteIndex
+                        emitAbsolute InterpolationStart "${" currentAbsoluteIndex
+
+                        let expressionEnd, terminated = scanInterpolationExpressionAbsolute (currentAbsoluteIndex + 2)
+
+                        if terminated then
+                            emitAbsolute InterpolationEnd "}" expressionEnd
+                            currentAbsoluteIndex <- expressionEnd + 1
+                            segmentStart <- currentAbsoluteIndex
+                        else
+                            currentAbsoluteIndex <- expressionEnd
+                    elif hashCount = 0 && currentAbsoluteIndex + 1 < text.Length && text[currentAbsoluteIndex] = '$' && text[currentAbsoluteIndex + 1] = '`' then
+                        emitPendingSegment currentAbsoluteIndex
+                        emitAbsolute InterpolationStart "$" currentAbsoluteIndex
+
+                        let endIndex, closedIdentifier = readBacktickIdentifier text (currentAbsoluteIndex + 1)
+
+                        if not closedIdentifier then
+                            diagnostics.AddError(
+                                DiagnosticCode.UnterminatedBacktickIdentifier,
+                                "Unterminated backtick identifier.",
+                                source.GetLocation(TextSpan.FromBounds(currentAbsoluteIndex + 1, endIndex))
+                            )
+
+                        emitAbsolute Identifier (text.Substring(currentAbsoluteIndex + 1, endIndex - (currentAbsoluteIndex + 1))) (currentAbsoluteIndex + 1)
+                        tokens.Add(zeroLengthToken InterpolationEnd endIndex)
+                        currentAbsoluteIndex <- endIndex
+                        segmentStart <- currentAbsoluteIndex
+                    elif hashCount = 0 && currentAbsoluteIndex + 1 < text.Length && text[currentAbsoluteIndex] = '$' && SyntaxFacts.isIdentifierStart text[currentAbsoluteIndex + 1] then
+                        emitPendingSegment currentAbsoluteIndex
+                        emitAbsolute InterpolationStart "$" currentAbsoluteIndex
+
+                        let endIndex = readIdentifier text (currentAbsoluteIndex + 1)
+                        let identifierText = text.Substring(currentAbsoluteIndex + 1, endIndex - (currentAbsoluteIndex + 1))
+                        let kind =
+                            if identifierText = "_" then Underscore else Identifier
+
+                        emitAbsolute kind identifierText (currentAbsoluteIndex + 1)
+                        tokens.Add(zeroLengthToken InterpolationEnd endIndex)
+                        currentAbsoluteIndex <- endIndex
+                        segmentStart <- currentAbsoluteIndex
+                    elif hashCount > 0
+                         && currentAbsoluteIndex + hashCount < text.Length
+                         && text.Substring(currentAbsoluteIndex, hashCount) = String('#', hashCount)
+                         && text[currentAbsoluteIndex + hashCount] = '{' then
+                        emitPendingSegment currentAbsoluteIndex
+                        emitAbsolute InterpolationStart (String('#', hashCount) + "{") currentAbsoluteIndex
+
+                        let expressionEnd, terminated = scanInterpolationExpressionAbsolute (currentAbsoluteIndex + hashCount + 1)
+
+                        if terminated then
+                            emitAbsolute InterpolationEnd "}" expressionEnd
+                            currentAbsoluteIndex <- expressionEnd + 1
+                            segmentStart <- currentAbsoluteIndex
+                        else
+                            currentAbsoluteIndex <- expressionEnd
+                    elif hashCount = 0 && text[currentAbsoluteIndex] = '\\' then
+                        currentAbsoluteIndex <- min text.Length (currentAbsoluteIndex + 2)
                     else
-                        currentIndex <- expressionEnd
+                        currentAbsoluteIndex <- currentAbsoluteIndex + 1
+
+                if not closed then
+                    diagnostics.AddError(
+                        DiagnosticCode.LexicalError,
+                        "Unterminated prefixed string literal.",
+                        source.GetLocation(TextSpan.FromBounds(absolutePrefixStart, currentAbsoluteIndex))
+                    )
+
+                    emitPendingSegment currentAbsoluteIndex
+
+                consumedUntilAbsoluteIndex <- max consumedUntilAbsoluteIndex currentAbsoluteIndex
+
+                if currentAbsoluteIndex <= lineStart + lineText.Length then
+                    currentAbsoluteIndex - lineStart
                 else
-                    currentIndex <- currentIndex + 1
+                    lineText.Length
 
-            if not closed then
-                diagnostics.AddError(DiagnosticCode.LexicalError, 
-                    "Unterminated prefixed string literal.",
-                    source.GetLocation(TextSpan.FromBounds(lineStart + prefixStart, lineStart + currentIndex))
-                )
+            if isMultiline then
+                scanMultilinePrefixedStringAbsolute ()
+            else
+                emit InterpolatedStringStart (SyntaxFacts.encodePrefixedStringStart prefixText hashCount) prefixStart
 
-                emitPendingSegment currentIndex
+                let mutable currentIndex =
+                    if hashCount = 0 then
+                        prefixEnd + 1
+                    else
+                        prefixEnd + hashCount + 1
+                let mutable segmentStart = currentIndex
+                let mutable closed = false
 
-            currentIndex
+                let emitPendingSegment endIndex =
+                    if endIndex > segmentStart then
+                        emit StringTextSegment (lineText.Substring(segmentStart, endIndex - segmentStart)) segmentStart
+
+                while currentIndex < lineText.Length && not closed do
+                    if hashCount = 0 && lineText[currentIndex] = '\\' then
+                        currentIndex <- min lineText.Length (currentIndex + 2)
+                    elif hashCount = 0 && lineText[currentIndex] = '"' then
+                        emitPendingSegment currentIndex
+                        emit InterpolatedStringEnd "\"" currentIndex
+                        currentIndex <- currentIndex + 1
+                        closed <- true
+                    elif hashCount > 0
+                         && lineText[currentIndex] = '"'
+                         && currentIndex + hashCount < lineText.Length
+                         && countLeadingHashes lineText (currentIndex + 1) = hashCount then
+                        emitPendingSegment currentIndex
+                        emit InterpolatedStringEnd ("\"" + String('#', hashCount)) currentIndex
+                        currentIndex <- currentIndex + 1 + hashCount
+                        closed <- true
+                    elif hashCount = 0 && currentIndex + 1 < lineText.Length && lineText[currentIndex] = '$' && lineText[currentIndex + 1] = '{' then
+                        emitPendingSegment currentIndex
+                        emit InterpolationStart "${" currentIndex
+
+                        let expressionEnd, terminated = scanInterpolationExpression (currentIndex + 2)
+
+                        if terminated then
+                            emit InterpolationEnd "}" expressionEnd
+                            currentIndex <- expressionEnd + 1
+                            segmentStart <- currentIndex
+                        else
+                            currentIndex <- expressionEnd
+                    elif hashCount = 0 && currentIndex + 1 < lineText.Length && lineText[currentIndex] = '$' && lineText[currentIndex + 1] = '`' then
+                        emitPendingSegment currentIndex
+                        emit InterpolationStart "$" currentIndex
+
+                        let endIndex = scanSimpleBacktickName (currentIndex + 1)
+                        tokens.Add(zeroLengthToken InterpolationEnd (lineStart + endIndex))
+                        currentIndex <- endIndex
+                        segmentStart <- currentIndex
+                    elif hashCount = 0 && currentIndex + 1 < lineText.Length && lineText[currentIndex] = '$' && SyntaxFacts.isIdentifierStart lineText[currentIndex + 1] then
+                        emitPendingSegment currentIndex
+                        emit InterpolationStart "$" currentIndex
+
+                        let endIndex = scanSimpleName (currentIndex + 1)
+                        tokens.Add(zeroLengthToken InterpolationEnd (lineStart + endIndex))
+                        currentIndex <- endIndex
+                        segmentStart <- currentIndex
+                    elif hashCount > 0
+                         && currentIndex + hashCount < lineText.Length
+                         && lineText.Substring(currentIndex, hashCount) = String('#', hashCount)
+                         && lineText[currentIndex + hashCount] = '{' then
+                        emitPendingSegment currentIndex
+                        emit InterpolationStart (String('#', hashCount) + "{") currentIndex
+
+                        let expressionEnd, terminated = scanInterpolationExpression (currentIndex + hashCount + 1)
+
+                        if terminated then
+                            emit InterpolationEnd "}" expressionEnd
+                            currentIndex <- expressionEnd + 1
+                            segmentStart <- currentIndex
+                        else
+                            currentIndex <- expressionEnd
+                    else
+                        currentIndex <- currentIndex + 1
+
+                if not closed then
+                    diagnostics.AddError(DiagnosticCode.LexicalError, 
+                        "Unterminated prefixed string literal.",
+                        source.GetLocation(TextSpan.FromBounds(lineStart + prefixStart, lineStart + currentIndex))
+                    )
+
+                    emitPendingSegment currentIndex
+
+                currentIndex
 
         and scanSimpleBacktickName startOffset =
             let endIndex, closed = readBacktickIdentifier lineText startOffset
@@ -407,6 +727,9 @@ module Lexer =
 
             if text = "let" && endIndex < lineText.Length && lineText[endIndex] = '?' then
                 emit (Keyword Keyword.LetQuestion) "let?" startOffset
+                endIndex + 1
+            elif text = "for" && endIndex < lineText.Length && lineText[endIndex] = '?' then
+                emit (Keyword Keyword.ForQuestion) "for?" startOffset
                 endIndex + 1
             else
                 emitNameToken text startOffset
@@ -440,6 +763,9 @@ module Lexer =
 
             if text = "let" && endIndex < lineText.Length && lineText[endIndex] = '?' then
                 emit (Keyword Keyword.LetQuestion) "let?" startOffset
+                endIndex + 1
+            elif text = "for" && endIndex < lineText.Length && lineText[endIndex] = '?' then
+                emit (Keyword Keyword.ForQuestion) "for?" startOffset
                 endIndex + 1
             elif endIndex < lineText.Length && lineText[endIndex] = '"' then
                 scanPrefixedString text startOffset endIndex 0

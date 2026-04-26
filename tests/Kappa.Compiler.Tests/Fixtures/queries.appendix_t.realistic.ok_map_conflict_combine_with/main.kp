@@ -1,0 +1,12 @@
+module main
+
+import model.data.*
+
+revenueByRegion : Map String Int
+let revenueByRegion =
+    {
+        for o in orders
+        if o.status == "paid"
+        yield o.region : o.total
+        on conflict combine with (\old new -> old + new)
+    }

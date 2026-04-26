@@ -1,0 +1,15 @@
+module main
+
+import model.data.*
+import dsl.sql.*
+
+queryByAccount : Int -> Int -> PreparedSql User
+let queryByAccount accountId minTotal =
+    sql#"""
+        select u.id, u.name, u.region
+        from users u
+        join orders o on o.user_id = u.id
+        where u.account_id = #{accountId : param}
+          and o.total >= #{minTotal : param}
+        order by #{User : ident}.name
+    """#

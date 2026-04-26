@@ -1,0 +1,11 @@
+module main
+
+import model.data.*
+import dsl.sql.*
+import service.reporting.*
+
+q : SqlQuery (id : Int, name : String, orders : List Order)
+let q = topCustomerQuery
+
+p : Int -> PreparedSql Order
+let p orderId = preparedAudit orderId

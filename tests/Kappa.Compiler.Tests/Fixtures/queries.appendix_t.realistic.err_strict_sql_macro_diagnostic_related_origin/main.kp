@@ -1,0 +1,21 @@
+module main
+
+data StrictSql : Type =
+    StrictSql
+
+summonDict : (c : Constraint) -> (@v : c) -> Dict c
+let summonDict c @v = v
+
+instance InterpolatedMacro StrictSql =
+    let buildInterpolated fragments =
+        do
+            let origin <- syntaxOrigin '{ () }
+            failElabWith "KAPPA-SQL-FORMAT" "unsupported SQL interpolation format; use :param or :ident" (origin :: Nil)
+
+strictSql : Elab (Dict (InterpolatedMacro StrictSql))
+let strictSql =
+    pure (summonDict (InterpolatedMacro StrictSql))
+
+bad : StrictSql
+let bad =
+    strictSql"select * from users where name = ${"Ada" : raw}"

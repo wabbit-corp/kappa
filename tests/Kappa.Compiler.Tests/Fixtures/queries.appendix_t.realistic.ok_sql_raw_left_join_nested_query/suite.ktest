@@ -1,0 +1,7 @@
+-- Appendix T directory suite.
+-- Left join binds only the grouped query, not the pattern variables after the clause.
+--! mode check
+--! packageMode
+--! assertNoErrors
+--! assertNoWarnings
+--! assertType customersWithOrders dsl.sql.SqlQuery (customer : model.data.User, orders : Query model.data.Order)

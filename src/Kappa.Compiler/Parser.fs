@@ -1212,6 +1212,13 @@ type private TokenParser
                         lines.Add(List.ofSeq currentLine)
                         currentLine.Clear()
 
+                let lineContinuesIntoIndentedBody () =
+                    if currentLine.Count = 0 then
+                        false
+                    else
+                        let lastToken = currentLine[currentLine.Count - 1]
+                        lastToken.Kind = Equals
+
                 while not (this.Current.Kind = Dedent && nestedIndents = 0) && this.Current.Kind <> EndOfFile do
                     match this.Current.Kind with
                     | Newline
@@ -1220,8 +1227,11 @@ type private TokenParser
                              && braceDepth = 0
                              && bracketDepth = 0
                              && setBraceDepth = 0 ->
-                        flushLine ()
-                        this.Advance() |> ignore
+                        if lineContinuesIntoIndentedBody () then
+                            currentLine.Add(this.Advance())
+                        else
+                            flushLine ()
+                            this.Advance() |> ignore
                     | Indent ->
                         nestedIndents <- nestedIndents + 1
                         currentLine.Add(this.Advance())

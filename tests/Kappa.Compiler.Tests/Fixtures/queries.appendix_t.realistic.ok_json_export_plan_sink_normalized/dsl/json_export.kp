@@ -1,0 +1,9 @@
+module dsl.json_export
+
+data JsonExport (row : Type) : Type =
+    JsonExport (description : String)
+
+instance FromComprehensionPlan (JsonExport row) =
+    let Item = row
+    let fromComprehensionPlan plan =
+        pure '{ JsonExport "normalized-plan-json-export" }
