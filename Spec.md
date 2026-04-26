@@ -1706,6 +1706,143 @@ Int`, `Ord Int`, `Show String`, `Monad (IO e)`, `MonadError (IO e)`, `MonadFinal
 
 `Eq Float` and `Eq Double` use raw IEEE-754 bit equality. Use `floatEq` for numeric equality.
 
+<!-- modules.prelude.numeric_operational_traits -->
+##### Operational numeric traits
+
+The prelude separates operational numeric operations from lawful algebraic structure.
+
+Operational traits provide callable operations. Lawful algebraic traits refine those operations with erased proof
+obligations.
+
+This split is required because some standard types, notably `Float` and `Double`, support useful arithmetic operations
+but do not satisfy ordinary algebraic laws under the portable raw-bit `Eq` semantics of §4.1.3.
+
+```kappa
+trait Zero (a : Type) =
+    zero : a
+
+trait One (a : Type) =
+    one : a
+
+trait Add (a : Type) =
+    add : a -> a -> a
+
+(+) :
+    forall (a : Type).
+    (@_ : Add a) ->
+    a -> a -> a
+
+let (+) x y = add x y
+
+trait Mul (a : Type) =
+    multiply : a -> a -> a
+
+(*) :
+    forall (a : Type).
+    (@_ : Mul a) ->
+    a -> a -> a
+
+let (*) x y = multiply x y
+
+trait Negatable (a : Type) =
+    negate : a -> a
+
+trait CheckedSub (a : Type) =
+    subDefined : (& x : a) -> (& y : a) -> Bool
+
+    subtract :
+        (x : a) ->
+        (y : a) ->
+        (@_ : subDefined x y = True) ->
+        a
+
+(-) :
+    forall (a : Type).
+    (@_ : CheckedSub a) ->
+    (x : a) ->
+    (y : a) ->
+    (@_ : subDefined x y = True) ->
+    a
+
+let (-) x y @p = subtract x y @p
+
+trait (Eq a, Zero a) => CheckedDiv (a : Type) =
+    divDefined : (& x : a) -> (& y : a) -> Bool
+
+    divide :
+        (x : a) ->
+        (y : a) ->
+        (@_ : divDefined x y = True) ->
+        a
+
+    divDefinedOnlyNonZero :
+        forall (x : a) (y : a).
+        divDefined x y = True -> (y /= zero) = True
+
+    divDefinedForNonZero :
+        forall (x : a) (y : a).
+        (y /= zero) = True -> divDefined x y = True
+
+(/) :
+    forall (a : Type).
+    (@_ : CheckedDiv a) ->
+    (x : a) ->
+    (y : a) ->
+    (@_ : divDefined x y = True) ->
+    a
+
+let (/) x y @p = divide x y @p
+
+trait (Eq a, Zero a) => CheckedMod (a : Type) =
+    modDefined : (& x : a) -> (& y : a) -> Bool
+
+    modulo :
+        (x : a) ->
+        (y : a) ->
+        (@_ : modDefined x y = True) ->
+        a
+
+    modDefinedOnlyNonZero :
+        forall (x : a) (y : a).
+        modDefined x y = True -> (y /= zero) = True
+
+    modDefinedForNonZero :
+        forall (x : a) (y : a).
+        (y /= zero) = True -> modDefined x y = True
+
+(%) :
+    forall (a : Type).
+    (@_ : CheckedMod a) ->
+    (x : a) ->
+    (y : a) ->
+    (@_ : modDefined x y = True) ->
+    a
+
+let (%) x y @p = modulo x y @p
+
+nonZero :
+    forall (a : Type).
+    (@_ : Eq a) ->
+    (@_ : Zero a) ->
+    (& x : a) ->
+    Bool
+
+let nonZero x = x /= zero
+```
+
+Rules:
+
+* `+`, `*`, `-`, `/`, and `%` are ordinary overloaded prelude terms.
+* `-` as a binary operator is checked subtraction. It is not saturating.
+* `/` is checked division. It requires proof that the denominator is valid for the selected `CheckedDiv` instance.
+* `%` is checked remainder/modulo. It requires proof that the denominator is valid for the selected `CheckedMod`
+  instance.
+* The portable prelude MUST NOT provide unchecked division-by-zero, unchecked modulo-by-zero, wrapping subtraction, or
+  saturating subtraction under these operator names.
+* Implementations MAY provide explicit nonportable or explicitly named operations such as `wrappingSub`,
+  `saturatingSub`, `unsafeDiv`, or `truncateDiv` in non-prelude modules, but those names are not part of the portable
+  prelude minimum.
+
 Fixities: Implementations MUST provide fixity declarations, or fixed built-in parsing precedences for reserved
 operator-like syntax. The following minimum table is normative:
 
