@@ -249,15 +249,35 @@ type private TokenParser
             while index < tokenArray.Length && foundInvalid.IsNone do
                 match tokenArray[index].Kind with
                 | LeftParen -> parenDepth <- parenDepth + 1
-                | RightParen -> parenDepth <- max 0 (parenDepth - 1)
+                | RightParen ->
+                    if parenDepth = 0 then
+                        foundInvalid <- Some tokenArray[index]
+                    else
+                        parenDepth <- parenDepth - 1
                 | LeftBrace -> braceDepth <- braceDepth + 1
-                | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
+                | RightBrace ->
+                    if braceDepth = 0 then
+                        foundInvalid <- Some tokenArray[index]
+                    else
+                        braceDepth <- braceDepth - 1
                 | LeftBracket -> bracketDepth <- bracketDepth + 1
-                | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
+                | RightBracket ->
+                    if bracketDepth = 0 then
+                        foundInvalid <- Some tokenArray[index]
+                    else
+                        bracketDepth <- bracketDepth - 1
                 | LeftEffectRow -> bracketDepth <- bracketDepth + 1
-                | RightEffectRow -> bracketDepth <- max 0 (bracketDepth - 1)
+                | RightEffectRow ->
+                    if bracketDepth = 0 then
+                        foundInvalid <- Some tokenArray[index]
+                    else
+                        bracketDepth <- bracketDepth - 1
                 | LeftSetBrace -> setBraceDepth <- setBraceDepth + 1
-                | RightSetBrace -> setBraceDepth <- max 0 (setBraceDepth - 1)
+                | RightSetBrace ->
+                    if setBraceDepth = 0 then
+                        foundInvalid <- Some tokenArray[index]
+                    else
+                        setBraceDepth <- setBraceDepth - 1
                 | Backslash when parenDepth = 0 && braceDepth = 0 && bracketDepth = 0 && setBraceDepth = 0 ->
                     foundInvalid <- Some tokenArray[index]
                 | Operator when parenDepth = 0 && braceDepth = 0 && bracketDepth = 0 && setBraceDepth = 0 && String.Equals(tokenArray[index].Text, "\\", StringComparison.Ordinal) ->
@@ -269,7 +289,13 @@ type private TokenParser
 
                 index <- index + 1
 
-            foundInvalid
+            match foundInvalid with
+            | Some _ as invalid ->
+                invalid
+            | None when parenDepth > 0 || braceDepth > 0 || bracketDepth > 0 || setBraceDepth > 0 ->
+                tokenArray |> Array.tryLast
+            | None ->
+                None
 
         match significantTokens, hasInvalidTopLevelToken with
         | [], _ ->

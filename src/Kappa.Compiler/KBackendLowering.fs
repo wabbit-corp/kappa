@@ -485,6 +485,7 @@ module internal KBackendLowering =
         let lowerModule (runtimeModule: KRuntimeModule) : Result<KBackendModule, string> =
             let environmentLayouts = ResizeArray<KBackendEnvironmentLayout>()
             let mutable nextEnvironmentLayoutId = 0
+            let mutable nextSyntheticBindingId = 0
 
             let makeCallingConvention runtimeArity parameterRepresentations resultRepresentation =
                 { RuntimeArity = runtimeArity
@@ -492,8 +493,99 @@ module internal KBackendLowering =
                   ResultRepresentation = resultRepresentation
                   RetainedDictionaryParameters = [] }
 
+            let freshEnvironmentLayoutName prefix =
+                nextEnvironmentLayoutId <- nextEnvironmentLayoutId + 1
+                $"{prefix}$env{nextEnvironmentLayoutId}"
+
+            let freshSyntheticBindingName prefix =
+                nextSyntheticBindingId <- nextSyntheticBindingId + 1
+                $"__kappa_{prefix}_{nextSyntheticBindingId}"
+
             let tryLookupBindingInfo moduleName bindingName =
                 context.BindingInfos |> Map.tryFind (moduleName, bindingName)
+
+            let synthesizeConstructorClosure
+                (constructorInfo: BackendLoweringConstructorInfo)
+                (loweredArguments: KBackendExpression list)
+                (argumentRepresentations: KBackendRepresentationClass list)
+                : Result<KBackendExpression * KBackendRepresentationClass, string> =
+                let remainingFieldRepresentations =
+                    constructorInfo.FieldRepresentations
+                    |> List.skip (List.length loweredArguments)
+
+                let capturedBindings =
+                    List.zip loweredArguments argumentRepresentations
+                    |> List.mapi (fun _ (argumentExpression, argumentRepresentation) ->
+                        let bindingName = freshSyntheticBindingName $"{constructorInfo.Name}_capture"
+
+                        ({ Name = bindingName
+                           Representation = argumentRepresentation }: KBackendParameter),
+                        argumentExpression)
+
+                let captures : KBackendCapture list =
+                    capturedBindings
+                    |> List.map (fun (binding, _) ->
+                        { Name = binding.Name
+                          Representation = binding.Representation })
+
+                let parameters : KBackendParameter list =
+                    remainingFieldRepresentations
+                    |> List.mapi (fun _ representation ->
+                        { Name = freshSyntheticBindingName $"{constructorInfo.Name}_arg"
+                          Representation = representation })
+
+                let environmentLayoutName = freshEnvironmentLayoutName constructorInfo.Name
+
+                environmentLayouts.Add
+                    { Name = environmentLayoutName
+                      Slots = captures }
+
+                let capturedFieldExpressions =
+                    capturedBindings
+                    |> List.map (fun (binding, _) ->
+                        BackendName(BackendLocalName(binding.Name, Some binding.Representation)))
+
+                let parameterFieldExpressions =
+                    parameters
+                    |> List.map (fun parameter ->
+                        BackendName(BackendLocalName(parameter.Name, Some parameter.Representation)))
+
+                let body =
+                    BackendConstructData(
+                        constructorInfo.ModuleName,
+                        constructorInfo.TypeName,
+                        constructorInfo.Name,
+                        constructorInfo.Tag,
+                        capturedFieldExpressions @ parameterFieldExpressions,
+                        constructorInfo.Representation
+                    )
+
+                let convention =
+                    makeCallingConvention
+                        (List.length parameters)
+                        (parameters |> List.map (fun parameter -> parameter.Representation))
+                        (Some constructorInfo.Representation)
+
+                let closureRepresentation = BackendRepClosure environmentLayoutName
+
+                let closure =
+                    BackendClosure(
+                        parameters,
+                        captures,
+                        environmentLayoutName,
+                        body,
+                        convention,
+                        closureRepresentation
+                    )
+
+                let wrappedClosure =
+                    List.foldBack
+                        (fun (binding, value) bodyExpression ->
+                            BackendLet(binding, value, bodyExpression, closureRepresentation))
+                        capturedBindings
+                        closure
+
+                Result.Ok(wrappedClosure, closureRepresentation)
 
             let lowerResolvedCall
                 (loweredArguments: KBackendExpression list)
@@ -515,9 +607,34 @@ module internal KBackendLowering =
                         ),
                         representation
                     )
-                | BackendConstructorName(moduleName, typeName, constructorName, _, arity, _) ->
-                    Result.Error
-                        $"Constructor '{moduleName}.{typeName}.{constructorName}' expected {arity} arguments but received {List.length loweredArguments}."
+                | BackendConstructorName(moduleName, _, constructorName, _, arity, _) when List.length loweredArguments < arity ->
+                    let constructorInfo = context.ConstructorInfos[moduleName, constructorName]
+                    synthesizeConstructorClosure constructorInfo loweredArguments argumentRepresentations
+                | BackendConstructorName(moduleName, typeName, constructorName, tag, arity, representation) ->
+                    let directArguments = loweredArguments |> List.take arity
+                    let remainingArguments = loweredArguments |> List.skip arity
+                    let remainingArgumentRepresentations = argumentRepresentations |> List.skip arity
+                    let constructedValue =
+                        BackendConstructData(
+                            moduleName,
+                            typeName,
+                            constructorName,
+                            tag,
+                            directArguments,
+                            representation
+                        )
+
+                    let resultRepresentation = fallbackResultRepresentation
+                    let convention =
+                        makeCallingConvention
+                            (List.length remainingArguments)
+                            remainingArgumentRepresentations
+                            (Some resultRepresentation)
+
+                    Result.Ok(
+                        BackendCall(constructedValue, remainingArguments, convention, resultRepresentation),
+                        resultRepresentation
+                    )
                 | BackendGlobalBindingName(moduleName, bindingName, _)
                 | BackendIntrinsicName(moduleName, bindingName, _) ->
                     let conventionResult =
@@ -733,8 +850,13 @@ module internal KBackendLowering =
                     Result.Ok(BackendLiteral(literal, representation), representation)
                 | KRuntimeName segments ->
                     resolveRuntimeName runtimeModule locals segments
-                    |> Result.map (fun (resolvedName, representation) ->
-                        BackendName resolvedName, representation)
+                    |> Result.bind (fun (resolvedName, representation) ->
+                        match resolvedName with
+                        | BackendConstructorName(moduleName, _, constructorName, _, arity, _) when arity > 0 ->
+                            let constructorInfo = context.ConstructorInfos[moduleName, constructorName]
+                            synthesizeConstructorClosure constructorInfo [] []
+                        | _ ->
+                            Result.Ok(BackendName resolvedName, representation))
                 | KRuntimeClosure(parameters, body) ->
                     let parameterRepresentations: KBackendParameter list =
                         parameters
@@ -761,9 +883,7 @@ module internal KBackendLowering =
                                     { Name = name
                                       Representation = representation }))
 
-                    let environmentLayoutName =
-                        nextEnvironmentLayoutId <- nextEnvironmentLayoutId + 1
-                        $"{scopeLabel}$env{nextEnvironmentLayoutId}"
+                    let environmentLayoutName = freshEnvironmentLayoutName scopeLabel
 
                     environmentLayouts.Add
                         { Name = environmentLayoutName

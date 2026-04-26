@@ -1912,6 +1912,39 @@ let ``type signatures reject unterminated effect rows without hanging`` () =
     Assert.True(TypeSignatures.parseScheme lexed.Tokens |> Option.isNone)
 
 [<Fact>]
+let ``source compilation rejects unterminated type alias bodies`` () =
+    let unterminatedBracketWorkspace =
+        compileInMemoryWorkspace
+            "memory-compile-unterminated-type-alias-bracket-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "type I0 ="
+                    "    ["
+                ]
+                |> String.concat "\n"
+            ]
+
+    let malformedConstructorWorkspace =
+        compileInMemoryWorkspace
+            "memory-compile-malformed-type-alias-constructor-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "type I0 ="
+                    "    I0 ["
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(unterminatedBracketWorkspace.HasErrors, "Expected an unterminated type alias body to produce a parse diagnostic.")
+    Assert.True(malformedConstructorWorkspace.HasErrors, "Expected a malformed type alias body to produce a parse diagnostic.")
+    Assert.Contains(unterminatedBracketWorkspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.ParseError)
+    Assert.Contains(malformedConstructorWorkspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.ParseError)
+
+[<Fact>]
 let ``parser gives built in safe navigation and elvis their spec precedence`` () =
     let source = createSource "__safe_navigation_precedence__.kp" "a?.b ?: fallback"
     let lexed = Lexer.tokenize source

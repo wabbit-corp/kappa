@@ -1998,6 +1998,44 @@ let ``source compilation surfaces malformed constructor pattern arity mismatches
     Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.DuplicateDeclaration)
 
 [<Fact>]
+let ``backend verification accepts constructor underapplication as ordinary application`` () =
+    let source =
+        [
+            "main.kp",
+            [
+                "module main"
+                ""
+                "data I0 : Type ="
+                "    I0 + I0"
+                ""
+                "result : Int"
+                "let result = I0 (I0 4 2)"
+            ]
+            |> String.concat "\n"
+        ]
+
+    let interpreterWorkspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-constructor-underapplication-interpreter-root"
+            "interpreter"
+            source
+
+    match Interpreter.evaluateBinding interpreterWorkspace "main.result" with
+    | Result.Ok value ->
+        Assert.Equal("<constructor I0/2 [1]>", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected constructor underapplication to evaluate in the interpreter, got %s" issue.Message
+
+    for backendProfile in [ "dotnet"; "zig" ] do
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                $"memory-constructor-underapplication-{backendProfile}-root"
+                backendProfile
+                source
+
+        Assert.Empty(Compilation.verifyCheckpoint workspace "KBackendIR")
+
+[<Fact>]
 let ``backend verification rejects missing backend modules`` () =
     let workspace =
         compileInMemoryWorkspace

@@ -1,0 +1,4 @@
+module main
+
+type I0 =
+    I0 [
