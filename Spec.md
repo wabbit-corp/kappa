@@ -15016,6 +15016,8 @@ A comprehension form may optionally be prefixed by a carrier type expression:
 ```kappa
 Array [ clauses..., yield valueExpr ]
 Query [ clauses..., yield valueExpr ]
+OnceQuery [ clauses..., yield valueExpr ]
+QueryCore (QueryMode OneShot QZeroOrMore) 1 [ clauses..., yield valueExpr ]
 Tensor (n, m) { clauses..., yield keyExpr : valueExpr }
 ```
 
@@ -15041,7 +15043,12 @@ No other automatic prefix application is standardized in v1.
 Consequences:
 
 * `Array [ ... ]` elaborates using candidate result type `Array item`.
-* `Query [ ... ]` elaborates using candidate result type `Query item`.
+* `Query [ ... ]` elaborates using candidate result type `Query item`, which is an alias for
+  `QueryCore (QueryMode Reusable QZeroOrMore) ω item`.
+* `OnceQuery [ ... ]` elaborates using candidate result type `OnceQuery item`, which is an alias for
+  `QueryCore (QueryMode OneShot QZeroOrMore) ω item`.
+* `QueryCore mode q [ ... ]` elaborates using candidate result type `QueryCore mode q item`, when the written prefix is
+  a unary type constructor after applying `mode` and `q`.
 * `Map k v { ... }` is accepted only when `Map k v : Type` is already fully applied.
 * Indexed or multi-parameter sinks that are not unary after their written arguments must be written fully applied, or
   must be handled by a carrier-specific raw hook whose prefix syntax is explicitly defined by that sink.
@@ -15078,6 +15085,25 @@ Carrier selection:
 
 4. If neither is available, the comprehension is ill-formed.
 
+Query-mode compatibility for carriers:
+
+* A carrier whose result type is headed by `QueryCore expectedMode expectedItemQuantity` accepts a normalized plan only
+  when the inferred plan mode and item quantity can be checked against the expected mode and item quantity.
+* A reusable inferred query may be checked against an expected one-shot query type. This merely commits to enumerating
+  it at most once through that value.
+* A one-shot inferred query may not be checked against an expected reusable query type.
+* Cardinality may be widened according to §10.10.1. For example, an inferred `QOne` query may be checked as
+  `QZeroOrMore`, but an inferred `QZeroOrMore` query may not be checked as `QOne`.
+* Item quantity is checked by the ordinary quantity-satisfaction relation of §5.1.5. A yielded item available only at
+  quantity `1` cannot be accepted by `Query item`, because `Query item` demands item quantity `ω`.
+
+Surface consequence:
+
+* `Query [ ... ]` always means a reusable query. If any source or clause makes the inferred plan one-shot, the
+  comprehension is rejected with a diagnostic directing the user to `OnceQuery [ ... ]` or to an explicitly indexed
+  `QueryCore` carrier.
+* `OnceQuery [ ... ]` accepts reusable or one-shot plans, but the resulting query value is itself one-shot.
+
 The associated type `Item` of the selected sink instance MUST be definitionally equal to the normalized yielded item
 type `item`.
 
@@ -15091,6 +15117,9 @@ Examples:
 
 * `Array [ ... ]` uses candidate result type `Array item`.
 * `Query [ ... ]` uses candidate result type `Query item`.
+* `OnceQuery [ ... ]` uses candidate result type `OnceQuery item`.
+* `QueryCore (QueryMode OneShot QZeroOrMore) 1 [ ... ]` uses candidate result type
+  `QueryCore (QueryMode OneShot QZeroOrMore) 1 item`.
 * `Map k v { ... }` may use `FromComprehensionPlan (Map k v)` with `Item = (key : k, value : v)`.
 * For a prefixed map sink `Map k v { ... }`, if the yield form has `keyExpr : K` and `valueExpr : V`, then `K` must
   be definitionally equal to `k` and `V` must be definitionally equal to `v`.
