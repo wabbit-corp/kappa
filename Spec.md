@@ -2072,12 +2072,79 @@ does not require runtime representation unless explicitly reified by another car
 The standard prelude definition of `Applicative`, and the fact that `Monad` refines `Applicative` in `std.prelude`, are
 specified in §12.1 (with Appendix G providing the `ApplicativeDo` amendment that relies on that relationship).
 
-Instances: All canonical instances of the above traits for the above types (e.g. coherent evidence for `Equiv Int`, `Eq
-Int`, `Ord Int`, `Show String`, `Monad (IO e)`, `MonadError (IO e)`, `MonadFinally (IO e)`, `MonadResource (IO e)`,
-`MonadRef (IO e)`, `Functor STM`, `Applicative STM`, `Monad STM`, `Alternative STM`, `Functor (Eff r)`, `Applicative
-(Eff r)`, `Monad (Eff r)`, ...).
+Instances:
 
-`Eq Float` and `Eq Double` use raw IEEE-754 bit equality. Use `floatEq` for numeric equality.
+Implementations MUST provide coherent evidence for at least the following portable instances.
+
+Equality, ordering, and display:
+
+```text
+Eq Unit, Eq Bool, Eq Char, Eq String, Eq Int, Eq Nat, Eq Integer, Eq Float, Eq Double, Eq Real,
+Eq Bytes, Eq Ordering, Eq Duration, Eq Instant,
+
+Ord Bool, Ord Char, Ord String, Ord Int, Ord Nat, Ord Integer, Ord Float, Ord Double, Ord Real,
+Ord Bytes, Ord Ordering, Ord Duration, Ord Instant,
+
+Show Unit, Show Bool, Show Char, Show String, Show Int, Show Nat, Show Integer, Show Float, Show Double, Show Real,
+Show Bytes, Show Ordering, Show Duration, Show Instant
+```
+
+Numeric:
+
+```text
+FromInteger Nat, FromInteger Int, FromInteger Integer, FromInteger Real, FromInteger Float, FromInteger Double,
+FromFloat Real, FromFloat Float, FromFloat Double,
+FromString String,
+
+Zero Nat, One Nat, Add Nat, Mul Nat, CheckedSub Nat, CheckedDiv Nat, CheckedMod Nat,
+Zero Integer, One Integer, Add Integer, Mul Integer, Negatable Integer, CheckedSub Integer, CheckedDiv Integer, CheckedMod Integer,
+Zero Int, One Int, Add Int, Mul Int, Negatable Int, CheckedSub Int, CheckedDiv Int, CheckedMod Int,
+Zero Real, One Real, Add Real, Mul Real, Negatable Real, CheckedSub Real, CheckedDiv Real,
+Zero Float, One Float, Add Float, Mul Float, Negatable Float, CheckedSub Float, CheckedDiv Float,
+Zero Double, One Double, Add Double, Mul Double, Negatable Double, CheckedSub Double, CheckedDiv Double
+```
+
+Lawful numeric instances:
+
+```text
+AdditiveMonoid Nat, MultiplicativeMonoid Nat, Semiring Nat, OrderedAdditive Nat, OrderedSemiring Nat,
+EuclideanSemiring Nat,
+
+AdditiveMonoid Integer, AdditiveGroup Integer,
+MultiplicativeMonoid Integer, Semiring Integer, Ring Integer,
+OrderedAdditive Integer, OrderedSemiring Integer,
+
+FieldLike Real
+```
+
+Container and traversal:
+
+```text
+Functor Option, Foldable Option, Traversable Option,
+Functor List, Foldable List, Traversable List, Filterable List, FilterMap List, Monoid (List a),
+Functor Array, Foldable Array, Traversable Array, Filterable Array, FilterMap Array,
+Iterator it where explicitly provided by the iterator type,
+Rangeable Nat, Rangeable Int, Rangeable Integer, Rangeable Char
+```
+
+Computation carriers:
+
+```text
+Functor (IO e), Applicative (IO e), Monad (IO e),
+MonadFinally (IO e), MonadError (IO e), MonadResource (IO e), MonadRef (IO e),
+
+Functor STM, Applicative STM, Monad STM, Alternative STM,
+
+Functor (Eff r), Applicative (Eff r), Monad (Eff r)
+```
+
+Resource/fiber support instances are required exactly where the corresponding standard runtime type exposes the
+operation.
+
+`Eq Float` and `Eq Double` use raw IEEE-754 bit equality. Use `floatEq` for IEEE numeric equality.
+
+`Float` and `Double` have operational arithmetic instances but no portable lawful algebraic instances such as
+`Semiring`, `Ring`, or `FieldLike`.
 
 <!-- modules.prelude.numeric_operational_traits -->
 ##### Operational numeric traits
