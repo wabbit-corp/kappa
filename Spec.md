@@ -16460,18 +16460,20 @@ numeric literals appearing as type indices are normalized before comparison.
 <!-- core_semantics.erasure -->
 ### 14.4 Erasure
 
-Intrinsic compile-time values, captured-region annotations, universes, `Type u` terms, quantities, regions, constraint
-descriptors, rows, labels, proof terms used only for compile-time reasoning, and erased indices do not require implicit
-runtime representation.
+Intrinsic compile-time values, meta-phase values, syntax values, elaboration actions, reflection values,
+captured-region annotations, universes, `Type u` terms, quantities, regions, constraint descriptors, rows, labels,
+proof terms used only for compile-time reasoning, and erased indices do not require implicit runtime representation.
 
 The runtime representation of a term is obtained by deleting:
 
 * all computational binders and fields whose quantity is `0`, together with the corresponding erased arguments at
   applications, except for retained coherent constraint evidence and explicit `Dict` values governed by §5.1.3;
 * all capture-annotation structure introduced by `captures (...)`; and
-* all binders, fields, arguments, and package members whose values are compile-time values in the sense of §5.1.4.1,
-  together with the internal nominal-scope tokens introduced by elaboration of §6.3.1.1, regardless of their written
-  quantity annotation, unless preserved by an explicit reified runtime carrier.
+* all binders, fields, arguments, and package members whose values are compile-time values or meta-phase values in the
+  sense of §§5.1.4, 5.1.4.1, 5.1.4.2, and 5.1.4.3, including `Syntax`, `SyntaxOrigin`, `SyntaxFragment`, `Elab`, `ElabGoal`, `CoreCtx`,
+  `Core`, `CoreEq`, `Symbol`, `RawComprehension`, and `ComprehensionPlan` values, together with the internal
+  nominal-scope tokens introduced by elaboration of §6.3.1.1, regardless of their written quantity annotation, unless
+  preserved by an explicit reified runtime carrier.
 
 For computational binders and fields, quantities other than `0` are runtime-relevant and remain in the runtime term.
 For compile-time binders, fields, arguments, and package members, and for internal nominal-scope tokens introduced by
@@ -18274,9 +18276,11 @@ A conforming implementation MUST behave as if the following phases exist:
 * `STATUS`: visibility, opacity, export status, unsafe/debug gating, instance admissibility, and modifier legality.
 * `IMPLICIT_SIGNATURES`: inference of declaration result types or initializer types only for declarations whose omitted
   signatures are required by the current query, interface materialization, or a dependent declaration body.
-* `BODY_RESOLVE`: call resolution, type inference, implicit-argument insertion, quantity checking, region checking, flow
-  facts, pattern reachability, handler typing, body-local declaration resolution, and generation of any modality
-  predicates required by an enabled modal/coeffect extension.
+* `BODY_RESOLVE`: phase checking, call resolution, type inference, implicit-argument insertion, execution of required
+  elaboration-time splices and hooks, recursive elaboration of generated syntax at its splice/hook site, quantity
+  checking, region checking, syntax-scope escape checking, flow facts, pattern reachability, handler typing,
+  body-local declaration resolution, and generation of any modality predicates required by an enabled modal/coeffect
+  extension.
 * `MODAL_SOLVE`: solving of predicates emitted during `BODY_RESOLVE` by any enabled modal/coeffect extension of
   §5.1.5.2, together with attachment of solved evidence where required. This phase is a no-op when no such extension is
   in use.
@@ -18306,11 +18310,18 @@ declaration whose header has not yet been prepared, the implementation behaves a
 `DECLARATION_SHAPES` through `STATUS`, and `HEADER_TYPES` where needed, are run for that declaration and its lexical
 container before the enclosing body continues.
 
-A `$(...)` splice, a prefixed-string elaboration such as `type"..."`, or other elaboration-time expansion MAY likewise be delayed until a phase first
-requires the expanded form. The implementation MUST preserve:
+A `$(...)` splice, a prefixed-string elaboration such as `type"..."`, a comprehension sink hook, or another
+elaboration-time expansion MAY likewise be delayed until a phase first requires the expanded form.
 
-* the source anchor of the original user-written construct, and
-* a synthetic-origin mapping for the expanded subtree.
+When such an expansion is forced, the implementation executes the corresponding `Elab` action at the original
+splice/hook site, obtains `Syntax`, and elaborates that syntax under the original lexical context and expected-type
+information.
+
+The implementation MUST preserve:
+
+* the source anchor of the original user-written construct;
+* the synthetic-origin mapping for the expanded subtree; and
+* the syntax-scope metadata needed to enforce hygiene, quantity, borrow, region, and local-nominal escape rules.
 
 <!-- compiler.kfrontir.error_tolerance_diagnostics -->
 #### 17.2.4 Error tolerance and diagnostics
