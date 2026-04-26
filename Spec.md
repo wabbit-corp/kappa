@@ -1200,6 +1200,117 @@ data List (a : Type) : Type =
     Nil
     (::) (head : a) (tail : List a)
 
+listLength :
+    forall (a : Type).
+    List a -> Nat
+
+listAppend :
+    forall (a : Type).
+    List a -> List a -> List a
+
+arrayEmpty :
+    forall (a : Type).
+    Array a
+
+arraySingleton :
+    forall (a : Type).
+    a -> Array a
+
+arrayFromList :
+    forall (a : Type).
+    List a -> Array a
+
+arrayToList :
+    forall (a : Type).
+    Array a -> List a
+
+arrayLength :
+    forall (a : Type).
+    Array a -> Nat
+
+arrayGet :
+    forall (a : Type).
+    Array a -> Nat -> Option a
+
+arrayIndex :
+    forall (a : Type).
+    (xs : Array a) ->
+    (i : Nat) ->
+    (@_ : (i < arrayLength xs) = True) ->
+    a
+
+setEmpty :
+    forall (a : Type).
+    (@_ : Eq a) ->
+    Set a
+
+setSingleton :
+    forall (a : Type).
+    (@_ : Eq a) ->
+    a -> Set a
+
+setInsert :
+    forall (a : Type).
+    (@_ : Eq a) ->
+    a -> Set a -> Set a
+
+setDelete :
+    forall (a : Type).
+    (@_ : Eq a) ->
+    a -> Set a -> Set a
+
+setMember :
+    forall (a : Type).
+    (@_ : Eq a) ->
+    (& value : a) -> (& set : Set a) -> Bool
+
+setSize :
+    forall (a : Type).
+    Set a -> Nat
+
+mapEmpty :
+    forall (k : Type) (v : Type).
+    (@_ : Eq k) ->
+    Map k v
+
+mapSingleton :
+    forall (k : Type) (v : Type).
+    (@_ : Eq k) ->
+    k -> v -> Map k v
+
+mapInsert :
+    forall (k : Type) (v : Type).
+    (@_ : Eq k) ->
+    k -> v -> Map k v -> Map k v
+
+mapDelete :
+    forall (k : Type) (v : Type).
+    (@_ : Eq k) ->
+    (& key : k) -> Map k v -> Map k v
+
+mapLookup :
+    forall (k : Type) (v : Type).
+    (@_ : Eq k) ->
+    (& key : k) -> (& map : Map k v) -> Option v
+
+mapMember :
+    forall (k : Type) (v : Type).
+    (@_ : Eq k) ->
+    (& key : k) -> (& map : Map k v) -> Bool
+
+mapSize :
+    forall (k : Type) (v : Type).
+    Map k v -> Nat
+
+Collection basics are specified through `Eq`, not `Hashable`.
+
+* `setInsert`, `setDelete`, and `setMember` identify elements by `Eq a`.
+* `mapInsert`, `mapDelete`, `mapLookup`, and `mapMember` identify keys by `Eq k`.
+* `mapInsert k v m` replaces the value associated with the `Eq`-class of `k`, if one is present; otherwise it inserts a
+  new key/value pair.
+* No operation in this subsection requires `std.hash.Hashable`.
+* Implementations MAY use hashing internally only under the `std.hash` as-if rules.
+
 data Res (a : Type) (r : Type) : Type =
     (:&) (value : a) (1 resource : r)
 
