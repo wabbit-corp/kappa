@@ -1350,7 +1350,7 @@ SplitEff    : EffRow -> EffLabel -> Type -> EffRow -> Constraint
 
 Variant : VarRow -> Type
 
-Eff : EffRow -> Type -> Type
+expect data Eff (r : EffRow) (a : Type) : Type
 
 Code       : Type -> Type
 ClosedCode : Type -> Type
@@ -1363,6 +1363,9 @@ ClosedCode : Type -> Type
 
 These declarations are ordinary source-level names. Their operational behavior is nevertheless primitive where the
 corresponding feature requires primitive support.
+
+`Eff` is exported by `std.prelude` because effect signatures, handlers, and `runPure` expose it in ordinary source types.
+The operational semantics of `Eff` remain those of §8.1.6.
 
 WellFounded :
     forall (a : Type).
@@ -1395,6 +1398,14 @@ instance (WellFoundedRelation a, WellFoundedRelation b)
 
 expect data IO (e : Type) (a : Type) : Type
 type UIO (a : Type) = IO Void a
+
+runPure :
+    forall (a : Type).
+    Eff <[ ]> a -> a
+
+instance Functor (Eff r)
+instance Applicative (Eff r)
+instance Monad (Eff r)
 
 expect data Fiber (e : Type) (a : Type) : Type
 expect data FiberId : Type
@@ -1461,6 +1472,27 @@ absurd :
 subst :
     forall (@0 a : Type) (@0 P : a -> Type) (@0 x : a) (@0 y : a).
     (@0 p : x = y) -> P x -> P y
+
+witness :
+    forall (a : Type).
+    (@value : a) -> a
+
+let witness @value = value
+
+summon :
+    forall (c : Constraint).
+    (@evidence : c) -> Dict c
+
+let summon @evidence = evidence
+
+raise :
+    forall (m : Type -> Type) (a : Type).
+    (@_ : MonadError m) ->
+    MonadError.Error m ->
+    m a
+
+let raise err =
+    throwError err
 
 fiberId :
     forall (e : Type) (a : Type).
@@ -10609,21 +10641,32 @@ If all steps fail, compilation fails with an error indicating the unsolved impli
 Implicit resolution can be invoked using ordinary functions with implicit parameters. Conventional helpers are:
 
 ```kappa
-witness : (t : Type) -> (@v : t) -> t
-let witness t @v = v
+witness :
+    forall (a : Type).
+    (@value : a) -> a
 
-summon : (c : Constraint) -> (@v : c) -> Dict c
-let summon c @v = v
+let witness @value = value
+
+summon :
+    forall (c : Constraint).
+    (@evidence : c) -> Dict c
+
+let summon @evidence = evidence
 ```
+
+`witness` reifies an implicit ordinary value as an ordinary explicit value.
+
+`summon` reifies coherent implicit constraint evidence as `Dict c`. It does not create evidence; it merely exposes
+evidence that implicit resolution has already found.
 
 Examples (using §5.6 coercion):
 
 ```kappa
 -- inside a context where (x > 0) = True is available implicitly:
-let p : (x > 0) = witness (x > 0)
+let p : (x > 0) = witness
 
 -- retrieving an instance dictionary:
-let eqInt : Dict (Eq Int) = summon (Eq Int)
+let eqInt : Dict (Eq Int) = summon
 ```
 
 <!-- expressions.implicit_parameters.constructor_tag_test_expression_is -->
@@ -14907,12 +14950,22 @@ Therefore:
 <!-- errors.raise -->
 ### 9.4 `raise`
 
-`raise err` is sugar for throwing an error in the current error monad:
+`raise` is the standard prelude helper:
 
-* In any context with an implicit `MonadError m`, if `err : MonadError.Error m` then `raise err : m a` desugars to
-  `throwError err`.
+```kappa
+raise :
+    forall (m : Type -> Type) (a : Type).
+    (@_ : MonadError m) ->
+    MonadError.Error m ->
+    m a
+```
 
-`raise` is permitted anywhere an expression of type `m a` is expected (commonly inside `except` handlers).
+It is definitionally equivalent to `throwError`.
+
+`raise` is an ordinary prelude helper. The surface form `raise err` is not special syntax; it resolves to this term.
+
+`raise err` is permitted anywhere an expression of type `m a` is expected and implicit resolution can supply
+`MonadError m`.
 
 <!-- errors.monad_resource -->
 ### 9.5 `MonadResource` and scoped allocation
