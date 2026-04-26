@@ -21482,6 +21482,31 @@ Payload MUST include:
 Internal compiler diagnostics SHOULD avoid exposing unstable memory addresses, nondeterministic thread IDs, or raw host
 exceptions as the only explanation.
 
+<!-- compiler.kfrontir.standard_diagnostic_families.hashcode_advisory -->
+##### 17.2.4A.14 Hash-code advisory diagnostics
+
+Family:
+
+```text
+kappa.hash.suspicious-hashcode-key
+```
+
+Used when source code appears to use `HashCode` equality or ordering as a substitute for equality or ordering of an
+original key type.
+
+A conforming implementation MAY emit this diagnostic as a warning.
+
+The diagnostic SHOULD be considered when:
+
+* a branch condition compares `hashWith seed x` and `hashWith seed y` directly;
+* an `order by`, `group by`, `distinct by`, map key, or set element is syntactically a direct `HashCode` projection from
+  a non-`HashCode` value;
+* a function returns or exports a value selected solely by `Ord HashCode`; or
+* a public API accepts `HashCode` where a stable digest, semantic hash, source key, or equality evidence would be more
+  appropriate.
+
+The diagnostic MUST NOT reject programs by default. Explicit `HashCode` comparison is permitted by §2.7E.
+
 <!-- compiler.kfrontir.tooling_facing_queries -->
 #### 17.2.5 Tooling-facing queries
 
