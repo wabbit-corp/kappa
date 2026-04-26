@@ -893,7 +893,9 @@ Syntax a, SyntaxOrigin, SyntaxFragment,
 Elab a, ElabGoal,
 CoreCtx, Core Γ a, CoreEq x y, Symbol,
 
-Query a, RawComprehension a, ComprehensionPlan a,
+Query a, OnceQuery a, OptionalQuery a, NonEmptyQuery a, SingletonQuery a,
+QueryCore m q a, QueryUse, QueryCard, QueryMode,
+RawComprehension a, ComprehensionPlan a,
 Option a, Result e a, List a, Array a, Set a, Map k v,
 Res a r, Match a r, Dec p, Dict c,
 WellFounded, Acc,
@@ -934,6 +936,10 @@ DefectTag.OtherDefect,
 DefectInfo.DefectInfo,
 TimeoutError.Timeout,
 RaceResult.LeftWins, RaceResult.RightWins,
+QueryUse.Reusable, QueryUse.OneShot,
+QueryCard.QZero, QueryCard.QOne, QueryCard.QZeroOrOne,
+QueryCard.QOneOrMore, QueryCard.QZeroOrMore,
+QueryMode.QueryMode,
 (=).refl,
 SyntaxFragment.Lit, SyntaxFragment.Interp, SyntaxFragment.InterpFmt,
 Unit.Unit
@@ -986,7 +992,7 @@ Traits (constraint namespace, restricted to trait):
 Equiv, Eq, Ord, Show, Shareable,
 Functor, Applicative, Monad, Alternative,
 Foldable, Traversable, Filterable, FilterMap, Monoid, Iterator, InterpolatedMacro,
-IntoQuery, FromComprehensionPlan, FromComprehensionRaw,
+IntoQuery, BorrowIntoQuery, FromComprehensionPlan, FromComprehensionRaw,
 FromInteger, FromFloat, FromString,
 WellFoundedRelation,
 MonadError, MonadFinally, MonadResource, MonadRef, Releasable
@@ -1272,7 +1278,40 @@ CoreEq  :
 
 Symbol : Type
 
-Query : Type -> Type
+data QueryUse : Type =
+    Reusable
+    OneShot
+
+data QueryCard : Type =
+    QZero
+    QOne
+    QZeroOrOne
+    QOneOrMore
+    QZeroOrMore
+
+data QueryMode : Type =
+    QueryMode (use : QueryUse) (card : QueryCard)
+
+expect data QueryCore
+    (@0 mode : QueryMode)
+    (@0 itemQuantity : Quantity)
+    (item : Type) : Type
+
+type Query (a : Type) =
+    QueryCore (QueryMode Reusable QZeroOrMore) ω a
+
+type OnceQuery (a : Type) =
+    QueryCore (QueryMode OneShot QZeroOrMore) ω a
+
+type OptionalQuery (a : Type) =
+    QueryCore (QueryMode Reusable QZeroOrOne) ω a
+
+type NonEmptyQuery (a : Type) =
+    QueryCore (QueryMode Reusable QOneOrMore) ω a
+
+type SingletonQuery (a : Type) =
+    QueryCore (QueryMode Reusable QOne) ω a
+
 RawComprehension : Type -> Type
 ComprehensionPlan : Type -> Type
 
@@ -1281,8 +1320,23 @@ trait InterpolatedMacro (t : Type) =
         List SyntaxFragment -> Elab (Syntax t)
 
 trait IntoQuery (src : Type) =
+    Mode : QueryMode
+    ItemQuantity : Quantity
     Item : Type
-    toQuery : src -> Query Item
+    SourceDemand : Quantity
+
+    toQuery :
+        (SourceDemand source : src) ->
+        QueryCore Mode ItemQuantity Item
+
+trait BorrowIntoQuery (src : Type) =
+    Card : QueryCard
+    Item : Type
+
+    toBorrowQuery :
+        forall (ρ : Region).
+        (&[ρ] source : src) ->
+        QueryCore (QueryMode Reusable Card) ω (BorrowView ρ Item) captures (ρ)
 
 trait FromComprehensionPlan (c : Type) =
     Item : Type
@@ -1297,6 +1351,39 @@ trait FromComprehensionRaw (c : Type) =
 
 `Syntax`, `SyntaxOrigin`, `SyntaxFragment`, `Elab`, `ElabGoal`, `CoreCtx`, `Core`, `CoreEq`, `Symbol`,
 `RawComprehension`, and `ComprehensionPlan` are compile-time-only types.
+
+`QueryCore mode itemQuantity item` is the elaborated first-class query type.
+
+The public aliases `Query`, `OnceQuery`, `OptionalQuery`, `NonEmptyQuery`, and `SingletonQuery` are ordinary type
+aliases. They exist so ordinary source code does not need to mention `QueryMode`, `QueryCard`, or item quantities.
+
+`Query a` means a reusable zero-or-more query whose yielded item binder has quantity `ω`.
+
+`OnceQuery a` means a one-shot zero-or-more query whose yielded item binder has quantity `ω`.
+The query value itself is one-shot, but the values yielded by the query are not thereby linear. A query yielding linear
+items must use `QueryCore` directly, or a library alias defined in terms of `QueryCore` with item quantity `1`.
+
+`OptionalQuery a`, `NonEmptyQuery a`, and `SingletonQuery a` are precision aliases for reusable queries with narrower
+cardinality. They are not required in ordinary code; `Query a` remains the default public query type.
+
+A value whose type has head `QueryCore (QueryMode OneShot c) q` is a one-shot query value. Enumerating it, converting it
+through `IntoQuery`, or otherwise running it as a source consumes the query value.
+
+If a local binding is inferred to have one-shot query type and has no explicit quantity annotation, its binding quantity
+defaults to `1` rather than to the ordinary default `ω`. Explicitly binding a one-shot query value at a quantity whose
+upper bound is greater than one is a compile-time error.
+
+The `itemQuantity` parameter controls the quantity assigned to the ordinary item binder introduced by `for pat in src`.
+For example, if a source elaborates to `QueryCore mode 1 File`, then `for f in source` binds `f` as a linear row entry.
+If it elaborates to `QueryCore mode ω File`, then `f` is an unrestricted row entry, subject to the ordinary internal
+field quantities of `File` if `File` is a record or another type whose eliminators impose quantity restrictions.
+
+Borrowed queries are represented by ordinary capture annotations. A query value that closes over a borrow has a type of
+the form:
+
+    QueryCore mode q item captures (ρ)
+
+There is no separate borrowed query mode.
 
 The comprehension sink hooks `fromComprehensionPlan` and `fromComprehensionRaw` are elaboration-time hooks.
 
