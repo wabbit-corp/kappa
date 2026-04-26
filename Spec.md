@@ -2513,6 +2513,9 @@ operator-like syntax. The following minimum table is normative:
 ?:                               : right-associative precedence 2
 ```
 
+The infix forms `(-)`, `(/)`, and `(%)` may have implicit proof arguments after their explicit operands. Operator
+parsing is unaffected by those implicit arguments; implicit insertion happens during elaboration.
+
 `(~=)` MUST have the same precedence and associativity as `(==)`.
 
 User fixity declarations for the bare `?` token, including `postfix (?)`, do not affect the reserved tokens `?.` and
@@ -2524,6 +2527,26 @@ controlled by prelude fixity declarations.
 Names not in this list MAY be exported by `std.prelude`, but user code SHOULD NOT rely on their presence.
 
 The standard prelude provisions for `|>`, `<|`, and the optional `|>=` operator are specified in Appendix B.
+
+<!-- modules.prelude.non_goals -->
+##### Prelude non-goals
+
+The implicit prelude is the minimum surface required for portable Kappa programs.
+
+The following are deliberately not part of the implicit prelude minimum:
+
+* `std.hash.Hashable`, which remains in `std.hash`;
+* exact-width and ABI numeric types, which remain in `std.ffi`;
+* atomics, which remain in `std.atomic`;
+* dynamic values and checked casts, which remain in `std.gradual`;
+* bridge and boundary contracts, which remain in `std.bridge`;
+* supervision helpers beyond the core runtime scope/fiber vocabulary, which remain in `std.supervisor`;
+* unsafe, unchecked, saturating, wrapping, or backend-specific arithmetic;
+* host reflection, filesystem, networking, subprocess, random, clock-wall-time, or environment APIs;
+* deep macro reflection beyond the portable `Syntax`, `Elab`, and staged-code carriers listed above.
+
+Implementations MAY export additional names from `std.prelude`, but portable source code SHOULD NOT rely on those names
+unless a later version of this specification adds them to the normative minimum.
 
 <!-- modules.ffi -->
 ### 2.7 Standard FFI support module `std.ffi`
