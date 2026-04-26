@@ -3679,6 +3679,37 @@ Rules:
   which SHOULD use U+FFFD REPLACEMENT CHARACTER.
 * `byteLength s` is the length of `utf8Bytes s`.
 
+Incremental UTF-8 decoding:
+
+```kappa
+expect data Utf8Decoder : Type
+expect data Utf8DecodeStep : Type
+
+newUtf8Decoder :
+    Utf8Decoder
+
+decodeUtf8Chunk :
+    Bytes ->
+    (1 decoder : Utf8Decoder) ->
+    Result UnicodeDecodeError (text : String, 1 decoder : Utf8Decoder)
+
+finishUtf8Decoder :
+    (1 decoder : Utf8Decoder) ->
+    Result UnicodeDecodeError String
+```
+
+Rules:
+
+* `Utf8Decoder` is a linear incremental decoder state.
+* `decodeUtf8Chunk chunk decoder` consumes one decoder state and one byte chunk, returning decoded text plus the next
+  decoder state.
+* The decoder may buffer an incomplete UTF-8 sequence across chunk boundaries.
+* `finishUtf8Decoder decoder` succeeds only if the decoder has no incomplete pending sequence.
+* Concatenating the `String` fragments produced by successful chunk decoding and finalization MUST equal the result of
+  `decodeUtf8` on the concatenation of the original byte chunks.
+* Error positions SHOULD report both the chunk-local byte offset and the total byte offset when the implementation can
+  track it.
+
 Text builders:
 
 ```kappa
