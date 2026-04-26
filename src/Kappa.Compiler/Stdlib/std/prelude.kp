@@ -120,6 +120,14 @@ expect type Syntax (t : Type)
 expect type SyntaxOrigin
 expect type Elab (a : Type)
 expect type ElabGoal
+expect type Projector (roots : Type) (focus : Type)
+expect type Getter (roots : Type) (focus : Type)
+expect type Opener (roots : Type) (focus : Type)
+expect type Setter (roots : Type) (focus : Type)
+expect type Sinker (roots : Type) (focus : Type)
+expect type BorrowView (rho : Region) (a : Type)
+data Zipper (whole : Type) (focus : Type) (replace : Type) : Type =
+    Zipper (focus : focus) (1 fill : replace -> whole)
 data Set (a : Type) : Type =
     Set (items : List a)
 
@@ -218,6 +226,11 @@ expect term not : Bool -> Bool
 expect term and : Bool -> Bool -> Bool
 expect term or : Bool -> Bool -> Bool
 expect term force : Thunk a -> a
+expect term captureBorrow : forall (rho : Region) (a : Type). (&[rho] x : a) -> BorrowView rho a
+expect term withBorrowView : forall (rho : Region) (a : Type) (r : Type). BorrowView rho a -> (((&[rho] x : a) -> r)) -> r
+expect term composeProjector :
+    forall (roots : Type) (mid : Type) (focus : Type).
+    Projector roots mid -> Projector mid focus -> Projector roots focus
 expect term empty : a
 expect term (<|>) : a -> a -> a
 expect term orElse : Option a -> Option a -> Option a

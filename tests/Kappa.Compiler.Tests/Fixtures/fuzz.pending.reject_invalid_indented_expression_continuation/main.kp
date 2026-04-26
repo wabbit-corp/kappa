@@ -1,0 +1,8 @@
+module main
+
+I0 : List Int -> Int
+let I0 I0 = if True then 42 else 42
+
+    pure (I0 * 2)
+result : Int
+let result = I0 (10 :: 20 :: 42 :: Nil)

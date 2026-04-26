@@ -1,0 +1,1 @@
+case left () i2 -> pure 42

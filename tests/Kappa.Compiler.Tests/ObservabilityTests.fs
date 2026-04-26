@@ -1793,6 +1793,117 @@ let ``source compilation surfaces unresolved applied names before backend loweri
     Assert.DoesNotContain("requires a backend module", diagnosticsText workspace.Diagnostics)
 
 [<Fact>]
+let ``source compilation surfaces unresolved lowercase applied names before backend lowering`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-compile-unresolved-lowercase-applied-name-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let result = i0 2"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected unresolved lowercase applied name to become a frontend compile diagnostic.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.NameUnresolved)
+    Assert.Contains("Name 'i0' is not in scope", diagnosticsText workspace.Diagnostics)
+    Assert.DoesNotContain("requires a backend module", diagnosticsText workspace.Diagnostics)
+
+[<Fact>]
+let ``source compilation surfaces unresolved dotted receiver names before backend lowering`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-compile-unresolved-dotted-receiver-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let result = I0.I0 + 2"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected unresolved dotted receiver to become a frontend compile diagnostic.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.NameUnresolved)
+    Assert.Contains("Module qualifier 'I0' is not in scope", diagnosticsText workspace.Diagnostics)
+    Assert.DoesNotContain("requires a backend module", diagnosticsText workspace.Diagnostics)
+
+[<Fact>]
+let ``source compilation rejects stray top level forms instead of accepting unknown declarations`` () =
+    let typeWorkspace =
+        compileInMemoryWorkspace
+            "memory-compile-stray-top-level-type-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "(I0 : Int) -> I0 -> Int"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let caseWorkspace =
+        compileInMemoryWorkspace
+            "memory-compile-stray-top-level-case-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "case left () i2 -> pure 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(typeWorkspace.HasErrors, "Expected stray top-level type text to become a parse diagnostic.")
+    Assert.True(caseWorkspace.HasErrors, "Expected stray top-level case text to become a parse diagnostic.")
+    Assert.Contains(typeWorkspace.Diagnostics, hasDiagnosticCode DiagnosticCode.ParseError)
+    Assert.Contains(caseWorkspace.Diagnostics, hasDiagnosticCode DiagnosticCode.ParseError)
+
+[<Fact>]
+let ``source compilation surfaces non callable applications before backend lowering`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-compile-non-callable-application-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let result ="
+                    "    if True then 42 else 42"
+                    ""
+                    "    pure 0"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected non-callable application to become a frontend compile diagnostic.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.ApplicationNonCallable)
+    Assert.DoesNotContain("requires a backend module", diagnosticsText workspace.Diagnostics)
+
+[<Fact>]
+let ``source compilation does not treat ordinary visible function calls as non callable`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-compile-visible-function-call-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let main : IO Unit ="
+                    "    printInt 0"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+    Assert.DoesNotContain(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.ApplicationNonCallable)
+
+[<Fact>]
 let ``source compilation surfaces backend verification call arity failures as diagnostics`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend

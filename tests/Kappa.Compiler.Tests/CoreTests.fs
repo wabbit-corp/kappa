@@ -494,9 +494,9 @@ let ``interpreter resolves bundled summon helper across imported trait modules``
 let ``resource checker lets parameters shadow prelude interpolation helpers`` () =
     let mainSource =
         [
-            "module main"
-            ""
             "@allow_unsafe_consume"
+            ""
+            "module main"
             ""
             "data File : Type ="
             "    Handle Int"

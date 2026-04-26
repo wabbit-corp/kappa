@@ -1,0 +1,4 @@
+data I0 : Type =
+    ]
+let main = do
+    I0 "s"

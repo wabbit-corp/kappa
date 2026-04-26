@@ -5231,6 +5231,18 @@ module ResourceChecking =
             when String.Equals(calleeName, "withBorrowView", StringComparison.Ordinal) ->
             let state = checkExpression projectionSummaries document signatures localTypes state view
             checkImmediateLambdaDemand projectionSummaries document signatures localTypes state parameters body
+        | Apply(Name [ calleeName ], [ argument ]) when String.Equals(calleeName, "captureBorrow", StringComparison.Ordinal) ->
+            let state = checkExpression projectionSummaries document signatures localTypes state argument
+
+            match tryBorrowablePlacesWithEnv Map.empty projectionSummaries state argument with
+            | Some places ->
+                places
+                |> List.fold (fun current place ->
+                    current
+                    |> validatePlaceAccess document place
+                    |> addNonConsumingDemand document place.Root) state
+            | None ->
+                state
         | Apply(Name [ calleeName ], [ argument ]) when String.Equals(calleeName, "force", StringComparison.Ordinal) ->
             let state = checkExpression projectionSummaries document signatures localTypes state argument
 

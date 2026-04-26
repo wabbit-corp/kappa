@@ -128,6 +128,7 @@ let ``il backend supports qualified cross module calls for zero argument binding
                 "main.kp",
                 [
                     "module main"
+                    "import math"
                     "let result = math.answer + 1"
                 ]
                 |> String.concat "\n"
@@ -168,6 +169,7 @@ let ``il backend supports qualified cross module calls into parameterized bindin
                 "main.kp",
                 [
                     "module main"
+                    "import math"
                     "let result = math.twice 21"
                 ]
                 |> String.concat "\n"

@@ -490,6 +490,16 @@ type private TokenParser
             | { Kind = Operator; Text = "|" } :: rest -> rest
             | tokens -> tokens
 
+        match constructorTokens with
+        | head :: _ when String.Equals(constructorName, "<anonymous>", StringComparison.Ordinal) ->
+            diagnostics.AddError(
+                DiagnosticCode.ParseError,
+                "Expected a constructor name.",
+                source.GetLocation(head.Span)
+            )
+        | _ ->
+            ()
+
         let constructorBodyTokens =
             let isSymbolToken token =
                 match token.Kind with
@@ -619,13 +629,78 @@ type private TokenParser
         let mutable localIndents = 0
         let mutable keepCollecting = true
 
+        let isLayoutToken (token: Token) =
+            match token.Kind with
+            | Newline
+            | Indent
+            | Dedent -> true
+            | _ -> false
+
+        let lastSignificantToken () =
+            collected
+            |> Seq.toList
+            |> List.rev
+            |> List.tryFind (isLayoutToken >> not)
+
+        let isNameToken (token: Token) =
+            Token.isName token
+            && not (Token.isKeyword Keyword.If token)
+            && not (Token.isKeyword Keyword.Is token)
+            && not (Token.isKeyword Keyword.Then token)
+            && not (Token.isKeyword Keyword.Else token)
+            && not (Token.isKeyword Keyword.In token)
+
+        let isExpressionStartToken (token: Token) =
+            match token.Kind with
+            | IntegerLiteral
+            | FloatLiteral
+            | StringLiteral
+            | InterpolatedStringStart
+            | CharacterLiteral
+            | LeftParen
+            | LeftBracket
+            | LeftSetBrace
+            | AtSign
+            | Backslash -> true
+            | Operator when token.Text = "'" -> true
+            | Operator when token.Text = "$" -> true
+            | Operator when FixityTable.tryFindPrefix token.Text fixities |> Option.isSome -> true
+            | Keyword Keyword.If
+            | Keyword Keyword.Seal -> true
+            | _ -> isNameToken token
+
+        let shouldContinueAcrossNewline nextToken =
+            match lastSignificantToken (), nextToken with
+            | None, Some followingToken when isExpressionStartToken followingToken ->
+                true
+            | Some lastToken, Some followingToken when isExpressionStartToken followingToken ->
+                lastToken.Kind = Equals
+                || lastToken.Kind = Arrow
+                || lastToken.Kind = Colon
+                || lastToken.Kind = Operator
+                || Token.isKeyword Keyword.In lastToken
+                || Token.isKeyword Keyword.Then lastToken
+                || Token.isKeyword Keyword.Elif lastToken
+                || Token.isKeyword Keyword.Else lastToken
+                || Token.isKeyword Keyword.Do lastToken
+                || Token.isKeyword Keyword.Match lastToken
+                || Token.isKeyword Keyword.Try lastToken
+                || Token.isKeyword Keyword.Case lastToken
+                || Token.isKeyword Keyword.Except lastToken
+                || Token.isKeyword Keyword.Finally lastToken
+                || Token.isKeyword Keyword.If lastToken
+                || Token.isKeyword Keyword.Yield lastToken
+                || Token.isKeyword Keyword.By lastToken
+            | _ ->
+                false
+
         while keepCollecting && this.Current.Kind <> EndOfFile do
             match this.Current.Kind with
             | Newline when localIndents = 0 ->
                 let next = this.NextNonLayout(1)
                 let afterNext = this.NextNonLayout(2)
 
-                if this.Peek(1).Kind = Indent then
+                if this.Peek(1).Kind = Indent && shouldContinueAcrossNewline (Some next) then
                     collected.Add(this.Advance())
                 elif this.IsProbableTopLevelStart(next, Some afterNext) then
                     keepCollecting <- false
@@ -1248,7 +1323,6 @@ type private TokenParser
 
     member private this.ParseTraitDeclaration(modifiers: ModifierState) =
         this.ExpectKeyword(Keyword.Trait, "Expected 'trait'.") |> ignore
-        let name = this.ConsumeName("Expected a trait name.")
 
         let headerTokens = ResizeArray<Token>()
 
@@ -1261,6 +1335,75 @@ type private TokenParser
                && this.Current.Kind <> Newline
                && this.Current.Kind <> EndOfFile) do
             headerTokens.Add(this.Advance())
+
+        let headerTokens = List.ofSeq headerTokens
+
+        let splitTraitHeader (tokens: Token list) =
+            let tokenArray = tokens |> List.toArray
+            let mutable depth = 0
+            let mutable headStart = 0
+            let mutable index = 0
+
+            while index < tokenArray.Length do
+                match tokenArray[index].Kind with
+                | LeftParen ->
+                    depth <- depth + 1
+                | RightParen ->
+                    depth <- max 0 (depth - 1)
+                | Operator when depth = 0 && String.Equals(tokenArray[index].Text, "=>", StringComparison.Ordinal) ->
+                    headStart <- index + 1
+                | Equals
+                    when depth = 0
+                         && index + 1 < tokenArray.Length
+                         && tokenArray[index + 1].Kind = Operator
+                         && String.Equals(tokenArray[index + 1].Text, ">", StringComparison.Ordinal) ->
+                    headStart <- index + 2
+                    index <- index + 1
+                | _ ->
+                    ()
+
+                index <- index + 1
+
+            let headTokens =
+                if headStart < tokenArray.Length then
+                    tokenArray[headStart..] |> Array.toList
+                else
+                    []
+
+            let rec collectQualifiedName acc remaining =
+                match remaining with
+                | token :: dotToken :: rest when Token.isName token && dotToken.Kind = Dot ->
+                    collectQualifiedName (SyntaxFacts.trimIdentifierQuotes token.Text :: acc) rest
+                | token :: _ when Token.isName token ->
+                    List.rev (SyntaxFacts.trimIdentifierQuotes token.Text :: acc)
+                | _ ->
+                    []
+
+            let rec stripQualifiedName remaining =
+                match remaining with
+                | token :: dotToken :: rest when Token.isName token && dotToken.Kind = Dot ->
+                    stripQualifiedName rest
+                | token :: rest when Token.isName token ->
+                    rest
+                | _ ->
+                    remaining
+
+            let traitName, traitHeadTokens =
+                match collectQualifiedName [] headTokens with
+                | [] ->
+                    None, headTokens
+                | [ singleName ] ->
+                    Some singleName, stripQualifiedName headTokens
+                | segments ->
+                    Some(SyntaxFacts.moduleNameToText segments), stripQualifiedName headTokens
+
+            traitName, traitHeadTokens
+
+        let nameOption, headTokens = splitTraitHeader headerTokens
+        let name = nameOption |> Option.defaultValue ""
+
+        if String.IsNullOrWhiteSpace name then
+            diagnostics.AddError(DiagnosticCode.ParseError, "Expected a trait head after 'trait'.", source.GetLocation(this.Current.Span))
 
         let members: TraitMember list =
             if this.TryConsume(Equals).IsSome then
@@ -1293,7 +1436,7 @@ type private TokenParser
         TraitDeclarationNode
             { Visibility = modifiers.Visibility
               Name = name
-              HeaderTokens = List.ofSeq headerTokens
+              HeaderTokens = headTokens
               Members = members }
 
     member private _.IsContextualEffectToken(token: Token) =
@@ -1581,6 +1724,12 @@ type private TokenParser
         ImportDeclaration(isExport, parsedSpecs)
 
     member private this.ParseUnknownDeclaration() =
+        diagnostics.AddError(
+            DiagnosticCode.ParseError,
+            "Expected a top-level declaration.",
+            source.GetLocation(this.Current.Span)
+        )
+
         UnknownDeclaration(this.CollectUntilTopLevelBoundary())
 
     member private this.ParseTopLevelDeclaration() =

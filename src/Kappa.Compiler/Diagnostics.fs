@@ -47,6 +47,7 @@ type DiagnosticCode =
     | RowExtensionDuplicateLabel
     | RowExtensionExistingField
     | RowExtensionMissingLacksConstraint
+    | ApplicationNonCallable
     | SealDirectLiteralForSignature
     | SealOpenRecordAscription
     | SealOpaqueUnfolding
@@ -113,6 +114,7 @@ module DiagnosticCode =
         | RowExtensionDuplicateLabel -> "E_ROW_EXTENSION_DUPLICATE_LABEL"
         | RowExtensionExistingField -> "E_ROW_EXTENSION_EXISTING_FIELD"
         | RowExtensionMissingLacksConstraint -> "E_ROW_EXTENSION_MISSING_LACKS_CONSTRAINT"
+        | ApplicationNonCallable -> "E_APPLICATION_NONCALLABLE"
         | SealDirectLiteralForSignature -> "E_SEAL_DIRECT_LITERAL_FOR_SIGNATURE"
         | SealOpenRecordAscription -> "E_SEAL_OPEN_RECORD_ASCRIPTION"
         | SealOpaqueUnfolding -> "E_SEAL_OPAQUE_UNFOLDING"
@@ -178,6 +180,7 @@ module DiagnosticCode =
         | "E_ROW_EXTENSION_DUPLICATE_LABEL" -> Some RowExtensionDuplicateLabel
         | "E_ROW_EXTENSION_EXISTING_FIELD" -> Some RowExtensionExistingField
         | "E_ROW_EXTENSION_MISSING_LACKS_CONSTRAINT" -> Some RowExtensionMissingLacksConstraint
+        | "E_APPLICATION_NONCALLABLE" -> Some ApplicationNonCallable
         | "E_SEAL_DIRECT_LITERAL_FOR_SIGNATURE" -> Some SealDirectLiteralForSignature
         | "E_SEAL_OPEN_RECORD_ASCRIPTION" -> Some SealOpenRecordAscription
         | "E_SEAL_OPAQUE_UNFOLDING" -> Some SealOpaqueUnfolding

@@ -3348,6 +3348,30 @@ module SurfaceElaboration =
             freshCounter.Value <- freshCounter.Value + instance.Forall.Length
             snd (TypeSignatures.schemeParts instance))
 
+    let private instantiateVisibleBindingBodyType
+        (environment: BindingLoweringEnvironment)
+        (freshCounter: int ref)
+        name
+        =
+        environment.VisibleBindings
+        |> Map.tryFind name
+        |> Option.map (fun bindingInfo ->
+            let instance = TypeSignatures.instantiate "t" freshCounter.Value bindingInfo.Scheme
+            freshCounter.Value <- freshCounter.Value + instance.Forall.Length
+            instance.Body)
+
+    let private instantiateVisibleConstructorBodyType
+        (environment: BindingLoweringEnvironment)
+        (freshCounter: int ref)
+        name
+        =
+        environment.VisibleConstructors
+        |> Map.tryFind name
+        |> Option.map (fun constructorInfo ->
+            let instance = TypeSignatures.instantiate "t" freshCounter.Value constructorInfo.Scheme
+            freshCounter.Value <- freshCounter.Value + instance.Forall.Length
+            instance.Body)
+
     let private tryInterpolatedMacroResultType
         (aliases: Map<string, TypeAliasInfo>)
         (typeExpr: TypeExpr)
@@ -4516,34 +4540,11 @@ module SurfaceElaboration =
                 |> Option.orElseWith (fun () ->
                     environment.VisibleBindings
                     |> Map.tryFind root
-                    |> Option.bind (fun bindingInfo ->
-                        if List.isEmpty path then
-                            tryPrepareVisibleBindingCall
-                                environment
-                                freshCounter
-                                bindingInfo
-                                (inferValidationExpressionType environment freshCounter localTypes)
-                                (tryResolveUniqueLocalImplicitByType environment localTypes)
-                                []
-                            |> Option.map (fun preparedCall -> preparedCall.ResultType)
-                            |> Option.orElseWith (fun () -> instantiateVisibleBindingResultType environment freshCounter root)
-                        else
-                            instantiateVisibleBindingResultType environment freshCounter root))
+                    |> Option.bind (fun _ -> instantiateVisibleBindingBodyType environment freshCounter root))
                 |> Option.orElseWith (fun () ->
                     environment.VisibleConstructors
                     |> Map.tryFind root
-                    |> Option.bind (fun constructorInfo ->
-                        if List.isEmpty path then
-                            tryPrepareVisibleBindingCall
-                                environment
-                                freshCounter
-                                constructorInfo
-                                (inferValidationExpressionType environment freshCounter localTypes)
-                                (tryResolveUniqueLocalImplicitByType environment localTypes)
-                                []
-                            |> Option.map (fun preparedCall -> preparedCall.ResultType)
-                        else
-                            None))
+                    |> Option.bind (fun _ -> instantiateVisibleConstructorBodyType environment freshCounter root))
                 |> Option.orElseWith (fun () ->
                     tryResolveScopedStaticObject environment (Name [ root ])
                     |> Option.bind (fun staticObject ->
@@ -5615,6 +5616,21 @@ module SurfaceElaboration =
         let isVisibleConstructorName name =
             environment.VisibleConstructors |> Map.containsKey name
 
+        let isVisibleRootName locals lexicalNames name =
+            let isVisibleModuleRoot =
+                environment.VisibleModules
+                |> Seq.exists (fun visibleModule ->
+                    String.Equals(visibleModule, name, StringComparison.Ordinal)
+                    || visibleModule.StartsWith(name + ".", StringComparison.Ordinal))
+
+            (Map.containsKey name locals)
+            || (Set.contains name lexicalNames)
+            || (Set.contains name knownSurfaceTermNames)
+            || (Set.contains name knownValueNames)
+            || String.Equals(name, "this", StringComparison.Ordinal)
+            || isVisibleModuleRoot
+            || (tryResolveScopedStaticObject environment (Name [ name ]) |> Option.isSome)
+
         let expressionSelectsOpaqueField expression =
             let tryRecordInfoFromType typeExpr =
                 match typeExpr with
@@ -6033,6 +6049,7 @@ module SurfaceElaboration =
         let normalizeExpectedType refinements typeExpr =
             typeExpr
             |> applyRefinements refinements
+            |> qualifyVisibleTypeNames environment
             |> normalizeTypeAliases environment.VisibleTypeAliases
 
         let rec typeContainsLocalTermVariable locals typeExpr =
@@ -7957,17 +7974,31 @@ module SurfaceElaboration =
                         | _ ->
                             []
                 let staticMemberDiagnostics =
-                    match expression with
-                    | Name segments ->
-                        match List.rev segments with
-                        | memberName :: receiverSegments when not (List.isEmpty receiverSegments) ->
-                            staticConstructorIdentityDiagnostic locals (Name(List.rev receiverSegments)) memberName
+                        match expression with
+                        | Name segments ->
+                            match List.rev segments with
+                            | memberName :: receiverSegments when not (List.isEmpty receiverSegments) ->
+                                staticConstructorIdentityDiagnostic locals (Name(List.rev receiverSegments)) memberName
+                            | _ ->
+                                []
                         | _ ->
                             []
-                    | _ ->
+                let unresolvedRootDiagnostics =
+                    if allowUnresolvedCallDiagnostics
+                       && List.isEmpty missingFieldDiagnostics
+                       && List.isEmpty staticMemberDiagnostics
+                       && not (isVisibleRootName locals lexicalNames root) then
+                        let message =
+                            if not (String.IsNullOrEmpty(root)) && Char.IsUpper(root[0]) then
+                                $"Module qualifier '{root}' is not in scope."
+                            else
+                                $"Name '{root}' is not in scope."
+
+                        [ makeDiagnostic DiagnosticCode.NameUnresolved message ]
+                    else
                         []
 
-                missingFieldDiagnostics @ staticMemberDiagnostics
+                missingFieldDiagnostics @ staticMemberDiagnostics @ unresolvedRootDiagnostics
             | Name [ name ]
                 when allowUnresolvedCallDiagnostics
                      && not (Map.containsKey name locals)
@@ -8182,9 +8213,15 @@ module SurfaceElaboration =
                 @ validateExpression locals trueRefinements lexicalNames whenTrue
                 @ validateExpression locals falseRefinements lexicalNames whenFalse
             | Match(scrutinee, cases) ->
+                let scrutineeType =
+                    inferValidationExpressionType environment freshCounter locals scrutinee
+
                 let caseDiagnostics =
                     cases
                     |> List.collect (fun caseClause ->
+                        let caseLocals =
+                            extendPatternLocalTypes environment freshCounter locals scrutineeType caseClause.Pattern
+
                         let caseLexicalNames =
                             collectPatternNames caseClause.Pattern
                             |> Set.ofList
@@ -8194,9 +8231,9 @@ module SurfaceElaboration =
                         @ staticPatternIdentityDiagnostics locals caseClause.Pattern
                         @ activePatternLinearityDiagnostics caseClause.Pattern "match case"
                         @ (caseClause.Guard
-                           |> Option.map (validateExpression locals refinements caseLexicalNames)
+                           |> Option.map (validateExpression caseLocals refinements caseLexicalNames)
                            |> Option.defaultValue [])
-                        @ validateExpression locals refinements caseLexicalNames caseClause.Body)
+                        @ validateExpression caseLocals refinements caseLexicalNames caseClause.Body)
 
                 recurse scrutinee @ caseDiagnostics
             | RecordLiteral fields ->
@@ -8428,10 +8465,16 @@ module SurfaceElaboration =
                         let applicationDiagnostics =
                             match callee with
                             | Name [ calleeName ] ->
+                                let isLexicallyBoundName =
+                                    Map.containsKey calleeName locals || Set.contains calleeName lexicalNames
+
                                 let bindingInfo =
-                                    environment.VisibleBindings
-                                    |> Map.tryFind calleeName
-                                    |> Option.orElseWith (fun () -> environment.VisibleConstructors |> Map.tryFind calleeName)
+                                    if isLexicallyBoundName then
+                                        None
+                                    else
+                                        environment.VisibleBindings
+                                        |> Map.tryFind calleeName
+                                        |> Option.orElseWith (fun () -> environment.VisibleConstructors |> Map.tryFind calleeName)
 
                                 let resolvesAsTraitMemberCall () =
                                     tryPrepareVisibleTraitMemberCall
@@ -8443,8 +8486,9 @@ module SurfaceElaboration =
                                     |> Option.isSome
 
                                 let isKnownVisibleCallee =
-                                    (Set.contains calleeName lexicalNames)
+                                    isLexicallyBoundName
                                     || (Set.contains calleeName knownSurfaceTermNames)
+                                    || (Set.contains calleeName knownValueNames)
                                     || environment.VisibleProjections.ContainsKey(calleeName)
                                     || (environment.VisibleTraits |> Map.exists (fun _ traitInfo -> traitInfo.Members.ContainsKey(calleeName)))
                                     || environment.ConstrainedMembers.ContainsKey(calleeName)
@@ -8490,9 +8534,7 @@ module SurfaceElaboration =
                                         expectedArgumentDiagnostics
                                 | None
                                     when allowUnresolvedCallDiagnostics
-                                         && not isKnownVisibleCallee
-                                         && not (String.IsNullOrEmpty(calleeName))
-                                         && Char.IsUpper(calleeName[0]) ->
+                                         && not isKnownVisibleCallee ->
                                     [ makeDiagnostic DiagnosticCode.NameUnresolved $"Name '{calleeName}' is not in scope." ]
                                 | None when hasNamedBlock ->
                                     [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch "Named application requires a callee with preserved parameter metadata." ]
@@ -8503,7 +8545,46 @@ module SurfaceElaboration =
                             | _ ->
                                 []
 
-                        argumentDiagnostics @ applicationDiagnostics
+                        let nonCallableDiagnostics =
+                            if not (List.isEmpty applicationDiagnostics) then
+                                []
+                            elif
+                                match callee with
+                                | Name [ calleeName ] ->
+                                    Set.contains calleeName lexicalNames && not (Map.containsKey calleeName locals)
+                                | _ ->
+                                    false
+                            then
+                                []
+                            elif
+                                match callee with
+                                | Name [ projectionName ] -> environment.VisibleProjections.ContainsKey(projectionName)
+                                | _ -> false
+                            then
+                                []
+                            else
+                                match inferValidationExpressionType environment (ref freshCounter.Value) locals callee with
+                                | Some calleeType ->
+                                    let normalizedCalleeType =
+                                        normalizeTypeAliases environment.VisibleTypeAliases calleeType
+
+                                    match normalizedCalleeType with
+                                    | TypeVariable _ ->
+                                        []
+                                    | TypeArrow _ ->
+                                        []
+                                    | TypeName(([ "Projector" ] | [ "std"; "prelude"; "Projector" ]), _) ->
+                                        []
+                                    | _ ->
+                                        [
+                                            makeDiagnostic
+                                                DiagnosticCode.ApplicationNonCallable
+                                                $"Expression of type '{TypeSignatures.toText normalizedCalleeType}' is not callable."
+                                        ]
+                                | None ->
+                                    []
+
+                        argumentDiagnostics @ applicationDiagnostics @ nonCallableDiagnostics
                     | _ ->
                         []
             | Elvis(left, right) ->
