@@ -6967,11 +6967,24 @@ A macro or splice that violates them is a compile-time error.
 <!-- types.macros.typed_elaboration_actions_elab -->
 #### 5.8.7 Typed elaboration actions (`Elab`)
 
-Kappa provides a built-in elaboration-time effect for context-sensitive macros and DSL elaborators:
+Kappa provides a built-in elaboration-time computation type for context-sensitive macros and DSL elaborators:
 
 ```kappa
 Elab : Type -> Type
+```
 
+`Elab a` is compile-time only.
+
+A value of type `Elab a` is an action run by the elaboration-time evaluator. If it completes successfully, it produces a
+meta-phase value of type `a`.
+
+The type argument `a` need not itself be intrinsically compile-time-only. For example, `Elab String` is an
+elaboration-time action producing a meta-phase `String`. This does not make ordinary object-phase `String` values
+compile-time.
+
+Canonical declarations:
+
+```kappa
 type ElabGoal : Type =
     (ctx : CoreCtx,
      expected : Option (Core this.ctx Type))
@@ -7017,6 +7030,14 @@ Implementations MUST provide coherent evidence for `Functor Elab`, `Applicative 
 Rules:
 
 * `Elab` actions run only during elaboration.
+* The body of an `Elab` action is checked in the meta phase.
+* Bindings introduced inside an `Elab` action are meta-phase bindings, even when their ordinary type is runtime-capable.
+* A meta-phase binding introduced inside an `Elab` action is erased and MUST NOT become a runtime binding unless it is
+  explicitly reified through an ordinary runtime carrier.
+* Object-phase runtime values cannot be directly captured by an `Elab` action.
+* Object-phase terms may enter `Elab` only through specified reflection carriers such as `Syntax t`, `Core Γ t`,
+  `RawComprehension a`, or `ComprehensionPlan a`.
+* The `pure` operation for `Elab` lifts only meta-phase values.
 * `currentGoal.ctx` is the lexical context that ordinary elaboration would use at the splice site.
 * `currentGoal.expected` is the expected type at the splice site when one is available; otherwise it is `None`.
 * `warnElab` emits a deterministic elaboration-time warning associated with the current source or synthetic-origin
@@ -7040,7 +7061,7 @@ Rules:
   and termination restrictions as other elaboration-time execution in §5.8.6.
 * `Elab` does not provide a second re-entry path into object code. It re-enters object-language code only by producing
   `Syntax` for `$(...)`.
-* `Elab` values are compile-time only, are erased, and MUST NOT be required at runtime or by `runCode`.
+* `Elab` values are erased and MUST NOT be required at runtime or by `runCode`.
 
 <!-- types.macros.output_round_tripping -->
 #### 5.8.7.1 Output round-tripping
