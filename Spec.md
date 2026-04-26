@@ -1458,6 +1458,33 @@ race :
     forall (e : Type) (a : Type) (f : Type) (b : Type).
     IO e a -> IO f b -> IO (| e | f |) (RaceResult a b)
 
+trait Show (a : Type) =
+    show : (& value : a) -> String
+
+printString :
+    String -> UIO Unit
+
+printlnString :
+    String -> UIO Unit
+
+print :
+    forall (a : Type).
+    (@_ : Show a) ->
+    (& value : a) ->
+    UIO Unit
+
+let print value =
+    printString (show value)
+
+println :
+    forall (a : Type).
+    (@_ : Show a) ->
+    (& value : a) ->
+    UIO Unit
+
+let println value =
+    printlnString (show value)
+
 trait Alternative (f : Type -> Type) =
     empty : f a
     (<|>) : f a -> f a -> f a
@@ -1682,6 +1709,19 @@ Thus `&&` and `||` are ordinary terms. They are not special evaluation forms.
 * `RaceResult a b` is the standard result type returned by `race`.
 * `blocking` requests backend-supported blocking-lane execution for a computation without changing its observable
   success, failure, interruption, or defect semantics.
+
+`print` and `println` are `Show`-based convenience functions.
+
+`printString` and `printlnString` are the primitive string-output operations. Implementations MAY realize them as
+runtime intrinsics.
+
+The portable prelude MUST provide at least:
+
+```text
+Show Unit, Show Bool, Show Char, Show String,
+Show Int, Show Nat, Show Integer, Show Float, Show Double, Show Real,
+Show Ordering, Show Duration, Show Instant
+```
 
 `Void`, `absurd`, and `Dec` are the standard proof-oriented prelude basics:
 
