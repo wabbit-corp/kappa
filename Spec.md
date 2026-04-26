@@ -1213,6 +1213,46 @@ data Dec (p : Type) : Type =
 
 Dict : Constraint -> Type
 
+-- Intrinsic compile-time classifiers exported by std.prelude.
+-- These are primitive declarations with ordinary source-level name resolution.
+
+Universe   : Type0
+Quantity   : Type0
+Region     : Type0
+Constraint : Type0
+
+RecRow   : Type0
+VarRow   : Type0
+EffRow   : Type0
+Label    : Type0
+EffLabel : Type0
+
+ContainsRec : RecRow -> Label -> Type -> Constraint
+LacksRec    : RecRow -> Label -> Constraint
+
+ContainsVar : VarRow -> Type -> Constraint
+LacksVar    : VarRow -> Type -> Constraint
+
+ContainsEff : EffRow -> EffLabel -> Type -> Constraint
+LacksEff    : EffRow -> EffLabel -> Constraint
+SplitEff    : EffRow -> EffLabel -> Type -> EffRow -> Constraint
+
+Variant : VarRow -> Type
+
+Eff : EffRow -> Type -> Type
+
+Code       : Type -> Type
+ClosedCode : Type -> Type
+
+`Variant`, `Eff`, `Code`, and `ClosedCode` are primitive type constructors exported by `std.prelude`.
+
+* `Variant r` is the elaborated carrier for union types (§5.4).
+* `Eff r a` is the algebraic-effect computation type of §8.1.6.
+* `Code a` and `ClosedCode a` are the staged-code carriers of §5.9.
+
+These declarations are ordinary source-level names. Their operational behavior is nevertheless primitive where the
+corresponding feature requires primitive support.
+
 WellFounded :
     forall (a : Type).
     (a -> a -> Type) -> Type
