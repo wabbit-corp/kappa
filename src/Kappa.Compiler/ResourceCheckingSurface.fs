@@ -44,6 +44,81 @@ module internal ResourceCheckingSurface =
         loop pattern |> Seq.toList
 
     let rec expressionNames (expression: SurfaceExpression) =
+        let expressionNamesInComprehension (comprehension: SurfaceComprehension) =
+            let rec loop shadowed clauses =
+                seq {
+                    match clauses with
+                    | [] ->
+                        for name in expressionNames comprehension.Yield do
+                            if not (Set.contains name shadowed) then
+                                yield name
+                    | clause :: rest ->
+                        match clause with
+                        | ForClause(_, _, binding, source) ->
+                            for name in expressionNames source do
+                                if not (Set.contains name shadowed) then
+                                    yield name
+
+                            let nextShadowed =
+                                shadowed
+                                |> Set.union (collectPatternNames binding.Pattern |> Set.ofList)
+
+                            yield! loop nextShadowed rest
+                        | LetClause(_, binding, value) ->
+                            for name in expressionNames value do
+                                if not (Set.contains name shadowed) then
+                                    yield name
+
+                            let nextShadowed =
+                                shadowed
+                                |> Set.union (collectPatternNames binding.Pattern |> Set.ofList)
+
+                            yield! loop nextShadowed rest
+                        | IfClause condition ->
+                            for name in expressionNames condition do
+                                if not (Set.contains name shadowed) then
+                                    yield name
+                            yield! loop shadowed rest
+                        | OrderByClause key ->
+                            for name in expressionNames key do
+                                if not (Set.contains name shadowed) then
+                                    yield name
+                            yield! loop shadowed rest
+                        | DistinctClause ->
+                            yield! loop shadowed rest
+                        | DistinctByClause key ->
+                            for name in expressionNames key do
+                                if not (Set.contains name shadowed) then
+                                    yield name
+                            yield! loop shadowed rest
+                        | SkipClause count ->
+                            for name in expressionNames count do
+                                if not (Set.contains name shadowed) then
+                                    yield name
+                            yield! loop shadowed rest
+                        | TakeClause count ->
+                            for name in expressionNames count do
+                                if not (Set.contains name shadowed) then
+                                    yield name
+                            yield! loop shadowed rest
+                        | LeftJoinClause(binding, source, condition, intoName) ->
+                            for name in expressionNames source do
+                                if not (Set.contains name shadowed) then
+                                    yield name
+
+                            let joinShadowed =
+                                shadowed
+                                |> Set.union (collectPatternNames binding.Pattern |> Set.ofList)
+
+                            for name in expressionNames condition do
+                                if not (Set.contains name joinShadowed) then
+                                    yield name
+
+                            yield! loop (Set.add intoName shadowed) rest
+                }
+
+            loop Set.empty comprehension.Clauses
+
         seq {
             match expression with
             | Literal _ -> ()
@@ -148,6 +223,8 @@ module internal ResourceCheckingSurface =
             | Elvis(left, right) ->
                 yield! expressionNames left
                 yield! expressionNames right
+            | Comprehension comprehension ->
+                yield! expressionNamesInComprehension comprehension
             | PrefixedString(_, parts) ->
                 for part in parts do
                     match part with

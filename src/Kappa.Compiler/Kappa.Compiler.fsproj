@@ -27,6 +27,7 @@
     <Compile Include="WorkspaceCompilation.fs" />
     <Compile Include="TraitRuntime.fs" />
     <Compile Include="ResourceModel.fs" />
+    <Compile Include="QuerySemantics.fs" />
     <Compile Include="ResourceCheckingDiagnostics.fs" />
     <Compile Include="ResourceCheckingSurface.fs" />
     <Compile Include="ResourceCheckingSignatures.fs" />

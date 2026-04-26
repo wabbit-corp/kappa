@@ -2869,6 +2869,14 @@ let ``implicit prelude import models the wildcard and constructor subset separat
                     Some ImportNamespace.Constructor, "LT"
                     Some ImportNamespace.Constructor, "EQ"
                     Some ImportNamespace.Constructor, "GT"
+                    Some ImportNamespace.Constructor, "Reusable"
+                    Some ImportNamespace.Constructor, "OneShot"
+                    Some ImportNamespace.Constructor, "QZero"
+                    Some ImportNamespace.Constructor, "QOne"
+                    Some ImportNamespace.Constructor, "QZeroOrOne"
+                    Some ImportNamespace.Constructor, "QOneOrMore"
+                    Some ImportNamespace.Constructor, "QZeroOrMore"
+                    Some ImportNamespace.Constructor, "QueryMode"
                     Some ImportNamespace.Constructor, "refl"
                 ]
 

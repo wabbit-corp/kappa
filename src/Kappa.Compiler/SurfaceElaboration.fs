@@ -5,6 +5,7 @@ open System.Numerics
 open System.Security.Cryptography
 open System.Text
 open System.Threading
+open Kappa.Compiler.ResourceModel
 
 // Elaborates resolved surface modules into KCore while preserving observability metadata.
 module SurfaceElaboration =
@@ -1058,6 +1059,8 @@ module SurfaceElaboration =
                 Binary(rewrite left, operatorName, rewrite right)
             | Elvis(left, right) ->
                 Elvis(rewrite left, rewrite right)
+            | Comprehension comprehension ->
+                Comprehension { comprehension with Lowered = rewrite comprehension.Lowered }
             | PrefixedString(prefix, parts) ->
                 PrefixedString(
                     prefix,
@@ -1193,6 +1196,8 @@ module SurfaceElaboration =
                 Binary(rewrite left, operatorName, rewrite right)
             | Elvis(left, right) ->
                 Elvis(rewrite left, rewrite right)
+            | Comprehension comprehension ->
+                Comprehension { comprehension with Lowered = rewrite comprehension.Lowered }
             | PrefixedString(prefix, parts) ->
                 PrefixedString(
                     prefix,
@@ -1300,6 +1305,8 @@ module SurfaceElaboration =
                 Binary(rewrite left, operatorName, rewrite right)
             | Elvis(left, right) ->
                 Elvis(rewrite left, rewrite right)
+            | Comprehension comprehension ->
+                Comprehension { comprehension with Lowered = rewrite comprehension.Lowered }
             | PrefixedString(prefix, parts) ->
                 PrefixedString(
                     prefix,
@@ -1503,6 +1510,8 @@ module SurfaceElaboration =
                 Binary(rewrite activeAliases left, operatorName, rewrite activeAliases right)
             | Elvis(left, right) ->
                 Elvis(rewrite activeAliases left, rewrite activeAliases right)
+            | Comprehension comprehension ->
+                Comprehension { comprehension with Lowered = rewrite activeAliases comprehension.Lowered }
             | PrefixedString(prefix, parts) ->
                 PrefixedString(
                     prefix,
@@ -3431,6 +3440,8 @@ module SurfaceElaboration =
         match expression with
         | Name segments when not (List.isEmpty segments) ->
             Some(TypeName(segments, []))
+        | NumericLiteral(SurfaceIntegerLiteral(value, _, None)) when value = 0I || value = 1I ->
+            Some(TypeName([ value.ToString() ], []))
         | Apply(head, arguments) ->
             match tryParseTypeLikeSurfaceExpression head, arguments |> List.map tryParseTypeLikeSurfaceExpression with
             | Some(TypeName(name, existingArguments)), parsedArguments when parsedArguments |> List.forall Option.isSome ->
@@ -3441,6 +3452,220 @@ module SurfaceElaboration =
             tryParseTypeLikeSurfaceExpression inner
         | _ ->
             None
+
+    type private QueryCarrierShape =
+        { ExpectedMode: QuerySemantics.QueryModeInfo
+          ExpectedItemQuantity: ResourceModel.ResourceQuantity
+          Comprehension: SurfaceComprehension }
+
+    type private QueryPlanShape =
+        { InferredMode: QuerySemantics.QueryModeInfo
+          InferredItemQuantity: ResourceModel.ResourceQuantity
+          InferredItemType: TypeExpr }
+
+    let private tryMatchQueryCarrierShape expression =
+        let tryExplicit modeExpression itemQuantityExpression comprehension =
+            match
+                tryParseTypeLikeSurfaceExpression modeExpression |> Option.bind QuerySemantics.tryParseModeExpr,
+                tryParseTypeLikeSurfaceExpression itemQuantityExpression |> Option.bind QuerySemantics.tryParseQuantityExpr
+            with
+            | Some modeInfo, Some itemQuantity ->
+                Some
+                    { ExpectedMode = modeInfo
+                      ExpectedItemQuantity = itemQuantity
+                      Comprehension = comprehension }
+            | _ ->
+                None
+
+        match expression with
+        | Apply(Name nameSegments, [ Comprehension comprehension ]) ->
+            match nameSegments |> List.tryLast with
+            | Some "Query" ->
+                Some
+                    { ExpectedMode = QuerySemantics.reusableZeroOrMoreMode
+                      ExpectedItemQuantity = ResourceQuantity.omega
+                      Comprehension = comprehension }
+            | Some "OnceQuery" ->
+                Some
+                    { ExpectedMode = QuerySemantics.oneShotZeroOrMoreMode
+                      ExpectedItemQuantity = ResourceQuantity.omega
+                      Comprehension = comprehension }
+            | _ ->
+                None
+        | Apply(Name nameSegments, [ modeExpression; itemQuantityExpression; Comprehension comprehension ])
+            when nameSegments |> List.tryLast = Some "QueryCore" ->
+            tryExplicit modeExpression itemQuantityExpression comprehension
+        | _ ->
+            None
+
+    let private tryInferComprehensionPlanShape
+        (environment: BindingLoweringEnvironment)
+        (freshCounter: int ref)
+        (localTypes: Map<string, TypeExpr>)
+        (inferExpressionType: Map<string, TypeExpr> -> SurfaceExpression -> TypeExpr option)
+        (comprehension: SurfaceComprehension)
+        =
+        let normalize = normalizeTypeAliases environment.VisibleTypeAliases
+
+        let trySourceInfo currentLocals sourceExpression =
+            inferExpressionType currentLocals sourceExpression
+            |> Option.bind (QuerySemantics.tryInferBuiltinQuerySource normalize)
+
+        let addPatternQuantities
+            (quantity: ResourceQuantity)
+            (binding: SurfaceBindPattern)
+            (quantities: Map<string, ResourceQuantity>)
+            =
+            ResourceCheckingSurface.collectPatternNames binding.Pattern
+            |> List.fold (fun current name -> Map.add name quantity current) quantities
+
+        let rec loop
+            (currentMode: QuerySemantics.QueryModeInfo)
+            currentLocals
+            (currentQuantities: Map<string, ResourceQuantity>)
+            clauses
+            =
+            match clauses with
+            | [] ->
+                inferExpressionType currentLocals comprehension.Yield
+                |> Option.map (fun itemType ->
+                    let itemQuantity =
+                        match comprehension.Yield with
+                        | Name [ name ] ->
+                            currentQuantities |> Map.tryFind name |> Option.defaultValue ResourceQuantity.omega
+                        | _ ->
+                            ResourceQuantity.omega
+
+                    { InferredMode = currentMode
+                      InferredItemQuantity = itemQuantity
+                      InferredItemType = itemType })
+            | clause :: rest ->
+                match clause with
+                | ForClause(_, _, binding, source) ->
+                    trySourceInfo currentLocals source
+                    |> Option.bind (fun sourceInfo ->
+                        let nextLocals =
+                            extendPatternLocalTypes environment freshCounter currentLocals (Some sourceInfo.Query.ItemType) binding.Pattern
+
+                        let nextQuantities =
+                            addPatternQuantities sourceInfo.Query.ItemQuantity binding currentQuantities
+
+                        let nextMode : QuerySemantics.QueryModeInfo =
+                            { Use = QuerySemantics.composeUse currentMode.Use sourceInfo.Query.Mode.Use
+                              Card = QuerySemantics.multiplyCard currentMode.Card sourceInfo.Query.Mode.Card }
+
+                        loop nextMode nextLocals nextQuantities rest)
+                | LetClause(_, binding, value) ->
+                    let nextLocals =
+                        match inferExpressionType currentLocals value with
+                        | Some valueType ->
+                            extendPatternLocalTypes environment freshCounter currentLocals (Some valueType) binding.Pattern
+                        | None ->
+                            currentLocals
+
+                    let nextQuantities =
+                        let quantity =
+                            binding.Quantity
+                            |> Option.map ResourceQuantity.ofSurface
+                            |> Option.defaultValue ResourceQuantity.omega
+
+                        addPatternQuantities quantity binding currentQuantities
+
+                    loop currentMode nextLocals nextQuantities rest
+                | IfClause _ ->
+                    loop { currentMode with Card = QuerySemantics.filterCard currentMode.Card } currentLocals currentQuantities rest
+                | OrderByClause _ ->
+                    loop currentMode currentLocals currentQuantities rest
+                | DistinctClause
+                | DistinctByClause _ ->
+                    loop currentMode currentLocals currentQuantities rest
+                | SkipClause _
+                | TakeClause _ ->
+                    loop { currentMode with Card = QuerySemantics.filterCard currentMode.Card } currentLocals currentQuantities rest
+                | LeftJoinClause(_, source, _, intoName) ->
+                    trySourceInfo currentLocals source
+                    |> Option.bind (fun sourceInfo ->
+                        let intoQueryType =
+                            TypeName(
+                                [ "QueryCore" ],
+                                [
+                                    TypeName(
+                                        [ "QueryMode"; "QueryMode" ],
+                                        [
+                                            TypeName(
+                                                [ "QueryUse"
+                                                  match sourceInfo.Query.Mode.Use with
+                                                  | QuerySemantics.Reusable -> "Reusable"
+                                                  | QuerySemantics.OneShot -> "OneShot" ],
+                                                []
+                                            )
+                                            TypeName(
+                                                [ "QueryCard"
+                                                  match sourceInfo.Query.Mode.Card with
+                                                  | QuerySemantics.QZero -> "QZero"
+                                                  | QuerySemantics.QOne -> "QOne"
+                                                  | QuerySemantics.QZeroOrOne -> "QZeroOrOne"
+                                                  | QuerySemantics.QOneOrMore -> "QOneOrMore"
+                                                  | QuerySemantics.QZeroOrMore -> "QZeroOrMore" ],
+                                                []
+                                            )
+                                        ]
+                                    )
+                                    TypeName([ ResourceQuantity.toSurfaceText sourceInfo.Query.ItemQuantity ], [])
+                                    sourceInfo.Query.ItemType
+                                ]
+                            )
+
+                        let nextLocals = Map.add intoName intoQueryType currentLocals
+                        loop currentMode nextLocals currentQuantities rest)
+
+        loop
+            { Use = QuerySemantics.Reusable
+              Card = QuerySemantics.QOne }
+            localTypes
+            Map.empty
+            comprehension.Clauses
+
+    let private tryInferQueryCarrierType
+        (environment: BindingLoweringEnvironment)
+        (freshCounter: int ref)
+        (localTypes: Map<string, TypeExpr>)
+        (inferExpressionType: Map<string, TypeExpr> -> SurfaceExpression -> TypeExpr option)
+        expression
+        =
+        tryMatchQueryCarrierShape expression
+        |> Option.bind (fun carrier ->
+            tryInferComprehensionPlanShape environment freshCounter localTypes inferExpressionType carrier.Comprehension
+            |> Option.map (fun plan ->
+                TypeName(
+                    [ "QueryCore" ],
+                    [
+                        TypeName(
+                            [ "QueryMode"; "QueryMode" ],
+                            [
+                                TypeName(
+                                    [ "QueryUse"
+                                      match carrier.ExpectedMode.Use with
+                                      | QuerySemantics.Reusable -> "Reusable"
+                                      | QuerySemantics.OneShot -> "OneShot" ],
+                                    []
+                                )
+                                TypeName(
+                                    [ "QueryCard"
+                                      match carrier.ExpectedMode.Card with
+                                      | QuerySemantics.QZero -> "QZero"
+                                      | QuerySemantics.QOne -> "QOne"
+                                      | QuerySemantics.QZeroOrOne -> "QZeroOrOne"
+                                      | QuerySemantics.QOneOrMore -> "QOneOrMore"
+                                      | QuerySemantics.QZeroOrMore -> "QZeroOrMore" ],
+                                    []
+                                )
+                            ]
+                        )
+                        TypeName([ ResourceQuantity.toSurfaceText carrier.ExpectedItemQuantity ], [])
+                        plan.InferredItemType
+                    ]
+                )))
 
     let private tryResolveTraitMemberProjection
         (environment: BindingLoweringEnvironment)
@@ -4508,62 +4733,72 @@ module SurfaceElaboration =
             None
         | InoutArgument inner ->
             inferValidationExpressionType environment freshCounter localTypes inner
-        | Apply(Name [ receiverName; memberName ], arguments) ->
-            tryInferStaticConstructorCall
+        | Apply _ as application ->
+            tryInferQueryCarrierType
                 environment
                 freshCounter
-                (inferValidationExpressionType environment freshCounter localTypes)
-                (Name [ receiverName ])
-                memberName
-                arguments
+                localTypes
+                (fun currentLocals currentExpression ->
+                    inferValidationExpressionType environment freshCounter currentLocals currentExpression)
+                application
             |> Option.orElseWith (fun () ->
-                environment.VisibleBindings
-                |> Map.tryFind memberName
-                |> Option.bind (fun bindingInfo ->
-                    tryBuildReceiverMethodArguments bindingInfo (Name [ receiverName ]) arguments
-                    |> Option.bind (fun receiverArguments ->
+                match application with
+                | Apply(Name [ receiverName; memberName ], arguments) ->
+                    tryInferStaticConstructorCall
+                        environment
+                        freshCounter
+                        (inferValidationExpressionType environment freshCounter localTypes)
+                        (Name [ receiverName ])
+                        memberName
+                        arguments
+                    |> Option.orElseWith (fun () ->
+                        environment.VisibleBindings
+                        |> Map.tryFind memberName
+                        |> Option.bind (fun bindingInfo ->
+                            tryBuildReceiverMethodArguments bindingInfo (Name [ receiverName ]) arguments
+                            |> Option.bind (fun receiverArguments ->
+                                tryPrepareVisibleBindingCall
+                                    environment
+                                    freshCounter
+                                    bindingInfo
+                                    (inferValidationExpressionType environment freshCounter localTypes)
+                                    (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                    receiverArguments
+                                |> Option.map (fun preparedCall -> preparedCall.ResultType))))
+                | Apply(Name [ calleeName ], arguments) ->
+                    environment.VisibleBindings
+                    |> Map.tryFind calleeName
+                    |> Option.bind (fun bindingInfo ->
                         tryPrepareVisibleBindingCall
                             environment
                             freshCounter
                             bindingInfo
                             (inferValidationExpressionType environment freshCounter localTypes)
                             (tryResolveUniqueLocalImplicitByType environment localTypes)
-                            receiverArguments
-                        |> Option.map (fun preparedCall -> preparedCall.ResultType))))
-        | Apply(Name [ calleeName ], arguments) ->
-            environment.VisibleBindings
-            |> Map.tryFind calleeName
-            |> Option.bind (fun bindingInfo ->
-                tryPrepareVisibleBindingCall
-                    environment
-                    freshCounter
-                    bindingInfo
-                    (inferValidationExpressionType environment freshCounter localTypes)
-                    (tryResolveUniqueLocalImplicitByType environment localTypes)
-                    arguments
-                |> Option.map (fun preparedCall -> preparedCall.ResultType))
-            |> Option.orElseWith (fun () ->
-                environment.VisibleConstructors
-                |> Map.tryFind calleeName
-                |> Option.bind (fun constructorInfo ->
-                    tryPrepareVisibleBindingCall
-                        environment
-                        freshCounter
-                        constructorInfo
-                        (inferValidationExpressionType environment freshCounter localTypes)
-                        (tryResolveUniqueLocalImplicitByType environment localTypes)
-                        arguments
-                    |> Option.map (fun preparedCall -> preparedCall.ResultType)))
-            |> Option.orElseWith (fun () ->
-                tryPrepareVisibleTraitMemberCall
-                    environment
-                    freshCounter
-                    calleeName
-                    (inferValidationExpressionType environment freshCounter localTypes)
-                    arguments
-                |> Option.map (fun (_, _, preparedCall, _) -> preparedCall.ResultType))
-        | Apply _ ->
-            None
+                            arguments
+                        |> Option.map (fun preparedCall -> preparedCall.ResultType))
+                    |> Option.orElseWith (fun () ->
+                        environment.VisibleConstructors
+                        |> Map.tryFind calleeName
+                        |> Option.bind (fun constructorInfo ->
+                            tryPrepareVisibleBindingCall
+                                environment
+                                freshCounter
+                                constructorInfo
+                                (inferValidationExpressionType environment freshCounter localTypes)
+                                (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                arguments
+                            |> Option.map (fun preparedCall -> preparedCall.ResultType)))
+                    |> Option.orElseWith (fun () ->
+                        tryPrepareVisibleTraitMemberCall
+                            environment
+                            freshCounter
+                            calleeName
+                            (inferValidationExpressionType environment freshCounter localTypes)
+                            arguments
+                        |> Option.map (fun (_, _, preparedCall, _) -> preparedCall.ResultType))
+                | _ ->
+                    None)
         | Unary("not", _) ->
             Some boolType
         | Unary("negate", operand) ->
@@ -4606,6 +4841,8 @@ module SurfaceElaboration =
                             None))
             | _ ->
                 None
+        | Comprehension comprehension ->
+            inferValidationExpressionType environment freshCounter localTypes comprehension.Lowered
         | PrefixedString(prefix, _) ->
             tryInferPrefixedStringMacroResultType environment freshCounter localTypes prefix
 
@@ -5280,6 +5517,8 @@ module SurfaceElaboration =
 
                         for argument in arguments do
                             yield! escapedCapturedNames bindingVisible currentVisible argument
+                    | Comprehension comprehension ->
+                        yield! escapedCapturedNames bindingVisible currentVisible comprehension.Lowered
                     | NamedApplicationBlock fields ->
                         for field in fields do
                             yield! escapedCapturedNames bindingVisible currentVisible field.Value
@@ -6154,6 +6393,8 @@ module SurfaceElaboration =
                     | Elvis(left, right) ->
                         yield! loop left
                         yield! loop right
+                    | Comprehension comprehension ->
+                        yield! loop comprehension.Lowered
                     | PrefixedString(_, parts) ->
                         for part in parts do
                             match part with
@@ -6554,6 +6795,7 @@ module SurfaceElaboration =
                     | Apply(callee, arguments) -> loop callee @ (arguments |> List.collect loop)
                     | Binary(left, _, right)
                     | Elvis(left, right) -> loop left @ loop right
+                    | Comprehension comprehension -> loop comprehension.Lowered
                     | PrefixedString(_, parts) ->
                         parts
                         |> List.collect (function
@@ -6791,6 +7033,100 @@ module SurfaceElaboration =
         let rec validateExpression locals refinements lexicalNames expression =
             let recurse = validateExpression locals refinements lexicalNames
 
+            let queryUseText useMode =
+                match useMode with
+                | QuerySemantics.Reusable -> "Reusable"
+                | QuerySemantics.OneShot -> "OneShot"
+
+            let queryCardText card =
+                match card with
+                | QuerySemantics.QZero -> "QZero"
+                | QuerySemantics.QOne -> "QOne"
+                | QuerySemantics.QZeroOrOne -> "QZeroOrOne"
+                | QuerySemantics.QOneOrMore -> "QOneOrMore"
+                | QuerySemantics.QZeroOrMore -> "QZeroOrMore"
+
+            let recurseComprehension (comprehension: SurfaceComprehension) =
+                let normalizeVisibleType = normalizeTypeAliases environment.VisibleTypeAliases
+
+                let rec loop currentLocals currentLexical clauses =
+                    match clauses with
+                    | [] ->
+                        validateExpression currentLocals refinements currentLexical comprehension.Yield
+                    | clause :: rest ->
+                        match clause with
+                        | ForClause(_, _, binding, source) ->
+                            let sourceDiagnostics =
+                                validateExpression currentLocals refinements currentLexical source
+
+                            let nextLocals =
+                                inferValidationExpressionType environment freshCounter currentLocals source
+                                |> Option.bind (QuerySemantics.tryInferBuiltinQuerySource normalizeVisibleType)
+                                |> Option.map (fun sourceInfo ->
+                                    extendBindingLocalTypes environment freshCounter currentLocals binding (Some sourceInfo.Query.ItemType))
+                                |> Option.defaultValue (extendBindingLocalTypes environment freshCounter currentLocals binding None)
+
+                            let nextLexical =
+                                Set.union currentLexical (collectPatternNames binding.Pattern |> Set.ofList)
+
+                            sourceDiagnostics @ loop nextLocals nextLexical rest
+                        | LetClause(_, binding, value) ->
+                            let valueDiagnostics =
+                                validateExpression currentLocals refinements currentLexical value
+
+                            let nextLocals =
+                                inferValidationExpressionType environment freshCounter currentLocals value
+                                |> Option.map (fun valueType ->
+                                    extendBindingLocalTypes environment freshCounter currentLocals binding (Some valueType))
+                                |> Option.defaultValue (extendBindingLocalTypes environment freshCounter currentLocals binding None)
+
+                            let nextLexical =
+                                Set.union currentLexical (collectPatternNames binding.Pattern |> Set.ofList)
+
+                            valueDiagnostics @ loop nextLocals nextLexical rest
+                        | IfClause condition ->
+                            validateExpression currentLocals refinements currentLexical condition
+                            @ loop currentLocals currentLexical rest
+                        | OrderByClause key ->
+                            validateExpression currentLocals refinements currentLexical key
+                            @ loop currentLocals currentLexical rest
+                        | DistinctClause ->
+                            loop currentLocals currentLexical rest
+                        | DistinctByClause key ->
+                            validateExpression currentLocals refinements currentLexical key
+                            @ loop currentLocals currentLexical rest
+                        | SkipClause count ->
+                            validateExpression currentLocals refinements currentLexical count
+                            @ loop currentLocals currentLexical rest
+                        | TakeClause count ->
+                            validateExpression currentLocals refinements currentLexical count
+                            @ loop currentLocals currentLexical rest
+                        | LeftJoinClause(binding, source, condition, intoName) ->
+                            let sourceDiagnostics =
+                                validateExpression currentLocals refinements currentLexical source
+
+                            let joinLocals =
+                                inferValidationExpressionType environment freshCounter currentLocals source
+                                |> Option.bind (QuerySemantics.tryInferBuiltinQuerySource normalizeVisibleType)
+                                |> Option.map (fun sourceInfo ->
+                                    extendBindingLocalTypes environment freshCounter currentLocals binding (Some sourceInfo.Query.ItemType))
+                                |> Option.defaultValue (extendBindingLocalTypes environment freshCounter currentLocals binding None)
+
+                            let joinLexical =
+                                Set.union currentLexical (collectPatternNames binding.Pattern |> Set.ofList)
+
+                            let conditionDiagnostics =
+                                validateExpression joinLocals refinements joinLexical condition
+
+                            let nextLocals =
+                                Map.add intoName (TypeSignatures.TypeVariable $"__kappa_left_join_{intoName}") currentLocals
+
+                            let nextLexical = Set.add intoName currentLexical
+
+                            sourceDiagnostics @ conditionDiagnostics @ loop nextLocals nextLexical rest
+
+                loop locals lexicalNames comprehension.Clauses
+
             let simpleClauseBinderName (tokens: Token list) =
                 match tokens |> List.filter (fun token -> token.Kind <> Newline && token.Kind <> Indent && token.Kind <> Dedent) with
                 | [ token ] when Token.isName token ->
@@ -6810,6 +7146,41 @@ module SurfaceElaboration =
 
             let rec expressionReferencesName target shadowed current =
                 let recurseName = expressionReferencesName target shadowed
+
+                let rec comprehensionReferencesName shadowed (comprehension: SurfaceComprehension) =
+                    let rec loop currentShadowed clauses =
+                        match clauses with
+                        | [] ->
+                            expressionReferencesName target currentShadowed comprehension.Yield
+                        | clause :: rest ->
+                            match clause with
+                            | ForClause(_, _, binding, source) ->
+                                expressionReferencesName target currentShadowed source
+                                || loop (Set.union currentShadowed (collectPatternNames binding.Pattern |> Set.ofList)) rest
+                            | LetClause(_, binding, value) ->
+                                expressionReferencesName target currentShadowed value
+                                || loop (Set.union currentShadowed (collectPatternNames binding.Pattern |> Set.ofList)) rest
+                            | IfClause condition ->
+                                expressionReferencesName target currentShadowed condition || loop currentShadowed rest
+                            | OrderByClause key ->
+                                expressionReferencesName target currentShadowed key || loop currentShadowed rest
+                            | DistinctClause ->
+                                loop currentShadowed rest
+                            | DistinctByClause key ->
+                                expressionReferencesName target currentShadowed key || loop currentShadowed rest
+                            | SkipClause count ->
+                                expressionReferencesName target currentShadowed count || loop currentShadowed rest
+                            | TakeClause count ->
+                                expressionReferencesName target currentShadowed count || loop currentShadowed rest
+                            | LeftJoinClause(binding, source, condition, intoName) ->
+                                let joinShadowed =
+                                    Set.union currentShadowed (collectPatternNames binding.Pattern |> Set.ofList)
+
+                                expressionReferencesName target currentShadowed source
+                                || expressionReferencesName target joinShadowed condition
+                                || loop (Set.add intoName currentShadowed) rest
+
+                    loop shadowed comprehension.Clauses
 
                 match current with
                 | Name [ name ] ->
@@ -6919,6 +7290,8 @@ module SurfaceElaboration =
                 | Binary(left, _, right)
                 | Elvis(left, right) ->
                     recurseName left || recurseName right
+                | Comprehension comprehension ->
+                    comprehensionReferencesName shadowed comprehension
                 | PrefixedString(_, parts) ->
                     parts
                     |> List.exists (function
@@ -7067,6 +7440,8 @@ module SurfaceElaboration =
                     Binary(rewrite left, operatorName, rewrite right)
                 | Elvis(left, right) ->
                     Elvis(rewrite left, rewrite right)
+                | Comprehension comprehension ->
+                    Comprehension { comprehension with Lowered = rewrite comprehension.Lowered }
                 | PrefixedString(prefix, parts) ->
                     PrefixedString(
                         prefix,
@@ -7160,6 +7535,8 @@ module SurfaceElaboration =
                     Binary(rewrite left, operatorName, rewrite right)
                 | Elvis(left, right) ->
                     Elvis(rewrite left, rewrite right)
+                | Comprehension comprehension ->
+                    Comprehension { comprehension with Lowered = rewrite comprehension.Lowered }
                 | PrefixedString(prefix, parts) ->
                     PrefixedString(
                         prefix,
@@ -7325,6 +7702,8 @@ module SurfaceElaboration =
                 | Binary(left, _, right)
                 | Elvis(left, right) ->
                     recurseCount left + recurseCount right
+                | Comprehension comprehension ->
+                    recurseCount comprehension.Lowered
                 | PrefixedString(_, parts) ->
                     parts
                     |> List.sumBy (function
@@ -7472,6 +7851,8 @@ module SurfaceElaboration =
                     | Binary(left, _, right)
                     | Elvis(left, right) ->
                         recurseCurrent left @ recurseCurrent right
+                    | Comprehension comprehension ->
+                        recurseCurrent comprehension.Lowered
                     | PrefixedString(_, parts) ->
                         parts
                         |> List.collect (function
@@ -7596,6 +7977,8 @@ module SurfaceElaboration =
                 [ makeDiagnostic DiagnosticCode.NameUnresolved $"Name '{name}' is not in scope." ]
             | Name _ ->
                 []
+            | Comprehension comprehension ->
+                recurseComprehension comprehension
             | LocalLet(binding, value, body) ->
                 let valueType =
                     binding.TypeTokens
@@ -7705,6 +8088,8 @@ module SurfaceElaboration =
                         Binary(rewrite left, operatorName, rewrite right)
                     | Elvis(left, right) ->
                         Elvis(rewrite left, rewrite right)
+                    | Comprehension comprehension ->
+                        Comprehension { comprehension with Lowered = rewrite comprehension.Lowered }
                     | PrefixedString(prefix, parts) ->
                         PrefixedString(
                             prefix,
@@ -7935,159 +8320,192 @@ module SurfaceElaboration =
                 recurse inner
             | NamedApplicationBlock fields ->
                 fields |> List.collect (fun field -> recurse field.Value)
-            | Apply(callee, arguments) ->
-                let argumentDiagnostics =
-                    (match callee with
-                     | Name [ _ ] -> []
-                     | _ -> recurse callee)
-                    @ (arguments |> List.collect recurse)
+            | Apply _ as application ->
+                match tryMatchQueryCarrierShape application with
+                | Some carrier ->
+                    let compatibilityDiagnostics =
+                        match
+                            tryInferComprehensionPlanShape
+                                environment
+                                freshCounter
+                                locals
+                                (fun currentLocals currentExpression ->
+                                    inferValidationExpressionType environment freshCounter currentLocals currentExpression)
+                                carrier.Comprehension
+                        with
+                        | Some plan when not (QuerySemantics.canCheckUse plan.InferredMode.Use carrier.ExpectedMode.Use) ->
+                            [ makeDiagnostic
+                                DiagnosticCode.TypeEqualityMismatch
+                                $"Query carrier expects a {queryUseText carrier.ExpectedMode.Use} query, but the comprehension infers {queryUseText plan.InferredMode.Use}; use OnceQuery or an explicitly one-shot QueryCore carrier." ]
+                        | Some plan when not (QuerySemantics.canCheckCard plan.InferredMode.Card carrier.ExpectedMode.Card) ->
+                            [ makeDiagnostic
+                                DiagnosticCode.TypeEqualityMismatch
+                                $"Query cardinality mismatch: inferred {queryCardText plan.InferredMode.Card} cannot be checked as {queryCardText carrier.ExpectedMode.Card}." ]
+                        | Some plan when not (QuerySemantics.canCheckItemQuantity plan.InferredItemQuantity carrier.ExpectedItemQuantity) ->
+                            [ makeDiagnostic
+                                DiagnosticCode.TypeEqualityMismatch
+                                $"Query item quantity mismatch: inferred item quantity '{ResourceQuantity.toSurfaceText plan.InferredItemQuantity}' cannot be checked as '{ResourceQuantity.toSurfaceText carrier.ExpectedItemQuantity}'." ]
+                        | _ ->
+                            []
 
-                let hasNamedBlock =
-                    arguments
-                    |> List.exists (function
-                        | NamedApplicationBlock _ -> true
-                        | _ -> false)
+                    recurseComprehension carrier.Comprehension @ compatibilityDiagnostics
+                | None ->
+                    match application with
+                    | Apply(callee, arguments) ->
+                        let argumentDiagnostics =
+                            (match callee with
+                             | Name [ _ ] -> []
+                             | _ -> recurse callee)
+                            @ (arguments |> List.collect recurse)
 
-                let hasExplicitImplicitArgument =
-                    arguments
-                    |> List.exists (function
-                        | ExplicitImplicitArgument _ -> true
-                        | _ -> false)
+                        let hasNamedBlock =
+                            arguments
+                            |> List.exists (function
+                                | NamedApplicationBlock _ -> true
+                                | _ -> false)
 
-                let localCanSatisfyImplicitParameter (bindingInfo: BindingSchemeInfo) =
-                    match bindingInfo.ParameterLayouts with
-                    | Some layouts when layouts |> List.exists (fun parameter -> parameter.IsImplicit) ->
-                        let parameterTypes, _ = TypeSignatures.schemeParts bindingInfo.Scheme
+                        let hasExplicitImplicitArgument =
+                            arguments
+                            |> List.exists (function
+                                | ExplicitImplicitArgument _ -> true
+                                | _ -> false)
 
-                        if List.length layouts = List.length parameterTypes then
-                            List.zip layouts parameterTypes
-                            |> List.exists (fun (layout, parameterType) ->
-                                layout.IsImplicit
-                                && not (isCompileTimeArgumentType environment.VisibleTypeAliases parameterType)
-                                && (locals
-                                    |> Map.exists (fun _ localType ->
-                                        TypeSignatures.definitionallyEqual
-                                            (normalizeTypeAliases environment.VisibleTypeAliases localType)
-                                            (normalizeTypeAliases environment.VisibleTypeAliases parameterType))))
-                        else
-                            false
-                    | _ ->
-                        false
+                        let localCanSatisfyImplicitParameter (bindingInfo: BindingSchemeInfo) =
+                            match bindingInfo.ParameterLayouts with
+                            | Some layouts when layouts |> List.exists (fun parameter -> parameter.IsImplicit) ->
+                                let parameterTypes, _ = TypeSignatures.schemeParts bindingInfo.Scheme
 
-                let hasUnsatisfiedRuntimeImplicit (bindingInfo: BindingSchemeInfo) =
-                    match bindingInfo.ParameterLayouts with
-                    | Some layouts ->
-                        let parameterTypes, _ = TypeSignatures.schemeParts bindingInfo.Scheme
-                        let isTraitConstraintType parameterType =
-                            match normalizeTypeAliases environment.VisibleTypeAliases parameterType with
-                            | TypeName([ traitName ], _) ->
-                                environment.VisibleTraits.ContainsKey(traitName)
-                            | TypeName(qualifiedName, _) ->
-                                environment.VisibleTraits.ContainsKey(SyntaxFacts.moduleNameToText qualifiedName)
+                                if List.length layouts = List.length parameterTypes then
+                                    List.zip layouts parameterTypes
+                                    |> List.exists (fun (layout, parameterType) ->
+                                        layout.IsImplicit
+                                        && not (isCompileTimeArgumentType environment.VisibleTypeAliases parameterType)
+                                        && (locals
+                                            |> Map.exists (fun _ localType ->
+                                                TypeSignatures.definitionallyEqual
+                                                    (normalizeTypeAliases environment.VisibleTypeAliases localType)
+                                                    (normalizeTypeAliases environment.VisibleTypeAliases parameterType))))
+                                else
+                                    false
                             | _ ->
                                 false
 
-                        List.length layouts = List.length parameterTypes
-                        && (List.zip layouts parameterTypes
-                            |> List.exists (fun (layout, parameterType) ->
-                                layout.IsImplicit
-                                && not (isCompileTimeArgumentType environment.VisibleTypeAliases parameterType)
-                                && not (isTraitConstraintType parameterType)
-                                && not (localCanSatisfyImplicitParameter bindingInfo)))
-                    | None ->
-                        false
+                        let hasUnsatisfiedRuntimeImplicit (bindingInfo: BindingSchemeInfo) =
+                            match bindingInfo.ParameterLayouts with
+                            | Some layouts ->
+                                let parameterTypes, _ = TypeSignatures.schemeParts bindingInfo.Scheme
+                                let isTraitConstraintType parameterType =
+                                    match normalizeTypeAliases environment.VisibleTypeAliases parameterType with
+                                    | TypeName([ traitName ], _) ->
+                                        environment.VisibleTraits.ContainsKey(traitName)
+                                    | TypeName(qualifiedName, _) ->
+                                        environment.VisibleTraits.ContainsKey(SyntaxFacts.moduleNameToText qualifiedName)
+                                    | _ ->
+                                        false
 
-                let hasTooManyArguments (bindingInfo: BindingSchemeInfo) =
-                    match bindingInfo.ParameterLayouts with
-                    | Some layouts ->
-                        let visibleParameterCount =
-                            layouts
-                            |> List.filter (fun parameter -> not parameter.IsImplicit)
-                            |> List.length
-
-                        visibleParameterCount > 0 && arguments.Length > visibleParameterCount
-                    | None ->
-                        false
-
-                let applicationDiagnostics =
-                    match callee with
-                    | Name [ calleeName ] ->
-                        let bindingInfo =
-                            environment.VisibleBindings
-                            |> Map.tryFind calleeName
-                            |> Option.orElseWith (fun () -> environment.VisibleConstructors |> Map.tryFind calleeName)
-
-                        let resolvesAsTraitMemberCall () =
-                            tryPrepareVisibleTraitMemberCall
-                                environment
-                                (ref freshCounter.Value)
-                                calleeName
-                                (inferValidationExpressionType environment (ref freshCounter.Value) locals)
-                                arguments
-                            |> Option.isSome
-
-                        let isKnownVisibleCallee =
-                            (Set.contains calleeName lexicalNames)
-                            || (Set.contains calleeName knownSurfaceTermNames)
-                            || environment.VisibleProjections.ContainsKey(calleeName)
-                            || (environment.VisibleTraits |> Map.exists (fun _ traitInfo -> traitInfo.Members.ContainsKey(calleeName)))
-                            || environment.ConstrainedMembers.ContainsKey(calleeName)
-                            || resolvesAsTraitMemberCall ()
-
-                        match bindingInfo with
-                        | Some bindingInfo ->
-                            let probeCounter = ref freshCounter.Value
-                            let expectedArgumentDiagnostics =
-                                applicationExpectedArgumentDiagnostics locals refinements bindingInfo arguments
-
-                            match
-                                tryPrepareVisibleBindingCall
-                                    environment
-                                    probeCounter
-                                    bindingInfo
-                                    (inferValidationExpressionType environment (ref freshCounter.Value) locals)
-                                    (tryResolveUniqueLocalImplicitByType environment locals)
-                                    arguments
-                            with
-                            | Some _ ->
-                                expectedArgumentDiagnostics
-                            | None when localCanSatisfyImplicitParameter bindingInfo && not hasExplicitImplicitArgument ->
-                                expectedArgumentDiagnostics
-                            | None
-                                when hasNamedBlock
-                                     || hasExplicitImplicitArgument
-                                     || hasUnsatisfiedRuntimeImplicit bindingInfo
-                                     || hasTooManyArguments bindingInfo ->
-                                let message =
-                                    if hasNamedBlock then
-                                        "Named application arguments do not match the callee parameter metadata."
-                                    elif hasExplicitImplicitArgument
-                                         || (bindingInfo.ParameterLayouts
-                                             |> Option.exists (List.exists (fun parameter -> parameter.IsImplicit))) then
-                                        "Implicit application argument could not be resolved or does not match the implicit parameter."
-                                    else
-                                        "Application argument types do not match the callee parameters."
-
-                                expectedArgumentDiagnostics
-                                @ [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch message ]
+                                List.length layouts = List.length parameterTypes
+                                && (List.zip layouts parameterTypes
+                                    |> List.exists (fun (layout, parameterType) ->
+                                        layout.IsImplicit
+                                        && not (isCompileTimeArgumentType environment.VisibleTypeAliases parameterType)
+                                        && not (isTraitConstraintType parameterType)
+                                        && not (localCanSatisfyImplicitParameter bindingInfo)))
                             | None ->
-                                expectedArgumentDiagnostics
-                        | None
-                            when allowUnresolvedCallDiagnostics
-                                 && not isKnownVisibleCallee
-                                 && not (String.IsNullOrEmpty(calleeName))
-                                 && Char.IsUpper(calleeName[0]) ->
-                            [ makeDiagnostic DiagnosticCode.NameUnresolved $"Name '{calleeName}' is not in scope." ]
-                        | None when hasNamedBlock ->
-                            [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch "Named application requires a callee with preserved parameter metadata." ]
-                        | _ ->
-                            []
-                    | _ when hasNamedBlock ->
-                        [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch "Named application requires a callee with preserved parameter metadata." ]
+                                false
+
+                        let hasTooManyArguments (bindingInfo: BindingSchemeInfo) =
+                            match bindingInfo.ParameterLayouts with
+                            | Some layouts ->
+                                let visibleParameterCount =
+                                    layouts
+                                    |> List.filter (fun parameter -> not parameter.IsImplicit)
+                                    |> List.length
+
+                                visibleParameterCount > 0 && arguments.Length > visibleParameterCount
+                            | None ->
+                                false
+
+                        let applicationDiagnostics =
+                            match callee with
+                            | Name [ calleeName ] ->
+                                let bindingInfo =
+                                    environment.VisibleBindings
+                                    |> Map.tryFind calleeName
+                                    |> Option.orElseWith (fun () -> environment.VisibleConstructors |> Map.tryFind calleeName)
+
+                                let resolvesAsTraitMemberCall () =
+                                    tryPrepareVisibleTraitMemberCall
+                                        environment
+                                        (ref freshCounter.Value)
+                                        calleeName
+                                        (inferValidationExpressionType environment (ref freshCounter.Value) locals)
+                                        arguments
+                                    |> Option.isSome
+
+                                let isKnownVisibleCallee =
+                                    (Set.contains calleeName lexicalNames)
+                                    || (Set.contains calleeName knownSurfaceTermNames)
+                                    || environment.VisibleProjections.ContainsKey(calleeName)
+                                    || (environment.VisibleTraits |> Map.exists (fun _ traitInfo -> traitInfo.Members.ContainsKey(calleeName)))
+                                    || environment.ConstrainedMembers.ContainsKey(calleeName)
+                                    || resolvesAsTraitMemberCall ()
+
+                                match bindingInfo with
+                                | Some bindingInfo ->
+                                    let probeCounter = ref freshCounter.Value
+                                    let expectedArgumentDiagnostics =
+                                        applicationExpectedArgumentDiagnostics locals refinements bindingInfo arguments
+
+                                    match
+                                        tryPrepareVisibleBindingCall
+                                            environment
+                                            probeCounter
+                                            bindingInfo
+                                            (inferValidationExpressionType environment (ref freshCounter.Value) locals)
+                                            (tryResolveUniqueLocalImplicitByType environment locals)
+                                            arguments
+                                    with
+                                    | Some _ ->
+                                        expectedArgumentDiagnostics
+                                    | None when localCanSatisfyImplicitParameter bindingInfo && not hasExplicitImplicitArgument ->
+                                        expectedArgumentDiagnostics
+                                    | None
+                                        when hasNamedBlock
+                                             || hasExplicitImplicitArgument
+                                             || hasUnsatisfiedRuntimeImplicit bindingInfo
+                                             || hasTooManyArguments bindingInfo ->
+                                        let message =
+                                            if hasNamedBlock then
+                                                "Named application arguments do not match the callee parameter metadata."
+                                            elif hasExplicitImplicitArgument
+                                                 || (bindingInfo.ParameterLayouts
+                                                     |> Option.exists (List.exists (fun parameter -> parameter.IsImplicit))) then
+                                                "Implicit application argument could not be resolved or does not match the implicit parameter."
+                                            else
+                                                "Application argument types do not match the callee parameters."
+
+                                        expectedArgumentDiagnostics
+                                        @ [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch message ]
+                                    | None ->
+                                        expectedArgumentDiagnostics
+                                | None
+                                    when allowUnresolvedCallDiagnostics
+                                         && not isKnownVisibleCallee
+                                         && not (String.IsNullOrEmpty(calleeName))
+                                         && Char.IsUpper(calleeName[0]) ->
+                                    [ makeDiagnostic DiagnosticCode.NameUnresolved $"Name '{calleeName}' is not in scope." ]
+                                | None when hasNamedBlock ->
+                                    [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch "Named application requires a callee with preserved parameter metadata." ]
+                                | _ ->
+                                    []
+                            | _ when hasNamedBlock ->
+                                [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch "Named application requires a callee with preserved parameter metadata." ]
+                            | _ ->
+                                []
+
+                        argumentDiagnostics @ applicationDiagnostics
                     | _ ->
                         []
-
-                argumentDiagnostics @ applicationDiagnostics
             | Elvis(left, right) ->
                 let diagnostics = recurse left @ recurse right
 
@@ -8306,6 +8724,8 @@ module SurfaceElaboration =
             | Binary(left, _, right)
             | Elvis(left, right) ->
                 recurse left @ recurse right
+            | Comprehension comprehension ->
+                recurse comprehension.Lowered
             | PrefixedString(_, parts) ->
                 parts
                 |> List.collect (function
@@ -8540,6 +8960,8 @@ module SurfaceElaboration =
             | Binary(left, _, right)
             | Elvis(left, right) ->
                 recurse left @ recurse right
+            | Comprehension comprehension ->
+                recurse comprehension.Lowered
             | PrefixedString(_, parts) ->
                 parts
                 |> List.collect (function
@@ -8763,6 +9185,8 @@ module SurfaceElaboration =
                 | Binary(left, _, right)
                 | Elvis(left, right) ->
                     recurse left @ recurse right
+                | Comprehension comprehension ->
+                    recurse comprehension.Lowered
                 | PrefixedString(_, parts) ->
                     parts
                     |> List.collect (function
@@ -9465,6 +9889,8 @@ module SurfaceElaboration =
                     | Binary(left, _, right)
                     | Elvis(left, right) ->
                         references left || references right
+                    | Comprehension comprehension ->
+                        references comprehension.Lowered
                     | PrefixedString(_, parts) ->
                         parts
                         |> List.exists (function
@@ -9597,6 +10023,8 @@ module SurfaceElaboration =
                         validateExpression receiver @ (navigation.Arguments |> List.collect validateExpression)
                     | TagTest(receiver, _) ->
                         validateExpression receiver
+                    | Comprehension comprehension ->
+                        validateExpression comprehension.Lowered
                     | Do statements ->
                         validateDo statements
                     | MonadicSplice inner
@@ -10023,6 +10451,8 @@ module SurfaceElaboration =
                     Binary(substitute left, operatorName, substitute right)
                 | Elvis(left, right) ->
                     Elvis(substitute left, substitute right)
+                | Comprehension comprehension ->
+                    Comprehension { comprehension with Lowered = substitute comprehension.Lowered }
                 | PrefixedString(prefix, parts) ->
                     PrefixedString(
                         prefix,
@@ -10184,6 +10614,8 @@ module SurfaceElaboration =
                 Binary(normalizeLocalDeclarations left, operatorName, normalizeLocalDeclarations right)
             | Elvis(left, right) ->
                 Elvis(normalizeLocalDeclarations left, normalizeLocalDeclarations right)
+            | Comprehension comprehension ->
+                Comprehension { comprehension with Lowered = normalizeLocalDeclarations comprehension.Lowered }
             | PrefixedString(prefix, parts) ->
                 PrefixedString(
                     prefix,
@@ -10486,67 +10918,76 @@ module SurfaceElaboration =
                 None
             | InoutArgument inner ->
                 inferExpressionType localTypes inner
-            | Apply(Name [ receiverName; memberName ], arguments) ->
-                tryInferStaticConstructorCall
+            | Apply _ as application ->
+                tryInferQueryCarrierType
                     environment
                     freshCounter
-                    (inferExpressionType localTypes)
-                    (Name [ receiverName ])
-                    memberName
-                    arguments
+                    localTypes
+                    (fun currentLocals currentExpression -> inferExpressionType currentLocals currentExpression)
+                    application
                 |> Option.orElseWith (fun () ->
-                    environment.VisibleBindings
-                    |> Map.tryFind memberName
-                    |> Option.bind (fun bindingInfo ->
-                        tryBuildReceiverMethodArguments bindingInfo (Name [ receiverName ]) arguments
-                        |> Option.bind (fun receiverArguments ->
+                    match application with
+                    | Apply(Name [ receiverName; memberName ], arguments) ->
+                        tryInferStaticConstructorCall
+                            environment
+                            freshCounter
+                            (inferExpressionType localTypes)
+                            (Name [ receiverName ])
+                            memberName
+                            arguments
+                        |> Option.orElseWith (fun () ->
+                            environment.VisibleBindings
+                            |> Map.tryFind memberName
+                            |> Option.bind (fun bindingInfo ->
+                                tryBuildReceiverMethodArguments bindingInfo (Name [ receiverName ]) arguments
+                                |> Option.bind (fun receiverArguments ->
+                                    tryPrepareVisibleBindingCall
+                                        environment
+                                        freshCounter
+                                        bindingInfo
+                                        (inferExpressionType localTypes)
+                                        (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                        receiverArguments
+                                    |> Option.map (fun preparedCall -> preparedCall.ResultType))))
+                    | Apply(Name [ calleeName ], arguments) ->
+                        environment.VisibleBindings
+                        |> Map.tryFind calleeName
+                        |> Option.bind (fun bindingInfo ->
                             tryPrepareVisibleBindingCall
                                 environment
                                 freshCounter
                                 bindingInfo
                                 (inferExpressionType localTypes)
                                 (tryResolveUniqueLocalImplicitByType environment localTypes)
-                                receiverArguments
-                            |> Option.map (fun preparedCall -> preparedCall.ResultType))))
-            | Apply(Name [ calleeName ], arguments) ->
-                environment.VisibleBindings
-                |> Map.tryFind calleeName
-                |> Option.bind (fun bindingInfo ->
-                    tryPrepareVisibleBindingCall
-                        environment
-                        freshCounter
-                        bindingInfo
-                        (inferExpressionType localTypes)
-                        (tryResolveUniqueLocalImplicitByType environment localTypes)
-                        arguments
-                    |> Option.map (fun preparedCall -> preparedCall.ResultType))
-                |> Option.orElseWith (fun () ->
-                    environment.VisibleConstructors
-                    |> Map.tryFind calleeName
-                    |> Option.bind (fun constructorInfo ->
-                        tryPrepareVisibleBindingCall
-                            environment
-                            freshCounter
-                            constructorInfo
-                            (inferExpressionType localTypes)
-                            (tryResolveUniqueLocalImplicitByType environment localTypes)
-                            arguments
-                        |> Option.map (fun preparedCall -> preparedCall.ResultType)))
-                |> Option.orElseWith (fun () ->
-                    tryPrepareVisibleTraitMemberCall
-                        environment
-                        freshCounter
-                        calleeName
-                        (inferExpressionType localTypes)
-                        arguments
-                    |> Option.map (fun (_, _, preparedCall, _) -> preparedCall.ResultType))
-                |> Option.orElseWith (fun () ->
-                    environment.VisibleProjections
-                    |> Map.tryFind calleeName
-                    |> Option.bind (fun projectionInfo ->
-                        tryInferProjectionCallResultType localTypes projectionInfo arguments))
-            | Apply _ ->
-                None
+                                arguments
+                            |> Option.map (fun preparedCall -> preparedCall.ResultType))
+                        |> Option.orElseWith (fun () ->
+                            environment.VisibleConstructors
+                            |> Map.tryFind calleeName
+                            |> Option.bind (fun constructorInfo ->
+                                tryPrepareVisibleBindingCall
+                                    environment
+                                    freshCounter
+                                    constructorInfo
+                                    (inferExpressionType localTypes)
+                                    (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                    arguments
+                                |> Option.map (fun preparedCall -> preparedCall.ResultType)))
+                        |> Option.orElseWith (fun () ->
+                            tryPrepareVisibleTraitMemberCall
+                                environment
+                                freshCounter
+                                calleeName
+                                (inferExpressionType localTypes)
+                                arguments
+                            |> Option.map (fun (_, _, preparedCall, _) -> preparedCall.ResultType))
+                        |> Option.orElseWith (fun () ->
+                            environment.VisibleProjections
+                            |> Map.tryFind calleeName
+                            |> Option.bind (fun projectionInfo ->
+                                tryInferProjectionCallResultType localTypes projectionInfo arguments))
+                    | _ ->
+                        None)
             | Unary("not", _) ->
                 Some boolType
             | Unary(("negate" | "-"), operand) ->
@@ -10584,6 +11025,8 @@ module SurfaceElaboration =
                                 None))
                 | _ ->
                     None
+            | Comprehension comprehension ->
+                inferExpressionType localTypes comprehension.Lowered
             | PrefixedString(prefix, _) ->
                 tryInferPrefixedStringMacroResultType environment freshCounter localTypes prefix
 
@@ -10898,6 +11341,8 @@ module SurfaceElaboration =
                     Binary(loop left, operatorName, loop right)
                 | Elvis(left, right) ->
                     Elvis(loop left, loop right)
+                | Comprehension comprehension ->
+                    Comprehension { comprehension with Lowered = loop comprehension.Lowered }
                 | PrefixedString(prefix, parts) ->
                     PrefixedString(
                         prefix,
@@ -11848,6 +12293,8 @@ module SurfaceElaboration =
                     | Elvis(left, right) ->
                         tryFind shadowed left
                         |> Option.orElseWith (fun () -> tryFind shadowed right)
+                    | Comprehension comprehension ->
+                        tryFind shadowed comprehension.Lowered
                     | PrefixedString(_, parts) ->
                         parts
                         |> List.tryPick (function
@@ -12073,6 +12520,8 @@ module SurfaceElaboration =
                 KCoreCodeQuote(lowerExpressionWithExpectedType localTypes None inner)
             | CodeSplice inner ->
                 KCoreCodeSplice(lowerExpressionWithExpectedType localTypes None inner)
+            | Comprehension comprehension ->
+                lowerExpressionWithExpectedType localTypes expectedType comprehension.Lowered
             | Handle(_, _, _, returnClause, _) ->
                 lowerExpressionWithExpectedType localTypes expectedType returnClause.Body
             | KindQualifiedName _ ->
@@ -12428,6 +12877,9 @@ module SurfaceElaboration =
                 KCoreLiteral LiteralValue.Unit
             | InoutArgument inner ->
                 lowerExpressionWithExpectedType localTypes None inner
+            | Apply _ as application when tryMatchQueryCarrierShape application |> Option.isSome ->
+                let carrier = tryMatchQueryCarrierShape application |> Option.get
+                lowerExpressionWithExpectedType localTypes expectedType carrier.Comprehension.Lowered
             | Apply(Name [ receiverName; memberName ], arguments) ->
                 match tryResolveStaticConstructor environment (Name [ receiverName ]) memberName with
                 | Some _ ->

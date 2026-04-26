@@ -1293,7 +1293,7 @@ let ``resource checker lets a match constructor pattern bind a linear field for 
     Assert.DoesNotContain(OwnershipDeferredFact.MatchPatternResourceChecking, ownership.OwnershipDeferred)
 
 [<Fact>]
-let ``resource checker treats match discrimination as non consuming`` () =
+let ``resource checker treats nullary constructor discrimination as consuming`` () =
     let text =
         [
             "module main"
@@ -1314,7 +1314,7 @@ let ``resource checker treats match discrimination as non consuming`` () =
 
     let result = ResourceChecking.checkDocumentsWithFacts [ document ]
 
-    assertContainsDiagnostic DiagnosticCode.QttLinearDrop result.Diagnostics
+    assertDoesNotContainDiagnostic DiagnosticCode.QttLinearDrop result.Diagnostics
 
 [<Fact>]
 let ``resource checker propagates borrowed match bindings as borrowed aliases`` () =

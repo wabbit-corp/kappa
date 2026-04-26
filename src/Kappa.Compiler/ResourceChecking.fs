@@ -484,6 +484,81 @@ module ResourceChecking =
             None
 
     let rec private expressionNames (expression: SurfaceExpression) =
+        let expressionNamesInComprehension (comprehension: SurfaceComprehension) =
+            let rec loop shadowed clauses =
+                seq {
+                    match clauses with
+                    | [] ->
+                        for name in expressionNames comprehension.Yield do
+                            if not (Set.contains name shadowed) then
+                                yield name
+                    | clause :: rest ->
+                        match clause with
+                        | ForClause(_, _, binding, source) ->
+                            for name in expressionNames source do
+                                if not (Set.contains name shadowed) then
+                                    yield name
+
+                            let nextShadowed =
+                                shadowed
+                                |> Set.union (collectPatternNames binding.Pattern |> Set.ofList)
+
+                            yield! loop nextShadowed rest
+                        | LetClause(_, binding, value) ->
+                            for name in expressionNames value do
+                                if not (Set.contains name shadowed) then
+                                    yield name
+
+                            let nextShadowed =
+                                shadowed
+                                |> Set.union (collectPatternNames binding.Pattern |> Set.ofList)
+
+                            yield! loop nextShadowed rest
+                        | IfClause condition ->
+                            for name in expressionNames condition do
+                                if not (Set.contains name shadowed) then
+                                    yield name
+                            yield! loop shadowed rest
+                        | OrderByClause key ->
+                            for name in expressionNames key do
+                                if not (Set.contains name shadowed) then
+                                    yield name
+                            yield! loop shadowed rest
+                        | DistinctClause ->
+                            yield! loop shadowed rest
+                        | DistinctByClause key ->
+                            for name in expressionNames key do
+                                if not (Set.contains name shadowed) then
+                                    yield name
+                            yield! loop shadowed rest
+                        | SkipClause count ->
+                            for name in expressionNames count do
+                                if not (Set.contains name shadowed) then
+                                    yield name
+                            yield! loop shadowed rest
+                        | TakeClause count ->
+                            for name in expressionNames count do
+                                if not (Set.contains name shadowed) then
+                                    yield name
+                            yield! loop shadowed rest
+                        | LeftJoinClause(binding, source, condition, intoName) ->
+                            for name in expressionNames source do
+                                if not (Set.contains name shadowed) then
+                                    yield name
+
+                            let joinShadowed =
+                                shadowed
+                                |> Set.union (collectPatternNames binding.Pattern |> Set.ofList)
+
+                            for name in expressionNames condition do
+                                if not (Set.contains name joinShadowed) then
+                                    yield name
+
+                            yield! loop (Set.add intoName shadowed) rest
+                }
+
+            loop Set.empty comprehension.Clauses
+
         seq {
             match expression with
             | Literal _ -> ()
@@ -594,6 +669,8 @@ module ResourceChecking =
             | Elvis(left, right) ->
                 yield! expressionNames left
                 yield! expressionNames right
+            | Comprehension comprehension ->
+                yield! expressionNamesInComprehension comprehension
             | PrefixedString(_, parts) ->
                 for part in parts do
                     match part with
@@ -1783,6 +1860,8 @@ module ResourceChecking =
             Binary(rewrite left, operatorName, rewrite right)
         | Elvis(left, right) ->
             Elvis(rewrite left, rewrite right)
+        | Comprehension comprehension ->
+            Comprehension { comprehension with Lowered = rewrite comprehension.Lowered }
         | PrefixedString(prefix, parts) ->
             let parts =
                 parts
@@ -2949,6 +3028,8 @@ module ResourceChecking =
         | Binary(left, _, right)
         | Elvis(left, right) ->
             recurse left + recurse right
+        | Comprehension comprehension ->
+            recurse comprehension.Lowered
         | PrefixedString(_, parts) ->
             parts
             |> List.sumBy (function
@@ -3302,6 +3383,14 @@ module ResourceChecking =
                         addNamedEvent OwnershipUseKind.Borrow (findUseLocation document scrutineeName 1) scrutineeBinding.Name state
                     | Some quantity
                         when ResourceQuantity.requiresUse quantity
+                             && List.isEmpty patternBindings ->
+                        match tryFindBindingId scrutineeName state with
+                        | Some bindingId ->
+                            updateBinding bindingId (fun binding -> { binding with UseMinimum = max binding.UseMinimum 1 }) state
+                        | None ->
+                            state
+                    | Some quantity
+                        when ResourceQuantity.requiresUse quantity
                              && not (List.isEmpty patternBindings)
                              && (constructorFieldQuantitiesForPattern
                                  |> Option.exists (List.forall (function | Some fieldQuantity -> not (ResourceQuantity.requiresUse fieldQuantity) | None -> true))) ->
@@ -3635,6 +3724,8 @@ module ResourceChecking =
             fields |> List.exists (fun field -> expressionResultMayCarryBorrow state field.Value)
         | Elvis _ ->
             not (Set.isEmpty (capturedRegions state expression))
+        | Comprehension comprehension ->
+            expressionResultMayCarryBorrow state comprehension.Lowered
         | Literal _
         | NumericLiteral _
         | KindQualifiedName _
@@ -3703,6 +3794,8 @@ module ResourceChecking =
             expressionMayCarryEscapingBorrow inner
         | NamedApplicationBlock fields ->
             fields |> List.exists (fun field -> expressionMayCarryEscapingBorrow field.Value)
+        | Comprehension comprehension ->
+            expressionMayCarryEscapingBorrow comprehension.Lowered
         | Literal _
         | NumericLiteral _
         | KindQualifiedName _
@@ -3796,6 +3889,8 @@ module ResourceChecking =
             checkEscapeAgainstAllowed allowedRegions document expression state
         | Apply(Name [ "captureBorrow" ], [ _ ]) ->
             checkEscapeAgainstAllowed allowedRegions document expression state
+        | Comprehension comprehension ->
+            checkResultEscapeAtBoundary allowedRegions document comprehension.Lowered state
         | Literal _
         | NumericLiteral _
         | KindQualifiedName _
@@ -4223,6 +4318,388 @@ module ResourceChecking =
         state
         expression
         =
+        let inferQuerySourceInfo locals source =
+            tryInferConservativeExpressionType signatures locals source
+            |> Option.bind (QuerySemantics.tryInferBuiltinQuerySource id)
+
+        let queryUseText useMode =
+            match useMode with
+            | QuerySemantics.Reusable -> "Reusable"
+            | QuerySemantics.OneShot -> "OneShot"
+
+        let queryCardText card =
+            match card with
+            | QuerySemantics.QZero -> "QZero"
+            | QuerySemantics.QOne -> "QOne"
+            | QuerySemantics.QZeroOrOne -> "QZeroOrOne"
+            | QuerySemantics.QOneOrMore -> "QOneOrMore"
+            | QuerySemantics.QZeroOrMore -> "QZeroOrMore"
+
+        let queryQuantityExpr quantity =
+            match quantity with
+            | ResourceQuantity.Interval(0, Some 0) -> TypeSignatures.TypeName([ "0" ], [])
+            | ResourceQuantity.Interval(1, Some 1) -> TypeSignatures.TypeName([ "1" ], [])
+            | ResourceQuantity.Interval(0, None) -> TypeSignatures.TypeName([ "ω" ], [])
+            | ResourceQuantity.Interval(0, Some 1) -> TypeSignatures.TypeName([ "<=1" ], [])
+            | ResourceQuantity.Interval(1, None) -> TypeSignatures.TypeName([ ">=1" ], [])
+            | ResourceQuantity.Borrow None -> TypeSignatures.TypeName([ "&" ], [])
+            | ResourceQuantity.Borrow(Some regionName) -> TypeSignatures.TypeName([ $"&[{regionName}]" ], [])
+            | ResourceQuantity.Variable name -> TypeSignatures.TypeName([ name ], [])
+            | ResourceQuantity.Interval(minimum, Some maximum) when minimum = maximum ->
+                TypeSignatures.TypeName([ string minimum ], [])
+            | ResourceQuantity.Interval(minimum, Some maximum) ->
+                TypeSignatures.TypeName([ $"[{minimum},{maximum}]" ], [])
+            | ResourceQuantity.Interval(minimum, None) ->
+                TypeSignatures.TypeName([ $"[{minimum},inf]" ], [])
+
+        let buildQueryTypeExpr (queryInfo: QuerySemantics.QueryTypeInfo) =
+            let buildModeExpr (mode: QuerySemantics.QueryModeInfo) =
+                let useExpr =
+                    TypeSignatures.TypeName(
+                        [
+                            match mode.Use with
+                            | QuerySemantics.Reusable -> "Reusable"
+                            | QuerySemantics.OneShot -> "OneShot"
+                        ],
+                        []
+                    )
+
+                let cardExpr =
+                    TypeSignatures.TypeName([ queryCardText mode.Card ], [])
+
+                TypeSignatures.TypeName([ "QueryMode" ], [ useExpr; cardExpr ])
+
+            let baseType =
+                match queryInfo.Mode.Use, queryInfo.Mode.Card, queryInfo.ItemQuantity with
+                | QuerySemantics.Reusable, QuerySemantics.QZeroOrMore, ResourceQuantity.Interval(0, None) ->
+                    TypeSignatures.TypeName([ "Query" ], [ queryInfo.ItemType ])
+                | QuerySemantics.OneShot, QuerySemantics.QZeroOrMore, ResourceQuantity.Interval(0, None) ->
+                    TypeSignatures.TypeName([ "OnceQuery" ], [ queryInfo.ItemType ])
+                | QuerySemantics.Reusable, QuerySemantics.QZeroOrOne, ResourceQuantity.Interval(0, None) ->
+                    TypeSignatures.TypeName([ "OptionalQuery" ], [ queryInfo.ItemType ])
+                | QuerySemantics.Reusable, QuerySemantics.QOneOrMore, ResourceQuantity.Interval(0, None) ->
+                    TypeSignatures.TypeName([ "NonEmptyQuery" ], [ queryInfo.ItemType ])
+                | QuerySemantics.Reusable, QuerySemantics.QOne, ResourceQuantity.Interval(0, None) ->
+                    TypeSignatures.TypeName([ "SingletonQuery" ], [ queryInfo.ItemType ])
+                | _ ->
+                    TypeSignatures.TypeName(
+                        [ "QueryCore" ],
+                        [ buildModeExpr queryInfo.Mode; queryQuantityExpr queryInfo.ItemQuantity; queryInfo.ItemType ]
+                    )
+
+            if Set.isEmpty queryInfo.CaptureSet then
+                baseType
+            else
+                TypeSignatures.TypeCapture(baseType, queryInfo.CaptureSet |> Set.toList)
+
+        let currentRowBindings current =
+            currentScopeBindingIds current
+            |> List.choose (fun bindingId ->
+                Map.tryFind bindingId current.Bindings
+                |> Option.map (fun binding -> bindingId, binding))
+            |> List.filter (fun (_, binding) -> binding.BindingKind = PatternBinding)
+
+        let currentExactOneRowBindings current =
+            currentRowBindings current |> List.filter (fun (_, binding) -> isExactOneBinding binding)
+
+        let restoreBindingSnapshots snapshots current =
+            let restoredBindings =
+                snapshots
+                |> Map.fold (fun bindings bindingId binding -> Map.add bindingId binding bindings) current.Bindings
+
+            { current with
+                Bindings = restoredBindings }
+
+        let addClauseDiagnostic code message clauseExpression current =
+            addDiagnostic code message (argumentLocation document clauseExpression) [] document current
+
+        let addExactOneRowClauseDiagnostic code message clauseExpression current =
+            match currentExactOneRowBindings current with
+            | [] ->
+                current
+            | (_, binding) :: _ ->
+                addClauseDiagnostic code (message binding.Name) clauseExpression current
+
+        let checkNonConsumingRowExpression clauseLabel clauseExpression currentLocals current =
+            let rowSnapshots =
+                currentExactOneRowBindings current |> Map.ofList
+
+            let checkedState =
+                current
+                |> noteValueDemandingNameUse document clauseExpression
+                |> fun next -> checkExpression projectionSummaries document signatures currentLocals next clauseExpression
+
+            let consumedRowBindings =
+                rowSnapshots
+                |> Map.toList
+                |> List.choose (fun (bindingId, beforeBinding) ->
+                    match Map.tryFind bindingId checkedState.Bindings with
+                    | Some afterBinding
+                        when afterBinding.UseMaximum > beforeBinding.UseMaximum
+                             || List.length afterBinding.ConsumedPaths > List.length beforeBinding.ConsumedPaths ->
+                        Some beforeBinding.Name
+                    | _ -> None)
+
+            let restored = restoreBindingSnapshots rowSnapshots checkedState
+
+            match consumedRowBindings with
+            | [] ->
+                restored
+            | bindingName :: _ ->
+                addClauseDiagnostic
+                    linearOveruseCode
+                    $"`{clauseLabel}` must not consume row binding '{bindingName}'."
+                    clauseExpression
+                    restored
+
+        let addCardinalityDiagnostic clauseLabel card clauseExpression current =
+            match currentExactOneRowBindings current with
+            | [] ->
+                current
+            | (_, binding) :: _ ->
+                let mayDrop = QuerySemantics.mayDiscardRows card
+                let mayDuplicate = QuerySemantics.mayDuplicateRows card
+                let code =
+                    if mayDuplicate then
+                        linearOveruseCode
+                    else
+                        linearDropCode
+
+                let effectText =
+                    match mayDrop, mayDuplicate with
+                    | true, true -> "duplicate or discard"
+                    | true, false -> "discard"
+                    | false, true -> "duplicate"
+                    | false, false -> "reorder"
+
+                addClauseDiagnostic
+                    code
+                    $"`{clauseLabel}` may {effectText} linear row binding '{binding.Name}' because the clause cardinality is {queryCardText card}."
+                    clauseExpression
+                    current
+
+        let addDropDiagnostic clauseLabel clauseExpression current =
+            addExactOneRowClauseDiagnostic
+                linearDropCode
+                (fun bindingName -> $"`{clauseLabel}` may discard linear row binding '{bindingName}'.")
+                clauseExpression
+                current
+
+        let addLeftJoinCaptureDiagnostic source condition current =
+            let outerLinearNames =
+                currentExactOneRowBindings current
+                |> List.map (fun (_, binding) -> binding.Name)
+                |> Set.ofList
+
+            let referencedLinearName =
+                [ source; condition ]
+                |> List.collect (ResourceCheckingSurface.expressionNames >> Seq.toList)
+                |> List.tryFind (fun name -> Set.contains name outerLinearNames)
+
+            match referencedLinearName with
+            | Some bindingName ->
+                addClauseDiagnostic
+                    linearOveruseCode
+                    $"`left join ... into` would capture linear outer row binding '{bindingName}' for delayed query use."
+                    condition
+                    current
+            | None ->
+                current
+
+        let rec checkComprehensionClauses currentLocals current (comprehension: SurfaceComprehension) clauses =
+            match clauses with
+            | [] ->
+                current
+                |> noteValueDemandingNameUse document comprehension.Yield
+                |> fun next -> checkExpression projectionSummaries document signatures currentLocals next comprehension.Yield
+            | clause :: rest ->
+                match clause with
+                | ForClause(_, _, binding, source) ->
+                    let current =
+                        current
+                        |> noteValueDemandingNameUse document source
+                        |> fun next -> checkExpression projectionSummaries document signatures currentLocals next source
+
+                    let current =
+                        match inferQuerySourceInfo currentLocals source with
+                        | Some sourceInfo when not (List.isEmpty (currentExactOneRowBindings current)) ->
+                            if
+                                QuerySemantics.mayDiscardRows sourceInfo.Query.Mode.Card
+                                || QuerySemantics.mayDuplicateRows sourceInfo.Query.Mode.Card
+                            then
+                                addCardinalityDiagnostic "for" sourceInfo.Query.Mode.Card source current
+                            else
+                                current
+                        | _ ->
+                            current
+
+                    let valueType =
+                        inferQuerySourceInfo currentLocals source |> Option.map (fun sourceInfo -> sourceInfo.Query.ItemType)
+
+                    let declaredQuantity =
+                        inferQuerySourceInfo currentLocals source
+                        |> Option.map (fun sourceInfo ->
+                            if binding.Quantity.IsSome then
+                                binding.Quantity |> Option.map ResourceQuantity.ofSurface |> Option.get
+                            else
+                                sourceInfo.Query.ItemQuantity)
+                        |> Option.orElseWith (fun () -> binding.Quantity |> Option.map ResourceQuantity.ofSurface)
+
+                    let capturedRegions =
+                        inferQuerySourceInfo currentLocals source
+                        |> Option.map (fun sourceInfo -> sourceInfo.Query.CaptureSet)
+                        |> Option.defaultValue Set.empty
+
+                    let nextState =
+                        addPatternBindings
+                            document
+                            binding
+                            declaredQuantity
+                            None
+                            None
+                            capturedRegions
+                            []
+                            (declaredQuantity |> Option.exists ResourceQuantity.requiresUse)
+                            None
+                            None
+                            current
+
+                    let nextLocals =
+                        extendBindingLocalTypes signatures currentLocals valueType binding
+
+                    checkComprehensionClauses nextLocals nextState comprehension rest
+                | LetClause(_, binding, value) ->
+                    let current =
+                        current
+                        |> noteValueDemandingNameUse document value
+                        |> fun next -> checkExpression projectionSummaries document signatures currentLocals next value
+
+                    let valueType = tryInferConservativeExpressionType signatures currentLocals value
+                    let declaredQuantity =
+                        binding.Quantity
+                        |> Option.map ResourceQuantity.ofSurface
+                        |> Option.orElseWith (fun () -> tryConstructorPatternQuantity document binding.Pattern)
+
+                    let nextState =
+                        addPatternBindings
+                            document
+                            binding
+                            declaredQuantity
+                            None
+                            None
+                            Set.empty
+                            []
+                            (declaredQuantity |> Option.exists ResourceQuantity.requiresUse)
+                            None
+                            None
+                            current
+
+                    let nextLocals =
+                        extendBindingLocalTypes signatures currentLocals valueType binding
+
+                    checkComprehensionClauses nextLocals nextState comprehension rest
+                | IfClause condition ->
+                    let current =
+                        current
+                        |> noteValueDemandingNameUse document condition
+                        |> fun next -> checkExpression projectionSummaries document signatures currentLocals next condition
+                        |> addDropDiagnostic "if" condition
+
+                    checkComprehensionClauses currentLocals current comprehension rest
+                | OrderByClause key ->
+                    let current = checkNonConsumingRowExpression "order by" key currentLocals current
+                    checkComprehensionClauses currentLocals current comprehension rest
+                | DistinctClause ->
+                    let current = addDropDiagnostic "distinct" comprehension.Yield current
+                    checkComprehensionClauses currentLocals current comprehension rest
+                | DistinctByClause key ->
+                    let current =
+                        current
+                        |> checkNonConsumingRowExpression "distinct by" key currentLocals
+                        |> addDropDiagnostic "distinct by" key
+
+                    checkComprehensionClauses currentLocals current comprehension rest
+                | SkipClause count ->
+                    let current =
+                        current
+                        |> noteValueDemandingNameUse document count
+                        |> fun next -> checkExpression projectionSummaries document signatures currentLocals next count
+                        |> addDropDiagnostic "skip" count
+
+                    checkComprehensionClauses currentLocals current comprehension rest
+                | TakeClause count ->
+                    let current =
+                        current
+                        |> noteValueDemandingNameUse document count
+                        |> fun next -> checkExpression projectionSummaries document signatures currentLocals next count
+                        |> addDropDiagnostic "take" count
+
+                    checkComprehensionClauses currentLocals current comprehension rest
+                | LeftJoinClause(binding, source, condition, intoName) ->
+                    let current =
+                        current
+                        |> noteValueDemandingNameUse document source
+                        |> fun next -> checkExpression projectionSummaries document signatures currentLocals next source
+                        |> addLeftJoinCaptureDiagnostic source condition
+
+                    let sourceInfo = inferQuerySourceInfo currentLocals source
+                    let joinLocalTypes =
+                        extendBindingLocalTypes
+                            signatures
+                            currentLocals
+                            (sourceInfo |> Option.map (fun info -> info.Query.ItemType))
+                            binding
+
+                    let current =
+                        withScope "left_join_on" (fun joinState ->
+                            let joinQuantity =
+                                sourceInfo
+                                |> Option.map (fun info -> info.Query.ItemQuantity)
+                                |> Option.orElseWith (fun () -> binding.Quantity |> Option.map ResourceQuantity.ofSurface)
+
+                            let joinState =
+                                addPatternBindings
+                                    document
+                                    binding
+                                    joinQuantity
+                                    None
+                                    None
+                                    Set.empty
+                                    []
+                                    (joinQuantity |> Option.exists ResourceQuantity.requiresUse)
+                                    None
+                                    None
+                                    joinState
+
+                            joinState
+                            |> noteValueDemandingNameUse document condition
+                            |> fun next -> checkExpression projectionSummaries document signatures joinLocalTypes next condition
+                            |> checkScopeLinearDrops document) current
+
+                    let intoType =
+                        sourceInfo
+                        |> Option.map (fun info -> buildQueryTypeExpr info.Query)
+                        |> Option.defaultValue (TypeSignatures.TypeVariable $"__kappa_query_{intoName}")
+
+                    let nextState =
+                        addBinding
+                            LocalBinding
+                            intoName
+                            None
+                            None
+                            Set.empty
+                            []
+                            false
+                            None
+                            None
+                            (argumentLocation document condition)
+                            current
+
+                    let nextLocals =
+                        Map.add intoName intoType currentLocals
+
+                    checkComprehensionClauses nextLocals nextState comprehension rest
+
         match expression with
         | CodeQuote inner ->
             state
@@ -4737,6 +5214,10 @@ module ResourceChecking =
             |> fun current -> checkExpression projectionSummaries document signatures localTypes current left
             |> noteValueDemandingNameUse document right
             |> fun current -> checkExpression projectionSummaries document signatures localTypes current right
+        | Comprehension comprehension ->
+            withScope "query" (fun scopedState ->
+                checkComprehensionClauses localTypes scopedState comprehension comprehension.Clauses
+                |> checkScopeLinearDrops document) state
         | PrefixedString(_, parts) ->
             parts
             |> List.fold (fun current part ->
@@ -5884,6 +6365,8 @@ module ResourceChecking =
                     | Binary(left, _, right)
                     | Elvis(left, right) ->
                         containsEscapingAbruptControl left || containsEscapingAbruptControl right
+                    | Comprehension comprehension ->
+                        containsEscapingAbruptControl comprehension.Lowered
                     | PrefixedString(_, parts) ->
                         parts
                         |> List.exists (function
