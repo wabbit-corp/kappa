@@ -280,7 +280,13 @@ def stage_to_args(stage: str) -> list[str]:
     if stage == "compile":
         return []
     if stage.startswith("verify:"):
-        return ["--verify", stage.split(":", 1)[1]]
+        target = stage.split(":", 1)[1]
+        checkpoint, separator, backend = target.partition("@")
+        args: list[str] = []
+        if separator and backend:
+            args.extend(["--backend", backend])
+        args.extend(["--verify", checkpoint])
+        return args
     raise ValueError(f"Unsupported stage: {stage}")
 
 
@@ -330,6 +336,13 @@ def run_cli_source(cli_path: Path, repo_root: Path, source: str, *, stage: str, 
 
 def bucket_for_kind(kind: str) -> str:
     return KIND_TO_BUCKET[kind]
+
+
+def terminal_signature_from_run(run: CaseRunResult) -> str:
+    terminal = last_nonblank_line(run.stderr) or last_nonblank_line(run.stdout) or "<empty>"
+    if run.stage != "compile":
+        return f"{run.stage}: {terminal}"
+    return terminal
 
 
 def kind_from_bucket_name(name: str) -> str:
@@ -1784,7 +1797,7 @@ def fuzz_from_checkpoint(
     max_ids: int,
     keep_diagnostics: int,
     keep_successes: int,
-    verify_clean_checkpoint: list[str],
+    verify_stages: list[str],
 ) -> dict:
     rng = random.Random(seed)
     require_torch()
@@ -1818,7 +1831,7 @@ def fuzz_from_checkpoint(
                 "seed": seed,
                 "timeout_seconds": timeout_seconds,
                 "max_ids": max_ids,
-                "verify_clean_checkpoint": verify_clean_checkpoint,
+                "verify_stages": verify_stages,
             },
             indent=2,
         ),
@@ -1836,16 +1849,31 @@ def fuzz_from_checkpoint(
         stage = "compile"
         run = run_cli_source(cli_path, repo_root, decoded, stage=stage, timeout_seconds=timeout_seconds)
         kind = run.kind
+        verification_results: list[dict] = []
 
         if kind == "ok":
-            for checkpoint_name in verify_clean_checkpoint:
-                verify_stage = f"verify:{checkpoint_name}"
+            failing_runs: list[CaseRunResult] = []
+            for verify_stage in verify_stages:
                 verify_run = run_cli_source(cli_path, repo_root, decoded, stage=verify_stage, timeout_seconds=timeout_seconds)
+                verification_results.append(
+                    {
+                        "stage": verify_stage,
+                        "kind": verify_run.kind,
+                        "returncode": verify_run.returncode,
+                        "timed_out": verify_run.timed_out,
+                        "terminal_signature": terminal_signature_from_run(verify_run),
+                    }
+                )
                 if verify_run.kind in {"crash", "timeout", "failure"}:
-                    run = verify_run
-                    stage = verify_stage
-                    kind = verify_run.kind
-                    break
+                    failing_runs.append(verify_run)
+            if failing_runs:
+                severity_order = {"crash": 0, "timeout": 1, "failure": 2}
+                run = min(
+                    failing_runs,
+                    key=lambda candidate: (severity_order.get(candidate.kind, 99), verify_stages.index(candidate.stage)),
+                )
+                stage = run.stage
+                kind = run.kind
 
         stats[kind] += 1
         should_save = False
@@ -1869,6 +1897,7 @@ def fuzz_from_checkpoint(
             (case_dir / "main.encoded.kp").write_text(encoded + "\n", encoding="utf-8")
             (case_dir / "stdout.txt").write_text(run.stdout, encoding="utf-8")
             (case_dir / "stderr.txt").write_text(run.stderr, encoding="utf-8")
+            (case_dir / "expected.txt").write_text(terminal_signature_from_run(run) + "\n", encoding="utf-8")
             (case_dir / "meta.json").write_text(
                 json.dumps(
                     {
@@ -1886,7 +1915,8 @@ def fuzz_from_checkpoint(
                         "prime": prime,
                         "sample_length": sample_length,
                         "seed": seed,
-                        "verify_clean_checkpoint": verify_clean_checkpoint,
+                        "verify_stages": verify_stages,
+                        "verification_results": verification_results,
                     },
                     indent=2,
                 ),
@@ -1910,7 +1940,7 @@ def retest_cases(
     cli_path: Path,
     out_dir: Path,
     timeout_seconds: float,
-    verify_clean_checkpoint: list[str],
+    verify_stages: list[str],
 ) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     for name in BUCKETS:
@@ -1925,7 +1955,7 @@ def retest_cases(
                 "cli": str(cli_path),
                 "timeout_seconds": timeout_seconds,
                 "case_count": len(case_dirs),
-                "verify_clean_checkpoint": verify_clean_checkpoint,
+                "verify_stages": verify_stages,
             },
             indent=2,
         ),
@@ -1939,16 +1969,31 @@ def retest_cases(
         stage = "compile"
         run = run_cli_source(cli_path, repo_root, source, stage=stage, timeout_seconds=timeout_seconds)
         kind = run.kind
+        verification_results: list[dict] = []
 
         if kind == "ok":
-            for checkpoint_name in verify_clean_checkpoint:
-                verify_stage = f"verify:{checkpoint_name}"
+            failing_runs: list[CaseRunResult] = []
+            for verify_stage in verify_stages:
                 verify_run = run_cli_source(cli_path, repo_root, source, stage=verify_stage, timeout_seconds=timeout_seconds)
+                verification_results.append(
+                    {
+                        "stage": verify_stage,
+                        "kind": verify_run.kind,
+                        "returncode": verify_run.returncode,
+                        "timed_out": verify_run.timed_out,
+                        "terminal_signature": terminal_signature_from_run(verify_run),
+                    }
+                )
                 if verify_run.kind in {"crash", "timeout", "failure"}:
-                    run = verify_run
-                    stage = verify_stage
-                    kind = verify_run.kind
-                    break
+                    failing_runs.append(verify_run)
+            if failing_runs:
+                severity_order = {"crash": 0, "timeout": 1, "failure": 2}
+                run = min(
+                    failing_runs,
+                    key=lambda candidate: (severity_order.get(candidate.kind, 99), verify_stages.index(candidate.stage)),
+                )
+                stage = run.stage
+                kind = run.kind
 
         stats[kind] += 1
         digest = sample_sha1(source)
@@ -1957,6 +2002,7 @@ def retest_cases(
         (dest_dir / "main.kp").write_text(source.rstrip() + "\n", encoding="utf-8")
         (dest_dir / "stdout.txt").write_text(run.stdout, encoding="utf-8")
         (dest_dir / "stderr.txt").write_text(run.stderr, encoding="utf-8")
+        (dest_dir / "expected.txt").write_text(terminal_signature_from_run(run) + "\n", encoding="utf-8")
         (dest_dir / "meta.json").write_text(
             json.dumps(
                 {
@@ -1970,7 +2016,8 @@ def retest_cases(
                     "cli": str(cli_path),
                     "stage": stage,
                     "source_case_dir": str(case_dir),
-                    "verify_clean_checkpoint": verify_clean_checkpoint,
+                    "verify_stages": verify_stages,
+                    "verification_results": verification_results,
                 },
                 indent=2,
             ),
@@ -2023,7 +2070,7 @@ def ddmin_list(items: list[str], test) -> list[str]:
 
 def load_case_expectation(case_dir: Path, kind: str) -> tuple[str, str]:
     meta = load_json(case_dir / "meta.json")
-    stage = str(meta.get("stage") or ("verify:KBackendIR" if kind == "failure" else "compile"))
+    stage = str(meta.get("stage") or ("verify:KBackendIR@dotnet-il" if kind == "failure" else "compile"))
     if kind == "failure":
         expected = terminal_signature_from_case(case_dir)
     elif kind == "crash":
@@ -2040,7 +2087,7 @@ def preserves_case(cli_path: Path, repo_root: Path, source: str, kind: str, stag
     if run.kind != kind:
         return False
     if kind == "failure":
-        return last_nonblank_line(run.stdout) == expected
+        return terminal_signature_from_run(run) == expected
     if kind == "crash":
         combined = f"{run.stdout}\n{run.stderr}"
         return expected in combined if expected and expected != "<empty>" else True
@@ -2177,6 +2224,15 @@ def verify_checkpoint_for_kind(kind: str) -> str | None:
     return "KBackendIR" if kind in {"failure", "ok", "success"} else None
 
 
+def verification_stage_for_case(case_dir: Path, kind: str) -> str:
+    meta = load_json(case_dir / "meta.json")
+    stage = str(meta.get("stage", "")).strip()
+    if stage:
+        return stage
+    verify_checkpoint = verify_checkpoint_for_kind(kind)
+    return f"verify:{verify_checkpoint}@dotnet-il" if verify_checkpoint else "compile"
+
+
 def has_case_dirs(root: Path) -> bool:
     return root.exists() and any(path.is_dir() and (path / "main.kp").exists() for path in root.iterdir())
 
@@ -2203,8 +2259,7 @@ def cluster_cases_by_trace(repo_root: Path, *, roots: list[Path], cli_path: Path
         kind = kind_from_case_dir(case_dir)
         source = (case_dir / "main.kp").read_text(encoding="utf-8", errors="replace")
         source_hash = alpha_source_hash(source)
-        verify_checkpoint = verify_checkpoint_for_kind(kind)
-        stage = f"verify:{verify_checkpoint}" if verify_checkpoint else "compile"
+        stage = verification_stage_for_case(case_dir, kind)
         run = run_cli_source(cli_path, repo_root, source, stage=stage, timeout_seconds=timeout_seconds, trace=True)
         steps = trace_steps_from_stdout(run.stdout)
         step_hash = trace_hash(steps)
@@ -2441,6 +2496,7 @@ def pipeline(
     skip_train: bool = False,
     cleanup: bool = True,
 ) -> dict:
+    verify_stages = ["verify:KBackendIR@dotnet-il", "verify:KBackendIR@zig"]
     compiler_commit = current_git_commit(repo_root)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     run_dir = model_dir / f"fuzz-run-{timestamp}-{compiler_commit[:8]}"
@@ -2454,7 +2510,7 @@ def pipeline(
 
     retest_summary = None
     if (repo_root / "pending-failures").exists():
-        retest_summary = retest_cases(repo_root, roots=["pending-failures"], cli_path=cli_path, out_dir=retest_dir, timeout_seconds=timeout_seconds, verify_clean_checkpoint=["KBackendIR"])
+        retest_summary = retest_cases(repo_root, roots=["pending-failures"], cli_path=cli_path, out_dir=retest_dir, timeout_seconds=timeout_seconds, verify_stages=verify_stages)
 
     corpus_before = update_corpus_store(repo_root, db_path=corpus_db, jsonl_path=corpus_jsonl)
     weighting = export_weighted_training_samples(repo_root, db_path=corpus_db, out_path=weighted_jsonl, preferred_commit=compiler_commit)
@@ -2477,7 +2533,7 @@ def pipeline(
         max_ids=8,
         keep_diagnostics=10,
         keep_successes=5,
-        verify_clean_checkpoint=["KBackendIR"],
+        verify_stages=verify_stages,
     )
 
     promotion = promote_pending_failures(repo_root, roots=[run_dir], cli_path=cli_path, pending_dir=repo_root / "pending-failures", timeout_seconds=timeout_seconds)

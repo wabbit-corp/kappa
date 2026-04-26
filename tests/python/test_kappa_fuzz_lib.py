@@ -201,6 +201,13 @@ class TraceReplayTests(unittest.TestCase):
             command,
         )
 
+    def test_build_cli_command_includes_backend_when_stage_requests_it(self) -> None:
+        command = build_cli_command(Path("/cli"), Path("/tmp/root"), Path("/tmp/root/main.kp"), stage="verify:KBackendIR@dotnet-il", trace=False)
+        self.assertEqual(
+            ["/cli", "--source-root", "/tmp/root", "--backend", "dotnet-il", "--verify", "KBackendIR", "/tmp/root/main.kp"],
+            command,
+        )
+
     def test_trace_parser_extracts_steps(self) -> None:
         stdout = """
 Pipeline trace

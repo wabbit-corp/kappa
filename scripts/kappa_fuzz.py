@@ -23,6 +23,8 @@ from kappa_fuzz_lib import (
     update_corpus_store,
 )
 
+VERIFY_STAGES = ["verify:KBackendIR@dotnet-il", "verify:KBackendIR@zig"]
+
 
 def add_common_paths(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--cli", default="src/Kappa.Compiler.Cli/bin/Release/net10.0/Kappa.Compiler.Cli")
@@ -141,7 +143,7 @@ def main() -> None:
             max_ids=8,
             keep_diagnostics=10,
             keep_successes=5,
-            verify_clean_checkpoint=["KBackendIR"],
+            verify_stages=VERIFY_STAGES,
         )
         promotion = promote_pending_failures(
             repo_root,
@@ -209,7 +211,7 @@ def main() -> None:
                     max_ids=8,
                     keep_diagnostics=10,
                     keep_successes=5,
-                    verify_clean_checkpoint=["KBackendIR"],
+                    verify_stages=VERIFY_STAGES,
                 ),
                 indent=2,
             )
@@ -225,7 +227,7 @@ def main() -> None:
                     cli_path=resolve_path(repo_root, args.cli),
                     out_dir=resolve_path(repo_root, args.out_dir),
                     timeout_seconds=args.timeout_seconds,
-                    verify_clean_checkpoint=["KBackendIR"],
+                    verify_stages=VERIFY_STAGES,
                 ),
                 indent=2,
             )
