@@ -14966,13 +14966,47 @@ Type and scope rules:
 
 * In `join`, the bindings introduced by `pat` are in scope in later clauses exactly as for other successful row
   extensions.
-* In `left join ... into name`, `name` is in scope in later clauses and has type `Query t`, where `t` is the item type
-  yielded by the normalized inner matching query.
+* In `left join ... into name`, `name` is in scope in later clauses and has the inferred first-class query type of the
+  normalized inner matching query. For the ordinary reusable/unrestricted case this type is displayed as `Query t`.
+  More generally it has elaborated type:
+
+  ```kappa
+  QueryCore innerMode innerItemQuantity t captures (ρ1, ..., ρn)
+  ```
+
+  where the capture set is inferred from values closed over by the inner matching query.
 * The encounter order and ordered/unordered status of `name` are those of the matching inner query produced for the
   current outer row.
 
 Implementations MAY lower joins to dedicated normalized join operators or to observationally equivalent combinations of
 normalized query operators, provided the semantics above are preserved.
+
+Quantity and borrowing:
+
+* Ordinary `join pat in xs on cond` has the same quantitative behavior as its normative lowering to `for tmp in xs`,
+  `let? pat = tmp`, and `if cond`.
+* In particular, it may drop or duplicate the current outer row according to the cardinality of `xs` and according to
+  whether matching and `cond` succeed. The carried outer row entries must satisfy the row-droppability and
+  row-duplicability requirements of §10.10.2B.
+* The join condition is checked in a non-consuming context with respect to row entries that remain available after the
+  join.
+* A source expression used by a join is evaluated once per incoming outer row. Demands on variables captured from the
+  surrounding lexical environment are multiplied by the current pipeline cardinality as specified in §10.10.2C.
+
+Left join:
+
+* `left join ... into name` preserves each outer row exactly once. The left-join clause itself therefore has per-input
+  row multiplicity `QOne` for the outer row.
+* The first-class query bound to `name` is a delayed value and may capture variables from the outer row and from the
+  surrounding lexical environment.
+* A delayed inner query may capture a row entry only by a non-consuming capture. In portable v1, this means the
+  captured row entry must be borrowed, erased, unrestricted, or explicitly reified as a `BorrowView` whose region is
+  recorded in the query value's `captures (...)` annotation.
+* A delayed inner query MUST NOT capture row entries whose available quantity is `1`, `<=1`, or `>=1`, unless a future
+  extension defines an explicit consuming left-join form that removes or transfers those entries from the outer row.
+* If the inferred inner query mode is one-shot, `left join ... into name` is ill-formed in portable v1 unless the
+  implementation lowers the join to an observationally equivalent materialized reusable result that consumes the
+  one-shot source exactly once. Such a materialization must be explicit in the normalized plan metadata.
 
 <!-- collections.carriers -->
 ### 10.9 Carrier prefixes, first-class queries, and custom sinks
@@ -15227,6 +15261,24 @@ Rules:
   borrowed item itself, but dropping the surrounding row remains subject to row-droppability.
 * A clause that may emit more than one output row for one input row is well-formed only when the duplicated
   runtime-relevant row components satisfy the ordinary quantity rules for duplication.
+
+<!-- collections.lowering.pipeline_cardinality -->
+#### 10.10.2C Pipeline cardinality and lexical demand multiplication
+
+Before `yield`, clause lowering also tracks how the current pipeline may change the number of rows produced for each
+incoming row.
+
+Rules:
+
+* Each normalized plan node has a per-input row multiplicity classified as `QZero`, `QOne`, `QZeroOrOne`,
+  `QOneOrMore`, or `QZeroOrMore`.
+* A source expression introduced by `for`, `for?`, `join`, or `left join` is evaluated once for each incoming row that
+  reaches that node, unless this specification explicitly states otherwise.
+* When an expression in the clause sequence mentions a variable from the surrounding lexical environment rather than a
+  row entry, the demand on that variable is multiplied by the current pipeline cardinality in the same sense as delayed
+  higher-order demand multiplication under §7.2.1.
+* A first-class query value introduced by the plan carries the resulting multiplied demands and inferred captures of the
+  lexical values it closes over.
 
 <!-- collections.lowering.clause_lowering -->
 #### 10.10.3 Clause lowering
