@@ -29,6 +29,7 @@ type DiagnosticCode =
     | ProjectionDefinitionUnsupported
     | DuplicateDeclaration
     | DuplicatePatternBinder
+    | TraitInstanceAmbiguous
     | NameUnresolved
     | RecursiveTypeAlias
     | MalformedConstructorDeclaration
@@ -98,6 +99,7 @@ module DiagnosticCode =
         | ProjectionDefinitionUnsupported -> "E_PROJECTION_DEFINITION_UNSUPPORTED"
         | DuplicateDeclaration -> "E_DUPLICATE_DECLARATION"
         | DuplicatePatternBinder -> "E_DUPLICATE_PATTERN_BINDER"
+        | TraitInstanceAmbiguous -> "E_TRAIT_INSTANCE_AMBIGUOUS"
         | NameUnresolved -> "E_NAME_UNRESOLVED"
         | RecursiveTypeAlias -> "E_RECURSIVE_TYPE_ALIAS"
         | MalformedConstructorDeclaration -> "E_MALFORMED_CONSTRUCTOR_DECLARATION"
@@ -166,6 +168,7 @@ module DiagnosticCode =
         | "E_PROJECTION_DEFINITION_UNSUPPORTED" -> Some ProjectionDefinitionUnsupported
         | "E_DUPLICATE_DECLARATION" -> Some DuplicateDeclaration
         | "E_DUPLICATE_PATTERN_BINDER" -> Some DuplicatePatternBinder
+        | "E_TRAIT_INSTANCE_AMBIGUOUS" -> Some TraitInstanceAmbiguous
         | "E_NAME_UNRESOLVED" -> Some NameUnresolved
         | "E_RECURSIVE_TYPE_ALIAS" -> Some RecursiveTypeAlias
         | "E_MALFORMED_CONSTRUCTOR_DECLARATION" -> Some MalformedConstructorDeclaration

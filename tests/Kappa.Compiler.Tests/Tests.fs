@@ -1643,6 +1643,123 @@ let ``type imports from modules with identical export shapes stay distinct`` () 
     Assert.False(workspace.HasErrors, sprintf "Expected aliased type imports from distinct modules to stay visible, got %A" workspace.Diagnostics)
 
 [<Fact>]
+let ``instances are visible through the full module closure independent of qualified imports`` () =
+    let scoreSource =
+        [
+            "module providers.score"
+            "trait Score a ="
+            "    score : a -> Int"
+        ]
+        |> String.concat "\n"
+
+    let implSource =
+        [
+            "module providers.impl"
+            "import providers.score.(trait Score)"
+            "instance Score Int ="
+            "    let score x = x"
+        ]
+        |> String.concat "\n"
+
+    let apiSource =
+        [
+            "module providers.api"
+            "import providers.score.(trait Score)"
+            "import providers.impl"
+            "useScore : Score a => a -> Int"
+            "let useScore x = score x"
+        ]
+        |> String.concat "\n"
+
+    let mainSource =
+        [
+            "module main"
+            "import providers.score.(trait Score)"
+            "import providers.api.(term useScore)"
+            "result : Int"
+            "let result = useScore 7"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-instance-closure-root"
+            "main.result"
+            [
+                "providers/score.kp", scoreSource
+                "providers/impl.kp", implSource
+                "providers/api.kp", apiSource
+                "main.kp", mainSource
+            ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected module-closure instance visibility, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("7", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected transitive qualified-only instance visibility to succeed, got %s" issue.Message
+
+[<Fact>]
+let ``multiple surviving global instances are rejected instead of picking the first match`` () =
+    let scoreSource =
+        [
+            "module providers.score"
+            "trait Score a ="
+            "    score : a -> Int"
+        ]
+        |> String.concat "\n"
+
+    let leftSource =
+        [
+            "module providers.left"
+            "import providers.score.(trait Score)"
+            "instance Score Int ="
+            "    let score x = x"
+        ]
+        |> String.concat "\n"
+
+    let rightSource =
+        [
+            "module providers.right"
+            "import providers.score.(trait Score)"
+            "instance Score Int ="
+            "    let score x = x + 1"
+        ]
+        |> String.concat "\n"
+
+    let mainSource =
+        [
+            "module main"
+            "import providers.score.(trait Score)"
+            "import providers.left.*"
+            "import providers.right.*"
+            "useScore : Score a => a -> Int"
+            "let useScore x = score x"
+            "result : Int"
+            "let result = useScore 41"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-instance-ambiguity-root"
+            [
+                "providers/score.kp", scoreSource
+                "providers/left.kp", leftSource
+                "providers/right.kp", rightSource
+                "main.kp", mainSource
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected overlapping global instances to be rejected.")
+
+    let ambiguityDiagnostic =
+        workspace.Diagnostics
+        |> List.tryFind (fun diagnostic -> diagnostic.Code = DiagnosticCode.TraitInstanceAmbiguous)
+
+    Assert.True(ambiguityDiagnostic.IsSome, sprintf "Expected an instance ambiguity diagnostic, got %A" workspace.Diagnostics)
+
+[<Fact>]
 let ``parser captures expect declarations including soft keyword names and operator terms`` () =
     let sourceText =
         [
