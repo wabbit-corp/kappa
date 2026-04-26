@@ -1334,7 +1334,7 @@ type private TokenParser
     member private this.ParseTraitDeclaration(modifiers: ModifierState) =
         this.ExpectKeyword(Keyword.Trait, "Expected 'trait'.") |> ignore
 
-        let headerTokens = ResizeArray<Token>()
+        let fullHeaderTokens = ResizeArray<Token>()
 
         let isConstraintArrowEquals () =
             this.Current.Kind = Equals
@@ -1344,9 +1344,9 @@ type private TokenParser
         while ((this.Current.Kind <> Equals || isConstraintArrowEquals ())
                && this.Current.Kind <> Newline
                && this.Current.Kind <> EndOfFile) do
-            headerTokens.Add(this.Advance())
+            fullHeaderTokens.Add(this.Advance())
 
-        let headerTokens = List.ofSeq headerTokens
+        let fullHeaderTokens = List.ofSeq fullHeaderTokens
 
         let splitTraitHeader (tokens: Token list) =
             let tokenArray = tokens |> List.toArray
@@ -1409,7 +1409,16 @@ type private TokenParser
 
             traitName, traitHeadTokens
 
-        let nameOption, headTokens = splitTraitHeader headerTokens
+        let tryMemberNameFromTokens (tokens: Token list) =
+            match tokens with
+            | head :: _ when Token.isName head ->
+                Some(SyntaxFacts.trimIdentifierQuotes head.Text)
+            | { Kind = LeftParen } :: { Kind = Operator; Text = operatorName } :: { Kind = RightParen } :: _ ->
+                Some operatorName
+            | _ ->
+                None
+
+        let nameOption, headTokens = splitTraitHeader fullHeaderTokens
         let name = nameOption |> Option.defaultValue ""
 
         if String.IsNullOrWhiteSpace name then
@@ -1432,10 +1441,8 @@ type private TokenParser
                         match lineTokens with
                         | _ when defaultDefinition.IsSome ->
                             defaultDefinition.Value.Name
-                        | head :: _ when Token.isName head ->
-                            Some(SyntaxFacts.trimIdentifierQuotes head.Text)
                         | _ ->
-                            None
+                            tryMemberNameFromTokens (this.SignificantTokens lineTokens)
 
                     ({ Name = memberName
                        DefaultDefinition = defaultDefinition
@@ -1446,6 +1453,7 @@ type private TokenParser
         TraitDeclarationNode
             { Visibility = modifiers.Visibility
               Name = name
+              FullHeaderTokens = fullHeaderTokens
               HeaderTokens = headTokens
               Members = members }
 

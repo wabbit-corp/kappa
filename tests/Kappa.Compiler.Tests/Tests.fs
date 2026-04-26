@@ -426,6 +426,45 @@ let ``parser rejects malformed trait members that are not signatures or defaults
     Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("trait member"))
 
 [<Fact>]
+let ``parser preserves trait supertraits operator members and typed defaults`` () =
+    let sourceText =
+        [
+            "module main"
+            ""
+            "trait (Eq a, Show a) => Ord a ="
+            "    (==) : a -> a -> Bool"
+            "    let debug : a -> String = \\x -> show x"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "memory.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Empty(parsed.Diagnostics)
+
+    let declaration =
+        parsed.Syntax.Declarations
+        |> List.pick (function
+            | TraitDeclarationNode declaration -> Some declaration
+            | _ -> None)
+
+    Assert.Equal("Ord", declaration.Name)
+    Assert.Equal("( Eq a , Show a ) = > Ord a", tokensText declaration.FullHeaderTokens)
+    Assert.Equal("a", tokensText declaration.HeaderTokens)
+
+    match declaration.Members with
+    | [ operatorMember; defaultMember ] ->
+        Assert.Equal(Some "==", operatorMember.Name)
+        Assert.Equal(Some "debug", defaultMember.Name)
+        Assert.True(defaultMember.DefaultDefinition.IsSome)
+        Assert.Equal(Some "debug", defaultMember.DefaultDefinition.Value.Name)
+    | other ->
+        failwithf "Expected two trait members, got %A" other
+
+[<Fact>]
 let ``parser rejects unterminated data constructors before the next declaration`` () =
     let sourceText =
         [

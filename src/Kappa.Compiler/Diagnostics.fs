@@ -30,6 +30,7 @@ type DiagnosticCode =
     | DuplicateDeclaration
     | DuplicatePatternBinder
     | TraitInstanceAmbiguous
+    | TraitSupertraitUnsatisfied
     | NameUnresolved
     | RecursiveTypeAlias
     | MalformedConstructorDeclaration
@@ -100,6 +101,7 @@ module DiagnosticCode =
         | DuplicateDeclaration -> "E_DUPLICATE_DECLARATION"
         | DuplicatePatternBinder -> "E_DUPLICATE_PATTERN_BINDER"
         | TraitInstanceAmbiguous -> "E_TRAIT_INSTANCE_AMBIGUOUS"
+        | TraitSupertraitUnsatisfied -> "E_TRAIT_SUPERTRAIT_UNSATISFIED"
         | NameUnresolved -> "E_NAME_UNRESOLVED"
         | RecursiveTypeAlias -> "E_RECURSIVE_TYPE_ALIAS"
         | MalformedConstructorDeclaration -> "E_MALFORMED_CONSTRUCTOR_DECLARATION"
@@ -169,6 +171,7 @@ module DiagnosticCode =
         | "E_DUPLICATE_DECLARATION" -> Some DuplicateDeclaration
         | "E_DUPLICATE_PATTERN_BINDER" -> Some DuplicatePatternBinder
         | "E_TRAIT_INSTANCE_AMBIGUOUS" -> Some TraitInstanceAmbiguous
+        | "E_TRAIT_SUPERTRAIT_UNSATISFIED" -> Some TraitSupertraitUnsatisfied
         | "E_NAME_UNRESOLVED" -> Some NameUnresolved
         | "E_RECURSIVE_TYPE_ALIAS" -> Some RecursiveTypeAlias
         | "E_MALFORMED_CONSTRUCTOR_DECLARATION" -> Some MalformedConstructorDeclaration

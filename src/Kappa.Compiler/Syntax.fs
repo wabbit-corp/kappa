@@ -698,6 +698,7 @@ type TraitMember =
 type TraitDeclaration =
     { Visibility: Visibility option
       Name: string
+      FullHeaderTokens: Token list
       HeaderTokens: Token list
       Members: TraitMember list }
 

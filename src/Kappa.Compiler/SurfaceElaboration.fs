@@ -20,6 +20,7 @@ module SurfaceElaboration =
         { ModuleName: string
           Name: string
           TypeParameters: string list
+          Supertraits: TraitConstraint list
           Members: Map<string, TraitMemberInfo> }
 
     type private InstanceInfo =
@@ -1649,21 +1650,187 @@ module SurfaceElaboration =
         | None ->
             None
 
-    let private tryParseTraitMemberInfo (memberDeclaration: TraitMember) =
+    let private tryParseTraitMemberSignatureNameAndScheme (memberDeclaration: TraitMember) =
         let tokens = significantTokens memberDeclaration.Tokens
 
-        match tokens with
-        | head :: colon :: rest when Token.isName head && colon.Kind = Colon ->
-            TypeSignatures.parseScheme rest
+        let tryParseNamedSignature name schemeTokens =
+            TypeSignatures.parseScheme schemeTokens
             |> Option.map (fun scheme ->
-                let memberName = SyntaxFacts.trimIdentifierQuotes head.Text
-
-                memberName,
-                { Name = memberName
+                name,
+                { Name = name
                   Scheme = scheme
                   DefaultDefinition = memberDeclaration.DefaultDefinition })
+
+        match tokens with
+        | head :: colon :: schemeTokens when Token.isName head && colon.Kind = Colon ->
+            tryParseNamedSignature (SyntaxFacts.trimIdentifierQuotes head.Text) schemeTokens
+        | { Kind = LeftParen } :: { Kind = Operator; Text = operatorName } :: { Kind = RightParen } :: colon :: schemeTokens
+            when colon.Kind = Colon ->
+            tryParseNamedSignature operatorName schemeTokens
         | _ ->
             None
+
+    let private tryParseTraitMemberInfo (memberDeclaration: TraitMember) =
+        tryParseTraitMemberSignatureNameAndScheme memberDeclaration
+
+    let private splitTopLevelConstraintGroups (tokens: Token list) =
+        let significant = significantTokens tokens
+
+        let stripSingleOuterParens current =
+            match current with
+            | { Kind = LeftParen } :: rest ->
+                let tokenArray = current |> List.toArray
+                let mutable depth = 0
+                let mutable closesAtEnd = false
+                let mutable index = 0
+
+                while index < tokenArray.Length do
+                    match tokenArray[index].Kind with
+                    | LeftParen ->
+                        depth <- depth + 1
+                    | RightParen ->
+                        depth <- depth - 1
+
+                        if depth = 0 then
+                            closesAtEnd <- index = tokenArray.Length - 1
+                    | _ ->
+                        ()
+
+                    index <- index + 1
+
+                if closesAtEnd then
+                    rest |> List.take (rest.Length - 1)
+                else
+                    current
+            | _ ->
+                current
+
+        let flattened = stripSingleOuterParens significant
+        let groups = ResizeArray<Token list>()
+        let currentGroup = ResizeArray<Token>()
+        let mutable parenDepth = 0
+        let mutable bracketDepth = 0
+        let mutable braceDepth = 0
+        let mutable setBraceDepth = 0
+
+        for token in flattened do
+            match token.Kind with
+            | LeftParen ->
+                parenDepth <- parenDepth + 1
+                currentGroup.Add(token)
+            | RightParen ->
+                parenDepth <- max 0 (parenDepth - 1)
+                currentGroup.Add(token)
+            | LeftBracket
+            | LeftEffectRow ->
+                bracketDepth <- bracketDepth + 1
+                currentGroup.Add(token)
+            | RightBracket
+            | RightEffectRow ->
+                bracketDepth <- max 0 (bracketDepth - 1)
+                currentGroup.Add(token)
+            | LeftBrace ->
+                braceDepth <- braceDepth + 1
+                currentGroup.Add(token)
+            | RightBrace ->
+                braceDepth <- max 0 (braceDepth - 1)
+                currentGroup.Add(token)
+            | LeftSetBrace ->
+                setBraceDepth <- setBraceDepth + 1
+                currentGroup.Add(token)
+            | RightSetBrace ->
+                setBraceDepth <- max 0 (setBraceDepth - 1)
+                currentGroup.Add(token)
+            | Comma when parenDepth = 0 && bracketDepth = 0 && braceDepth = 0 && setBraceDepth = 0 ->
+                if currentGroup.Count > 0 then
+                    groups.Add(List.ofSeq currentGroup)
+                    currentGroup.Clear()
+            | _ ->
+                currentGroup.Add(token)
+
+        if currentGroup.Count > 0 then
+            groups.Add(List.ofSeq currentGroup)
+
+        groups |> Seq.toList
+
+    let private trySplitTraitHeaderTokens (tokens: Token list) =
+        let tokenArray = tokens |> List.toArray
+        let mutable parenDepth = 0
+        let mutable bracketDepth = 0
+        let mutable braceDepth = 0
+        let mutable setBraceDepth = 0
+        let mutable headStart = 0
+        let mutable constraintEnd = 0
+        let mutable index = 0
+
+        while index < tokenArray.Length do
+            match tokenArray[index].Kind with
+            | LeftParen ->
+                parenDepth <- parenDepth + 1
+            | RightParen ->
+                parenDepth <- max 0 (parenDepth - 1)
+            | LeftBracket
+            | LeftEffectRow ->
+                bracketDepth <- bracketDepth + 1
+            | RightBracket
+            | RightEffectRow ->
+                bracketDepth <- max 0 (bracketDepth - 1)
+            | LeftBrace ->
+                braceDepth <- braceDepth + 1
+            | RightBrace ->
+                braceDepth <- max 0 (braceDepth - 1)
+            | LeftSetBrace ->
+                setBraceDepth <- setBraceDepth + 1
+            | RightSetBrace ->
+                setBraceDepth <- max 0 (setBraceDepth - 1)
+            | Operator
+                when parenDepth = 0
+                     && bracketDepth = 0
+                     && braceDepth = 0
+                     && setBraceDepth = 0
+                     && String.Equals(tokenArray[index].Text, "=>", StringComparison.Ordinal) ->
+                headStart <- index + 1
+                constraintEnd <- index
+            | Equals
+                when parenDepth = 0
+                     && bracketDepth = 0
+                     && braceDepth = 0
+                     && setBraceDepth = 0
+                     && index + 1 < tokenArray.Length
+                     && tokenArray[index + 1].Kind = Operator
+                     && String.Equals(tokenArray[index + 1].Text, ">", StringComparison.Ordinal) ->
+                headStart <- index + 2
+                constraintEnd <- index
+                index <- index + 1
+            | _ ->
+                ()
+
+            index <- index + 1
+
+        if headStart <= 0 then
+            [], tokens
+        else
+            tokenArray[..constraintEnd - 1] |> Array.toList, tokenArray[headStart..] |> Array.toList
+
+    let private tryParseTraitConstraintTokens tokens =
+        TypeSignatures.parseType tokens
+        |> Option.bind (function
+            | TypeName(nameSegments, arguments) ->
+                Some
+                    { TraitName =
+                        match nameSegments with
+                        | [ singleName ] -> singleName
+                        | _ -> SyntaxFacts.moduleNameToText nameSegments
+                      Arguments = arguments }
+            | _ ->
+                None)
+
+    let private parseTraitSupertraits (declaration: TraitDeclaration) =
+        let supertraitTokens, _ = trySplitTraitHeaderTokens declaration.FullHeaderTokens
+
+        splitTopLevelConstraintGroups supertraitTokens
+        |> List.choose tryParseTraitConstraintTokens
+
 
     let private tryParseInstanceHeader (declaration: InstanceDeclaration) =
         declaration.FullHeaderTokens
@@ -2143,6 +2310,8 @@ module SurfaceElaboration =
             frontendModule.Declarations
             |> List.choose (function
                 | TraitDeclarationNode declaration ->
+                    let supertraits = parseTraitSupertraits declaration
+
                     let members =
                         declaration.Members
                         |> List.fold (fun state memberDeclaration ->
@@ -2162,12 +2331,19 @@ module SurfaceElaboration =
                             | None ->
                                 match memberDeclaration.Name, memberDeclaration.DefaultDefinition with
                                 | Some memberName, Some defaultDefinition ->
-                                    state
-                                    |> Map.change memberName (function
-                                        | Some existingInfo ->
-                                            Some { existingInfo with DefaultDefinition = Some defaultDefinition }
-                                        | None ->
-                                            None)
+                                    match Map.tryFind memberName state, tryParseLetDefinitionScheme defaultDefinition with
+                                    | Some existingInfo, _ ->
+                                        state
+                                        |> Map.add memberName { existingInfo with DefaultDefinition = Some defaultDefinition }
+                                    | None, Some scheme ->
+                                        state
+                                        |> Map.add
+                                            memberName
+                                            { Name = memberName
+                                              Scheme = scheme
+                                              DefaultDefinition = Some defaultDefinition }
+                                    | None, None ->
+                                        state
                                 | _ ->
                                     state) Map.empty
 
@@ -2176,6 +2352,7 @@ module SurfaceElaboration =
                         { ModuleName = moduleName
                           Name = declaration.Name
                           TypeParameters = TypeSignatures.collectLeadingTypeParameters declaration.HeaderTokens
+                          Supertraits = supertraits
                           Members = members }
                     )
                 | _ ->
@@ -3861,11 +4038,64 @@ module SurfaceElaboration =
                     ]
                 )))
 
+    let private tryInstantiateTraitSupertraits
+        (traitInfo: TraitInfo)
+        (arguments: TypeExpr list)
+        =
+        if List.length traitInfo.TypeParameters = List.length arguments then
+            let substitution = List.zip traitInfo.TypeParameters arguments |> Map.ofList
+            traitInfo.Supertraits
+            |> List.map (TypeSignatures.applyConstraintSubstitution substitution)
+            |> Some
+        else
+            None
+
+    let private reachableTraitConstraints
+        (environment: BindingLoweringEnvironment)
+        (constraintInfo: TraitConstraint)
+        =
+        let rec visit visited acc (current: TraitConstraint) =
+            let key =
+                current.TraitName,
+                (current.Arguments
+                 |> List.map (normalizeTypeAliases environment.VisibleTypeAliases >> TypeSignatures.toText))
+
+            if Set.contains key visited then
+                visited, acc
+            else
+                let visited = Set.add key visited
+                let acc = current :: acc
+
+                let nextConstraints =
+                    environment.VisibleTraits
+                    |> Map.tryFind current.TraitName
+                    |> Option.bind (fun traitInfo -> tryInstantiateTraitSupertraits traitInfo current.Arguments)
+                    |> Option.defaultValue []
+
+                nextConstraints |> List.fold (fun (visitedState, accState) next -> visit visitedState accState next) (visited, acc)
+
+        visit Set.empty [] constraintInfo |> snd |> List.rev
+
     let private tryResolveTraitMemberProjection
         (environment: BindingLoweringEnvironment)
         (localTypes: Map<string, TypeExpr>)
         nameSegments
         =
+        let tryFindOwnerTrait traitName arguments memberName =
+            let rootConstraint: TraitConstraint =
+                { TraitName = traitName
+                  Arguments = arguments }
+
+            reachableTraitConstraints environment rootConstraint
+            |> List.tryPick (fun candidateConstraint ->
+                environment.VisibleTraits
+                |> Map.tryFind candidateConstraint.TraitName
+                |> Option.bind (fun candidateTraitInfo ->
+                    if candidateTraitInfo.Members.ContainsKey(memberName) then
+                        Some(candidateTraitInfo, memberName, candidateConstraint.Arguments)
+                    else
+                        None))
+
         match nameSegments with
         | receiverName :: [ memberName ] ->
             localTypes
@@ -3877,18 +4107,16 @@ module SurfaceElaboration =
             |> Option.bind (fun receiverType ->
                 match normalizeTypeAliases environment.VisibleTypeAliases receiverType with
                 | TypeName([ traitName ], arguments) when environment.VisibleTraits.ContainsKey(traitName) ->
-                    let traitInfo = environment.VisibleTraits[traitName]
-
-                    if traitInfo.Members.ContainsKey(memberName) then
-                        Some(traitInfo, memberName, arguments, receiverName)
-                    else
-                        None
+                    tryFindOwnerTrait traitName arguments memberName
+                    |> Option.map (fun (traitInfo, resolvedMemberName, resolvedArguments) ->
+                        traitInfo, resolvedMemberName, resolvedArguments, receiverName)
                 | TypeName(qualifiedName, arguments) ->
                     let traitName = SyntaxFacts.moduleNameToText qualifiedName
 
-                    if environment.VisibleTraits.ContainsKey(traitName)
-                       && environment.VisibleTraits[traitName].Members.ContainsKey(memberName) then
-                        Some(environment.VisibleTraits[traitName], memberName, arguments, receiverName)
+                    if environment.VisibleTraits.ContainsKey(traitName) then
+                        tryFindOwnerTrait traitName arguments memberName
+                        |> Option.map (fun (traitInfo, resolvedMemberName, resolvedArguments) ->
+                            traitInfo, resolvedMemberName, resolvedArguments, receiverName)
                     else
                         None
                 | _ ->
@@ -4071,6 +4299,16 @@ module SurfaceElaboration =
                 None
         | _ ->
             None
+
+    let private localTraitConstraints
+        (environment: BindingLoweringEnvironment)
+        (localTypes: Map<string, TypeExpr>)
+        =
+        localTypes
+        |> Map.toList
+        |> List.choose (fun (name, localType) ->
+            tryTraitConstraintFromType environment localType
+            |> Option.map (fun constraintInfo -> name, constraintInfo))
 
     let private renderTraitConstraint (environment: BindingLoweringEnvironment) (constraintInfo: TraitConstraint) =
         let normalizedArguments =
@@ -4280,6 +4518,31 @@ module SurfaceElaboration =
         match matches with
         | [ name, _ ] ->
             Some(KCoreName [ name ])
+        | [] ->
+            match tryTraitConstraintFromType environment parameterType with
+            | Some goalConstraint ->
+                let projectedMatches =
+                    localTraitConstraints environment localTypes
+                    |> List.filter (fun (_, localConstraint: TraitConstraint) ->
+                        reachableTraitConstraints environment localConstraint
+                        |> List.exists (fun (reachableConstraint: TraitConstraint) ->
+                            String.Equals(reachableConstraint.TraitName, goalConstraint.TraitName, StringComparison.Ordinal)
+                            && List.length reachableConstraint.Arguments = List.length goalConstraint.Arguments
+                            && List.forall2
+                                (fun left right ->
+                                    TypeSignatures.definitionallyEqual
+                                        (normalizeTypeAliases environment.VisibleTypeAliases left)
+                                        (normalizeTypeAliases environment.VisibleTypeAliases right))
+                                reachableConstraint.Arguments
+                                goalConstraint.Arguments))
+
+                match projectedMatches with
+                | [ name, _ ] ->
+                    Some(KCoreName [ name ])
+                | _ ->
+                    None
+            | None ->
+                None
         | _ ->
             None
 
@@ -11242,6 +11505,55 @@ module SurfaceElaboration =
                     | _ ->
                         [])
 
+            let instanceSupertraitDiagnostics =
+                let traitInfoByName =
+                    environment.VisibleTraits
+
+                let constraintMatches (expected: TraitConstraint) (actual: TraitConstraint) =
+                    String.Equals(expected.TraitName, actual.TraitName, StringComparison.Ordinal)
+                    && List.length expected.Arguments = List.length actual.Arguments
+                    && List.forall2
+                        (fun left right ->
+                            TypeSignatures.definitionallyEqual
+                                (normalizeTypeAliases environment.VisibleTypeAliases left)
+                                (normalizeTypeAliases environment.VisibleTypeAliases right))
+                        expected.Arguments
+                        actual.Arguments
+
+                let premisesSatisfy (premises: TraitConstraint list) (requiredConstraint: TraitConstraint) =
+                    premises
+                    |> List.exists (fun (premise: TraitConstraint) ->
+                        reachableTraitConstraints environment premise
+                        |> List.exists (constraintMatches requiredConstraint))
+
+                frontendModule.Declarations
+                |> List.collect (function
+                    | InstanceDeclarationNode declaration ->
+                        tryParseInstanceHeader declaration
+                        |> Option.toList
+                        |> List.collect (fun (traitName, constraints, headTypes) ->
+                            traitInfoByName
+                            |> Map.tryFind traitName
+                            |> Option.toList
+                            |> List.collect (fun traitInfo ->
+                                tryInstantiateTraitSupertraits traitInfo headTypes
+                                |> Option.defaultValue []
+                                |> List.choose (fun requiredConstraint ->
+                                    let satisfied =
+                                        premisesSatisfy constraints requiredConstraint
+                                        || (resolveConstraintInstance environment requiredConstraint |> Option.isSome)
+
+                                    if satisfied then
+                                        None
+                                    else
+                                        Some(
+                                            makeDiagnostic
+                                                DiagnosticCode.TraitSupertraitUnsatisfied
+                                                $"Instance for trait '{traitName}' requires declared supertrait '{renderTraitConstraint environment requiredConstraint}', but that evidence is not satisfied by the instance premises or visible instances."
+                                        ))))
+                    | _ ->
+                        [])
+
             let structuralDiagnostics =
                 duplicateDeclarationDiagnostics
                 @ totalityAssertionDiagnostics
@@ -11250,6 +11562,7 @@ module SurfaceElaboration =
                 @ unsignedRecursiveBindingDiagnostics
                 @ trivialRecursiveCycleDiagnostics
                 @ constructorDefaultDiagnostics
+                @ instanceSupertraitDiagnostics
                 @ instanceMemberSignatureDiagnostics
 
             if not (List.isEmpty typeAliasCycleDiagnostics) then
@@ -14123,18 +14436,25 @@ module SurfaceElaboration =
 
                         constraintInfo, dictionaryParameterName)
 
-                let constrainedMembers =
-                    memberEntries
-                    |> List.collect (fun (constraintInfo, dictionaryParameterName) ->
+                let addConstrainedMembers state constraintInfo dictionaryParameterName =
+                    reachableTraitConstraints environment constraintInfo
+                    |> List.fold (fun current reachableConstraint ->
                         environment.VisibleTraits
-                        |> Map.tryFind constraintInfo.TraitName
+                        |> Map.tryFind reachableConstraint.TraitName
                         |> Option.map (fun traitInfo ->
                             traitInfo.Members
                             |> Map.toList
-                            |> List.map (fun (memberName, _) ->
-                                memberName, (constraintInfo.TraitName, dictionaryParameterName)))
-                        |> Option.defaultValue [])
-                    |> Map.ofList
+                            |> List.fold (fun innerState (memberName, _) ->
+                                if Map.containsKey memberName innerState then
+                                    innerState
+                                else
+                                    Map.add memberName (reachableConstraint.TraitName, dictionaryParameterName) innerState) current)
+                        |> Option.defaultValue current) state
+
+                let constrainedMembers =
+                    memberEntries
+                    |> List.fold (fun state (constraintInfo, dictionaryParameterName) ->
+                        addConstrainedMembers state constraintInfo dictionaryParameterName) Map.empty
 
                 constrainedMembers, memberEntries
             | _ ->
