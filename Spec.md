@@ -985,7 +985,10 @@ Universe, Quantity, Region, Constraint,
 RecRow, VarRow, EffRow, Label, EffLabel,
 
 -- core ordinary types
-Unit, Void, Bool, Char, String, Int, Nat, Integer, Float, Double, Real, Bytes, Ordering,
+Unit, Void, Bool,
+Byte, Bytes,
+UnicodeScalar, Grapheme, String,
+Int, Nat, Integer, Float, Double, Real, Ordering,
 
 -- unions and rows
 Variant r,
@@ -1024,6 +1027,34 @@ Duration, Instant, TimeoutError, RaceResult a b,
 -- strings, regex, equality, and suspension
 Regex, (=), Thunk a, Need a
 ```
+
+`Byte` is a raw 8-bit octet type. It is not a character type and does not receive portable numeric instances by default.
+
+`UnicodeScalar` is the scalar-value text atom: one Unicode scalar value, excluding surrogate code points.
+
+`Grapheme` is the user-perceived text atom: one extended grapheme cluster under the implementation's pinned Unicode
+version.
+
+`String` is immutable valid UTF-8 text.
+
+`Bytes` is raw binary data and may contain byte sequences that are not valid UTF-8.
+
+Compatibility spelling:
+
+Portable Kappa uses `UnicodeScalar`, not `Char`, for one Unicode scalar value.
+
+An implementation MAY provide:
+
+```kappa
+type Char = UnicodeScalar
+```
+
+as a deprecated compatibility alias during an implementation-defined transition window.
+
+If provided, `Char` MUST be a pure alias of `UnicodeScalar`; it MUST NOT denote a byte, UTF-16 code unit, Unicode code
+point including surrogates, extended grapheme cluster, or one-code-unit substring.
+
+Portable source code SHOULD use `UnicodeScalar`.
 
 `Integer`, `Double`, and `Real` are ordinary user-facing numeric types exported by `std.prelude`.
 `Dict c` is the standard explicit dictionary reification type for constraints.
@@ -2086,7 +2117,7 @@ runtime intrinsics.
 The portable prelude MUST provide at least:
 
 ```text
-Show Unit, Show Bool, Show Char, Show String,
+Show Unit, Show Bool, Show Byte, Show Bytes, Show UnicodeScalar, Show Grapheme, Show String,
 Show Int, Show Nat, Show Integer, Show Float, Show Double, Show Real,
 Show Ordering, Show Duration, Show Instant
 ```
@@ -2146,14 +2177,14 @@ Implementations MUST provide coherent evidence for at least the following portab
 Equality, ordering, and display:
 
 ```text
-Eq Unit, Eq Bool, Eq Char, Eq String, Eq Int, Eq Nat, Eq Integer, Eq Float, Eq Double, Eq Real,
-Eq Bytes, Eq Ordering, Eq Duration, Eq Instant,
+Eq Unit, Eq Bool, Eq Byte, Eq Bytes, Eq UnicodeScalar, Eq Grapheme, Eq String, Eq Int, Eq Nat, Eq Integer, Eq Float, Eq Double, Eq Real,
+Eq Ordering, Eq Duration, Eq Instant,
 
-Ord Bool, Ord Char, Ord String, Ord Int, Ord Nat, Ord Integer, Ord Float, Ord Double, Ord Real,
-Ord Bytes, Ord Ordering, Ord Duration, Ord Instant,
+Ord Bool, Ord Byte, Ord Bytes, Ord UnicodeScalar, Ord String, Ord Int, Ord Nat, Ord Integer, Ord Float, Ord Double, Ord Real,
+Ord Ordering, Ord Duration, Ord Instant,
 
-Show Unit, Show Bool, Show Char, Show String, Show Int, Show Nat, Show Integer, Show Float, Show Double, Show Real,
-Show Bytes, Show Ordering, Show Duration, Show Instant
+Show Unit, Show Bool, Show Byte, Show Bytes, Show UnicodeScalar, Show Grapheme, Show String, Show Int, Show Nat, Show Integer, Show Float, Show Double, Show Real,
+Show Ordering, Show Duration, Show Instant
 ```
 
 Numeric:
@@ -2191,7 +2222,7 @@ Functor Option, Foldable Option, Traversable Option,
 Functor List, Foldable List, Traversable List, Filterable List, FilterMap List, Monoid (List a),
 Functor Array, Foldable Array, Traversable Array, Filterable Array, FilterMap Array,
 Iterator it where explicitly provided by the iterator type,
-Rangeable Nat, Rangeable Int, Rangeable Integer, Rangeable Char
+Rangeable Nat, Rangeable Int, Rangeable Integer, Rangeable UnicodeScalar
 ```
 
 Computation carriers:
@@ -3239,7 +3270,8 @@ newHashState,
 finishHashState,
 hashUnit,
 hashBool,
-hashChar,
+hashUnicodeScalar,
+hashGrapheme,
 hashString,
 hashBytes,
 hashInt,
@@ -3273,8 +3305,11 @@ hashUnit :
 hashBool :
     Bool -> (1 state : HashState) -> HashState
 
-hashChar :
-    Char -> (1 state : HashState) -> HashState
+hashUnicodeScalar :
+    UnicodeScalar -> (1 state : HashState) -> HashState
+
+hashGrapheme :
+    Grapheme -> (1 state : HashState) -> HashState
 
 hashString :
     String -> (1 state : HashState) -> HashState
@@ -3435,7 +3470,7 @@ Required instances:
 A conforming implementation MUST provide `Hashable` instances in `std.hash` for at least:
 
 ```text
-Unit, Bool, Char, String, Bytes, Int, Integer, Float, Double, Ordering
+Unit, Bool, Byte, Bytes, UnicodeScalar, Grapheme, String, Int, Integer, Float, Double, Ordering
 ```
 
 and for the following type constructors whenever their element arguments are `Hashable`:
@@ -3446,6 +3481,27 @@ Result e a
 List a
 Array a
 ```
+
+Hashing of `String` MUST follow exact `Eq String` semantics.
+
+Hashing of `Grapheme` MUST follow exact `Eq Grapheme` semantics.
+
+Hashing of `String` and `Grapheme` MUST NOT use canonical equivalence unless the values have first been explicitly
+normalized by the source program.
+
+Consequently:
+
+```kappa
+hashWith seed "\u{00E9}"
+```
+
+and:
+
+```kappa
+hashWith seed "e\u{301}"
+```
+
+are not required to be equal unless the two strings are first normalized to the same normalization form.
 
 An implementation MAY provide additional `Hashable` instances for standard or backend-specific types.
 
@@ -3474,6 +3530,215 @@ provided that the instance hashes according to `Eq HashCode` and preserves all o
 non-serialization requirements of this section.
 
 `Hashable HashCode` is not required by the portable minimum.
+
+<!-- modules.unicode -->
+### 2.7F Standard Unicode text support module `std.unicode`
+
+Implementations MUST provide a standard module `std.unicode`.
+
+`std.unicode` is not implicitly imported.
+
+The module provides portable Unicode text operations over `String`, `Bytes`, `Byte`, `UnicodeScalar`, and `Grapheme`.
+
+Unicode version:
+
+```kappa
+expect data UnicodeVersion : Type
+
+unicodeVersion :
+    UnicodeVersion
+```
+
+Rules:
+
+* The implementation MUST document the Unicode version used by `std.unicode`.
+* `unicodeVersion` returns that version.
+* Grapheme segmentation, word segmentation, sentence segmentation, normalization, case mapping, case folding, Unicode
+  properties, display-width classification, and collation data are all relative to this Unicode version.
+* Package-mode reproducibility treats the Unicode data version as part of the implementation and standard-library
+  identity.
+
+Core text types:
+
+```kappa
+expect data UnicodeDecodeError : Type
+expect data UnicodeTextError : Type
+
+expect data NormalizationForm : Type
+expect data CaseFoldMode : Type
+expect data DisplayWidthMode : Type
+```
+
+Required constructors or values:
+
+```kappa
+NFC  : NormalizationForm
+NFD  : NormalizationForm
+NFKC : NormalizationForm
+NFKD : NormalizationForm
+```
+
+Required byte/text operations:
+
+```kappa
+utf8Bytes :
+    String -> Bytes
+
+decodeUtf8 :
+    Bytes -> Result UnicodeDecodeError String
+
+decodeUtf8Lossy :
+    Bytes -> String
+
+byteLength :
+    String -> Nat
+```
+
+Rules:
+
+* `utf8Bytes s` returns the canonical UTF-8 encoding of `s`.
+* `decodeUtf8 bs` succeeds iff `bs` is well-formed UTF-8 scalar text.
+* `decodeUtf8Lossy bs` replaces malformed byte sequences using the implementation's documented replacement policy,
+  which SHOULD use U+FFFD REPLACEMENT CHARACTER.
+* `byteLength s` is the length of `utf8Bytes s`.
+
+Required scalar operations:
+
+```kappa
+scalarValue :
+    UnicodeScalar -> Nat
+
+unicodeScalarFromValue :
+    Nat -> Option UnicodeScalar
+
+scalarToString :
+    UnicodeScalar -> String
+
+scalars :
+    String -> Query UnicodeScalar
+
+scalarCount :
+    String -> Nat
+```
+
+Rules:
+
+* `unicodeScalarFromValue n` returns `None` when `n` is outside the Unicode scalar range or is a surrogate code point.
+* `scalars s` yields the Unicode scalar values of `s` in source order.
+* `scalarCount s` is the number of yielded scalars.
+
+Required grapheme operations:
+
+```kappa
+graphemeToString :
+    Grapheme -> String
+
+graphemeFromString :
+    String -> Option Grapheme
+
+graphemes :
+    String -> Query Grapheme
+
+graphemeCount :
+    String -> Nat
+```
+
+Rules:
+
+* `graphemeFromString s` returns `Some g` iff `s` contains exactly one extended grapheme cluster.
+* `graphemes s` segments `s` according to the default extended grapheme cluster algorithm of Unicode Standard Annex
+  #29 for the implementation's Unicode version.
+* `graphemeCount s` is the number of yielded graphemes.
+
+Normalization and equivalence:
+
+```kappa
+normalize :
+    NormalizationForm -> String -> String
+
+isNormalized :
+    NormalizationForm -> String -> Bool
+
+canonicalEquivalent :
+    String -> String -> Bool
+```
+
+Rules:
+
+* `normalize` implements the Unicode normalization form selected by its first argument.
+* `canonicalEquivalent x y` is equivalent to comparing `normalize NFC x` and `normalize NFC y` by `Eq String`,
+  unless the implementation documents an observationally equivalent Unicode-conformant algorithm.
+* Canonical equivalence is not the same operation as `Eq String`.
+
+Case operations:
+
+```kappa
+caseFold :
+    CaseFoldMode -> String -> String
+```
+
+Rules:
+
+* Case folding is explicit.
+* `Eq String` is not case-insensitive.
+* Locale-sensitive casing, if provided, MUST require an explicit locale or tailoring parameter.
+
+Display width:
+
+```kappa
+displayWidth :
+    DisplayWidthMode -> String -> Nat
+```
+
+Rules:
+
+* `displayWidth` computes an approximate display-cell width under the selected policy.
+* It is intended for terminal/table layout, not for semantic string equality.
+* The selected mode MUST state its treatment of ambiguous-width characters, emoji presentation, combining marks, control
+  characters, and unassigned code points.
+
+Word and sentence segmentation:
+
+```kappa
+words :
+    String -> Query String
+
+sentences :
+    String -> Query String
+```
+
+Rules:
+
+* `words` and `sentences` use the default word-boundary and sentence-boundary algorithms of Unicode Standard Annex #29
+  unless an implementation exposes locale-tailored variants.
+* Locale-tailored variants MUST require an explicit locale or tailoring parameter.
+
+Collation:
+
+An implementation SHOULD provide a submodule:
+
+```kappa
+std.unicode.collation
+```
+
+for locale-sensitive collation.
+
+If provided, it MUST NOT reuse `Ord String` as locale collation. It must expose explicit collation keys, collators, or
+comparison operations.
+
+Security:
+
+An implementation SHOULD provide a submodule:
+
+```kappa
+std.unicode.security
+```
+
+for Unicode security mechanisms such as confusable detection, mixed-script analysis, identifier-profile checks, and
+bidirectional-control diagnostics.
+
+These security operations are library analyses. They do not change the lexical grammar of standard identifiers unless a
+later section explicitly says so.
 
 ---
 
@@ -4271,7 +4536,7 @@ Consequences:
 * `FromInteger` is not a general signed conversion operation. Signed conversions, checked narrowing, and parsing live in
   ordinary library functions outside literal elaboration.
 
-Char literals: Char literals have type `Char`.
+Unicode scalar literals: single-quoted literals have type `UnicodeScalar`.
 
 Defaulting: If elaboration cannot determine a unique `T` for a numeric literal from context, the compiler defaults `T`
 as follows:
@@ -4348,7 +4613,8 @@ Common escapes:
 
 * `\n`, `\t`, `\r`, `\\`, `\"`, `\b`, `\uXXXX` etc. Exact set is implementation-defined but should be Unicode-aware.
 
-Single-quoted literals are reserved for `Char` literals (§4.4). Single-quoted **string** literals are not valid in v0.1.
+Single-quoted literals are reserved for Unicode scalar literals (§4.4). Single-quoted **string** literals are not valid
+in v0.1.
 
 <!-- literals.string_literals.raw_strings -->
 #### 4.3.2 Raw strings
@@ -4656,27 +4922,213 @@ Accordingly, `type"..."` follows §4.3.4 exactly and elaborates through `buildIn
 
 Implementations MAY provide additional ordinary type-producing prefixed-string handlers.
 
-<!-- literals.character_literals_char -->
-### 4.4 Character literals (`Char`)
+<!-- literals.string_literals.text_model -->
+#### 4.3.6 String text model
 
-A character literal is a single-quoted Unicode scalar value:
+`String` is immutable valid UTF-8 text.
+
+Semantic invariant:
+
+* Every `String` value denotes a finite sequence of Unicode scalar values.
+* Every `String` value has a canonical UTF-8 encoding.
+* No `String` value contains invalid UTF-8.
+* No `String` value contains surrogate code points.
+* Raw bytes that are not known to be valid UTF-8 are represented by `Bytes`, not by `String`.
+
+Runtime representation:
+
+* The canonical runtime representation of `String` is UTF-8.
+* An implementation MAY cache other views, such as scalar indices, grapheme boundaries, UTF-16 views for host interop,
+  or normalized forms, but such caches are observationally invisible.
+* A backend whose host string representation is not UTF-8 MUST still preserve the portable UTF-8 string semantics of
+  this section.
+
+String literals:
+
+* An ordinary string literal denotes a `String`.
+* After escape decoding and multiline dedent, the resulting text MUST be valid Unicode scalar text.
+* String literals are not implicitly normalized.
+
+Equality and ordering:
+
+* `Eq String` compares exact Unicode scalar sequences.
+* Equivalently, because `String` is valid UTF-8, `Eq String` compares exact canonical UTF-8 byte sequences.
+* `Ord String` is deterministic lexicographic ordering by Unicode scalar value.
+* `Ord String` is not locale collation.
+* Source code that wants canonical equivalence, compatibility equivalence, case-folded equality, or locale-sensitive
+  comparison MUST use the explicit Unicode APIs of `std.unicode`.
+
+Consequences:
+
+```kappa
+"\u{00E9}" == "e\u{301}"
+```
+
+is `False` unless the two strings have first been normalized to the same normalization form.
+
+This preserves ordinary congruence for functions such as:
+
+```kappa
+utf8Bytes : String -> Bytes
+```
+
+because exact string equality implies exact UTF-8 byte equality.
+
+Length and indexing:
+
+* `String` MUST NOT provide portable integer indexing by `Nat`.
+* There is no portable ambiguous `length : String -> Nat`.
+* Portable APIs MUST name the unit they count or traverse:
+
+  * bytes,
+  * Unicode scalars,
+  * extended grapheme clusters,
+  * words,
+  * sentences,
+  * display cells,
+  * or another explicitly specified unit.
+
+Examples of required naming style:
+
+```kappa
+byteLength     : String -> Nat
+scalarCount    : String -> Nat
+graphemeCount  : String -> Nat
+```
+
+Slicing:
+
+* A byte slice of a `String` is valid as `String` only when its boundaries fall on UTF-8 scalar boundaries.
+* A scalar slice is valid as `String` only when its boundaries fall on scalar boundaries.
+* A grapheme slice is valid as `String` only when its boundaries fall on extended grapheme cluster boundaries.
+* APIs that cannot statically guarantee valid boundaries MUST return `Option String`, `Result UnicodeTextError String`,
+  or an equivalent checked result.
+
+Display width:
+
+* Grapheme count is not display width.
+* Portable display-width operations MUST be explicit and MUST state the Unicode version and width policy they use.
+
+<!-- literals.unicode_scalar_literals -->
+### 4.4 Unicode scalar literals
+
+A single-quoted literal without a prefix is a Unicode scalar literal.
+
+Examples:
 
 ```kappa
 'a'
 'λ'
+'书'
 '🙂'
 '\n'
 '\u03BB'
+'\u{1F642}'
 ```
 
 Rules:
-* A Char literal denotes a value of type Char.
-* The literal must contain exactly one Unicode scalar value (one code point excluding surrogates).
-  * Grapheme clusters consisting of multiple code points are not a single Char.
-* Escape sequences are the same as for strings (at minimum \n, \t, \r, \\, \', \uXXXX, and \u{...} if supported).
-* Char ordering and ranges:
-  * Char has an Ord-like ordering given by numeric scalar value order.
-  * Range enumeration over Char (e.g. 'a' .. 'z') enumerates by increasing scalar value.
+
+* A Unicode scalar literal has type `UnicodeScalar`.
+* The literal payload, after escape decoding, MUST contain exactly one Unicode scalar value.
+* A Unicode scalar value is a Unicode code point excluding surrogate code points.
+* The literal MUST NOT denote a surrogate code point.
+* The literal MUST NOT contain more than one Unicode scalar value.
+* A literal such as `'e\u{301}'`, where the visible glyph is encoded as `e` followed by a combining accent, is
+  rejected as a Unicode scalar literal because it contains two scalar values.
+* A literal such as `'\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}'` is rejected as a Unicode scalar
+  literal because it contains multiple scalar values.
+* To write one user-perceived character that may contain multiple scalars, use a grapheme literal (§4.4A).
+* Escape sequences are the same as for strings, with the additional restriction that the decoded result must be exactly
+  one Unicode scalar value.
+* `Eq UnicodeScalar` compares scalar values.
+* `Ord UnicodeScalar` orders by Unicode scalar numeric value.
+* `Rangeable UnicodeScalar` enumerates by increasing scalar value, skipping invalid surrogate code points.
+
+<!-- literals.grapheme_literals -->
+### 4.4A Grapheme literals
+
+A grapheme literal has the form:
+
+```kappa
+g'a'
+g'e\u{301}'
+g'\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}'
+```
+
+Grammar:
+
+```text
+graphemeLiteral ::= 'g' '\'' graphemeLiteralBody '\''
+```
+
+Rules:
+
+* A grapheme literal has type `Grapheme`.
+* The literal payload is decoded using the ordinary string escape rules.
+* The decoded payload MUST be valid UTF-8 text containing exactly one extended grapheme cluster as defined by the
+  implementation's pinned Unicode version and the default extended grapheme cluster algorithm of Unicode Standard Annex
+  #29.
+* The payload may contain one or more Unicode scalar values.
+* The empty payload is rejected.
+* A payload containing more than one extended grapheme cluster is rejected.
+* `Grapheme` is not definitionally equal to `String`.
+* A `Grapheme` may be converted to `String` using the standard Unicode text API.
+* `Eq Grapheme` compares the exact scalar sequence of the grapheme, not canonical equivalence.
+* Canonical equivalence of graphemes is provided by the Unicode normalization/equivalence API, not by `Eq Grapheme`.
+
+Examples:
+
+```kappa
+let a : UnicodeScalar = 'a'
+let g1 : Grapheme = g'a'
+let g2 : Grapheme = g'e\u{301}'
+let family : Grapheme = g'\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}'
+```
+
+Rejected examples:
+
+```kappa
+let badScalar = 'e\u{301}'
+-- rejected: Unicode scalar literal contains two scalar values
+
+let badScalar2 = '\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}'
+-- rejected: Unicode scalar literal contains multiple scalar values
+
+let badGrapheme = g'ab'
+-- rejected: grapheme literal contains two extended grapheme clusters
+```
+
+<!-- literals.byte_literals -->
+### 4.4B Byte literals
+
+A byte literal has the form:
+
+```kappa
+b'a'
+b'\n'
+b'\x00'
+b'\xFF'
+```
+
+Grammar:
+
+```text
+byteLiteral ::= 'b' '\'' byteLiteralBody '\''
+```
+
+Rules:
+
+* A byte literal has type `Byte`.
+* The decoded payload MUST contain exactly one byte.
+* ASCII printable characters and common escapes such as `\n`, `\t`, `\r`, `\\`, and `\'` are permitted when they decode
+  to one byte.
+* `\xNN` denotes the byte with hexadecimal value `NN`.
+* Unicode escapes such as `\uXXXX` or `\u{...}` are permitted in byte literals only when the resulting scalar's UTF-8
+  encoding is exactly one byte.
+* Therefore `b'a'` is valid, but `b'λ'` and `b'书'` are rejected.
+* `Byte` is a raw octet. It is not a Unicode scalar value.
+* `Eq Byte` compares byte values.
+* `Ord Byte` orders by numeric byte value.
 
 <!-- literals.unit_tuples -->
 ### 4.5 Unit and tuples
@@ -8707,8 +9159,8 @@ A type `a` is dynamically representable iff a value of type `DynRep a` is availa
 Portable minimum:
 
 * Implementations SHOULD provide `DynamicType` instances at least for:
-  * `Unit`, `Bool`, `Char`, `String`, `Bytes`, `Int`, `Integer`, `Float`, `Double`, and any implementation-documented
-    primitive scalar types with first-order runtime representations;
+  * `Unit`, `Bool`, `Byte`, `Bytes`, `UnicodeScalar`, `Grapheme`, `String`, `Int`, `Integer`, `Float`, `Double`, and
+    any implementation-documented primitive scalar types with first-order runtime representations;
   * `Option a`, `Result e a`, `List a`, and `Array a` when their argument types are dynamically representable;
   * closed record types whose field types are dynamically representable;
   * closed variant / union types whose member types are dynamically representable;
@@ -15692,7 +16144,7 @@ Rules:
 * `from ..< to` elaborates to `range from to True`.
 * For coherent `Rangeable v` evidence, the result type is `Rangeable.Range v`.
 * Range construction is pure. Iterating a range is governed by `IntoQuery` or another explicit consumer instance.
-* The portable prelude MUST provide `Rangeable` instances for `Nat`, `Int`, `Integer`, and `Char`.
+* The portable prelude MUST provide `Rangeable` instances for `Nat`, `Int`, `Integer`, and `UnicodeScalar`.
 * A `Rangeable Float` or `Rangeable Double` instance is not part of the portable minimum.
 
 <!-- collections.comprehensions -->
@@ -20870,6 +21322,38 @@ identifier, even if the implementation's rendered diagnostic code is different.
 If a diagnostic is implementation-defined and has no standardized family, its family MUST be absent or must use an
 implementation-reserved prefix that cannot collide with `kappa.`.
 
+<!-- compiler.kfrontir.unicode_diagnostics -->
+##### 17.2.4.2A Unicode diagnostics
+
+A conforming implementation MUST provide stable diagnostics for at least the following Unicode-source conditions.
+The standard diagnostic-code spellings are:
+
+```text
+E_UNICODE_INVALID_SCALAR_LITERAL
+E_UNICODE_INVALID_GRAPHEME_LITERAL
+E_UNICODE_INVALID_BYTE_LITERAL
+E_UNICODE_INVALID_UTF8
+W_UNICODE_CONFUSABLE_IDENTIFIER
+W_UNICODE_NON_NORMALIZED_SOURCE_TEXT
+W_UNICODE_BIDI_CONTROL
+```
+
+Unicode diagnostics:
+
+* `E_UNICODE_INVALID_SCALAR_LITERAL` is emitted when a single-quoted Unicode scalar literal decodes to zero scalar
+  values, more than one scalar value, a surrogate code point, or an out-of-range code point.
+* `E_UNICODE_INVALID_GRAPHEME_LITERAL` is emitted when a grapheme literal decodes to zero extended grapheme clusters or
+  more than one extended grapheme cluster.
+* `E_UNICODE_INVALID_BYTE_LITERAL` is emitted when a byte literal decodes to zero bytes or more than one byte.
+* `E_UNICODE_INVALID_UTF8` is emitted when a source form or checked conversion requires valid UTF-8 but receives
+  invalid bytes.
+* `W_UNICODE_CONFUSABLE_IDENTIFIER` MAY be emitted for backtick identifiers or stringly named generated declarations
+  that contain visually confusable Unicode characters.
+* `W_UNICODE_NON_NORMALIZED_SOURCE_TEXT` MAY be emitted when a source file contains non-normalized text in comments,
+  strings, backtick identifiers, or diagnostics-sensitive positions.
+* `W_UNICODE_BIDI_CONTROL` SHOULD be emitted when source text contains bidirectional control characters outside string
+  or byte literals, unless the source position is explicitly permitted by a later Unicode-source-profile section.
+
 <!-- compiler.kfrontir.origins_ranges_labels -->
 ##### 17.2.4.3 Origins, ranges, and labels
 
@@ -24541,7 +25025,7 @@ A backend MUST preserve all observable source semantics of Chapters 4, 8, 9, 10,
 In particular, a backend MUST preserve:
 
 * floating-point equality and ordering as specified by §4.1.3;
-* `Char` as a Unicode scalar value;
+* `UnicodeScalar` as a Unicode scalar value;
 * the distinction between `String` and `Bytes`;
 * the stable member-type tag identity requirements of §14.5;
 * the record-canonicalization and path-sensitive consumption rules of §§5.5 and 14.6;
