@@ -16848,18 +16848,39 @@ trait Eq a => Ord (a : Type) =
     compare : (& x : a) -> (& y : a) -> Ordering
 
 trait Functor (f : Type -> Type) =
-    ...
+    map :
+        forall (a : Type) (b : Type).
+        (a -> b) -> f a -> f b
 
-trait Applicative (f : Type -> Type) =
-    pure    : a -> f a
-    liftA2  : (a -> b -> c) -> f a -> f b -> f c
+trait Functor f => Applicative (f : Type -> Type) =
+    pure :
+        forall (a : Type).
+        a -> f a
 
-    let (<*>) : f (a -> b) -> f a -> f b =
-        \ff fa -> liftA2 (\f x -> f x) ff fa
+    liftA2 :
+        forall (a : Type) (b : Type) (c : Type).
+        (a -> b -> c) -> f a -> f b -> f c
 
-trait Applicative (m : Type -> Type) => Monad (m : Type -> Type) =
-    ...
+    let (<*>) :
+        forall (a : Type) (b : Type).
+        f (a -> b) -> f a -> f b =
+            \ff fa -> liftA2 (\f x -> f x) ff fa
+
+trait Applicative m => Monad (m : Type -> Type) =
+    (>>=) :
+        forall (a : Type) (b : Type).
+        m a -> (a -> m b) -> m b
+
+    let (>>) :
+        forall (a : Type) (b : Type).
+        m a -> m b -> m b =
+            \ma mb -> ma >>= \_ -> mb
 ```
+
+All `Functor`, `Applicative`, and `Monad` instances MUST satisfy the usual identity, composition, homomorphism,
+interchange, associativity, and unit laws up to observational equivalence for the corresponding carrier.
+
+These laws are normative even when not represented as explicit erased trait members.
 
 Fully applied trait applications have type `Constraint`, not `Type` (§5.1.3).
 
