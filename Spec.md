@@ -638,6 +638,64 @@ Rules:
 * If the selected bridge realization cannot preserve or enforce the exported Kappa surface, compilation fails unless the
   user explicitly imports or defines a less precise adapter module.
 
+<!-- modules.imports.import_environment_stability -->
+#### 2.3.5 Import-environment equivalence and stability
+
+Import declarations contribute to the lexical and semantic environment of a source location.
+
+For a given source location, the **effective import environment** consists of:
+
+* the set of imported module interfaces visible at that location;
+* the module aliases visible at that location;
+* the unqualified imported binding groups visible at that location;
+* the qualified module declarations visible at that location;
+* the imported constructor bindings visible at that location;
+* the imported fixity declarations visible at that location;
+* the active `unhide` and `clarify` effects visible at that location;
+* the semantic identities of all declarations made visible by those imports;
+* the module-interface identities and provider identities of all imported modules;
+* the dependency-closure contribution of those imports; and
+* any build-mode, unsafe/debug, backend-profile, bridge-provider, host-binding, URL-pinning, or lockfile information
+  that affects those imported interfaces.
+
+Two effective import environments are **semantically equivalent** iff every lookup, fixity lookup, visibility query,
+opacity query, `unhide` query, `clarify` query, module-alias lookup, imported-interface lookup, and imported semantic
+object identity query that is defined in one environment is defined with the same semantic result in the other.
+
+Semantic equivalence of import environments ignores:
+
+* the physical order in which imported module interface artifacts were loaded;
+* the physical order in which dependency modules were compiled, provided all dependency interfaces are available when
+  required;
+* the order in which a compiler iterates over maps, tables, caches, or semantic object stores;
+* the source order of import declarations whose reordering does not change the effective import environment at any
+  affected source location; and
+* reload history in an interactive session, provided the reloaded interfaces have the same semantic identities and
+  fingerprints.
+
+Semantic equivalence of import environments does not ignore:
+
+* moving an import across a source location where that import affects name resolution or fixity resolution;
+* changing whether a name is imported unqualified;
+* changing a module alias;
+* changing whether a constructor is imported;
+* changing a `clarify` or `unhide` modifier;
+* changing the selected provider of a module;
+* changing a URL module's resolved immutable identity;
+* changing a host-binding, bridge-supplied, package, or source-module provider identity;
+* adding or removing a module from the compilation unit's dependency closure; or
+* changing the set of top-level instances in the module closure.
+
+Consequences:
+
+* Reordering unrelated imports MUST NOT change elaboration, normalization, definitional equality, hole-goal answers,
+  diagnostics other than source-order presentation, case-split generation, completion results, reflection-query results,
+  or accepted/rejected status.
+* Reloading an imported module interface with the same semantic identity and fingerprint MUST NOT change elaboration,
+  normalization, definitional equality, hole-goal answers, reflection-query results, or accepted/rejected status.
+* If an import reorder or reload changes the effective import environment, the resulting semantic changes are governed
+  by the ordinary rules for name resolution, visibility, opacity, instance search, and dependency invalidation.
+
 <!-- modules.exports -->
 ### 2.4 Exports (re-exporting imports)
 
