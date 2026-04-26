@@ -3318,7 +3318,13 @@ Rules:
   deterministic computation within one program execution.
 * Different implementations, backend profiles, compiler versions, process executions, or collection instances MAY use
   different internal hash algorithms or seeds.
-* No portable program may observe such differences except through implementation-defined debug/profiling APIs.
+* Portable programs may observe only the same-execution `Eq HashCode` and `Ord HashCode` relations over `HashCode`
+  values they explicitly compute or receive.
+* Such observations are not portable across different implementations, backend profiles, compiler versions, process
+  executions, collection instances, or seeds.
+* A portable program MUST NOT use `HashCode` equality or ordering as a persistent identity, cross-run cache key,
+  serialization key, distributed protocol key, interface identity, semantic hash, module identity, or proof that two
+  source-level keys are equal.
 
 Consistency with `Eq`:
 
