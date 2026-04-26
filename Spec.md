@@ -25778,6 +25778,15 @@ assertDiagnosticAt <path> <severity> <code> <line>
 assertDiagnosticAt <path> <severity> <code> <line> <column>
 assertDiagnosticAt <path> <severity> <code> <startLine> <startColumn> - <endLine> <endColumn>
 assertDiagnosticMatch <regex>
+assertDiagnosticFamily <severity> <family>
+assertDiagnosticPayload <severity> <code-or-family> <json-pointer> <expected-json>
+assertDiagnosticLabel <severity> <code-or-family> <role>
+assertDiagnosticRelated <severity> <code-or-family> <role>
+assertDiagnosticFix <severity> <code-or-family> <applicability>
+assertDiagnosticFixCount <severity> <code-or-family> <n>
+assertDiagnosticFixCompiles <severity> <code-or-family>
+assertDiagnosticExplainExists <code-or-family>
+assertSuppressedDiagnostic <primary-code-or-family> <suppressed-code-or-family>
 ```
 
 where `severity` is one of:
@@ -25821,6 +25830,58 @@ Rules:
   It succeeds iff at least one matching diagnostic has its primary origin in that file and begins on the marked source
   line, regardless of column.
   If several diagnostic codes follow one `--!!` marker, it expands to one same-line assertion per code.
+
+Additional structured diagnostic assertion rules:
+
+* `assertDiagnosticFamily severity family` succeeds iff at least one diagnostic with that severity and standardized
+  diagnostic family is produced.
+* `assertDiagnosticPayload severity code-or-family json-pointer expected-json` succeeds iff at least one matching
+  diagnostic has a JSON payload value at `json-pointer` equal to `expected-json`.
+  The `json-pointer` syntax is RFC-6901 JSON Pointer syntax.
+  The `expected-json` value is parsed as JSON from the remainder of the directive body.
+* `assertDiagnosticLabel severity code-or-family role` succeeds iff at least one matching diagnostic contains a label
+  with that role.
+* `assertDiagnosticRelated severity code-or-family role` succeeds iff at least one matching diagnostic contains a related
+  origin with that role.
+* `assertDiagnosticFix severity code-or-family applicability` succeeds iff at least one matching diagnostic contains a
+  fix with the specified applicability.
+* `assertDiagnosticFixCount severity code-or-family n` succeeds iff the selected matching diagnostic contains exactly
+  `n` fixes.
+* `assertDiagnosticFixCompiles severity code-or-family` applies the first `machine-applicable` fix attached to the first
+  matching diagnostic, then recompiles the resulting test source under the same test configuration.
+  It succeeds iff the fix applies cleanly and the recompilation produces no error diagnostics unless the test explicitly
+  contains follow-up assertions for the fixed source.
+* `assertDiagnosticExplainExists code-or-family` succeeds iff the implementation exposes a long-form explanation entry
+  for the given diagnostic code or family.
+* `assertSuppressedDiagnostic primary-code-or-family suppressed-code-or-family` succeeds iff a diagnostic matching the
+  first argument contains a suppressed diagnostic summary matching the second argument.
+
+In the directives above, `<code-or-family>` matches either:
+
+* the implementation diagnostic code; or
+* the standardized diagnostic family.
+
+If both a diagnostic code and a family have the same spelling, code matching takes priority unless the spelling begins
+with `kappa.`, in which case it is interpreted as a family.
+
+Structured diagnostic assertions are matched against machine-readable diagnostic records, not against human-readable
+rendered output.
+
+A standard test suite SHOULD prefer code, family, payload, label, related-origin, and fix assertions over
+`assertDiagnosticMatch` whenever possible.
+
+A standard test suite MUST NOT require exact full-message matching for diagnostics whose human-readable prose is not
+declared stable by the implementation.
+
+Machine-applicable fix tests:
+
+* A diagnostic fix marked `machine-applicable` is eligible for `assertDiagnosticFixCompiles`.
+* A fix containing placeholders MUST NOT be marked `machine-applicable`.
+* A fix editing generated-only synthetic origins MUST NOT be marked `machine-applicable`.
+* If a diagnostic exposes several alternative machine-applicable fixes, the test harness MAY provide an
+  implementation-defined way to select one by title.
+* If no selection mechanism is provided, `assertDiagnosticFixCompiles` applies the first machine-applicable fix in the
+  deterministic fix ordering of the diagnostic record.
 
 The code-based diagnostic assertions `assertDiagnostic`, `assertDiagnosticNext`, `assertDiagnosticAt`, and `--!!` are
 matched by severity and diagnostic code, not by the full human-readable message text.
