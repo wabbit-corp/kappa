@@ -6638,6 +6638,32 @@ Symbol  : Type
 
 `Core Γ t` denotes an elaborated, well-scoped core term of object-language type `t` in lexical context `Γ`.
 
+For purposes of semantic reflection, "well-scoped" and "well-typed" include all ordinary object-language obligations.
+
+A `Core Γ t` value is valid only when the reflected term satisfies, under `Γ`:
+
+* ordinary typing;
+* quantity checking;
+* borrow checking;
+* path-sensitive ownership checking;
+* capture checking;
+* region-escape checking;
+* local nominal-scope escape checking;
+* implicit insertion already committed by elaboration; and
+* the current visibility, opacity, `unhide`, and `clarify` environment.
+
+`CoreCtx` records not only object variable types, but also the quantities, rigid-region environment, capture
+annotations, local nominal-scope information, implicit evidence, path-state information, and visibility/opacity context
+needed to enforce those obligations.
+
+The public `Core` constructor/destructor API MUST be QTT-aware. It MUST NOT allow construction of reflected core terms
+that duplicate linear resources, retain expired borrows, fabricate region captures, violate path-sensitive ownership,
+or refer to binders outside `Γ`.
+
+A conforming implementation may enforce this either by making ill-formed reflected terms unrepresentable through the
+public API, or by returning reflected terms only together with checked usage/capture evidence that is consumed before
+reification or splicing.
+
 `CoreEq x y` denotes macro-level exact equality between reflected core terms `x` and `y` in the same lexical context.
 The reflected terms may have different object-language type indices. A `CoreEq x y` witness exists only when ordinary
 elaboration can justify the comparison, including any required definitional equality between the reflected types of `x`
@@ -6790,7 +6816,7 @@ The reflection API MUST additionally provide an elaboration-time operation equiv
 ```kappa
 lowerComprehension :
     forall (a : Type).
-    RawComprehension a -> ComprehensionPlan a
+    RawComprehension a -> Elab (ComprehensionPlan a)
 ```
 
 `RawComprehension a` is a stable compile-time reflection type for user-written comprehensions.
@@ -6846,7 +6872,9 @@ Two implementations MAY use different internal representations, but any public r
 `ComprehensionPlan` MUST be rich enough to recover the normalized semantics above without reparsing source text
 or inspecting compiler-private IR.
 
-`lowerComprehension` performs the normative lowering of §10.10.
+`lowerComprehension` performs the normative lowering of §10.10 during elaboration.
+It obeys the same name-resolution, implicit-insertion, quantity, borrowing, region, visibility, opacity, `unhide`, and
+`clarify` rules as ordinary comprehension elaboration at the current call site.
 
 The reflection API MUST additionally provide elaboration-time convenience operations equivalent to:
 
