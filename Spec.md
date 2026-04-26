@@ -1447,6 +1447,36 @@ expect data TVar (a : Type) : Type
 expect data Duration : Type
 expect data Instant : Type
 
+nanos :
+    Integer -> Duration
+
+micros :
+    Integer -> Duration
+
+millis :
+    Integer -> Duration
+
+seconds :
+    Integer -> Duration
+
+minutes :
+    Integer -> Duration
+
+durationAdd :
+    Duration -> Duration -> Duration
+
+durationSub :
+    Duration -> Duration -> Duration
+
+durationCompare :
+    (& x : Duration) -> (& y : Duration) -> Ordering
+
+instantAdd :
+    Instant -> Duration -> Instant
+
+instantDiff :
+    Instant -> Instant -> Duration
+
 data InterruptTag : Type =
     Requested
     ScopeShutdown
@@ -1974,6 +2004,38 @@ Show Unit, Show Bool, Show Char, Show String,
 Show Int, Show Nat, Show Integer, Show Float, Show Double, Show Real,
 Show Ordering, Show Duration, Show Instant
 ```
+
+Rules:
+
+* `Duration` is a signed monotonic-time difference.
+* `nanos`, `micros`, `millis`, `seconds`, and `minutes` accept signed `Integer` values.
+* `durationCompare` defines the canonical `Ord Duration` ordering.
+* `instantDiff later earlier` returns the signed duration `later - earlier`.
+* `instantAdd instant duration` offsets an instant by a signed duration.
+* `sleepFor d` treats nonpositive durations as already elapsed and returns without sleeping.
+* `sleepUntil t` returns without sleeping when `t` is not later than `nowMonotonic`.
+
+The portable prelude MUST provide:
+
+```text
+Eq Duration, Ord Duration, Show Duration,
+Eq Instant, Ord Instant, Show Instant,
+Add Duration, Negatable Duration, CheckedSub Duration,
+AdditiveMonoid Duration, AdditiveGroup Duration
+```
+
+For `Duration`:
+
+```kappa
+zero = nanos 0
+add = durationAdd
+negate d = durationSub zero d
+subDefined x y = True
+subtract x y @_ = durationSub x y
+```
+
+`Instant` is ordered but not additive. Use `instantAdd` and `instantDiff`; do not provide `Zero Instant`, `Add Instant`,
+or `AdditiveMonoid Instant`.
 
 `Void`, `absurd`, and `Dec` are the standard proof-oriented prelude basics:
 
@@ -11952,7 +12014,12 @@ race :
 Semantics:
 
 * `Instant` and `Duration` are monotonic runtime time values. They are not wall-clock calendar values.
+* `Duration` is a signed monotonic-time difference.
 * `nowMonotonic` returns the current monotonic instant of the runtime agent.
+* `nanos`, `micros`, `millis`, `seconds`, and `minutes` construct signed durations from signed `Integer` values.
+* `durationCompare` defines the canonical ordering on `Duration`.
+* `instantDiff later earlier` returns the signed duration `later - earlier`.
+* `instantAdd instant duration` offsets an instant by the given signed duration.
 * `sleepFor d` suspends the current fiber for duration `d`, unless interrupted first.
 * `sleepUntil t` suspends the current fiber until instant `t`, unless interrupted first.
 * `sleepFor` and `sleepUntil` are interruptible and do not block an entire runtime agent merely by parking one fiber.
