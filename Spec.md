@@ -22160,6 +22160,45 @@ Query rules:
 * Hidden ambient mutable state MUST NOT affect query results except insofar as it is itself modeled as an explicit query
   input or recorded transcript input.
 
+Import-order stability:
+
+A query result MUST NOT depend on the physical order in which imported interfaces are loaded, reloaded, discovered,
+iterated, or cached.
+
+For a query whose result depends on imports, the implementation MUST behave as if the query depends on the canonical
+effective import environment of §2.3.5 rather than on the compiler's physical import-processing order.
+
+In particular, the following queries MUST be import-order stable:
+
+* compute declaration body resolution;
+* compute module interface;
+* lower declaration or module to KCore;
+* evaluate elaboration-time expansion or normalization request;
+* compute inhabitance summary;
+* solve implicit arguments;
+* solve trait instances;
+* answer hole-goal queries;
+* answer semantic reflection queries; and
+* answer tooling-facing semantic queries.
+
+If an implementation uses work queues, hash maps, memo tables, persistent caches, or parallel scheduling to evaluate
+queries, any nondeterministic iteration order in those structures MUST be hidden behind a canonical semantic ordering
+before it can affect a query result.
+
+Canonical semantic ordering, where an order is required, SHOULD use:
+
+1. resolved declaration identity;
+2. canonical module identity;
+3. canonical provider identity;
+4. normalized source path;
+5. source start offset within that path;
+6. declaration kind;
+7. spelling;
+8. implementation-defined stable tie-breaker.
+
+This ordering is for deterministic implementation behavior only. It does not create source-language shadowing,
+priority, or overload-resolution rules.
+
 Inhabitance-query determinism:
 
 Inhabitance-summary and finite-enumeration queries MUST be deterministic within an analysis session.
