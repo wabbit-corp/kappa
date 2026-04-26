@@ -1447,6 +1447,128 @@ let ``compilation reports import cycles across modules`` () =
     Assert.True(cycleDiagnostic.IsSome, sprintf "Expected an import-cycle diagnostic, got %A" workspace.Diagnostics)
 
 [<Fact>]
+let ``same module fragments merge surface declarations across files`` () =
+    let mainSource =
+        [
+            "module main"
+            "x : Int"
+            "let x = 1"
+        ]
+        |> String.concat "\n"
+
+    let extraSource =
+        [
+            "module main"
+            "y : Int"
+            "let y = x"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-module-fragment-merge-root"
+            "main.y"
+            [
+                "main.kp", mainSource
+                "main.extra.kp", extraSource
+            ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected fragment-merged module to compile, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("1", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected cross-fragment binding to evaluate, got %A" issue
+
+[<Fact>]
+let ``imports see declarations from all fragments of a module`` () =
+    let mainSource =
+        [
+            "module main"
+            "x : Int"
+            "let x = 1"
+        ]
+        |> String.concat "\n"
+
+    let extraSource =
+        [
+            "module main"
+            "y : Int"
+            "let y = x"
+        ]
+        |> String.concat "\n"
+
+    let consumerSource =
+        [
+            "module consumer"
+            "import main.*"
+            "result : Int"
+            "let result = x + y"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-module-fragment-import-root"
+            "consumer.result"
+            [
+                "main.kp", mainSource
+                "main.extra.kp", extraSource
+                "consumer.kp", consumerSource
+            ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected imports to see all fragment declarations, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("2", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected imported fragment binding to evaluate, got %A" issue
+
+[<Fact>]
+let ``compilation reports import cycles across module fragments`` () =
+    let moduleABaseSource =
+        [
+            "module a"
+            "let a = 1"
+        ]
+        |> String.concat "\n"
+
+    let moduleAFragmentSource =
+        [
+            "module a"
+            "import b"
+            "let fromB = b"
+        ]
+        |> String.concat "\n"
+
+    let moduleBSource =
+        [
+            "module b"
+            "import a"
+            "let b = a"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-fragment-cycle-root"
+            [
+                "a.kp", moduleABaseSource
+                "a.extra.kp", moduleAFragmentSource
+                "b.kp", moduleBSource
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected a fragment-spanning cycle diagnostic.")
+
+    let cycleDiagnostic =
+        workspace.Diagnostics
+        |> List.tryFind (fun diagnostic -> diagnostic.Code = DiagnosticCode.ImportCycle)
+
+    Assert.True(cycleDiagnostic.IsSome, sprintf "Expected an import-cycle diagnostic from fragment imports, got %A" workspace.Diagnostics)
+
+[<Fact>]
 let ``parser captures expect declarations including soft keyword names and operator terms`` () =
     let sourceText =
         [

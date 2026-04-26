@@ -2283,26 +2283,65 @@ module SurfaceElaboration =
           ExportedTypes = description.Types |> List.map (fun exportedType -> exportedType.Name) |> Set.ofList
           ExportedTraits = Set.empty }
 
+    let private mergeSurfaceInfoMaps
+        (left: Map<string, 'value>)
+        (right: Map<string, 'value>)
+        =
+        right |> Map.fold (fun state name info -> Map.add name info state) left
+
+    let private mergeSurfaceInfoSetMaps
+        (left: Map<string, Set<string>>)
+        (right: Map<string, Set<string>>)
+        =
+        right
+        |> Map.fold (fun state name values ->
+            let mergedValues =
+                state
+                |> Map.tryFind name
+                |> Option.map (Set.union values)
+                |> Option.defaultValue values
+
+            Map.add name mergedValues state) left
+
+    let private mergeModuleSurfaceInfo (left: ModuleSurfaceInfo) (right: ModuleSurfaceInfo) =
+        { TypeAliases = mergeSurfaceInfoMaps left.TypeAliases right.TypeAliases
+          TypeFacets = mergeSurfaceInfoMaps left.TypeFacets right.TypeFacets
+          RecordTypes = mergeSurfaceInfoMaps left.RecordTypes right.RecordTypes
+          BindingSchemes = mergeSurfaceInfoMaps left.BindingSchemes right.BindingSchemes
+          Constructors = mergeSurfaceInfoMaps left.Constructors right.Constructors
+          Projections = mergeSurfaceInfoMaps left.Projections right.Projections
+          Traits = mergeSurfaceInfoMaps left.Traits right.Traits
+          Instances = left.Instances @ right.Instances
+          Imports = left.Imports @ right.Imports
+          ExportedTerms = Set.union left.ExportedTerms right.ExportedTerms
+          ExportedConstructors = Set.union left.ExportedConstructors right.ExportedConstructors
+          ExportedConstructorsByType =
+            mergeSurfaceInfoSetMaps left.ExportedConstructorsByType right.ExportedConstructorsByType
+          ExportedTypes = Set.union left.ExportedTypes right.ExportedTypes
+          ExportedTraits = Set.union left.ExportedTraits right.ExportedTraits }
+
     let private buildSurfaceIndex
         (frontendModules: KFrontIRModule list)
         (hostModules: Map<string, HostBindings.HostModuleDescription>)
         =
-        let directIndex =
-            (frontendModules
-             |> List.map (fun moduleDump ->
-                 moduleNameText moduleDump.ModuleIdentity, buildModuleSurfaceInfo moduleDump)
-             |> Map.ofList)
-            |> fun userModules ->
-                hostModules
-                |> Map.fold (fun state moduleName description -> Map.add moduleName (buildHostModuleSurfaceInfo description) state) userModules
-
-        let hostSurfaceIndex =
-            hostModules |> Map.map (fun _ description -> buildHostModuleSurfaceInfo description)
-
         let moduleGroups =
             frontendModules
             |> List.groupBy (fun moduleDump -> moduleNameText moduleDump.ModuleIdentity)
             |> Map.ofList
+
+        let directUserSurfaceIndex =
+            moduleGroups
+            |> Map.map (fun _ moduleDumps ->
+                moduleDumps
+                |> List.map buildModuleSurfaceInfo
+                |> List.reduce mergeModuleSurfaceInfo)
+
+        let hostSurfaceIndex =
+            hostModules |> Map.map (fun _ description -> buildHostModuleSurfaceInfo description)
+
+        let directIndex =
+            hostSurfaceIndex
+            |> Map.fold (fun state moduleName moduleInfo -> Map.add moduleName moduleInfo state) directUserSurfaceIndex
 
         let addReexportedItem (importedModule: ModuleSurfaceInfo) (moduleInfo: ModuleSurfaceInfo) (item: ImportItem) =
             let exportedName = item.Name
@@ -2382,7 +2421,7 @@ module SurfaceElaboration =
             let updatedUserSurfaceIndex =
                 moduleGroups
                 |> Map.map (fun moduleName moduleDumps ->
-                    let directModuleInfo = Map.find moduleName directIndex
+                    let directModuleInfo = Map.find moduleName directUserSurfaceIndex
 
                     moduleDumps
                     |> List.collect (fun moduleDump ->

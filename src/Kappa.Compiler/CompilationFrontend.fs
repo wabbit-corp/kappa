@@ -1777,18 +1777,24 @@ module internal CompilationFrontend =
         let diagnostics = ResizeArray<Diagnostic>()
         let emitted = HashSet<string>()
 
-        let moduleMap =
+        let moduleDocuments =
             documents
             |> List.choose (fun document ->
                 document.ModuleName
                 |> Option.map (fun moduleName -> SyntaxFacts.moduleNameToText moduleName, document))
+            |> List.groupBy fst
+            |> List.map (fun (moduleName, entries) ->
+                moduleName, entries |> List.map snd)
             |> Map.ofList
 
         let edges =
-            moduleMap
-            |> Map.map (fun _ document ->
-                importedModules document
-                |> List.filter (fun moduleName -> moduleMap.ContainsKey(moduleName)))
+            moduleDocuments
+            |> Map.map (fun _ moduleGroup ->
+                moduleGroup
+                |> List.collect importedModules
+                |> Set.ofList
+                |> Set.filter (fun moduleName -> moduleDocuments.ContainsKey(moduleName))
+                |> Set.toList)
 
         let states = Dictionary<string, int>()
         let stack = ResizeArray<string>()
@@ -1803,7 +1809,7 @@ module internal CompilationFrontend =
                     let cycleStart = stack |> Seq.findIndex ((=) dependency)
                     let cycle = stack |> Seq.skip cycleStart |> Seq.toList
                     let message = String.concat " -> " (cycle @ [ dependency ])
-                    let document = moduleMap[moduleName]
+                    let document = moduleDocuments[moduleName] |> List.head
 
                     diagnostics.Add(
                         { Severity = Error
@@ -1826,7 +1832,7 @@ module internal CompilationFrontend =
                 ignore (stack.RemoveAt(stack.Count - 1))
                 states[moduleName] <- 2
 
-        for moduleName in moduleMap.Keys do
+        for moduleName in moduleDocuments.Keys do
             visit moduleName
 
         diagnostics |> Seq.toList
