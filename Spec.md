@@ -11168,7 +11168,7 @@ Failure-side constructor narrowing:
 A failed constructor test introduces `LacksCtor e ⟨C⟩` evidence for the tested scrutinee.
 
 If the scrutinee type has a finite visible constructor set, and the active refinement context proves `LacksCtor` for all
-but one visible constructor of that type, the implementation MAY derive `HasCtor D` for the unique remaining visible
+but one visible constructor of that type, the implementation MUST derive `HasCtor D` for the unique remaining visible
 constructor `D`.
 
 This strengthening is permitted only when:
@@ -11192,6 +11192,36 @@ case _ ->
 
 Outside a module where an opaque data type's constructors are visible, failure-side `LacksCtor` evidence does not reveal
 hidden constructors.
+
+Failure-side constructor facts participate in branch-local normalization under §14.3A.
+
+Example:
+
+```kappa
+let readSome (x : Option Int) : Int =
+    if x is None then
+        0
+    else
+        x.value
+```
+
+In the `else` branch, the condition introduces:
+
+```kappa
+@_ : LacksCtor x ⟨None⟩
+```
+
+Since `Option` has the visible finite constructor set `{None, Some}`, the branch-local context also derives:
+
+```kappa
+@_ : HasCtor x ⟨Some⟩
+```
+
+Therefore constructor-field projection `x.value` is well-formed in the `else` branch.
+
+For a type with more than two visible constructors, ruling out one constructor does not by itself introduce a positive
+constructor fact. It may still allow a residual catch-all branch to be selected during normalization, as specified by
+§14.3A.
 
 These erased assumptions participate in implicit resolution (§7.3.3).
 
