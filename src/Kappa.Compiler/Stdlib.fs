@@ -29,6 +29,7 @@ module Stdlib =
           "Err"
           "Nil"
           "::"
+          ":&"
           "LT"
           "EQ"
           "GT"

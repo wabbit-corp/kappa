@@ -2865,6 +2865,7 @@ let ``implicit prelude import models the wildcard and constructor subset separat
                     Some ImportNamespace.Constructor, "Err"
                     Some ImportNamespace.Constructor, "Nil"
                     Some ImportNamespace.Constructor, "::"
+                    Some ImportNamespace.Constructor, ":&"
                     Some ImportNamespace.Constructor, "LT"
                     Some ImportNamespace.Constructor, "EQ"
                     Some ImportNamespace.Constructor, "GT"

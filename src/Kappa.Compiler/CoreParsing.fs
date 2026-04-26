@@ -1236,6 +1236,25 @@ type private PatternParser(tokens: Token list, source: SourceText, diagnostics: 
 
             pattern
 
+type private CollectionKind =
+    | ListCollection
+    | SetCollection
+
+type private CollectionOrderedness =
+    | KnownOrdered
+    | KnownUnordered
+    | UnknownOrderedness
+
+type private CollectionClause =
+    | ForClause of SurfaceBindPattern * SurfaceExpression
+    | LetClause of SurfaceBindPattern * SurfaceExpression
+    | IfClause of SurfaceExpression
+    | OrderByClause of SurfaceExpression
+    | DistinctClause
+    | DistinctByClause of SurfaceExpression
+    | SkipClause of SurfaceExpression
+    | YieldClause of SurfaceExpression
+
 type private ExpressionParser
     (
         tokens: Token list,
@@ -1318,6 +1337,8 @@ type private ExpressionParser
         | InterpolatedStringStart
         | CharacterLiteral
         | LeftParen
+        | LeftBracket
+        | LeftSetBrace
         | AtSign
         | Backslash -> true
         | Dot when inCodeQuote && this.Peek(1).Kind = Operator && this.Peek(1).Text = "~" -> true
@@ -1344,6 +1365,981 @@ type private ExpressionParser
         | Result.Error message ->
             diagnostics.AddError(DiagnosticCode.ParseError, message, source.GetLocation(token.Span))
             '\000'
+
+    member private this.CollectBracketedTokens(errorMessage: string) =
+        let start = this.Current
+        this.Advance() |> ignore
+
+        let innerTokens = ResizeArray<Token>()
+        let mutable depth = 1
+
+        while depth > 0 && this.Current.Kind <> EndOfFile do
+            match this.Current.Kind with
+            | LeftBracket ->
+                depth <- depth + 1
+                innerTokens.Add(this.Advance())
+            | RightBracket ->
+                depth <- depth - 1
+
+                if depth > 0 then
+                    innerTokens.Add(this.Advance())
+                else
+                    this.Advance() |> ignore
+            | _ ->
+                innerTokens.Add(this.Advance())
+
+        if depth > 0 then
+            diagnostics.AddError(DiagnosticCode.ParseError, errorMessage, source.GetLocation(start.Span))
+
+        List.ofSeq innerTokens
+
+    member private this.CollectSetBracedTokens(errorMessage: string) =
+        let start = this.Current
+        this.Advance() |> ignore
+
+        let innerTokens = ResizeArray<Token>()
+        let mutable depth = 1
+
+        while depth > 0 && this.Current.Kind <> EndOfFile do
+            match this.Current.Kind with
+            | LeftSetBrace ->
+                depth <- depth + 1
+                innerTokens.Add(this.Advance())
+            | RightSetBrace ->
+                depth <- depth - 1
+
+                if depth > 0 then
+                    innerTokens.Add(this.Advance())
+                else
+                    this.Advance() |> ignore
+            | _ ->
+                innerTokens.Add(this.Advance())
+
+        if depth > 0 then
+            diagnostics.AddError(DiagnosticCode.ParseError, errorMessage, source.GetLocation(start.Span))
+
+        List.ofSeq innerTokens
+
+    member private this.ParseCollectionExpression(kind: CollectionKind, innerTokens: Token list) =
+        let listNil = Name [ "Nil" ]
+        let boolTrue = Name [ "True" ]
+        let boolFalse = Name [ "False" ]
+
+        let cons head tail =
+            Apply(Name [ "::" ], [ head; tail ])
+
+        let makeListExpression (items: SurfaceExpression list) =
+            List.foldBack cons items listNil
+
+        let makeSetExpression (items: SurfaceExpression list) =
+            Apply(Name [ "Set" ], [ makeListExpression items ])
+
+        let patternBoundNames pattern =
+            let rec loop current =
+                match current with
+                | WildcardPattern
+                | LiteralPattern _ -> []
+                | NamePattern name -> [ name ]
+                | AsPattern(name, inner) -> name :: loop inner
+                | TypedPattern(inner, _) -> loop inner
+                | ConstructorPattern(_, arguments) ->
+                    arguments |> List.collect loop
+                | NamedConstructorPattern(_, fields) ->
+                    fields |> List.collect (fun field -> loop field.Pattern)
+                | TuplePattern elements ->
+                    elements |> List.collect loop
+                | VariantPattern variant ->
+                    match variant with
+                    | BoundVariantPattern(name, _) -> [ name ]
+                    | WildcardVariantPattern _ -> []
+                    | RestVariantPattern name -> [ name ]
+                | OrPattern alternatives ->
+                    alternatives |> List.tryHead |> Option.map loop |> Option.defaultValue []
+                | AnonymousRecordPattern(fields, rest) ->
+                    let fieldNames = fields |> List.collect (fun field -> loop field.Pattern)
+                    let restNames =
+                        match rest with
+                        | Some(BindRecordPatternRest name) -> [ name ]
+                        | _ -> []
+
+                    fieldNames @ restNames
+
+            loop pattern
+
+        let extendRowNames existingNames newNames =
+            let newNameSet = newNames |> Set.ofList
+
+            (existingNames |> List.filter (fun name -> not (Set.contains name newNameSet)))
+            @ newNames
+
+        let makeUnitDo statements =
+            Do(statements @ [ DoExpression(Literal LiteralValue.Unit) ])
+
+        let makeNamePatternBinding name =
+            SurfaceBinderParsing.makeBindPattern (NamePattern name) None []
+
+        let makeParameter name =
+            { Name = name
+              TypeTokens = None
+              Quantity = None
+              IsImplicit = false
+              IsInout = false
+              IsReceiver = false }
+
+        let preludeResConstructorName =
+            [ ":&" ]
+
+        let bindName name value body =
+            LocalLet(makeNamePatternBinding name, value, body)
+
+        let applyName name arguments =
+            Apply(Name [ name ], arguments)
+
+        let rec makeRowExpression rowNames =
+            match rowNames with
+            | [] ->
+                Literal LiteralValue.Unit
+            | [ name ] ->
+                Name [ name ]
+            | name :: rest ->
+                Apply(Name preludeResConstructorName, [ Name [ name ]; makeRowExpression rest ])
+
+        let wrapPatternBindings binding value body =
+            LocalLet(binding, value, body)
+
+        let wrapRowBindings rowNames rowExpression body =
+            match rowNames with
+            | [] ->
+                body
+            | [ name ] ->
+                wrapPatternBindings (makeNamePatternBinding name) rowExpression body
+            | _ ->
+                let rec makeRowPattern names =
+                    match names with
+                    | [] -> WildcardPattern
+                    | [ name ] -> NamePattern name
+                    | name :: rest -> ConstructorPattern(preludeResConstructorName, [ NamePattern name; makeRowPattern rest ])
+
+                wrapPatternBindings
+                    (SurfaceBinderParsing.makeBindPattern (makeRowPattern rowNames) None [])
+                    rowExpression
+                    body
+
+        let makeListMatch listExpression headName tailName consBody nilBody =
+            Match(
+                listExpression,
+                [
+                    { Pattern = ConstructorPattern([ "::" ], [ NamePattern headName; NamePattern tailName ])
+                      Guard = None
+                      Body = consBody }
+                    { Pattern = ConstructorPattern([ "Nil" ], [])
+                      Guard = None
+                      Body = nilBody }
+                ]
+            )
+
+        let makeReverseExpression listExpression =
+            let reverseName = this.FreshSyntheticName "__query_reverse"
+            let remainingName = this.FreshSyntheticName "__query_reverse_remaining"
+            let accumulatorName = this.FreshSyntheticName "__query_reverse_acc"
+            let headName = this.FreshSyntheticName "__query_reverse_head"
+            let tailName = this.FreshSyntheticName "__query_reverse_tail"
+
+            bindName
+                reverseName
+                (Lambda(
+                    [ makeParameter remainingName; makeParameter accumulatorName ],
+                    makeListMatch
+                        (Name [ remainingName ])
+                        headName
+                        tailName
+                        (applyName reverseName [ Name [ tailName ]; cons (Name [ headName ]) (Name [ accumulatorName ]) ])
+                        (Name [ accumulatorName ])
+                ))
+                (applyName reverseName [ listExpression; listNil ])
+
+        let makeAppendExpression prefixExpression suffixExpression =
+            let appendName = this.FreshSyntheticName "__query_append"
+            let prefixName = this.FreshSyntheticName "__query_append_prefix"
+            let suffixName = this.FreshSyntheticName "__query_append_suffix"
+            let headName = this.FreshSyntheticName "__query_append_head"
+            let tailName = this.FreshSyntheticName "__query_append_tail"
+
+            bindName
+                appendName
+                (Lambda(
+                    [ makeParameter prefixName; makeParameter suffixName ],
+                    makeListMatch
+                        (Name [ prefixName ])
+                        headName
+                        tailName
+                        (cons (Name [ headName ]) (applyName appendName [ Name [ tailName ]; Name [ suffixName ] ]))
+                        (Name [ suffixName ])
+                ))
+                (applyName appendName [ prefixExpression; suffixExpression ])
+
+        let makeContainsExpression listExpression searchedValue =
+            let containsName = this.FreshSyntheticName "__query_contains"
+            let remainingName = this.FreshSyntheticName "__query_contains_remaining"
+            let searchedName = this.FreshSyntheticName "__query_contains_value"
+            let headName = this.FreshSyntheticName "__query_contains_head"
+            let tailName = this.FreshSyntheticName "__query_contains_tail"
+
+            bindName
+                containsName
+                (Lambda(
+                    [ makeParameter remainingName; makeParameter searchedName ],
+                    makeListMatch
+                        (Name [ remainingName ])
+                        headName
+                        tailName
+                        (IfThenElse(
+                            Binary(Name [ headName ], "==", Name [ searchedName ]),
+                            boolTrue,
+                            applyName containsName [ Name [ tailName ]; Name [ searchedName ] ]
+                        ))
+                        boolFalse
+                ))
+                (applyName containsName [ listExpression; searchedValue ])
+
+        let splitCollectionClauses (tokens: Token list) =
+            let clauses = ResizeArray<Token list>()
+            let current = ResizeArray<Token>()
+            let tokenArray = tokens |> List.toArray
+            let mutable parenDepth = 0
+            let mutable bracketDepth = 0
+            let mutable effectRowDepth = 0
+            let mutable braceDepth = 0
+            let mutable setBraceDepth = 0
+            let mutable layoutDepth = 0
+            let mutable neutralLayoutDepth = 0
+
+            let isLayoutToken (token: Token) =
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent -> true
+                | _ -> false
+
+            let trimOuterLayoutTokens (tokens: ResizeArray<Token>) =
+                tokens
+                |> Seq.toList
+                |> List.skipWhile isLayoutToken
+                |> List.rev
+                |> List.skipWhile isLayoutToken
+                |> List.rev
+
+            let lastSignificantToken () =
+                current |> Seq.toList |> List.rev |> List.tryFind (isLayoutToken >> not)
+
+            let shouldContinueAcrossNewline nextToken =
+                match lastSignificantToken (), nextToken with
+                | Some lastToken, Some followingToken when this.IsExpressionStart(followingToken) ->
+                    lastToken.Kind = Equals
+                    || lastToken.Kind = Arrow
+                    || lastToken.Kind = Colon
+                    || lastToken.Kind = Operator
+                    || Token.isKeyword Keyword.In lastToken
+                    || Token.isKeyword Keyword.If lastToken
+                    || Token.isKeyword Keyword.Yield lastToken
+                    || Token.isKeyword Keyword.By lastToken
+                | _ ->
+                    false
+
+            let flushCurrent () =
+                let clauseTokens =
+                    trimOuterLayoutTokens current
+
+                if not (List.isEmpty clauseTokens) then
+                    clauses.Add(clauseTokens)
+
+                current.Clear()
+
+            for index = 0 to tokenArray.Length - 1 do
+                let token = tokenArray[index]
+                let nextToken =
+                    if index + 1 < tokenArray.Length then
+                        Some tokenArray[index + 1]
+                    else
+                        None
+
+                let atTopLevel =
+                    parenDepth = 0
+                    && bracketDepth = 0
+                    && effectRowDepth = 0
+                    && braceDepth = 0
+                    && setBraceDepth = 0
+                    && layoutDepth = 0
+
+                match token.Kind with
+                | LeftParen ->
+                    parenDepth <- parenDepth + 1
+                    current.Add(token)
+                | RightParen ->
+                    parenDepth <- max 0 (parenDepth - 1)
+                    current.Add(token)
+                | LeftBracket ->
+                    bracketDepth <- bracketDepth + 1
+                    current.Add(token)
+                | RightBracket ->
+                    bracketDepth <- max 0 (bracketDepth - 1)
+                    current.Add(token)
+                | LeftEffectRow ->
+                    effectRowDepth <- effectRowDepth + 1
+                    current.Add(token)
+                | RightEffectRow ->
+                    effectRowDepth <- max 0 (effectRowDepth - 1)
+                    current.Add(token)
+                | LeftBrace ->
+                    braceDepth <- braceDepth + 1
+                    current.Add(token)
+                | RightBrace ->
+                    braceDepth <- max 0 (braceDepth - 1)
+                    current.Add(token)
+                | LeftSetBrace ->
+                    setBraceDepth <- setBraceDepth + 1
+                    current.Add(token)
+                | RightSetBrace ->
+                    setBraceDepth <- max 0 (setBraceDepth - 1)
+                    current.Add(token)
+                | Comma when atTopLevel ->
+                    flushCurrent ()
+                | Newline
+                    when atTopLevel
+                         && ((nextToken |> Option.exists (fun following -> following.Kind = Indent))
+                             || shouldContinueAcrossNewline nextToken) ->
+                    current.Add(token)
+                | Newline when atTopLevel ->
+                    flushCurrent ()
+                | Indent ->
+                    let hasSignificantTokens =
+                        current |> Seq.exists (isLayoutToken >> not)
+
+                    if not hasSignificantTokens && layoutDepth = 0 then
+                        neutralLayoutDepth <- neutralLayoutDepth + 1
+                    else
+                        layoutDepth <- layoutDepth + 1
+
+                    current.Add(token)
+                | Dedent ->
+                    if neutralLayoutDepth > 0 && layoutDepth = 0 then
+                        neutralLayoutDepth <- neutralLayoutDepth - 1
+                    else
+                        layoutDepth <- max 0 (layoutDepth - 1)
+
+                    current.Add(token)
+                | _ ->
+                    current.Add(token)
+
+            flushCurrent ()
+            List.ofSeq clauses
+
+        let splitTopLevelItems (tokens: Token list) =
+            let items = ResizeArray<Token list>()
+            let current = ResizeArray<Token>()
+            let tokenArray = tokens |> List.toArray
+            let mutable parenDepth = 0
+            let mutable bracketDepth = 0
+            let mutable effectRowDepth = 0
+            let mutable braceDepth = 0
+            let mutable setBraceDepth = 0
+            let mutable layoutDepth = 0
+            let mutable neutralLayoutDepth = 0
+
+            let isLayoutToken (token: Token) =
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent -> true
+                | _ -> false
+
+            let trimOuterLayoutTokens (tokens: ResizeArray<Token>) =
+                tokens
+                |> Seq.toList
+                |> List.skipWhile isLayoutToken
+                |> List.rev
+                |> List.skipWhile isLayoutToken
+                |> List.rev
+
+            let lastSignificantToken () =
+                current |> Seq.toList |> List.rev |> List.tryFind (isLayoutToken >> not)
+
+            let shouldContinueAcrossNewline nextToken =
+                match lastSignificantToken (), nextToken with
+                | Some lastToken, Some followingToken when this.IsExpressionStart(followingToken) ->
+                    lastToken.Kind = Equals
+                    || lastToken.Kind = Arrow
+                    || lastToken.Kind = Colon
+                    || lastToken.Kind = Operator
+                | _ ->
+                    false
+
+            let flushCurrent () =
+                let itemTokens =
+                    trimOuterLayoutTokens current
+
+                if not (List.isEmpty itemTokens) then
+                    items.Add(itemTokens)
+
+                current.Clear()
+
+            for index = 0 to tokenArray.Length - 1 do
+                let token = tokenArray[index]
+                let nextToken =
+                    if index + 1 < tokenArray.Length then
+                        Some tokenArray[index + 1]
+                    else
+                        None
+
+                let atTopLevel =
+                    parenDepth = 0
+                    && bracketDepth = 0
+                    && effectRowDepth = 0
+                    && braceDepth = 0
+                    && setBraceDepth = 0
+                    && layoutDepth = 0
+
+                match token.Kind with
+                | LeftParen ->
+                    parenDepth <- parenDepth + 1
+                    current.Add(token)
+                | RightParen ->
+                    parenDepth <- max 0 (parenDepth - 1)
+                    current.Add(token)
+                | LeftBracket ->
+                    bracketDepth <- bracketDepth + 1
+                    current.Add(token)
+                | RightBracket ->
+                    bracketDepth <- max 0 (bracketDepth - 1)
+                    current.Add(token)
+                | LeftEffectRow ->
+                    effectRowDepth <- effectRowDepth + 1
+                    current.Add(token)
+                | RightEffectRow ->
+                    effectRowDepth <- max 0 (effectRowDepth - 1)
+                    current.Add(token)
+                | LeftBrace ->
+                    braceDepth <- braceDepth + 1
+                    current.Add(token)
+                | RightBrace ->
+                    braceDepth <- max 0 (braceDepth - 1)
+                    current.Add(token)
+                | LeftSetBrace ->
+                    setBraceDepth <- setBraceDepth + 1
+                    current.Add(token)
+                | RightSetBrace ->
+                    setBraceDepth <- max 0 (setBraceDepth - 1)
+                    current.Add(token)
+                | Comma when atTopLevel ->
+                    flushCurrent ()
+                | Newline
+                    when atTopLevel
+                         && ((nextToken |> Option.exists (fun following -> following.Kind = Indent))
+                             || shouldContinueAcrossNewline nextToken) ->
+                    current.Add(token)
+                | Newline when atTopLevel ->
+                    flushCurrent ()
+                | Indent ->
+                    let hasSignificantTokens =
+                        current |> Seq.exists (isLayoutToken >> not)
+
+                    if not hasSignificantTokens && layoutDepth = 0 then
+                        neutralLayoutDepth <- neutralLayoutDepth + 1
+                    else
+                        layoutDepth <- layoutDepth + 1
+
+                    current.Add(token)
+                | Dedent ->
+                    if neutralLayoutDepth > 0 && layoutDepth = 0 then
+                        neutralLayoutDepth <- neutralLayoutDepth - 1
+                    else
+                        layoutDepth <- max 0 (layoutDepth - 1)
+
+                    current.Add(token)
+                | _ ->
+                    current.Add(token)
+
+            flushCurrent ()
+            List.ofSeq items
+
+        let tryFindTopLevelToken predicate (tokens: Token list) =
+            let tokenArray = tokens |> List.toArray
+            let mutable parenDepth = 0
+            let mutable bracketDepth = 0
+            let mutable effectRowDepth = 0
+            let mutable braceDepth = 0
+            let mutable setBraceDepth = 0
+            let mutable layoutDepth = 0
+            let mutable index = 0
+            let mutable result = None
+
+            while index < tokenArray.Length && result.IsNone do
+                match tokenArray[index].Kind with
+                | LeftParen -> parenDepth <- parenDepth + 1
+                | RightParen -> parenDepth <- max 0 (parenDepth - 1)
+                | LeftBracket -> bracketDepth <- bracketDepth + 1
+                | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
+                | LeftEffectRow -> effectRowDepth <- effectRowDepth + 1
+                | RightEffectRow -> effectRowDepth <- max 0 (effectRowDepth - 1)
+                | LeftBrace -> braceDepth <- braceDepth + 1
+                | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
+                | LeftSetBrace -> setBraceDepth <- setBraceDepth + 1
+                | RightSetBrace -> setBraceDepth <- max 0 (setBraceDepth - 1)
+                | Indent -> layoutDepth <- layoutDepth + 1
+                | Dedent -> layoutDepth <- max 0 (layoutDepth - 1)
+                | _
+                    when parenDepth = 0
+                         && bracketDepth = 0
+                         && effectRowDepth = 0
+                         && braceDepth = 0
+                         && setBraceDepth = 0
+                         && layoutDepth = 0
+                         && predicate tokenArray[index] ->
+                    result <- Some index
+                | _ ->
+                    ()
+
+                index <- index + 1
+
+            result
+
+        let parseClause (clauseTokens: Token list) =
+            match clauseTokens with
+            | yieldToken :: rest when Token.isKeyword Keyword.Yield yieldToken ->
+                Some(YieldClause(this.ParseStandaloneExpression(rest)))
+            | forToken :: rest when Token.isKeyword Keyword.For forToken ->
+                match tryFindTopLevelToken (fun token -> Token.isKeyword Keyword.In token) rest with
+                | Some inIndex ->
+                    let tokenArray = rest |> List.toArray
+                    let patternTokens = tokenArray[0 .. inIndex - 1] |> Array.toList
+                    let sourceTokens = tokenArray[inIndex + 1 ..] |> Array.toList
+                    Some(ForClause(this.ParseBindPatternFromTokens patternTokens, this.ParseStandaloneExpression(sourceTokens)))
+                | None ->
+                    diagnostics.AddError(DiagnosticCode.ParseError, "Expected 'in' in the comprehension generator.", source.GetLocation(forToken.Span))
+                    None
+            | letToken :: rest when Token.isKeyword Keyword.Let letToken ->
+                match tryFindTopLevelToken (fun token -> token.Kind = Equals) rest with
+                | Some equalsIndex ->
+                    let tokenArray = rest |> List.toArray
+                    let bindingTokens = tokenArray[0 .. equalsIndex - 1] |> Array.toList
+                    let valueTokens = tokenArray[equalsIndex + 1 ..] |> Array.toList
+                    Some(LetClause(this.ParseBindPatternFromTokens bindingTokens, this.ParseStandaloneExpression(valueTokens)))
+                | None ->
+                    diagnostics.AddError(DiagnosticCode.ParseError, "Expected '=' in the comprehension let clause.", source.GetLocation(letToken.Span))
+                    None
+            | ifToken :: rest when Token.isKeyword Keyword.If ifToken ->
+                Some(IfClause(this.ParseStandaloneExpression(rest)))
+            | orderToken :: byToken :: rest when Token.isKeyword Keyword.Order orderToken && Token.isKeyword Keyword.By byToken ->
+                Some(OrderByClause(this.ParseStandaloneExpression(rest)))
+            | distinctToken :: byToken :: rest when Token.isKeyword Keyword.Distinct distinctToken && Token.isKeyword Keyword.By byToken ->
+                Some(DistinctByClause(this.ParseStandaloneExpression(rest)))
+            | distinctToken :: [] when Token.isKeyword Keyword.Distinct distinctToken ->
+                Some DistinctClause
+            | skipToken :: rest when Token.isKeyword Keyword.Skip skipToken ->
+                Some(SkipClause(this.ParseStandaloneExpression(rest)))
+            | token :: _ ->
+                diagnostics.AddError(DiagnosticCode.ParseError, "Unsupported comprehension clause.", source.GetLocation(token.Span))
+                None
+            | [] ->
+                None
+
+        let unwrapEnumeratedSource expression =
+            match expression with
+            | Apply(Name [ "Set" ], [ items ]) ->
+                items, KnownUnordered
+            | _ ->
+                expression, UnknownOrderedness
+
+        let buildInitialRows () =
+            makeListExpression [ Literal LiteralValue.Unit ]
+
+        let mapYield rowNames rowsExpression yieldedExpression =
+            let loopName = this.FreshSyntheticName "__query_yield_loop"
+            let remainingRowsName = this.FreshSyntheticName "__query_yield_rows"
+            let rowName = this.FreshSyntheticName "__query_yield_row"
+            let tailName = this.FreshSyntheticName "__query_yield_tail"
+
+            bindName
+                loopName
+                (Lambda(
+                    [ makeParameter remainingRowsName ],
+                    makeListMatch
+                        (Name [ remainingRowsName ])
+                        rowName
+                        tailName
+                        (wrapRowBindings
+                            rowNames
+                            (Name [ rowName ])
+                            (cons yieldedExpression (applyName loopName [ Name [ tailName ] ])))
+                        listNil
+                ))
+                (applyName loopName [ rowsExpression ])
+
+        let transformForClause
+            (rowNames: string list)
+            (rowsExpression: SurfaceExpression)
+            (binding: SurfaceBindPattern)
+            (sourceExpression: SurfaceExpression)
+            =
+            let nextRowNames = extendRowNames rowNames (patternBoundNames binding.Pattern)
+            let enumeratedSourceExpression, sourceOrderedness = unwrapEnumeratedSource sourceExpression
+            let loopRowsName = this.FreshSyntheticName "__query_for_rows"
+            let remainingRowsName = this.FreshSyntheticName "__query_for_remaining_rows"
+            let rowName = this.FreshSyntheticName "__query_for_row"
+            let rowTailName = this.FreshSyntheticName "__query_for_row_tail"
+            let loopItemsName = this.FreshSyntheticName "__query_for_items"
+            let itemName = this.FreshSyntheticName "__query_for_item"
+            let itemTailName = this.FreshSyntheticName "__query_for_item_tail"
+            let sourceItemsName = this.FreshSyntheticName "__query_for_source_items"
+
+            let transformedExpression =
+                bindName
+                    loopRowsName
+                    (Lambda(
+                        [ makeParameter remainingRowsName ],
+                        makeListMatch
+                            (Name [ remainingRowsName ])
+                            rowName
+                            rowTailName
+                            (wrapRowBindings
+                                rowNames
+                                (Name [ rowName ])
+                                (bindName
+                                    loopItemsName
+                                    (Lambda(
+                                        [ makeParameter sourceItemsName ],
+                                        makeListMatch
+                                            (Name [ sourceItemsName ])
+                                            itemName
+                                            itemTailName
+                                            (wrapPatternBindings
+                                                binding
+                                                (Name [ itemName ])
+                                                (cons
+                                                    (makeRowExpression nextRowNames)
+                                                    (applyName loopItemsName [ Name [ itemTailName ] ])))
+                                            listNil
+                                    ))
+                                    (makeAppendExpression
+                                        (applyName loopItemsName [ enumeratedSourceExpression ])
+                                        (applyName loopRowsName [ Name [ rowTailName ] ]))))
+                            listNil
+                    ))
+                    (applyName loopRowsName [ rowsExpression ])
+
+            transformedExpression, nextRowNames, sourceOrderedness
+
+        let transformLetClause
+            (rowNames: string list)
+            (rowsExpression: SurfaceExpression)
+            (binding: SurfaceBindPattern)
+            (valueExpression: SurfaceExpression)
+            =
+            let nextRowNames = extendRowNames rowNames (patternBoundNames binding.Pattern)
+            let loopName = this.FreshSyntheticName "__query_let_loop"
+            let remainingRowsName = this.FreshSyntheticName "__query_let_rows"
+            let rowName = this.FreshSyntheticName "__query_let_row"
+            let rowTailName = this.FreshSyntheticName "__query_let_row_tail"
+
+            let transformedExpression =
+                bindName
+                    loopName
+                    (Lambda(
+                        [ makeParameter remainingRowsName ],
+                        makeListMatch
+                            (Name [ remainingRowsName ])
+                            rowName
+                            rowTailName
+                            (wrapRowBindings
+                                rowNames
+                                (Name [ rowName ])
+                                (wrapPatternBindings
+                                    binding
+                                    valueExpression
+                                    (cons
+                                        (makeRowExpression nextRowNames)
+                                        (applyName loopName [ Name [ rowTailName ] ]))))
+                            listNil
+                    ))
+                    (applyName loopName [ rowsExpression ])
+
+            transformedExpression, nextRowNames
+
+        let transformIfClause rowNames rowsExpression conditionExpression =
+            let loopName = this.FreshSyntheticName "__query_if_loop"
+            let remainingRowsName = this.FreshSyntheticName "__query_if_rows"
+            let rowName = this.FreshSyntheticName "__query_if_row"
+            let rowTailName = this.FreshSyntheticName "__query_if_row_tail"
+            let filteredTailName = this.FreshSyntheticName "__query_if_tail_filtered"
+
+            bindName
+                loopName
+                (Lambda(
+                    [ makeParameter remainingRowsName ],
+                    makeListMatch
+                        (Name [ remainingRowsName ])
+                        rowName
+                        rowTailName
+                        (wrapRowBindings
+                            rowNames
+                            (Name [ rowName ])
+                            (bindName
+                                filteredTailName
+                                (applyName loopName [ Name [ rowTailName ] ])
+                                (IfThenElse(
+                                    conditionExpression,
+                                    cons (Name [ rowName ]) (Name [ filteredTailName ]),
+                                    Name [ filteredTailName ]
+                                ))))
+                        listNil
+                ))
+                (applyName loopName [ rowsExpression ])
+
+        let transformDistinctClause rowNames rowsExpression keySelector =
+            let loopName = this.FreshSyntheticName "__query_distinct_loop"
+            let remainingRowsName = this.FreshSyntheticName "__query_distinct_rows"
+            let seenKeysName = this.FreshSyntheticName "__query_distinct_seen"
+            let rowName = this.FreshSyntheticName "__query_distinct_row"
+            let rowTailName = this.FreshSyntheticName "__query_distinct_row_tail"
+            let keyName = this.FreshSyntheticName "__query_distinct_key"
+
+            bindName
+                loopName
+                (Lambda(
+                    [ makeParameter remainingRowsName; makeParameter seenKeysName ],
+                    makeListMatch
+                        (Name [ remainingRowsName ])
+                        rowName
+                        rowTailName
+                        (wrapRowBindings
+                            rowNames
+                            (Name [ rowName ])
+                            (bindName
+                                keyName
+                                keySelector
+                                (IfThenElse(
+                                    makeContainsExpression (Name [ seenKeysName ]) (Name [ keyName ]),
+                                    applyName loopName [ Name [ rowTailName ]; Name [ seenKeysName ] ],
+                                    cons
+                                        (Name [ rowName ])
+                                        (applyName
+                                            loopName
+                                            [ Name [ rowTailName ]; cons (Name [ keyName ]) (Name [ seenKeysName ]) ])
+                                ))))
+                        listNil
+                ))
+                (applyName loopName [ rowsExpression; listNil ])
+
+        let transformSkipClause rowsExpression orderedness countExpression =
+            let skipToken =
+                innerTokens
+                |> List.tryFind (Token.isKeyword Keyword.Skip)
+                |> Option.defaultValue { Kind = Keyword Keyword.Skip; Text = "skip"; Span = eofSpan }
+
+            if orderedness = KnownUnordered then
+                diagnostics.AddError(
+                    DiagnosticCode.ParseError,
+                    "skip and take require an ordered query pipeline; the current pipeline is unordered.",
+                    source.GetLocation(skipToken.Span)
+                )
+
+            let loopName = this.FreshSyntheticName "__query_skip_loop"
+            let remainingRowsName = this.FreshSyntheticName "__query_skip_rows"
+            let remainingCountName = this.FreshSyntheticName "__query_skip_count"
+            let rowName = this.FreshSyntheticName "__query_skip_row"
+            let rowTailName = this.FreshSyntheticName "__query_skip_row_tail"
+
+            bindName
+                loopName
+                (Lambda(
+                    [ makeParameter remainingRowsName; makeParameter remainingCountName ],
+                    makeListMatch
+                        (Name [ remainingRowsName ])
+                        rowName
+                        rowTailName
+                        (IfThenElse(
+                            Binary(Name [ remainingCountName ], ">", NumericLiteral(SurfaceIntegerLiteral(0I, "0", None))),
+                            applyName
+                                loopName
+                                [ Name [ rowTailName ]
+                                  Binary(
+                                      Name [ remainingCountName ],
+                                      "-",
+                                      NumericLiteral(SurfaceIntegerLiteral(1I, "1", None))
+                                  ) ],
+                            cons (Name [ rowName ]) (applyName loopName [ Name [ rowTailName ]; Name [ remainingCountName ] ])
+                        ))
+                        listNil
+                ))
+                (applyName loopName [ rowsExpression; countExpression ])
+
+        let transformOrderByClause rowNames rowsExpression keyExpression =
+            let insertName = this.FreshSyntheticName "__query_order_insert"
+            let sortName = this.FreshSyntheticName "__query_order_sort"
+            let projectName = this.FreshSyntheticName "__query_order_project"
+            let remainingRowsName = this.FreshSyntheticName "__query_order_rows"
+            let sortedPairsName = this.FreshSyntheticName "__query_order_pairs"
+            let rowName = this.FreshSyntheticName "__query_order_row"
+            let rowTailName = this.FreshSyntheticName "__query_order_row_tail"
+            let pairName = this.FreshSyntheticName "__query_order_pair"
+            let headPairName = this.FreshSyntheticName "__query_order_head_pair"
+            let pairTailName = this.FreshSyntheticName "__query_order_pair_tail"
+            let currentKeyName = this.FreshSyntheticName "__query_order_key"
+            let currentRowValueName = this.FreshSyntheticName "__query_order_row_value"
+            let existingKeyName = this.FreshSyntheticName "__query_order_existing_key"
+            let existingRowValueName = this.FreshSyntheticName "__query_order_existing_row"
+            let orderedBeforeExisting =
+                Binary(
+                    Binary(Name [ currentKeyName ], "<", Name [ existingKeyName ]),
+                    "||",
+                    Binary(Name [ currentKeyName ], "==", Name [ existingKeyName ])
+                )
+
+            let pairBinding name keyName rowValueName =
+                SurfaceBinderParsing.makeBindPattern
+                    (ConstructorPattern(preludeResConstructorName, [ NamePattern keyName; NamePattern rowValueName ]))
+                    None
+                    []
+
+            bindName
+                insertName
+                (Lambda(
+                    [ makeParameter pairName; makeParameter sortedPairsName ],
+                    wrapPatternBindings
+                        (pairBinding pairName currentKeyName currentRowValueName)
+                        (Name [ pairName ])
+                        (makeListMatch
+                            (Name [ sortedPairsName ])
+                            headPairName
+                            pairTailName
+                            (wrapPatternBindings
+                                (pairBinding headPairName existingKeyName existingRowValueName)
+                                (Name [ headPairName ])
+                                (IfThenElse(
+                                    orderedBeforeExisting,
+                                    cons (Name [ pairName ]) (Name [ sortedPairsName ]),
+                                    cons
+                                        (Name [ headPairName ])
+                                        (applyName insertName [ Name [ pairName ]; Name [ pairTailName ] ])
+                                )))
+                            (cons (Name [ pairName ]) listNil))
+                ))
+                (bindName
+                    sortName
+                    (Lambda(
+                        [ makeParameter remainingRowsName ],
+                        makeListMatch
+                            (Name [ remainingRowsName ])
+                            rowName
+                            rowTailName
+                            (wrapRowBindings
+                                rowNames
+                                (Name [ rowName ])
+                                (bindName
+                                    pairName
+                                    (Apply(Name preludeResConstructorName, [ keyExpression; Name [ rowName ] ]))
+                                    (applyName
+                                        insertName
+                                        [ Name [ pairName ]
+                                          applyName sortName [ Name [ rowTailName ] ] ])))
+                            listNil
+                    ))
+                    (bindName
+                        projectName
+                        (Lambda(
+                            [ makeParameter sortedPairsName ],
+                            makeListMatch
+                                (Name [ sortedPairsName ])
+                                headPairName
+                                pairTailName
+                                (wrapPatternBindings
+                                    (pairBinding headPairName existingKeyName existingRowValueName)
+                                    (Name [ headPairName ])
+                                    (cons
+                                        (Name [ existingRowValueName ])
+                                        (applyName projectName [ Name [ pairTailName ] ])))
+                                listNil
+                        ))
+                        (applyName projectName [ applyName sortName [ rowsExpression ] ])))
+
+        let startsComprehension =
+            innerTokens
+            |> List.tryFind (fun token ->
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent -> false
+                | _ -> true)
+            |> Option.exists (fun token ->
+                Token.isKeyword Keyword.Yield token
+                || Token.isKeyword Keyword.For token)
+
+        if not startsComprehension then
+            let items =
+                splitTopLevelItems innerTokens
+                |> List.map this.ParseStandaloneExpression
+
+            match kind with
+            | ListCollection ->
+                makeListExpression items
+            | SetCollection ->
+                makeSetExpression items
+        else
+            let clauses =
+                splitCollectionClauses innerTokens
+                |> List.choose parseClause
+
+            match List.rev clauses with
+            | YieldClause yielded :: reversedPrefix ->
+                let rowClauses = List.rev reversedPrefix
+
+                let rowsExpression, rowNames, orderedness =
+                    List.fold
+                        (fun (currentRows, currentNames, currentOrderedness) clause ->
+                        match clause with
+                        | ForClause(binding, sourceExpression) ->
+                            let transformedRows, nextNames, sourceOrderedness =
+                                transformForClause currentNames currentRows binding sourceExpression
+
+                            let nextOrderedness =
+                                match currentOrderedness, sourceOrderedness with
+                                | KnownUnordered, _
+                                | _, KnownUnordered -> KnownUnordered
+                                | KnownOrdered, KnownOrdered -> KnownOrdered
+                                | _ -> UnknownOrderedness
+
+                            transformedRows, nextNames, nextOrderedness
+                        | LetClause(binding, valueExpression) ->
+                            let transformedRows, nextNames =
+                                transformLetClause currentNames currentRows binding valueExpression
+
+                            transformedRows, nextNames, currentOrderedness
+                        | IfClause conditionExpression ->
+                            transformIfClause currentNames currentRows conditionExpression, currentNames, currentOrderedness
+                        | DistinctClause ->
+                            transformDistinctClause currentNames currentRows (makeRowExpression currentNames), currentNames, currentOrderedness
+                        | DistinctByClause keyExpression ->
+                            transformDistinctClause currentNames currentRows keyExpression, currentNames, currentOrderedness
+                        | OrderByClause keyExpression ->
+                            transformOrderByClause currentNames currentRows keyExpression, currentNames, KnownOrdered
+                        | SkipClause countExpression ->
+                            transformSkipClause currentRows currentOrderedness countExpression, currentNames, currentOrderedness
+                        | YieldClause _ ->
+                            currentRows, currentNames, currentOrderedness)
+                        (buildInitialRows (), [], KnownOrdered)
+                        rowClauses
+
+                let yieldedRows = mapYield rowNames rowsExpression yielded
+
+                match kind with
+                | ListCollection -> yieldedRows
+                | SetCollection -> Apply(Name [ "Set" ], [ yieldedRows ])
+            | _ ->
+                diagnostics.AddError(DiagnosticCode.ParseError, "A comprehension must end with a yield clause.", source.GetLocation(eofSpan))
+
+                match kind with
+                | ListCollection -> listNil
+                | SetCollection -> Apply(Name [ "Set" ], [ listNil ])
 
     member private this.DecodeStringTextSegment(token: Token) =
         match SyntaxFacts.tryUnescapeStringContent token.Text with
@@ -3663,6 +4659,12 @@ type private ExpressionParser
                             | None ->
                                 diagnostics.AddError(DiagnosticCode.ParseError, "Expected an expression inside parentheses.", source.GetLocation(this.Current.Span))
                                 Literal Unit
+        | LeftBracket ->
+            let innerTokens = this.CollectBracketedTokens("Expected ']' to close the list expression.")
+            this.ParseCollectionExpression(ListCollection, innerTokens)
+        | LeftSetBrace ->
+            let innerTokens = this.CollectSetBracedTokens("Expected '|}' to close the set expression.")
+            this.ParseCollectionExpression(SetCollection, innerTokens)
         | _ when this.IsNameToken(this.Current) ->
             let segments = this.ParseQualifiedName()
             Name segments

@@ -120,8 +120,11 @@ expect type Syntax (t : Type)
 expect type SyntaxOrigin
 expect type Elab (a : Type)
 expect type ElabGoal
-expect type Set (a : Type)
-expect type Map (k : Type) (v : Type)
+data Set (a : Type) : Type =
+    Set (items : List a)
+
+data Map (k : Type) (v : Type) : Type =
+    Map (entries : List (Res k v))
 expect type Dict (c : Constraint)
 expect type WellFounded (a : Type) (rel : a -> a -> Type)
 expect type Acc (a : Type) (rel : a -> a -> Type) (x : a)

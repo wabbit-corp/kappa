@@ -1,9 +1,23 @@
 namespace Kappa.Compiler
 
 open System
+open System.Security.Cryptography
+open System.Text
 
 // Lowers KCore into the implementation-defined KRuntimeIR checkpoint.
 module internal KRuntimeLowering =
+    let private stableSyntheticSuffix (value: string) =
+        let bytes = Encoding.UTF8.GetBytes(value)
+        let hash = SHA256.HashData(bytes)
+
+        hash
+        |> Seq.take 10
+        |> Seq.map (fun value -> value.ToString("x2"))
+        |> String.concat ""
+
+    let private syntheticRuntimeRecordTypeName recordKey =
+        "__kappa_record_" + stableSyntheticSuffix recordKey
+
     let private tokensText (tokens: Token list) =
         tokens
         |> List.map (fun token -> token.Text)
@@ -921,6 +935,128 @@ module internal KRuntimeLowering =
                           MemberBindings = memberBindings }
                 | _ ->
                     None)
+
+        let dataTypes, termBindings, traitInstances =
+            let knownTypeNames =
+                ref (dataTypes |> List.map (fun dataType -> dataType.Name) |> Set.ofList)
+
+            let runtimeRecordTypes = ref Map.empty<string, KRuntimeDataType>
+
+            let syntheticRecordOrigin typeName =
+                { FilePath = coreModule.SourceFile
+                  ModuleName = coreModule.Name
+                  DeclarationName = Some typeName
+                  IntroductionKind = "runtime-record" }
+
+            let rec rewriteRuntimeTypeExpr typeExpr =
+                match typeExpr with
+                | TypeSignatures.TypeName(name, arguments) ->
+                    TypeSignatures.TypeName(name, arguments |> List.map rewriteRuntimeTypeExpr)
+                | TypeSignatures.TypeVariable _
+                | TypeSignatures.TypeLevelLiteral _
+                | TypeSignatures.TypeIntrinsic _ ->
+                    typeExpr
+                | TypeSignatures.TypeUniverse level ->
+                    TypeSignatures.TypeUniverse(level |> Option.map rewriteRuntimeTypeExpr)
+                | TypeSignatures.TypeApply(callee, arguments) ->
+                    TypeSignatures.TypeApply(rewriteRuntimeTypeExpr callee, arguments |> List.map rewriteRuntimeTypeExpr)
+                | TypeSignatures.TypeLambda(parameterName, parameterSort, body) ->
+                    TypeSignatures.TypeLambda(parameterName, rewriteRuntimeTypeExpr parameterSort, rewriteRuntimeTypeExpr body)
+                | TypeSignatures.TypeDelay inner ->
+                    TypeSignatures.TypeDelay(rewriteRuntimeTypeExpr inner)
+                | TypeSignatures.TypeMemo inner ->
+                    TypeSignatures.TypeMemo(rewriteRuntimeTypeExpr inner)
+                | TypeSignatures.TypeForce inner ->
+                    TypeSignatures.TypeForce(rewriteRuntimeTypeExpr inner)
+                | TypeSignatures.TypeProject(target, fieldName) ->
+                    TypeSignatures.TypeProject(rewriteRuntimeTypeExpr target, fieldName)
+                | TypeSignatures.TypeArrow(quantity, parameterType, returnType) ->
+                    TypeSignatures.TypeArrow(quantity, rewriteRuntimeTypeExpr parameterType, rewriteRuntimeTypeExpr returnType)
+                | TypeSignatures.TypeEquality(left, right) ->
+                    TypeSignatures.TypeEquality(rewriteRuntimeTypeExpr left, rewriteRuntimeTypeExpr right)
+                | TypeSignatures.TypeCapture(inner, captures) ->
+                    TypeSignatures.TypeCapture(rewriteRuntimeTypeExpr inner, captures)
+                | TypeSignatures.TypeEffectRow(entries, tail) ->
+                    TypeSignatures.TypeEffectRow(
+                        entries
+                        |> List.map (fun entry ->
+                            { entry with
+                                Label = rewriteRuntimeTypeExpr entry.Label
+                                Effect = rewriteRuntimeTypeExpr entry.Effect }),
+                        tail |> Option.map rewriteRuntimeTypeExpr
+                    )
+                | TypeSignatures.TypeRecord fields ->
+                    let rewrittenFields =
+                        fields
+                        |> List.map (fun field ->
+                            { field with
+                                Type = rewriteRuntimeTypeExpr field.Type })
+
+                    let recordExpr = TypeSignatures.TypeRecord rewrittenFields
+                    let recordKey = TypeSignatures.toText recordExpr
+                    let typeName = syntheticRuntimeRecordTypeName recordKey
+                    let typeParameters = TypeSignatures.collectFreeTypeVariables recordExpr
+
+                    if not (Set.contains typeName knownTypeNames.Value) && not (Map.containsKey typeName runtimeRecordTypes.Value) then
+                        let constructor =
+                            { Name = typeName
+                              Arity = rewrittenFields.Length
+                              TypeName = typeName
+                              FieldNames = rewrittenFields |> List.map (fun field -> Some field.Name)
+                              FieldTypeTexts = rewrittenFields |> List.map (fun field -> TypeSignatures.toText field.Type)
+                              Provenance = syntheticRecordOrigin typeName }
+
+                        runtimeRecordTypes.Value <-
+                            runtimeRecordTypes.Value
+                            |> Map.add
+                                typeName
+                                { Name = typeName
+                                  TypeParameters = typeParameters
+                                  Constructors = [ constructor ] }
+
+                        knownTypeNames.Value <- Set.add typeName knownTypeNames.Value
+
+                    TypeSignatures.TypeName([ typeName ], typeParameters |> List.map TypeSignatures.TypeVariable)
+                | TypeSignatures.TypeUnion members ->
+                    TypeSignatures.TypeUnion(members |> List.map rewriteRuntimeTypeExpr)
+
+            let rewriteRuntimeTypeText text =
+                match tryParseTypeText text with
+                | Some parsed ->
+                    parsed
+                    |> rewriteRuntimeTypeExpr
+                    |> TypeSignatures.toText
+                | None ->
+                    text
+
+            let rewrittenDataTypes =
+                dataTypes
+                |> List.map (fun dataType ->
+                    { dataType with
+                        Constructors =
+                            dataType.Constructors
+                            |> List.map (fun constructor ->
+                                { constructor with
+                                    FieldTypeTexts = constructor.FieldTypeTexts |> List.map rewriteRuntimeTypeText }) })
+
+            let rewrittenBindings =
+                termBindings
+                |> List.map (fun binding ->
+                    { binding with
+                        Parameters =
+                            binding.Parameters
+                            |> List.map (fun parameter ->
+                                { parameter with
+                                    TypeText = parameter.TypeText |> Option.map rewriteRuntimeTypeText })
+                        ReturnTypeText = binding.ReturnTypeText |> Option.map rewriteRuntimeTypeText })
+
+            let rewrittenTraitInstances =
+                traitInstances
+                |> List.map (fun instanceDeclaration ->
+                    { instanceDeclaration with
+                        HeadTypeTexts = instanceDeclaration.HeadTypeTexts |> List.map rewriteRuntimeTypeText })
+
+            rewrittenDataTypes @ (runtimeRecordTypes.Value |> Map.toList |> List.map snd), rewrittenBindings, rewrittenTraitInstances
 
         let constructors : KRuntimeConstructor list =
             dataTypes

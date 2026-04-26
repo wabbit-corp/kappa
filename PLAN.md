@@ -67,6 +67,7 @@ Preferred resolution: adjust the compiler.
 - [ ] Audit the current `KBackendIR` model in `src/Kappa.Compiler/KBackendIR.fs` and its lowering path against `Spec.md` sections 17.4 and 17.4.1.
 - [x] Decide whether to evolve the current `KBackendIR` into a true runtime IR or to insert a new explicit runtime IR and rename the current form.
 - [ ] Introduce runtime-facing constructs for representation choice, runtime calls, data layout, field access, retained dictionaries/type parameters, and explicit runtime control.
+- [ ] Keep record-typed runtime values as dedicated record carriers through backend lowering rather than re-encoding them as nested `Res` pairs; for the CLR backend, follow up by mapping synthesized record carriers onto a native record/class/struct representation with predictable field layout so query-row temporaries and ordinary records do not pay avoidable allocation or indirection costs.
 - [x] Strengthen `KBackendIR` verification so it checks the legality conditions from section 17.4.2 instead of only structural uniqueness checks.
 - [ ] Extend observability as `KBackendIR` grows so `KBackendIR` dumps and post-`KBackendIR` CLR-lowering dumps continue to expose the graph/provenance/runtime information required by sections 17.4.3-17.4.4.
 - [x] Add a second post-`KBackendIR` lowering path using the standardized `zig` profile (implemented initially as generated C compiled by `zig cc`) so the runtime/data-layout boundary is exercised by more than the CLR backend.

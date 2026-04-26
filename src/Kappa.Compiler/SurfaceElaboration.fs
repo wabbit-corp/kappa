@@ -7768,9 +7768,11 @@ module SurfaceElaboration =
                 let nextLocals =
                     parameters
                     |> List.fold (fun state parameter ->
-                        match tryParseParameterType parameter with
-                        | Some parameterType -> Map.add parameter.Name parameterType state
-                        | None -> state) locals
+                        let parameterType =
+                            tryParseParameterType parameter
+                            |> Option.defaultValue (TypeVariable $"lambda{freshCounter.Value}")
+
+                        Map.add parameter.Name parameterType state) locals
 
                 let nextLexicalNames =
                     parameters
@@ -10547,7 +10549,7 @@ module SurfaceElaboration =
                 None
             | Unary("not", _) ->
                 Some boolType
-            | Unary("negate", operand) ->
+            | Unary(("negate" | "-"), operand) ->
                 inferExpressionType localTypes operand
             | Unary _ ->
                 None
@@ -11758,6 +11760,129 @@ module SurfaceElaboration =
                     )
                 )
 
+            let tryInferSeededLambdaParameterTypes helperName parameters bodyExpression =
+                let rec tryFind shadowed expression =
+                    match expression with
+                    | Apply(Name [ name ], arguments)
+                        when String.Equals(name, helperName, StringComparison.Ordinal)
+                             && not (Set.contains helperName shadowed)
+                             && List.length arguments = List.length parameters ->
+                        let argumentTypes = arguments |> List.map (inferExpressionType localTypes)
+
+                        if argumentTypes |> List.forall Option.isSome then
+                            Some(argumentTypes |> List.choose id)
+                        else
+                            None
+                    | Apply(callee, arguments) ->
+                        tryFind shadowed callee
+                        |> Option.orElseWith (fun () -> arguments |> List.tryPick (tryFind shadowed))
+                    | LocalLet(binding, value, body) ->
+                        tryFind shadowed value
+                        |> Option.orElseWith (fun () ->
+                            let nextShadowed =
+                                if collectPatternNames binding.Pattern |> List.exists (fun name -> String.Equals(name, helperName, StringComparison.Ordinal)) then
+                                    Set.add helperName shadowed
+                                else
+                                    shadowed
+
+                            tryFind nextShadowed body)
+                    | LocalSignature(declaration, body) ->
+                        if String.Equals(declaration.Name, helperName, StringComparison.Ordinal) then
+                            None
+                        else
+                            tryFind shadowed body
+                    | LocalTypeAlias(_, body) ->
+                        tryFind shadowed body
+                    | LocalScopedEffect(_, body) ->
+                        tryFind shadowed body
+                    | Lambda(nestedParameters, body) ->
+                        let nextShadowed =
+                            if nestedParameters |> List.exists (fun parameter -> String.Equals(parameter.Name, helperName, StringComparison.Ordinal)) then
+                                Set.add helperName shadowed
+                            else
+                                shadowed
+
+                        tryFind nextShadowed body
+                    | IfThenElse(condition, whenTrue, whenFalse) ->
+                        tryFind shadowed condition
+                        |> Option.orElseWith (fun () -> tryFind shadowed whenTrue)
+                        |> Option.orElseWith (fun () -> tryFind shadowed whenFalse)
+                    | Handle(_, label, body, returnClause, operationClauses) ->
+                        tryFind shadowed label
+                        |> Option.orElseWith (fun () -> tryFind shadowed body)
+                        |> Option.orElseWith (fun () -> tryFind shadowed returnClause.Body)
+                        |> Option.orElseWith (fun () -> operationClauses |> List.tryPick (fun clause -> tryFind shadowed clause.Body))
+                    | Match(scrutinee, cases) ->
+                        tryFind shadowed scrutinee
+                        |> Option.orElseWith (fun () ->
+                            cases
+                            |> List.tryPick (fun caseClause ->
+                                caseClause.Guard
+                                |> Option.bind (tryFind shadowed)
+                                |> Option.orElseWith (fun () -> tryFind shadowed caseClause.Body)))
+                    | RecordLiteral fields ->
+                        fields |> List.tryPick (fun field -> tryFind shadowed field.Value)
+                    | RecordUpdate(receiver, fields) ->
+                        tryFind shadowed receiver
+                        |> Option.orElseWith (fun () -> fields |> List.tryPick (fun field -> tryFind shadowed field.Value))
+                    | MemberAccess(receiver, _, arguments) ->
+                        tryFind shadowed receiver
+                        |> Option.orElseWith (fun () -> arguments |> List.tryPick (tryFind shadowed))
+                    | SafeNavigation(receiver, navigation) ->
+                        tryFind shadowed receiver
+                        |> Option.orElseWith (fun () -> navigation.Arguments |> List.tryPick (tryFind shadowed))
+                    | TagTest(receiver, _) ->
+                        tryFind shadowed receiver
+                    | MonadicSplice inner
+                    | ExplicitImplicitArgument inner
+                    | InoutArgument inner
+                    | Unary(_, inner)
+                    | SyntaxQuote inner
+                    | SyntaxSplice inner
+                    | TopLevelSyntaxSplice inner
+                    | CodeQuote inner
+                    | CodeSplice inner
+                    | Seal(inner, _) ->
+                        tryFind shadowed inner
+                    | Binary(left, _, right)
+                    | Elvis(left, right) ->
+                        tryFind shadowed left
+                        |> Option.orElseWith (fun () -> tryFind shadowed right)
+                    | PrefixedString(_, parts) ->
+                        parts
+                        |> List.tryPick (function
+                            | StringText _ -> None
+                            | StringInterpolation(inner, _) -> tryFind shadowed inner)
+                    | NamedApplicationBlock fields ->
+                        fields |> List.tryPick (fun field -> tryFind shadowed field.Value)
+                    | Do _
+                    | Literal _
+                    | NumericLiteral _
+                    | Name _
+                    | KindQualifiedName _ ->
+                        None
+
+                tryFind Set.empty bodyExpression
+
+            let lowerLambdaExpression parameterTypeHints lambdaParameters lambdaBody =
+                let resolvedParameterTypes =
+                    lambdaParameters
+                    |> List.mapi (fun index parameter ->
+                        tryParseParameterType parameter
+                        |> Option.orElseWith (fun () ->
+                            parameterTypeHints |> Option.bind (List.tryItem index))
+                        |> Option.defaultValue (TypeVariable $"lambda{freshCounter.Value}"))
+
+                let lambdaLocals =
+                    List.zip lambdaParameters resolvedParameterTypes
+                    |> List.fold (fun state (parameter, parameterType) -> Map.add parameter.Name parameterType state) localTypes
+
+                KCoreLambda(
+                    List.zip lambdaParameters resolvedParameterTypes
+                    |> List.map (fun (parameter, parameterType) -> lowerKCoreParameter parameter (Some parameterType)),
+                    lowerExpressionWithExpectedType lambdaLocals expectedType lambdaBody
+                )
+
             let rec substituteKCoreNames substitutions current =
                 match current with
                 | KCoreName [ name ] ->
@@ -12010,7 +12135,15 @@ module SurfaceElaboration =
             | LocalLet(binding, value, body) ->
                 let bindingNames = collectPatternNames binding.Pattern
 
-                let loweredValue = lowerExpressionWithExpectedType localTypes None value
+                let loweredValue =
+                    match binding.Pattern, value with
+                    | NamePattern bindingName, Lambda(lambdaParameters, lambdaBody) ->
+                        lowerLambdaExpression
+                            (tryInferSeededLambdaParameterTypes bindingName lambdaParameters body)
+                            lambdaParameters
+                            lambdaBody
+                    | _ ->
+                        lowerExpressionWithExpectedType localTypes None value
                 let bodyForLowering =
                     match bindingNames, tryResolveScopedStaticObject environment value with
                     | [ aliasName ], Some staticObject ->
@@ -12042,19 +12175,7 @@ module SurfaceElaboration =
             | LocalScopedEffect(declaration, body) ->
                 withScopedEffectDeclaration declaration (fun () -> lowerExpressionWithExpectedType localTypes expectedType body)
             | Lambda(lambdaParameters, lambdaBody) ->
-                let lambdaLocals =
-                    lambdaParameters
-                    |> List.fold (fun state parameter ->
-                        match tryParseParameterType parameter with
-                        | Some parameterType -> Map.add parameter.Name parameterType state
-                        | None -> state) localTypes
-
-                KCoreLambda(
-                    lambdaParameters
-                    |> List.map (fun parameter ->
-                        lowerKCoreParameter parameter (tryParseParameterType parameter)),
-                    lowerExpressionWithExpectedType lambdaLocals expectedType lambdaBody
-                )
+                lowerLambdaExpression None lambdaParameters lambdaBody
             | IfThenElse(condition, whenTrue, whenFalse) ->
                 KCoreIfThenElse(
                     lowerExpressionWithExpectedType localTypes None condition,
