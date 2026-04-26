@@ -5354,6 +5354,34 @@ Equality and ordering:
 * Source code that wants canonical equivalence, compatibility equivalence, case-folded equality, or locale-sensitive
   comparison MUST use the explicit Unicode APIs of `std.unicode`.
 
+Relationship to `Bytes`:
+
+For every `s : String`:
+
+```kappa
+decodeUtf8 (utf8Bytes s) = Ok s
+```
+
+A `String` value and a `Bytes` value are never definitionally equal, even when the bytes are the UTF-8 encoding of the
+string.
+
+Exact string equality implies exact UTF-8 byte equality:
+
+```kappa
+x = y  implies  utf8Bytes x = utf8Bytes y
+```
+
+The converse holds only through `decodeUtf8`:
+
+```kappa
+utf8Bytes x = utf8Bytes y  implies  x = y
+```
+
+because `String` has a canonical UTF-8 encoding.
+
+No Unicode normalization, case folding, locale tailoring, grapheme segmentation, or display-width policy participates in
+`Eq String`.
+
 Consequences:
 
 ```kappa
