@@ -3394,6 +3394,29 @@ An implementation MAY provide additional `Hashable` instances for standard or ba
 An implementation MUST NOT provide a portable `Hashable` instance for a type unless the instance hashes according to
 that type's portable `Eq` semantics.
 
+HashCode comparison instances:
+
+A conforming implementation MUST provide the following instances from `std.hash`:
+
+```text
+Eq HashCode
+Ord HashCode
+```
+
+These instances are ordinary coherent instances of the prelude traits, subject to the special opacity and same-execution
+rules of this section.
+
+A conforming implementation MAY provide:
+
+```text
+Hashable HashCode
+```
+
+provided that the instance hashes according to `Eq HashCode` and preserves all opacity, same-execution, and
+non-serialization requirements of this section.
+
+`Hashable HashCode` is not required by the portable minimum.
+
 ---
 
 <!-- modules.names -->
