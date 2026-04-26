@@ -1,5 +1,6 @@
 namespace Kappa.Compiler
 
+open System
 open Kappa.Compiler.ResourceModel
 
 // Extracts quantity and resource-signature information from declarations for the checker.
@@ -149,6 +150,81 @@ module internal ResourceCheckingSignatures =
             |> List.take (segments.Length - 1)
             |> List.map parameterType
 
+    let private signatureParameterNames tokens =
+        let trimSignificant tokens =
+            tokens
+            |> List.filter (fun token ->
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent
+                | EndOfFile -> false
+                | _ -> true)
+
+        let stripBinderShell tokens =
+            match trimSignificant tokens with
+            | { Kind = LeftParen } :: rest ->
+                match List.rev rest with
+                | { Kind = RightParen } :: reversedInner ->
+                    reversedInner |> List.rev |> trimSignificant
+                | _ ->
+                    trimSignificant tokens
+            | trimmed ->
+                trimmed
+
+        let rec stripQuantityPrefix tokens =
+            match tokens with
+            | { Kind = AtSign } :: rest ->
+                stripQuantityPrefix rest
+            | { Kind = IntegerLiteral; Text = "0" } :: rest
+            | { Kind = IntegerLiteral; Text = "1" } :: rest ->
+                rest
+            | { Kind = Operator; Text = "&" } :: rest ->
+                rest
+            | { Kind = Operator; Text = "<=" } :: { Kind = IntegerLiteral; Text = "1" } :: rest
+            | { Kind = Operator; Text = ">=" } :: { Kind = IntegerLiteral; Text = "1" } :: rest ->
+                rest
+            | head :: rest when Token.isName head && (head.Text = "omega" || head.Text = "ω") ->
+                rest
+            | other ->
+                other
+
+        let parameterName segmentTokens =
+            let trimmed =
+                segmentTokens
+                |> stripBinderShell
+                |> stripQuantityPrefix
+
+            match trimmed with
+            | token :: colonToken :: _ when token.Kind = Underscore && colonToken.Kind = Colon ->
+                None
+            | token :: colonToken :: _ when Token.isName token && colonToken.Kind = Colon ->
+                Some(SyntaxFacts.trimIdentifierQuotes token.Text)
+            | receiverToken :: nameToken :: colonToken :: _
+                when Token.isName receiverToken
+                     && String.Equals(receiverToken.Text, "this", StringComparison.Ordinal)
+                     && Token.isName nameToken
+                     && colonToken.Kind = Colon ->
+                Some(SyntaxFacts.trimIdentifierQuotes nameToken.Text)
+            | receiverToken :: colonToken :: _
+                when Token.isName receiverToken
+                     && String.Equals(receiverToken.Text, "this", StringComparison.Ordinal)
+                     && colonToken.Kind = Colon ->
+                Some "this"
+            | _ ->
+                None
+
+        let segments =
+            splitTopLevelArrows tokens
+            |> List.filter (List.isEmpty >> not)
+
+        if List.length segments <= 1 then
+            []
+        else
+            segments
+            |> List.take (segments.Length - 1)
+            |> List.map parameterName
+
     let private signatureParameterInout tokens =
         let trimSignificant tokens =
             tokens
@@ -197,6 +273,7 @@ module internal ResourceCheckingSignatures =
     let private signatureEntries
         (document: ParsedDocument)
         (name: string)
+        parameterNames
         quantities
         parameterTypes
         returnTypeTokens
@@ -206,6 +283,7 @@ module internal ResourceCheckingSignatures =
         |> List.map (fun signatureName ->
             signatureName,
             { Name = signatureName
+              ParameterNames = parameterNames
               ParameterQuantities = quantities
               ParameterTypeTokens = parameterTypes
               ReturnTypeTokens = returnTypeTokens
@@ -235,10 +313,15 @@ module internal ResourceCheckingSignatures =
                     parameterGroups |> List.map quantityFromSignatureSegment, parameterTypes |> List.map Some
 
             let parameterInout = quantities |> List.map (fun _ -> false)
+            let parameterNames =
+                match constructor.Parameters with
+                | Some parameters -> parameters |> List.map (fun parameter -> parameter.ParameterName)
+                | None -> parameterTypes |> List.map (fun _ -> None)
 
             signatureEntries
                 document
                 constructor.Name
+                parameterNames
                 quantities
                 parameterTypes
                 returnTypeTokens
@@ -284,8 +367,23 @@ module internal ResourceCheckingSignatures =
             | None ->
                 List.tryItem index existing |> Option.defaultValue None)
 
+    let private mergeParameterNames existing next =
+        let length = max (List.length existing) (List.length next)
+
+        [ 0 .. length - 1 ]
+        |> List.map (fun index ->
+            match List.tryItem index next with
+            | Some(Some name) ->
+                Some name
+            | Some None ->
+                List.tryItem index existing |> Option.defaultValue None
+            | None ->
+                List.tryItem index existing |> Option.defaultValue None)
+
     let private mergeSignature existing next =
         { next with
+            ParameterNames =
+                mergeParameterNames existing.ParameterNames next.ParameterNames
             ParameterQuantities =
                 mergeParameterQuantities existing.ParameterQuantities next.ParameterQuantities
             ParameterTypeTokens =
@@ -302,12 +400,14 @@ module internal ResourceCheckingSignatures =
             document.Syntax.Declarations
             |> List.choose (function
                 | SignatureDeclaration declaration ->
+                    let parameterNames = signatureParameterNames declaration.TypeTokens
                     let quantities = signatureParameterQuantities declaration.TypeTokens
                     let parameterTypes = signatureParameterTypeTokens declaration.TypeTokens
                     let returnTypeTokens = signatureReturnTypeTokens declaration.TypeTokens
                     let parameterInout = signatureParameterInout declaration.TypeTokens
-                    Some(signatureEntries document declaration.Name quantities parameterTypes returnTypeTokens parameterInout)
+                    Some(signatureEntries document declaration.Name parameterNames quantities parameterTypes returnTypeTokens parameterInout)
                 | ExpectDeclarationNode (ExpectTermDeclaration declaration) ->
+                    let parameterNames = signatureParameterNames declaration.TypeTokens
                     let quantities = signatureParameterQuantities declaration.TypeTokens
                     let parameterTypes = signatureParameterTypeTokens declaration.TypeTokens
                     let returnTypeTokens = signatureReturnTypeTokens declaration.TypeTokens
@@ -316,6 +416,7 @@ module internal ResourceCheckingSignatures =
                         signatureEntries
                             document
                             declaration.Name
+                            parameterNames
                             quantities
                             parameterTypes
                             returnTypeTokens
@@ -324,6 +425,10 @@ module internal ResourceCheckingSignatures =
                 | LetDeclaration definition ->
                     definition.Name
                     |> Option.map (fun name ->
+                        let parameterNames =
+                            definition.Parameters
+                            |> List.map (fun (parameter: Parameter) -> Some parameter.Name)
+
                         let quantities =
                             definition.Parameters
                             |> List.map (fun (parameter: Parameter) ->
@@ -339,6 +444,7 @@ module internal ResourceCheckingSignatures =
                         signatureEntries
                             document
                             name
+                            parameterNames
                             quantities
                             parameterTypes
                             definition.ReturnTypeTokens

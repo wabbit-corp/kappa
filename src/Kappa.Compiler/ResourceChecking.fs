@@ -4881,9 +4881,10 @@ module ResourceChecking =
                 | _ ->
                     state
 
-            let parameterQuantities, parameterTypes, parameterInout =
+            let parameterNames, parameterQuantities, parameterTypes, parameterInout =
                 match localLambda with
                 | Some lambdaValue ->
+                    lambdaValue.Parameters |> List.map (fun parameter -> Some parameter.Name),
                     lambdaValue.Parameters |> List.map parameterQuantity,
                     (lambdaValue.Parameters |> List.map (fun parameter -> parameter.TypeTokens |> Option.bind TypeSignatures.parseType)),
                     (lambdaValue.Parameters |> List.map (fun parameter -> parameter.IsInout))
@@ -4893,38 +4894,82 @@ module ResourceChecking =
                         match Map.tryFind name localTypes with
                         | Some localType ->
                             let quantities, parameterTypes = functionParameterInfoFromType localType
-                            quantities, parameterTypes, List.replicate parameterTypes.Length false
+                            [], quantities, parameterTypes, List.replicate parameterTypes.Length false
                         | None ->
                             calleeName
                             |> Option.bind (fun resolvedName -> Map.tryFind resolvedName signatures)
                             |> Option.map (fun signature ->
+                                signature.ParameterNames,
                                 signature.ParameterQuantities,
                                 (signature.ParameterTypeTokens |> List.map (Option.bind TypeSignatures.parseType)),
                                 signature.ParameterInout)
-                            |> Option.defaultValue ([], [], [])
+                            |> Option.defaultValue ([], [], [], [])
                     | _ ->
                         calleeName
                         |> Option.bind (fun name -> Map.tryFind name signatures)
                         |> Option.map (fun signature ->
+                            signature.ParameterNames,
                             signature.ParameterQuantities,
                             (signature.ParameterTypeTokens |> List.map (Option.bind TypeSignatures.parseType)),
                             signature.ParameterInout)
-                        |> Option.defaultValue ([], [], [])
+                        |> Option.defaultValue ([], [], [], [])
+
+            let actualArguments =
+                let splitTrailingNamedArgumentBlock (callArguments: SurfaceExpression list) =
+                    let indexedNamedBlocks =
+                        callArguments
+                        |> List.mapi (fun index argument ->
+                            match argument with
+                            | NamedApplicationBlock fields -> Some(index, fields)
+                            | _ -> None)
+                        |> List.choose id
+
+                    match indexedNamedBlocks with
+                    | [ index, fields ] when index = List.length callArguments - 1 ->
+                        Some(callArguments |> List.take index, fields)
+                    | _ ->
+                        None
+
+                match splitTrailingNamedArgumentBlock arguments with
+                | Some(positionalArguments, namedFields) ->
+                    let namedParameterIndices =
+                        parameterNames
+                        |> List.mapi (fun index name -> index, name)
+                        |> List.skip positionalArguments.Length
+                        |> List.choose (fun (index, name) -> name |> Option.map (fun parameterName -> parameterName, index))
+                        |> Map.ofList
+
+                    let positionalActuals =
+                        positionalArguments
+                        |> List.mapi (fun sourceIndex argument -> sourceIndex, Some sourceIndex, argument)
+
+                    let namedActuals =
+                        namedFields
+                        |> List.mapi (fun fieldIndex field ->
+                            positionalArguments.Length + fieldIndex,
+                            Map.tryFind field.Name namedParameterIndices,
+                            field.Value)
+
+                    positionalActuals @ namedActuals
+                | None ->
+                    arguments
+                    |> List.mapi (fun sourceIndex argument -> sourceIndex, Some sourceIndex, argument)
 
             let state =
                 let inoutPlaces =
-                    arguments
-                    |> List.mapi (fun index argument -> index, argument)
-                    |> List.choose (fun (index, argument) ->
+                    actualArguments
+                    |> List.choose (fun (sourceIndex, formalIndex, argument) ->
+                        let parameterIndex = formalIndex |> Option.defaultValue sourceIndex
+
                         let expectsInout =
                             parameterInout
-                            |> List.tryItem index
+                            |> List.tryItem parameterIndex
                             |> Option.defaultValue false
 
                         match expectsInout, argument with
                         | true, InoutArgument inner ->
                             tryInoutArgumentPlaces projectionSummaries state inner
-                            |> Option.map (fun places -> argument, places)
+                            |> Option.map (fun places -> sourceIndex, argument, places)
                         | _ ->
                             None)
 
@@ -4936,7 +4981,7 @@ module ResourceChecking =
                     ]
 
                 placePairs
-                |> List.fold (fun current ((_, leftPlaces), (rightArgument, rightPlaces)) ->
+                |> List.fold (fun current ((_, _, leftPlaces), (_, rightArgument, rightPlaces)) ->
                     let overlaps =
                         leftPlaces
                         |> List.exists (fun leftPlace ->
@@ -4957,25 +5002,27 @@ module ResourceChecking =
                         current) state
 
             let state =
-                let indexedArguments = arguments |> List.mapi (fun index argument -> index, argument)
-
                 let demandedQuantityAt index =
                     parameterQuantities
                     |> List.tryItem index
                     |> demandedParameterQuantity
 
                 let borrowArguments =
-                    indexedArguments
-                    |> List.choose (fun (index, argument) ->
-                        match demandedQuantityAt index with
+                    actualArguments
+                    |> List.choose (fun (sourceIndex, formalIndex, argument) ->
+                        let parameterIndex = formalIndex |> Option.defaultValue sourceIndex
+
+                        match demandedQuantityAt parameterIndex with
                         | Some demandQuantity when ResourceQuantity.isBorrow demandQuantity ->
                             tryBorrowablePlacesWithEnv Map.empty projectionSummaries state argument
-                            |> Option.map (fun places -> index, argument, places)
+                            |> Option.map (fun places -> sourceIndex, argument, places)
                         | _ ->
                             None)
 
-                let consumingArgumentPlaces index argument =
-                    match demandedQuantityAt index with
+                let consumingArgumentPlaces sourceIndex formalIndex argument =
+                    let parameterIndex = formalIndex |> Option.defaultValue sourceIndex
+
+                    match demandedQuantityAt parameterIndex with
                     | Some demandQuantity when concreteQuantityCountsUse demandQuantity ->
                         match argument with
                         | Name(root :: path) ->
@@ -4998,12 +5045,12 @@ module ResourceChecking =
                         | _ ->
                             None
 
-                indexedArguments
-                |> List.fold (fun current (consumeIndex, consumeArgument) ->
-                    match consumingArgumentPlaces consumeIndex consumeArgument with
+                actualArguments
+                |> List.fold (fun current (consumeSourceIndex, consumeFormalIndex, consumeArgument) ->
+                    match consumingArgumentPlaces consumeSourceIndex consumeFormalIndex consumeArgument with
                     | Some consumedPlaces ->
                         borrowArguments
-                        |> List.filter (fun (borrowIndex, _, _) -> borrowIndex < consumeIndex)
+                        |> List.filter (fun (borrowIndex, _, _) -> borrowIndex < consumeSourceIndex)
                         |> List.fold (fun next (_, borrowArgument, borrowedPlaces) ->
                             let overlaps =
                                 borrowedPlaces
@@ -5033,22 +5080,24 @@ module ResourceChecking =
                         current) state
 
             let state =
-                ((state, 0), arguments)
-                ||> List.fold (fun (current, index) argument ->
+                (state, actualArguments)
+                ||> List.fold (fun current (sourceIndex, formalIndex, argument) ->
+                    let parameterIndex = formalIndex |> Option.defaultValue sourceIndex
+
                     let quantity =
                         parameterQuantities
-                        |> List.tryItem index
+                        |> List.tryItem parameterIndex
 
                     let demandQuantity = demandedParameterQuantity quantity
 
                     let demandedParameterType =
                         parameterTypes
-                        |> List.tryItem index
+                        |> List.tryItem parameterIndex
                         |> Option.flatten
 
                     let expectsInout =
                         parameterInout
-                        |> List.tryItem index
+                        |> List.tryItem parameterIndex
                         |> Option.defaultValue false
 
                     let hasInoutMarker =
@@ -5279,8 +5328,7 @@ module ResourceChecking =
                             |> noteValueDemandingNameUse document argument
                             |> fun next -> checkExpression projectionSummaries document signatures localTypes next argument
 
-                    next, index + 1)
-                |> fst
+                    next)
 
             match localLambda with
             | Some lambdaValue ->

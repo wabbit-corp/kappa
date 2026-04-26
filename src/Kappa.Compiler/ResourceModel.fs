@@ -97,6 +97,7 @@ module ResourceModel =
 
     type FunctionSignature =
         { Name: string
+          ParameterNames: string option list
           ParameterQuantities: ResourceQuantity option list
           ParameterTypeTokens: Token list option list
           ReturnTypeTokens: Token list option

@@ -31,6 +31,7 @@ type DiagnosticCode =
     | RecursiveTypeAlias
     | MalformedConstructorDeclaration
     | RecursionRequiresSignature
+    | SignatureUnsatisfied
     | OrPatternBinderMismatch
     | SafeNavigationAmbiguous
     | SafeNavigationReceiverNotOption
@@ -96,6 +97,7 @@ module DiagnosticCode =
         | RecursiveTypeAlias -> "E_RECURSIVE_TYPE_ALIAS"
         | MalformedConstructorDeclaration -> "E_MALFORMED_CONSTRUCTOR_DECLARATION"
         | RecursionRequiresSignature -> "E_RECURSION_REQUIRES_SIGNATURE"
+        | SignatureUnsatisfied -> "E_SIGNATURE_UNSATISFIED"
         | OrPatternBinderMismatch -> "E_OR_PATTERN_BINDER_MISMATCH"
         | SafeNavigationAmbiguous -> "E_SAFE_NAVIGATION_AMBIGUOUS"
         | SafeNavigationReceiverNotOption -> "E_SAFE_NAVIGATION_RECEIVER_NOT_OPTION"
@@ -160,6 +162,7 @@ module DiagnosticCode =
         | "E_RECURSIVE_TYPE_ALIAS" -> Some RecursiveTypeAlias
         | "E_MALFORMED_CONSTRUCTOR_DECLARATION" -> Some MalformedConstructorDeclaration
         | "E_RECURSION_REQUIRES_SIGNATURE" -> Some RecursionRequiresSignature
+        | "E_SIGNATURE_UNSATISFIED" -> Some SignatureUnsatisfied
         | "E_OR_PATTERN_BINDER_MISMATCH" -> Some OrPatternBinderMismatch
         | "E_SAFE_NAVIGATION_AMBIGUOUS" -> Some SafeNavigationAmbiguous
         | "E_SAFE_NAVIGATION_RECEIVER_NOT_OPTION" -> Some SafeNavigationReceiverNotOption

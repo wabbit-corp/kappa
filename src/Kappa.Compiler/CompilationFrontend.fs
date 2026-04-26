@@ -1598,6 +1598,16 @@ module internal CompilationFrontend =
 
         declarations |> List.filter matchesExpectation |> List.length
 
+    let private countSameFileSignatureSatisfactions (document: ParsedDocument) (signature: BindingSignature) =
+        document.Syntax.Declarations
+        |> List.filter (function
+            | LetDeclaration definition ->
+                definition.Name
+                |> Option.exists (fun name -> String.Equals(name, signature.Name, StringComparison.Ordinal))
+            | _ ->
+                false)
+        |> List.length
+
     let private describeExpectation declaration =
         match declaration with
         | ExpectTypeDeclaration declaration -> $"type '{declaration.Name}'"
@@ -1696,6 +1706,26 @@ module internal CompilationFrontend =
                         )
             | None ->
                 ()
+
+        diagnostics.Items
+
+    let validateTopLevelSignatureDeclarations (documents: ParsedDocument list) =
+        let diagnostics = DiagnosticBag()
+
+        for document in documents do
+            for declaration in document.Syntax.Declarations do
+                match declaration with
+                | SignatureDeclaration signature when countSameFileSignatureSatisfactions document signature = 0 ->
+                    diagnostics.AddError(
+                        DiagnosticCode.SignatureUnsatisfied,
+                        $"Top-level signature '{signature.Name} : {tokensText signature.TypeTokens}' has no matching definition in the same source file. Define it with 'let {signature.Name} = ...' or declare it as 'expect term {signature.Name} : {tokensText signature.TypeTokens}'.",
+                        findTokenLocation document signature.Name
+                        |> Option.defaultValue (document.Source.GetLocation(TextSpan.FromBounds(0, 0))),
+                        stage = "KFrontIR",
+                        phase = KFrontIRPhase.phaseName CHECKERS
+                    )
+                | _ ->
+                    ()
 
         diagnostics.Items
 

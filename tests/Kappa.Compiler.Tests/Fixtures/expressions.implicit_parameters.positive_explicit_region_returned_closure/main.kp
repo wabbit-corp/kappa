@@ -12,6 +12,6 @@ makeGetter :
     forall (s : Region) (a : Type).
     (&[s] x : Box a) -> ((Unit -> a) captures (s))
 
-makeGetter x = \_ -> read x
+let makeGetter x = \_ -> read x
 
 --! assertNoErrors

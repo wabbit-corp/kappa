@@ -1,3 +1,4 @@
 module std.base
 
-println : String -> IO Unit
+println : String -> UIO Unit
+let println (_ : String) = pure Unit

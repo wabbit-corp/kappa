@@ -448,6 +448,29 @@ let ``parser rejects unterminated data constructors before the next declaration`
     Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("Expected ')'"))
 
 [<Fact>]
+let ``parser rejects malformed top level signatures with stray block bodies`` () =
+    let sourceText =
+        [
+            "module main"
+            ""
+            "data I1 : Type ="
+            "    I1 (I0 : Int)"
+            ""
+            "I0 : (1 I0 : I0) -> IO (1]"
+            "    case Nil -> 0"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "memory.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Equal<DiagnosticCode list>([ DiagnosticCode.ParseError ], parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code))
+    Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("valid signature type"))
+
+[<Fact>]
 let ``parser accepts URL singleton sugar for import and export`` () =
     let sourceText =
         [
@@ -2130,6 +2153,46 @@ let ``prefixed strings infer their macro result type from the prefix dictionary`
     Assert.False(workspace.HasErrors, $"Expected prefixed string macro result inference to succeed, got {workspace.Diagnostics}.")
 
 [<Fact>]
+let ``prefixed strings reject unresolved interpolation names and non-macro prefixes`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-prefixed-string-invalid-prefix-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    ""
+                    "I1 : Int"
+                    "let I1 = I1\"${I1\" $i0 \"}\""
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected malformed prefixed-string macro usage to be rejected in frontend validation.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.NameUnresolved && diagnostic.Message.Contains("'i0'", StringComparison.Ordinal))
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.TypeEqualityMismatch && diagnostic.Message.Contains("InterpolatedMacro", StringComparison.Ordinal))
+
+[<Fact>]
+let ``prefixed string prefixes respect lexical shadowing over prelude dictionaries`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-prefixed-string-shadowing-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    ""
+                    "bad : Int -> String"
+                    "let bad f = f\"hi\""
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected a local value that shadows a prelude string macro dictionary to be rejected.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.TypeEqualityMismatch && diagnostic.Message.Contains("InterpolatedMacro", StringComparison.Ordinal))
+    Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.NameUnresolved && diagnostic.Message.Contains("'f'", StringComparison.Ordinal))
+
+[<Fact>]
 let ``KCore lowers prefixed strings through buildInterpolated macro splices`` () =
     let workspace =
         compileInMemoryWorkspace
@@ -2781,6 +2844,60 @@ let ``compilation reports unsatisfied expect declarations outside std prelude`` 
         |> List.tryFind (fun item -> item.Code = DiagnosticCode.ExpectUnsatisfied)
 
     Assert.True(diagnostic.IsSome, sprintf "Expected an unsatisfied expect diagnostic, got %A" workspace.Diagnostics)
+
+[<Fact>]
+let ``compilation reports unsatisfied top level signatures without same file definitions`` () =
+    let mainSource =
+        [
+            "module main"
+            "undefined_string : String"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-unsatisfied-signature-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected an unsatisfied top-level signature diagnostic.")
+
+    let diagnostic =
+        workspace.Diagnostics
+        |> List.tryFind (fun item -> item.Code = DiagnosticCode.SignatureUnsatisfied)
+
+    Assert.True(diagnostic.IsSome, sprintf "Expected an unsatisfied top-level signature diagnostic, got %A" workspace.Diagnostics)
+
+[<Fact>]
+let ``top level signatures are satisfied only by same file definitions`` () =
+    let headerSource =
+        [
+            "module main"
+            "answer : Int"
+        ]
+        |> String.concat "\n"
+
+    let definitionSource =
+        [
+            "module main"
+            "let answer : Int = 42"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-same-module-fragments-signature-root"
+            [
+                "a.kp", headerSource
+                "b.kp", definitionSource
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected the header-only fragment to remain unsatisfied.")
+
+    let matchingDiagnostics =
+        workspace.Diagnostics
+        |> List.filter (fun item -> item.Code = DiagnosticCode.SignatureUnsatisfied)
+
+    Assert.Single(matchingDiagnostics)
 
 [<Fact>]
 let ``parser treats a following signature as a top level boundary after a let body`` () =

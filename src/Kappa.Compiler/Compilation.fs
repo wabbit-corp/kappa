@@ -100,6 +100,7 @@ module Compilation =
             @ detectImportCycles documents
             @ validateImportSelections options.PackageMode documents
             @ CompilationFrontend.validateReflEqualityDeclarations documents
+            @ CompilationFrontend.validateTopLevelSignatureDeclarations documents
             @ SurfaceElaboration.validateSurfaceModules frontendModulesForValidation
             @ validateExpectDeclarations normalizedBackendProfile options.AllowUnsafeConsume documents
 

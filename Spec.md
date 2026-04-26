@@ -7068,7 +7068,19 @@ Modifier rules:
    [public|private] [opaque] name : Type
    ```
 
-   This introduces a type for `name` without providing a definition. Commonly used:
+   Outside trait bodies and other explicitly signature-like contexts, a top-level term signature declaration is a
+   header, not a standalone declaration of a value.
+
+   A non-`expect` top-level term signature declaration MUST be satisfied by exactly one matching top-level definition in
+   the same source file. If no matching definition exists in that file, compilation fails.
+
+   Standalone definitionless top-level items MUST use `expect term`, or some future explicitly unsafe/postulate form if
+   the language later standardizes one.
+
+   `opaque` on a signature does not turn an unsatisfied signature into an abstract constant; it is only meaningful as a
+   modifier of the matching definition.
+
+   Commonly used:
 
     * for trait members inside `trait` bodies,
     * as top-level signatures before a `let` definition.
@@ -7458,6 +7470,9 @@ Additional rules:
 
 * For a top-level simple-name value binding of the form `let name : T = expr`, the annotation `: T` itself counts as an
   explicit top-level signature and satisfies this section.
+* A separate top-level signature declaration `name : T` is satisfied only by a matching top-level definition in the
+  same source file. A definition in another fragment of the same effective module does not satisfy it; use `expect`
+  when cross-file module composition requires an externally supplied declaration.
 * The alternative "every binder in the definition has an explicit type annotation and the definition has an explicit
   result-type annotation" applies only to named function-definition forms.
 * A top-level pattern binding whose binder is not a single simple name MUST NOT be exported.

@@ -4656,11 +4656,89 @@ module SurfaceElaboration =
         (scheme: TypeScheme option)
         =
         let freshCounter = ref 0
-        let localTypes = buildLocalTypes scheme definition.Parameters
-        let parameterNames =
+        let tupleParameterLocalTypes =
             definition.Parameters
-            |> List.map (fun parameter -> parameter.Name)
+            |> List.collect (fun parameter ->
+                parameter.TypeTokens
+                |> Option.map significantTokens
+                |> Option.map splitTopLevelCommaGroups
+                |> Option.map (fun groups ->
+                    groups
+                    |> List.skip 1
+                    |> List.choose (fun group ->
+                        match significantTokens group with
+                        | nameToken :: colonToken :: typeTokens
+                            when Token.isName nameToken && colonToken.Kind = Colon ->
+                            typeTokens
+                            |> TypeSignatures.parseType
+                            |> Option.map (fun fieldType -> SyntaxFacts.trimIdentifierQuotes nameToken.Text, fieldType)
+                        | _ ->
+                            None))
+                |> Option.defaultValue [])
+
+        let recordParameterLocalTypes =
+            definition.Parameters
+            |> List.collect (fun parameter ->
+                parameter.TypeTokens
+                |> Option.bind tryParseRecordSurfaceInfo
+                |> Option.map (fun recordInfo ->
+                    recordInfo.Fields
+                    |> List.choose (fun field ->
+                        field.TypeTokens
+                        |> TypeSignatures.parseType
+                        |> Option.map (fun fieldType -> field.Name, fieldType)))
+                |> Option.defaultValue [])
+
+        let localTypes =
+            (tupleParameterLocalTypes @ recordParameterLocalTypes)
+            |> List.fold (fun state (name, fieldType) -> Map.add name fieldType state) (buildLocalTypes scheme definition.Parameters)
+
+        let parameterNames =
+            [ definition.Parameters |> List.map (fun parameter -> parameter.Name)
+              tupleParameterLocalTypes |> List.map fst
+              recordParameterLocalTypes |> List.map fst ]
+            |> List.concat
             |> Set.ofList
+
+        let preludeContract = IntrinsicCatalog.bundledPreludeExpectContract ()
+        let standardRuntimeNames =
+            Set.ofList
+                [ "bindModule"; "bindModuleOwned"; "bridgePackageValue"; "bridgePackageOrigin"; "bridgeFailureToCastBlame"
+                  "checkedCast"; "checkedCastWith"; "sameDynRep"; "toDyn"; "toDynWith"
+                  "Conservative"; "Exact"; "IntoKappa"; "LaterUse"; "Lossy"; "OutOfKappa" ]
+
+        let compilerKnownSurfaceTerms =
+            Set.ofList
+                [ "thunk"
+                  "lazy"
+                  "force"
+                  "captureBorrow"
+                  "withBorrowView"
+                  "break"
+                  "continue"
+                  "fork"
+                  "defEqSyntax"
+                  "headSymbolSyntax"
+                  "sameSymbol" ]
+
+        let visibleTraitMemberNames =
+            environment.VisibleTraits
+            |> Map.values
+            |> Seq.collect (fun traitInfo -> traitInfo.Members.Keys)
+            |> Set.ofSeq
+
+        let knownValueNames =
+            [ preludeContract.TermNames
+              Set.ofList Stdlib.FixedPreludeConstructors
+              IntrinsicCatalog.namedIntrinsicTermNames ()
+              standardRuntimeNames
+              compilerKnownSurfaceTerms
+              environment.VisibleBindings |> Map.keys |> Set.ofSeq
+              environment.VisibleConstructors |> Map.keys |> Set.ofSeq
+              visibleTraitMemberNames
+              environment.ConstrainedMembers |> Map.keys |> Set.ofSeq ]
+            |> Set.unionMany
+            |> Set.remove "<anonymous>"
 
         let makeDiagnostic code message =
             { Severity = DiagnosticSeverity.Error
@@ -4670,6 +4748,43 @@ module SurfaceElaboration =
               Message = message
               Location = None
               RelatedLocations = [] }
+
+        let tryInstantiateVisibleBindingType name =
+            let instantiate (bindingInfo: BindingSchemeInfo) =
+                let probe = ref freshCounter.Value
+                let instance = TypeSignatures.instantiate "t" probe.Value bindingInfo.Scheme
+                snd (TypeSignatures.schemeParts instance)
+
+            environment.VisibleBindings
+            |> Map.tryFind name
+            |> Option.map instantiate
+            |> Option.orElseWith (fun () ->
+                environment.VisibleConstructors
+                |> Map.tryFind name
+                |> Option.map instantiate)
+
+        let prefixedStringPrefixDiagnostics locals lexicalNames prefix =
+            let mismatchMessage =
+                $"Prefixed string prefix '{prefix}' must resolve to a term of type 'Dict (InterpolatedMacro t)' for some 't'."
+
+            let prefixType =
+                locals
+                |> Map.tryFind prefix
+                |> Option.orElseWith (fun () -> tryInstantiateVisibleBindingType prefix)
+
+            match prefixType with
+            | Some resolvedType ->
+                match tryInterpolatedMacroResultType environment.VisibleTypeAliases resolvedType with
+                | Some _ -> []
+                | None -> [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch mismatchMessage ]
+            | None when Set.contains prefix lexicalNames ->
+                []
+            | None when allowUnresolvedCallDiagnostics && not (Set.contains prefix knownValueNames) ->
+                [ makeDiagnostic DiagnosticCode.NameUnresolved $"Name '{prefix}' is not in scope." ]
+            | None when Set.contains prefix knownSurfaceTermNames ->
+                [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch mismatchMessage ]
+            | None ->
+                []
 
         let numericLiteralRangeDiagnostic literal =
             let sourceText = SurfaceNumericLiteral.toSurfaceText literal
@@ -6239,6 +6354,9 @@ module SurfaceElaboration =
             | CodeSplice inner ->
                 recurse inner
             | Handle(_, label, body, returnClause, operationClauses) ->
+                let returnClauseLexicalNames =
+                    Set.union lexicalNames (clauseBoundNames returnClause)
+
                 let handlerDiagnostics =
                     match label with
                     | Name [ effectName ] ->
@@ -6275,8 +6393,11 @@ module SurfaceElaboration =
 
                 recurse label
                 @ recurse body
-                @ recurse returnClause.Body
-                @ (operationClauses |> List.collect (fun clause -> recurse clause.Body))
+                @ validateExpression locals refinements returnClauseLexicalNames returnClause.Body
+                @ (operationClauses
+                   |> List.collect (fun clause ->
+                       let clauseLexicalNames = Set.union lexicalNames (clauseBoundNames clause)
+                       validateExpression locals refinements clauseLexicalNames clause.Body))
                 @ handlerDiagnostics
             | Literal _ ->
                 []
@@ -6321,6 +6442,13 @@ module SurfaceElaboration =
                         []
 
                 missingFieldDiagnostics @ staticMemberDiagnostics
+            | Name [ name ]
+                when allowUnresolvedCallDiagnostics
+                     && not (Map.containsKey name locals)
+                     && not (Set.contains name lexicalNames)
+                     && not (Set.contains name knownSurfaceTermNames)
+                     && not (Set.contains name knownValueNames) ->
+                [ makeDiagnostic DiagnosticCode.NameUnresolved $"Name '{name}' is not in scope." ]
             | Name _ ->
                 []
             | LocalLet(binding, value, body) ->
@@ -6465,7 +6593,13 @@ module SurfaceElaboration =
 
                 recurse value @ validateExpression nextLocals refinements nextLexicalNames bodyForValidation
             | LocalSignature(declaration, body) ->
-                validateExpression locals refinements (Set.add declaration.Name lexicalNames) body
+                let nextLocals =
+                    declaration.TypeTokens
+                    |> TypeSignatures.parseType
+                    |> Option.map (fun declarationType -> Map.add declaration.Name declarationType locals)
+                    |> Option.defaultValue locals
+
+                validateExpression nextLocals refinements (Set.add declaration.Name lexicalNames) body
             | LocalTypeAlias(declaration, body) ->
                 validateExpression locals refinements (Set.add declaration.Name lexicalNames) body
             | LocalScopedEffect(declaration, body) ->
@@ -6642,7 +6776,10 @@ module SurfaceElaboration =
                 fields |> List.collect (fun field -> recurse field.Value)
             | Apply(callee, arguments) ->
                 let argumentDiagnostics =
-                    recurse callee @ (arguments |> List.collect recurse)
+                    (match callee with
+                     | Name [ _ ] -> []
+                     | _ -> recurse callee)
+                    @ (arguments |> List.collect recurse)
 
                 let hasNamedBlock =
                     arguments
@@ -6823,11 +6960,12 @@ module SurfaceElaboration =
                     @ operandDiagnostics "right-hand side" right
                 | _ ->
                     diagnostics
-            | PrefixedString(_, parts) ->
-                parts
-                |> List.collect (function
-                    | StringText _ -> []
-                    | StringInterpolation(inner, _) -> recurse inner)
+            | PrefixedString(prefix, parts) ->
+                prefixedStringPrefixDiagnostics locals lexicalNames prefix
+                @ (parts
+                   |> List.collect (function
+                       | StringText _ -> []
+                       | StringInterpolation(inner, _) -> recurse inner))
 
         and validateDoStatements locals refinements lexicalNames statements =
             match statements with
@@ -8346,41 +8484,7 @@ module SurfaceElaboration =
                 validateExpression expression
 
             let expressionNameResolutionDiagnostics (definition: LetDefinition) expression =
-                let visibleNames =
-                    let preludeContract = IntrinsicCatalog.bundledPreludeExpectContract ()
-                    let standardRuntimeNames =
-                        Set.ofList
-                            [ "bindModule"; "bindModuleOwned"; "bridgePackageValue"; "bridgePackageOrigin"; "bridgeFailureToCastBlame"
-                              "checkedCast"; "checkedCastWith"; "sameDynRep"; "toDyn"; "toDynWith"
-                              "Conservative"; "Exact"; "IntoKappa"; "LaterUse"; "Lossy"; "OutOfKappa" ]
-
-                    [ topLevelNames
-                      definition.Parameters |> List.map (fun parameter -> parameter.Name) |> Set.ofList
-                      preludeContract.TermNames
-                      preludeContract.TypeNames
-                      preludeContract.TraitNames
-                      Set.ofList Stdlib.FixedPreludeConstructors
-                      standardRuntimeNames
-                      environment.VisibleBindings |> Map.keys |> Set.ofSeq
-                      environment.VisibleConstructors |> Map.keys |> Set.ofSeq
-                      environment.VisibleModules
-                      environment.VisibleStaticObjects |> Map.keys |> Set.ofSeq
-                      environment.VisibleTypeFacets |> Map.keys |> Set.ofSeq
-                      environment.VisibleTraits |> Map.keys |> Set.ofSeq ]
-                    |> Set.unionMany
-                    |> Set.remove "<anonymous>"
-
-                let unresolved name =
-                    not (Set.contains name visibleNames)
-
-                if hasNonQualifiedImports then
-                    []
-                else
-                    match expression with
-                    | Name [ name ] when unresolved name ->
-                        [ makeDiagnostic DiagnosticCode.NameUnresolved $"Name '{name}' is not in scope." ]
-                    | _ ->
-                        []
+                []
 
             let constructorDefaultDiagnostics =
                 let topLevelNames =

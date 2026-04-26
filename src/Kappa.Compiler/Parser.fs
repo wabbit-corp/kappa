@@ -305,6 +305,70 @@ type private TokenParser
                 source.GetLocation(head.Span)
             )
 
+    member private this.ValidateSignatureType(tokens: Token list) =
+        let significantTokens = this.SignificantTokens tokens
+
+        let findInvalidToken () =
+            let tokenArray = significantTokens |> List.toArray
+            let mutable parenDepth = 0
+            let mutable braceDepth = 0
+            let mutable bracketDepth = 0
+            let mutable setBraceDepth = 0
+            let mutable invalidToken = None
+            let mutable index = 0
+
+            while index < tokenArray.Length && invalidToken.IsNone do
+                match tokenArray[index].Kind with
+                | LeftParen ->
+                    parenDepth <- parenDepth + 1
+                | RightParen ->
+                    if parenDepth = 0 then
+                        invalidToken <- Some tokenArray[index]
+                    else
+                        parenDepth <- parenDepth - 1
+                | LeftBrace ->
+                    braceDepth <- braceDepth + 1
+                | RightBrace ->
+                    if braceDepth = 0 then
+                        invalidToken <- Some tokenArray[index]
+                    else
+                        braceDepth <- braceDepth - 1
+                | LeftBracket
+                | LeftEffectRow ->
+                    bracketDepth <- bracketDepth + 1
+                | RightBracket
+                | RightEffectRow ->
+                    if bracketDepth = 0 then
+                        invalidToken <- Some tokenArray[index]
+                    else
+                        bracketDepth <- bracketDepth - 1
+                | LeftSetBrace ->
+                    setBraceDepth <- setBraceDepth + 1
+                | RightSetBrace ->
+                    if setBraceDepth = 0 then
+                        invalidToken <- Some tokenArray[index]
+                    else
+                        setBraceDepth <- setBraceDepth - 1
+                | _ ->
+                    ()
+
+                index <- index + 1
+
+            if invalidToken.IsSome then
+                invalidToken
+            elif parenDepth > 0 || braceDepth > 0 || bracketDepth > 0 || setBraceDepth > 0 then
+                significantTokens |> List.tryLast
+            else
+                None
+
+        match significantTokens, findInvalidToken () with
+        | [], _ ->
+            diagnostics.AddError(DiagnosticCode.ParseError, "Expected a signature type.", source.GetLocation(this.Current.Span))
+        | _, Some token ->
+            diagnostics.AddError(DiagnosticCode.ParseError, "Expected a valid signature type.", source.GetLocation(token.Span))
+        | _ ->
+            ()
+
     member private _.SplitTopLevelCommaGroups(tokens: Token list) =
         let groups = ResizeArray<Token list>()
         let tokenArray = tokens |> List.toArray
@@ -866,12 +930,14 @@ type private TokenParser
     member private this.ParseSignature(modifiers: ModifierState) =
         let name = this.ConsumeTermBindingName("Expected a name in the signature declaration.")
         this.Expect(Colon, "Expected ':' in the signature declaration.") |> ignore
+        let typeTokens = this.CollectUntilTopLevelBoundary()
+        this.ValidateSignatureType(typeTokens)
 
         SignatureDeclaration
             { Visibility = modifiers.Visibility
               IsOpaque = modifiers.IsOpaque
               Name = name
-              TypeTokens = this.CollectUntilTopLevelBoundary() }
+              TypeTokens = typeTokens }
 
     member private this.ParseExpectDeclaration() =
         this.ExpectKeyword(Keyword.Expect, "Expected 'expect'.") |> ignore
