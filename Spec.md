@@ -3809,6 +3809,50 @@ Rules:
   #29 for the implementation's Unicode version.
 * `graphemeCount s` is the number of yielded graphemes.
 
+String cursors and spans:
+
+```kappa
+expect data StringCursor : Type
+expect data StringSpan : Type
+
+stringStart :
+    String -> StringCursor
+
+stringEnd :
+    String -> StringCursor
+
+stringCursorOffset :
+    String -> StringCursor -> Nat
+
+stringNextScalar :
+    String -> StringCursor -> Option (scalar : UnicodeScalar, next : StringCursor)
+
+stringPrevScalar :
+    String -> StringCursor -> Option (prev : StringCursor, scalar : UnicodeScalar)
+
+stringNextGrapheme :
+    String -> StringCursor -> Option (grapheme : Grapheme, next : StringCursor)
+
+stringSpan :
+    String -> StringCursor -> StringCursor -> Option String
+
+stringCompact :
+    String -> String
+```
+
+Rules:
+
+* A `StringCursor` is valid only for the `String` value from which it was produced.
+* `stringCursorOffset` returns the byte offset of the cursor in that string.
+* `stringNextScalar` and `stringPrevScalar` step by Unicode scalar value.
+* `stringNextGrapheme` steps by extended grapheme cluster under the implementation's pinned Unicode version.
+* `stringSpan s start end` succeeds iff both cursors are valid for `s` and `start <= end`.
+* `stringSpan` MUST NOT split a UTF-8 scalar.
+* `stringSpan` MAY split a grapheme cluster unless the cursor was obtained from grapheme stepping or the API explicitly
+  demands grapheme boundaries.
+* `stringCompact s == s`.
+* `stringCompact` SHOULD release retention of unrelated source storage when possible.
+
 Normalization and equivalence:
 
 ```kappa
