@@ -16942,6 +16942,57 @@ trait Eq (a : Type) =
 trait Eq a => Ord (a : Type) =
     compare : (& x : a) -> (& y : a) -> Ordering
 
+(/=) :
+    forall (a : Type).
+    (@_ : Eq a) ->
+    (& x : a) -> (& y : a) -> Bool
+
+let (/=) x y = not (x == y)
+
+(<) :
+    forall (a : Type).
+    (@_ : Ord a) ->
+    (& x : a) -> (& y : a) -> Bool
+
+let (<) x y =
+    match compare x y
+    case LT -> True
+    case EQ -> False
+    case GT -> False
+
+(<=) :
+    forall (a : Type).
+    (@_ : Ord a) ->
+    (& x : a) -> (& y : a) -> Bool
+
+let (<=) x y =
+    match compare x y
+    case LT -> True
+    case EQ -> True
+    case GT -> False
+
+(>) :
+    forall (a : Type).
+    (@_ : Ord a) ->
+    (& x : a) -> (& y : a) -> Bool
+
+let (>) x y =
+    match compare x y
+    case LT -> False
+    case EQ -> False
+    case GT -> True
+
+(>=) :
+    forall (a : Type).
+    (@_ : Ord a) ->
+    (& x : a) -> (& y : a) -> Bool
+
+let (>=) x y =
+    match compare x y
+    case LT -> False
+    case EQ -> True
+    case GT -> True
+
 trait Functor (f : Type -> Type) =
     map :
         forall (a : Type) (b : Type).
@@ -16971,6 +17022,10 @@ trait Applicative m => Monad (m : Type -> Type) =
         m a -> m b -> m b =
             \ma mb -> ma >>= \_ -> mb
 ```
+
+The comparison helper operators are derived from `compare`; they do not consume their operands.
+
+For any lawful `Ord a` instance, `compare x y = EQ` must agree with `(x == y) = True`.
 
 All `Functor`, `Applicative`, and `Monad` instances MUST satisfy the usual identity, composition, homomorphism,
 interchange, associativity, and unit laws up to observational equivalence for the corresponding carrier.
