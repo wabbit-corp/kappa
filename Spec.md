@@ -22040,16 +22040,32 @@ An analysis session is the tooling-time environment within which KFrontIR querie
 
 An analysis session is parameterized at least by:
 
-* the source roots and dependency closure,
-* package mode vs script mode,
-* the effective build configuration, including unsafe/debug flags,
-* the selected backend profile and backend intrinsic set,
-* and any macro-input-transcript state relevant to script-mode analysis.
+* the source roots and dependency closure;
+* package mode vs script mode;
+* the effective build configuration, including unsafe/debug flags;
+* the selected backend profile and backend intrinsic set;
+* the canonical effective import environment at each semantic query site;
+* the semantic identities and fingerprints of imported module interfaces;
+* the selected provider identities for source modules, URL modules, host-binding modules, bridge-supplied modules, and
+  package modules; and
+* any macro-input-transcript state relevant to script-mode analysis.
 
 Symbols, query results, and cached semantic objects are valid only within the analysis session that created them.
 
 When any input to the session changes, the implementation MUST invalidate all affected cached results from the earliest
 affected phase onward.
+
+An implementation MUST distinguish a semantic input change from an observationally irrelevant reload or reorder.
+
+A reload of an imported interface whose semantic identity and fingerprint are unchanged is not, by itself, a semantic
+input change.
+
+A reordering of import declarations that leaves every affected source location's effective import environment
+semantically equivalent under §2.3.5 is not, by itself, a semantic input change for normalization, elaboration,
+definitional equality, hole-goal answers, or semantic tooling queries.
+
+Such a reorder may still affect source positions, import-formatting diagnostics, unused-import diagnostics, or
+presentation-level ordering.
 
 At minimum:
 
@@ -22058,6 +22074,9 @@ At minimum:
 * a change to a declaration header, explicit type, supertype, import/export surface, build flag, backend profile,
   backend intrinsic set, or dependency interface MUST invalidate dependent results from the earliest phase whose inputs
   changed;
+* a change to the effective import environment at a source location MUST invalidate all query results whose name
+  resolution, fixity resolution, visibility, opacity, `unhide`, `clarify`, instance search, imported-interface access,
+  semantic reflection, normalization, or elaboration depended on that environment;
 * a change to a pinned host-source identity, binding-generator version, host metadata input, native ABI description,
   selected adapter mode, marshalling profile, deployment prerequisite, generated companion artifact, trusted binding
   summary, shim artifact, bridge provider artifact, bridge contract, bridge generator version, bridge realization mode,
@@ -22069,6 +22088,22 @@ At minimum:
 The implementation MUST determine affected results by consulting recorded query dependencies and compiler fingerprints,
 not merely by coarse file-level invalidation, unless the implementation can prove that such coarse invalidation is
 equivalent for the affected request.
+
+Query dependencies over imports MUST be recorded in semantic terms.
+
+At minimum, dependency tracking MUST distinguish:
+
+* dependency on a specific resolved declaration identity;
+* dependency on a module interface identity;
+* dependency on a module provider identity;
+* dependency on a visibility/opacity decision;
+* dependency on a `clarify` or `unhide` effect;
+* dependency on imported fixity at a source location;
+* dependency on the global instance environment induced by the module closure; and
+* dependency on an unresolved or ambiguous lookup result.
+
+An implementation MUST NOT invalidate or change semantic query results merely because the physical import list was
+reordered, unless that reordering changes one of the semantic dependencies above.
 
 <!-- compiler.kfrontir.query_model -->
 #### 17.2.7 Query model
