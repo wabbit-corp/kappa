@@ -1958,6 +1958,101 @@ Rules:
 * `Real` MAY receive `FieldLike` if the implementation provides exact real/decimal semantics satisfying the stated laws.
 * `Nat` MUST NOT receive `Negatable`, `AdditiveGroup`, `Ring`, or `FieldLike`.
 
+<!-- modules.prelude.numeric_standard_instances -->
+##### Standard numeric instances and partial-operation domains
+
+The portable prelude MUST provide the following operational instances:
+
+```text
+Zero Nat, One Nat, Add Nat, Mul Nat, CheckedSub Nat, CheckedDiv Nat, CheckedMod Nat
+Zero Integer, One Integer, Add Integer, Mul Integer, Negatable Integer, CheckedSub Integer, CheckedDiv Integer, CheckedMod Integer
+Zero Int, One Int, Add Int, Mul Int, Negatable Int, CheckedSub Int, CheckedDiv Int, CheckedMod Int
+Zero Real, One Real, Add Real, Mul Real, Negatable Real, CheckedSub Real, CheckedDiv Real
+Zero Float, One Float, Add Float, Mul Float, Negatable Float, CheckedSub Float, CheckedDiv Float
+Zero Double, One Double, Add Double, Mul Double, Negatable Double, CheckedSub Double, CheckedDiv Double
+```
+
+The portable prelude MUST provide the following lawful instances when the corresponding type semantics satisfy the laws:
+
+```text
+AdditiveMonoid Nat, MultiplicativeMonoid Nat, Semiring Nat, OrderedAdditive Nat, OrderedSemiring Nat,
+EuclideanSemiring Nat,
+
+AdditiveMonoid Integer, AdditiveGroup Integer,
+MultiplicativeMonoid Integer, Semiring Integer, Ring Integer,
+OrderedAdditive Integer, OrderedSemiring Integer,
+
+FieldLike Real
+```
+
+`Int` receives lawful instances only if portable `Int` arithmetic is specified as exact mathematical integer arithmetic.
+If `Int` is fixed-width, wrapping, trapping, saturating, or backend-dependent, the portable prelude MUST NOT provide
+lawful algebraic instances for `Int`; it may provide only the operational traits.
+
+For `Nat`:
+
+```kappa
+subDefined x y = (y <= x)
+divDefined x y = (y /= zero)
+modDefined x y = (y /= zero)
+```
+
+Therefore portable `Nat` subtraction has the shape:
+
+```kappa
+(-) :
+    (x : Nat) ->
+    (y : Nat) ->
+    (@_ : (y <= x) = True) ->
+    Nat
+```
+
+Portable `Nat` division and modulo have the shapes:
+
+```kappa
+(/) :
+    (x : Nat) ->
+    (y : Nat) ->
+    (@_ : (y /= zero) = True) ->
+    Nat
+
+(%) :
+    (x : Nat) ->
+    (y : Nat) ->
+    (@_ : (y /= zero) = True) ->
+    Nat
+```
+
+The portable prelude MUST NOT define `Nat` subtraction as saturating subtraction.
+
+For `Integer`:
+
+```kappa
+subDefined x y = True
+divDefined x y = (y /= zero)
+modDefined x y = (y /= zero)
+```
+
+For exact signed integer division, the implementation MUST document the quotient/remainder convention and use it
+consistently in the `EuclideanSemiring` instance if such an instance is provided.
+
+For `Real`:
+
+```kappa
+subDefined x y = True
+divDefined x y = (y /= zero)
+```
+
+For `Float` and `Double`:
+
+```kappa
+subDefined x y = True
+divDefined x y = (y /= zero)
+```
+
+`Float` and `Double` division remains operational. It does not imply `FieldLike`, because NaN, infinities, signed zero,
+rounding, and raw-bit equality prevent the ordinary field laws from holding.
+
 Fixities: Implementations MUST provide fixity declarations, or fixed built-in parsing precedences for reserved
 operator-like syntax. The following minimum table is normative:
 
