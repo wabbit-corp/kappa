@@ -6467,30 +6467,103 @@ terms or types.
 <!-- types.macros.functions -->
 #### 5.8.3 Macros as ordinary functions
 
-A macro is an ordinary elaboration-time function whose result type is `Syntax t` or `Elab (Syntax t)`:
+A macro is an ordinary elaboration-time function whose splice-invoked result type is:
 
 ```kappa
-myMacro : Syntax Int -> Syntax Int
-let myMacro e = '{ ${e} + 1 }
+Elab (Syntax t)
+```
+
+Example:
+
+```kappa
+myMacro : Syntax Int -> Elab (Syntax Int)
+let myMacro e =
+    pure '{ ${e} + 1 }
 
 let x = $(myMacro '{ 10 })
 ```
 
-There is no separate macro declaration kind or shadowing regime; macros are ordinary term definitions invoked through elaboration-time splicing.
+There is no separate macro declaration kind or shadowing regime. Macros are ordinary term definitions invoked through
+elaboration-time splicing.
+
+Pure helper functions over compile-time syntax values are permitted, for example:
+
+```kappa
+wrap : Syntax Int -> Syntax Int
+let wrap e = '{ ${e} + 1 }
+```
+
+Such a helper is not itself a splice action. To splice its result directly, the bare-`Syntax` splice sugar of §5.8.2
+wraps the meta-phase result with `pure`.
 
 A macro MAY inspect and transform code either at the surface level through `Syntax` or at the semantic level through the
-reflection API of §5.8.5. Semantic reflection does not introduce a second user-visible source language or a separate
-macro lookup space; it is an elaboration-time interface for reasoning about ordinary Kappa terms, types, rows, labels,
-and constraints after elaboration.
+reflection API of §5.8.5.
+
+Semantic reflection does not introduce a second user-visible source language or a separate macro lookup space. It is an
+elaboration-time interface for reasoning about ordinary Kappa terms, types, rows, labels, constraints, quantities,
+borrows, regions, captures, and visibility after elaboration.
 
 <!-- types.macros.hygiene -->
-#### 5.8.4 Hygiene
+#### 5.8.4 Hygiene, scope metadata, and escape
 
 Syntax quotes are hygienic.
 
 * Quoted binders are hygienic.
 * Spliced syntax preserves its own binding structure.
 * Generated binders are alpha-renamed as needed to avoid capture.
+
+Every `Syntax t` value carries hidden syntax-scope metadata.
+
+That metadata records every free hygienic object-language binder referenced by the syntax, including:
+
+* local variables and parameters;
+* resolved global declarations;
+* implicit evidence references;
+* quantity capabilities associated with referenced binders;
+* rigid borrow regions associated with borrowed references;
+* capture annotations associated with referenced values;
+* local nominal-scope tokens introduced by scoped declarations; and
+* source/synthetic origin information needed for diagnostics and tooling.
+
+A `Syntax` value may escape a lexical scope only when every free hygienic binder recorded in its hidden syntax-scope
+metadata remains valid outside that scope.
+
+In particular:
+
+* if a `Syntax` value mentions an anonymous rigid borrow region introduced by a local borrow, the ordinary skolem-escape
+  rule of §5.1.6 applies;
+* if a `Syntax` value mentions a scoped local nominal token introduced by §6.3.1.1, the scoped-nominal escape rule
+  applies;
+* if a `Syntax` value mentions a local object-language binder, it may be spliced only where that binder is still in
+  scope with compatible quantity, region, and capture information; and
+* packaging, rebinding, returning, or storing a `Syntax` value does not discharge these obligations.
+
+Splicing a `Syntax` value is permitted only when every free hygienic binder referenced by that syntax is available in
+the splice-site lexical context with compatible object-language type, quantity, region, capture, visibility, and opacity
+information.
+
+Example accepted:
+
+```kappa
+ok :
+    (1 box : Box Int) -> Int
+let ok box =
+    let & x = box.value
+    $(pure '{ x + 1 })
+```
+
+Example rejected:
+
+```kappa
+bad :
+    (1 box : Box Int) -> Syntax Int
+let bad box =
+    let & x = box.value
+    '{ x }
+```
+
+The second example is rejected because the returned `Syntax Int` mentions the anonymous rigid borrow region introduced
+for `x`, and that region would escape its lexical scope.
 
 <!-- types.macros.surface_syntax_inspection_and_origins -->
 #### 5.8.4.1 Surface syntax inspection and origins
