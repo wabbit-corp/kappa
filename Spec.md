@@ -1030,14 +1030,29 @@ Regex, (=), Thunk a, Need a
 
 `Byte` is a raw 8-bit octet type. It is not a character type and does not receive portable numeric instances by default.
 
+`Bytes` is an opaque, immutable, finite byte-sequence type.
+
+A `Bytes` value is observationally a finite sequence of `Byte` values. Its equality, ordering, hashing, indexing,
+slicing, encoding, decoding, and I/O behavior are defined by that byte sequence.
+
+`Bytes` is not definitionally equal to `Array Byte`, `List Byte`, `exists n. Array n Byte`, or any other generic
+container encoding.
+
+An implementation MAY represent `Bytes` using a compact byte array, a slice of a larger byte array, a small inline
+buffer, a pinned foreign buffer, a memory-mapped region, a runtime-specific byte-string representation, or another
+observationally equivalent representation.
+
+The representation of `Bytes` is not observable except through the operations specified by this document and by
+standard-library modules.
+
+`Bytes` may contain byte sequences that are not valid UTF-8.
+
 `UnicodeScalar` is the scalar-value text atom: one Unicode scalar value, excluding surrogate code points.
 
 `Grapheme` is the user-perceived text atom: one extended grapheme cluster under the implementation's pinned Unicode
 version.
 
 `String` is immutable valid UTF-8 text.
-
-`Bytes` is raw binary data and may contain byte sequences that are not valid UTF-8.
 
 Compatibility spelling:
 
