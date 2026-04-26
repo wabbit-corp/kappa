@@ -22264,6 +22264,30 @@ A conforming implementation SHOULD exploit parallelism at least across:
 An implementation MAY decline to parallelize any of these cases, but it MUST NOT introduce a semantic dependence on
 serial evaluation order where the source language does not require one.
 
+The same prohibition applies to import processing and interface loading.
+
+A conforming implementation MAY parse, discover, load, compile, check, hash, normalize, or cache imported modules in any
+order permitted by the dependency graph.
+
+However, for fixed source inputs, dependency closure, build configuration, backend profile, backend-intrinsic set,
+provider identities, interface fingerprints, macro transcript, and implementation version, the resulting semantic
+answers MUST be independent of that processing order.
+
+This includes:
+
+* normal forms;
+* weak-head normal forms;
+* definitional-equality answers;
+* implicit solutions;
+* selected coherent instance dictionaries;
+* hole-goal contexts;
+* case-split results;
+* generated missing clauses;
+* semantic-reflection results;
+* emitted KCore;
+* emitted interfaces; and
+* accepted/rejected status.
+
 <!-- compiler.kfrontir.cancellation -->
 #### 17.2.9 Cancellation
 
