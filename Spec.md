@@ -14686,12 +14686,13 @@ distinct by keyExpr
 
 Typing:
 
-* `distinct` requires an implicit `Eq (Row(Γ))` instance, where `Row(Γ)` is the current row record of §10.10.2.
+* `distinct` requires an implicit `Eq (Row(Ξ))` instance, where `Row(Ξ)` is the current quantitative row record of
+  §10.10.2A.
 * `distinct by keyExpr` requires an implicit `Eq K` instance, where `keyExpr : K`.
 
 Semantics:
 
-* `distinct` keeps the first encountered row for each unique current row record `Row(Γ)`.
+* `distinct` keeps the first encountered row for each unique current quantitative row record `Row(Ξ)`.
 * `distinct by keyExpr` evaluates `keyExpr` exactly once per incoming row and keeps the first encountered row for each
   unique key.
 * The semantics of `distinct` and `distinct by` are defined only in terms of the corresponding `Eq` instance.
@@ -15133,49 +15134,552 @@ satisfied by the normalized plan.
 <!-- collections.lowering -->
 ### 10.10 Normative lowering: sources, query core, and collection
 
-Normative lowering proceeds in two stages:
+Normative lowering proceeds in three stages:
 
-1. clause lowering to a normalized query pipeline `Query row`,
-2. terminal projection and collection via `ComprehensionPlan`.
+1. source and clause lowering to a normalized query pipeline
+   `QueryCore mode itemQuantity row`;
+2. terminal projection to a normalized item query; and
+3. terminal collection through the selected carrier.
+
+The concrete representation of `QueryCore` is implementation-defined. Its mode, item quantity, item type, orderedness,
+quantitative row states, and terminal collection metadata are nevertheless part of the normative semantics and must be
+available through `ComprehensionPlan` inspection as specified in §5.8.5.
+
+<!-- collections.lowering.query_modes -->
+#### 10.10.1 Query modes, cardinality, and item quantity
+
+A query mode consists of:
+
+* a use mode, either `Reusable` or `OneShot`; and
+* a cardinality approximation, one of `QZero`, `QOne`, `QZeroOrOne`, `QOneOrMore`, or `QZeroOrMore`.
+
+The cardinalities denote intervals of possible row counts:
+
+```text
+QZero        = [0,0]
+QOne         = [1,1]
+QZeroOrOne   = [0,1]
+QOneOrMore   = [1,∞]
+QZeroOrMore  = [0,∞]
+```
+
+Use-mode composition is:
+
+```text
+Reusable ⊗ Reusable = Reusable
+Reusable ⊗ OneShot  = OneShot
+OneShot  ⊗ Reusable = OneShot
+OneShot  ⊗ OneShot  = OneShot
+```
+
+A one-shot ingredient makes the resulting query one-shot.
+
+Cardinality composition for nested generators and flat-mapping is interval multiplication over the table above. For
+example:
+
+```text
+QOne       * QOne        = QOne
+QOne       * QZeroOrOne  = QZeroOrOne
+QOne       * QZeroOrMore = QZeroOrMore
+QZeroOrOne * QZeroOrOne  = QZeroOrOne
+QOneOrMore * QOneOrMore  = QOneOrMore
+QOneOrMore * QZeroOrMore = QZeroOrMore
+```
+
+Cardinality filtering removes positive lower-bound information while preserving the upper bound:
+
+```text
+filterCard(QZero)        = QZero
+filterCard(QOne)         = QZeroOrOne
+filterCard(QZeroOrOne)   = QZeroOrOne
+filterCard(QOneOrMore)   = QZeroOrMore
+filterCard(QZeroOrMore)  = QZeroOrMore
+```
+
+Mode checking permits widening but not unsupported narrowing:
+
+* `Reusable` may be checked as `Reusable` or `OneShot`.
+* `OneShot` may be checked only as `OneShot`.
+* A cardinality interval may be checked against another cardinality interval only when the inferred interval is a subset
+  of the demanded interval.
+
+Consequences:
+
+* `QOne` may be checked as `QZeroOrOne`, `QOneOrMore`, or `QZeroOrMore`.
+* `QZeroOrOne` may be checked as `QZeroOrMore`.
+* `QOneOrMore` may be checked as `QZeroOrMore`.
+* `QZeroOrMore` may be checked only as `QZeroOrMore`.
+
+The item quantity of a `QueryCore mode q item` controls the quantity assigned to an ordinary item binder introduced by
+`for pat in src`. It is independent of the query use mode. A one-shot query may yield unrestricted items, linear items,
+borrow views, or any other item quantity expressible by `q`.
 
 <!-- collections.lowering.sources -->
-#### 10.10.1 Sources
+#### 10.10.2 Sources
 
 A generator source is any expression whose type `src` has an implicit instance `IntoQuery src`.
 
-If `IntoQuery src` provides associated item type `a`, then:
+If `IntoQuery src` provides:
 
 ```kappa
-toQuery : src -> Query a
+Mode : QueryMode
+ItemQuantity : Quantity
+Item : Type
+SourceDemand : Quantity
 ```
 
-is the semantic source of rows for `for ... in ...` clauses.
+then:
+
+```kappa
+toQuery :
+    (SourceDemand source : src) ->
+    QueryCore Mode ItemQuantity Item
+```
+
+is the semantic source of rows for ordinary `for ... in ...` clauses.
+
+A borrowed generator source is any expression whose type `src` has an implicit instance `BorrowIntoQuery src`.
+If `BorrowIntoQuery src` provides:
+
+```kappa
+Card : QueryCard
+Item : Type
+```
+
+then:
+
+```kappa
+toBorrowQuery :
+    forall (ρ : Region).
+    (&[ρ] source : src) ->
+    QueryCore (QueryMode Reusable Card) ω (BorrowView ρ Item) captures (ρ)
+```
+
+is the semantic source of rows for `for & ... in ...` and `for? & ... in ...` clauses.
 
 Built-in source obligations:
 
 Implementations MUST provide standard `IntoQuery` instances for:
 
-* `List a`;
-* `Array a`;
-* the built-in set type;
-* map iteration as specified by §10.4;
-* the canonical range result type of §10.2; and
-* `Query a` itself.
+* `List a`, with mode `QueryMode Reusable QZeroOrMore`, item quantity `ω`, and source demand `ω`;
+* `Array a`, with mode `QueryMode Reusable QZeroOrMore`, item quantity `ω`, and source demand `ω`;
+* the built-in set type, with mode `QueryMode Reusable QZeroOrMore`, item quantity `ω`, and source demand `ω`;
+* map iteration as specified by §10.4, with mode `QueryMode Reusable QZeroOrMore`, item quantity `ω`, and source demand
+  `ω`;
+* `Option a`, with mode `QueryMode Reusable QZeroOrOne`, item quantity `ω`, and source demand `ω`;
+* the canonical range result type of §10.2, with mode and cardinality determined by the range implementation, but at
+  least as precise as `QueryMode Reusable QZeroOrMore`; and
+* `QueryCore mode q a` itself.
 
-`IntoQuery (Query a)` MUST behave as identity on element streams.
+For `QueryCore mode q a` itself:
 
-A conforming implementation MAY provide additional `IntoQuery` instances for implementation-defined sources, but those
-additional instances MUST NOT change the semantics of the required built-in instances.
+* the resulting `Mode` is `mode`;
+* the resulting `ItemQuantity` is `q`;
+* the resulting `Item` is `a`;
+* the source demand is `ω` when `mode.use = Reusable`; and
+* the source demand is `1` when `mode.use = OneShot`.
+
+`IntoQuery (Query a)` behaves as identity on reusable element streams.
+`IntoQuery (OnceQuery a)` consumes the one-shot query value and behaves as identity on the element stream.
+
+A conforming implementation MAY provide additional `IntoQuery` or `BorrowIntoQuery` instances for implementation-defined
+sources, but those additional instances MUST NOT change the semantics of the required built-in instances.
+
+<!-- collections.lowering.quantitative_rows -->
+#### 10.10.2A Quantitative row environment
+
+Before `yield`, a comprehension is elaborated as a pipeline over a quantitative row environment.
+
+At any clause site, let `Ξ` be the ordered quantitative row context of names bound by preceding clauses.
+Each entry of `Ξ` records at least:
+
+* the source name;
+* the type of the binding;
+* the binding quantity;
+* whether the binding is object-phase or compile-time-only;
+* path-consumption state for stable places and record fields;
+* the hidden region environment and any explicit `captures (...)` annotation;
+* whether the entry is row-droppable;
+* whether the entry is row-duplicable; and
+* source-origin metadata for diagnostics.
+
+The corresponding row type `Row(Ξ)` is the canonical record type whose fields are the names in `Ξ`, preserving field
+quantities, field types, compile-time/runtime classification, and capture annotations. Field order is the canonical
+dependency-respecting record order of §14.6.
+
+Implicit assumptions introduced by filters, constructor tests, branch refinements, and implicit-resolution context are
+not fields of `Row(Ξ)` unless explicitly bound by a preceding clause.
+
+All clause semantics before `yield` are defined in terms of transformations on:
+
+```kappa
+QueryCore mode ω (Row(Ξ))
+```
+
+The outer item quantity of the internal row stream is `ω`; the quantities that matter for row fields are the field
+quantities preserved inside `Row(Ξ)`. A conforming implementation may use an observationally equivalent internal
+representation, but it must preserve the same row-entry quantity behavior.
+
+Terminology:
+
+* The term "current query pipeline" refers to the normalized `QueryCore mode ω (Row(Ξ))` being transformed before
+  `yield`.
+* The term "carrier" is reserved for the final collection sink selected by §10.9.
+* Clause semantics before `yield` MUST NOT depend on the final carrier, except where this specification explicitly
+  delegates to `FromComprehensionRaw`.
+
+<!-- collections.lowering.row_drop_dup -->
+#### 10.10.2B Row droppability and row duplicability
+
+A row entry is **row-droppable** iff abandoning that entry would not violate any runtime-relevant positive lower-bound
+obligation, linear ownership obligation, borrow-escape rule, or path-consumption obligation.
+
+For ordinary v1 surface quantities, ignoring internal path state:
+
+```text
+row-droppable:      0, &, <=1, ω
+not row-droppable:  1, >=1
+```
+
+A row entry is **row-duplicable** iff carrying that entry into more than one output row would not violate its quantity,
+path state, or capture rules.
+
+For ordinary v1 surface quantities, ignoring internal path state:
+
+```text
+row-duplicable:      0, &, >=1, ω
+not row-duplicable:  1, <=1
+```
+
+Compile-time-only row entries are row-droppable and row-duplicable for runtime-quantity purposes, but they still
+participate in dependency analysis, definitional equality, interface identity, and region-escape checking.
+
+Path-sensitive state may make a field non-droppable or non-duplicable even when its outer binding quantity would
+otherwise permit the operation. In particular, a partially consumed record may be carried only if all remaining path
+obligations are preserved and no consumed path is read, duplicated, or dropped illegally.
+
+Each normalized clause has a per-input row multiplicity:
+
+```text
+QZero
+QOne
+QZeroOrOne
+QOneOrMore
+QZeroOrMore
+```
+
+A clause may carry an existing row entry through according to that multiplicity:
+
+```text
+QOne:
+    the row entry is transferred exactly once.
+
+QZero:
+    the row entry is always discarded; it must be row-droppable or explicitly consumed before the clause.
+
+QZeroOrOne:
+    the row entry may be discarded; it must be row-droppable.
+
+QOneOrMore:
+    the row entry may be duplicated; it must be row-duplicable.
+
+QZeroOrMore:
+    the row entry may be discarded or duplicated; it must be both row-droppable and row-duplicable.
+```
+
+A clause that removes a row entry from `Ξ` must discharge that entry by ordinary quantity checking: transfer, consuming
+call, pattern decomposition, aggregate transfer, explicit destructor, or another specified consuming operation.
+
+A clause that introduces a new row entry assigns that entry the quantity determined by the clause:
+
+* ordinary `for pat in src` uses the source query's `ItemQuantity`;
+* borrowed `for & pat in src` introduces borrowed entries under the source borrow region;
+* `let pat = expr` uses the quantities written in `pat` when present, otherwise the ordinary defaulting rules;
+* grouping uses the aggregate field quantities specified in §10.7; and
+* first-class query values introduced by `left join ... into name` have their ordinary value quantity inferred from
+  their query mode, with one-shot query values subject to the one-shot binding rule of §2.6.2.
+
+<!-- collections.lowering.lexical_captures -->
+#### 10.10.2C Demands on outer lexical variables
+
+Clause expressions may refer both to row entries and to ordinary lexical variables from outside the comprehension.
+
+A clause expression is evaluated once for each row to which that clause applies, unless the clause states a different
+evaluation count.
+
+Demands on row entries are checked by the row-carrying rules of §10.10.2B.
+Demands on outer lexical variables are multiplied by the cardinality of the current input pipeline and by the evaluation
+count of the clause expression.
+
+Consequences:
+
+* A one-shot variable from an outer lexical scope cannot be used as the source expression of a nested `for` under a
+  pipeline that may contain more than one row, unless the expression produces a fresh one-shot source for each row.
+* A borrowed outer variable captured by a first-class query value contributes to that query value's inferred capture set.
+* If such a query value escapes, the ordinary `captures (...)` and skolem-escape rules apply.
+* This rule applies equally to source expressions, filter conditions, ordering keys, distinct keys, group keys,
+  aggregate expressions, join conditions, and yield expressions.
+
+<!-- collections.lowering.initial_row_stream -->
+#### 10.10.3 Initial row stream
+
+A comprehension with no pre-yield clause sequence begins from a singleton empty-row stream.
+
+Formally:
+
+* before any non-yield clause is processed, the initial pipeline is:
+
+  ```kappa
+  QueryCore (QueryMode Reusable QOne) ω (Row(∅))
+  ```
+
+* `Row(∅)` is the zero-field closed record type; under §4.5 it is identified with `Unit`.
+
+Consequences:
+
+* `[ yield valueExpr ]` is well-formed and lowers from a singleton query over `Unit`;
+* `{| yield valueExpr |}` is well-formed and lowers from a singleton query over `Unit`;
+* `{ yield keyExpr : valueExpr }` is well-formed and lowers from a singleton query over `Unit`.
+
+In these forms, `valueExpr`, `keyExpr`, and `valueExpr` are elaborated in the empty row environment.
+
+<!-- collections.lowering.clause_lowering -->
+#### 10.10.4 Clause lowering
+
+The compiler MUST lower the clause sequence to behavior observationally equivalent to the following normalized query
+algebra:
+
+* source introduction from `IntoQuery.toQuery`;
+* borrowed source introduction from `BorrowIntoQuery.toBorrowQuery`;
+* row extension;
+* row-local mapping;
+* flat-mapping;
+* filtering;
+* refutable filtering / filter-map;
+* ordering;
+* paging;
+* distinct-by-key;
+* join;
+* left join; and
+* grouping.
+
+The exact concrete representation of `QueryCore` is implementation-defined, but a conforming implementation MUST
+provide a stable public interface or data representation sufficient to realize these semantics and to support
+`FromComprehensionPlan`.
+
+Required clause behavior:
+
+1. `for pat in src`
+
+   * obtain `toQuery src`;
+   * require `pat` to be irrefutable for the source item type;
+   * extend the current row stream by binding `pat`;
+   * compose the current use mode with the source use mode;
+   * multiply the current cardinality by the source cardinality;
+   * use the source cardinality as the per-input row multiplicity for row-carrying checks; and
+   * bind names introduced by `pat` at the source query's `ItemQuantity`, subject to any more specific quantities
+     written in the pattern.
+
+2. `for? pat in src`
+
+   * obtain `toQuery src`;
+   * match each source item against `pat`;
+   * keep only matching items;
+   * use `filterCard(sourceCard)` as the per-input row multiplicity;
+   * reject the clause when dropping a non-matching item or a non-matching incoming row would violate the droppability
+     rules of §§10.4.1 and 10.10.2B; and
+   * bind names introduced by `pat` at the source query's `ItemQuantity`, subject to any more specific quantities
+     written in the pattern.
+
+3. `for & pat in src`
+
+   * borrow `src` and obtain `toBorrowQuery src`;
+   * require `pat` to be irrefutable for the borrowed item type;
+   * preserve the source borrow region in the hidden region environment of the introduced bindings;
+   * introduce names bound by `pat` as borrowed row entries under that region;
+   * use the borrowed source cardinality as the per-input row multiplicity for row-carrying checks; and
+   * reject any later escape of the borrowed entries unless the escaping value type records a still-live explicit region.
+
+4. `for? & pat in src`
+
+   * borrow `src` and obtain `toBorrowQuery src`;
+   * match each borrowed item against `pat`;
+   * keep only matching items;
+   * use `filterCard(sourceCard)` as the per-input row multiplicity;
+   * introduce names bound by `pat` as borrowed row entries under the source borrow region; and
+   * reject any row-dropping or borrow-escape violation under §§10.10.2B and 5.1.6.
+
+5. `let pat = expr`
+
+   * evaluate `expr` once per incoming row;
+   * require `pat` to be irrefutable;
+   * use per-input row multiplicity `QOne`;
+   * extend the current row with the bound names; and
+   * preserve existing row entries by transfer.
+
+6. `let? pat = expr`
+
+   * evaluate `expr` once per incoming row;
+   * keep only rows for which `pat` matches;
+   * use per-input row multiplicity `QZeroOrOne`;
+   * reject the clause when dropping the failure residue or incoming row residue would violate droppability; and
+   * extend the current row with the bound names on the success path.
+
+7. `if cond`
+
+   * filter rows by `cond`;
+   * evaluate `cond` at most once per incoming row;
+   * use per-input row multiplicity `QZeroOrOne`;
+   * require the discarded row residue on the false path to be row-droppable;
+   * check `cond` in a non-consuming context with respect to row entries that remain available after the filter; and
+   * typecheck subsequent clauses under the success assumption `cond = True`.
+
+8. `if expr is C`
+
+   * filter rows by the top-level constructor test;
+   * evaluate `expr` at most once per incoming row;
+   * use per-input row multiplicity `QZeroOrOne`;
+   * require the discarded row residue on the false path to be row-droppable; and
+   * typecheck subsequent clauses under the same positive constructor refinement as §7.4.1.
+
+9. `join ...`
+
+   * lower to a normalized inner-join operator, or to an observationally equivalent combination of `toQuery`, refutable
+     matching, and filtering;
+   * compose use mode with the joined source use mode;
+   * use the joined source's filtered cardinality as the per-input row multiplicity;
+   * extend the current row environment with the bindings introduced by the join pattern;
+   * require carried row entries to satisfy the corresponding droppability and duplicability obligations; and
+   * preserve the semantics of §10.8.
+
+10. `left join ... into name`
+
+    * lower to a normalized group-left-join operator, or to an observationally equivalent row-local binding of a
+      first-class query value;
+    * use per-input row multiplicity `QOne` for the outer row;
+    * preserve the current outer row environment and extend it only with `name`;
+    * infer the mode, item quantity, item type, and capture set of the inner matching query;
+    * keep the join pattern bindings in scope only while checking the join condition and the inner matching query;
+    * reject delayed captures of non-capturable row entries as specified in §10.8; and
+    * preserve the semantics of §10.8.
+
+11. `group by ...`
+
+    * lower to a normalized grouping operator, or to an observationally equivalent implementation;
+    * require the key type to have an implicit `Eq` instance;
+    * use many-to-one row replacement;
+    * replace the current row environment with a singleton row containing only the `into` binder;
+    * require all non-droppable pre-group row entries to be consumed, transferred into aggregate results, or explicitly
+      discharged; and
+    * preserve the semantics and scoping rules of §10.7.
+
+12. `distinct`
+
+    * deduplicate on the current row record `Row(Ξ)`;
+    * preserve the first encountered representative;
+    * check row equality non-consumingly through borrowed `Eq`; and
+    * require every row that may be discarded as a duplicate to be row-droppable.
+
+13. `distinct by keyExpr`
+
+    * evaluate `keyExpr` exactly once per row;
+    * check `keyExpr` in a non-consuming context with respect to row entries that remain available after the clause;
+    * deduplicate by that key;
+    * preserve the first encountered representative;
+    * require temporary discarded key values to be droppable; and
+    * require every row that may be discarded as a duplicate to be row-droppable.
+
+14. `order by`
+
+    * preserve all rows exactly once;
+    * check ordering keys in a non-consuming context;
+    * require temporary ordering keys to be droppable unless not materialized or otherwise discharged; and
+    * preserve the ordered/unordered rules of §10.3.2 and §10.6.
+
+15. `skip` and `take`
+
+    * preserve the ordered/unordered rules of §10.3.2 and §10.6;
+    * may discard rows; and
+    * require every discarded row to be row-droppable.
+
+<!-- collections.lowering.yield_terminal_plan -->
+#### 10.10.5 Yield and terminal plan
+
+After all non-yield clauses are lowered, the comprehension performs a final projection.
+
+For list-like and set-like comprehensions:
+
+* `yield valueExpr` produces a normalized item stream `QueryCore mode itemQuantity a`;
+* the expression is checked in a terminal projection context;
+* terminal projection may consume row entries, provided all row obligations are discharged exactly as required by their
+  quantities;
+* terminal built-in set collection additionally requires an implicit `Eq a` instance; and
+* terminal built-in list and array collection do not require `Eq a`.
+
+For map-like comprehensions:
+
+* if `keyExpr : K` and `valueExpr : V`, then `yield keyExpr : valueExpr` produces a normalized item stream whose item
+  type is:
+
+  ```kappa
+  (key : K, value : V)
+  ```
+
+* `keyExpr` is checked in a non-consuming context unless the selected carrier explicitly demands a consuming key;
+* `valueExpr` is checked in a terminal projection context and may consume row entries, provided all row obligations are
+  discharged;
+* terminal built-in map collection requires an implicit `Eq K` instance;
+* terminal built-in map collection does not require `Hashable K`; and
+* any `on conflict` clause is recorded as terminal collection metadata.
+
+The final result of `lowerComprehension` is a `ComprehensionPlan item` carrying:
+
+* the normalized item query, including inferred query mode and item quantity; and
+* terminal collection metadata:
+  * list-like element collection,
+  * set-like element collection,
+  * or key/value collection together with any `on conflict` policy.
+
+Map-conflict policy is terminal collection metadata, not part of the general `QueryCore` algebra.
+
+<!-- collections.lowering.collection_first_class_queries -->
+#### 10.10.6 Collection and first-class queries
+
+Collection is performed only after clause lowering.
+
+* Built-in list, set, map, array, `Query`, `OnceQuery`, and `QueryCore` comprehensions use the standard built-in
+  collection behavior of §10.10.7.
+* A prefixed carrier uses the selection rule of §10.9.
+
+`Query [ ... ]` is the standard first-class reusable query form for element-stream comprehensions.
+
+Rules:
+
+* `Query [ clauses..., yield valueExpr ]` is well-formed only when the normalized plan can be checked against
+  `Query item`, that is `QueryCore (QueryMode Reusable QZeroOrMore) ω item`.
+* `OnceQuery [ clauses..., yield valueExpr ]` is well-formed when the normalized plan can be checked against
+  `OnceQuery item`, that is `QueryCore (QueryMode OneShot QZeroOrMore) ω item`.
+* `QueryCore mode q [ clauses..., yield valueExpr ]` is well-formed when the normalized plan can be checked against
+  `QueryCore mode q item`.
+* `Query {| ... |}`, `OnceQuery {| ... |}`, and `QueryCore mode q {| ... |}` are ill-formed in v1 unless a later
+  section defines a set-like first-class query carrier.
+* `Query { ... }`, `OnceQuery { ... }`, and `QueryCore mode q { ... }` are ill-formed in v1 unless a later section
+  defines a key/value first-class query carrier.
+* No collector is permitted to silently discard terminal collection metadata.
+* A carrier that wishes to represent set-like or key/value query semantics as first-class values MUST do so through its
+  own explicit carrier type rather than by reusing `QueryCore` with metadata loss.
 
 <!-- collections.lowering.built_in_collection_obligations -->
-#### 10.10.1A Built-in collection obligations
+#### 10.10.7 Built-in collection obligations
 
 Implementations MUST provide standard collection behavior observationally equivalent to `FromComprehensionPlan` for:
 
 * omitted list comprehensions `[ ... ]`;
 * omitted set comprehensions `{| ... |}`;
 * omitted map comprehensions `{ ... }`;
-* `Query a` for element-stream comprehensions; and
+* `Query a` for reusable element-stream comprehensions;
+* `OnceQuery a` for one-shot element-stream comprehensions;
+* explicitly indexed `QueryCore mode q a` for element-stream comprehensions; and
 * `Array a` for element-stream comprehensions.
 
 Implementations MAY realize these collectors intrinsically rather than as ordinary user-visible instances, but their
@@ -15184,16 +15688,32 @@ behavior MUST be observationally equivalent to such instances.
 For `Query a`:
 
 * only element-stream comprehensions are supported in v1;
-* `Query [ clauses..., yield valueExpr ]` returns the normalized `Query a`;
-* `Query {| ... |}` is ill-formed in v1;
-* `Query { ... }` is ill-formed in v1.
+* `Query [ clauses..., yield valueExpr ]` returns the normalized reusable `Query a`; if the inferred plan is one-shot,
+  use `OnceQuery [ ... ]` or an explicit `QueryCore` carrier;
+* if the inferred query use mode is one-shot, `Query [ ... ]` is rejected; and
+* `Query {| ... |}` and `Query { ... }` are ill-formed in v1.
+
+For `OnceQuery a`:
+
+* only element-stream comprehensions are supported in v1;
+* reusable inferred plans may be weakened to one-shot;
+* one-shot inferred plans are accepted;
+* the resulting query value is one-shot; and
+* `OnceQuery {| ... |}` and `OnceQuery { ... }` are ill-formed in v1.
+
+For explicitly indexed `QueryCore mode q a`:
+
+* only element-stream comprehensions are supported in v1;
+* the normalized plan must check against the demanded `mode` and `q`; and
+* set-like and key/value forms are ill-formed unless handled by another explicit carrier.
 
 For `Array a`:
 
 * `Array [ clauses..., yield valueExpr ]` collects yielded values in pipeline encounter order;
 * if the input pipeline is Ordered, the resulting array order is that encounter order;
 * if the input pipeline is Unordered, the resulting array order is deterministic in package mode under §10.3.2, but not
-  user-visible or specified.
+  user-visible or specified; and
+* array collection consumes the normalized query exactly once.
 
 For omitted set comprehensions `{| ... |}`:
 
@@ -15204,7 +15724,9 @@ For omitted set comprehensions `{| ... |}`:
 * because built-in set iteration is Unordered (§10.3.2), the representative is not user-visible except through later
   operations that explicitly expose elements;
 * in package mode, representative choice must nevertheless be deterministic for fixed inputs and fixed implementation
-  configuration.
+  configuration; and
+* elements discarded as duplicates must be droppable unless the set representation explicitly preserves their ownership
+  obligations.
 
 For omitted map comprehensions `{ ... }`:
 
@@ -15214,7 +15736,9 @@ For omitted map comprehensions `{ ... }`:
 * the conflict policy of §10.5.1 determines the value associated with each equality class of keys;
 * if no conflict policy is written, the default remains `keep last` in encounter order;
 * if the key/value stream is Unordered, encounter-sensitive conflict policies follow the deterministic-but-unspecified
-  rule of §10.3.2.
+  rule of §10.3.2; and
+* discarded keys and discarded conflict-losing values must be droppable unless the conflict policy explicitly consumes or
+  transfers them.
 
 Equality-keyed acceleration:
 
@@ -15229,257 +15753,27 @@ Equality-keyed acceleration:
 * Otherwise the implementation must rebuild the cache, ignore it, or fall back to an `Eq`-only strategy.
 * No source-level operation may observe whether a cache existed, was reused, was rebuilt, or was discarded.
 
-<!-- collections.lowering.row_environment -->
-#### 10.10.2 Row environment
-
-Before `yield`, a comprehension is elaborated as a pipeline over a current row environment.
-
-At any clause site, let `Γ` be the set of currently bound names in scope from preceding clauses.
-The corresponding row type `Row(Γ)` is the canonical record type whose fields are those names and whose field order is
-the canonical dependency-respecting record order of §14.6.
-
-Implicit assumptions introduced by filters, constructor tests, branch refinements, and implicit-resolution context are
-not fields of `Row(Γ)` unless explicitly bound by a preceding clause.
-
-All clause semantics before `yield` are defined in terms of transformations on `Query (Row(Γ))`.
-
-Consequences:
-
-* `distinct` operates on the full current row environment at its clause site.
-* `distinct by keyExpr` operates on keys computed from the current row environment.
-* `order by`, `group by`, `join`, and filters likewise operate on the current row environment.
-
-Terminology:
-
-* The term "current query pipeline" refers to the normalized `Query (Row(Γ))` being transformed before `yield`.
-* The term "carrier" is reserved for the final collection sink selected by §10.9.
-* Clause semantics before `yield` MUST NOT depend on the final carrier, except where this specification explicitly
-  delegates to `FromComprehensionRaw`.
-
-<!-- collections.lowering.initial_row_stream -->
-#### 10.10.2A Initial row stream
-
-A comprehension with no pre-yield clause sequence begins from a singleton empty-row stream.
-
-Formally:
-
-* before any non-yield clause is processed, the initial pipeline is `Query (Row(∅))`;
-* `Row(∅)` is the zero-field closed record type; under §4.5 it is identified with `Unit`.
-
-Consequences:
-
-* `[ yield valueExpr ]` is well-formed and lowers from a singleton `Query Unit`;
-* `{| yield valueExpr |}` is well-formed and lowers from a singleton `Query Unit`;
-* `{ yield keyExpr : valueExpr }` is well-formed and lowers from a singleton `Query Unit`.
-
-In these forms, `valueExpr`, `keyExpr`, and `valueExpr` are elaborated in the empty row environment.
-
-<!-- collections.lowering.quantitative_row_obligations -->
-#### 10.10.2B Quantitative row obligations
-
-Before `yield`, clause lowering tracks quantitative obligations both for newly introduced source items and for the
-incoming row environment.
-
-Rules:
-
-* A clause path that drops the current row is well-formed only when every runtime-relevant component discarded from that
-  row is row-droppable.
-* Row droppability is determined by the ordinary quantity rules of §5.1.5A and §5.1.5B, applied to the
-  runtime-relevant components of the current row environment.
-* Borrowed source items that are not owned by the row may be dropped without discharging an ownership obligation for the
-  borrowed item itself, but dropping the surrounding row remains subject to row-droppability.
-* A clause that may emit more than one output row for one input row is well-formed only when the duplicated
-  runtime-relevant row components satisfy the ordinary quantity rules for duplication.
-
-<!-- collections.lowering.pipeline_cardinality -->
-#### 10.10.2C Pipeline cardinality and lexical demand multiplication
-
-Before `yield`, clause lowering also tracks how the current pipeline may change the number of rows produced for each
-incoming row.
-
-Rules:
-
-* Each normalized plan node has a per-input row multiplicity classified as `QZero`, `QOne`, `QZeroOrOne`,
-  `QOneOrMore`, or `QZeroOrMore`.
-* A source expression introduced by `for`, `for?`, `join`, or `left join` is evaluated once for each incoming row that
-  reaches that node, unless this specification explicitly states otherwise.
-* When an expression in the clause sequence mentions a variable from the surrounding lexical environment rather than a
-  row entry, the demand on that variable is multiplied by the current pipeline cardinality in the same sense as delayed
-  higher-order demand multiplication under §7.2.1.
-* A first-class query value introduced by the plan carries the resulting multiplied demands and inferred captures of the
-  lexical values it closes over.
-
-<!-- collections.lowering.clause_lowering -->
-#### 10.10.3 Clause lowering
-
-The compiler MUST lower the clause sequence to behavior observationally equivalent to the following normalized query
-algebra:
-
-* source introduction from `IntoQuery.toQuery`,
-* row extension,
-* row-local mapping,
-* flat-mapping,
-* filtering,
-* refutable filtering / filter-map,
-* ordering,
-* paging,
-* distinct-by-key,
-* join,
-* left join,
-* grouping.
-
-The exact concrete representation of `Query` is implementation-defined, but a conforming implementation MUST provide a
-stable public interface or data representation sufficient to realize these semantics and to support
-`FromComprehensionPlan`.
-
-Required clause behavior:
-
-1. `for pat in src`
-
-   * obtain `toQuery src`,
-   * require `pat` to be irrefutable for the source item type,
-   * extend the current row stream by binding `pat`.
-
-2. `for? pat in src`
-
-   * obtain `toQuery src`,
-   * match each source item against `pat`,
-   * keep only matching items,
-   * reject the clause when dropping a non-matching item would violate the droppability rule of §10.4.1.
-
-3. `let pat = expr`
-
-   * evaluate `expr` once per incoming row,
-   * require `pat` to be irrefutable,
-   * extend the current row with the bound names.
-
-4. `let? pat = expr`
-
-   * evaluate `expr` once per incoming row,
-   * keep only rows for which `pat` matches,
-   * reject the clause when dropping the failure residue would violate the droppability rule of §10.4.1.
-
-5. `if cond`
-
-   * filter rows by `cond`,
-   * evaluate `cond` at most once per incoming row,
-   * typecheck subsequent clauses under the success assumption `cond = True`.
-
-6. `if expr is C`
-
-   * filter rows by the top-level constructor test,
-   * evaluate `expr` at most once per incoming row,
-   * typecheck subsequent clauses under the same positive constructor refinement as §7.4.1.
-
-7. `join ...`
-
-   * lower to a normalized inner-join operator, or to an observationally equivalent combination of `toQuery`,
-     refutable matching, and filtering;
-   * extend the current row environment with the bindings introduced by the join pattern;
-   * preserve the semantics of §10.8.
-
-8. `left join ... into name`
-
-   * lower to a normalized group-left-join operator, or to an observationally equivalent row-local binding of
-     `name : Query t`;
-   * preserve the current outer row environment and extend it only with `name`;
-   * keep the join pattern bindings in scope only while checking the join condition and the inner matching query;
-   * preserve the semantics of §10.8.
-
-9. `group by ...`
-
-   * lower to a normalized grouping operator, or to an observationally equivalent implementation,
-   * require the key type to have an implicit `Eq` instance,
-   * replace the current row environment with a singleton row containing only the `into` binder,
-   * preserve the semantics and scoping rules of §10.7.
-
-10. `distinct`
-
-   * deduplicate on the current row record `Row(Γ)`,
-   * preserving the first encountered representative.
-
-11. `distinct by keyExpr`
-
-    * evaluate `keyExpr` exactly once per row,
-    * deduplicate by that key,
-    * preserving the first encountered representative.
-
-12. `order by`, `skip`, and `take`
-
-    * preserve the ordered/unordered rules of §10.3.2 and §10.6.
-
-<!-- collections.lowering.yield_terminal_plan -->
-#### 10.10.4 Yield and terminal plan
-
-After all non-yield clauses are lowered, the comprehension performs a final projection.
-
-For list-like and set-like comprehensions:
-
-* `yield valueExpr` produces a normalized item stream `Query a`;
-* terminal built-in set collection additionally requires an implicit `Eq a` instance;
-* terminal built-in list and array collection do not require `Eq a`.
-
-For map-like comprehensions:
-
-* if `keyExpr : K` and `valueExpr : V`, then `yield keyExpr : valueExpr` produces a normalized item stream
-
-  ```kappa
-  Query (key : K, value : V)
-  ```
-
-* terminal built-in map collection requires an implicit `Eq K` instance;
-* terminal built-in map collection does not require `Hashable K`;
-* any `on conflict` clause is recorded as terminal collection metadata.
-
-The final result of `lowerComprehension` is a `ComprehensionPlan item` carrying:
-
-* the normalized item query, and
-* terminal collection metadata:
-  * list-like element collection,
-  * set-like element collection,
-  * or key/value collection together with any `on conflict` policy.
-
-Map-conflict policy is terminal collection metadata, not part of the general `Query` algebra.
-
-<!-- collections.lowering.collection_first_class_queries -->
-#### 10.10.5 Collection and first-class queries
-
-Collection is performed only after clause lowering.
-
-* Built-in list, set, map, array, and query comprehensions use the standard built-in collection behavior of §10.10.1A.
-* A prefixed carrier uses the selection rule of §10.9.
-
-`Query [ ... ]` is the standard first-class query form for element-stream comprehensions.
-
-Rules:
-
-* `Query [ clauses..., yield valueExpr ]` is well-formed and returns the normalized `Query item`.
-* `Query {| ... |}` is ill-formed in v1.
-* `Query { ... }` is ill-formed in v1.
-* No collector is permitted to silently discard terminal collection metadata.
-* A carrier that wishes to represent set-like or key/value query semantics as first-class values MUST do so through its
-  own explicit carrier type rather than by reusing `Query` with metadata loss.
-
 <!-- collections.lowering.performance_if_rule -->
-#### 10.10.6 Performance and as-if rule
+#### 10.10.8 Performance and as-if rule
 
-The normative semantics are defined as if the compiler constructs `RawComprehension`, lowers it to
-`ComprehensionPlan`, and then invokes the selected collector.
+The normative semantics are defined as if the compiler constructs `RawComprehension`, lowers it to `ComprehensionPlan`,
+and then invokes the selected collector.
 
 A conforming implementation need not materialize any of these intermediate values when doing so is unnecessary.
 
 In particular, an implementation MAY:
 
-* fuse source conversion, clause lowering, optimization, and collection,
-* avoid materializing intermediate row records,
-* avoid materializing an intermediate `Query` value when the normalized plan does not escape,
-* lower directly to loops, iterators, relational algebra, SQL, or target-specific kernels,
+* fuse source conversion, clause lowering, optimization, and collection;
+* avoid materializing intermediate row records;
+* avoid materializing an intermediate `QueryCore` value when the normalized plan does not escape;
+* lower directly to loops, iterators, relational algebra, SQL, or target-specific kernels; and
+* use a more efficient implementation of row droppability, duplicability, capture, and item-quantity checks,
 
 provided the observable behavior is the same as the normative semantics above.
 
-A first-class `Query` value need be materialized only when it escapes as a user-visible value.
+A first-class `QueryCore` value need be materialized only when it escapes as a user-visible value.
 
-Within a comprehension, implementations MUST preserve the following evaluation-count guarantees (as-if rules):
+Within a comprehension, implementations MUST preserve the following evaluation-count guarantees:
 
 * `let` clause right-hand sides are evaluated at most once per incoming row.
 * `if` filter conditions are evaluated at most once per incoming row.
@@ -15488,35 +15782,27 @@ Within a comprehension, implementations MUST preserve the following evaluation-c
 * In `group by`:
   * `keyExpr` is evaluated exactly once per incoming row.
   * each aggregate `valueExpr` is evaluated exactly once per incoming row per aggregate field.
+* `yield` expressions are evaluated exactly once per surviving row.
 
-Hash acceleration as-if rule:
+These are source-level evaluation-count guarantees. Runtime failure, interruption, or defect behavior remains governed by
+the ordinary computation and resource rules.
 
-For any equality-keyed operation in this chapter, including:
+Diagnostics:
 
-* `distinct`,
-* `distinct by`,
-* `group by`,
-* built-in set collection,
-* built-in map collection,
-* map conflict resolution,
+When rejecting a comprehension for quantitative reasons, an implementation SHOULD report the row-level cause in source
+terms. For example:
 
-the observable semantics are defined by `Eq`, not by hashing.
+* a nested `for` may use a linear row entry zero times or more than once;
+* an `if` filter may discard a row containing a linear entry;
+* `skip` or `take` may discard non-droppable rows;
+* `distinct` may discard duplicate rows containing non-droppable entries;
+* `group by` replaces the row and therefore requires non-droppable entries to be consumed or transferred into
+  aggregates;
+* `Query [ ... ]` requires a reusable query but a source is one-shot; or
+* a left-join inner query attempts to capture a linear outer row entry.
 
-An implementation MAY use hashing only when the following as-if conditions hold:
-
-1. Removing the hash acceleration and replacing it with an `Eq`-only implementation would produce the same source-level
-   result.
-2. Hash-code equality is never used as proof of key equality.
-3. Hash collisions are resolved using the corresponding `Eq` instance.
-4. Any hash-derived cache inside a collection value is semantically invisible.
-5. Iteration order, representative choice, and conflict order obey the Ordered/Unordered rules of §10.3.2, not the
-   accident of hash-table bucket order.
-6. Package-mode determinism MUST NOT depend on worker count, hash-table iteration order, randomized hash seeds, address
-   layout, or backend-specific object identity unless that identity is already part of the specified `Eq` semantics for
-   the key type.
-
-If these conditions cannot be met, the implementation MUST use an `Eq`-only strategy or reject only the
-implementation-specific optimization, not the source program.
+A diagnostic SHOULD mention `QZeroOrMore`, `row-droppable`, or `row-duplicable` only as secondary detail; the primary
+message should identify the user-written clause and binding that caused the violation.
 
 <!-- data_types -->
 ## 11. Algebraic Data Types and Type Aliases
@@ -16058,36 +16344,27 @@ Traits describe typeclasses / interfaces.
 Trait declarations use Haskell/Idris-style headers, optionally with a supertrait context:
 
 ```kappa
-trait Eq a =
-    ...
-
-trait Eq a => Ord a =
-    compare : a -> a -> Ordering
-
-trait Applicative f =
-    ...
-
-trait Applicative f => Monad f =
-    (>>=) : f a -> (a -> f b) -> f b
-
 trait Equiv (a : Type) =
-    (~=) : a -> a -> Bool
+    (~=) : (& x : a) -> (& y : a) -> Bool
 
     equivRefl :
-        (x : a) -> ((x ~= x) = True)
+        (& x : a) -> ((x ~= x) = True)
 
     equivSym :
-        (x : a) -> (y : a) ->
+        (& x : a) -> (& y : a) ->
         ((x ~= y) = True -> (y ~= x) = True)
 
     equivTrans :
-        (x : a) -> (y : a) -> (z : a) ->
+        (& x : a) -> (& y : a) -> (& z : a) ->
         ((x ~= y) = True -> (y ~= z) = True -> (x ~= z) = True)
 
 trait Eq (a : Type) =
-    (==) : a -> a -> Bool
-    eqSound    : (x : a) -> (y : a) -> ((x == y) = True  -> x = y)
-    eqComplete : (x : a) -> (y : a) -> (x = y -> (x == y) = True)
+    (==) : (& x : a) -> (& y : a) -> Bool
+    eqSound    : (& x : a) -> (& y : a) -> ((x == y) = True  -> x = y)
+    eqComplete : (& x : a) -> (& y : a) -> (x = y -> (x == y) = True)
+
+trait Eq a => Ord (a : Type) =
+    compare : (& x : a) -> (& y : a) -> Ordering
 
 trait Functor (f : Type -> Type) =
     ...
@@ -16105,15 +16382,26 @@ trait Applicative (m : Type -> Type) => Monad (m : Type -> Type) =
 
 Fully applied trait applications have type `Constraint`, not `Type` (§5.1.3).
 
-`Eq` is reflective decidable equality. An `Eq` instance participates in equality reflection only because `eqSound` and
-`eqComplete` are required members whose proof terms must typecheck. No additional restriction on hand-written instances
-is required beyond those required members.
+`Eq` is reflective decidable equality. Its comparison operation is non-consuming: both operands are received by borrow.
+An `Eq` instance participates in equality reflection only because `eqSound` and `eqComplete` are required members whose
+proof terms must typecheck. No additional restriction on hand-written instances is required beyond those required
+members.
 
-`Equiv` is a non-reflecting boolean equivalence relation. The compiler MUST NOT derive `x = y` from `(x ~= y) = True`;
-only proof-carrying `Eq` participates in equality reflection (§7.3.3).
+`Equiv` is a non-reflecting boolean equivalence relation. Its comparison operation is also non-consuming. The compiler
+MUST NOT derive `x = y` from `(x ~= y) = True`; only proof-carrying `Eq` participates in equality reflection (§7.3.3).
 
-In `std.prelude`, `Ord` refines `Eq`, not `Equiv`: any `Ord a` instance MUST also supply an `Eq a` instance for the same
-`a`, and its equality classes MUST agree with `(==)`.
+In `std.prelude`, `Ord` refines `Eq`, not `Equiv`. Its `compare` operation is non-consuming and receives both operands
+by borrow. Any `Ord a` instance MUST also supply an `Eq a` instance for the same `a`, and its equality classes MUST
+agree with `(==)`.
+
+Consequences for collections and queries:
+
+* equality-keyed operations such as set collection, map collection, `distinct`, `distinct by`, `group by`, and joins
+  use `Eq` without consuming keys;
+* ordering operations such as `order by` use `Ord` without consuming keys;
+* temporary keys may still have their own ownership obligations, so query clauses separately require discarded
+  temporary keys to be droppable unless those keys are transferred into an output value; and
+* `std.hash.Hashable.hashInto` remains borrow-based and therefore agrees with the non-consuming shape of `Eq`.
 
 <!-- traits.hashable -->
 #### 12.1.X `Hashable` and equality-compatible runtime hashing
@@ -16128,7 +16416,9 @@ trait Eq a => Hashable (a : Type) =
         (& value : a) -> (1 state : std.hash.HashState) -> std.hash.HashState
 ```
 
-`Hashable a` refines `Eq a` because hash acceleration is meaningful only relative to equality classes.
+`Hashable a` refines `Eq a` because hash acceleration is meaningful only relative to equality classes. Both equality and
+hashing are non-consuming: `Eq.(==)` receives both operands by borrow, and `Hashable.hashInto` receives the hashed value
+by borrow while consuming only the hash accumulator.
 
 No separate `hashSound` member is required. Since `Eq a` reflects boolean equality into propositional equality, any pure
 hashing function automatically maps `Eq`-equal values to propositionally equal hash results.
@@ -22444,7 +22734,7 @@ parallel iteration races, or platform collection iteration order alter Kappa sou
 In particular:
 
 * backend hash tables may be used to implement `Set`, `Map`, `distinct`, `group by`, and related operations only under
-  the as-if rule of §10.10.6;
+  the as-if rule of §10.10.8;
 * host object identity may be used in hashing only when object identity is already part of the key type's specified
   `Eq` semantics;
 * if a host boundary cannot preserve the `Eq` semantics of a key type, it cannot justify hash-based collection behavior
