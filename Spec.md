@@ -22991,6 +22991,106 @@ Boolean branch evidence continues to use ordinary propositional equality:
 * `if b then t else f` introduces branch-local erased evidence `b = True` / `b = False`.
 * `match b` on boolean constructors behaves likewise.
 
+Active refinement context:
+
+A conforming implementation MUST behave as if every branch body, guard body, `impossible` check, implicit-resolution
+query, normalization query, and definitional-equality query is evaluated with an explicit active refinement context.
+
+The active refinement context contains only refinement facts introduced by specified control-flow and pattern-refinement
+rules.
+
+At minimum, it contains:
+
+```text
+BoolIsTrue  b
+BoolIsFalse b
+HasCtorFact   s tag
+LacksCtorFact s tag
+CtorIndexEq   equality
+StableAliasEq equality
+```
+
+where `s` is a stable refinement subject and `tag : CtorTag`.
+
+The implementation may represent these facts as erased proof terms, side-table entries, context annotations, or another
+observationally equivalent representation.
+
+However:
+
+* refinement facts MUST be scoped to the branch or continuation that introduced them;
+* refinement facts MUST be transported across stable-alias equality as specified by §7.4.3;
+* refinement facts MUST be available to constructor-field projection, reachability, implicit resolution, and
+  branch-local normalization;
+* refinement facts MUST be included in the dependency key of any memoized normalization or definitional-equality query
+  whose result depends on them; and
+* refinement facts MUST be erased before KBackendIR.
+
+Case-tree normalization:
+
+A conforming implementation MUST behave as if pattern matching and transparent pattern-defined functions elaborate to
+case trees whose decision nodes expose:
+
+* the stable scrutinee representative being tested;
+* the constructor or literal alternatives tested at that node;
+* the catch-all or residual alternative, if any;
+* the branch-local facts introduced by taking each alternative; and
+* the negative facts introduced by falling through each failed unguarded constructor alternative.
+
+The KCore normalizer MUST implement the refinement-aware reduction rules of §14.3A over these case trees.
+
+In particular:
+
+* a constructor alternative contradicted by `LacksCtor` may be skipped;
+* a constructor alternative proved by `HasCtor` may be selected;
+* a catch-all or residual alternative may be selected once all preceding alternatives are ruled out;
+* branch-local boolean facts may reduce `if`, boolean `match`, and constructor-tag tests;
+* guarded constructor alternatives do not introduce negative constructor facts on guard failure; and
+* contradictory refinement contexts mark the branch unreachable but do not make arbitrary reachable terms
+  definitionally equal.
+
+Clause-style definitions:
+
+If an implementation supports clause-style function definitions or another surface form whose semantics are first-match
+pattern equations over multiple arguments, that surface form MUST elaborate to a case tree satisfying this section.
+
+Earlier failed unguarded constructor patterns in clause order MUST produce the same `LacksCtor` facts that the equivalent
+nested `match` would produce.
+
+Consequently, branch-local normalization of a call to such a function MUST be able to skip earlier ruled-out clauses
+when the active refinement context proves that those clauses cannot match.
+
+Example, shown as equivalent nested Kappa:
+
+```kappa
+let foo (left : List a) (right : List a) : List a =
+    match left
+    case Nil -> Nil
+    case _ ->
+        match right
+        case Nil -> Nil
+        case _   -> Nil
+
+fooRightNil :
+    (left : List a) ->
+    match left
+    case Nil -> Unit
+    case _   -> foo left Nil = Nil
+
+let fooRightNil left =
+    match left
+    case Nil -> ()
+    case _   -> refl
+```
+
+In the residual branch of `fooRightNil`, the active refinement context contains:
+
+```kappa
+@_ : LacksCtor left ⟨Nil⟩
+```
+
+Therefore normalizing `foo left Nil` skips the first `left = Nil` alternative, reaches the decision on `right`, and
+reduces using the known `Nil` argument.
+
 <!-- compiler.kcore.application_spines.reified_static_object_values -->
 ##### 17.3.1.9 Reified static-object values
 
