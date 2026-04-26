@@ -3710,6 +3710,26 @@ Rules:
 * Error positions SHOULD report both the chunk-local byte offset and the total byte offset when the implementation can
   track it.
 
+Chunked text streams:
+
+Portable streaming text APIs SHOULD use one of:
+
+```kappa
+OnceQuery String
+Query String
+```
+
+where each yielded `String` value is one valid-UTF-8 text chunk.
+
+Rules:
+
+* `String` itself is the strict finite valid-UTF-8 text type.
+* Large or streaming text SHOULD be represented as `OnceQuery String`, `Query String`, or an implementation-defined
+  stream type with equivalent chunk semantics.
+* Chunk boundaries are not necessarily scalar, grapheme, word, sentence, or line boundaries unless the API explicitly
+  says so.
+* APIs that split text into chunks at semantic boundaries MUST name the boundary unit.
+
 Text builders:
 
 ```kappa
@@ -3987,6 +4007,24 @@ Rules:
 * `finishBytesBuilder` returns the concatenation of the bytes appended to the builder in source order.
 * Builders are intended for efficient construction. Their representation and growth strategy are implementation-defined.
 * Builder operations MUST NOT mutate any already-created `Bytes` value.
+
+Chunked byte streams:
+
+Portable streaming byte APIs SHOULD use one of:
+
+```kappa
+OnceQuery Bytes
+Query Bytes
+```
+
+where each yielded `Bytes` value is one chunk.
+
+Rules:
+
+* `Bytes` itself is the strict finite byte-sequence type.
+* Large or streaming binary data SHOULD be represented as `OnceQuery Bytes`, `Query Bytes`, or an implementation-defined
+  stream type with equivalent chunk semantics.
+* A chunked byte stream MUST NOT be confused with one strict `Bytes` value unless explicitly collected.
 
 Dependent views:
 
