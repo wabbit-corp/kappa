@@ -10998,8 +10998,13 @@ Resolution proceeds in this order:
    candidate, attempt to resolve an instance from the instance environment using the algorithm of §12.3.1.
 
 3. **Boolean proposition normalization**:
-    * If `G` is `b = True` and `b` normalizes (by definitional equality) to `True`, synthesize `refl`.
-    * If `G` is `b = False` and `b` normalizes (by definitional equality) to `False`, synthesize `refl`.
+    * If `G` is `b = True` and `b` normalizes under the current active refinement context (§14.3A) to `True`,
+      synthesize `refl`.
+    * If `G` is `b = False` and `b` normalizes under the current active refinement context (§14.3A) to `False`,
+      synthesize `refl`.
+
+This rule uses only the current active refinement context. It does not make arbitrary user-provided propositional
+equality evidence participate in definitional equality.
 
 4. **Equality reflection from `==`**: If `G` is `x = y`, and the implicit context contains `p : (x == y) = True`, and an
    implicit `Eq A` is available, elaborate using:
