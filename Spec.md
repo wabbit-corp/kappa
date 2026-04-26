@@ -11581,7 +11581,7 @@ where `⟨C⟩ : CtorTag` is the internal constructor-tag constant of §17.3.1.8
 Residual negative evidence:
 
 * If a branch is a top-level unguarded catch-all branch reached only after one or more preceding top-level unguarded
-  constructor branches on the same scrutinee have failed, that branch MAY additionally be checked under the
+  constructor branches on the same scrutinee have failed, that branch MUST be checked under the corresponding negative
   corresponding negative evidence:
 
   ```kappa
@@ -11596,7 +11596,38 @@ Residual negative evidence:
   the constructor itself.
 
 If residual negative evidence leaves exactly one visible constructor, the failure-side constructor narrowing rule of
-§7.4 may derive the corresponding `HasCtor` evidence.
+§7.4 MUST derive the corresponding `HasCtor` evidence.
+
+Residual negative evidence participates in branch-local normalization under §14.3A.
+
+Example:
+
+```kappa
+let notLT (o : Ordering) : Bool =
+    match o
+    case LT -> False
+    case _  -> True
+
+notLTResidual :
+    (o : Ordering) ->
+    match o
+    case LT -> Unit
+    case _  -> notLT o = True
+
+let notLTResidual o =
+    match o
+    case LT -> ()
+    case _  -> refl
+```
+
+In the residual `_` branch, the active refinement context contains:
+
+```kappa
+@_ : LacksCtor o ⟨LT⟩
+```
+
+The expression `notLT o` unfolds to a `match` on `o`. Refinement-aware normalization skips the `LT` branch and selects
+the residual branch, so `notLT o` is definitionally equal to `True` in that branch.
 
 This evidence is erased and exists only for typechecking, refinement, reachability, and elaboration. It does not affect
 runtime representation.
