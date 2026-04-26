@@ -18327,7 +18327,23 @@ Evaluation order:
 
 Definitional equality (also called conversion) is the equality relation used by the typechecker.
 
-Definitional equality is the smallest congruence containing the following reductions (subject to opacity rules):
+Definitional equality is checked relative to:
+
+* the ordinary typing context; and
+* the active refinement context of the current branch, if any.
+
+The active refinement context contains only compiler-introduced branch-local facts specified by this document, including:
+
+* boolean branch facts such as `b = True` and `b = False`;
+* constructor facts such as `HasCtor s ⟨C⟩` and `LacksCtor s ⟨C⟩`;
+* constructor-forced index equalities; and
+* stable-alias equalities used only to transport such refinement facts.
+
+Ordinary user-written propositional equality evidence is not, merely by being in scope, an active definitional-equality
+assumption.
+
+Definitional equality is the smallest congruence containing the following reductions, relative to the active refinement
+context and subject to opacity rules:
 
 * β-reduction: `(\(x : A) -> e) v  ↦  e[x := v]`
 * δ-reduction: unfolding of transparent **conversion-reducible** definitions, including transparent type aliases, whose
@@ -18336,7 +18352,9 @@ Definitional equality is the smallest congruence containing the following reduct
   them and recorded them as conversion-reducible. Definitions accepted via `assertReducible` unfold only in
   unsafe/debug builds that explicitly permit that non-portable escape. Outside the defining module, opaque definitions
   and opaque type aliases do not unfold unless the importing module has explicitly clarified them (§2.5.2).
-* ι-reduction: reducing `match` on known constructors/literals.
+* ι-reduction: reducing `match`, `if`, constructor-tag tests, and case-tree decisions on known constructors/literals.
+  Knowledge may come either from the normalized scrutinee itself or from the active refinement context, as specified in
+  §14.3A.
 * η-equality (definitional):
     * Functions: `f ≡ (\(x : A) -> f x)` when `x` is not free in `f`.
     * Records: a record is definitionally equal to a record reconstructed from its projections (field-wise η), up to
@@ -18404,6 +18422,24 @@ Definitional equality also includes canonical normalization of:
 * opaque-member opacity: if `f` is opaque in `S`, the projection `(seal e as S).f` does not δ-reduce across the seal;
 * projection of a non-erased field through a seal is not required to reduce for definitional equality. It remains a
   well-typed neutral elimination form whose runtime behavior is ordinary projection.
+
+<!-- core_semantics.definitional_equality.active_refinement_context -->
+#### 14.3A Active refinement context for definitional equality
+
+The active refinement context is the branch-local fact environment used by definitional equality and ordinary checking
+inside a control-flow branch.
+
+It contains only the compiler-introduced refinement facts standardized by this specification, including boolean branch
+facts, `HasCtor` / `LacksCtor` facts, constructor-forced index equalities, and stable-alias equalities used to transport
+those facts.
+
+When conversion, case-tree reduction, or constructor-tag testing needs branch knowledge, the implementation may use both:
+
+* facts derivable from the normalized scrutinee itself; and
+* facts available in the active refinement context for the current branch.
+
+Ordinary user-written propositional equality evidence does not enter the active refinement context merely by being in
+scope. It participates in checking only through the explicit mechanisms standardized elsewhere in this specification.
 
 <!-- core_semantics.definitional_equality.literal_normalization -->
 #### 14.3.1 Literal normalization
