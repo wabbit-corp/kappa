@@ -6413,20 +6413,56 @@ occur in disjoint lexical contexts.
 <!-- types.macros.top_level_syntax_splicing -->
 #### 5.8.2 Top-level syntax splicing
 
-Outside quoted blocks, `$(s)` is an elaboration-time splice in term and type positions.
+Outside quoted blocks, `$(m)` is an elaboration-time splice in term and type positions.
 
-* In a term position expecting type `t`, `$(s)` requires either `s : Syntax t` or `s : Elab (Syntax t)`.
-* In a type position, `$(s)` requires either `s : Syntax Type` or `s : Elab (Syntax Type)`.
-* `$(s)` consumes `Syntax`, or an `Elab` action producing `Syntax`, not `Core` or `Code`. Staged code is executed only
-  via `runCode` on `ClosedCode` (§5.9.6). Semantic reflection values of §5.8.5 must first be reified back to `Syntax`
-  before they can be spliced.
-* If `s : Elab (Syntax t)`, the `Elab` action is executed at the splice site and its resulting `Syntax t` is spliced as
-  if that syntax had been supplied directly.
-* `$(...)` and `reifyCore` are the only normative re-entry points from elaboration-time reflection to object-language
-  code. Implementations MUST NOT provide a generic splice or coercion from arbitrary compile-time values, rows, labels,
-  constraints, lexical contexts, or exact-equality witnesses directly into ordinary runtime terms or types.
-* `$(s)` is the only elaboration-time splice form for `Syntax`.
-* `!` remains reserved for the monadic splice form inside `do` blocks (§5.7.1) and is not a synonym for `$(...)`.
+* In a term position expecting type `t`, `$(m)` requires `m : Elab (Syntax t)`.
+* In a type position, `$(m)` requires `m : Elab (Syntax Type)`.
+
+As surface convenience only, if the expression inside the splice is a meta-phase value `s : Syntax t`, then:
+
+```kappa
+$(s)
+```
+
+is treated as sugar for:
+
+```kappa
+$(pure s)
+```
+
+using the `Applicative Elab` instance.
+
+This sugar does not permit object-phase runtime values to enter elaboration. The argument `s` must already be a
+meta-phase syntax value.
+
+`$(m)` consumes an `Elab` action producing `Syntax`, not `Core` or `Code`.
+
+Staged code is executed only via `runCode` on `ClosedCode` (§5.9.6). Semantic reflection values of §5.8.5 must first
+be reified back to `Syntax` before they can be spliced.
+
+Splice elaboration:
+
+* The `Elab` action is executed at the splice site.
+* The resulting `Syntax t` is elaborated at the splice site exactly as if that syntax had been written there.
+* The type index `Syntax t` is not a certificate that object-level obligations have already been discharged.
+* The generated syntax is subject to ordinary name resolution, implicit insertion, quantity checking, borrow checking,
+  region-escape checking, local nominal-scope escape checking, visibility, opacity, `unhide`, and `clarify` rules.
+* Object-level uses contained in the produced syntax are charged each time that syntax is spliced.
+* Duplicating a `Syntax` value duplicates only meta-level syntax data; it does not duplicate the object-level resources
+  referenced by that syntax.
+
+Consequently, a macro may duplicate syntax that mentions a linear object-language variable, but any splice whose
+expanded object code uses that linear variable more often than its quantity permits is rejected by ordinary QTT checking
+at the splice site.
+
+`$(...)` is the only elaboration-time splice form for `Syntax`.
+
+`$(...)` and `reifyCore` are the only normative re-entry points from elaboration-time reflection to object-language
+code. Implementations MUST NOT provide a generic splice or coercion from arbitrary compile-time values, rows, labels,
+constraints, lexical contexts, exact-equality witnesses, or meta-phase ordinary values directly into ordinary runtime
+terms or types.
+
+`!` remains reserved for the monadic splice form inside `do` blocks (§5.7.1) and is not a synonym for `$(...)`.
 
 <!-- types.macros.functions -->
 #### 5.8.3 Macros as ordinary functions
