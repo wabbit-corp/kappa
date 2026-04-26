@@ -877,13 +877,39 @@ The exact contents of std.prelude are implementation-defined, but it must includ
 Implementations MUST provide a prelude module `std.prelude` that is implicitly imported (§2.6) and exports at least the
 following:
 
-In addition to the ordinary exports listed below, implementations MUST provide the compile-time row and label
-declarations referenced by §§5.3.1-5.3.2 (`Label`, `EffLabel`, `ContainsRec`, `LacksRec`, `ContainsVar`, `LacksVar`,
-`ContainsEff`, `LacksEff`, and `SplitEff`) whenever those names are user-nameable in source programs.
+In addition to the ordinary exports listed below, implementations MUST provide the intrinsic compile-time classifier
+names referenced by §5.1.3, §5.3.1, and §5.3.2 whenever those names are user-nameable in source programs:
 
-Implementations MUST also provide the projector and accessor declarations referenced by §§5.1.7.3, 7.1.3A, 7.1.3B,
-8.8, and 17.3.1.3 (`Projector`, `Getter`, `Opener`, `Setter`, `Sinker`, `BorrowView`, `Zipper`, `captureBorrow`,
-`withBorrowView`, and `composeProjector`) whenever those names are user-nameable in source programs.
+```text
+Universe, Quantity, Region, Constraint,
+RecRow, VarRow, EffRow,
+Label, EffLabel
+```
+
+These names denote intrinsic compile-time classifiers. Their implementation is primitive, but their source-level
+name-resolution behavior is ordinary: they are exported by `std.prelude`, participate in lexical lookup, may be rebound
+as compile-time values where §5.1.3 permits, and are erased according to §5.1.4.
+
+Implementations MUST provide the compile-time row and label constraint declarations referenced by §§5.3.1-5.3.2:
+
+```text
+ContainsRec, LacksRec,
+ContainsVar, LacksVar,
+ContainsEff, LacksEff, SplitEff
+```
+
+Implementations MUST provide the projector and accessor declarations referenced by §§5.1.7.3, 7.1.3A, 7.1.3B, 8.8, and
+17.3.1.3:
+
+```text
+Projector, Getter, Opener, Setter, Sinker,
+BorrowView, Zipper,
+captureBorrow, withBorrowView, composeProjector
+```
+
+These declarations are part of the portable prelude surface whenever the corresponding language feature is implemented.
+An implementation MAY realize them as compiler intrinsics, primitive declarations, or ordinary transparent definitions,
+but source programs observe them as ordinary prelude exports.
 
 Types (type namespace):
 ```
