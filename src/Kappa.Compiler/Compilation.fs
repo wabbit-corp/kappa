@@ -89,7 +89,10 @@ module Compilation =
         let documents =
             initialDocuments
             |> reparseDocumentsWithImportedFixities options
-            |> resolveImportExportSemantics
+            |> resolveImportExportSemantics normalizedBackendProfile
+
+        let hostBindingModules =
+            HostBindings.collectImportedModules normalizedBackendProfile documents
 
         let frontendModulesForValidation =
             documents
@@ -98,10 +101,10 @@ module Compilation =
         let frontendDiagnostics =
             (documents |> List.collect (fun document -> document.Diagnostics))
             @ detectImportCycles documents
-            @ validateImportSelections options.PackageMode documents
+            @ validateImportSelections options.PackageMode normalizedBackendProfile documents
             @ CompilationFrontend.validateReflEqualityDeclarations documents
             @ CompilationFrontend.validateTopLevelSignatureDeclarations documents
-            @ SurfaceElaboration.validateSurfaceModules frontendModulesForValidation
+            @ SurfaceElaboration.validateSurfaceModules frontendModulesForValidation hostBindingModules
             @ validateExpectDeclarations normalizedBackendProfile options.AllowUnsafeConsume documents
 
         let resourceCheckResult: ResourceChecking.CheckResult =
@@ -121,12 +124,13 @@ module Compilation =
             frontendSnapshots[CORE_LOWERING].Modules
 
         let kCore =
-            SurfaceElaboration.lowerKCoreModules normalizedBackendProfile options.AllowUnsafeConsume kFrontIR
+            SurfaceElaboration.lowerKCoreModules normalizedBackendProfile options.AllowUnsafeConsume kFrontIR hostBindingModules
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
         let kRuntimeIR =
             kCore
             |> List.map KRuntimeLowering.lowerKRuntimeModule
+            |> fun loweredModules -> loweredModules @ (hostBindingModules |> Map.values |> Seq.map HostBindings.toRuntimeModule |> Seq.toList)
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
         let kBackendIR, backendLoweringDiagnostics =

@@ -51,6 +51,18 @@ module internal IlDotNetBackendEmit =
         | None ->
             invalidOp $"IL backend is missing emitted type builder metadata for '{moduleName}.{typeName}'."
 
+    let private resolveExternalRuntimeType (typeName: string) =
+        Type.GetType(typeName, throwOnError = false, ignoreCase = false)
+        |> Option.ofObj
+        |> Option.orElseWith (fun () ->
+            AppDomain.CurrentDomain.GetAssemblies()
+            |> Seq.tryPick (fun assembly ->
+                try
+                    assembly.GetType(typeName, throwOnError = false, ignoreCase = false) |> Option.ofObj
+                with _ ->
+                    None))
+        |> Option.defaultWith (fun () -> invalidOp $"IL backend could not resolve external runtime type '{typeName}'.")
+
     let rec internal resolveClrType (state: EmissionState) (typeParameters: Map<string, Type>) ilType =
         match ilType with
         | IlPrimitive primitiveType ->
@@ -76,17 +88,29 @@ module internal IlDotNetBackendEmit =
         | IlNamed("std.prelude", typeName, _) when isDictionaryTypeName typeName ->
             typeof<Tuple<string, string, string>>
         | IlNamed(moduleName, typeName, arguments) ->
-            let emission = lookupDataTypeEmission state moduleName typeName
-            let baseType =
-                emission.BaseTypeBuilder :> Type
+            match state.Environment.DataTypes |> Map.tryFind (moduleName, typeName) with
+            | Some dataTypeInfo when dataTypeInfo.ExternalRuntimeTypeName.IsSome ->
+                let baseType = resolveExternalRuntimeType dataTypeInfo.ExternalRuntimeTypeName.Value
 
-            if List.isEmpty arguments then
-                baseType
-            else
-                let genericArguments =
-                    arguments |> List.map (resolveClrType state typeParameters) |> List.toArray
+                if List.isEmpty arguments then
+                    baseType
+                else
+                    let genericArguments =
+                        arguments |> List.map (resolveClrType state typeParameters) |> List.toArray
 
-                baseType.MakeGenericType(genericArguments)
+                    baseType.MakeGenericType(genericArguments)
+            | _ ->
+                let emission = lookupDataTypeEmission state moduleName typeName
+                let baseType =
+                    emission.BaseTypeBuilder :> Type
+
+                if List.isEmpty arguments then
+                    baseType
+                else
+                    let genericArguments =
+                        arguments |> List.map (resolveClrType state typeParameters) |> List.toArray
+
+                    baseType.MakeGenericType(genericArguments)
 
     let internal resolveConstructorTypeAndMembers (state: EmissionState) (substitution: Map<string, IlType>) (constructorInfo: ConstructorInfo) =
         let dataTypeEmission = lookupDataTypeEmission state constructorInfo.ModuleName constructorInfo.TypeName
@@ -1336,9 +1360,193 @@ module internal IlDotNetBackendEmit =
                       Type = parameterType })
                 |> Map.ofList
 
+            let rec emitManagedNumericConversion sourceType targetType =
+                if sourceType = targetType then
+                    Result.Ok()
+                elif sourceType = typeof<int64> && targetType = typeof<int32> then
+                    il.Emit(OpCodes.Conv_I4)
+                    Result.Ok()
+                elif sourceType = typeof<int64> && targetType = typeof<int16> then
+                    il.Emit(OpCodes.Conv_I2)
+                    Result.Ok()
+                elif sourceType = typeof<int64> && targetType = typeof<sbyte> then
+                    il.Emit(OpCodes.Conv_I1)
+                    Result.Ok()
+                elif sourceType = typeof<int64> && targetType = typeof<byte> then
+                    il.Emit(OpCodes.Conv_U1)
+                    Result.Ok()
+                elif sourceType = typeof<int64> && targetType = typeof<uint16> then
+                    il.Emit(OpCodes.Conv_U2)
+                    Result.Ok()
+                elif sourceType = typeof<int64> && targetType = typeof<uint32> then
+                    il.Emit(OpCodes.Conv_U4)
+                    Result.Ok()
+                elif sourceType = typeof<int64> && targetType = typeof<uint64> then
+                    il.Emit(OpCodes.Conv_U8)
+                    Result.Ok()
+                elif sourceType = typeof<int32> && targetType = typeof<int64> then
+                    il.Emit(OpCodes.Conv_I8)
+                    Result.Ok()
+                elif sourceType = typeof<int16> && targetType = typeof<int64> then
+                    il.Emit(OpCodes.Conv_I8)
+                    Result.Ok()
+                elif sourceType = typeof<sbyte> && targetType = typeof<int64> then
+                    il.Emit(OpCodes.Conv_I8)
+                    Result.Ok()
+                elif sourceType = typeof<byte> && targetType = typeof<int64> then
+                    il.Emit(OpCodes.Conv_I8)
+                    Result.Ok()
+                elif sourceType = typeof<uint16> && targetType = typeof<int64> then
+                    il.Emit(OpCodes.Conv_I8)
+                    Result.Ok()
+                elif sourceType = typeof<uint32> && targetType = typeof<int64> then
+                    il.Emit(OpCodes.Conv_I8)
+                    Result.Ok()
+                elif sourceType = typeof<uint64> && targetType = typeof<int64> then
+                    il.Emit(OpCodes.Conv_I8)
+                    Result.Ok()
+                elif sourceType = typeof<float> && targetType = typeof<float32> then
+                    il.Emit(OpCodes.Conv_R4)
+                    Result.Ok()
+                elif sourceType = typeof<float32> && targetType = typeof<float> then
+                    il.Emit(OpCodes.Conv_R8)
+                    Result.Ok()
+                elif targetType.IsEnum then
+                    emitManagedNumericConversion sourceType (Enum.GetUnderlyingType targetType)
+                elif sourceType.IsEnum then
+                    emitManagedNumericConversion (Enum.GetUnderlyingType sourceType) targetType
+                else
+                    Result.Error $"IL backend cannot convert managed host type '{sourceType}' to '{targetType}'."
+
+            let emitManagedArgument actualParameterType (localValue: LocalValue) =
+                result {
+                    let sourceClrType = resolveClrType state methodEmission.GenericParameters localValue.Type
+                    loadValue il localValue
+
+                    if actualParameterType = sourceClrType || actualParameterType.IsAssignableFrom(sourceClrType) then
+                        return ()
+                    else
+                        do! emitManagedNumericConversion sourceClrType actualParameterType
+                }
+
+            let emitManagedReturnConversion actualReturnType =
+                let wrapperReturnType = resolveClrType state methodEmission.GenericParameters bindingInfo.ReturnType
+
+                if wrapperReturnType = actualReturnType || wrapperReturnType.IsAssignableFrom(actualReturnType) then
+                    Result.Ok()
+                else
+                    emitManagedNumericConversion actualReturnType wrapperReturnType
+
+            let isUnitWrapperParameter (_, parameterType) =
+                match parameterType with
+                | IlNamed(moduleName, typeName, []) ->
+                    String.Equals(moduleName, Stdlib.PreludeModuleText, StringComparison.Ordinal)
+                    && String.Equals(typeName, "Unit", StringComparison.Ordinal)
+                | _ ->
+                    false
+
+            let emitHostDotNetBindingBody (callable: HostBindings.DotNetHostCallable) =
+                result {
+                    match callable with
+                    | HostBindings.HostConstructor constructorInfo ->
+                        let actualParameters = constructorInfo.GetParameters()
+                        let hasSyntheticUnit =
+                            actualParameters.Length = 0
+                            && bindingInfo.ParameterTypes.Length = 1
+                            && isUnitWrapperParameter bindingInfo.ParameterTypes.Head
+
+                        if actualParameters.Length <> bindingInfo.ParameterTypes.Length && not hasSyntheticUnit then
+                            return!
+                                Result.Error
+                                    $"IL backend host constructor wrapper '{moduleInfo.Name}.{bindingInfo.Binding.Name}' expected {actualParameters.Length} parameter(s), but the wrapper declares {bindingInfo.ParameterTypes.Length}."
+
+                        do!
+                            List.zip
+                                (if hasSyntheticUnit then
+                                     []
+                                 else
+                                     bindingInfo.ParameterTypes)
+                                (actualParameters |> Array.toList)
+                            |> List.fold
+                                (fun stateResult ((parameterName, parameterType), parameterInfo) ->
+                                    result {
+                                        do! stateResult
+                                        do! emitManagedArgument parameterInfo.ParameterType localValues[parameterName]
+                                    })
+                                (Result.Ok())
+
+                        il.Emit(OpCodes.Newobj, constructorInfo)
+                        do! emitManagedReturnConversion constructorInfo.DeclaringType
+                    | HostBindings.HostMethod methodInfo
+                    | HostBindings.HostPropertyGetter methodInfo ->
+                        let actualParameters = methodInfo.GetParameters()
+                        let wrapperParameters = bindingInfo.ParameterTypes
+                        let receiverCount = if methodInfo.IsStatic then 0 else 1
+                        let hasSyntheticUnit =
+                            match callable with
+                            | HostBindings.HostMethod _ ->
+                                actualParameters.Length = 0
+                                && wrapperParameters.Length = actualParameters.Length + receiverCount + 1
+                                && (wrapperParameters |> List.last |> isUnitWrapperParameter)
+                            | HostBindings.HostPropertyGetter _ ->
+                                false
+                            | _ ->
+                                false
+
+                        if wrapperParameters.Length <> actualParameters.Length + receiverCount && not hasSyntheticUnit then
+                            return!
+                                Result.Error
+                                    $"IL backend host method wrapper '{moduleInfo.Name}.{bindingInfo.Binding.Name}' does not match the managed member arity."
+
+                        let explicitParameters =
+                            if methodInfo.IsStatic then
+                                wrapperParameters
+                            else
+                                wrapperParameters |> List.skip 1
+                            |> fun parameters ->
+                                if hasSyntheticUnit then
+                                    parameters |> List.take actualParameters.Length
+                                else
+                                    parameters
+
+                        if not methodInfo.IsStatic then
+                            let receiverName, _ = wrapperParameters.Head
+                            do! emitManagedArgument methodInfo.DeclaringType localValues[receiverName]
+
+                        do!
+                            List.zip explicitParameters (actualParameters |> Array.toList)
+                            |> List.fold
+                                (fun stateResult ((parameterName, _), parameterInfo) ->
+                                    result {
+                                        do! stateResult
+                                        do! emitManagedArgument parameterInfo.ParameterType localValues[parameterName]
+                                    })
+                                (Result.Ok())
+
+                        let opcode =
+                            if methodInfo.IsStatic then
+                                OpCodes.Call
+                            elif methodInfo.IsVirtual && not methodInfo.IsFinal && not methodInfo.DeclaringType.IsValueType then
+                                OpCodes.Callvirt
+                            else
+                                OpCodes.Call
+
+                        il.Emit(opcode, methodInfo)
+
+                        if methodInfo.ReturnType = typeof<Void> then
+                            do! emitUnitValue il
+                        else
+                            do! emitManagedReturnConversion methodInfo.ReturnType
+                }
+
             match bindingInfo.Binding.Body with
             | None ->
-                return! Result.Error $"IL backend requires a body for '{moduleInfo.Name}.{bindingInfo.Binding.Name}'."
+                match HostBindings.tryResolveDotNetCallable moduleInfo.Name bindingInfo.Binding.Name with
+                | Some callable ->
+                    do! emitHostDotNetBindingBody callable
+                    il.Emit(OpCodes.Ret)
+                | None ->
+                    return! Result.Error $"IL backend requires a body for '{moduleInfo.Name}.{bindingInfo.Binding.Name}'."
             | Some body ->
                 do!
                     emitExpression
@@ -1357,6 +1565,7 @@ module internal IlDotNetBackendEmit =
         let baseTypeDefinitions =
             environment.DataTypes
             |> Map.toList
+            |> List.filter (fun (_, dataTypeInfo) -> dataTypeInfo.ExternalRuntimeTypeName.IsNone)
             |> List.map (fun ((moduleName, typeName), dataTypeInfo) ->
                 let baseTypeBuilder =
                     moduleBuilder.DefineType(

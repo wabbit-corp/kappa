@@ -2212,12 +2212,92 @@ module SurfaceElaboration =
           ExportedTypes = exportedTypes
           ExportedTraits = exportedTraits }
 
-    let private buildSurfaceIndex (frontendModules: KFrontIRModule list) =
-        let directIndex =
-            frontendModules
-            |> List.map (fun moduleDump ->
-                moduleNameText moduleDump.ModuleIdentity, buildModuleSurfaceInfo moduleDump)
+    let private buildHostModuleSurfaceInfo (description: HostBindings.HostModuleDescription) =
+        let bindingSchemes =
+            description.Terms
+            |> List.choose (fun binding ->
+                let parameterTypes =
+                    binding.Parameters
+                    |> List.map (fun parameter -> tryParseTypeText parameter.TypeText)
+
+                let returnType = tryParseTypeText binding.ReturnTypeText
+
+                if parameterTypes |> List.forall Option.isSome && returnType.IsSome then
+                    let schemeBody =
+                        (parameterTypes |> List.choose id)
+                        |> List.rev
+                        |> List.fold (fun current parameterType -> TypeArrow(QuantityOmega, parameterType, current)) returnType.Value
+
+                    let parameterLayouts =
+                        binding.Parameters
+                        |> List.map (fun parameter ->
+                            { Name = parameter.Name
+                              TypeTokens = Some(typeTextTokens parameter.TypeText)
+                              Quantity = None
+                              IsImplicit = false
+                              IsInout = false
+                              IsReceiver = parameter.IsReceiver })
+
+                    Some(
+                        binding.Name,
+                        { ModuleName = description.ModuleName
+                          Name = binding.Name
+                          IsPattern = false
+                          Scheme =
+                            { Forall = []
+                              Constraints = []
+                              Body = schemeBody }
+                          TypeTokens = typeTextTokens binding.ReturnTypeText
+                          ParameterLayouts = Some parameterLayouts
+                          ConstructorTypeName = None
+                          DefaultArguments = Map.empty }
+                    )
+                else
+                    None)
             |> Map.ofList
+
+        let typeFacets =
+            description.Types
+            |> List.map (fun exportedType ->
+                exportedType.Name,
+                { ModuleName = description.ModuleName
+                  Name = exportedType.Name
+                  Scheme =
+                    { Forall = []
+                      Constraints = []
+                      Body = typeObjectType } })
+            |> Map.ofList
+
+        { TypeAliases = Map.empty
+          TypeFacets = typeFacets
+          RecordTypes = Map.empty
+          BindingSchemes = bindingSchemes
+          Constructors = Map.empty
+          Projections = Map.empty
+          Traits = Map.empty
+          Instances = []
+          Imports = []
+          ExportedTerms = description.Terms |> List.map (fun binding -> binding.Name) |> Set.ofList
+          ExportedConstructors = Set.empty
+          ExportedConstructorsByType = Map.empty
+          ExportedTypes = description.Types |> List.map (fun exportedType -> exportedType.Name) |> Set.ofList
+          ExportedTraits = Set.empty }
+
+    let private buildSurfaceIndex
+        (frontendModules: KFrontIRModule list)
+        (hostModules: Map<string, HostBindings.HostModuleDescription>)
+        =
+        let directIndex =
+            (frontendModules
+             |> List.map (fun moduleDump ->
+                 moduleNameText moduleDump.ModuleIdentity, buildModuleSurfaceInfo moduleDump)
+             |> Map.ofList)
+            |> fun userModules ->
+                hostModules
+                |> Map.fold (fun state moduleName description -> Map.add moduleName (buildHostModuleSurfaceInfo description) state) userModules
+
+        let hostSurfaceIndex =
+            hostModules |> Map.map (fun _ description -> buildHostModuleSurfaceInfo description)
 
         let moduleGroups =
             frontendModules
@@ -2299,7 +2379,7 @@ module SurfaceElaboration =
                         addWildcardReexports importedModule moduleInfo excludedItems
 
         let rec saturate surfaceIndex =
-            let nextSurfaceIndex =
+            let updatedUserSurfaceIndex =
                 moduleGroups
                 |> Map.map (fun moduleName moduleDumps ->
                     let directModuleInfo = Map.find moduleName directIndex
@@ -2312,6 +2392,10 @@ module SurfaceElaboration =
                             | _ -> None)
                         |> List.concat)
                     |> List.fold (applyReexportSpec surfaceIndex) directModuleInfo)
+
+            let nextSurfaceIndex =
+                hostSurfaceIndex
+                |> Map.fold (fun state moduleName moduleInfo -> Map.add moduleName moduleInfo state) updatedUserSurfaceIndex
 
             if nextSurfaceIndex = surfaceIndex then
                 surfaceIndex
@@ -9389,8 +9473,11 @@ module SurfaceElaboration =
                 @ fullyAppliedProjectionReturningDescriptorDiagnostic body
             | None -> []
 
-    let validateSurfaceModules (frontendModules: KFrontIRModule list) =
-        let surfaceIndex = buildSurfaceIndex frontendModules
+    let validateSurfaceModules
+        (frontendModules: KFrontIRModule list)
+        (hostModules: Map<string, HostBindings.HostModuleDescription>)
+        =
+        let surfaceIndex = buildSurfaceIndex frontendModules hostModules
 
         frontendModules
         |> List.collect (fun frontendModule ->
@@ -13474,8 +13561,13 @@ module SurfaceElaboration =
 
         memberBindings @ [ dictionaryBinding ]
 
-    let lowerKCoreModules (backendProfile: string) allowUnsafeConsume (frontendModules: KFrontIRModule list) =
-        let surfaceIndex = buildSurfaceIndex frontendModules
+    let lowerKCoreModules
+        (backendProfile: string)
+        allowUnsafeConsume
+        (frontendModules: KFrontIRModule list)
+        (hostModules: Map<string, HostBindings.HostModuleDescription>)
+        =
+        let surfaceIndex = buildSurfaceIndex frontendModules hostModules
 
         frontendModules
         |> List.map (fun frontendModule ->

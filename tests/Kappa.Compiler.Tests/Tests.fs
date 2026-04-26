@@ -808,6 +808,68 @@ let ``package mode rejects unpinned URL imports and exports before module resolu
     )
 
 [<Fact>]
+let ``dotnet host type modules import as ordinary modules on the dotnet backend`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-host-dotnet-import-root"
+            "dotnet"
+            [
+                "main.kp",
+                String.concat
+                    "\n"
+                    [
+                        "module main"
+                        "import host.dotnet.Kappa.Compiler.TestHost.Sample.(type Sample, term new, term Echo, term Create)"
+                        "result : String"
+                        "let result ="
+                        "    let fromCtor = new \"hello\""
+                        "    let _ = fromCtor.Echo ()"
+                        "    let fromStatic = Create \"world\""
+                        "    fromStatic.Echo ()"
+                    ]
+            ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected host.dotnet import to compile on the dotnet backend, got %A" workspace.Diagnostics)
+
+[<Fact>]
+let ``host dotnet imports are rejected on unsupported backends`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-host-dotnet-unsupported-root"
+            "interpreter"
+            [
+                "main.kp",
+                String.concat
+                    "\n"
+                    [
+                        "module main"
+                        "import host.dotnet.Kappa.Compiler.TestHost.Sample.(type Sample)"
+                    ]
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected host.dotnet imports to be rejected on backends that do not provide host.dotnet.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("host.dotnet", StringComparison.Ordinal))
+
+[<Fact>]
+let ``source modules under reserved host roots are rejected`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-host-root-reserved"
+            "dotnet"
+            [
+                "host/dotnet/System/Text/StringBuilder.kp",
+                String.concat
+                    "\n"
+                    [
+                        "module host.dotnet.System.Text.StringBuilder"
+                        "let fake = 0"
+                    ]
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected source-defined modules under reserved host roots to be rejected.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("reserved host", StringComparison.OrdinalIgnoreCase))
+
+[<Fact>]
 let ``parser decodes raw and multiline strings using spec dedent rules`` () =
     let sourceText =
         [

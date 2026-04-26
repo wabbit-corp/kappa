@@ -31,6 +31,7 @@ module internal IlDotNetBackendModel =
           Name: string
           TypeParameters: string list
           Constructors: RawConstructorInfo list
+          ExternalRuntimeTypeName: string option
           EmittedTypeName: string }
 
     type internal ConstructorInfo =
@@ -46,6 +47,7 @@ module internal IlDotNetBackendModel =
           Name: string
           TypeParameters: string list
           Constructors: Map<string, ConstructorInfo>
+          ExternalRuntimeTypeName: string option
           EmittedTypeName: string }
 
     type internal ModuleSurface<'binding> =

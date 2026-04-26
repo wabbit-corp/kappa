@@ -202,6 +202,7 @@ module internal IlDotNetBackendInput =
                           Name = dataType.Name
                           TypeParameters = dataType.TypeParameters
                           Constructors = constructors
+                          ExternalRuntimeTypeName = dataType.ExternalRuntimeTypeName
                           EmittedTypeName = emittedDataTypeName moduleDump.Name dataType.Name }
 
                     dataType.Name, rawDataType)
@@ -455,6 +456,7 @@ module internal IlDotNetBackendInput =
                                           Name = rawDataType.Name
                                           TypeParameters = rawDataType.TypeParameters
                                           Constructors = constructors |> Map.ofList
+                                          ExternalRuntimeTypeName = rawDataType.ExternalRuntimeTypeName
                                           EmittedTypeName = rawDataType.EmittedTypeName }: DataTypeInfo
 
                                     return (rawDataType.Name, resolvedDataType) :: entries

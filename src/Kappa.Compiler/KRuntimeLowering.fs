@@ -867,7 +867,8 @@ module internal KRuntimeLowering =
                         Some
                             { Name = dataDeclaration.Name
                               TypeParameters = TypeSignatures.collectLeadingTypeParameters dataDeclaration.HeaderTokens
-                              Constructors = constructors }
+                              Constructors = constructors
+                              ExternalRuntimeTypeName = None }
                     | _ ->
                         None)
 
@@ -884,7 +885,8 @@ module internal KRuntimeLowering =
 
                     { Name = dataType.Name
                       TypeParameters = dataType.TypeParameters
-                      Constructors = [ constructor ] })
+                      Constructors = [ constructor ]
+                      ExternalRuntimeTypeName = None })
 
             sourceDataTypes @ syntheticDataTypes
 
@@ -1012,7 +1014,8 @@ module internal KRuntimeLowering =
                                 typeName
                                 { Name = typeName
                                   TypeParameters = typeParameters
-                                  Constructors = [ constructor ] }
+                                  Constructors = [ constructor ]
+                                  ExternalRuntimeTypeName = None }
 
                         knownTypeNames.Value <- Set.add typeName knownTypeNames.Value
 

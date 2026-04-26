@@ -55,7 +55,8 @@ type KRuntimeConstructor =
 type KRuntimeDataType =
     { Name: string
       TypeParameters: string list
-      Constructors: KRuntimeConstructor list }
+      Constructors: KRuntimeConstructor list
+      ExternalRuntimeTypeName: string option }
 
 type KRuntimeTrait =
     { Name: string

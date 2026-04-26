@@ -43,73 +43,101 @@ module internal IlDotNetBackendTyping =
                         | None ->
                             Result.Error $"IL backend could not resolve binding '{currentModule}.{bindingName}'."
                         | Some binding ->
-                            match binding.Body with
-                            | None ->
-                                Result.Error $"IL backend requires a body for '{currentModule}.{bindingName}'."
-                            | Some body ->
-                                result {
-                                    let! declaredTypes = tryResolveDeclaredBindingTypes currentModule bindingName
+                            result {
+                                let! declaredTypes = tryResolveDeclaredBindingTypes currentModule bindingName
 
-                                    match binding.Parameters, declaredTypes with
-                                    | [], Some declared when declared.ParameterTypes |> Option.exists (List.isEmpty >> not) ->
-                                        return!
-                                            Result.Error
-                                                $"IL backend expected zero-argument binding '{currentModule}.{bindingName}' to have a zero-argument declaration."
-                                    | [], declared ->
-                                        let declaredReturnType =
-                                            declared |> Option.bind (fun info -> info.ReturnType)
-
-                                        let! bodyType =
-                                            inferExpressionType currentModule Map.empty (Set.add cacheKey active) declaredReturnType body
-
-                                        match declaredReturnType with
-                                        | Some expectedReturnType when expectedReturnType <> bodyType ->
-                                            return!
-                                                Result.Error
-                                                    $"IL backend expected '{currentModule}.{bindingName}' to return {formatIlType expectedReturnType}, but the body returns {formatIlType bodyType}."
-                                        | _ ->
-                                            let info =
-                                                { Binding = binding
-                                                  ParameterTypes = []
-                                                  ReturnType = declaredReturnType |> Option.defaultValue bodyType
-                                                  TypeParameters =
-                                                    bindingTypeParameters [] (declaredReturnType |> Option.defaultValue bodyType)
-                                                  EmittedMethodName = emittedMethodName bindingName }
-
-                                            cache[cacheKey] <- info
-                                            return info
-                                    | parameters, Some { ParameterTypes = None } ->
-                                        return!
-                                            Result.Error
-                                                $"IL backend currently requires parameter types for '{currentModule}.{bindingName}'."
-                                    | parameters, None ->
-                                        return!
-                                            Result.Error
-                                                $"IL backend currently requires declared types for parameterized binding '{currentModule}.{bindingName}'."
-                                    | parameters, Some { ParameterTypes = Some parameterTypes
-                                                         ReturnType = declaredReturnType } ->
-                                        if List.length parameters <> List.length parameterTypes then
-                                            return!
-                                                Result.Error
-                                                    $"IL backend expected declaration for '{currentModule}.{bindingName}' to declare {List.length parameters} parameter type(s), but found {List.length parameterTypes}."
-
-                                        let parameterNames =
-                                            parameters |> List.map (fun parameter -> parameter.Name)
-
-                                        let localTypes =
-                                            List.zip parameterNames parameterTypes |> Map.ofList
-
-                                        let provisionalReturnType =
-                                            declaredReturnType |> Option.defaultValue unitIlType
-
+                                match binding.Parameters, declaredTypes, binding.Body with
+                                | [], Some declared, None when declared.ParameterTypes |> Option.exists (List.isEmpty >> not) ->
+                                    return!
+                                        Result.Error
+                                            $"IL backend expected zero-argument binding '{currentModule}.{bindingName}' to have a zero-argument declaration."
+                                | [], declared, None ->
+                                    match declared |> Option.bind (fun info -> info.ReturnType) with
+                                    | Some declaredReturnType ->
                                         let info =
                                             { Binding = binding
-                                              ParameterTypes = List.zip parameterNames parameterTypes
-                                              ReturnType = provisionalReturnType
-                                              TypeParameters = bindingTypeParameters parameterTypes provisionalReturnType
+                                              ParameterTypes = []
+                                              ReturnType = declaredReturnType
+                                              TypeParameters = bindingTypeParameters [] declaredReturnType
                                               EmittedMethodName = emittedMethodName bindingName }
 
                                         cache[cacheKey] <- info
+                                        return info
+                                    | None ->
+                                        return!
+                                            Result.Error
+                                                $"IL backend requires a declared return type for bodyless binding '{currentModule}.{bindingName}'."
+                                | [], declared, Some body ->
+                                    let declaredReturnType =
+                                        declared |> Option.bind (fun info -> info.ReturnType)
+
+                                    let! bodyType =
+                                        inferExpressionType currentModule Map.empty (Set.add cacheKey active) declaredReturnType body
+
+                                    match declaredReturnType with
+                                    | Some expectedReturnType when expectedReturnType <> bodyType ->
+                                        return!
+                                            Result.Error
+                                                $"IL backend expected '{currentModule}.{bindingName}' to return {formatIlType expectedReturnType}, but the body returns {formatIlType bodyType}."
+                                    | _ ->
+                                        let info =
+                                            { Binding = binding
+                                              ParameterTypes = []
+                                              ReturnType = declaredReturnType |> Option.defaultValue bodyType
+                                              TypeParameters =
+                                                bindingTypeParameters [] (declaredReturnType |> Option.defaultValue bodyType)
+                                              EmittedMethodName = emittedMethodName bindingName }
+
+                                        cache[cacheKey] <- info
+                                        return info
+                                | parameters, Some { ParameterTypes = None }, _ ->
+                                    return!
+                                        Result.Error
+                                            $"IL backend currently requires parameter types for '{currentModule}.{bindingName}'."
+                                | parameters, None, _ ->
+                                    return!
+                                        Result.Error
+                                            $"IL backend currently requires declared types for parameterized binding '{currentModule}.{bindingName}'."
+                                | parameters, Some { ParameterTypes = Some parameterTypes
+                                                     ReturnType = declaredReturnType }, body ->
+                                    if List.length parameters <> List.length parameterTypes then
+                                        return!
+                                            Result.Error
+                                                $"IL backend expected declaration for '{currentModule}.{bindingName}' to declare {List.length parameters} parameter type(s), but found {List.length parameterTypes}."
+
+                                    let parameterNames =
+                                        parameters |> List.map (fun parameter -> parameter.Name)
+
+                                    let provisionalReturnType =
+                                        declaredReturnType |> Option.defaultValue unitIlType
+
+                                    let info =
+                                        { Binding = binding
+                                          ParameterTypes = List.zip parameterNames parameterTypes
+                                          ReturnType = provisionalReturnType
+                                          TypeParameters = bindingTypeParameters parameterTypes provisionalReturnType
+                                          EmittedMethodName = emittedMethodName bindingName }
+
+                                    cache[cacheKey] <- info
+
+                                    match body with
+                                    | None ->
+                                        match declaredReturnType with
+                                        | Some resolvedReturnType ->
+                                            let resolvedInfo =
+                                                { info with
+                                                    ReturnType = resolvedReturnType
+                                                    TypeParameters = bindingTypeParameters parameterTypes resolvedReturnType }
+
+                                            cache[cacheKey] <- resolvedInfo
+                                            return resolvedInfo
+                                        | None ->
+                                            return!
+                                                Result.Error
+                                                    $"IL backend requires an explicit return type for bodyless binding '{currentModule}.{bindingName}'."
+                                    | Some body ->
+                                        let localTypes =
+                                            List.zip parameterNames parameterTypes |> Map.ofList
 
                                         let! bodyType =
                                             inferExpressionType
@@ -137,7 +165,7 @@ module internal IlDotNetBackendTyping =
                                         cache[cacheKey] <- resolvedInfo
 
                                         return resolvedInfo
-                                }
+                            }
 
                 and inferPatternBindings currentModule active expectedType pattern =
                     match pattern with

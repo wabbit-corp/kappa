@@ -294,6 +294,9 @@ module CheckpointVerification =
         verify Set.empty expression
 
     let private verifyKRuntimeIRCheckpoint (workspace: WorkspaceCompilation) =
+        let isGeneratedHostBinding provenance =
+            String.Equals(provenance.IntroductionKind, "host-binding", StringComparison.Ordinal)
+
         let runtimeModules =
             workspace.KRuntimeIR
             |> List.sortBy (fun (moduleDump: KRuntimeModule) -> moduleDump.SourceFile)
@@ -349,7 +352,8 @@ module CheckpointVerification =
                     else
                         match binding.Body with
                         | None ->
-                            yield makeDiagnostic $"Checkpoint 'KRuntimeIR' requires runtime binding '{moduleDump.Name}.{binding.Name}' to have a body."
+                            if not (isGeneratedHostBinding binding.Provenance) then
+                                yield makeDiagnostic $"Checkpoint 'KRuntimeIR' requires runtime binding '{moduleDump.Name}.{binding.Name}' to have a body."
                         | Some body ->
                             let bindingLabel = $"{moduleDump.Name}.{binding.Name}"
                             yield! verifyRuntimeExpression "KRuntimeIR" bindingLabel body
@@ -400,6 +404,9 @@ module CheckpointVerification =
         verify Set.empty pattern
 
     let private verifyKBackendIRCheckpoint (workspace: WorkspaceCompilation) =
+        let isGeneratedHostBinding provenance =
+            String.Equals(provenance.IntroductionKind, "host-binding", StringComparison.Ordinal)
+
         let backendModules =
             workspace.KBackendIR
             |> List.sortBy (fun (moduleDump: KBackendModule) -> moduleDump.SourceFile)
@@ -713,7 +720,8 @@ module CheckpointVerification =
                     else
                         match binding.Body with
                         | None ->
-                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires function '{bindingLabel}' to have a body."
+                            if not (isGeneratedHostBinding binding.Provenance) then
+                                yield makeDiagnostic $"Checkpoint 'KBackendIR' requires function '{bindingLabel}' to have a body."
                         | Some body ->
                             yield! verifyBackendExpression moduleDump bindingLabel body
         ]

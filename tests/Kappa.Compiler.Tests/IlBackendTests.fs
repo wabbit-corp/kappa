@@ -114,6 +114,45 @@ let ``il backend emits executable conditional logic as IL`` () =
     Assert.Equal(1L, resultMethod.Invoke(null, [||]) |> unbox<int64>)
 
 [<Fact>]
+let ``il backend emits callable wrappers for host dotnet type modules`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-il-host-dotnet-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "import host.dotnet.Kappa.Compiler.TestHost.Sample.(term new, term Echo, term Create)"
+                    "result : String"
+                    "let result ="
+                    "    let fromCtor = new \"wrapped\""
+                    "    let _ = Echo fromCtor ()"
+                    "    let fromStatic = Create \"ok\""
+                    "    Echo fromStatic ()"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected host.dotnet wrappers to compile, got %A" workspace.Diagnostics)
+
+    let outputDirectory = createScratchDirectory "il-host-dotnet"
+
+    let artifact =
+        match Backend.emitIlAssemblyArtifact workspace outputDirectory with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    use loaded = loadManagedAssembly artifact.AssemblyFilePath
+
+    let moduleType = loaded.Assembly.GetType("Kappa.Generated.main", throwOnError = true, ignoreCase = false)
+    let resultMethod = moduleType.GetMethod("result", BindingFlags.Public ||| BindingFlags.Static)
+
+    Assert.NotNull(resultMethod)
+    Assert.Equal(typeof<string>, resultMethod.ReturnType)
+    Assert.Equal("ok", resultMethod.Invoke(null, [||]) :?> string)
+
+[<Fact>]
 let ``il backend supports qualified cross module calls for zero argument bindings`` () =
     let workspace =
         compileInMemoryWorkspace

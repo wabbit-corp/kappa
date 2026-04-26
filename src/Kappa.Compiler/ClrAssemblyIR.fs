@@ -14,7 +14,8 @@ type ClrAssemblyConstructor =
 type ClrAssemblyDataType =
     { Name: string
       TypeParameters: string list
-      Constructors: ClrAssemblyConstructor list }
+      Constructors: ClrAssemblyConstructor list
+      ExternalRuntimeTypeName: string option }
 
 type ClrAssemblyTraitInstance =
     { TraitName: string
@@ -57,7 +58,8 @@ module ClrAssemblyIR =
     let private ofRuntimeDataType (dataType: KRuntimeDataType) : ClrAssemblyDataType =
         { Name = dataType.Name
           TypeParameters = dataType.TypeParameters
-          Constructors = dataType.Constructors |> List.map ofRuntimeConstructor }
+          Constructors = dataType.Constructors |> List.map ofRuntimeConstructor
+          ExternalRuntimeTypeName = dataType.ExternalRuntimeTypeName }
 
     let private ofRuntimeTraitInstance (instanceDeclaration: KRuntimeTraitInstance) : ClrAssemblyTraitInstance =
         { TraitName = instanceDeclaration.TraitName

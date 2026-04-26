@@ -20,6 +20,8 @@ type DiagnosticCode =
     | ImportItemNotFound
     | UrlImportUnpinnedInPackageMode
     | UrlImportRefPinRequiresLock
+    | HostModuleReservedRoot
+    | HostModuleUnsupportedBackend
     | ModuleNameUnresolved
     | ModulePathMismatch
     | StaticObjectUnresolved
@@ -87,6 +89,8 @@ module DiagnosticCode =
         | ImportItemNotFound -> "E_IMPORT_ITEM_NOT_FOUND"
         | UrlImportUnpinnedInPackageMode -> "E_URL_IMPORT_UNPINNED_IN_PACKAGE_MODE"
         | UrlImportRefPinRequiresLock -> "E_URL_IMPORT_REF_PIN_REQUIRES_LOCK"
+        | HostModuleReservedRoot -> "E_HOST_MODULE_RESERVED_ROOT"
+        | HostModuleUnsupportedBackend -> "E_HOST_MODULE_UNSUPPORTED_BACKEND"
         | ModuleNameUnresolved -> "E_MODULE_NAME_UNRESOLVED"
         | ModulePathMismatch -> "E_MODULE_PATH_MISMATCH"
         | StaticObjectUnresolved -> "E_STATIC_OBJECT_UNRESOLVED"
@@ -153,6 +157,8 @@ module DiagnosticCode =
         | "E_IMPORT_ITEM_NOT_FOUND" -> Some ImportItemNotFound
         | "E_URL_IMPORT_UNPINNED_IN_PACKAGE_MODE" -> Some UrlImportUnpinnedInPackageMode
         | "E_URL_IMPORT_REF_PIN_REQUIRES_LOCK" -> Some UrlImportRefPinRequiresLock
+        | "E_HOST_MODULE_RESERVED_ROOT" -> Some HostModuleReservedRoot
+        | "E_HOST_MODULE_UNSUPPORTED_BACKEND" -> Some HostModuleUnsupportedBackend
         | "E_MODULE_NAME_UNRESOLVED" -> Some ModuleNameUnresolved
         | "E_MODULE_PATH_MISMATCH" -> Some ModulePathMismatch
         | "E_STATIC_OBJECT_UNRESOLVED" -> Some StaticObjectUnresolved

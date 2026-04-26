@@ -23,6 +23,7 @@
     <Compile Include="Parser.fs" />
     <Compile Include="IntrinsicCatalog.fs" />
     <Compile Include="Stdlib.fs" />
+    <Compile Include="HostBindings.fs" />
     <Compile Include="KCore.fs" />
     <Compile Include="WorkspaceCompilation.fs" />
     <Compile Include="TraitRuntime.fs" />
