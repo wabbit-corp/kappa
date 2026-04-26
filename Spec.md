@@ -3559,7 +3559,19 @@ List a
 Array a
 ```
 
-Hashing of `String` MUST follow exact `Eq String` semantics.
+Hashing of `Bytes`:
+
+* `Hashable Bytes` hashes the exact byte sequence.
+* It MUST agree with `Eq Bytes`.
+* It MUST NOT inspect or depend on the physical representation of the `Bytes` value, such as slice offset, backing
+  buffer identity, pinning status, mmap identity, or compaction status.
+
+Hashing of `String`:
+
+* `Hashable String` hashes according to exact `Eq String`.
+* An implementation MAY hash the canonical UTF-8 bytes of the string.
+* Hashing MUST NOT perform Unicode normalization, case folding, grapheme segmentation, locale collation, or
+  display-width calculation.
 
 Hashing of `Grapheme` MUST follow exact `Eq Grapheme` semantics.
 
