@@ -1355,11 +1355,30 @@ expect data Eff (r : EffRow) (a : Type) : Type
 Code       : Type -> Type
 ClosedCode : Type -> Type
 
+trait Lift (a : Type) =
+    liftCode :
+        a -> Code a
+
+closeCode :
+    forall (@0 t : Type).
+    Code t -> Option (ClosedCode t)
+
+genlet :
+    forall (@0 t : Type).
+    Code t -> Code t
+
+runCode :
+    forall (@0 t : Type).
+    ClosedCode t -> UIO t
+
 `Variant`, `Eff`, `Code`, and `ClosedCode` are primitive type constructors exported by `std.prelude`.
 
 * `Variant r` is the elaborated carrier for union types (§5.4).
 * `Eff r a` is the algebraic-effect computation type of §8.1.6.
 * `Code a` and `ClosedCode a` are the staged-code carriers of §5.9.
+
+`Code` and `ClosedCode` are generative staged-code carriers, not inspectable syntax. Use `Syntax t` for inspectable
+ASTs.
 
 These declarations are ordinary source-level names. Their operational behavior is nevertheless primitive where the
 corresponding feature requires primitive support.
@@ -8147,6 +8166,8 @@ Rules:
 #### 5.9.1 `Code` and `ClosedCode`
 
 Kappa provides separate built-in types for generative staged code:
+
+`Code`, `ClosedCode`, `Lift`, `liftCode`, `closeCode`, `genlet`, and `runCode` are exported by `std.prelude`.
 
 ```kappa
 Code       : Type -> Type
