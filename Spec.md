@@ -1009,32 +1009,124 @@ refl
 
 Terms (term namespace):
 ```
-pure, (>>=), (>>), (|>), (<|),
+-- monadic / applicative / pipeline
+pure, (>>=), (>>), map, liftA2, (<*>), (|>), (<|),
+
+-- booleans and short-circuiting
 not, and, or, force, (&&), (||),
-empty, (<|>), orElse,
+
+-- equality, equivalence, and ordering
+(==), (/=), (~=), compare, (<), (<=), (>), (>=),
+
+-- numeric operations
+zero, one,
+add, (+),
+multiply, (*),
 negate,
+subDefined, subtract, (-),
+divDefined, divide, (/),
+modDefined, modulo, (%),
+nonZero,
+
+-- alternatives, monoids, folds, traversals, filters
+empty, (<|>), orElse,
+append, (++),
+foldl, foldr, foldMap, traverse,
+for_, sequence, sequence_,
+filter, filterMap,
+
+-- literals and interpolation
+fromInteger, fromFloat, fromString,
+buildInterpolated,
+f, re, b, type,
+
+-- iteration and comprehensions
+next,
+toQuery, toBorrowQuery,
+fromComprehensionPlan, fromComprehensionRaw,
+
+-- proof and equality helpers
 absurd,
 subst, sym, trans, cong,
+witness, summon,
 measureRelation, lexRelation,
+
+-- floating point
 floatEq,
+
+-- algebraic effects
 runPure,
+
+-- runtime error / finalization / resources
 sandbox, unsandbox,
-fork, forkDaemon, await, join, interrupt, interruptFork, interruptAs, interruptForkAs,
+poll, uninterruptible, mask, ensuring, acquireRelease,
+finally, throwError, catchError, raise,
+bracket, release,
+
+-- fibers and scopes
+fork, forkDaemon, await, join,
+interrupt, interruptFork, interruptAs, interruptForkAs,
 fiberId, currentFiberId, getFiberLabel, setFiberLabel, locallyFiberLabel,
 cede, blocking,
-poll, uninterruptible, mask, ensuring, acquireRelease,
 newScope, withScope, forkIn, shutdownScope,
 monitor, awaitMonitor, demonitor,
+
+-- fiber-local and promise
 newFiberRef, getFiberRef, setFiberRef, locallyFiberRef,
 newPromise, awaitPromiseExit, awaitPromise, completePromise,
-nowMonotonic, sleepFor, sleepUntil, timeout, race,
+
+-- references and STM
+newRef, readRef, writeRef,
 atomically, newTVar, readTVar, writeTVar, retry, check,
-f, re, b, type,
-println, print
+
+-- ranges
+range, (..), (..<),
+
+-- collection basics
+listLength, listAppend,
+arrayEmpty, arraySingleton, arrayFromList, arrayToList, arrayLength, arrayGet, arrayIndex,
+setEmpty, setSingleton, setInsert, setDelete, setMember, setSize,
+mapEmpty, mapSingleton, mapInsert, mapDelete, mapLookup, mapMember, mapSize,
+
+-- time
+nowMonotonic,
+nanos, micros, millis, seconds, minutes,
+durationAdd, durationSub, durationCompare,
+instantAdd, instantDiff,
+sleepFor, sleepUntil, timeout, race,
+
+-- staging and syntax metadata
+syntaxOrigin, withSyntaxOrigin,
+liftCode, closeCode, genlet, runCode,
+
+-- output
+show, printString, printlnString, print, println
 ```
 
-Several listed terms, such as `pure`, `(>>=)`, `empty`, `(<|>)`, and `orElse`, are overloaded member names induced by
-the corresponding prelude traits (§12.2.1).
+Several listed terms are overloaded member names induced by the corresponding prelude traits (§12.2.1). This includes,
+but is not limited to:
+
+```text
+pure, (>>=), map, liftA2, (<*>),
+empty, (<|>), orElse,
+(==), (~=), compare,
+zero, one, add, (+), multiply, (*), negate,
+subDefined, subtract, (-),
+divDefined, divide, (/),
+modDefined, modulo, (%),
+append, (++),
+foldl, foldr, foldMap, traverse,
+filter, filterMap,
+fromInteger, fromFloat, fromString,
+next, range,
+buildInterpolated,
+finally, throwError, catchError, bracket, release,
+newRef, readRef, writeRef,
+show, liftCode
+```
+
+The fact that an overloaded member name is listed here does not mean it is a single monomorphic global function.
+Resolution follows the ordinary trait-member and implicit-evidence rules.
 
 `floatEq : Float -> Float -> Bool` compares floating-point values using IEEE numeric equality (so `NaN` is never equal
 and `+0.0` equals `-0.0`). It is not the default `(==)` for `Float`.
