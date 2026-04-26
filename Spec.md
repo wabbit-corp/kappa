@@ -18422,6 +18422,30 @@ The only occurrence of `x` is inside closure `f`, but `f` is not demanded
 on this path.
 ```
 
+Macro and elaboration-time phase diagnostics:
+
+When compilation rejects a program because an `Elab` action, macro, prefixed-string handler, or comprehension hook
+attempts to use an object-phase runtime value, the diagnostic MUST identify:
+
+* the elaboration-time computation being checked;
+* the object-phase value that would have been captured or inspected;
+* the source construct that attempted the phase crossing; and
+* the nearest valid reflection boundary, if one exists, such as quotation to `Syntax` or semantic reflection to `Core`.
+
+When compilation rejects a `Syntax` value because its hidden syntax-scope metadata would escape, the diagnostic MUST
+identify:
+
+* the `Syntax` value or quote that carries the escaping reference;
+* the referenced binder, borrow region, or local nominal token;
+* the scope that introduced it; and
+* the return, storage, package, splice, or rebinding site that would cause the escape.
+
+When compilation rejects a splice because generated code violates quantity or borrowing rules, the diagnostic MUST
+identify both:
+
+* the macro expansion or splice site; and
+* the generated use site responsible for the object-level quantity, borrow, or region violation.
+
 Tooling queries over syntactically incomplete files are valid. Where possible, they MUST return partial results rather
 than failing wholesale merely because the surrounding file is incomplete.
 
