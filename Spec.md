@@ -6364,13 +6364,29 @@ Kappa provides a built-in type family for inspectable, hygienic syntax values:
 Syntax : Type -> Type
 ```
 
-If `expr : t`, then:
+`Syntax t` is a compile-time-only type. A value of type `Syntax t` represents object-language syntax whose expected
+object-language type is `t`.
+
+Syntax quotation:
 
 ```kappa
 '{ expr }
 ```
 
-has type `Syntax t`.
+constructs a meta-phase value of type `Syntax t` when `expr` can be assigned object-language type `t` in the quotation's
+object context.
+
+Quotation is scope-aware and type-directed, but quotation construction is not final object-language elaboration.
+
+In particular:
+
+* quotation records syntax and hygienic binding structure;
+* quotation records the hidden syntax-scope environment of every free object-language binder referenced by the quoted
+  syntax;
+* quotation may use ordinary type-directed checking sufficient to assign the `Syntax` index;
+* quotation does not discharge final object-level quantity, borrow, region-escape, implicit, visibility, opacity, or
+  linearity obligations; and
+* those obligations are discharged when the syntax is spliced and elaborated at a splice site.
 
 Splice syntax inside syntax quotes:
 
@@ -6380,8 +6396,19 @@ ${ s }
 
 requires `s : Syntax t` and inserts the quoted sub-expression into the surrounding quote.
 
+An `Elab (Syntax t)` action is not run implicitly inside a quote. To splice the result of an elaboration action into a
+quote, bind it first in the surrounding `Elab` computation and then use `${...}` on the resulting `Syntax t`.
+
+Example:
+
+```kappa
+makeAddOne : Syntax Int -> Elab (Syntax Int)
+let makeAddOne e =
+    pure '{ ${e} + 1 }
+```
+
 Note: `${...}` inside a quoted block is distinct from the string-interpolation `${...}` syntax of §4.3.4. The two forms
-occur in disjoint lexical contexts (strings vs. quotes).
+occur in disjoint lexical contexts.
 
 <!-- types.macros.top_level_syntax_splicing -->
 #### 5.8.2 Top-level syntax splicing
