@@ -3163,6 +3163,16 @@ Traits:
 Hashable
 ```
 
+Required instances supplied by `std.hash`:
+
+```text
+Eq HashCode
+Ord HashCode
+```
+
+These instances are not part of the implicit prelude merely because `Eq` and `Ord` themselves are prelude traits.
+They become available according to the ordinary instance-visibility rules for `std.hash`.
+
 Terms:
 
 ```text
@@ -3266,12 +3276,44 @@ Rules:
 * `HashState` is a linear accumulator. A portable `hashInto` implementation must consume the incoming state exactly once
   and return the resulting state exactly once.
 * `HashCode` is an opaque runtime value.
-* Portable source code MUST NOT rely on any numeric representation, ordering, serialization, printed form, or stable
-  cross-run identity of `HashCode`.
-* The standard module MUST NOT export `Eq HashCode`, `Ord HashCode`, `Show HashCode`, or a conversion from `HashCode`
-  to an ordinary numeric type as part of the portable minimum.
-* An implementation MAY provide implementation-defined debug or profiling operations for `HashCode`, but such operations
-  are outside portable semantics.
+* The standard module MUST provide coherent instances:
+
+  ```text
+  Eq HashCode
+  Ord HashCode
+  ```
+
+* The `Eq HashCode` instance compares hash-code values as same-execution opaque tokens.
+  If `(h1 == h2) = True`, then `Eq.eqSound` proves only:
+
+  ```kappa
+  h1 = h2
+  ```
+
+  as values of type `HashCode`.
+
+  It does not prove equality of any source values whose hashes produced `h1` and `h2`.
+
+* The `Ord HashCode` instance provides a deterministic total order over `HashCode` values within one program execution.
+  Its equality class MUST agree with `Eq HashCode`:
+
+  ```text
+  compare h1 h2 = EQ    iff    (h1 == h2) = True
+  ```
+
+* The ordering of `HashCode` values is opaque.
+  Portable source code MUST NOT rely on the ordering being numeric, lexical, insertion-ordered, address-ordered,
+  algorithm-stable, seed-stable, implementation-stable, backend-stable, compiler-version-stable, or stable across
+  process executions.
+
+* Portable source code MUST NOT rely on any numeric representation, serialization, printed form, or stable cross-run
+  identity of `HashCode`.
+
+* The standard module MUST NOT export `Show HashCode`, any parser for `HashCode`, any serializer for `HashCode`, or any
+  conversion from `HashCode` to an ordinary numeric type as part of the portable minimum.
+
+* An implementation MAY provide implementation-defined debug or profiling operations for `HashCode`, including rendered
+  or serialized forms, but such operations are outside portable semantics.
 * `HashSeed` is explicit so that hashing remains pure. For a fixed seed and fixed value, `hashWith seed value` is a pure
   deterministic computation within one program execution.
 * Different implementations, backend profiles, compiler versions, process executions, or collection instances MAY use
