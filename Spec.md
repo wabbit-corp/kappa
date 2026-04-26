@@ -18532,6 +18532,33 @@ Evaluation order:
 
 Definitional equality (also called conversion) is the equality relation used by the typechecker.
 
+Definitional equality is stable under semantically equivalent import environments.
+
+For a fixed elaborated term, fixed lexical context, fixed active refinement context, fixed visibility/opacity state,
+fixed `unhide`/`clarify` state, fixed backend profile where relevant, and fixed imported-interface identities,
+definitional equality and normalization MUST NOT depend on:
+
+* the source order of unrelated import declarations;
+* the order in which imported modules were loaded;
+* the order in which imported definitions were reloaded in an interactive session;
+* the order in which declaration, instance, or semantic-object tables are iterated internally;
+* memoization hit or miss behavior;
+* persistent-cache insertion order;
+* parallel worker scheduling; or
+* whether an imported interface was obtained by fresh compilation, cache reuse, or interface reload.
+
+If two source programs differ only by a reordering of imports that leaves every affected source location's effective
+import environment semantically equivalent under §2.3.5, then corresponding normalization and definitional-equality
+queries MUST return the same results.
+
+If two imported interface artifacts have the same semantic identity and fingerprint, replacing one with the other during
+an interactive reload MUST NOT change normalization or definitional equality results.
+
+If an imported interface artifact changes its semantic identity, transparency information, exported definitions,
+exported type aliases, exported constructors, instance set, provider identity, `clarify`-relevant information, or other
+interface facts used by conversion, then the effective import environment has changed and ordinary invalidation rules
+apply.
+
 Definitional equality is checked relative to:
 
 * the ordinary typing context; and
@@ -18557,6 +18584,13 @@ context and subject to opacity rules:
   them and recorded them as conversion-reducible. Definitions accepted via `assertReducible` unfold only in
   unsafe/debug builds that explicitly permit that non-portable escape. Outside the defining module, opaque definitions
   and opaque type aliases do not unfold unless the importing module has explicitly clarified them (§2.5.2).
+  δ-reduction of imported definitions is keyed by resolved declaration identity and the current visibility/opacity,
+  `unhide`, and `clarify` environment.
+  It is not keyed by the spelling through which the declaration was imported, the source order of unrelated imports, the
+  module-load order, or the cache entry from which the declaration was obtained.
+  If a declaration is reachable through more than one import path or alias, all paths resolving to the same declaration
+  identity expose the same δ-reduction behavior at a given use site, modulo the use site's ordinary visibility/opacity,
+  `unhide`, and `clarify` environment.
 * ι-reduction: reducing `match`, `if`, constructor-tag tests, and case-tree decisions on known constructors/literals.
   Knowledge may come either from the normalized scrutinee itself or from the active refinement context, as specified in
   §14.3A.
