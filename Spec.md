@@ -14809,12 +14809,24 @@ Built-in defaults when the prefix is omitted:
 Carrier selection:
 
 1. If an instance `FromComprehensionRaw c` is available, the compiler constructs a `RawComprehension item` for the
-   comprehension, evaluates `fromComprehensionRaw` during elaboration, and elaborates the resulting `Syntax c` at the
-   original comprehension site.
+   comprehension and invokes:
+
+   ```kappa
+   fromComprehensionRaw :
+       RawComprehension Item -> Elab (Syntax c)
+   ```
+
+   during elaboration.
 
 2. Otherwise, if an instance `FromComprehensionPlan c` is available, the compiler constructs the normalized
-   `ComprehensionPlan item` of §10.10, evaluates `fromComprehensionPlan` during elaboration, and elaborates the
-   resulting `Syntax c` at the original comprehension site.
+   `ComprehensionPlan item` of §10.10 and invokes:
+
+   ```kappa
+   fromComprehensionPlan :
+       ComprehensionPlan Item -> Elab (Syntax c)
+   ```
+
+   during elaboration.
 
 3. If both are available, `FromComprehensionRaw` is preferred.
 
@@ -14825,9 +14837,9 @@ type `item`.
 
 The selected hook is an elaboration-time hook and is subject to the restrictions of §5.8.6.
 
-The `Syntax c` returned by the hook is elaborated using the same lexical context, expected-type information,
-name-resolution, implicit-insertion, visibility, opacity, `unhide`, and `clarify` rules that would apply to an ordinary
-splice at the comprehension site.
+The `Syntax c` produced by the selected `Elab` action is elaborated using the same lexical context, expected-type
+information, name-resolution, implicit-insertion, quantity checking, borrow checking, region-escape checking,
+visibility, opacity, `unhide`, and `clarify` rules that would apply to an ordinary splice at the comprehension site.
 
 Examples:
 
@@ -16195,12 +16207,17 @@ Elaboration performs (non-exhaustive):
 
 * layout processing (`INDENT`/`DEDENT`) and parsing using fixities in scope,
 * construction and phase resolution of KFrontIR (§17.2),
+* phase checking of object-phase and meta-phase expressions, including enforcement that `Elab` actions cannot directly
+  capture object-phase runtime values (§5.1.4.3, §5.8.7),
+* execution of `$(...)` splices, prefixed-string handlers, comprehension sink hooks, and other elaboration-time
+  expansions, where each expansion produces `Syntax` that is recursively elaborated at the original splice or hook site
+  (§5.8.2, §4.3.4, §10.9),
 * name resolution across lexical binding groups, declaration kinds,
   same-spelling data families, and nearest-successful receiver lookup,
 * implicit argument insertion (§7.3),
 * construction of maximal application sites and their alignment with resolved Pi telescopes (§7.1.3, §17.3.1),
-* quantity checking and borrow checking under §§5.1.5-5.1.7 using the syntax-directed ownership rules of the core
-  language,
+* quantity checking, borrow checking, syntax-scope escape checking, and region/local-nominal escape checking under
+  §§5.1.5-5.1.7 and §5.8.4 using the syntax-directed ownership rules of the core language,
 * generation of any predicates required by an enabled modal/coeffect extension of §5.1.5.2, followed by
   modality-specific solving,
 * insertion of coercions required by:
