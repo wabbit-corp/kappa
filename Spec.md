@@ -3364,8 +3364,13 @@ Primitive hashing operations:
   other structural delimiters in derived or handwritten instances.
 * The exact mixing algorithm used by `HashState` is implementation-defined.
 * The mixing algorithm MUST be deterministic for a fixed implementation, backend profile, seed, and execution.
-* The mixing algorithm MUST NOT affect source-level equality, ordering, grouping, map conflict resolution, or
-  representative choice.
+* Except where a source program explicitly computes and compares `HashCode` values, the mixing algorithm MUST NOT affect
+  source-level equality, ordering, grouping, map conflict resolution, or representative choice.
+* If a source program explicitly orders, groups, partitions, selects, or otherwise branches by `HashCode`, then the
+  resulting behavior may depend on the same-execution opaque-token equality or ordering of those `HashCode` values.
+  Such behavior is portable only in the limited sense specified for `Eq HashCode` and `Ord HashCode`; it is not
+  reproducible across implementations, backend profiles, compiler versions, process executions, collection instances, or
+  seeds.
 
 Required instances:
 
