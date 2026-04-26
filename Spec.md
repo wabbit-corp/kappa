@@ -22075,6 +22075,62 @@ observationally unchanged.
 If the reloaded interface has a different semantic identity or fingerprint, the implementation MUST invalidate affected
 queries from the earliest phase whose inputs changed, as specified by §17.2.6.
 
+<!-- compiler.kfrontir.import_stability_examples -->
+##### 17.2.5B Examples: import stability
+
+Example: unrelated import reorder.
+
+```kappa
+module M
+
+import A
+import B
+import C
+
+x : T
+let x = body
+```
+
+If `body`, its type annotation, its holes, its implicit goals, and every declaration it references have the same
+effective import environment after reordering `A`, `B`, and `C`, then the elaborated result of `x` must be unchanged.
+
+In particular, normalization of `x`, hole-goal queries inside `body`, and semantic reflection queries executed while
+elaborating `body` must not depend on whether `A` was loaded before `B`.
+
+Example: import reorder that is not unrelated.
+
+```kappa
+import A   -- exports infix left 60 (++)
+
+x = a ++ b
+```
+
+Moving the import of `A` after `x` may change whether `++` has a fixity in scope at the expression. This is not an
+unrelated import reorder and is not protected by import-stability equivalence.
+
+Example: imported function reduction through alias.
+
+```kappa
+import Data.List.Extra as E
+
+let y = E.find p xs
+```
+
+If `E.find` resolves to the same declaration identity before and after an interface reload, normalization of `y` must
+use the same transparent definition of `E.find` under the same opacity environment.
+
+It must not fail or become neutral merely because another visible declaration has the same unqualified spelling `find`.
+
+Example: dependency closure change.
+
+```kappa
+import A
+```
+
+Adding `import B` may add `B` to the module closure. If `B` contains top-level instances, those instances enter the
+global instance environment under §12.3. This is a semantic import-environment change and may affect implicit resolution,
+including by introducing ambiguity or coherence failure.
+
 <!-- compiler.kfrontir.analysis_sessions_invalidation -->
 #### 17.2.6 Analysis sessions and invalidation
 
