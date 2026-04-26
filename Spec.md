@@ -21986,6 +21986,53 @@ instance resolution, or refactoring legality can differ from batch compilation.
 Purely presentation-level services such as syntax coloring, formatting, outline grouping, or snippet expansion MAY use
 lighter-weight mechanisms, provided they do not claim semantic authority.
 
+<!-- compiler.kfrontir.tooling_import_stability -->
+#### 17.2.5A Import stability for tooling and interactive queries
+
+Tooling and interactive queries MUST be stable under semantically equivalent import environments as defined by §2.3.5.
+
+This requirement applies at least to:
+
+* name-resolution queries;
+* type-at-position queries;
+* expected-type, expected-quantity, expected-effect-row, and expected-capture queries;
+* hole-goal queries;
+* proof-search and term-search queries;
+* case-split generation;
+* missing-clause generation;
+* completion candidate enumeration;
+* `whnf`, `normalize`, and definitional-equality queries exposed through semantic reflection;
+* diagnostics;
+* refactoring legality;
+* interface browsing;
+* semantic-object lookup; and
+* source-to-source edits produced by hole refinement, case splitting, import insertion, and renaming.
+
+For fixed source text modulo unrelated import reordering, fixed build configuration, fixed backend profile, fixed
+dependency-interface identities, fixed macro transcript, and semantically equivalent effective import environments,
+tooling queries MUST return the same semantic answers.
+
+Permitted differences are limited to presentation differences, such as:
+
+* source ranges after physically moving import declarations;
+* ordering of equally valid presentation candidates when the implementation documents a deterministic presentation
+  order;
+* pretty-printed qualification choices when several aliases name the same declaration identity; and
+* diagnostics about unused imports or import formatting.
+
+Presentation differences MUST NOT affect accepted/rejected status, inferred types, hole goals, solved implicits,
+normal forms, definitional-equality answers, or generated KCore.
+
+A language-server or editor implementation MUST NOT maintain an import-order-sensitive semantic cache whose results can
+disagree with batch compilation.
+
+If an interactive session reloads an imported module and the reloaded module interface has the same semantic identity
+and fingerprint as the previous interface, all still-valid semantic query results depending on that interface MUST remain
+observationally unchanged.
+
+If the reloaded interface has a different semantic identity or fingerprint, the implementation MUST invalidate affected
+queries from the earliest phase whose inputs changed, as specified by §17.2.6.
+
 <!-- compiler.kfrontir.analysis_sessions_invalidation -->
 #### 17.2.6 Analysis sessions and invalidation
 
