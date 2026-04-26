@@ -913,22 +913,48 @@ but source programs observe them as ordinary prelude exports.
 
 Types (type namespace):
 ```
+-- intrinsic compile-time classifiers
+Universe, Quantity, Region, Constraint,
+RecRow, VarRow, EffRow, Label, EffLabel,
+
+-- core ordinary types
 Unit, Void, Bool, Char, String, Int, Nat, Integer, Float, Double, Real, Bytes, Ordering,
 
+-- unions and rows
+Variant r,
+
+-- syntax, elaboration, reflection, and staging
 Syntax a, SyntaxOrigin, SyntaxFragment,
 Elab a, ElabGoal,
 CoreCtx, Core Γ a, CoreEq x y, Symbol,
+Code a, ClosedCode a,
 
+-- queries and comprehensions
 Query a, OnceQuery a, OptionalQuery a, NonEmptyQuery a, SingletonQuery a,
 QueryCore m q a, QueryUse, QueryCard, QueryMode,
 RawComprehension a, ComprehensionPlan a,
+
+-- standard data containers
 Option a, Result e a, List a, Array a, Set a, Map k v,
+
+-- resource and proof basics
 Res a r, Match a r, Dec p, Dict c,
 WellFounded, Acc,
-IO e a, UIO a, Fiber e a, FiberId, Exit e a, Cause e, InterruptTag, InterruptCause, DefectTag, DefectInfo,
+
+-- algebraic effects and runtime effects
+Eff r a,
+IO e a, UIO a,
+Fiber e a, FiberId, Exit e a, Cause e,
+InterruptTag, InterruptCause, DefectTag, DefectInfo,
 Scope, Monitor e a, FiberRef a, Promise e a,
+
+-- mutable / transactional
 STM a, TVar a,
+
+-- time / concurrency helpers
 Duration, Instant, TimeoutError, RaceResult a b,
+
+-- strings, regex, equality, and suspension
 Regex, (=), Thunk a, Need a
 ```
 
