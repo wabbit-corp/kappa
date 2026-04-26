@@ -161,6 +161,62 @@ let ``resource checker preserves borrowed parameter quantities declared by a sep
     assertDoesNotContainDiagnostic DiagnosticCode.QttBorrowEscape result.Diagnostics
 
 [<Fact>]
+let ``resource checker gives multi binder using patterns one shared borrow region and one release obligation`` () =
+    let text =
+        [
+            "module main"
+            ""
+            "data Handle : Type ="
+            "    Handle Int"
+            ""
+            "openPair : String -> IO (left : Handle, right : Handle)"
+            "let openPair name = pure (left = Handle 1, right = Handle 2)"
+            ""
+            "use : (& h : Handle) -> Unit"
+            "let use h = ()"
+            ""
+            "main : IO Unit"
+            "let main = do"
+            "    using (left = left, right = right) <- openPair \"data.txt\""
+            "    use left"
+            "    use right"
+        ]
+        |> String.concat "\n"
+
+    let document = parsedDocument "main.kp" text
+
+    Assert.Empty(document.Diagnostics)
+
+    let result = ResourceChecking.checkDocumentsWithFacts [ document ]
+
+    assertDoesNotContainDiagnostic DiagnosticCode.QttBorrowEscape result.Diagnostics
+    assertDoesNotContainDiagnostic DiagnosticCode.QttLinearDrop result.Diagnostics
+    assertDoesNotContainDiagnostic DiagnosticCode.QttLinearOveruse result.Diagnostics
+
+    let ownership = result.OwnershipFactsByFile[document.Source.FilePath]
+
+    Assert.Single(ownership.OwnershipUsingScopes) |> ignore
+
+    let usingScope = ownership.OwnershipUsingScopes.Head
+    let sharedRegionId = usingScope.UsingScopeSharedRegionId
+
+    let borrowedBindings =
+        ownership.OwnershipBindings
+        |> List.filter (fun binding ->
+            (binding.BindingName = "left" || binding.BindingName = "right")
+            && binding.BindingBorrowRegionId = Some sharedRegionId)
+
+    Assert.Equal(2, borrowedBindings.Length)
+
+    let releaseEvents =
+        ownership.OwnershipUses
+        |> List.filter (fun useFact ->
+            useFact.UseKind = OwnershipUseKind.Release
+            && useFact.UseTargetName = usingScope.UsingScopeHiddenOwnedBinding)
+
+    Assert.Single(releaseEvents) |> ignore
+
+[<Fact>]
 let ``resource checker rejects a returned lambda that captures a borrowed parameter declared by a separate signature`` () =
     let text =
         [

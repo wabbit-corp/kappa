@@ -735,6 +735,72 @@ let ``BODY_RESOLVE dump exposes M3 ownership facts`` () =
     )
 
 [<Fact>]
+let ``CHECKERS dump preserves M3 ownership facts`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithUnsafeConsume
+            "memory-m3-checkers-ownership-dump-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    ""
+                    "data File : Type ="
+                    "    Handle Int"
+                    ""
+                    "let openFile name = pure (Handle 1)"
+                    "let readData (& file : File) = pure \"chunk\""
+                    ""
+                    "let main : IO Unit = do"
+                    "    using file <- openFile \"data.txt\""
+                    "    let reader = \\ unit -> file"
+                    "    readData (reader ())"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let checkerJson =
+        match Compilation.dumpStage workspace "KFrontIR.CHECKERS" StageDumpFormat.Json with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    use document = JsonDocument.Parse(checkerJson)
+
+    let mainDocument =
+        document.RootElement.GetProperty("documents").EnumerateArray()
+        |> Seq.find (fun item -> item.GetProperty("moduleIdentity").GetString() = "main")
+
+    let ownership = mainDocument.GetProperty("ownership")
+
+    Assert.NotEqual(JsonValueKind.Null, ownership.ValueKind)
+    Assert.Equal(JsonValueKind.Array, ownership.GetProperty("bindings").ValueKind)
+    Assert.Equal(JsonValueKind.Array, ownership.GetProperty("uses").ValueKind)
+    Assert.Equal(JsonValueKind.Array, ownership.GetProperty("borrowRegions").ValueKind)
+    Assert.Equal(JsonValueKind.Array, ownership.GetProperty("usingScopes").ValueKind)
+    Assert.Equal(JsonValueKind.Array, ownership.GetProperty("closures").ValueKind)
+    Assert.Equal(JsonValueKind.Array, ownership.GetProperty("deferred").ValueKind)
+    Assert.Equal(JsonValueKind.Array, ownership.GetProperty("diagnostics").ValueKind)
+
+    let usingScope =
+        ownership.GetProperty("usingScopes").EnumerateArray()
+        |> Seq.find (fun item -> item.GetProperty("sharedRegionId").GetString().StartsWith("rho", StringComparison.Ordinal))
+
+    let sharedRegionId = usingScope.GetProperty("sharedRegionId").GetString()
+
+    Assert.Contains(
+        ownership.GetProperty("bindings").EnumerateArray(),
+        fun item ->
+            item.GetProperty("name").GetString() = "file"
+            && item.GetProperty("borrowRegionId").GetString() = sharedRegionId
+    )
+
+    Assert.Contains(
+        ownership.GetProperty("closures").EnumerateArray(),
+        fun item ->
+            item.GetProperty("name").GetString() = "reader"
+            && item.GetProperty("escapeStatus").GetString() = "contained"
+    )
+
+[<Fact>]
 let ``BODY_RESOLVE dump records linear move events`` () =
     let workspace =
         compileInMemoryWorkspaceWithUnsafeConsume
