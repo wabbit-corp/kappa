@@ -1005,7 +1005,7 @@ QueryCore m q a, QueryUse, QueryCard, QueryMode,
 RawComprehension a, ComprehensionPlan a,
 
 -- standard data containers
-Option a, Result e a, List a, Array a, Set a, Map k v,
+Option a, Result e a, List a, Array a, SizedArray n a, Set a, Map k v,
 
 -- resource and proof basics
 Res a r, Match a r, Dec p, Dict c,
@@ -1035,7 +1035,7 @@ Regex, (=), Thunk a, Need a
 A `Bytes` value is observationally a finite sequence of `Byte` values. Its equality, ordering, hashing, indexing,
 slicing, encoding, decoding, and I/O behavior are defined by that byte sequence.
 
-`Bytes` is not definitionally equal to `Array Byte`, `List Byte`, `exists n. Array n Byte`, or any other generic
+`Bytes` is not definitionally equal to `Array Byte`, `List Byte`, `exists n. SizedArray n Byte`, or any other generic
 container encoding.
 
 An implementation MAY represent `Bytes` using a compact byte array, a slice of a larger byte array, a small inline
@@ -1308,6 +1308,68 @@ data Ordering : Type =
     LT
     EQ
     GT
+```
+
+The following core ordinary types are primitive or implementation-provided ordinary runtime-capable types:
+
+```kappa
+expect data Byte : Type
+expect data Bytes : Type
+expect data UnicodeScalar : Type
+expect data Grapheme : Type
+expect data String : Type
+expect data Array (a : Type) : Type
+expect data SizedArray (n : Nat) (a : Type) : Type
+expect data Set (a : Type) : Type
+expect data Map (k : Type) (v : Type) : Type
+```
+
+Rules:
+
+* `Byte`, `Bytes`, `UnicodeScalar`, `Grapheme`, `String`, `Array`, `Set`, and `Map` are ordinary source-level types.
+* Their operational behavior may be primitive, but their names are resolved through the ordinary prelude import rules.
+* `Array a` is the ordinary dynamic-length generic array type.
+* `Bytes` is the ordinary packed byte-sequence type.
+* `String` is the ordinary valid-UTF-8 text type.
+
+`SizedArray n a` is the statically length-indexed array type.
+
+Rules:
+
+* A `SizedArray n a` contains exactly `n` elements of type `a`.
+* `SizedArray n a` is distinct from `Array a`.
+* `Array a` is the ordinary dynamic-length array type.
+* `SizedArray n a` is used when the length is part of the static type.
+* `Array a` is used when the length is an ordinary runtime property.
+
+Required operations:
+
+```kappa
+sizedArrayLength :
+    forall (n : Nat) (a : Type).
+    SizedArray n a -> Nat
+
+sizedArrayIndex :
+    forall (n : Nat) (a : Type).
+    (xs : SizedArray n a) ->
+    (i : Nat) ->
+    (@_ : (i < n) = True) ->
+    a
+
+sizedArrayToArray :
+    forall (n : Nat) (a : Type).
+    SizedArray n a -> Array a
+
+arrayAsSized :
+    forall (a : Type).
+    (xs : Array a) ->
+    exists (n : Nat). SizedArray n a
+```
+
+`SizedArray n a` values may share representation with `Array a` values. Such sharing is not observable except through
+performance and implementation-defined profiling/debug APIs.
+
+```kappa
 
 data List (a : Type) : Type =
     Nil
@@ -6275,7 +6337,7 @@ Consequences:
   the footprint of `r.f`, until that borrow ends.
 * Disjoint sibling borrows are allowed simultaneously. Thus independent fields such as `r.x` and `r.y` may both be
   borrowed at once.
-* Dependent fields are not disjoint merely because their labels differ. If `buffer : Array len Byte`, then borrowing
+* Dependent fields are not disjoint merely because their labels differ. If `buffer : SizedArray len Byte`, then borrowing
   `r.buffer` overlaps with `r.len`.
 * Borrowing through a record pattern is decomposed pathwise. For example, `let & (x = bx, y = by) = r` introduces
   borrows of `r.x` and `r.y`, not one undifferentiated borrow of all of `r`, except that dependency closure may enlarge
@@ -6953,7 +7015,7 @@ Record types are written:
 (name : String, age : Int)
 (value : Int, array : Array Int)
 (1 data : Bytes, & file : File, len : Nat)
-(len : Nat, buf : Array this.len Byte | r)
+(len : Nat, buf : SizedArray this.len Byte | r)
 ```
 
 Field declaration grammar:
@@ -7434,18 +7496,18 @@ Reconstitution:
 **Examples:**
 
 ```kappa
-type SizedBuffer = (len : Nat, buffer : Array this.len Byte, checksum : Nat)
+type SizedBuffer = (len : Nat, buffer : SizedArray this.len Byte, checksum : Nat)
 
 let buf : SizedBuffer = (len = 10, buffer = mkBuffer 10, checksum = 42)
 
 let buf2 = buf.{ len = 20 }
 -- elaborates to:
 -- (len = 20, buffer = buf.buffer, checksum = buf.checksum)
--- rejected because `buf.buffer` has type `Array 10 Byte`, not `Array 20 Byte`
+-- rejected because `buf.buffer` has type `SizedArray 10 Byte`, not `SizedArray 20 Byte`
 
 let buf3 = buf.{ len = 20, buffer = mkBuffer this.len }
 -- OK; `this.len` refers to the updated prefix, so the buffer is checked
--- against `Array 20 Byte`
+-- against `SizedArray 20 Byte`
 
 let buf4 = buf.{ checksum = 99 }
 -- OK; omitted fields are copied from `buf`
@@ -23036,9 +23098,9 @@ error[E_DEP_RECORD_REPAIR]: updating `len` changed the expected type of copied f
 note: copied field:
       buffer = buf.buffer
 note: expected after update:
-      Array 20 Byte
+      SizedArray 20 Byte
 note: found:
-      Array 10 Byte
+      SizedArray 10 Byte
 help: supply `buffer` explicitly in the same update
    |
 12 |     buf.{ len = 20, buffer = ... }
@@ -23214,9 +23276,9 @@ error[E_INOUT_RESTORATION]: restoring `buf.buffer` no longer satisfies the enclo
    |                   ----------- restored here
    |
 note: field `buffer` is required to have type:
-      Array buf.len Byte
+      SizedArray buf.len Byte
 note: after the call, the restored value has type:
-      Array 20 Byte
+      SizedArray 20 Byte
 help: update `len` and `buffer` together so the dependent fields agree
 ```
 
