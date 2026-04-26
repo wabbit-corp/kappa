@@ -3284,11 +3284,21 @@ A non-interpolated prefixed string:
 p"raw"
 ```
 
-elaborates to:
+elaborates as if written:
 
 ```kappa
-$(p.buildInterpolated [Lit "raw"])
+$(do
+    __prefix <- p
+    __prefix.buildInterpolated [Lit "raw"])
 ```
+
+If `p` itself is already a meta-phase value of type `Dict (InterpolatedMacro t)`, the first line is treated as:
+
+```kappa
+let __prefix = p
+```
+
+rather than as an `Elab` bind.
 
 An interpolated prefixed string:
 
@@ -3296,13 +3306,15 @@ An interpolated prefixed string:
 p"pre${x}post"
 ```
 
-elaborates to:
+elaborates as if written:
 
 ```kappa
-$(p.buildInterpolated [Lit "pre", Interp @Tx '{ x }, Lit "post"])
+$(do
+    __prefix <- p
+    __prefix.buildInterpolated [Lit "pre", Interp @Tx '{ x }, Lit "post"])
 ```
 
-where `Tx` is the inferred type of `x`.
+where `Tx` is the inferred object-language type of `x`.
 
 A formatted interpolation:
 
@@ -3310,10 +3322,12 @@ A formatted interpolation:
 p"pre${x : %04d}post"
 ```
 
-elaborates to:
+elaborates as if written:
 
 ```kappa
-$(p.buildInterpolated [Lit "pre", InterpFmt @Tx '{ x } "%04d", Lit "post"])
+$(do
+    __prefix <- p
+    __prefix.buildInterpolated [Lit "pre", InterpFmt @Tx '{ x } "%04d", Lit "post"])
 ```
 
 A raw interpolated prefixed string:
@@ -3322,10 +3336,12 @@ A raw interpolated prefixed string:
 p#"pre#{x}post"#
 ```
 
-elaborates to:
+elaborates as if written:
 
 ```kappa
-$(p.buildInterpolated [Lit "pre", Interp @Tx '{ x }, Lit "post"])
+$(do
+    __prefix <- p
+    __prefix.buildInterpolated [Lit "pre", Interp @Tx '{ x }, Lit "post"])
 ```
 
 A raw formatted interpolation:
@@ -3334,17 +3350,19 @@ A raw formatted interpolation:
 p#"pre#{x : ident}post"#
 ```
 
-elaborates to:
+elaborates as if written:
 
 ```kappa
-$(p.buildInterpolated [Lit "pre", InterpFmt @Tx '{ x } "ident", Lit "post"])
+$(do
+    __prefix <- p
+    __prefix.buildInterpolated [Lit "pre", InterpFmt @Tx '{ x } "ident"])
 ```
 
 There is no implementation-defined rewrite of formatted interpolation.
-Any meaning of the format specifier is determined entirely by `p.buildInterpolated`.
+Any meaning of the format specifier is determined entirely by `buildInterpolated`.
 
-The standard `f`, `re`, `b`, and `type` prefixes supplied by `std.prelude` are ordinary terms participating in this mechanism.
-They receive no special parser treatment.
+The standard `f`, `re`, `b`, and `type` prefixes supplied by `std.prelude` are ordinary terms participating in this
+mechanism. They receive no special parser treatment.
 
 <!-- literals.string_literals.type_prefix_handler -->
 #### 4.3.5 Conventional type-prefix handler
