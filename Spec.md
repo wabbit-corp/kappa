@@ -3898,6 +3898,41 @@ bytesFromList :
     List Byte -> Bytes
 ```
 
+Dependent views:
+
+```kappa
+bytesAsSizedArray :
+    (bs : Bytes) ->
+    exists (n : Nat). SizedArray n Byte
+
+bytesFromSizedArray :
+    forall (n : Nat).
+    SizedArray n Byte -> Bytes
+```
+
+Rules:
+
+* `bytesAsSizedArray bs` returns a length-indexed view of the byte sequence denoted by `bs`.
+* The existential witness returned by `bytesAsSizedArray bs` MUST be propositionally equal to `bytesLength bs`.
+* `bytesFromSizedArray arr` returns the `Bytes` value with the same byte sequence as `arr`.
+* Neither operation exposes the runtime representation of `Bytes`.
+* Either operation MAY copy or share storage.
+* Portable code MUST NOT infer representation identity from these operations.
+
+Round-trip laws:
+
+```kappa
+bytesFromSizedArray (snd (bytesAsSizedArray bs)) = bs
+```
+
+up to the standard existential packaging equality for the returned length witness.
+
+For any `arr : SizedArray n Byte`:
+
+```kappa
+bytesLength (bytesFromSizedArray arr) = n
+```
+
 Extensional semantics:
 
 * `bytesLength bs` is the number of bytes in `bs`.
