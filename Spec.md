@@ -3345,9 +3345,15 @@ Consequences:
 
 * A hash implementation may use hash-code inequality, under the same seed and same `Hashable` evidence, as a fast
   rejection test before calling `(==)`.
-* A hash implementation MUST NOT use hash-code equality as proof that two keys are equal.
-* Any operation that needs to decide whether two keys are the same key MUST use `Eq`.
-* Hash collisions are ordinary and semantically invisible.
+* A hash implementation MUST NOT use hash-code equality as proof that two source-level keys are equal.
+* A hash implementation MUST NOT use hash-code ordering as proof of any source-level ordering relation between keys.
+* Any operation that needs to decide whether two source-level keys are the same key MUST use `Eq` for the key type.
+* Any operation that needs to decide source-level ordering of keys MUST use `Ord` for the key type, or another explicitly
+  specified key-ordering relation.
+* Hash collisions are ordinary and semantically invisible to equality-keyed and ordering-keyed operations over the
+  original key type.
+* Hash collisions are observable only to programs that explicitly compute and compare `HashCode` values.
+  Such observations are same-execution opaque-token observations, not facts about the original keys.
 
 Primitive hashing operations:
 
