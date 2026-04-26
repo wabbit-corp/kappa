@@ -18232,10 +18232,29 @@ When solving a trait constraint goal `Tr args`, instance resolution proceeds as 
    * If zero candidates survive, the implicit goal is unsolved.
    * If one candidate survives, use it.
    * If multiple candidates survive, compare their instantiated candidate dictionaries according to §15.2.1:
-     * compare Easy Hashes first,
-     * if needed compare Hard Hashes,
-     * if all surviving instantiated candidate dictionaries have the same canonical Hard Hash, accept and pick any one,
+     * compare Easy Hashes first;
+     * if needed compare Hard Hashes;
+     * if all surviving instantiated candidate dictionaries have the same canonical Hard Hash, accept the constraint and
+       select the canonical representative by the deterministic ordering below;
      * otherwise reject the program as incoherent.
+
+Canonical representative ordering for equivalent surviving instances:
+
+1. canonical module identity of the instance declaration;
+2. provider identity of the defining module;
+3. normalized source path of the declaration, when available;
+4. source start offset, when available;
+5. canonical instance-head rendering;
+6. implementation-defined stable tie-breaker.
+
+The selected representative affects diagnostics, reflection, hole-goal display, and generated evidence names.
+
+Because the surviving dictionaries have the same canonical Hard Hash, the choice of representative MUST NOT affect
+source-language semantics, definitional equality, accepted/rejected status, generated KCore modulo alpha-renaming, or
+runtime behavior.
+
+Instance candidate collection and representative selection MUST NOT depend on import declaration order, module load
+order, interface reload order, hash-map iteration order, cache insertion order, or worker scheduling.
 
 <!-- traits.instances.search_termination -->
 #### 12.3.2 Instance search termination
