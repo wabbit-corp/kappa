@@ -11637,6 +11637,87 @@ the residual branch, so `notLT o` is definitionally equal to `True` in that bran
 This evidence is erased and exists only for typechecking, refinement, reachability, and elaboration. It does not affect
 runtime representation.
 
+<!-- expressions.match.refinement_normalization_examples -->
+##### 7.5.4A Examples: residual facts and branch-local normalization
+
+Residual branches may use ruled-out constructor information for normalization.
+
+Example with a residual catch-all:
+
+```kappa
+let notLT (o : Ordering) : Bool =
+    match o
+    case LT -> False
+    case _  -> True
+
+notLTResidual :
+    (o : Ordering) ->
+    match o
+    case LT -> Unit
+    case _  -> notLT o = True
+
+let notLTResidual o =
+    match o
+    case LT -> ()
+    case _  -> refl
+```
+
+The residual branch is checked under `LacksCtor o ⟨LT⟩`. Therefore `notLT o` reduces to `True` in that branch.
+
+No positive fact that `o` is `EQ` or `GT` is introduced merely by ruling out `LT`.
+
+Example with unique remaining constructor:
+
+```kappa
+let fromOption (x : Option Int) : Int =
+    match x
+    case None -> 0
+    case _    -> x.value
+```
+
+The residual branch is checked under `LacksCtor x ⟨None⟩`.
+
+Since `Option` has exactly the visible constructors `None` and `Some`, the branch also derives `HasCtor x ⟨Some⟩`, so
+constructor-field projection `x.value` is valid.
+
+Guarded branches do not produce residual negative constructor facts:
+
+```kappa
+let guarded (x : Option Int) (b : Bool) : Int =
+    match x
+    case Some v if b -> v
+    case _           -> 0
+```
+
+The residual branch must not assume `LacksCtor x ⟨Some⟩`, because the preceding branch may have failed only because
+`b` was `False`.
+
+Example equivalent to a two-argument first-match clause tree:
+
+```kappa
+let foo (left : List a) (right : List a) : List a =
+    match left
+    case Nil -> Nil
+    case _ ->
+        match right
+        case Nil -> Nil
+        case _   -> Nil
+
+fooRightNil :
+    (left : List a) ->
+    match left
+    case Nil -> Unit
+    case _   -> foo left Nil = Nil
+
+let fooRightNil left =
+    match left
+    case Nil -> ()
+    case _   -> refl
+```
+
+In the residual branch, normalization of `foo left Nil` skips the first alternative using `LacksCtor left ⟨Nil⟩`, then
+reduces the second decision using the known `right = Nil` argument.
+
 <!-- expressions.match.narrowing_is_consuming -->
 #### 7.5.5 Narrowing is non-consuming
 
