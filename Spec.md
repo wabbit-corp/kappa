@@ -18848,8 +18848,8 @@ secondary ranges, structured fields, and ordering, subject to the parallel-diagn
 <!-- compiler.kcore -->
 ### 17.3 KCore
 
-KCore is the canonical fully resolved, post-macro core language obtained from KFrontIR after the `CORE_LOWERING` phase
-of §17.2.2.
+KCore is the canonical fully resolved, post-elaboration-expansion core language obtained from KFrontIR after the
+`CORE_LOWERING` phase of §17.2.2.
 
 Normative role:
 
@@ -18865,7 +18865,8 @@ Normative role:
 
 KCore is after:
 
-* macro expansion;
+* execution of required `Elab` splices and elaboration-time hooks;
+* recursive elaboration of the generated `Syntax` at each original splice or hook site;
 * layout resolution and parsing;
 * name resolution;
 * implicit-argument insertion;
@@ -18884,6 +18885,8 @@ KCore retains all compile-time structure needed by the source semantics. In part
 
 * intrinsic compile-time types and their inhabitants, including `Universe`, `Quantity`, `Region`, `Constraint`, row
   types, label types, universe terms, and `Type u`;
+* source/synthetic origin chains and syntax-scope metadata needed to justify generated code, diagnostics, and interface
+  identity after macro expansion;
 * explicit binder quantities, explicit regions, and explicit implicit binders;
 * explicit capture-annotated value types over explicit `Region` binders;
 * proof terms and equality evidence;
@@ -18914,9 +18917,10 @@ KCore contains no unresolved:
 * unresolved modality predicates,
 * or type-inference obligations.
 
-The ownership rules of `Quantity` are fully decided before KCore is constructed. Any modal/coeffect information present
-in KCore appears only as separate evidence introduced by `MODAL_SOLVE`; it does not alter the meaning of quantity
-terms, quantity satisfaction, or borrow checking.
+The ownership rules of `Quantity`, the borrow/region rules, and syntax-scope escape obligations are fully decided
+before KCore is constructed. Any modal/coeffect information present in KCore appears only as separate evidence
+introduced by `MODAL_SOLVE`; it does not alter the meaning of quantity terms, quantity satisfaction, or borrow
+checking.
 
 Any modality-predicate evidence introduced by an enabled modal/coeffect extension is compile-time only and
 proof-irrelevant for typechecking unless that extension explicitly introduces a user-visible runtime carrier. Such
