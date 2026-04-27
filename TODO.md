@@ -353,11 +353,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Add a resolved effect/operation representation so later passes do not need to rediscover effect identity from syntax.
   - Sources: `reviews/effects1.md`.
 
-- `[High] Make one-shot resumption checking robust across aliases and first-class labels.`
-  - One-shot resumption overuse should be rejected even when the handled label is rebound, stored in a record, or accessed through imports and member paths.
-  - Add regression tests for alias-based and record-carried-label one-shot overuse.
-  - Sources: `reviews/effects1.md`.
-
 - `[High] Make multi-shot continuation capture analysis semantic rather than syntax-shaped.`
   - Current logic appears too tied to narrow `DoBind` / direct-operation-call forms.
   - It needs to recognize semantically equivalent operation invocations through aliases, records, qualified names, and nested expressions.

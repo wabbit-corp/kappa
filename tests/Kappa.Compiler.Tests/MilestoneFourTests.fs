@@ -1321,6 +1321,132 @@ let ``one shot resumptions cannot be resumed twice`` () =
     Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttLinearOveruse)
 
 [<Fact>]
+let ``one shot resumptions remain one shot under a rebound handled label`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "bad : Int"
+            "let bad : Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            ask : Unit -> Bool"
+            ""
+            "        let l = Ask"
+            ""
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let _ <- l.ask ()"
+            "                pure 1"
+            ""
+            "        let handled ="
+            "            deep handle l comp with"
+            "                case return y -> pure y"
+            "                case ask _ k ->"
+            "                    do"
+            "                        let a <- k True"
+            "                        let _ <- k False"
+            "                        pure a"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-oneshot-rebound-label-overuse-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected one-shot resumption overuse under a rebound handled label to be rejected.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttLinearOveruse)
+
+[<Fact>]
+let ``one shot resumptions remain one shot under a record carried handled label`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "bad : Int"
+            "let bad : Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            ask : Unit -> Bool"
+            ""
+            "        let pkg = (label = Ask)"
+            ""
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let _ <- pkg.label.ask ()"
+            "                pure 1"
+            ""
+            "        let handled ="
+            "            deep handle pkg.label comp with"
+            "                case return y -> pure y"
+            "                case ask _ k ->"
+            "                    do"
+            "                        let a <- k True"
+            "                        let _ <- k False"
+            "                        pure a"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-oneshot-record-label-overuse-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected one-shot resumption overuse under a record-carried handled label to be rejected.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttLinearOveruse)
+
+[<Fact>]
+let ``one shot resumptions remain one shot under a qualified imported handled label`` () =
+    let libSource =
+        [
+            "module lib"
+            ""
+            "effect Ask ="
+            "    1 ask : Unit -> Bool"
+        ]
+        |> String.concat "\n"
+
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            "import lib"
+            ""
+            "bad : Int"
+            "let bad : Int ="
+            "    block"
+            "        let comp : Eff <[lib.Ask : lib.Ask]> Int ="
+            "            do"
+            "                let _ <- lib.Ask.ask ()"
+            "                pure 1"
+            ""
+            "        let handled ="
+            "            deep handle lib.Ask comp with"
+            "                case return y -> pure y"
+            "                case ask _ k ->"
+            "                    do"
+            "                        let a <- k True"
+            "                        let _ <- k False"
+            "                        pure a"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-oneshot-imported-label-overuse-root"
+            [ "lib.kp", libSource
+              "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected one-shot resumption overuse under a qualified imported handled label to be rejected.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttLinearOveruse)
+
+[<Fact>]
 let ``shallow handlers type resumptions against the remainder row`` () =
     let mainSource =
         [
