@@ -919,12 +919,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - message text only as a secondary check.
   - Sources: `reviews/tests1.md`.
 
-- `[Medium] Rename or redesign misleading tests whose names overclaim what they prove.`
-  - Example called out in the review:
-  - “type imports from modules with identical export shapes stay distinct” uses transparent aliases to `Int`, which does not prove distinct nominal identity.
-  - Similar honesty fixes may be needed for “normative minimum prelude surface” and other implementation-detail tests currently named like spec tests.
-  - Sources: `reviews/tests1.md`.
-
 - `[Medium] Label URL import tests as staging/policy tests until there is a real resolver.`
   - Current URL import tests are useful for parser and package/script-mode policy checks, but they do not exercise full URL-import conformance such as fetching, digest verification, transient locking, lockfile requirements, or mismatch behavior.
   - Keep them, but classify them honestly until a resolver/mock-resolver exists.

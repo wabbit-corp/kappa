@@ -1823,33 +1823,45 @@ let ``multiple import specs from the same module preserve distinct selections`` 
         failwithf "Expected both import specs to remain usable, got %A" issue
 
 [<Fact>]
-let ``type imports from modules with identical export shapes stay distinct`` () =
+let ``aliased type imports from modules with identical export shapes remain simultaneously usable`` () =
     let leftSource =
         [
             "module left"
-            "type T = Int"
+            "data T : Type ="
+            "    Mk Int"
         ]
         |> String.concat "\n"
 
     let rightSource =
         [
             "module right"
-            "type T = Int"
+            "data T : Type ="
+            "    Mk Int"
         ]
         |> String.concat "\n"
 
     let mainSource =
         [
             "module main"
+            "import left, right"
             "import left.(type T as LeftT), right.(type T as RightT)"
-            "result : LeftT -> RightT -> Int"
-            "let result left right = left + right"
+            "leftInt : LeftT -> Int"
+            "let leftInt value ="
+            "    match value"
+            "      case left.Mk n -> n"
+            "rightInt : RightT -> Int"
+            "let rightInt value ="
+            "    match value"
+            "      case right.Mk n -> n"
+            "result : Int"
+            "let result = leftInt (left.Mk 1) + rightInt (right.Mk 2)"
         ]
         |> String.concat "\n"
 
-    let workspace =
-        compileInMemoryWorkspace
+    let workspace, result =
+        evaluateInMemoryBinding
             "memory-identical-import-shapes-root"
+            "main.result"
             [
                 "left.kp", leftSource
                 "right.kp", rightSource
@@ -1857,6 +1869,12 @@ let ``type imports from modules with identical export shapes stay distinct`` () 
             ]
 
     Assert.False(workspace.HasErrors, sprintf "Expected aliased type imports from distinct modules to stay visible, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("3", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected aliased imports from same-shaped modules to remain usable together, got %A" issue
 
 [<Fact>]
 let ``instances are visible through the full module closure independent of qualified imports`` () =
@@ -3026,7 +3044,7 @@ let ``backend profile aliases normalize to the effective backend identity`` () =
     Assert.Equal("bootstrap-prelude-v2", workspace.BackendIntrinsicIdentity)
 
 [<Fact>]
-let ``bundled bootstrap prelude exposes the normative minimum surface and IO shape`` () =
+let ``bundled bootstrap prelude exposes the current bootstrap surface and IO shape`` () =
     let workspace =
         compileInMemoryWorkspace
             "memory-bootstrap-prelude-root"
