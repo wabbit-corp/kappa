@@ -224,13 +224,6 @@ module internal CompilationFrontend =
             | _ ->
                 []))
 
-    let private importedModules (document: ParsedDocument) =
-        collectImportSpecs document
-        |> List.choose (fun spec ->
-            match spec.Source with
-            | Dotted name -> Some(SyntaxFacts.moduleNameToText name)
-            | Url url -> Some(SyntaxFacts.urlModuleSpecifierIdentityText url))
-
     let severityText severity =
         match severity with
         | DiagnosticSeverity.Info -> "info"
@@ -793,6 +786,16 @@ module internal CompilationFrontend =
                         Some(document.Source.GetLocation(token.Span))
                     | _ ->
                         None)
+
+    let private importedModuleEdges (document: ParsedDocument) =
+        collectImportSpecs document
+        |> List.choose (fun spec ->
+            let defaultLocation = document.Source.GetLocation(TextSpan.FromBounds(0, 0))
+            let specLocation = defaultArg (findImportSpecifierLocation document spec) defaultLocation
+
+            match spec.Source with
+            | Dotted name -> Some(SyntaxFacts.moduleNameToText name, specLocation)
+            | Url url -> Some(SyntaxFacts.urlModuleSpecifierIdentityText url, specLocation))
 
     let private buildModuleExportInventory backendProfile (documents: ParsedDocument list) =
         let emptyInventory =
@@ -2102,14 +2105,26 @@ module internal CompilationFrontend =
                 moduleName, entries |> List.map snd)
             |> Map.ofList
 
-        let edges =
+        let edgeOrigins =
             moduleDocuments
             |> Map.map (fun _ moduleGroup ->
                 moduleGroup
-                |> List.collect importedModules
-                |> Set.ofList
-                |> Set.filter (fun moduleName -> moduleDocuments.ContainsKey(moduleName))
-                |> Set.toList)
+                |> List.collect importedModuleEdges
+                |> List.groupBy fst
+                |> List.choose (fun (moduleName, entries) ->
+                    if moduleDocuments.ContainsKey(moduleName) then
+                        let locations =
+                            entries
+                            |> List.map snd
+                            |> List.sortBy (fun location ->
+                                location.FilePath, location.Start.Line, location.Start.Column, location.End.Line, location.End.Column)
+
+                        Some(moduleName, locations)
+                    else
+                        None)
+                |> Map.ofList)
+
+        let edges = edgeOrigins |> Map.map (fun _ origins -> origins |> Map.keys |> Seq.toList)
 
         let states = Dictionary<string, int>()
         let stack = ResizeArray<string>()
@@ -2124,7 +2139,33 @@ module internal CompilationFrontend =
                     let cycleStart = stack |> Seq.findIndex ((=) dependency)
                     let cycle = stack |> Seq.skip cycleStart |> Seq.toList
                     let message = String.concat " -> " (cycle @ [ dependency ])
-                    let document = moduleDocuments[moduleName] |> List.head
+                    let cycleEdgeOrigins =
+                        (cycle @ [ dependency ])
+                        |> List.pairwise
+                        |> List.choose (fun (sourceModule, targetModule) ->
+                            edgeOrigins
+                            |> Map.tryFind sourceModule
+                            |> Option.bind (Map.tryFind targetModule)
+                            |> Option.bind List.tryHead
+                            |> Option.map (fun location -> sourceModule, targetModule, location))
+
+                    let defaultLocation =
+                        moduleDocuments[moduleName]
+                        |> List.head
+                        |> fun document -> document.Source.GetLocation(TextSpan.FromBounds(0, 0))
+
+                    let primaryLocation =
+                        cycleEdgeOrigins
+                        |> List.tryHead
+                        |> Option.map (fun (_, _, location) -> location)
+                        |> Option.defaultValue defaultLocation
+
+                    let relatedLocations =
+                        cycleEdgeOrigins
+                        |> List.skip 1
+                        |> List.map (fun (sourceModule, targetModule, location) ->
+                            { Message = $"Import from module '{sourceModule}' to module '{targetModule}' participates in this cycle."
+                              Location = location })
 
                     diagnostics.Add(
                         { Severity = Error
@@ -2132,8 +2173,8 @@ module internal CompilationFrontend =
                           Stage = Some "KFrontIR"
                           Phase = Some(KFrontIRPhase.phaseName CHECKERS)
                           Message = $"Import cycle detected: {message}."
-                          Location = Some(document.Source.GetLocation(TextSpan.FromBounds(0, 0)))
-                          RelatedLocations = [] }
+                          Location = Some primaryLocation
+                          RelatedLocations = relatedLocations }
                     )
             | 2 ->
                 ()

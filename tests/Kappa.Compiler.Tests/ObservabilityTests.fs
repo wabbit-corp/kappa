@@ -1315,6 +1315,70 @@ let ``M3 overuse diagnostics expose primary and related origins`` () =
     Assert.Equal(2, dumpedDiagnostic.GetProperty("relatedOrigins").GetArrayLength())
 
 [<Fact>]
+let ``import cycle diagnostics expose import edge origins`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-import-cycle-origins-root"
+            [
+                "a.kp",
+                [
+                    "module a"
+                    "let seed = 0"
+                ]
+                |> String.concat "\n"
+                "a.extra.kp",
+                [
+                    "module a"
+                    "import b"
+                    "let fromB = b"
+                ]
+                |> String.concat "\n"
+                "b.kp",
+                [
+                    "module b"
+                    "import a"
+                    "let b = seed"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let diagnostic =
+        workspace.Diagnostics
+        |> List.find (hasDiagnosticCode DiagnosticCode.ImportCycle)
+
+    let originFileNames =
+        diagnostic.Location
+        |> Option.toList
+        |> List.append (diagnostic.RelatedLocations |> List.map (fun related -> related.Location) )
+        |> List.map (fun location -> Path.GetFileName(location.FilePath))
+        |> Set.ofList
+
+    Assert.Equal<Set<string>>(set [ "a.extra.kp"; "b.kp" ], originFileNames)
+
+    let checkersJson =
+        match Compilation.dumpStage workspace "KFrontIR.CHECKERS" StageDumpFormat.Json with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    use document = JsonDocument.Parse(checkersJson)
+
+    let expectedCode =
+        DiagnosticCode.toIdentifier DiagnosticCode.ImportCycle
+
+    let dumpedDiagnostic =
+        document.RootElement.GetProperty("diagnostics").EnumerateArray()
+        |> Seq.find (fun item -> item.GetProperty("code").GetString() = expectedCode)
+
+    Assert.Equal(1, dumpedDiagnostic.GetProperty("relatedOrigins").GetArrayLength())
+
+    let dumpedOriginFiles =
+        dumpedDiagnostic.GetProperty("relatedOrigins").EnumerateArray()
+        |> Seq.map (fun item -> Path.GetFileName(item.GetProperty("filePath").GetString()))
+        |> Set.ofSeq
+
+    Assert.Equal<Set<string>>(set [ "b.kp" ], dumpedOriginFiles)
+
+[<Fact>]
 let ``M3 overuse diagnostic origins ignore names inside string literals`` () =
     let workspace =
         compileInMemoryWorkspaceWithUnsafeConsume

@@ -90,6 +90,20 @@ let ``source text reports 1-based line and column positions`` () =
     Assert.Equal(5, location.End.Column)
 
 [<Fact>]
+let ``import diagnostics expose long form explanations`` () =
+    let explainedCodes =
+        [
+            DiagnosticCode.ImportCycle
+            DiagnosticCode.ImportAmbiguous
+            DiagnosticCode.ImportItemNotFound
+            DiagnosticCode.ModuleNameUnresolved
+        ]
+
+    for code in explainedCodes do
+        let explanation = DiagnosticCode.tryGetExplanation code
+        Assert.True(explanation.IsSome, $"Expected {DiagnosticCode.toIdentifier code} to have a long-form explanation.")
+
+[<Fact>]
 let ``lexer emits indent and dedent tokens for indented declarations`` () =
     let sourceText =
         [

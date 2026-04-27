@@ -281,6 +281,14 @@ module DiagnosticCode =
             Some "The source text contains a token or character sequence that is not valid Kappa syntax."
         | ParseError ->
             Some "The token stream is well-formed lexically, but it does not match the grammar expected at that source position."
+        | ImportCycle ->
+            Some "Imports must form an acyclic module dependency graph. Each module in the reported cycle depends, directly or through fragments, on the next module in the cycle."
+        | ImportAmbiguous ->
+            Some "This import syntax can resolve to more than one meaning. Rewrite it with an explicit module-only form or an explicit item-selection form so resolution is unique."
+        | ImportItemNotFound ->
+            Some "An explicitly selected or excluded import item does not exist in the referenced module's export surface."
+        | ModuleNameUnresolved ->
+            Some "A referenced module name does not resolve to any module available in the current compilation unit or bundled standard-module inventory."
         | NameUnresolved ->
             Some "A referenced name is not in lexical, module, or imported scope."
         | TypeEqualityMismatch ->

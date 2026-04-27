@@ -96,10 +96,9 @@ Duplicates are merged. The organization below is by compiler stage rather than b
 
 ## 4. Imports, Standard Modules, KFrontIR, and Diagnostics
 
-- `[High] Upgrade diagnostics toward the spec’s machine-readable contract.`
-  - Diagnostic records are currently much thinner than the spec requires.
-  - Many diagnostics lack source locations or the richer payload/label/related/fix structure expected by the harness appendix and Chapter 17.
-  - Add standardized families, payloads, labels, related origins, fix-it support, and long-form explanation entries where the spec requires them.
+- `[High] Finish the remaining diagnostics-contract work beyond the import family.`
+  - Import-cycle diagnostics now expose related origins and the import-family codes now have long-form explanations, but many other frontend families still lack the richer payload/label/related/fix structure expected by the harness appendix and Chapter 17.
+  - Continue with standardized families, payloads, labels, related origins, fix-it support, and long-form explanation entries for visibility, trait, resource, and backend diagnostics.
   - Sources: `reviews/frontend1.md`, `reviews/general1.md`.
 
 - `[Medium] Complete the intended KFrontIR phase model instead of leaving it as scaffolding.`
