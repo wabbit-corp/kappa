@@ -1144,6 +1144,46 @@ let ``KCore using release action selects Releasable evidence`` () =
         failwithf "Expected using release action to select Releasable IO File evidence, got %A" other
 
 [<Fact>]
+let ``KRuntimeIR preserves imported multi parameter trait arity in instance head metadata`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-traits-imported-arity-root"
+            [
+                "lib.kp",
+                [
+                    "module lib"
+                    ""
+                    "trait Pairing a b ="
+                    "    pair : a -> b -> Int"
+                ]
+                |> String.concat "\n"
+                "main.kp",
+                [
+                    "module main"
+                    "import lib.(trait Pairing)"
+                    ""
+                    "instance Pairing Int Bool ="
+                    "    let pair x y = if y then x else 0"
+                    ""
+                    "result : Int"
+                    "let result = 0"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    let runtimeModule =
+        workspace.KRuntimeIR
+        |> List.find (fun moduleDump -> moduleDump.Name = "main")
+
+    let pairingInstance =
+        runtimeModule.TraitInstances
+        |> List.find (fun instanceInfo -> instanceInfo.TraitName = "Pairing")
+
+    Assert.Equal<string list>([ "Int"; "Bool" ], pairingInstance.HeadTypeTexts)
+
+[<Fact>]
 let ``KRuntimeIR preserves using release schedules for backend lowering`` () =
     let workspace =
         compileInMemoryWorkspace

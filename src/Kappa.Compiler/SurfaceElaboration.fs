@@ -21062,6 +21062,9 @@ module SurfaceElaboration =
                   SourceFile = frontendModule.FilePath
                   ModuleAttributes = frontendModule.ModuleAttributes
                   Imports = frontendModule.Imports
+                  VisibleTraitTypeParameterCounts =
+                    environment.VisibleTraits
+                    |> Map.map (fun _ traitInfo -> traitInfo.TypeParameters.Length)
                   IntrinsicTerms = intrinsicTerms |> List.distinct |> List.sort
                   SyntheticDataTypes =
                     recordLayouts.Value

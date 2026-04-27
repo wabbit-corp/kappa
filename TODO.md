@@ -254,12 +254,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Add a richer resolution result/evidence model, then implement canonicalization/hash-based coherence rather than blanket ambiguity rejection.
   - Sources: `reviews/traits1.md`.
 
-- `[Medium-High] Stop rediscovering imported trait arity from local syntax during runtime lowering.`
-  - Runtime lowering currently guesses trait arity from declarations in the current module and defaults imported traits to arity `1`.
-  - That corrupts runtime metadata for imported multi-parameter traits.
-  - Carry trait head information/arity from elaboration into runtime metadata instead of reparsing it locally.
-  - Sources: `reviews/traits1.md`.
-
 - `[Medium] Fix constraint parsing/model gaps in instance and trait contexts.`
   - Parenthesized multi-constraint contexts in instance headers are currently suspect because constraint splitting/parsing is duplicated and inconsistent.
   - Silent `List.choose` constraint dropping is also a bad failure mode.

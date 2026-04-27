@@ -129,6 +129,7 @@ type KCoreModule =
       SourceFile: string
       ModuleAttributes: string list
       Imports: ImportSpec list
+      VisibleTraitTypeParameterCounts: Map<string, int>
       IntrinsicTerms: string list
       SyntheticDataTypes: KCoreSyntheticDataType list
       Ownership: OwnershipFactSet option

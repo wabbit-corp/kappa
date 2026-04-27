@@ -775,19 +775,7 @@ module internal KRuntimeLowering =
                     None)
             |> Set.ofList
 
-        let moduleTraitArities =
-            coreModule.Declarations
-            |> List.choose (fun declaration ->
-                match declaration.Source with
-                | TraitDeclarationNode traitDeclaration ->
-                    Some(
-                        traitDeclaration.Name,
-                        TypeSignatures.collectLeadingTypeParameters traitDeclaration.HeaderTokens
-                        |> List.length
-                    )
-                | _ ->
-                    None)
-            |> Map.ofList
+        let visibleTraitArities = coreModule.VisibleTraitTypeParameterCounts
 
         let runtimeParameterMasks =
             coreModule.Declarations
@@ -942,7 +930,7 @@ module internal KRuntimeLowering =
                 | InstanceDeclarationNode instanceDeclaration when not (Set.contains instanceDeclaration.TraitName compileTimeOnlyTraitNames) ->
                     let instanceKey = TraitRuntime.instanceKeyFromTokens instanceDeclaration.HeaderTokens
                     let argumentCount =
-                        moduleTraitArities
+                        visibleTraitArities
                         |> Map.tryFind instanceDeclaration.TraitName
                         |> Option.defaultValue 1
 
