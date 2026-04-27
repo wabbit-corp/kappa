@@ -2239,6 +2239,43 @@ let ``source compilation rejects unannotated sibling functions whose sole binder
     Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TypeEqualityMismatch)
 
 [<Fact>]
+let ``source compilation rejects compile time parameters used as runtime numeric operands`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-compile-time-parameter-runtime-arithmetic-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "i0 : Type -> Int"
+                    "let i0 i0 ="
+                    "    i0 + 1"
+                    "let result = i0 ()"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected a compile-time parameter consumed by runtime arithmetic to be rejected in the frontend.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TypeEqualityMismatch)
+
+[<Fact>]
+let ``source compilation rejects malformed instance declarations without crashing`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-malformed-instance-declaration-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "instance I0 (I0 Int) -> Int"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected a malformed instance declaration to fail with frontend diagnostics instead of crashing lowering.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.ParseError)
+
+[<Fact>]
 let ``source compilation rejects sibling lambda values in arithmetic inside applications`` () =
     let workspace =
         compileInMemoryWorkspace

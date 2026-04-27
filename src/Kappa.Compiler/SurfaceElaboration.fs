@@ -6764,17 +6764,19 @@ module SurfaceElaboration =
         (knownSurfaceTermNames: Set<string>)
         (allowUnresolvedCallDiagnostics: bool)
         (explicitSignatureNames: Set<string>)
+        (sourceSignatureScheme: TypeScheme option)
         (topLevelDefinitionsByName: Map<string, LetDefinition>)
         (definition: LetDefinition)
         (scheme: TypeScheme option)
         =
         let freshCounter = ref 0
+        let effectiveScheme = sourceSignatureScheme |> Option.orElse scheme
         let rewrittenDefinitionBody =
             definition.Body
             |> Option.map (rewriteTopLevelManifestStaticFieldUses environment topLevelDefinitionsByName)
 
         let effectiveParameters, effectiveBody =
-            match definition.Parameters, rewrittenDefinitionBody, scheme with
+            match definition.Parameters, rewrittenDefinitionBody, effectiveScheme with
             | parameters, body, Some bindingScheme ->
                 match
                     tryRewriteLegacyRecordDestructuringParametersForBinding
@@ -6823,11 +6825,18 @@ module SurfaceElaboration =
                         |> Option.map (fun fieldType -> field.Name, fieldType)))
                 |> Option.defaultValue [])
 
+        let declaredParameterLocalTypes = buildLocalTypes effectiveScheme effectiveParameters
+
         let inferredParameterLocalTypes =
             let parameterNames =
                 effectiveParameters
                 |> List.map (fun parameter -> parameter.Name)
                 |> Set.ofList
+
+            let declaredParameterNames =
+                declaredParameterLocalTypes
+                |> Map.keys
+                |> Set.ofSeq
 
             let annotatedParameterLocals =
                 effectiveParameters
@@ -6874,7 +6883,9 @@ module SurfaceElaboration =
             let rec walk expectations expression =
                 let addFromOperand parameterExpression counterpart currentExpectations =
                     match parameterExpression with
-                    | Name [ parameterName ] when Set.contains parameterName parameterNames ->
+                    | Name [ parameterName ]
+                        when Set.contains parameterName parameterNames
+                             && not (Set.contains parameterName declaredParameterNames) ->
                         match tryInferNumericOperandType counterpart with
                         | Some inferredType ->
                             addExpectation parameterName inferredType currentExpectations
@@ -7084,7 +7095,7 @@ module SurfaceElaboration =
 
         let localTypes =
             (inferredParameterLocalTypes @ tupleParameterLocalTypes @ recordParameterLocalTypes)
-            |> List.fold (fun state (name, fieldType) -> Map.add name fieldType state) (buildLocalTypes scheme effectiveParameters)
+            |> List.fold (fun state (name, fieldType) -> Map.add name fieldType state) declaredParameterLocalTypes
 
         let parameterNames =
             [ effectiveParameters |> List.map (fun parameter -> parameter.Name)
@@ -9853,7 +9864,7 @@ module SurfaceElaboration =
                 loop effectiveParameters.Length typeExpr
 
             let signatureExpectedBodyType =
-                scheme
+                effectiveScheme
                 |> Option.map (fun scheme ->
                     if List.isEmpty effectiveParameters then
                         scheme.Body
@@ -13396,6 +13407,14 @@ module SurfaceElaboration =
                             let normalizedRightType = normalizeTypeAliases environment.VisibleTypeAliases rightType
 
                             match normalizedLeftType, normalizedRightType with
+                            | _ when
+                                isCompileTimeArgumentType environment.VisibleTypeAliases normalizedLeftType
+                                || isCompileTimeArgumentType environment.VisibleTypeAliases normalizedRightType ->
+                                [
+                                    makeDiagnostic
+                                        DiagnosticCode.TypeEqualityMismatch
+                                        $"Arithmetic operator operands must both be numeric, but found '{TypeSignatures.toText leftType}' and '{TypeSignatures.toText rightType}'."
+                                ]
                             | TypeVariable _, _
                             | _, TypeVariable _ ->
                                 []
@@ -15642,11 +15661,26 @@ module SurfaceElaboration =
                                     | _ -> None)
                                 |> Set.ofList
 
+                            let sourceSignatureSchemesByName =
+                                frontendModule.Declarations
+                                |> List.choose (function
+                                    | SignatureDeclaration declaration ->
+                                        TypeSignatures.parseScheme declaration.TypeTokens
+                                        |> Option.map (fun parsedScheme -> declaration.Name, parsedScheme)
+                                    | _ ->
+                                        None)
+                                |> Map.ofList
+
+                            let sourceSignatureScheme =
+                                definition.Name
+                                |> Option.bind (fun name -> Map.tryFind name sourceSignatureSchemesByName)
+
                             validateBuiltInExpressionsForBinding
                                 bodyEnvironment
                                 knownSurfaceTermNames
                                 allowUnresolvedCallDiagnostics
                                 explicitSignatureNames
+                                sourceSignatureScheme
                                 moduleTopLevelDefinitionsByName
                                 definition
                                 scheme
@@ -20068,14 +20102,19 @@ module SurfaceElaboration =
                             originalDeclaration @ synthesizeTraitDispatchBindings frontendModule.FilePath moduleName traitInfo
                         | InstanceDeclarationNode declaration ->
                             let instanceKey = TraitRuntime.instanceKeyFromTokens declaration.HeaderTokens
-                            let instanceInfo =
+                            match
                                 moduleInfo.Instances
-                                |> List.find (fun info ->
+                                |> List.tryFind (fun info ->
                                     String.Equals(info.TraitName, declaration.TraitName, StringComparison.Ordinal)
                                     && String.Equals(info.InstanceKey, instanceKey, StringComparison.Ordinal))
-
-                            originalDeclaration
-                            @ synthesizeInstanceBindings surfaceIndex recordLayouts frontendModule.FilePath moduleName instanceInfo
+                            with
+                            | Some instanceInfo ->
+                                originalDeclaration
+                                @ synthesizeInstanceBindings surfaceIndex recordLayouts frontendModule.FilePath moduleName instanceInfo
+                            | None ->
+                                // Parse-invalid instance declarations may survive as surface nodes with diagnostics but
+                                // intentionally produce no semantic instance info. Lowering must not crash on them.
+                                originalDeclaration
                         | _ ->
                             originalDeclaration)
 
