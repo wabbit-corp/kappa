@@ -395,11 +395,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Add an explicit runtime value case for operation values and use declared operation telescopes during application.
   - Sources: `reviews/effects1.md`.
 
-- `[Medium] Add a runtime one-shot fail-safe in the interpreter.`
-  - Static checking should catch one-shot overuse, but the interpreter should still track consumed one-shot resumptions and fail loudly if a consumed one-shot resumption is called again.
-  - This is a guardrail against compiler bugs, not a replacement for static checking.
-  - Sources: `reviews/effects1.md`.
-
 ## 7A. Query and Comprehension Semantics
 
 - `[Critical] Stop lowering comprehensions in the parser and build a real query/comprehension plan after semantic resolution.`

@@ -117,6 +117,101 @@ let rec private containsDeepRuntimeHandle expression =
     | KRuntimeEffectLabel _ ->
         false
 
+let rec private duplicateFirstResumptionUse expression =
+    let recurse current = duplicateFirstResumptionUse current
+
+    match expression with
+    | KRuntimeHandle(isDeep, label, body, returnClause, operationClauses) ->
+        let rewrittenClauses =
+            operationClauses
+            |> List.mapi (fun index clause ->
+                if index = 0 then
+                    match clause.ResumptionName with
+                    | Some resumptionName ->
+                        let firstResume =
+                            KRuntimeApply(
+                                KRuntimeName [ resumptionName ],
+                                [ KRuntimeName [ "True" ] ]
+                            )
+
+                        let secondResume =
+                            KRuntimeApply(
+                                KRuntimeName [ resumptionName ],
+                                [ KRuntimeName [ "False" ] ]
+                            )
+
+                        { clause with
+                            Body =
+                                KRuntimeSequence(
+                                    KRuntimeExecute firstResume,
+                                    secondResume
+                                ) }
+                    | None ->
+                        clause
+                else
+                    clause)
+
+        KRuntimeHandle(
+            isDeep,
+            recurse label,
+            recurse body,
+            { returnClause with Body = recurse returnClause.Body },
+            rewrittenClauses
+        )
+    | KRuntimeClosure(parameters, body) ->
+        KRuntimeClosure(parameters, recurse body)
+    | KRuntimeIfThenElse(condition, whenTrue, whenFalse) ->
+        KRuntimeIfThenElse(recurse condition, recurse whenTrue, recurse whenFalse)
+    | KRuntimeLet(bindingName, value, body) ->
+        KRuntimeLet(bindingName, recurse value, recurse body)
+    | KRuntimeDoScope(scopeLabel, body) ->
+        KRuntimeDoScope(scopeLabel, recurse body)
+    | KRuntimeScheduleExit(scopeLabel, action, body) ->
+        let rewrittenAction =
+            match action with
+            | KRuntimeDeferred deferred -> KRuntimeDeferred(recurse deferred)
+            | KRuntimeRelease(resourceTypeText, release, resource) ->
+                KRuntimeRelease(resourceTypeText, recurse release, recurse resource)
+
+        KRuntimeScheduleExit(scopeLabel, rewrittenAction, recurse body)
+    | KRuntimeSequence(firstExpression, secondExpression) ->
+        KRuntimeSequence(recurse firstExpression, recurse secondExpression)
+    | KRuntimeWhile(condition, body) ->
+        KRuntimeWhile(recurse condition, recurse body)
+    | KRuntimeApply(callee, arguments) ->
+        KRuntimeApply(recurse callee, arguments |> List.map recurse)
+    | KRuntimeTraitCall(traitName, memberName, dictionary, arguments) ->
+        KRuntimeTraitCall(traitName, memberName, recurse dictionary, arguments |> List.map recurse)
+    | KRuntimeMatch(scrutinee, cases) ->
+        KRuntimeMatch(
+            recurse scrutinee,
+            cases
+            |> List.map (fun caseClause ->
+                { caseClause with
+                    Guard = caseClause.Guard |> Option.map recurse
+                    Body = recurse caseClause.Body })
+        )
+    | KRuntimeExecute inner ->
+        KRuntimeExecute(recurse inner)
+    | KRuntimeUnary(operatorName, inner) ->
+        KRuntimeUnary(operatorName, recurse inner)
+    | KRuntimeBinary(left, operatorName, right) ->
+        KRuntimeBinary(recurse left, operatorName, recurse right)
+    | KRuntimePrefixedString(prefix, parts) ->
+        KRuntimePrefixedString(
+            prefix,
+            parts
+            |> List.map (function
+                | KRuntimeStringText text -> KRuntimeStringText text
+                | KRuntimeStringInterpolation(inner, format) -> KRuntimeStringInterpolation(recurse inner, format))
+        )
+    | KRuntimeLiteral _
+    | KRuntimeName _
+    | KRuntimeEffectLabel _
+    | KRuntimeEffectOperation _
+    | KRuntimeDictionaryValue _ ->
+        expression
+
 let rec private containsRecursiveShallowCoreDriver expression =
     let recurse current = containsRecursiveShallowCoreDriver current
 
@@ -258,6 +353,62 @@ let ``interpreter executes a one shot deep handler over a parameterized scoped e
         Assert.Equal("0", RuntimeValue.format value)
     | Result.Error issue ->
         failwithf "Expected parameterized local effect evaluation to succeed, got %s" issue.Message
+
+[<Fact>]
+let ``interpreter rejects repeated use of a consumed one shot resumption`` () =
+    let mainSource =
+        [
+            "module main"
+            ""
+            "result : Int"
+            "let result : Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            1 ask : Unit -> Bool"
+            ""
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let b <- Ask.ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        let handled : Eff <[ ]> Int ="
+            "            deep handle Ask comp with"
+            "                case return x -> pure x"
+            "                case ask () k -> k True"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-runtime-oneshot-failsafe-root"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected source workspace to compile cleanly, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+    let malformedWorkspace =
+        { workspace with
+            KRuntimeIR =
+                workspace.KRuntimeIR
+                |> List.map (fun runtimeModule ->
+                    if runtimeModule.Name = "main" then
+                        { runtimeModule with
+                            Bindings =
+                                runtimeModule.Bindings
+                                |> List.map (fun binding ->
+                                    if binding.Name = "result" then
+                                        { binding with Body = binding.Body |> Option.map duplicateFirstResumptionUse }
+                                    else
+                                        binding) }
+                    else
+                        runtimeModule) }
+
+    match Interpreter.evaluateBinding malformedWorkspace "main.result" with
+    | Result.Ok value ->
+        failwithf "Expected duplicated one-shot resumption to fail at runtime, but interpreter returned %s" (RuntimeValue.format value)
+    | Result.Error issue ->
+        Assert.Contains("one-shot resumption", issue.Message, StringComparison.Ordinal)
 
 [<Fact>]
 let ``deep handlers elaborate to a recursive shallow driver before KCore and KRuntimeIR`` () =

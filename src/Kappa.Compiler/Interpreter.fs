@@ -148,6 +148,16 @@ module Interpreter =
     let private ok value =
         Result.Ok value
 
+    let private resumptionQuantityPermitsMultiple quantity =
+        match quantity |> Option.defaultValue QuantityOne |> ResourceModel.ResourceQuantity.ofSurface with
+        | ResourceModel.ResourceQuantity.Interval(_, Some maximum) ->
+            maximum > 1
+        | ResourceModel.ResourceQuantity.Interval(_, None) ->
+            true
+        | ResourceModel.ResourceQuantity.Borrow _
+        | ResourceModel.ResourceQuantity.Variable _ ->
+            false
+
     let private runtimeConstructorOf value =
         match value with
         | ConstructorFunctionValue(constructor, _)
@@ -809,10 +819,15 @@ module Interpreter =
             (scope: RuntimeScope)
             isDeep
             (label: RuntimeEffectLabel)
+            operationName
+            (resumptionQuantity: Quantity option)
             (returnClause: KRuntimeEffectHandlerClause)
             (operationClauses: KRuntimeEffectHandlerClause list)
             continueWith
             =
+            let consumed = ref false
+            let isOneShot = not (resumptionQuantityPermitsMultiple resumptionQuantity)
+
             NativeFunctionValue
                 { Name = $"{label.Name}.resume"
                   Arity = 1
@@ -821,14 +836,20 @@ module Interpreter =
                     (fun arguments ->
                         match arguments with
                         | [ value ] ->
-                            ok
-                                (IOActionValue(fun () ->
-                                    continueWith value
-                                    |> Result.bind (fun step ->
-                                        if isDeep then
-                                            handleActionResult scope isDeep label returnClause operationClauses step
-                                        else
-                                            ok step)))
+                            if isOneShot && consumed.Value then
+                                error $"Consumed one-shot resumption '{label.Name}.{operationName}' cannot be resumed again."
+                            else
+                                if isOneShot then
+                                    consumed.Value <- true
+
+                                ok
+                                    (IOActionValue(fun () ->
+                                        continueWith value
+                                        |> Result.bind (fun step ->
+                                            if isDeep then
+                                                handleActionResult scope isDeep label returnClause operationClauses step
+                                            else
+                                                ok step)))
                         | _ ->
                             error "Resumptions expect exactly one argument.") }
 
@@ -861,8 +882,21 @@ module Interpreter =
             | RuntimeActionRequest request when String.Equals(request.Label.Name, label.Name, StringComparison.Ordinal) ->
                 match operationClauses |> List.tryFind (fun clause -> String.Equals(clause.OperationName, request.OperationName, StringComparison.Ordinal)) with
                 | Some clause ->
+                    let resumptionQuantity =
+                        request.Label.Operations
+                        |> Map.tryFind request.OperationName
+                        |> Option.defaultValue (Some QuantityOne)
+
                     let resumptionValue =
-                        makeResumptionValue scope isDeep label returnClause operationClauses request.ContinueWith
+                        makeResumptionValue
+                            scope
+                            isDeep
+                            label
+                            request.OperationName
+                            resumptionQuantity
+                            returnClause
+                            operationClauses
+                            request.ContinueWith
 
                     executeHandlerClause scope isDeep label returnClause operationClauses clause request.Arguments (Some resumptionValue)
                 | None ->
