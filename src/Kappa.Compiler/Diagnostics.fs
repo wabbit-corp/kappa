@@ -282,11 +282,11 @@ module DiagnosticCode =
         | HandlerEffectRowMismatch ->
             Some "A handler can eliminate only an Eff computation whose handled label appears in the handled effect row."
         | HandlerClauseMissing ->
-            Some "A handler must define exactly one operation clause for every operation declared by the handled effect interface."
+            Some "A handler must define exactly one return clause and exactly one operation clause for every operation declared by the handled effect interface."
         | HandlerClauseDuplicate ->
-            Some "A handler must not define more than one clause for the same effect operation."
+            Some "A handler must not define more than one return clause or more than one clause for the same effect operation."
         | HandlerClauseArityMismatch ->
-            Some "A handler operation clause must bind exactly the parameters declared by the handled effect operation."
+            Some "A handler return clause must bind exactly one payload, and each handler operation clause must bind exactly the parameters declared by the handled effect operation."
         | HandlerClauseUnexpected ->
             Some "A handler clause names an operation that is not declared by the handled effect interface."
         | EffectResumptionQuantityBorrowed ->

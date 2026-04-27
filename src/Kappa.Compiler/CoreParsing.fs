@@ -5354,15 +5354,34 @@ type private ExpressionParser
         let clauses = this.CollectIndentedLines() |> List.filter (List.isEmpty >> not) |> List.map this.ParseEffectHandlerClause
         let returnClauses = clauses |> List.filter (fun clause -> String.Equals(clause.OperationName, "return", StringComparison.Ordinal))
         let operationClauses = clauses |> List.filter (fun clause -> not (String.Equals(clause.OperationName, "return", StringComparison.Ordinal)))
+
+        if List.length returnClauses > 1 then
+            diagnostics.AddError(
+                DiagnosticCode.HandlerClauseDuplicate,
+                "A handler must not define more than one return clause.",
+                source.GetLocation(this.Current.Span)
+            )
+
         let returnClause =
             match returnClauses with
             | clause :: _ -> clause
             | [] ->
-                diagnostics.AddError(DiagnosticCode.ParseError, "Expected a 'case return ...' clause in the handler.", source.GetLocation(this.Current.Span))
+                diagnostics.AddError(
+                    DiagnosticCode.HandlerClauseMissing,
+                    "A handler must define exactly one return clause of the form 'case return x -> ...'.",
+                    source.GetLocation(this.Current.Span)
+                )
                 { OperationName = "return"
                   ArgumentTokens = []
                   ResumptionName = None
                   Body = Literal LiteralValue.Unit }
+
+        if List.length returnClause.ArgumentTokens <> 1 then
+            diagnostics.AddError(
+                DiagnosticCode.HandlerClauseArityMismatch,
+                $"A handler return clause must bind exactly one payload argument, but binds {List.length returnClause.ArgumentTokens}.",
+                source.GetLocation(this.Current.Span)
+            )
 
         Handle(isDeep, label, handledBody, returnClause, operationClauses)
 

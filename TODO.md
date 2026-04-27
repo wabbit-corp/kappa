@@ -251,17 +251,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Handlers should remove row entries by label identity, not by matching names.
   - Sources: `reviews/effects1.md`.
 
-- `[Medium] Validate handler clauses as a first-class structure before elaboration proceeds.`
-  - Preserve all parsed handler clauses first, then validate:
-  - exactly one return clause;
-  - return clause arity exactly one;
-  - no duplicate operation clauses;
-  - no missing operation clauses;
-  - no unexpected operation clauses;
-  - operation clause arity/binder agreement with the declared operation telescope.
-  - This avoids silently mishandling duplicate `case return` clauses or malformed return-clause binder lists.
-  - Sources: `reviews/effects1.md`.
-
 - `[Medium] Parse and elaborate parameterized local scoped effects the same way as top-level effects.`
   - Local scoped effects appear to ignore header parameters even though the AST has header-token fields.
   - Do not maintain divergent parsers for nearly the same declaration form.

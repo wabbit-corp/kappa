@@ -361,6 +361,127 @@ let ``handlers reject missing operation clauses for the handled effect`` () =
     Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseMissing)
 
 [<Fact>]
+let ``handlers reject a missing return clause`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "bad : Eff <[ ]> Int"
+            "let bad : Eff <[ ]> Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            ask : Unit -> Bool"
+            ""
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let b <- Ask.ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        handle Ask comp with"
+            "            case ask () k -> k True"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-missing-return-clause-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected handlers without a return clause to be rejected.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseMissing)
+
+[<Fact>]
+let ``handlers reject duplicate return clauses`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "bad : Eff <[ ]> Int"
+            "let bad : Eff <[ ]> Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            ask : Unit -> Bool"
+            ""
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let b <- Ask.ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        handle Ask comp with"
+            "            case return x -> pure x"
+            "            case return y -> pure y"
+            "            case ask () k -> k True"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-duplicate-return-clause-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected handlers with duplicate return clauses to be rejected.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseDuplicate)
+
+[<Fact>]
+let ``handler return clauses must bind exactly one payload`` () =
+    let noPayloadSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "bad : Eff <[ ]> Int"
+            "let bad : Eff <[ ]> Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            ask : Unit -> Bool"
+            ""
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let b <- Ask.ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        handle Ask comp with"
+            "            case return -> pure 0"
+            "            case ask () k -> k True"
+        ]
+        |> String.concat "\n"
+
+    let extraPayloadSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "bad : Eff <[ ]> Int"
+            "let bad : Eff <[ ]> Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            ask : Unit -> Bool"
+            ""
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let b <- Ask.ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        handle Ask comp with"
+            "            case return x y -> pure x"
+            "            case ask () k -> k True"
+        ]
+        |> String.concat "\n"
+
+    let noPayloadWorkspace =
+        compileInMemoryWorkspace
+            "memory-m4-return-clause-arity-zero-root"
+            [ "main.kp", noPayloadSource ]
+
+    let extraPayloadWorkspace =
+        compileInMemoryWorkspace
+            "memory-m4-return-clause-arity-two-root"
+            [ "main.kp", extraPayloadSource ]
+
+    Assert.True(noPayloadWorkspace.HasErrors, "Expected return clauses without a payload binder to be rejected.")
+    Assert.True(extraPayloadWorkspace.HasErrors, "Expected return clauses with multiple payload binders to be rejected.")
+    Assert.Contains(noPayloadWorkspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseArityMismatch)
+    Assert.Contains(extraPayloadWorkspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseArityMismatch)
+
+[<Fact>]
 let ``handlers reject unexpected and duplicate operation clauses`` () =
     let mainSource =
         [
