@@ -961,3 +961,32 @@ let ``one shot resumptions cannot be resumed twice`` () =
 
     Assert.True(workspace.HasErrors, "Expected one-shot resumption overuse to be rejected.")
     Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttLinearOveruse)
+
+[<Fact>]
+let ``shallow handlers type resumptions against the remainder row`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "probe : Int"
+            "let probe : Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            1 ask : Unit -> Bool"
+            ""
+            "        let handleAsk : forall (r : EffRow). Eff <[Ask : Ask | r]> Int -> Eff r Int ="
+            "            \\(comp : Eff <[Ask : Ask | r]> Int) ->"
+            "                handle Ask comp with"
+            "                    case return y -> pure y"
+            "                    case ask () k -> k True"
+            ""
+            "        0"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-remainder-row-root"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected shallow handler remainder-row typing to succeed, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
