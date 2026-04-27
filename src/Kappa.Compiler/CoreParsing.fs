@@ -5194,13 +5194,26 @@ type private ExpressionParser
                             argumentGroups, None
                         else
                             match List.rev argumentGroups with
-                            | [ ] -> [], None
+                            | [ ] ->
+                                diagnostics.AddError(
+                                    DiagnosticCode.ParseError,
+                                    "Expected a resumption binder in the handler clause.",
+                                    source.GetLocation(operationToken.Span)
+                                )
+
+                                [], None
                             | lastGroup :: reversedArguments ->
                                 let resumptionName =
                                     match lastGroup with
                                     | [ nameToken ] when this.IsNameToken(nameToken) ->
                                         Some(SyntaxFacts.trimIdentifierQuotes nameToken.Text)
                                     | _ ->
+                                        diagnostics.AddError(
+                                            DiagnosticCode.ParseError,
+                                            "Expected a resumption binder in the handler clause.",
+                                            source.GetLocation(operationToken.Span)
+                                        )
+
                                         None
 
                                 List.rev reversedArguments, resumptionName

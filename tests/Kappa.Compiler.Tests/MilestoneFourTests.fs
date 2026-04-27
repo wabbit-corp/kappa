@@ -395,6 +395,159 @@ let ``handlers reject unexpected and duplicate operation clauses`` () =
     Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseUnexpected)
 
 [<Fact>]
+let ``handlers reject operation clauses with mismatched parameter arity`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "bad : Eff <[ ]> Int"
+            "let bad : Eff <[ ]> Int ="
+            "    block"
+            "        scoped effect Pairing ="
+            "            pair : Int -> Bool -> String"
+            ""
+            "        let comp : Eff <[Pairing : Pairing]> Int ="
+            "            do"
+            "                let _ <- Pairing.pair 1 True"
+            "                0"
+            ""
+            "        handle Pairing comp with"
+            "            case return x -> pure x"
+            "            case pair x k -> pure 0"
+            "            case pair x y z k -> pure 0"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-handler-arity-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected handler clauses with wrong parameter arity to be rejected.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseArityMismatch)
+
+[<Fact>]
+let ``handler operation clauses require an explicit resumption binder`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "bad : Eff <[ ]> Int"
+            "let bad : Eff <[ ]> Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            ask : Unit -> Bool"
+            ""
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let b <- Ask.ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        handle Ask comp with"
+            "            case return x -> pure x"
+            "            case ask () -> pure 0"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-handler-missing-resumption-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected handler clauses without a resumption binder to be rejected.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.ParseError)
+
+[<Fact>]
+let ``shallow handler clauses must agree on a single target carrier`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "bad : Eff <[ ]> Int"
+            "let bad : Eff <[ ]> Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            ask : Unit -> Bool"
+            ""
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let b <- Ask.ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        handle Ask comp with"
+            "            case return x -> pure x"
+            "            case ask () k -> 0"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-shallow-handler-carrier-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected mismatched shallow handler clause carriers to be rejected.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.TypeEqualityMismatch)
+
+[<Fact>]
+let ``deep handler clauses must agree on a single target carrier`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "bad : Int"
+            "let bad : Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            ask : Unit -> Bool"
+            ""
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let b <- Ask.ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        deep handle Ask comp with"
+            "            case return x -> x"
+            "            case ask () k -> k True"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-deep-handler-carrier-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected mismatched deep handler clause carriers to be rejected.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.TypeEqualityMismatch)
+
+[<Fact>]
+let ``handlers reject computations whose closed effect row lacks the handled label`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "bad : Eff <[ ]> Int"
+            "let bad : Eff <[ ]> Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            ask : Unit -> Bool"
+            ""
+            "        let comp : Eff <[ ]> Int = pure 0"
+            ""
+            "        handle Ask comp with"
+            "            case return x -> pure x"
+            "            case ask () k -> k True"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-handler-row-mismatch-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected handlers to reject computations whose closed effect row lacks the handled label.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerEffectRowMismatch)
+
+[<Fact>]
 let ``multishot scoped effect invocation rejects captured linear suffix at the operation site`` () =
     let fixturePath =
         Path.Combine(

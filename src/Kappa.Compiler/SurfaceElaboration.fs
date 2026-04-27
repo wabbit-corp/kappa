@@ -7568,6 +7568,15 @@ module SurfaceElaboration =
                     | _ ->
                         []
 
+        let rec isHandlerCarrierResultType typeExpr =
+            match normalizeTypeAliases environment.VisibleTypeAliases typeExpr with
+            | TypeCapture(innerType, _) ->
+                isHandlerCarrierResultType innerType
+            | TypeName(_, _ :: _) ->
+                true
+            | _ ->
+                false
+
         let isSimpleExpectedBodyType locals typeExpr =
             match normalizeTypeAliases environment.VisibleTypeAliases typeExpr with
             | TypeIntrinsic _ ->
@@ -9566,9 +9575,6 @@ module SurfaceElaboration =
                     |> Option.map snd
                     |> Option.defaultValue (TypeVariable $"handlePayload{freshCounter.Value}")
 
-                let handledResultType =
-                    inferValidationExpressionType environment freshCounter locals returnClause.Body
-
                 let extendHandlerLocals argumentTokens argumentTypes resumptionName resumptionType currentLocals =
                     let nextLocals =
                         argumentTokens
@@ -9584,6 +9590,12 @@ module SurfaceElaboration =
                     | _ ->
                         nextLocals
 
+                let returnClauseLocals =
+                    extendHandlerLocals returnClause.ArgumentTokens [ handledPayloadType ] None None locals
+
+                let returnClauseType =
+                    inferValidationExpressionType environment freshCounter returnClauseLocals returnClause.Body
+
                 let tryOperationClauseLocals (clause: SurfaceEffectHandlerClause) =
                     match label with
                     | Name [ effectName ] ->
@@ -9596,7 +9608,7 @@ module SurfaceElaboration =
                             |> Option.map (fun (parameterTypes, resultType) ->
                                 let resumptionResultType =
                                     if isDeep then
-                                        handledResultType
+                                        returnClauseType
                                     else
                                         handledBodyType
 
@@ -9612,6 +9624,96 @@ module SurfaceElaboration =
                                     locals))
                     | _ ->
                         None
+
+                let operationClauseInfos =
+                    operationClauses
+                    |> List.map (fun clause ->
+                        let clauseLocals = tryOperationClauseLocals clause |> Option.defaultValue locals
+                        clause, clauseLocals, inferValidationExpressionType environment freshCounter clauseLocals clause.Body)
+
+                let handledResultType =
+                    returnClauseType
+                    |> Option.orElseWith (fun () ->
+                        operationClauseInfos
+                        |> List.tryPick (fun (_, _, clauseType) -> clauseType))
+
+                let handlerClauseTypeDiagnostics =
+                    let carrierDiagnostics =
+                        handledResultType
+                        |> Option.filter (isHandlerCarrierResultType >> not)
+                        |> Option.map (fun actualType ->
+                            [
+                                makeDiagnostic
+                                    DiagnosticCode.TypeEqualityMismatch
+                                    $"Handler clauses must return a carrier-applied result type 'm b', but inferred '{TypeSignatures.toText actualType}'."
+                            ])
+                        |> Option.defaultValue []
+
+                    let returnDiagnostics =
+                        handledResultType
+                        |> Option.map (fun expectedType ->
+                            expectedTypeDiagnostics returnClauseLocals refinements "Handler return clause" expectedType returnClause.Body)
+                        |> Option.defaultValue []
+
+                    let operationDiagnostics =
+                        match handledResultType with
+                        | Some expectedType ->
+                            operationClauseInfos
+                            |> List.collect (fun (clause, clauseLocals, _) ->
+                                expectedTypeDiagnostics
+                                    clauseLocals
+                                    refinements
+                                    $"Handler clause for operation '{clause.OperationName}'"
+                                    expectedType
+                                    clause.Body)
+                        | None ->
+                            []
+
+                    carrierDiagnostics @ returnDiagnostics @ operationDiagnostics
+
+                let handledEffectRowDiagnostics =
+                    let tryClosedRowContainsLabel effectName effectRow =
+                        match normalizeTypeAliases environment.VisibleTypeAliases effectRow with
+                        | TypeEffectRow(entries, tail) ->
+                            let containsLabel =
+                                entries
+                                |> List.exists (fun entry ->
+                                    match normalizeTypeAliases environment.VisibleTypeAliases entry.Label with
+                                    | TypeName([ labelName ], []) ->
+                                        String.Equals(labelName, effectName, StringComparison.Ordinal)
+                                    | _ ->
+                                        false)
+
+                            if containsLabel then
+                                Some true
+                            elif tail.IsSome then
+                                None
+                            else
+                                Some false
+                        | _ ->
+                            None
+
+                    match label, handledBodyType with
+                    | Name [ effectName ], Some handledType ->
+                        match tryUnwrapEffType handledType with
+                        | Some(effectRow, _) ->
+                            match tryClosedRowContainsLabel effectName effectRow with
+                            | Some false ->
+                                [
+                                    makeDiagnostic
+                                        DiagnosticCode.HandlerEffectRowMismatch
+                                        $"Handler for '{effectName}' expects the handled computation to carry label '{effectName}' in its effect row, but found '{TypeSignatures.toText effectRow}'."
+                                ]
+                            | _ ->
+                                []
+                        | None ->
+                            [
+                                makeDiagnostic
+                                    DiagnosticCode.HandlerEffectRowMismatch
+                                    $"Handler for '{effectName}' expects an Eff computation, but the handled expression has type '{TypeSignatures.toText handledType}'."
+                            ]
+                    | _ ->
+                        []
 
                 let handlerDiagnostics =
                     match label with
@@ -9673,20 +9775,41 @@ module SurfaceElaboration =
                                 |> List.collect (fun clause ->
                                     match Map.tryFind clause.OperationName declaredOperationMap with
                                     | Some operation ->
-                                        match operation.ResumptionQuantity, clause.ResumptionName with
-                                        | Some QuantityZero, _
-                                        | Some QuantityAtMostOne, _
-                                        | None, _ ->
-                                            []
-                                        | Some _, Some resumptionName
-                                            when not (expressionReferencesName resumptionName Set.empty clause.Body) ->
-                                            [
-                                                makeDiagnostic
-                                                    DiagnosticCode.QttLinearDrop
-                                                    $"Handler clause for operation '{clause.OperationName}' must use relevant resumption '{resumptionName}'."
-                                            ]
-                                        | Some _, _ ->
-                                            []
+                                        let operationArity =
+                                            operation.SignatureTokens
+                                            |> TypeSignatures.parseType
+                                            |> Option.map (qualifyVisibleTypeNames environment)
+                                            |> Option.map TypeSignatures.functionParts
+                                            |> Option.map (fun (parameterTypes, _) -> List.length parameterTypes)
+
+                                        let arityDiagnostics =
+                                            match operationArity with
+                                            | Some expectedArity when expectedArity <> List.length clause.ArgumentTokens ->
+                                                [
+                                                    makeDiagnostic
+                                                        DiagnosticCode.HandlerClauseArityMismatch
+                                                        $"Handler clause for operation '{clause.OperationName}' binds {List.length clause.ArgumentTokens} argument(s), but the effect declaration requires {expectedArity}."
+                                                ]
+                                            | _ ->
+                                                []
+
+                                        let resumptionUseDiagnostics =
+                                            match operation.ResumptionQuantity, clause.ResumptionName with
+                                            | Some QuantityZero, _
+                                            | Some QuantityAtMostOne, _
+                                            | None, _ ->
+                                                []
+                                            | Some _, Some resumptionName
+                                                when not (expressionReferencesName resumptionName Set.empty clause.Body) ->
+                                                [
+                                                    makeDiagnostic
+                                                        DiagnosticCode.QttLinearDrop
+                                                        $"Handler clause for operation '{clause.OperationName}' must use relevant resumption '{resumptionName}'."
+                                                ]
+                                            | Some _, _ ->
+                                                []
+
+                                        arityDiagnostics @ resumptionUseDiagnostics
                                     | None ->
                                         [])
 
@@ -9716,6 +9839,8 @@ module SurfaceElaboration =
                            constructorFacts
                            clause.Body))
                 @ handlerDiagnostics
+                @ handlerClauseTypeDiagnostics
+                @ handledEffectRowDiagnostics
             | Literal _ ->
                 []
             | NumericLiteral _ ->
