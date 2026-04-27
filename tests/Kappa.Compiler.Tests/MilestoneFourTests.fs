@@ -1145,3 +1145,106 @@ let ``handlers can split a handled label out of a normalized tail alias`` () =
             [ "main.kp", mainSource ]
 
     Assert.False(workspace.HasErrors, sprintf "Expected handler typing to split handled labels from normalized tail aliases, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+[<Fact>]
+let ``deep handlers can split a handled label out of a normalized tail alias`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "effect Ask ="
+            "    1 ask : Unit -> Bool"
+            ""
+            "effect Other ="
+            "    other : Unit -> Int"
+            ""
+            "type AskTail (r : EffRow) = <[Ask : Ask | r]>"
+            ""
+            "probe : Int"
+            "let probe : Int ="
+            "    block"
+            "        let handleAsk : forall (r : EffRow). Eff <[Other : Other | AskTail r]> Int -> Eff <[Other : Other | r]> Int ="
+            "            \\(comp : Eff <[Other : Other | AskTail r]> Int) ->"
+            "                deep handle Ask comp with"
+            "                    case return y -> pure y"
+            "                    case ask () k -> k True"
+            ""
+            "        0"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-deep-open-row-tail-alias-root"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected deep handler typing to split handled labels from normalized tail aliases, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+[<Fact>]
+let ``handlers reject normalized tail aliases whose handled label names a different interface`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "effect Ask ="
+            "    1 ask : Unit -> Bool"
+            ""
+            "effect Other ="
+            "    other : Unit -> Int"
+            ""
+            "type WrongAskTail (r : EffRow) = <[Ask : Other | r]>"
+            ""
+            "probe : Int"
+            "let probe : Int ="
+            "    block"
+            "        let badHandle : forall (r : EffRow). Eff <[Other : Other | WrongAskTail r]> Int -> Eff <[Other : Other | r]> Int ="
+            "            \\(comp : Eff <[Other : Other | WrongAskTail r]> Int) ->"
+            "                handle Ask comp with"
+            "                    case return y -> pure y"
+            "                    case ask () k -> k True"
+            ""
+            "        0"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-open-row-tail-alias-mismatch-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected normalized tail aliases with mismatched handled interfaces to be rejected.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerEffectRowMismatch)
+
+[<Fact>]
+let ``handlers can split a handled label out of a local normalized tail alias`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "probe : Int"
+            "let probe : Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            1 ask : Unit -> Bool"
+            ""
+            "        scoped effect Other ="
+            "            other : Unit -> Int"
+            ""
+            "        type AskTail (r : EffRow) = <[Ask : Ask | r]>"
+            ""
+            "        let handleAsk : forall (r : EffRow). Eff <[Other : Other | AskTail r]> Int -> Eff <[Other : Other | r]> Int ="
+            "            \\(comp : Eff <[Other : Other | AskTail r]> Int) ->"
+            "                handle Ask comp with"
+            "                    case return y -> pure y"
+            "                    case ask () k -> k True"
+            ""
+            "        0"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-local-open-row-tail-alias-root"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected handlers to split handled labels from local normalized tail aliases, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))

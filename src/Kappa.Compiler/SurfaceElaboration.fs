@@ -3527,6 +3527,281 @@ module SurfaceElaboration =
 
         split effectRow
 
+    let private renderSurfaceSchemeTokens (scheme: TypeScheme) =
+        let binderText (binder: TypeSignatures.ForallBinder) =
+            let quantityPrefix =
+                match binder.Quantity with
+                | QuantityZero -> ""
+                | quantity -> Quantity.toSurfaceText quantity + " "
+
+            $"({quantityPrefix}{binder.Name} : {TypeSignatures.toText binder.Sort})"
+
+        let constraintText (constraintInfo: TypeSignatures.TraitConstraint) =
+            match constraintInfo.Arguments with
+            | [] -> constraintInfo.TraitName
+            | arguments ->
+                String.concat " " (constraintInfo.TraitName :: (arguments |> List.map TypeSignatures.toText))
+
+        let forallPrefix =
+            match scheme.Forall with
+            | [] -> ""
+            | binders ->
+                "forall " + (binders |> List.map binderText |> String.concat " ") + ". "
+
+        let constraintsPrefix =
+            match scheme.Constraints with
+            | [] -> ""
+            | constraints ->
+                (constraints |> List.map constraintText |> String.concat ", ") + " => "
+
+        typeTextTokens (forallPrefix + constraintsPrefix + TypeSignatures.toText scheme.Body)
+
+    let private rewriteLocalTypeAliasesInSurfaceExpression
+        currentModuleName
+        (visibleAliases: Map<string, TypeAliasInfo>)
+        expression
+        =
+        let mergeAliases localAliases =
+            visibleAliases
+            |> Map.fold (fun state name info -> Map.add name info state) localAliases
+
+        let expandTypeTokens localAliases tokens =
+            let aliases = mergeAliases localAliases
+
+            match TypeSignatures.parseScheme tokens with
+            | Some scheme ->
+                { scheme with
+                    Forall = scheme.Forall |> List.map (fun binder -> { binder with Sort = normalizeTypeAliases aliases binder.Sort })
+                    Constraints =
+                        scheme.Constraints
+                        |> List.map (fun constraintInfo ->
+                            { constraintInfo with
+                                Arguments = constraintInfo.Arguments |> List.map (normalizeTypeAliases aliases) })
+                    Body = normalizeTypeAliases aliases scheme.Body }
+                |> renderSurfaceSchemeTokens
+            | None ->
+                tokens
+                |> TypeSignatures.parseType
+                |> Option.map (normalizeTypeAliases aliases)
+                |> Option.map TypeSignatures.toText
+                |> Option.map typeTextTokens
+                |> Option.defaultValue tokens
+
+        let expandTypeTokenOption localAliases tokens =
+            tokens |> Option.map (expandTypeTokens localAliases)
+
+        let expandParameter localAliases (parameter: Parameter) =
+            { parameter with
+                TypeTokens = expandTypeTokenOption localAliases parameter.TypeTokens }
+
+        let expandBinding localAliases (binding: SurfaceBindPattern) =
+            { binding with
+                TypeTokens = expandTypeTokenOption localAliases binding.TypeTokens }
+
+        let expandEffectDeclaration localAliases (declaration: EffectDeclaration) =
+            { declaration with
+                HeaderTokens = expandTypeTokens localAliases declaration.HeaderTokens
+                Operations =
+                    declaration.Operations
+                    |> List.map (fun operation ->
+                        { operation with
+                            SignatureTokens = expandTypeTokens localAliases operation.SignatureTokens }) }
+
+        let expandTypeAlias localAliases (declaration: TypeAlias) =
+            { declaration with
+                HeaderTokens = expandTypeTokens localAliases declaration.HeaderTokens
+                BodyTokens = expandTypeTokenOption localAliases declaration.BodyTokens }
+
+        let rec rewritePattern localAliases pattern =
+            match pattern with
+            | TypedPattern(inner, typeTokens) ->
+                TypedPattern(rewritePattern localAliases inner, expandTypeTokens localAliases typeTokens)
+            | AsPattern(name, inner) ->
+                AsPattern(name, rewritePattern localAliases inner)
+            | ConstructorPattern(name, items) ->
+                ConstructorPattern(name, items |> List.map (rewritePattern localAliases))
+            | NamedConstructorPattern(name, fields) ->
+                NamedConstructorPattern(
+                    name,
+                    fields
+                    |> List.map (fun field ->
+                        { field with
+                            Pattern = rewritePattern localAliases field.Pattern })
+                )
+            | OrPattern items ->
+                OrPattern(items |> List.map (rewritePattern localAliases))
+            | TuplePattern items ->
+                TuplePattern(items |> List.map (rewritePattern localAliases))
+            | AnonymousRecordPattern(fields, rest) ->
+                AnonymousRecordPattern(
+                    fields |> List.map (fun field -> { field with Pattern = rewritePattern localAliases field.Pattern }),
+                    rest
+                )
+            | VariantPattern variantPattern ->
+                let rewrittenVariant =
+                    match variantPattern with
+                    | BoundVariantPattern(name, typeTokens) ->
+                        BoundVariantPattern(name, expandTypeTokenOption localAliases typeTokens)
+                    | WildcardVariantPattern typeTokens ->
+                        WildcardVariantPattern(expandTypeTokenOption localAliases typeTokens)
+                    | RestVariantPattern _ ->
+                        variantPattern
+
+                VariantPattern rewrittenVariant
+            | WildcardPattern
+            | NamePattern _
+            | LiteralPattern _ ->
+                pattern
+
+        let rec rewriteDoStatement localAliases statement =
+            match statement with
+            | DoLet(binding, inner) ->
+                DoLet(expandBinding localAliases binding, rewriteExpression localAliases inner)
+            | DoLetQuestion(binding, inner, failure) ->
+                let rewrittenFailure =
+                    failure
+                    |> Option.map (fun failure ->
+                        { failure with
+                            ResiduePattern = expandBinding localAliases failure.ResiduePattern
+                            Body = failure.Body |> List.map (rewriteDoStatement localAliases) })
+
+                DoLetQuestion(expandBinding localAliases binding, rewriteExpression localAliases inner, rewrittenFailure)
+            | DoBind(binding, inner) ->
+                DoBind(expandBinding localAliases binding, rewriteExpression localAliases inner)
+            | DoUsing(binding, inner) ->
+                DoUsing(expandBinding localAliases binding, rewriteExpression localAliases inner)
+            | DoVar(name, inner) ->
+                DoVar(name, rewriteExpression localAliases inner)
+            | DoAssign(name, inner) ->
+                DoAssign(name, rewriteExpression localAliases inner)
+            | DoDefer inner ->
+                DoDefer(rewriteExpression localAliases inner)
+            | DoIf(condition, whenTrue, whenFalse) ->
+                DoIf(
+                    rewriteExpression localAliases condition,
+                    whenTrue |> List.map (rewriteDoStatement localAliases),
+                    whenFalse |> List.map (rewriteDoStatement localAliases)
+                )
+            | DoWhile(condition, body) ->
+                DoWhile(rewriteExpression localAliases condition, body |> List.map (rewriteDoStatement localAliases))
+            | DoReturn inner ->
+                DoReturn(rewriteExpression localAliases inner)
+            | DoExpression inner ->
+                DoExpression(rewriteExpression localAliases inner)
+
+        and rewriteExpression localAliases current =
+            match current with
+            | SyntaxQuote inner ->
+                SyntaxQuote(rewriteExpression localAliases inner)
+            | SyntaxSplice inner ->
+                SyntaxSplice(rewriteExpression localAliases inner)
+            | TopLevelSyntaxSplice inner ->
+                TopLevelSyntaxSplice(rewriteExpression localAliases inner)
+            | CodeQuote inner ->
+                CodeQuote(rewriteExpression localAliases inner)
+            | CodeSplice inner ->
+                CodeSplice(rewriteExpression localAliases inner)
+            | Handle(isDeep, label, body, returnClause, operationClauses) ->
+                let rewriteClause (clause: SurfaceEffectHandlerClause) =
+                    { clause with
+                        ArgumentTokens = clause.ArgumentTokens |> List.map (expandTypeTokens localAliases)
+                        Body = rewriteExpression localAliases clause.Body }
+
+                Handle(
+                    isDeep,
+                    rewriteExpression localAliases label,
+                    rewriteExpression localAliases body,
+                    rewriteClause returnClause,
+                    operationClauses |> List.map rewriteClause
+                )
+            | LocalSignature(declaration, body) ->
+                let expandedDeclaration =
+                    { declaration with
+                        TypeTokens = expandTypeTokens localAliases declaration.TypeTokens }
+
+                LocalSignature(expandedDeclaration, rewriteExpression localAliases body)
+            | LocalTypeAlias(declaration, body) ->
+                let expandedDeclaration = expandTypeAlias localAliases declaration
+
+                match tryParseTypeAliasInfo currentModuleName expandedDeclaration with
+                | Some(_, aliasInfo) ->
+                    rewriteExpression (Map.add declaration.Name aliasInfo localAliases) body
+                | None ->
+                    LocalTypeAlias(expandedDeclaration, rewriteExpression localAliases body)
+            | LocalLet(binding, value, body) ->
+                LocalLet(expandBinding localAliases binding, rewriteExpression localAliases value, rewriteExpression localAliases body)
+            | LocalScopedEffect(declaration, body) ->
+                LocalScopedEffect(expandEffectDeclaration localAliases declaration, rewriteExpression localAliases body)
+            | Lambda(parameters, body) ->
+                Lambda(parameters |> List.map (expandParameter localAliases), rewriteExpression localAliases body)
+            | IfThenElse(condition, whenTrue, whenFalse) ->
+                IfThenElse(
+                    rewriteExpression localAliases condition,
+                    rewriteExpression localAliases whenTrue,
+                    rewriteExpression localAliases whenFalse
+                )
+            | Match(scrutinee, cases) ->
+                Match(
+                    rewriteExpression localAliases scrutinee,
+                    cases
+                    |> List.map (fun caseClause ->
+                        { caseClause with
+                            Pattern = rewritePattern localAliases caseClause.Pattern
+                            Guard = caseClause.Guard |> Option.map (rewriteExpression localAliases)
+                            Body = rewriteExpression localAliases caseClause.Body })
+                )
+            | RecordLiteral fields ->
+                RecordLiteral(fields |> List.map (fun field -> { field with Value = rewriteExpression localAliases field.Value }))
+            | Seal(value, ascriptionTokens) ->
+                Seal(rewriteExpression localAliases value, expandTypeTokens localAliases ascriptionTokens)
+            | RecordUpdate(receiver, fields) ->
+                RecordUpdate(rewriteExpression localAliases receiver, fields |> List.map (fun field -> { field with Value = rewriteExpression localAliases field.Value }))
+            | MemberAccess(receiver, segments, arguments) ->
+                MemberAccess(rewriteExpression localAliases receiver, segments, arguments |> List.map (rewriteExpression localAliases))
+            | SafeNavigation(receiver, navigation) ->
+                SafeNavigation(
+                    rewriteExpression localAliases receiver,
+                    { navigation with
+                        Arguments = navigation.Arguments |> List.map (rewriteExpression localAliases) }
+                )
+            | TagTest(receiver, constructorName) ->
+                TagTest(rewriteExpression localAliases receiver, constructorName)
+            | Do statements ->
+                Do(statements |> List.map (rewriteDoStatement localAliases))
+            | MonadicSplice inner ->
+                MonadicSplice(rewriteExpression localAliases inner)
+            | Apply(callee, arguments) ->
+                Apply(rewriteExpression localAliases callee, arguments |> List.map (rewriteExpression localAliases))
+            | ExplicitImplicitArgument inner ->
+                ExplicitImplicitArgument(rewriteExpression localAliases inner)
+            | NamedApplicationBlock fields ->
+                NamedApplicationBlock(fields |> List.map (fun field -> { field with Value = rewriteExpression localAliases field.Value }))
+            | InoutArgument inner ->
+                InoutArgument(rewriteExpression localAliases inner)
+            | Unary(operatorName, inner) ->
+                Unary(operatorName, rewriteExpression localAliases inner)
+            | Binary(left, operatorName, right) ->
+                Binary(rewriteExpression localAliases left, operatorName, rewriteExpression localAliases right)
+            | Elvis(left, right) ->
+                Elvis(rewriteExpression localAliases left, rewriteExpression localAliases right)
+            | Comprehension comprehension ->
+                Comprehension { comprehension with Lowered = rewriteExpression localAliases comprehension.Lowered }
+            | PrefixedString(prefix, parts) ->
+                PrefixedString(
+                    prefix,
+                    parts
+                    |> List.map (function
+                        | StringText text -> StringText text
+                        | StringInterpolation(inner, format) -> StringInterpolation(rewriteExpression localAliases inner, format))
+                )
+            | Literal _
+            | NumericLiteral _
+            | KindQualifiedName _
+            | Name _ ->
+                current
+
+        rewriteExpression Map.empty expression
+
     let private tryUnwrapElabType aliases typeExpr =
         let normalize = normalizeTypeAliases aliases
 
@@ -5615,8 +5890,12 @@ module SurfaceElaboration =
                     inferValidationApplicationType environment freshCounter localTypes expression
         | LocalSignature(_, body) ->
             inferValidationExpressionType environment freshCounter localTypes body
-        | LocalTypeAlias(_, body) ->
-            inferValidationExpressionType environment freshCounter localTypes body
+        | LocalTypeAlias _ ->
+            inferValidationExpressionType
+                environment
+                freshCounter
+                localTypes
+                (rewriteLocalTypeAliasesInSurfaceExpression environment.CurrentModuleName environment.VisibleTypeAliases expression)
         | LocalLet(binding, value, body) ->
             let bindingNames = collectPatternNames binding.Pattern
 
@@ -10328,7 +10607,7 @@ module SurfaceElaboration =
                     (Set.add declaration.Name lexicalNames)
                     (Map.remove declaration.Name aliases)
                     constructorFacts
-                    body
+                    (rewriteLocalTypeAliasesInSurfaceExpression environment.CurrentModuleName environment.VisibleTypeAliases expression)
             | LocalScopedEffect(declaration, body) ->
                 withScopedEffectDeclaration declaration (fun () ->
                     validateExpressionWithFlow
@@ -13613,107 +13892,227 @@ module SurfaceElaboration =
             | _ ->
                 value
 
-        let rec normalizeLocalDeclarations expression =
+        let mergeVisibleAndLocalTypeAliases localAliases =
+            environment.VisibleTypeAliases
+            |> Map.fold (fun state name info -> Map.add name info state) localAliases
+
+        let renderLocalSchemeTokens (scheme: TypeScheme) =
+            let binderText (binder: TypeSignatures.ForallBinder) =
+                let quantityPrefix =
+                    match binder.Quantity with
+                    | QuantityZero -> ""
+                    | quantity -> Quantity.toSurfaceText quantity + " "
+
+                $"({quantityPrefix}{binder.Name} : {TypeSignatures.toText binder.Sort})"
+
+            let constraintText (constraintInfo: TypeSignatures.TraitConstraint) =
+                match constraintInfo.Arguments with
+                | [] -> constraintInfo.TraitName
+                | arguments ->
+                    String.concat " " (constraintInfo.TraitName :: (arguments |> List.map TypeSignatures.toText))
+
+            let forallPrefix =
+                match scheme.Forall with
+                | [] -> ""
+                | binders ->
+                    "forall " + (binders |> List.map binderText |> String.concat " ") + ". "
+
+            let constraintsPrefix =
+                match scheme.Constraints with
+                | [] -> ""
+                | constraints ->
+                    (constraints |> List.map constraintText |> String.concat ", ") + " => "
+
+            typeTextTokens (forallPrefix + constraintsPrefix + TypeSignatures.toText scheme.Body)
+
+        let expandTypeTokensWithLocalAliases localAliases tokens =
+            let aliases = mergeVisibleAndLocalTypeAliases localAliases
+
+            match TypeSignatures.parseScheme tokens with
+            | Some scheme ->
+                { scheme with
+                    Forall = scheme.Forall |> List.map (fun binder -> { binder with Sort = normalizeTypeAliases aliases binder.Sort })
+                    Constraints =
+                        scheme.Constraints
+                        |> List.map (fun constraintInfo ->
+                            { constraintInfo with
+                                Arguments = constraintInfo.Arguments |> List.map (normalizeTypeAliases aliases) })
+                    Body = normalizeTypeAliases aliases scheme.Body }
+                |> renderLocalSchemeTokens
+            | None ->
+                tokens
+                |> TypeSignatures.parseType
+                |> Option.map (normalizeTypeAliases aliases)
+                |> Option.map TypeSignatures.toText
+                |> Option.map typeTextTokens
+                |> Option.defaultValue tokens
+
+        let expandTypeTokenOptionWithLocalAliases localAliases tokens =
+            tokens |> Option.map (expandTypeTokensWithLocalAliases localAliases)
+
+        let expandParameterTypeTokens localAliases (parameter: Parameter) =
+            { parameter with
+                TypeTokens = expandTypeTokenOptionWithLocalAliases localAliases parameter.TypeTokens }
+
+        let expandBindingTypeTokens localAliases (binding: SurfaceBindPattern) =
+            { binding with
+                TypeTokens = expandTypeTokenOptionWithLocalAliases localAliases binding.TypeTokens }
+
+        let expandEffectDeclarationTypeTokens localAliases (declaration: EffectDeclaration) =
+            { declaration with
+                HeaderTokens = expandTypeTokensWithLocalAliases localAliases declaration.HeaderTokens
+                Operations =
+                    declaration.Operations
+                    |> List.map (fun operation ->
+                        { operation with
+                            SignatureTokens = expandTypeTokensWithLocalAliases localAliases operation.SignatureTokens }) }
+
+        let expandTypeAliasTokens localAliases (declaration: TypeAlias) =
+            { declaration with
+                HeaderTokens = expandTypeTokensWithLocalAliases localAliases declaration.HeaderTokens
+                BodyTokens = expandTypeTokenOptionWithLocalAliases localAliases declaration.BodyTokens }
+
+        let rec normalizeLocalDeclarationsWithAliases localAliases expression =
             match expression with
             | SyntaxQuote inner ->
-                SyntaxQuote(normalizeLocalDeclarations inner)
+                SyntaxQuote(normalizeLocalDeclarationsWithAliases localAliases inner)
             | SyntaxSplice inner ->
-                SyntaxSplice(normalizeLocalDeclarations inner)
+                SyntaxSplice(normalizeLocalDeclarationsWithAliases localAliases inner)
             | TopLevelSyntaxSplice inner ->
-                TopLevelSyntaxSplice(normalizeLocalDeclarations inner)
+                TopLevelSyntaxSplice(normalizeLocalDeclarationsWithAliases localAliases inner)
             | CodeQuote inner ->
-                CodeQuote(normalizeLocalDeclarations inner)
+                CodeQuote(normalizeLocalDeclarationsWithAliases localAliases inner)
             | CodeSplice inner ->
-                CodeSplice(normalizeLocalDeclarations inner)
+                CodeSplice(normalizeLocalDeclarationsWithAliases localAliases inner)
             | Handle(isDeep, label, body, returnClause, operationClauses) ->
                 let normalizeClause (clause: SurfaceEffectHandlerClause) =
                     { clause with
-                        Body = normalizeLocalDeclarations clause.Body }
+                        Body = normalizeLocalDeclarationsWithAliases localAliases clause.Body }
 
                 Handle(
                     isDeep,
-                    normalizeLocalDeclarations label,
-                    normalizeLocalDeclarations body,
+                    normalizeLocalDeclarationsWithAliases localAliases label,
+                    normalizeLocalDeclarationsWithAliases localAliases body,
                     normalizeClause returnClause,
                     operationClauses |> List.map normalizeClause
                 )
             | LocalTypeAlias(declaration, body) ->
-                match tryParseTypeAliasInfo environment.CurrentModuleName declaration with
-                | Some(_, aliasInfo) when List.isEmpty aliasInfo.Parameters ->
-                    body
-                    |> substituteZeroArityLocalTypeAliasInExpression declaration
-                    |> normalizeLocalDeclarations
-                | _ ->
-                    LocalTypeAlias(declaration, normalizeLocalDeclarations body)
+                let expandedDeclaration = expandTypeAliasTokens localAliases declaration
+
+                match tryParseTypeAliasInfo environment.CurrentModuleName expandedDeclaration with
+                | Some(_, aliasInfo) ->
+                    let nextLocalAliases = Map.add declaration.Name aliasInfo localAliases
+                    normalizeLocalDeclarationsWithAliases nextLocalAliases body
+                | None ->
+                    LocalTypeAlias(expandedDeclaration, normalizeLocalDeclarationsWithAliases localAliases body)
             | LocalSignature(declaration, LocalLet(binding, value, body))
                 when binding.Pattern = NamePattern declaration.Name ->
-                LocalLet(binding, annotateLambdaFromSignature declaration (normalizeLocalDeclarations value), normalizeLocalDeclarations body)
+                let expandedDeclaration =
+                    { declaration with
+                        TypeTokens = expandTypeTokensWithLocalAliases localAliases declaration.TypeTokens }
+
+                LocalLet(
+                    expandBindingTypeTokens localAliases binding,
+                    annotateLambdaFromSignature expandedDeclaration (normalizeLocalDeclarationsWithAliases localAliases value),
+                    normalizeLocalDeclarationsWithAliases localAliases body
+                )
             | LocalSignature(declaration, body) ->
-                LocalSignature(declaration, normalizeLocalDeclarations body)
+                let expandedDeclaration =
+                    { declaration with
+                        TypeTokens = expandTypeTokensWithLocalAliases localAliases declaration.TypeTokens }
+
+                LocalSignature(expandedDeclaration, normalizeLocalDeclarationsWithAliases localAliases body)
             | LocalLet(binding, value, body) ->
-                LocalLet(binding, normalizeLocalDeclarations value, normalizeLocalDeclarations body)
+                LocalLet(
+                    expandBindingTypeTokens localAliases binding,
+                    normalizeLocalDeclarationsWithAliases localAliases value,
+                    normalizeLocalDeclarationsWithAliases localAliases body
+                )
             | LocalScopedEffect(declaration, body) ->
-                LocalScopedEffect(declaration, normalizeLocalDeclarations body)
+                LocalScopedEffect(
+                    expandEffectDeclarationTypeTokens localAliases declaration,
+                    normalizeLocalDeclarationsWithAliases localAliases body
+                )
             | Lambda(parameters, body) ->
-                Lambda(parameters, normalizeLocalDeclarations body)
+                Lambda(parameters |> List.map (expandParameterTypeTokens localAliases), normalizeLocalDeclarationsWithAliases localAliases body)
             | IfThenElse(condition, whenTrue, whenFalse) ->
                 IfThenElse(
-                    normalizeLocalDeclarations condition,
-                    normalizeLocalDeclarations whenTrue,
-                    normalizeLocalDeclarations whenFalse
+                    normalizeLocalDeclarationsWithAliases localAliases condition,
+                    normalizeLocalDeclarationsWithAliases localAliases whenTrue,
+                    normalizeLocalDeclarationsWithAliases localAliases whenFalse
                 )
             | Match(scrutinee, cases) ->
                 Match(
-                    normalizeLocalDeclarations scrutinee,
+                    normalizeLocalDeclarationsWithAliases localAliases scrutinee,
                     cases
                     |> List.map (fun caseClause ->
                         { caseClause with
-                            Guard = caseClause.Guard |> Option.map normalizeLocalDeclarations
-                            Body = normalizeLocalDeclarations caseClause.Body })
+                            Guard = caseClause.Guard |> Option.map (normalizeLocalDeclarationsWithAliases localAliases)
+                            Body = normalizeLocalDeclarationsWithAliases localAliases caseClause.Body })
                 )
             | RecordLiteral fields ->
-                RecordLiteral(fields |> List.map (fun field -> { field with Value = normalizeLocalDeclarations field.Value }))
+                RecordLiteral(fields |> List.map (fun field -> { field with Value = normalizeLocalDeclarationsWithAliases localAliases field.Value }))
             | Seal(value, ascriptionTokens) ->
-                Seal(normalizeLocalDeclarations value, ascriptionTokens)
+                Seal(
+                    normalizeLocalDeclarationsWithAliases localAliases value,
+                    expandTypeTokensWithLocalAliases localAliases ascriptionTokens
+                )
             | RecordUpdate(receiver, fields) ->
-                RecordUpdate(receiver |> normalizeLocalDeclarations, fields |> List.map (fun field -> { field with Value = normalizeLocalDeclarations field.Value }))
+                RecordUpdate(
+                    receiver |> normalizeLocalDeclarationsWithAliases localAliases,
+                    fields |> List.map (fun field -> { field with Value = normalizeLocalDeclarationsWithAliases localAliases field.Value })
+                )
             | MemberAccess(receiver, segments, arguments) ->
-                MemberAccess(normalizeLocalDeclarations receiver, segments, arguments |> List.map normalizeLocalDeclarations)
+                MemberAccess(
+                    normalizeLocalDeclarationsWithAliases localAliases receiver,
+                    segments,
+                    arguments |> List.map (normalizeLocalDeclarationsWithAliases localAliases)
+                )
             | SafeNavigation(receiver, navigation) ->
                 SafeNavigation(
-                    normalizeLocalDeclarations receiver,
+                    normalizeLocalDeclarationsWithAliases localAliases receiver,
                     { navigation with
-                        Arguments = navigation.Arguments |> List.map normalizeLocalDeclarations }
+                        Arguments = navigation.Arguments |> List.map (normalizeLocalDeclarationsWithAliases localAliases) }
                 )
             | TagTest(receiver, constructorName) ->
-                TagTest(normalizeLocalDeclarations receiver, constructorName)
+                TagTest(normalizeLocalDeclarationsWithAliases localAliases receiver, constructorName)
             | Do statements ->
-                Do(statements |> List.map normalizeLocalDoStatement)
+                Do(statements |> List.map (normalizeLocalDoStatementWithAliases localAliases))
             | MonadicSplice inner ->
-                MonadicSplice(normalizeLocalDeclarations inner)
+                MonadicSplice(normalizeLocalDeclarationsWithAliases localAliases inner)
             | Apply(callee, arguments) ->
-                Apply(normalizeLocalDeclarations callee, arguments |> List.map normalizeLocalDeclarations)
+                Apply(
+                    normalizeLocalDeclarationsWithAliases localAliases callee,
+                    arguments |> List.map (normalizeLocalDeclarationsWithAliases localAliases)
+                )
             | ExplicitImplicitArgument inner ->
-                ExplicitImplicitArgument(normalizeLocalDeclarations inner)
+                ExplicitImplicitArgument(normalizeLocalDeclarationsWithAliases localAliases inner)
             | NamedApplicationBlock fields ->
-                NamedApplicationBlock(fields |> List.map (fun field -> { field with Value = normalizeLocalDeclarations field.Value }))
+                NamedApplicationBlock(fields |> List.map (fun field -> { field with Value = normalizeLocalDeclarationsWithAliases localAliases field.Value }))
             | InoutArgument inner ->
-                InoutArgument(normalizeLocalDeclarations inner)
+                InoutArgument(normalizeLocalDeclarationsWithAliases localAliases inner)
             | Unary(operatorName, inner) ->
-                Unary(operatorName, normalizeLocalDeclarations inner)
+                Unary(operatorName, normalizeLocalDeclarationsWithAliases localAliases inner)
             | Binary(left, operatorName, right) ->
-                Binary(normalizeLocalDeclarations left, operatorName, normalizeLocalDeclarations right)
+                Binary(
+                    normalizeLocalDeclarationsWithAliases localAliases left,
+                    operatorName,
+                    normalizeLocalDeclarationsWithAliases localAliases right
+                )
             | Elvis(left, right) ->
-                Elvis(normalizeLocalDeclarations left, normalizeLocalDeclarations right)
+                Elvis(
+                    normalizeLocalDeclarationsWithAliases localAliases left,
+                    normalizeLocalDeclarationsWithAliases localAliases right
+                )
             | Comprehension comprehension ->
-                Comprehension { comprehension with Lowered = normalizeLocalDeclarations comprehension.Lowered }
+                Comprehension { comprehension with Lowered = normalizeLocalDeclarationsWithAliases localAliases comprehension.Lowered }
             | PrefixedString(prefix, parts) ->
                 PrefixedString(
                     prefix,
                     parts
                     |> List.map (function
                         | StringText text -> StringText text
-                        | StringInterpolation(inner, format) -> StringInterpolation(normalizeLocalDeclarations inner, format))
+                        | StringInterpolation(inner, format) -> StringInterpolation(normalizeLocalDeclarationsWithAliases localAliases inner, format))
                 )
             | Literal _
             | NumericLiteral _
@@ -13721,42 +14120,46 @@ module SurfaceElaboration =
             | Name _ ->
                 expression
 
-        and normalizeLocalDoStatement statement =
+        and normalizeLocalDoStatementWithAliases localAliases statement =
             match statement with
             | DoLet(binding, expression) ->
-                DoLet(binding, normalizeLocalDeclarations expression)
+                DoLet(expandBindingTypeTokens localAliases binding, normalizeLocalDeclarationsWithAliases localAliases expression)
             | DoLetQuestion(binding, expression, failure) ->
                 let normalizedFailure =
                     failure
                     |> Option.map (fun failure ->
                         { failure with
-                            Body = failure.Body |> List.map normalizeLocalDoStatement })
+                            ResiduePattern = expandBindingTypeTokens localAliases failure.ResiduePattern
+                            Body = failure.Body |> List.map (normalizeLocalDoStatementWithAliases localAliases) })
 
-                DoLetQuestion(binding, normalizeLocalDeclarations expression, normalizedFailure)
+                DoLetQuestion(expandBindingTypeTokens localAliases binding, normalizeLocalDeclarationsWithAliases localAliases expression, normalizedFailure)
             | DoBind(binding, expression) ->
-                DoBind(binding, normalizeLocalDeclarations expression)
+                DoBind(expandBindingTypeTokens localAliases binding, normalizeLocalDeclarationsWithAliases localAliases expression)
             | DoVar(name, expression) ->
-                DoVar(name, normalizeLocalDeclarations expression)
+                DoVar(name, normalizeLocalDeclarationsWithAliases localAliases expression)
             | DoAssign(name, expression) ->
-                DoAssign(name, normalizeLocalDeclarations expression)
+                DoAssign(name, normalizeLocalDeclarationsWithAliases localAliases expression)
             | DoUsing(binding, expression) ->
-                DoUsing(binding, normalizeLocalDeclarations expression)
+                DoUsing(expandBindingTypeTokens localAliases binding, normalizeLocalDeclarationsWithAliases localAliases expression)
             | DoDefer expression ->
-                DoDefer(normalizeLocalDeclarations expression)
+                DoDefer(normalizeLocalDeclarationsWithAliases localAliases expression)
             | DoIf(condition, whenTrue, whenFalse) ->
                 DoIf(
-                    normalizeLocalDeclarations condition,
-                    whenTrue |> List.map normalizeLocalDoStatement,
-                    whenFalse |> List.map normalizeLocalDoStatement
+                    normalizeLocalDeclarationsWithAliases localAliases condition,
+                    whenTrue |> List.map (normalizeLocalDoStatementWithAliases localAliases),
+                    whenFalse |> List.map (normalizeLocalDoStatementWithAliases localAliases)
                 )
             | DoWhile(condition, body) ->
-                DoWhile(normalizeLocalDeclarations condition, body |> List.map normalizeLocalDoStatement)
+                DoWhile(
+                    normalizeLocalDeclarationsWithAliases localAliases condition,
+                    body |> List.map (normalizeLocalDoStatementWithAliases localAliases)
+                )
             | DoReturn expression ->
-                DoReturn(normalizeLocalDeclarations expression)
+                DoReturn(normalizeLocalDeclarationsWithAliases localAliases expression)
             | DoExpression expression ->
-                DoExpression(normalizeLocalDeclarations expression)
+                DoExpression(normalizeLocalDeclarationsWithAliases localAliases expression)
 
-        let body = normalizeLocalDeclarations body
+        let body = normalizeLocalDeclarationsWithAliases Map.empty body
 
         let rec inferExpressionType localTypes expression =
             match expression with
