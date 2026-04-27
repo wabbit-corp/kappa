@@ -2676,6 +2676,46 @@ let ``backend verification rejects leaked pre-erasure runtime metadata`` () =
     Assert.Contains(diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
 
 [<Fact>]
+let ``backend verification rejects leaked effect row runtime metadata`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-verify-effect-row-erasure-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "id : Int -> Int"
+                    "let id value = value"
+                    "let answer = id 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let malformedWorkspace =
+        { workspace with
+            KRuntimeIR =
+                workspace.KRuntimeIR
+                |> List.map (fun moduleDump ->
+                    if moduleDump.Name = "main" then
+                        { moduleDump with
+                            Bindings =
+                                moduleDump.Bindings
+                                |> List.map (fun binding ->
+                                    if binding.Name = "id" then
+                                        { binding with
+                                            ReturnTypeText = Some "Eff <[Ask : Ask]> Int" }
+                                    else
+                                        binding) }
+                    else
+                        moduleDump) }
+
+    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KBackendIR"
+
+    Assert.NotEmpty(diagnostics)
+    Assert.Contains(diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
+    Assert.Contains("pre-erasure runtime metadata", diagnosticsText diagnostics)
+
+[<Fact>]
 let ``workspace materializes frontend core and backend modules`` () =
     let workspace =
         compileInMemoryWorkspace
