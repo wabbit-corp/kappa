@@ -2144,6 +2144,64 @@ let ``source compilation rejects sibling callable values in arithmetic before ru
     Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TypeEqualityMismatch)
 
 [<Fact>]
+let ``source compilation rejects recursive function typed values whose bodies are not functions`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-compile-recursive-function-typed-value-body-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "i0 : Unit -> Int"
+                    "let i0 = i0 ()"
+                    "result : Int"
+                    "let result = i0 ()"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected a recursive function-typed value whose body reduces to Int to be rejected in the frontend.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TypeEqualityMismatch)
+
+[<Fact>]
+let ``source compilation rejects sibling lambda values in arithmetic inside applications`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-compile-sibling-lambda-arithmetic-application-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let i0 = \\() -> 42"
+                    "let result = i0 (i0 + i0)"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected arithmetic over a sibling lambda-valued binding inside an application to be rejected in the frontend.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TypeEqualityMismatch)
+
+[<Fact>]
+let ``source compilation rejects receiver marked definitions whose bodies disagree with trailing function signatures`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-compile-receiver-marked-definition-signature-mismatch-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "i0 : Int -> Int -> Int"
+                    "let i0 (this i0 : Int) : Int ="
+                    "    i0 + i0"
+                    "let result = i0 ()"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected a receiver-marked definition body to be rejected when the remaining function signature still requires another argument.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TypeEqualityMismatch)
+
+[<Fact>]
 let ``source compilation rejects unused ill typed top level bindings`` () =
     let workspace =
         compileInMemoryWorkspace

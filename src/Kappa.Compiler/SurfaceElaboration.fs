@@ -9336,12 +9336,46 @@ module SurfaceElaboration =
 
                 loop effectiveParameters.Length typeExpr
 
+            let signatureExpectedBodyType =
+                scheme
+                |> Option.map (fun scheme ->
+                    if List.isEmpty effectiveParameters then
+                        scheme.Body
+                    else
+                        let schemeParameterTypes, schemeResultType = TypeSignatures.schemeParts scheme
+
+                        let rec dropLeadingOmittableParameters remaining =
+                            match remaining with
+                            | parameterType :: rest
+                                when isCompileTimeArgumentType environment.VisibleTypeAliases parameterType
+                                     || (tryTraitConstraintFromType environment parameterType |> Option.isSome) ->
+                                dropLeadingOmittableParameters rest
+                            | _ ->
+                                remaining
+
+                        let alignableParameterTypes =
+                            dropLeadingOmittableParameters schemeParameterTypes
+
+                        match tryAlignParameterTypesWithLayouts environment effectiveParameters alignableParameterTypes with
+                        | Some(_, trailingParameterTypes) ->
+                            trailingParameterTypes
+                            |> List.rev
+                            |> List.fold (fun current parameterType -> TypeArrow(QuantityOmega, parameterType, current)) schemeResultType
+                        | None ->
+                            dropDefinitionParameters scheme.Body)
+
             let expectedBodyType =
                 definition.ReturnTypeTokens
                 |> Option.bind TypeSignatures.parseType
-                |> Option.orElseWith (fun () ->
-                    scheme
-                    |> Option.map (fun scheme -> dropDefinitionParameters scheme.Body))
+                |> Option.orElse signatureExpectedBodyType
+
+            let signatureReturnAnnotationDiagnostics =
+                match definition.ReturnTypeTokens |> Option.bind TypeSignatures.parseType, signatureExpectedBodyType with
+                | Some annotatedReturnType, Some signatureReturnType
+                    when not (expectedTypeAccepts locals Map.empty signatureReturnType annotatedReturnType) ->
+                    [ expectedMismatchDiagnostic locals Map.empty "Definition result annotation" signatureReturnType annotatedReturnType ]
+                | _ ->
+                    []
 
             let directSignatureLiteralDiagnostic =
                 match body, definition.ReturnTypeTokens |> Option.bind tryRecordInfoFromTypeTokens with
@@ -9539,6 +9573,17 @@ module SurfaceElaboration =
                 | _ ->
                     []
 
+            let callableExpectedBodyDiagnostics =
+                match expectedBodyType, inferValidationExpressionType environment freshCounter locals body with
+                | Some expectedType, Some actualType
+                    when typeIsCallableLikeForValidation expectedType
+                         && (canCompareInferredValidationTypes locals expectedType actualType
+                             || needsDependentTransportComparison locals expectedType actualType)
+                         && not (expectedTypeAccepts locals Map.empty expectedType actualType) ->
+                    [ expectedMismatchDiagnostic locals Map.empty "Definition body" expectedType actualType ]
+                | _ ->
+                    []
+
             let macroExpectedBodyDiagnostics =
                 match expectedBodyType, tryInferMacroAwareValidationType locals body with
                 | Some expectedType, Some actualType
@@ -9619,6 +9664,7 @@ module SurfaceElaboration =
                     []
 
             directSignatureLiteralDiagnostic
+            @ signatureReturnAnnotationDiagnostics
             @ sealAscriptionDiagnostics
             @ opaqueUnfoldingDiagnostics
             @ projectionTypeMismatchDiagnostics
@@ -9628,6 +9674,7 @@ module SurfaceElaboration =
             @ contextualNumericBodyDiagnostics
             @ doBlockExpectedBodyDiagnostics
             @ lambdaExpectedBodyDiagnostics
+            @ callableExpectedBodyDiagnostics
             @ macroExpectedBodyDiagnostics
             @ textBinaryExpectedBodyDiagnostics
             @ generalInferredExpectedBodyDiagnostics
@@ -12722,17 +12769,29 @@ module SurfaceElaboration =
                                      definition.Name
                                      |> Option.exists (fun definitionName -> String.Equals(name, definitionName, StringComparison.Ordinal))
                                  ) ->
-                            match topLevelDefinitionsByName |> Map.tryFind name with
-                            | Some bindingInfo when not (List.isEmpty bindingInfo.Parameters) ->
+                            let inferredOperandType =
+                                inferValidationExpressionType environment freshCounter locals operand
+                                |> Option.orElseWith (fun () -> tryInferExpressionTypeWithSiblingFallback Set.empty locals operand)
+
+                            match inferredOperandType with
+                            | Some operandType when typeIsCallableLikeForValidation operandType ->
                                     [
                                         makeDiagnostic
                                             DiagnosticCode.TypeEqualityMismatch
                                             $"Arithmetic operator {operandLabel} must be a numeric value, but '{name}' resolves to a callable binding."
                                     ]
-                            | None ->
-                                []
-                            | Some _ ->
-                                []
+                            | _ ->
+                                match topLevelDefinitionsByName |> Map.tryFind name with
+                                | Some bindingInfo when not (List.isEmpty bindingInfo.Parameters) ->
+                                    [
+                                        makeDiagnostic
+                                            DiagnosticCode.TypeEqualityMismatch
+                                            $"Arithmetic operator {operandLabel} must be a numeric value, but '{name}' resolves to a callable binding."
+                                    ]
+                                | None ->
+                                    []
+                                | Some _ ->
+                                    []
                         | _ ->
                             []
 
