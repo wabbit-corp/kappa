@@ -1282,3 +1282,38 @@ let ``deep handlers can split a handled label out of a local normalized tail ali
             [ "main.kp", mainSource ]
 
     Assert.False(workspace.HasErrors, sprintf "Expected deep handlers to split handled labels from local normalized tail aliases, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+[<Fact>]
+let ``deep handlers reject local normalized tail aliases whose handled label names a different interface`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "probe : Int"
+            "let probe : Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            1 ask : Unit -> Bool"
+            ""
+            "        scoped effect Other ="
+            "            other : Unit -> Int"
+            ""
+            "        type WrongAskTail (r : EffRow) = <[Ask : Other | r]>"
+            ""
+            "        let badHandle : forall (r : EffRow). Eff <[Other : Other | WrongAskTail r]> Int -> Eff <[Other : Other | r]> Int ="
+            "            \\(comp : Eff <[Other : Other | WrongAskTail r]> Int) ->"
+            "                deep handle Ask comp with"
+            "                    case return y -> pure y"
+            "                    case ask () k -> k True"
+            ""
+            "        0"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-local-deep-open-row-tail-alias-mismatch-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected deep handlers to reject local normalized tail aliases with mismatched handled interfaces.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerEffectRowMismatch)
