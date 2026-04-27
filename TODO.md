@@ -59,13 +59,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Centralize path-to-module inference in one spec-facing function.
   - Sources: `reviews/frontend1.md`, `reviews/general1.md`, `reviews/principles1.md`.
 
-- `[High] Validate unknown module attributes instead of silently accepting them.`
-  - The parser accepts arbitrary `@Ident` attributes.
-  - The frontend appears to meaningfully consume only `PrivateByDefault` and a small number of assertion-gating attributes.
-  - Unknown attributes currently appear to pass through as inert metadata, which contradicts the spec unless they are explicitly documented as implementation-defined.
-  - Add a validation pass that rejects unknown module attributes with direct diagnostics.
-  - Sources: `reviews/frontend1.md`, `reviews/general1.md`.
-
 - `[Medium-High] Align identifier and keyword handling with the lexical spec.`
   - Standard identifiers are specified as ASCII-only, but the current lexer accepts unquoted Unicode identifiers through `Char.IsLetter` and `Char.IsLetterOrDigit`.
   - Decide whether the spec should permit Unicode standard identifiers or the lexer should reject them except through backtick identifiers.

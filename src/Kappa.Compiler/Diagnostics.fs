@@ -23,6 +23,7 @@ type DiagnosticCode =
     | HostModuleReservedRoot
     | HostModuleUnsupportedBackend
     | MultishotEffectUnsupportedBackend
+    | ModuleAttributeUnknown
     | ModuleNameUnresolved
     | ModulePathMismatch
     | StaticObjectUnresolved
@@ -109,6 +110,7 @@ module DiagnosticCode =
         | HostModuleReservedRoot -> "E_HOST_MODULE_RESERVED_ROOT"
         | HostModuleUnsupportedBackend -> "E_HOST_MODULE_UNSUPPORTED_BACKEND"
         | MultishotEffectUnsupportedBackend -> "E_MULTISHOT_EFFECT_UNSUPPORTED_BACKEND"
+        | ModuleAttributeUnknown -> "E_MODULE_ATTRIBUTE_UNKNOWN"
         | ModuleNameUnresolved -> "E_MODULE_NAME_UNRESOLVED"
         | ModulePathMismatch -> "E_MODULE_PATH_MISMATCH"
         | StaticObjectUnresolved -> "E_STATIC_OBJECT_UNRESOLVED"
@@ -194,6 +196,7 @@ module DiagnosticCode =
         | "E_HOST_MODULE_RESERVED_ROOT" -> Some HostModuleReservedRoot
         | "E_HOST_MODULE_UNSUPPORTED_BACKEND" -> Some HostModuleUnsupportedBackend
         | "E_MULTISHOT_EFFECT_UNSUPPORTED_BACKEND" -> Some MultishotEffectUnsupportedBackend
+        | "E_MODULE_ATTRIBUTE_UNKNOWN" -> Some ModuleAttributeUnknown
         | "E_MODULE_NAME_UNRESOLVED" -> Some ModuleNameUnresolved
         | "E_MODULE_PATH_MISMATCH" -> Some ModulePathMismatch
         | "E_STATIC_OBJECT_UNRESOLVED" -> Some StaticObjectUnresolved
@@ -279,6 +282,8 @@ module DiagnosticCode =
             Some "A multi-shot continuation cannot capture live linear or borrowed resources across the operation site."
         | MultishotEffectUnsupportedBackend ->
             Some "The selected backend profile does not advertise rt-multishot-effects, so reachable multi-shot effect invocations and exported declarations that may invoke them must be rejected."
+        | ModuleAttributeUnknown ->
+            Some "Only documented module attributes are accepted. Unknown module attributes are compile-time errors."
         | HandlerEffectRowMismatch ->
             Some "A handler can eliminate only an Eff computation whose handled label appears in the handled effect row."
         | HandlerClauseMissing ->

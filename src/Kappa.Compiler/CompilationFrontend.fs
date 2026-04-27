@@ -710,7 +710,7 @@ module internal CompilationFrontend =
 
     let private isPrivateByDefault (document: ParsedDocument) =
         document.Syntax.ModuleAttributes
-        |> List.exists (fun attributeName -> String.Equals(attributeName, "PrivateByDefault", StringComparison.Ordinal))
+        |> List.exists (fun attributeName -> String.Equals(attributeName, ModuleAttribute.PrivateByDefault, StringComparison.Ordinal))
 
     let private isExportedVisibility isPrivateByDefault visibility =
         match visibility with

@@ -714,6 +714,31 @@ let ``script mode permits unpinned and ref pinned URL imports without package-mo
     Assert.Equal(2, codes |> List.filter ((=) DiagnosticCode.ModuleNameUnresolved) |> List.length)
 
 [<Fact>]
+let ``frontend rejects unknown module attributes`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-unknown-module-attribute-root"
+            [
+                "main.kp",
+                String.concat
+                    "\n"
+                    [
+                        "@NotAKappaModuleAttribute"
+                        "module main"
+                        "result : Int"
+                        "let result = 0"
+                    ]
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected unknown module attributes to be rejected.")
+    Assert.Contains(
+        workspace.Diagnostics,
+        fun diagnostic ->
+            diagnostic.Code = DiagnosticCode.ModuleAttributeUnknown
+            && diagnostic.Message.Contains("@NotAKappaModuleAttribute", StringComparison.Ordinal)
+    )
+
+[<Fact>]
 let ``bare dotted import resolves to singleton sugar when only the parent item exists`` () =
     let workspace =
         compileInMemoryWorkspace

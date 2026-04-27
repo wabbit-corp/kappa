@@ -742,6 +742,31 @@ module Token =
         | Keyword _ -> true
         | _ -> false
 
+module ModuleAttribute =
+    [<Literal>]
+    let PrivateByDefault = "PrivateByDefault"
+
+    [<Literal>]
+    let AllowAssertTerminates = "allow_assert_terminates"
+
+    [<Literal>]
+    let AllowAssertReducible = "allow_assert_reducible"
+
+    [<Literal>]
+    let AllowUnsafeConsume = "allow_unsafe_consume"
+
+    let knownAttributes =
+        Set.ofList
+            [
+                PrivateByDefault
+                AllowAssertTerminates
+                AllowAssertReducible
+                AllowUnsafeConsume
+            ]
+
+    let isKnown attributeName =
+        Set.contains attributeName knownAttributes
+
 // Holds syntax-level helpers for names, paths, declarations, and module facts.
 module SyntaxFacts =
     type ParsedNumericLiteral =

@@ -2201,7 +2201,7 @@ module SurfaceElaboration =
 
     let private isPrivateByDefault (frontendModule: KFrontIRModule) =
         frontendModule.ModuleAttributes
-        |> List.exists (fun attributeName -> String.Equals(attributeName, "PrivateByDefault", StringComparison.Ordinal))
+        |> List.exists (fun attributeName -> String.Equals(attributeName, ModuleAttribute.PrivateByDefault, StringComparison.Ordinal))
 
     let private moduleHasAttribute (frontendModule: KFrontIRModule) (attributeName: string) =
         frontendModule.ModuleAttributes
@@ -14965,9 +14965,28 @@ module SurfaceElaboration =
                     @ duplicateNames "Type declaration" typeDeclarations
                     @ duplicateNames "Constructor declaration" constructorDeclarations
 
+                let moduleAttributeDiagnostics =
+                    let supportedAttributes =
+                        ModuleAttribute.knownAttributes
+                        |> Set.toList
+                        |> List.sort
+                        |> List.map (fun attributeName -> "@" + attributeName)
+                        |> String.concat ", "
+
+                    frontendModule.ModuleAttributes
+                    |> List.choose (fun attributeName ->
+                        if ModuleAttribute.isKnown attributeName then
+                            None
+                        else
+                            Some(
+                                makeDiagnostic
+                                    DiagnosticCode.ModuleAttributeUnknown
+                                    $"Unknown module attribute '@{attributeName}'. Supported module attributes in this implementation are: {supportedAttributes}."
+                            ))
+
                 let totalityAssertionDiagnostics =
-                    let allowAssertTerminates = moduleHasAttribute frontendModule "allow_assert_terminates"
-                    let allowAssertReducible = moduleHasAttribute frontendModule "allow_assert_reducible"
+                    let allowAssertTerminates = moduleHasAttribute frontendModule ModuleAttribute.AllowAssertTerminates
+                    let allowAssertReducible = moduleHasAttribute frontendModule ModuleAttribute.AllowAssertReducible
 
                     frontendModule.Declarations
                     |> List.choose (function
@@ -15730,7 +15749,8 @@ module SurfaceElaboration =
                             [])
 
                 let structuralDiagnostics =
-                    duplicateDeclarationDiagnostics
+                    moduleAttributeDiagnostics
+                    @ duplicateDeclarationDiagnostics
                     @ totalityAssertionDiagnostics
                     @ typeAliasCycleDiagnostics
                     @ malformedConstructorDiagnostics

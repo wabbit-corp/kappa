@@ -564,7 +564,7 @@ module internal KRuntimeLowering =
 
     let private isPrivateByDefaultAttributes attributes =
         attributes
-        |> List.exists (fun attributeName -> String.Equals(attributeName, "PrivateByDefault", StringComparison.Ordinal))
+        |> List.exists (fun attributeName -> String.Equals(attributeName, ModuleAttribute.PrivateByDefault, StringComparison.Ordinal))
 
     let private isExportedVisibility moduleAttributes visibility =
         match visibility with
