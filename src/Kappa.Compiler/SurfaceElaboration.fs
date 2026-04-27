@@ -34,14 +34,23 @@ module SurfaceElaboration =
     type private TypeAliasInfo =
         { ModuleName: string
           Name: string
+          IsOpaque: bool
           Parameters: string list
           Body: TypeExpr
           TerminationCertified: bool
           ConversionReducible: bool }
 
+    type private TypeFacetKind =
+        | TypeAliasFacet
+        | DataFacet
+        | EffectFacet
+        | AbstractFacet
+
     type private TypeFacetInfo =
         { ModuleName: string
           Name: string
+          FacetKind: TypeFacetKind
+          IsOpaque: bool
           Scheme: TypeScheme }
 
     type private StaticObjectKind =
@@ -2469,19 +2478,17 @@ module SurfaceElaboration =
                 None)
 
     let private tryParseTypeAliasInfo moduleName (declaration: TypeAlias) =
-        if declaration.IsOpaque then
-            None
-        else
-            declaration.BodyTokens
-            |> Option.bind TypeSignatures.parseType
-            |> Option.map (fun body ->
-                declaration.Name,
-                { ModuleName = moduleName
-                  Name = declaration.Name
-                  Parameters = TypeSignatures.collectLeadingTypeParameters declaration.HeaderTokens
-                  Body = body
-                  TerminationCertified = true
-                  ConversionReducible = true })
+        declaration.BodyTokens
+        |> Option.bind TypeSignatures.parseType
+        |> Option.map (fun body ->
+            declaration.Name,
+            { ModuleName = moduleName
+              Name = declaration.Name
+              IsOpaque = declaration.IsOpaque
+              Parameters = TypeSignatures.collectLeadingTypeParameters declaration.HeaderTokens
+              Body = body
+              TerminationCertified = true
+              ConversionReducible = true })
 
     let private splitHeaderKindTokens (tokens: Token list) =
         let rec loop depth index =
@@ -2556,7 +2563,7 @@ module SurfaceElaboration =
 
         loop tokens []
 
-    let private buildTypeFacetInfo moduleName name headerTokens =
+    let private buildTypeFacetInfo moduleName name kind isOpaque headerTokens =
         let parameterTokens, kindTokens = splitHeaderKindTokens headerTokens
 
         let resultType =
@@ -2573,6 +2580,8 @@ module SurfaceElaboration =
         name,
         { ModuleName = moduleName
           Name = name
+          FacetKind = kind
+          IsOpaque = isOpaque
           Scheme =
             { Forall = []
               Constraints = []
@@ -2585,6 +2594,15 @@ module SurfaceElaboration =
     let private moduleHasAttribute (frontendModule: KFrontIRModule) (attributeName: string) =
         frontendModule.ModuleAttributes
         |> List.exists (fun current -> String.Equals(current, attributeName, StringComparison.Ordinal))
+
+    let private itemHasModifier modifier (item: ImportItem) =
+        item.Modifiers |> List.exists ((=) modifier)
+
+    let private itemRequestsUnhide item =
+        itemHasModifier Unhide item
+
+    let private itemRequestsClarify item =
+        itemHasModifier Clarify item
 
     let private isExportedVisibility isPrivateByDefault visibility =
         match visibility with
@@ -2750,6 +2768,36 @@ module SurfaceElaboration =
             else
                 None
 
+    let private selectionImportedNameWithExplicitAccess
+        namespaceName
+        (exportedNames: Set<string>)
+        itemSelector
+        itemAccessAllowed
+        (selection: ImportSelection)
+        (name: string)
+        =
+        let exported = Set.contains name exportedNames
+
+        match selection with
+        | QualifiedOnly ->
+            None
+        | Items items ->
+            items
+            |> List.tryPick (fun item ->
+                if String.Equals(item.Name, name, StringComparison.Ordinal)
+                   && itemSelector item
+                   && itemAccessAllowed item then
+                    Some(importedItemLocalName item)
+                else
+                    None)
+        | All ->
+            if exported then Some name else None
+        | AllExcept excludedItems ->
+            if exported && not (excludedItems |> List.exists (exceptMatches namespaceName name)) then
+                Some name
+            else
+                None
+
     let private buildModuleSurfaceInfo (frontendModule: KFrontIRModule) =
         let moduleName = moduleNameText frontendModule.ModuleIdentity
         let privateByDefault = isPrivateByDefault frontendModule
@@ -2765,13 +2813,13 @@ module SurfaceElaboration =
             frontendModule.Declarations
             |> List.choose (function
                 | DataDeclarationNode declaration ->
-                    buildTypeFacetInfo moduleName declaration.Name declaration.HeaderTokens
+                    buildTypeFacetInfo moduleName declaration.Name DataFacet declaration.IsOpaque declaration.HeaderTokens
                     |> Some
                 | EffectDeclarationNode declaration ->
-                    buildTypeFacetInfo moduleName declaration.Name declaration.HeaderTokens
+                    buildTypeFacetInfo moduleName declaration.Name EffectFacet false declaration.HeaderTokens
                     |> Some
                 | TypeAliasNode declaration ->
-                    buildTypeFacetInfo moduleName declaration.Name declaration.HeaderTokens
+                    buildTypeFacetInfo moduleName declaration.Name TypeAliasFacet declaration.IsOpaque declaration.HeaderTokens
                     |> Some
                 | _ ->
                     None)
@@ -2949,7 +2997,8 @@ module SurfaceElaboration =
         let exportedConstructors =
             frontendModule.Declarations
             |> List.choose (function
-                | DataDeclarationNode declaration when isExportedVisibility privateByDefault declaration.Visibility ->
+                | DataDeclarationNode declaration
+                    when isExportedVisibility privateByDefault declaration.Visibility && not declaration.IsOpaque ->
                     Some(declaration.Constructors |> List.map (fun constructor -> constructor.Name))
                 | _ ->
                     None)
@@ -2959,7 +3008,8 @@ module SurfaceElaboration =
         let exportedConstructorsByType =
             frontendModule.Declarations
             |> List.choose (function
-                | DataDeclarationNode declaration when isExportedVisibility privateByDefault declaration.Visibility ->
+                | DataDeclarationNode declaration
+                    when isExportedVisibility privateByDefault declaration.Visibility && not declaration.IsOpaque ->
                     Some(
                         declaration.Name,
                         declaration.Constructors |> List.map (fun constructor -> constructor.Name) |> Set.ofList
@@ -3128,6 +3178,8 @@ module SurfaceElaboration =
                 exportedType.Name,
                 { ModuleName = description.ModuleName
                   Name = exportedType.Name
+                  FacetKind = AbstractFacet
+                  IsOpaque = false
                   Scheme =
                     { Forall = []
                       Constraints = []
@@ -3175,6 +3227,8 @@ module SurfaceElaboration =
                 typeName,
                 { ModuleName = description.ModuleName
                   Name = typeName
+                  FacetKind = AbstractFacet
+                  IsOpaque = false
                   Scheme =
                     { Forall = []
                       Constraints = []
@@ -3350,7 +3404,9 @@ module SurfaceElaboration =
                     | QualifiedOnly ->
                         moduleInfo
                     | Items items ->
-                        items |> List.fold (addReexportedItem importedModule) moduleInfo
+                        items
+                        |> List.filter (fun item -> List.isEmpty item.Modifiers)
+                        |> List.fold (addReexportedItem importedModule) moduleInfo
                     | All ->
                         addWildcardReexports importedModule moduleInfo []
                     | AllExcept excludedItems ->
@@ -3414,19 +3470,23 @@ module SurfaceElaboration =
             |> Option.bind effectDeclarationsByModule.TryFind
             |> Option.defaultValue []
             |> List.choose (fun declaration ->
+                let canImportType =
+                    Set.contains declaration.Name importedModule.ExportedTypes
+
                 let importedName =
                     match spec.Selection with
                     | QualifiedOnly ->
-                        if Set.contains declaration.Name importedModule.ExportedTypes then
+                        if canImportType then
                             let qualifiedPrefix = spec.Alias |> Option.defaultValue importedModuleName.Value
                             Some(qualifiedPrefix + "." + declaration.Name)
                         else
                             None
                     | _ ->
-                        selectionImportedName
+                        selectionImportedNameWithExplicitAccess
                             ImportNamespace.Type
                             importedModule.ExportedTypes
                             itemImportsTypeName
+                            (fun item -> canImportType || itemRequestsUnhide item)
                             spec.Selection
                             declaration.Name
 
@@ -3444,7 +3504,15 @@ module SurfaceElaboration =
             |> List.fold (fun state (spec, importedModule) ->
                 importedModule.BindingSchemes
                 |> Map.fold (fun current name info ->
-                    match selectionImportedName ImportNamespace.Term importedModule.ExportedTerms itemImportsTermName spec.Selection name with
+                    match
+                        selectionImportedNameWithExplicitAccess
+                            ImportNamespace.Term
+                            importedModule.ExportedTerms
+                            itemImportsTermName
+                            (fun item -> Set.contains name importedModule.ExportedTerms || itemRequestsUnhide item)
+                            spec.Selection
+                            name
+                    with
                     | Some localName -> Map.add localName info current
                     | None -> current) state) Map.empty
 
@@ -3470,6 +3538,20 @@ module SurfaceElaboration =
             |> List.fold (fun state (spec, importedModule) ->
                 importedModule.Constructors
                 |> Map.fold (fun current name info ->
+                    let parentTypeInfo =
+                        info.ConstructorTypeName
+                        |> Option.bind (fun typeName -> importedModule.TypeFacets |> Map.tryFind typeName)
+
+                    let constructorAccessAllowed item =
+                        match info.ConstructorTypeName, parentTypeInfo with
+                        | Some typeName, Some typeInfo ->
+                            let parentExported = Set.contains typeName importedModule.ExportedTypes
+                            let canSeeParent = parentExported || itemRequestsUnhide item
+                            let canClarifyParent = not typeInfo.IsOpaque || itemRequestsClarify item
+                            canSeeParent && canClarifyParent
+                        | _ ->
+                            false
+
                     let importedName =
                         match spec.Selection with
                         | QualifiedOnly ->
@@ -3478,20 +3560,19 @@ module SurfaceElaboration =
                         | AllExcept _ ->
                             None
                         | Items items ->
-                            if not (Set.contains name importedModule.ExportedConstructors) then
-                                None
-                            else
-                                items
-                                |> List.tryPick (fun item ->
-                                    if String.Equals(item.Name, name, StringComparison.Ordinal)
-                                       && itemImportsConstructorName item then
-                                        Some(importedItemLocalName item)
-                                    else
-                                        match info.ConstructorTypeName with
-                                        | Some typeName when itemImportsConstructorsOfType typeName item ->
-                                            Some name
-                                        | _ ->
-                                            None)
+                            items
+                            |> List.tryPick (fun item ->
+                                if not (constructorAccessAllowed item) then
+                                    None
+                                elif String.Equals(item.Name, name, StringComparison.Ordinal)
+                                     && itemImportsConstructorName item then
+                                    Some(importedItemLocalName item)
+                                else
+                                    match info.ConstructorTypeName with
+                                    | Some typeName when itemImportsConstructorsOfType typeName item ->
+                                        Some name
+                                    | _ ->
+                                        None)
 
                     match importedName with
                     | Some localName -> Map.add localName info current
@@ -3521,7 +3602,15 @@ module SurfaceElaboration =
             |> List.fold (fun state (spec, importedModule) ->
                 importedModule.Projections
                 |> Map.fold (fun current name info ->
-                    match selectionImportedName ImportNamespace.Term importedModule.ExportedTerms itemImportsTermName spec.Selection name with
+                    match
+                        selectionImportedNameWithExplicitAccess
+                            ImportNamespace.Term
+                            importedModule.ExportedTerms
+                            itemImportsTermName
+                            (fun item -> Set.contains name importedModule.ExportedTerms || itemRequestsUnhide item)
+                            spec.Selection
+                            name
+                    with
                     | Some localName -> Map.add localName info current
                     | None -> current) state) Map.empty
 
@@ -3540,7 +3629,17 @@ module SurfaceElaboration =
             |> List.fold (fun state (spec, importedModule) ->
                 importedModule.TypeAliases
                 |> Map.fold (fun current name info ->
-                    match selectionImportedName ImportNamespace.Type importedModule.ExportedTypes itemImportsTypeName spec.Selection name with
+                    match
+                        selectionImportedNameWithExplicitAccess
+                            ImportNamespace.Type
+                            importedModule.ExportedTypes
+                            itemImportsTypeName
+                            (fun item ->
+                                (Set.contains name importedModule.ExportedTypes || itemRequestsUnhide item)
+                                && (not info.IsOpaque || itemRequestsClarify item))
+                            spec.Selection
+                            name
+                    with
                     | Some localName -> Map.add localName info current
                     | None -> current) state) Map.empty
 
@@ -3566,7 +3665,15 @@ module SurfaceElaboration =
             |> List.fold (fun state (spec, importedModule) ->
                 importedModule.TypeFacets
                 |> Map.fold (fun current name info ->
-                    match selectionImportedName ImportNamespace.Type importedModule.ExportedTypes itemImportsTypeName spec.Selection name with
+                    match
+                        selectionImportedNameWithExplicitAccess
+                            ImportNamespace.Type
+                            importedModule.ExportedTypes
+                            itemImportsTypeName
+                            (fun item -> Set.contains name importedModule.ExportedTypes || itemRequestsUnhide item)
+                            spec.Selection
+                            name
+                    with
                     | Some localName -> Map.add localName info current
                     | None -> current) state) Map.empty
 
@@ -3617,7 +3724,23 @@ module SurfaceElaboration =
             |> List.fold (fun state (spec, importedModule) ->
                 importedModule.RecordTypes
                 |> Map.fold (fun current name info ->
-                    match selectionImportedName ImportNamespace.Type importedModule.ExportedTypes itemImportsTypeName spec.Selection name with
+                    match
+                        selectionImportedNameWithExplicitAccess
+                            ImportNamespace.Type
+                            importedModule.ExportedTypes
+                            itemImportsTypeName
+                            (fun item ->
+                                match importedModule.TypeFacets |> Map.tryFind name with
+                                | Some facetInfo when facetInfo.FacetKind = TypeAliasFacet ->
+                                    (Set.contains name importedModule.ExportedTypes || itemRequestsUnhide item)
+                                    && (not facetInfo.IsOpaque || itemRequestsClarify item)
+                                | None ->
+                                    false
+                                | Some _ ->
+                                    false)
+                            spec.Selection
+                            name
+                    with
                     | Some localName -> Map.add localName info current
                     | None -> current) state) Map.empty
 
@@ -3636,7 +3759,15 @@ module SurfaceElaboration =
             |> List.fold (fun state (spec, importedModule) ->
                 importedModule.Traits
                 |> Map.fold (fun current name info ->
-                    match selectionImportedName ImportNamespace.Trait importedModule.ExportedTraits itemImportsTraitName spec.Selection name with
+                    match
+                        selectionImportedNameWithExplicitAccess
+                            ImportNamespace.Trait
+                            importedModule.ExportedTraits
+                            itemImportsTraitName
+                            (fun item -> Set.contains name importedModule.ExportedTraits || itemRequestsUnhide item)
+                            spec.Selection
+                            name
+                    with
                     | Some localName -> Map.add localName info current
                     | None -> current) state) Map.empty
 
@@ -10400,8 +10531,40 @@ module SurfaceElaboration =
                 checkRootMember root memberName
             | Apply(Name(root :: memberName :: _), _) ->
                 checkRootMember root memberName
+            | MemberAccess(Name [ root ], [ memberName ], []) ->
+                checkRootMember root memberName
+            | Apply(MemberAccess(Name [ root ], [ memberName ], []), _) ->
+                checkRootMember root memberName
             | _ ->
                 None
+
+        let projectionMismatchDiagnostics locals root memberName (expectedText: string) =
+            match tryRecordInfoForRoot locals root with
+            | Some recordInfo ->
+                match recordInfo.Fields |> List.tryFind (fun (field: RecordSurfaceFieldInfo) -> String.Equals(field.Name, memberName, StringComparison.Ordinal)) with
+                | Some field ->
+                    if fieldMentionsOpaqueMember recordInfo field then
+                        []
+                    else
+                        let unstableDependencies =
+                            fieldTypeReferences recordInfo field.TypeTokens
+                            |> List.choose (fun dependencyName ->
+                                recordInfo.Fields
+                                |> List.tryFind (fun candidate -> String.Equals(candidate.Name, dependencyName, StringComparison.Ordinal))
+                                |> Option.filter (isTransparentCompileTimeField >> not)
+                                |> Option.map (fun _ -> dependencyName))
+
+                        if
+                            unstableDependencies
+                            |> List.exists (fun dependencyName -> expectedText.Contains($"{root}.{dependencyName}", StringComparison.Ordinal) |> not)
+                        then
+                            [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch "Projected field type does not match the declared result type." ]
+                        else
+                            []
+                | None ->
+                    []
+            | None ->
+                []
 
         let validateExpectedBody locals body =
             let dropDefinitionParameters typeExpr =
@@ -10529,32 +10692,9 @@ module SurfaceElaboration =
             let projectionTypeMismatchDiagnostics =
                 match body, expectedTypeCompactText with
                 | Name(root :: memberName :: _), Some expectedText ->
-                    match tryRecordInfoForRoot locals root with
-                    | Some recordInfo ->
-                        match recordInfo.Fields |> List.tryFind (fun (field: RecordSurfaceFieldInfo) -> String.Equals(field.Name, memberName, StringComparison.Ordinal)) with
-                        | Some field ->
-                            if fieldMentionsOpaqueMember recordInfo field then
-                                []
-                            else
-                                let unstableDependencies =
-                                    fieldTypeReferences recordInfo field.TypeTokens
-                                    |> List.choose (fun dependencyName ->
-                                        recordInfo.Fields
-                                        |> List.tryFind (fun candidate -> String.Equals(candidate.Name, dependencyName, StringComparison.Ordinal))
-                                        |> Option.filter (isTransparentCompileTimeField >> not)
-                                        |> Option.map (fun _ -> dependencyName))
-
-                                if
-                                    unstableDependencies
-                                    |> List.exists (fun dependencyName -> expectedText.Contains($"{root}.{dependencyName}", StringComparison.Ordinal) |> not)
-                                then
-                                    [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch "Projected field type does not match the declared result type." ]
-                                else
-                                    []
-                        | None ->
-                            []
-                    | None ->
-                        []
+                    projectionMismatchDiagnostics locals root memberName expectedText
+                | MemberAccess(Name [ root ], [ memberName ], []), Some expectedText ->
+                    projectionMismatchDiagnostics locals root memberName expectedText
                 | _ ->
                     []
 

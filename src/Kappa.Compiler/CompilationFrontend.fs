@@ -14,6 +14,26 @@ module internal CompilationFrontend =
           ConstructorsByType: Map<string, Set<string>>
           UnqualifiedBindings: Set<string> }
 
+    type private ImportableNameInfo =
+        { IsPrivate: bool
+          IsOpaque: bool }
+
+    type private ImportableTypeInfo =
+        { IsPrivate: bool
+          IsOpaque: bool
+          Constructors: Set<string> }
+
+    type private ImportableConstructorInfo =
+        { TypeName: string
+          IsPrivate: bool
+          IsOpaque: bool }
+
+    type private ModuleImportEscapeInventory =
+        { TermInfos: Map<string, ImportableNameInfo>
+          TypeInfos: Map<string, ImportableTypeInfo>
+          TraitInfos: Map<string, ImportableNameInfo>
+          ConstructorInfos: Map<string, ImportableConstructorInfo> }
+
     let parseBundledPrelude allowUnsafeConsume =
         let source =
             SourceText.From(Stdlib.BundledPreludeVirtualPath, Stdlib.loadBundledPreludeTextForOptions allowUnsafeConsume)
@@ -718,6 +738,9 @@ module internal CompilationFrontend =
         | Some Visibility.Private -> false
         | None -> not isPrivateByDefault
 
+    let private isPrivateVisibility isPrivateByDefault visibility =
+        not (isExportedVisibility isPrivateByDefault visibility)
+
     let private isExportedDefinition (document: ParsedDocument) (definition: LetDefinition) =
         isExportedVisibility (isPrivateByDefault document) definition.Visibility
 
@@ -1038,7 +1061,9 @@ module internal CompilationFrontend =
                     | QualifiedOnly ->
                         inventory
                     | Items items ->
-                        items |> List.fold (addReexportedItem importedInventory) inventory
+                        items
+                        |> List.filter (fun item -> List.isEmpty item.Modifiers)
+                        |> List.fold (addReexportedItem importedInventory) inventory
                     | All ->
                         addWildcardReexports importedInventory inventory []
                     | AllExcept excludedNames ->
@@ -1066,8 +1091,11 @@ module internal CompilationFrontend =
                     |> recomputeUnqualifiedBindings
                 | DataDeclarationNode declaration when exportedDataDeclaration document declaration ->
                     let constructorNames =
-                        declaration.Constructors
-                        |> List.map (fun constructor -> constructor.Name)
+                        if declaration.IsOpaque then
+                            []
+                        else
+                            declaration.Constructors
+                            |> List.map (fun constructor -> constructor.Name)
 
                     { current with
                         Types = Set.add declaration.Name current.Types
@@ -1154,6 +1182,120 @@ module internal CompilationFrontend =
 
         saturate (withSyntheticModuleInventories syntaxInventories)
 
+    let private buildModuleImportEscapeInventories (documents: ParsedDocument list) =
+        let emptyInventory =
+            { TermInfos = Map.empty
+              TypeInfos = Map.empty
+              TraitInfos = Map.empty
+              ConstructorInfos = Map.empty }
+
+        let mergeNameInfo (existing: ImportableNameInfo) (incoming: ImportableNameInfo) : ImportableNameInfo =
+            { IsPrivate = existing.IsPrivate && incoming.IsPrivate
+              IsOpaque = existing.IsOpaque || incoming.IsOpaque }
+
+        let mergeTypeInfo (existing: ImportableTypeInfo) (incoming: ImportableTypeInfo) : ImportableTypeInfo =
+            { IsPrivate = existing.IsPrivate && incoming.IsPrivate
+              IsOpaque = existing.IsOpaque || incoming.IsOpaque
+              Constructors = Set.union existing.Constructors incoming.Constructors }
+
+        let addName (map: Map<string, ImportableNameInfo>) name (info: ImportableNameInfo) =
+            map
+            |> Map.change name (function
+                | Some existing -> Some(mergeNameInfo existing info)
+                | None -> Some info)
+
+        let addType (map: Map<string, ImportableTypeInfo>) name (info: ImportableTypeInfo) =
+            map
+            |> Map.change name (function
+                | Some existing -> Some(mergeTypeInfo existing info)
+                | None -> Some info)
+
+        let addDocument (inventory: ModuleImportEscapeInventory) (document: ParsedDocument) =
+            let privateByDefault = isPrivateByDefault document
+
+            document.Syntax.Declarations
+            |> List.fold (fun current declaration ->
+                match declaration with
+                | SignatureDeclaration signature ->
+                    let info: ImportableNameInfo =
+                        { IsPrivate = isPrivateVisibility privateByDefault signature.Visibility
+                          IsOpaque = signature.IsOpaque }
+
+                    { current with
+                        TermInfos = addName current.TermInfos signature.Name info }
+                | LetDeclaration definition ->
+                    match definition.Name with
+                    | Some name ->
+                        let info: ImportableNameInfo =
+                            { IsPrivate = isPrivateVisibility privateByDefault definition.Visibility
+                              IsOpaque = definition.IsOpaque }
+
+                        { current with
+                            TermInfos = addName current.TermInfos name info }
+                    | None ->
+                        current
+                | ProjectionDeclarationNode declaration ->
+                    let info: ImportableNameInfo =
+                        { IsPrivate = isPrivateVisibility privateByDefault declaration.Visibility
+                          IsOpaque = false }
+
+                    { current with
+                        TermInfos = addName current.TermInfos declaration.Name info }
+                | DataDeclarationNode declaration ->
+                    let typeInfo: ImportableTypeInfo =
+                        { IsPrivate = isPrivateVisibility privateByDefault declaration.Visibility
+                          IsOpaque = declaration.IsOpaque
+                          Constructors = declaration.Constructors |> List.map (fun constructor -> constructor.Name) |> Set.ofList }
+
+                    let constructors =
+                        declaration.Constructors
+                        |> List.fold (fun (state: Map<string, ImportableConstructorInfo>) constructor ->
+                            Map.add
+                                constructor.Name
+                                ({ TypeName = declaration.Name
+                                   IsPrivate = typeInfo.IsPrivate
+                                   IsOpaque = declaration.IsOpaque }: ImportableConstructorInfo)
+                                state) current.ConstructorInfos
+
+                    { current with
+                        TypeInfos = addType current.TypeInfos declaration.Name typeInfo
+                        ConstructorInfos = constructors }
+                | TypeAliasNode declaration ->
+                    let info: ImportableTypeInfo =
+                        { IsPrivate = isPrivateVisibility privateByDefault declaration.Visibility
+                          IsOpaque = declaration.IsOpaque
+                          Constructors = Set.empty }
+
+                    { current with
+                        TypeInfos = addType current.TypeInfos declaration.Name info }
+                | EffectDeclarationNode declaration ->
+                    let info: ImportableTypeInfo =
+                        { IsPrivate = isPrivateVisibility privateByDefault declaration.Visibility
+                          IsOpaque = false
+                          Constructors = Set.empty }
+
+                    { current with
+                        TypeInfos = addType current.TypeInfos declaration.Name info }
+                | TraitDeclarationNode declaration ->
+                    let info: ImportableNameInfo =
+                        { IsPrivate = isPrivateVisibility privateByDefault declaration.Visibility
+                          IsOpaque = false }
+
+                    { current with
+                        TraitInfos = addName current.TraitInfos declaration.Name info }
+                | _ ->
+                    current) inventory
+
+        documents
+        |> List.choose (fun document ->
+            document.ModuleName
+            |> Option.map (fun moduleName -> SyntaxFacts.moduleNameToText moduleName, document))
+        |> List.groupBy fst
+        |> List.map (fun (moduleNameText, entries) ->
+            moduleNameText,
+            (entries |> List.map snd |> List.fold addDocument emptyInventory))
+        |> Map.ofList
+
     let private importItemExists inventory (item: ImportItem) =
         if item.IncludeConstructors then
             item.Namespace = Some ImportNamespace.Type
@@ -1185,6 +1327,76 @@ module internal CompilationFrontend =
         | None ->
             Set.contains item.Name inventory.UnqualifiedBindings
 
+    let private itemHasModifier modifier (item: ImportItem) =
+        item.Modifiers |> List.exists ((=) modifier)
+
+    let private itemRequestsUnhide item =
+        itemHasModifier Unhide item
+
+    let private itemRequestsClarify item =
+        itemHasModifier Clarify item
+
+    let private importItemExistsViaEscapeHatch (inventory: ModuleImportEscapeInventory) (item: ImportItem) =
+        let termAccessible (info: ImportableNameInfo) =
+            (not info.IsPrivate) || itemRequestsUnhide item
+
+        let typeAccessible (info: ImportableTypeInfo) =
+            (not info.IsPrivate) || itemRequestsUnhide item
+
+        let constructorAccessible (info: ImportableConstructorInfo) =
+            ((not info.IsPrivate) || itemRequestsUnhide item)
+            && ((not info.IsOpaque) || itemRequestsClarify item)
+
+        let bundledConstructorsAccessible (info: ImportableTypeInfo) =
+            typeAccessible info
+            && not (Set.isEmpty info.Constructors)
+            && ((not info.IsOpaque) || itemRequestsClarify item)
+
+        match item.Namespace with
+        | Some ImportNamespace.Term ->
+            inventory.TermInfos
+            |> Map.tryFind item.Name
+            |> Option.exists termAccessible
+        | Some ImportNamespace.Type ->
+            inventory.TypeInfos
+            |> Map.tryFind item.Name
+            |> Option.exists (fun info ->
+                if item.IncludeConstructors then
+                    bundledConstructorsAccessible info
+                else
+                    typeAccessible info)
+        | Some ImportNamespace.Trait ->
+            inventory.TraitInfos
+            |> Map.tryFind item.Name
+            |> Option.exists termAccessible
+        | Some ImportNamespace.Constructor ->
+            inventory.ConstructorInfos
+            |> Map.tryFind item.Name
+            |> Option.exists constructorAccessible
+        | None ->
+            let termMatch =
+                inventory.TermInfos
+                |> Map.tryFind item.Name
+                |> Option.exists termAccessible
+
+            let typeMatch =
+                inventory.TypeInfos
+                |> Map.tryFind item.Name
+                |> Option.exists typeAccessible
+
+            let traitMatch =
+                inventory.TraitInfos
+                |> Map.tryFind item.Name
+                |> Option.exists termAccessible
+
+            let sameSpellingConstructorMatch =
+                inventory.ConstructorInfos
+                |> Map.tryFind item.Name
+                |> Option.exists (fun info ->
+                    String.Equals(info.TypeName, item.Name, StringComparison.Ordinal) && constructorAccessible info)
+
+            termMatch || typeMatch || traitMatch || sameSpellingConstructorMatch
+
     type private UrlImportValidationResult =
         | UrlImportValid
         | UrlImportInvalid of DiagnosticCode * string
@@ -1207,11 +1419,14 @@ module internal CompilationFrontend =
     let validateImportSelections packageMode backendProfile (documents: ParsedDocument list) =
         let diagnostics = DiagnosticBag()
         let exportInventories = buildModuleExportInventory backendProfile documents
+        let importEscapeInventories = buildModuleImportEscapeInventories documents
+        let allowUnhiding = not packageMode
+        let allowClarify = not packageMode
 
         for document in documents do
             for declaration in document.Syntax.Declarations do
                 match declaration with
-                | ImportDeclaration (_, specs) ->
+                | ImportDeclaration (isExport, specs) ->
                     for spec in specs do
                         let defaultLocation = document.Source.GetLocation(TextSpan.FromBounds(0, 0))
                         let specLocation = defaultArg (findImportSpecifierLocation document spec) defaultLocation
@@ -1266,6 +1481,62 @@ module internal CompilationFrontend =
                                 )
                             | ResolvedImportSpec resolvedSpec ->
                                 let importedModuleName = moduleSpecifierText resolvedSpec.Source
+                                let importedModuleIdentity = moduleSpecifierIdentityText resolvedSpec.Source
+
+                                let validateImportItem (item: ImportItem) (inventory: ModuleExportInventory) =
+                                    let itemLocation = defaultArg (findTokenLocation document item.Name) defaultLocation
+
+                                    let hasDisabledEscapeHatch =
+                                        let mutable disabled = false
+
+                                        if itemRequestsUnhide item && not allowUnhiding then
+                                            diagnostics.AddError(
+                                                DiagnosticCode.FrontendValidation,
+                                                $"Import item '{importItemText item}' requires build setting 'allow_unhiding', which is disabled in package mode.",
+                                                itemLocation,
+                                                stage = "KFrontIR",
+                                                phase = KFrontIRPhase.phaseName CHECKERS
+                                            )
+                                            disabled <- true
+
+                                        if itemRequestsClarify item && not allowClarify then
+                                            diagnostics.AddError(
+                                                DiagnosticCode.FrontendValidation,
+                                                $"Import item '{importItemText item}' requires build setting 'allow_clarify', which is disabled in package mode.",
+                                                itemLocation,
+                                                stage = "KFrontIR",
+                                                phase = KFrontIRPhase.phaseName CHECKERS
+                                            )
+                                            disabled <- true
+
+                                        if isExport && not (List.isEmpty item.Modifiers) then
+                                            diagnostics.AddError(
+                                                DiagnosticCode.FrontendValidation,
+                                                $"Import item '{importItemText item}' uses unhide/clarify and must not be re-exported.",
+                                                itemLocation,
+                                                stage = "KFrontIR",
+                                                phase = KFrontIRPhase.phaseName CHECKERS
+                                            )
+                                            disabled <- true
+
+                                        disabled
+
+                                    if not hasDisabledEscapeHatch then
+                                        let ordinaryExists = importItemExists inventory item
+
+                                        let escapeExists =
+                                            importEscapeInventories
+                                            |> Map.tryFind importedModuleIdentity
+                                            |> Option.exists (fun escapeInventory -> importItemExistsViaEscapeHatch escapeInventory item)
+
+                                        if not ordinaryExists && not escapeExists then
+                                            diagnostics.AddError(
+                                                DiagnosticCode.ImportItemNotFound,
+                                                $"Import item '{item.Name}' was not found in module '{importedModuleName}'.",
+                                                itemLocation,
+                                                stage = "KFrontIR",
+                                                phase = KFrontIRPhase.phaseName CHECKERS
+                                            )
 
                                 match resolvedSpec.Source with
                                 | Url specifier ->
@@ -1273,19 +1544,12 @@ module internal CompilationFrontend =
                                     | UrlImportInvalid _ ->
                                         ()
                                     | UrlImportValid ->
-                                        match Map.tryFind (moduleSpecifierIdentityText resolvedSpec.Source) exportInventories with
+                                        match Map.tryFind importedModuleIdentity exportInventories with
                                         | Some inventory ->
                                             match resolvedSpec.Selection with
                                             | Items items ->
                                                 for item in items do
-                                                    if not (importItemExists inventory item) then
-                                                        diagnostics.AddError(
-                                                            DiagnosticCode.ImportItemNotFound,
-                                                            $"Import item '{item.Name}' was not found in module '{importedModuleName}'.",
-                                                            defaultArg (findTokenLocation document item.Name) defaultLocation,
-                                                            stage = "KFrontIR",
-                                                            phase = KFrontIRPhase.phaseName CHECKERS
-                                                        )
+                                                    validateImportItem item inventory
                                             | AllExcept items ->
                                                 for item in items do
                                                     if not (exceptItemExists inventory item) then
@@ -1307,19 +1571,12 @@ module internal CompilationFrontend =
                                                 phase = KFrontIRPhase.phaseName CHECKERS
                                             )
                                 | _ ->
-                                    match Map.tryFind (moduleSpecifierIdentityText resolvedSpec.Source) exportInventories with
+                                    match Map.tryFind importedModuleIdentity exportInventories with
                                     | Some inventory ->
                                         match resolvedSpec.Selection with
                                         | Items items ->
                                             for item in items do
-                                                if not (importItemExists inventory item) then
-                                                    diagnostics.AddError(
-                                                        DiagnosticCode.ImportItemNotFound,
-                                                        $"Import item '{item.Name}' was not found in module '{importedModuleName}'.",
-                                                        defaultArg (findTokenLocation document item.Name) defaultLocation,
-                                                        stage = "KFrontIR",
-                                                        phase = KFrontIRPhase.phaseName CHECKERS
-                                                    )
+                                                validateImportItem item inventory
                                         | AllExcept items ->
                                             for item in items do
                                                 if not (exceptItemExists inventory item) then

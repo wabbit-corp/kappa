@@ -1,3 +1,4 @@
+--! scriptMode
 module main_unhide_clarify
 
 import std.rope.(unhide normalizeWorker, clarify Rope)

@@ -96,12 +96,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
 
 ## 4. Imports, Standard Modules, KFrontIR, and Diagnostics
 
-- `[High] Finish import semantics for `unhide` and `clarify`.`
-  - The parser recognizes `unhide` and `clarify` modifiers and rejects duplicate modifiers.
-  - Semantic validation and export inventory construction do not appear to use `item.Modifiers` in a way that implements their specified semantics.
-  - `unhide` must request access to private imported items, and `clarify` must request transparent treatment for opaque imported items.
-  - Sources: `reviews/frontend1.md`.
-
 - `[High] Either implement URL imports fully or reject them explicitly as unsupported.`
   - URL import syntax and pin-policy checks exist.
   - Real provider/fetch/cache/lock/resolution behavior does not appear to exist; URL imports still end up unresolved.

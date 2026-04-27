@@ -515,6 +515,232 @@ let ``parser rejects duplicate unhide and clarify modifiers within one import it
     Assert.Contains(parsed.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("Duplicate 'clarify'"))
 
 [<Fact>]
+let ``source compilation imports private terms only via unhide in script mode`` () =
+    let plainWorkspace =
+        compileInMemoryWorkspaceWithPackageMode
+            "memory-import-private-term-without-unhide-root"
+            false
+            [
+                "lib.kp",
+                [
+                    "@PrivateByDefault module lib"
+                    "secret : Int"
+                    "let secret = 42"
+                ]
+                |> String.concat "\n"
+                "main.kp",
+                [
+                    "module main"
+                    "import lib.(term secret)"
+                    "result : Int"
+                    "let result = secret"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(plainWorkspace.HasErrors, "Expected ordinary import of a private term to be rejected.")
+    Assert.Contains(plainWorkspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.ImportItemNotFound)
+
+    let unhiddenWorkspace =
+        compileInMemoryWorkspaceWithPackageMode
+            "memory-import-private-term-with-unhide-root"
+            false
+            [
+                "lib.kp",
+                [
+                    "@PrivateByDefault module lib"
+                    "secret : Int"
+                    "let secret = 42"
+                ]
+                |> String.concat "\n"
+                "main.kp",
+                [
+                    "module main"
+                    "import lib.(unhide term secret)"
+                    "result : Int"
+                    "let result = secret"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(unhiddenWorkspace.HasErrors, sprintf "Expected unhide import of a private term to succeed in script mode, got %A" unhiddenWorkspace.Diagnostics)
+
+[<Fact>]
+let ``source compilation rejects unhide imports in package mode`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-import-unhide-package-mode-root"
+            [
+                "lib.kp",
+                [
+                    "@PrivateByDefault module lib"
+                    "secret : Int"
+                    "let secret = 42"
+                ]
+                |> String.concat "\n"
+                "main.kp",
+                [
+                    "module main"
+                    "import lib.(unhide term secret)"
+                    "result : Int"
+                    "let result = secret"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected package mode to reject unhide imports.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("allow_unhiding"))
+
+[<Fact>]
+let ``source compilation keeps imported opaque type aliases abstract unless clarified`` () =
+    let abstractWorkspace =
+        compileInMemoryWorkspaceWithPackageMode
+            "memory-import-opaque-alias-without-clarify-root"
+            false
+            [
+                "lib.kp",
+                [
+                    "module lib"
+                    "opaque type Box = (value : Int)"
+                ]
+                |> String.concat "\n"
+                "main.kp",
+                [
+                    "module main"
+                    "import lib.(type Box)"
+                    "copy : Box"
+                    "let copy : Box = (value = 1)"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(abstractWorkspace.HasErrors, "Expected imported opaque type aliases to remain abstract without clarify.")
+
+    let clarifiedWorkspace =
+        compileInMemoryWorkspaceWithPackageMode
+            "memory-import-opaque-alias-with-clarify-root"
+            false
+            [
+                "lib.kp",
+                [
+                    "module lib"
+                    "opaque type Box = (value : Int)"
+                ]
+                |> String.concat "\n"
+                "main.kp",
+                [
+                    "module main"
+                    "import lib.(clarify type Box)"
+                    "copy : Box"
+                    "let copy : Box = (value = 1)"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(clarifiedWorkspace.HasErrors, sprintf "Expected clarify import of an opaque type alias to expose its equation locally, got %A" clarifiedWorkspace.Diagnostics)
+
+[<Fact>]
+let ``source compilation exposes opaque data constructors only via clarify in script mode`` () =
+    let abstractWorkspace =
+        compileInMemoryWorkspaceWithPackageMode
+            "memory-import-opaque-data-without-clarify-root"
+            false
+            [
+                "lib.kp",
+                [
+                    "module lib"
+                    "opaque data Token : Type ="
+                    "    Token"
+                ]
+                |> String.concat "\n"
+                "main.kp",
+                [
+                    "module main"
+                    "import lib.(type Token(..))"
+                    "make : Token"
+                    "let make = Token"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(abstractWorkspace.HasErrors, "Expected opaque data constructors to stay hidden without clarify.")
+
+    let clarifiedWorkspace =
+        compileInMemoryWorkspaceWithPackageMode
+            "memory-import-opaque-data-with-clarify-root"
+            false
+            [
+                "lib.kp",
+                [
+                    "module lib"
+                    "opaque data Token : Type ="
+                    "    Token"
+                ]
+                |> String.concat "\n"
+                "main.kp",
+                [
+                    "module main"
+                    "import lib.(clarify type Token(..))"
+                    "make : Token"
+                    "let make = Token"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(clarifiedWorkspace.HasErrors, sprintf "Expected clarify import of opaque data to expose constructors locally, got %A" clarifiedWorkspace.Diagnostics)
+
+[<Fact>]
+let ``source compilation rejects clarify imports in package mode`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-import-clarify-package-mode-root"
+            [
+                "lib.kp",
+                [
+                    "module lib"
+                    "opaque type Id a = a"
+                ]
+                |> String.concat "\n"
+                "main.kp",
+                [
+                    "module main"
+                    "import lib.(clarify type Id)"
+                    "coerce : Id Int -> Int"
+                    "let coerce x : Int = x"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected package mode to reject clarify imports.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("allow_clarify"))
+
+[<Fact>]
+let ``source compilation rejects re exporting items imported via unhide or clarify`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithPackageMode
+            "memory-reexport-unhide-clarify-root"
+            false
+            [
+                "lib.kp",
+                [
+                    "@PrivateByDefault module lib"
+                    "opaque type Id a = a"
+                    "secret : Int"
+                    "let secret = 42"
+                ]
+                |> String.concat "\n"
+                "main.kp",
+                [
+                    "module main"
+                    "export lib.(unhide term secret, clarify type Id)"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected re-export of unhide/clarify imports to be rejected.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("must not be re-exported"))
+
+[<Fact>]
 let ``parser rejects aliases on constructor-bundle import items`` () =
     let sourceText =
         [
