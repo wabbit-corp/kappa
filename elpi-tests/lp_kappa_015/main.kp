@@ -1,0 +1,33 @@
+module main
+
+type GeneratedUnit = Unit
+
+type GeneratedPair = (left : Int, right : Int)
+
+type GeneratedTuple = (Int, Int)
+
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
+
+trait GeneratedScore a =
+    score : a -> Int
+
+instance GeneratedScore Int =
+    let score x = x
+
+generated_15 : Int
+let generated_15 =
+    block
+        let pair : GeneratedTuple = (20, 22)
+        let (left, right) = pair
+
+        (left + right)
+
+result : Int
+let result = generated_15
+
+--! assertNoErrors
+--! assertType generated_15 Int
+--! assertType result Int
+--! assertDeclKinds type, type, type, data, trait, instance, signature, let, signature, let
