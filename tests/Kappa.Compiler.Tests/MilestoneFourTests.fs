@@ -1248,3 +1248,37 @@ let ``handlers can split a handled label out of a local normalized tail alias`` 
             [ "main.kp", mainSource ]
 
     Assert.False(workspace.HasErrors, sprintf "Expected handlers to split handled labels from local normalized tail aliases, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+[<Fact>]
+let ``deep handlers can split a handled label out of a local normalized tail alias`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "probe : Int"
+            "let probe : Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            1 ask : Unit -> Bool"
+            ""
+            "        scoped effect Other ="
+            "            other : Unit -> Int"
+            ""
+            "        type AskTail (r : EffRow) = <[Ask : Ask | r]>"
+            ""
+            "        let handleAsk : forall (r : EffRow). Eff <[Other : Other | AskTail r]> Int -> Eff <[Other : Other | r]> Int ="
+            "            \\(comp : Eff <[Other : Other | AskTail r]> Int) ->"
+            "                deep handle Ask comp with"
+            "                    case return y -> pure y"
+            "                    case ask () k -> k True"
+            ""
+            "        0"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-local-deep-open-row-tail-alias-root"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected deep handlers to split handled labels from local normalized tail aliases, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
