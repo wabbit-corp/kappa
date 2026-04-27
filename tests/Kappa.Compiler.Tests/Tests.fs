@@ -312,6 +312,44 @@ let ``parser captures import selectors and declaration kinds`` () =
         failwithf "Unexpected top-level declarations: %A" other
 
 [<Fact>]
+let ``parser reports a dedicated diagnostic for misplaced module headers`` () =
+    let sourceText =
+        [
+            "module demo.one"
+            "let x = 1"
+            "module demo.two"
+            "let y = 2"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "demo/one.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Equal<DiagnosticCode list>([ DiagnosticCode.ModuleHeaderMisplaced ], parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code))
+
+[<Fact>]
+let ``parser reports a dedicated diagnostic for module attributes without a header`` () =
+    let sourceText =
+        [
+            "@PrivateByDefault"
+            "let x = 1"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "demo/attrs_only.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Equal<DiagnosticCode list>([ DiagnosticCode.ModuleHeaderExpectedAfterAttributes ], parsed.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code))
+    Assert.Empty(parsed.Syntax.ModuleAttributes)
+    Assert.Equal(None, parsed.Syntax.ModuleHeader)
+
+[<Fact>]
 let ``parser captures effect declarations and handler expressions`` () =
     let sourceText =
         [

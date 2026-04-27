@@ -24,6 +24,8 @@ type DiagnosticCode =
     | HostModuleUnsupportedBackend
     | MultishotEffectUnsupportedBackend
     | ModuleAttributeUnknown
+    | ModuleHeaderMisplaced
+    | ModuleHeaderExpectedAfterAttributes
     | ModuleNameUnresolved
     | ModulePathMismatch
     | StaticObjectUnresolved
@@ -111,6 +113,8 @@ module DiagnosticCode =
         | HostModuleUnsupportedBackend -> "E_HOST_MODULE_UNSUPPORTED_BACKEND"
         | MultishotEffectUnsupportedBackend -> "E_MULTISHOT_EFFECT_UNSUPPORTED_BACKEND"
         | ModuleAttributeUnknown -> "E_MODULE_ATTRIBUTE_UNKNOWN"
+        | ModuleHeaderMisplaced -> "E_MODULE_HEADER_MISPLACED"
+        | ModuleHeaderExpectedAfterAttributes -> "E_MODULE_HEADER_EXPECTED_AFTER_ATTRIBUTES"
         | ModuleNameUnresolved -> "E_MODULE_NAME_UNRESOLVED"
         | ModulePathMismatch -> "E_MODULE_PATH_MISMATCH"
         | StaticObjectUnresolved -> "E_STATIC_OBJECT_UNRESOLVED"
@@ -197,6 +201,8 @@ module DiagnosticCode =
         | "E_HOST_MODULE_UNSUPPORTED_BACKEND" -> Some HostModuleUnsupportedBackend
         | "E_MULTISHOT_EFFECT_UNSUPPORTED_BACKEND" -> Some MultishotEffectUnsupportedBackend
         | "E_MODULE_ATTRIBUTE_UNKNOWN" -> Some ModuleAttributeUnknown
+        | "E_MODULE_HEADER_MISPLACED" -> Some ModuleHeaderMisplaced
+        | "E_MODULE_HEADER_EXPECTED_AFTER_ATTRIBUTES" -> Some ModuleHeaderExpectedAfterAttributes
         | "E_MODULE_NAME_UNRESOLVED" -> Some ModuleNameUnresolved
         | "E_MODULE_PATH_MISMATCH" -> Some ModulePathMismatch
         | "E_STATIC_OBJECT_UNRESOLVED" -> Some StaticObjectUnresolved
@@ -284,6 +290,10 @@ module DiagnosticCode =
             Some "The selected backend profile does not advertise rt-multishot-effects, so reachable multi-shot effect invocations and exported declarations that may invoke them must be rejected."
         | ModuleAttributeUnknown ->
             Some "Only documented module attributes are accepted. Unknown module attributes are compile-time errors."
+        | ModuleHeaderMisplaced ->
+            Some "A source file may contain at most one module header, and if present it must appear before any non-comment, non-whitespace top-level token other than leading module attributes."
+        | ModuleHeaderExpectedAfterAttributes ->
+            Some "Top-level @Ident module attributes are only valid as the leading prefix of a module header."
         | HandlerEffectRowMismatch ->
             Some "A handler can eliminate only an Eff computation whose handled label appears in the handled effect row."
         | HandlerClauseMissing ->

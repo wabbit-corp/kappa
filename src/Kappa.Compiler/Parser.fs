@@ -610,6 +610,8 @@ type private TokenParser
 
     member private _.IsProbableTopLevelStart(token: Token, nextToken: Token option, thirdToken: Token option, fourthToken: Token option) =
         match token.Kind with
+        | AtSign
+        | Keyword Keyword.Module
         | Keyword Keyword.Import
         | Keyword Keyword.Export
         | Keyword Keyword.Expect
@@ -772,6 +774,55 @@ type private TokenParser
             segments.Add(this.ConsumeName("Expected a module name segment."))
 
         List.ofSeq segments
+
+    member private this.ConsumeModuleAttributePrefix() =
+        let tokens = ResizeArray<Token>()
+
+        while this.Current.Kind = AtSign do
+            tokens.Add(this.Advance())
+
+            if Token.isName this.Current then
+                tokens.Add(this.Advance())
+            else
+                diagnostics.AddError(
+                    DiagnosticCode.ParseError,
+                    "Expected a module attribute name after '@'.",
+                    source.GetLocation(this.Current.Span)
+                )
+
+            this.SkipLayout()
+
+        List.ofSeq tokens
+
+    member private this.ParseMisplacedModuleHeaderOrAttributes() =
+        let prefixTokens =
+            if this.Current.Kind = AtSign then
+                this.ConsumeModuleAttributePrefix()
+            else
+                []
+
+        let diagnosticLocation =
+            match prefixTokens with
+            | first :: _ -> source.GetLocation(first.Span)
+            | [] -> source.GetLocation(this.Current.Span)
+
+        if Token.isKeyword Keyword.Module this.Current then
+            diagnostics.AddError(
+                DiagnosticCode.ModuleHeaderMisplaced,
+                "A module header may appear only once and must be the first top-level item in the file after any leading module attributes.",
+                diagnosticLocation
+            )
+
+            let trailingTokens = this.CollectUntilTopLevelBoundary()
+            UnknownDeclaration(prefixTokens @ trailingTokens)
+        else
+            diagnostics.AddError(
+                DiagnosticCode.ModuleHeaderExpectedAfterAttributes,
+                "Top-level module attributes must be followed immediately by a module header.",
+                diagnosticLocation
+            )
+
+            UnknownDeclaration(prefixTokens)
 
     member private this.ParseNameList() =
         let items = ResizeArray<string>()
@@ -1852,18 +1903,27 @@ type private TokenParser
             this.Advance() |> ignore
             this.SkipLayout()
 
-        let moduleAttributes = ResizeArray<string>()
+        let moduleAttributeTokens = this.ConsumeModuleAttributePrefix()
 
-        while this.Current.Kind = AtSign do
-            this.Advance() |> ignore
-            moduleAttributes.Add(this.ConsumeName("Expected a module attribute name after '@'."))
-            this.SkipLayout()
+        let moduleAttributes =
+            moduleAttributeTokens
+            |> List.choose (fun token ->
+                match token.Kind with
+                | Identifier -> Some(SyntaxFacts.trimIdentifierQuotes token.Text)
+                | _ -> None)
 
         let moduleHeader =
             if Token.isKeyword Keyword.Module this.Current then
                 this.Advance() |> ignore
                 Some(this.ParseDottedName())
             else
+                if not moduleAttributeTokens.IsEmpty then
+                    diagnostics.AddError(
+                        DiagnosticCode.ModuleHeaderExpectedAfterAttributes,
+                        "Top-level module attributes must be followed immediately by a module header.",
+                        source.GetLocation(moduleAttributeTokens.Head.Span)
+                    )
+
                 None
 
         let declarations = ResizeArray<TopLevelDeclaration>()
@@ -1881,9 +1941,12 @@ type private TokenParser
                 this.SkipLayout()
 
             if this.Current.Kind <> EndOfFile then
-                declarations.Add(this.ParseTopLevelDeclaration())
+                if this.Current.Kind = AtSign || Token.isKeyword Keyword.Module this.Current then
+                    declarations.Add(this.ParseMisplacedModuleHeaderOrAttributes())
+                else
+                    declarations.Add(this.ParseTopLevelDeclaration())
 
-        { ModuleAttributes = List.ofSeq moduleAttributes
+        { ModuleAttributes = if moduleHeader.IsSome then moduleAttributes else []
           ModuleHeader = moduleHeader
           Declarations = List.ofSeq declarations
           Tokens = List.ofArray tokenArray },

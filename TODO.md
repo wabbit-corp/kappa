@@ -94,10 +94,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Add surface syntax, elaboration, checking, and diagnostics for `decreases` and structural termination.
   - Sources: `reviews/frontend1.md`.
 
-- `[Medium] Add dedicated diagnostics for multiple module headers and similar malformed top-level structure.`
-  - Current behavior seems to fall back to generic parse errors rather than the more precise diagnostics implied by the spec.
-  - Sources: `reviews/frontend1.md`.
-
 ## 4. Imports, Standard Modules, KFrontIR, and Diagnostics
 
 - `[High] Finish import semantics for `unhide` and `clarify`.`
