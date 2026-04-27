@@ -143,6 +143,91 @@ let ``lexer recognizes spec numeric literal forms including suffixes`` () =
     )
 
 [<Fact>]
+let ``lexer reports malformed prefixed numeric literals directly`` () =
+    let source =
+        createSource
+            "__malformed_numeric_literals__.kp"
+            "0x 0b102 0o89"
+
+    let lexed = Lexer.tokenize source
+
+    let actualTokens =
+        lexed.Tokens
+        |> List.filter (fun token ->
+            match token.Kind with
+            | Newline
+            | EndOfFile -> false
+            | _ -> true)
+        |> List.map (fun token -> token.Kind, token.Text)
+
+    Assert.Equal<(TokenKind * string) list>(
+        [
+            BadToken, "0x"
+            BadToken, "0b102"
+            BadToken, "0o89"
+        ],
+        actualTokens
+    )
+
+    let lexicalDiagnostics =
+        lexed.Diagnostics
+        |> List.filter (fun diagnostic -> diagnostic.Code = DiagnosticCode.LexicalError)
+
+    Assert.Equal(3, lexicalDiagnostics.Length)
+
+[<Fact>]
+let ``lexer preserves spec suffixed identifier adjacency for numeric literals`` () =
+    let source =
+        createSource
+            "__suffixed_numeric_literal_adjacency__.kp"
+            "123abc 0xFFu32"
+
+    let lexed = Lexer.tokenize source
+
+    let actualTokens =
+        lexed.Tokens
+        |> List.filter (fun token ->
+            match token.Kind with
+            | Newline
+            | EndOfFile -> false
+            | _ -> true)
+        |> List.map (fun token -> token.Kind, token.Text)
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Equal<(TokenKind * string) list>(
+        [
+            IntegerLiteral, "123abc"
+            IntegerLiteral, "0xFFu32"
+        ],
+        actualTokens
+    )
+
+[<Fact>]
+let ``compilation surfaces malformed prefixed numeric literals at the lexical boundary`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-malformed-prefixed-numeric-literals"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    ""
+                    "hex : Int"
+                    "let hex = 0x"
+                    ""
+                    "bits : Int"
+                    "let bits = 0b102"
+                    ""
+                    "perms : Int"
+                    "let perms = 0o89"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected malformed prefixed numeric literals to be rejected.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.LexicalError)
+
+[<Fact>]
 let ``lexer recognizes raw and multiline string literal spellings`` () =
     let sourceText =
         [

@@ -773,6 +773,10 @@ module SyntaxFacts =
         { Literal: SurfaceNumericLiteral
           Suffix: string option }
 
+    type NumericTokenScan =
+        | ValidNumericToken of kind: TokenKind * endIndex: int
+        | InvalidNumericToken of message: string * endIndex: int
+
     type PrefixedStringStartInfo =
         { PrefixText: string
           HashCount: int }
@@ -879,6 +883,10 @@ module SyntaxFacts =
           Suffix: string option
           EndIndex: int }
 
+    type private NumericLiteralScan =
+        | ValidLiteralScan of NumericTokenScan * ScannedNumericLiteral
+        | InvalidLiteralScan of NumericTokenScan
+
     let private tryReadDigits (text: string) startIndex (isDigit: char -> bool) =
         if startIndex >= text.Length || not (isDigit text[startIndex]) then
             None
@@ -911,6 +919,14 @@ module SyntaxFacts =
         else
             None, startIndex
 
+    let private readMalformedNumericTail (text: string) startIndex =
+        let mutable endIndex = startIndex
+
+        while endIndex < text.Length && (Char.IsLetterOrDigit(text[endIndex]) || text[endIndex] = '_') do
+            endIndex <- endIndex + 1
+
+        endIndex
+
     let private tryDigitValue character =
         match character with
         | _ when character >= '0' && character <= '9' ->
@@ -939,13 +955,18 @@ module SyntaxFacts =
         | :? FormatException ->
             None
 
-    let private tryScanNumericLiteralAt (text: string) startIndex =
+    let private scanNumericLiteralAt (text: string) startIndex =
         let length = text.Length
+
+        let invalidPrefixedIntegerLiteral baseName invalidStartIndex =
+            let endIndex = readMalformedNumericTail text invalidStartIndex
+            InvalidLiteralScan(InvalidNumericToken($"Malformed {baseName} integer literal.", max endIndex invalidStartIndex))
 
         let buildInteger integerBase digits endIndex =
             let suffix, finalEndIndex = readIdentifierSuffix text endIndex
 
-            Some
+            ValidLiteralScan(
+                ValidNumericToken(IntegerLiteral, finalEndIndex),
                 { Kind = IntegerLiteral
                   IntegralDigits = digits
                   FractionalDigits = None
@@ -954,33 +975,38 @@ module SyntaxFacts =
                   IntegerBase = integerBase
                   Suffix = suffix
                   EndIndex = finalEndIndex }
+            )
 
         if startIndex >= length || not (Char.IsDigit text[startIndex]) then
             None
         elif startIndex + 1 < length
              && text[startIndex] = '0'
-             && (text[startIndex + 1] = 'x' || text[startIndex + 1] = 'X') then
+            && (text[startIndex + 1] = 'x' || text[startIndex + 1] = 'X') then
             match tryReadDigits text (startIndex + 2) (fun character -> tryDigitValue character |> Option.exists (fun digit -> digit < 16)) with
             | Some(digits, endIndex) ->
-                buildInteger 16 digits endIndex
+                Some(buildInteger 16 digits endIndex)
             | None ->
-                buildInteger 10 "0" (startIndex + 1)
+                Some(invalidPrefixedIntegerLiteral "hexadecimal" (startIndex + 2))
         elif startIndex + 1 < length
              && text[startIndex] = '0'
              && (text[startIndex + 1] = 'o' || text[startIndex + 1] = 'O') then
             match tryReadDigits text (startIndex + 2) (fun character -> character >= '0' && character <= '7') with
+            | Some(_, endIndex) when endIndex < length && Char.IsDigit text[endIndex] ->
+                Some(invalidPrefixedIntegerLiteral "octal" endIndex)
             | Some(digits, endIndex) ->
-                buildInteger 8 digits endIndex
+                Some(buildInteger 8 digits endIndex)
             | None ->
-                buildInteger 10 "0" (startIndex + 1)
+                Some(invalidPrefixedIntegerLiteral "octal" (startIndex + 2))
         elif startIndex + 1 < length
              && text[startIndex] = '0'
              && (text[startIndex + 1] = 'b' || text[startIndex + 1] = 'B') then
             match tryReadDigits text (startIndex + 2) (fun character -> character = '0' || character = '1') with
+            | Some(_, endIndex) when endIndex < length && Char.IsDigit text[endIndex] ->
+                Some(invalidPrefixedIntegerLiteral "binary" endIndex)
             | Some(digits, endIndex) ->
-                buildInteger 2 digits endIndex
+                Some(buildInteger 2 digits endIndex)
             | None ->
-                buildInteger 10 "0" (startIndex + 1)
+                Some(invalidPrefixedIntegerLiteral "binary" (startIndex + 2))
         else
             match tryReadDigits text startIndex Char.IsDigit with
             | None ->
@@ -1023,7 +1049,7 @@ module SyntaxFacts =
                 let suffix, finalEndIndex = readIdentifierSuffix text afterExponent
                 let kind = if fractionalDigits.IsSome || exponentDigits.IsSome then FloatLiteral else IntegerLiteral
 
-                Some
+                let scanned =
                     { Kind = kind
                       IntegralDigits = integralDigits
                       FractionalDigits = fractionalDigits
@@ -1033,9 +1059,23 @@ module SyntaxFacts =
                       Suffix = suffix
                       EndIndex = finalEndIndex }
 
+                Some(ValidLiteralScan(ValidNumericToken(kind, finalEndIndex), scanned))
+
+    let scanNumericToken (text: string) startIndex =
+        scanNumericLiteralAt text startIndex
+        |> Option.map (function
+            | ValidLiteralScan(tokenScan, _) -> tokenScan
+            | InvalidLiteralScan tokenScan -> tokenScan)
+
+    let private tryScanNumericLiteralAt (text: string) startIndex =
+        match scanNumericLiteralAt text startIndex with
+        | Some(ValidLiteralScan(_, scanned)) -> Some scanned
+        | _ -> None
+
     let tryReadNumericLiteral (text: string) startIndex =
-        tryScanNumericLiteralAt text startIndex
-        |> Option.map (fun scanned -> scanned.Kind, scanned.EndIndex)
+        match scanNumericToken text startIndex with
+        | Some(ValidNumericToken(kind, endIndex)) -> Some(kind, endIndex)
+        | _ -> None
 
     let tryParseNumericLiteral (text: string) =
         match tryScanNumericLiteralAt text 0 with

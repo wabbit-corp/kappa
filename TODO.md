@@ -71,11 +71,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Tooling that relies on token streams will see a different language than the spec if keyword recognition remains incomplete.
   - Sources: `reviews/frontend1.md`, `reviews/general1.md`.
 
-- `[Medium] Tighten malformed numeric literal handling in the lexer.`
-  - Prefixes such as `0x`, `0b`, and `0o` currently fall back too leniently when no valid digits follow, producing misleading later parse/name errors instead of lexical or literal diagnostics.
-  - Add direct tests for malformed forms such as `0x`, `0b102`, `0o89`, and invalid suffix adjacency like `123abc`.
-  - Sources: `reviews/frontend1.md`.
-
 ## 3. Parsing and Surface Syntax Coverage
 
 - `[High] Complete the spec-required `do`-block syntax.`

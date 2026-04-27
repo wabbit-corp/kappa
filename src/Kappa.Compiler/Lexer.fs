@@ -469,12 +469,22 @@ module Lexer =
                             emitAbsolute Identifier (text.Substring(currentAbsoluteIndex, endIndex - currentAbsoluteIndex)) currentAbsoluteIndex
                             currentAbsoluteIndex <- endIndex
                         | _ when Char.IsDigit(current) ->
-                            let kind, endIndex =
-                                SyntaxFacts.tryReadNumericLiteral text currentAbsoluteIndex
-                                |> Option.defaultValue (IntegerLiteral, currentAbsoluteIndex + 1)
+                            match SyntaxFacts.scanNumericToken text currentAbsoluteIndex with
+                            | Some(SyntaxFacts.ValidNumericToken(kind, endIndex)) ->
+                                emitAbsolute kind (text.Substring(currentAbsoluteIndex, endIndex - currentAbsoluteIndex)) currentAbsoluteIndex
+                                currentAbsoluteIndex <- endIndex
+                            | Some(SyntaxFacts.InvalidNumericToken(message, endIndex)) ->
+                                diagnostics.AddError(
+                                    DiagnosticCode.LexicalError,
+                                    message,
+                                    source.GetLocation(TextSpan.FromBounds(currentAbsoluteIndex, endIndex))
+                                )
 
-                            emitAbsolute kind (text.Substring(currentAbsoluteIndex, endIndex - currentAbsoluteIndex)) currentAbsoluteIndex
-                            currentAbsoluteIndex <- endIndex
+                                emitAbsolute BadToken (text.Substring(currentAbsoluteIndex, endIndex - currentAbsoluteIndex)) currentAbsoluteIndex
+                                currentAbsoluteIndex <- endIndex
+                            | None ->
+                                emitAbsolute IntegerLiteral (text.Substring(currentAbsoluteIndex, 1)) currentAbsoluteIndex
+                                currentAbsoluteIndex <- currentAbsoluteIndex + 1
                         | _ when SyntaxFacts.isIdentifierStart current ->
                             let endIndex = readIdentifier text currentAbsoluteIndex
                             let identifierText = text.Substring(currentAbsoluteIndex, endIndex - currentAbsoluteIndex)
@@ -790,12 +800,22 @@ module Lexer =
                 endIndex
 
         and scanNumber startOffset =
-            let kind, endIndex =
-                SyntaxFacts.tryReadNumericLiteral lineText startOffset
-                |> Option.defaultValue (IntegerLiteral, startOffset + 1)
+            match SyntaxFacts.scanNumericToken lineText startOffset with
+            | Some(SyntaxFacts.ValidNumericToken(kind, endIndex)) ->
+                emit kind (lineText.Substring(startOffset, endIndex - startOffset)) startOffset
+                endIndex
+            | Some(SyntaxFacts.InvalidNumericToken(message, endIndex)) ->
+                diagnostics.AddError(
+                    DiagnosticCode.LexicalError,
+                    message,
+                    source.GetLocation(TextSpan.FromBounds(lineStart + startOffset, lineStart + endIndex))
+                )
 
-            emit kind (lineText.Substring(startOffset, endIndex - startOffset)) startOffset
-            endIndex
+                emit BadToken (lineText.Substring(startOffset, endIndex - startOffset)) startOffset
+                endIndex
+            | None ->
+                emit IntegerLiteral (lineText.Substring(startOffset, 1)) startOffset
+                startOffset + 1
 
         and scanOperator startOffset =
             let mutable endIndex = startOffset + 1
