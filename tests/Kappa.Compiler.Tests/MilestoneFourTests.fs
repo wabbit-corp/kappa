@@ -548,6 +548,112 @@ let ``handlers reject computations whose closed effect row lacks the handled lab
     Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerEffectRowMismatch)
 
 [<Fact>]
+let ``handlers reject computations whose handled row entry names a different effect interface`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "bad : Eff <[ ]> Int"
+            "let bad : Eff <[ ]> Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            ask : Unit -> Bool"
+            ""
+            "        scoped effect Other ="
+            "            other : Unit -> Int"
+            ""
+            "        let comp : Eff <[Ask : Other]> Int = pure 0"
+            ""
+            "        handle Ask comp with"
+            "            case return x -> pure x"
+            "            case ask () k -> k True"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-handler-row-interface-mismatch-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected handlers to reject rows whose handled label is paired with the wrong effect interface.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerEffectRowMismatch)
+
+[<Fact>]
+let ``deep handlers can eliminate one label from a closed multi effect row`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "ok : Eff <[Other : Other]> Int"
+            "let ok : Eff <[Other : Other]> Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            ask : Unit -> Bool"
+            ""
+            "        scoped effect Other ="
+            "            other : Unit -> Int"
+            ""
+            "        let comp : Eff <[Ask : Ask, Other : Other]> Int ="
+            "            do"
+            "                let b <- Ask.ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        deep handle Ask comp with"
+            "            case return x -> pure x"
+            "            case ask () k -> k True"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-handler-row-remainder-root"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected deep handler over a closed multi-effect row to typecheck, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+[<Fact>]
+let ``deep handlers accept a lexically rebound effect label`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "ok : Int"
+            "let ok : Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            ask : Unit -> Bool"
+            ""
+            "        let l = Ask"
+            ""
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let b <- Ask.ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        let handled : Eff <[ ]> Int ="
+            "            deep handle l comp with"
+            "                case return x -> pure x"
+            "                case ask () k -> k True"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-m4-handler-label-alias-root"
+            "main.ok"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected deep handler with a rebound effect label to typecheck, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("1", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected rebound-label deep handler evaluation to succeed, got %s" issue.Message
+
+[<Fact>]
 let ``multishot scoped effect invocation rejects captured linear suffix at the operation site`` () =
     let fixturePath =
         Path.Combine(
@@ -565,6 +671,47 @@ let ``multishot scoped effect invocation rejects captured linear suffix at the o
             [ "main.kp", mainSource ]
 
     Assert.True(workspace.HasErrors, "Expected the multishot capture rule to reject the operation site.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.MultishotEffectUnsupportedBackend)
+
+[<Fact>]
+let ``multishot aliased effect labels still trigger capture and backend capability checks`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "bad : (1 x : Int) -> Int"
+            "let bad (1 x : Int) : Int ="
+            "    block"
+            "        scoped effect Choice ="
+            "            ω choose : Unit -> Bool"
+            ""
+            "        let c = Choice"
+            ""
+            "        let comp : Eff <[Choice : Choice]> Int ="
+            "            do"
+            "                let b <- c.choose ()"
+            "                if b then x else x"
+            ""
+            "        let handled ="
+            "            deep handle Choice comp with"
+            "                case return y -> pure y"
+            "                case choose _ k ->"
+            "                    do"
+            "                        let a <- k True"
+            "                        let _ <- k False"
+            "                        pure a"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-multishot-alias-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected aliased multishot invocations to be rejected.")
     Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
     Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.MultishotEffectUnsupportedBackend)
 

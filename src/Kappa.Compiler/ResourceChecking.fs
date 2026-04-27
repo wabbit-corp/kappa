@@ -835,6 +835,13 @@ module ResourceChecking =
                 |> List.tryFind (fun operation -> String.Equals(operation.Name, operationName, StringComparison.Ordinal))
                 |> Option.filter (fun operation -> isMultiShotResumptionQuantity operation.ResumptionQuantity)
                 |> Option.map (fun operation -> effectName, operation))
+        | Apply(MemberAccess(KindQualifiedName(EffectLabelKind, [ effectName ]), [ operationName ], []), _) ->
+            tryFindScopedEffectDeclaration effectName
+            |> Option.bind (fun declaration ->
+                declaration.Operations
+                |> List.tryFind (fun operation -> String.Equals(operation.Name, operationName, StringComparison.Ordinal))
+                |> Option.filter (fun operation -> isMultiShotResumptionQuantity operation.ResumptionQuantity)
+                |> Option.map (fun operation -> effectName, operation))
         | _ ->
             None
 
@@ -4916,6 +4923,144 @@ module ResourceChecking =
 
                     checkComprehensionClauses nextLocals nextState comprehension rest
 
+        let rec rewriteEffectLabelAliasUse aliasName effectName current =
+            let rewrite = rewriteEffectLabelAliasUse aliasName effectName
+
+            match current with
+            | Name [ name ] when String.Equals(name, aliasName, StringComparison.Ordinal) ->
+                KindQualifiedName(EffectLabelKind, [ effectName ])
+            | Name(root :: path) when String.Equals(root, aliasName, StringComparison.Ordinal) ->
+                Name(effectName :: path)
+            | Name _ ->
+                current
+            | SyntaxQuote inner ->
+                SyntaxQuote(rewrite inner)
+            | SyntaxSplice inner ->
+                SyntaxSplice(rewrite inner)
+            | TopLevelSyntaxSplice inner ->
+                TopLevelSyntaxSplice(rewrite inner)
+            | CodeQuote inner ->
+                CodeQuote(rewrite inner)
+            | CodeSplice inner ->
+                CodeSplice(rewrite inner)
+            | Handle(isDeep, label, body, returnClause, operationClauses) ->
+                let rewriteClause (clause: SurfaceEffectHandlerClause) =
+                    { clause with
+                        Body = rewrite clause.Body }
+
+                Handle(
+                    isDeep,
+                    rewrite label,
+                    rewrite body,
+                    rewriteClause returnClause,
+                    operationClauses |> List.map rewriteClause
+                )
+            | LocalLet(binding, value, body) ->
+                let shadowsAlias =
+                    collectPatternNames binding.Pattern
+                    |> List.exists (fun name -> String.Equals(name, aliasName, StringComparison.Ordinal))
+
+                LocalLet(binding, rewrite value, if shadowsAlias then body else rewrite body)
+            | LocalSignature(declaration, body) ->
+                if String.Equals(declaration.Name, aliasName, StringComparison.Ordinal) then
+                    current
+                else
+                    LocalSignature(declaration, rewrite body)
+            | LocalTypeAlias(declaration, body) ->
+                LocalTypeAlias(declaration, rewrite body)
+            | LocalScopedEffect(declaration, body) ->
+                if String.Equals(declaration.Name, aliasName, StringComparison.Ordinal) then
+                    current
+                else
+                    LocalScopedEffect(declaration, rewrite body)
+            | Lambda(parameters, body) ->
+                if parameters |> List.exists (fun parameter -> String.Equals(parameter.Name, aliasName, StringComparison.Ordinal)) then
+                    current
+                else
+                    Lambda(parameters, rewrite body)
+            | IfThenElse(condition, whenTrue, whenFalse) ->
+                IfThenElse(rewrite condition, rewrite whenTrue, rewrite whenFalse)
+            | Match(scrutinee, cases) ->
+                Match(
+                    rewrite scrutinee,
+                    cases
+                    |> List.map (fun caseClause ->
+                        let shadowsAlias =
+                            collectPatternNames caseClause.Pattern
+                            |> List.exists (fun name -> String.Equals(name, aliasName, StringComparison.Ordinal))
+
+                        { caseClause with
+                            Guard = caseClause.Guard |> Option.map rewrite
+                            Body = if shadowsAlias then caseClause.Body else rewrite caseClause.Body })
+                )
+            | RecordLiteral fields ->
+                RecordLiteral(fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+            | Seal(value, ascriptionTokens) ->
+                Seal(rewrite value, ascriptionTokens)
+            | RecordUpdate(receiver, fields) ->
+                RecordUpdate(rewrite receiver, fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+            | MemberAccess(receiver, segments, arguments) ->
+                MemberAccess(rewrite receiver, segments, arguments |> List.map rewrite)
+            | SafeNavigation(receiver, navigation) ->
+                SafeNavigation(rewrite receiver, { navigation with Arguments = navigation.Arguments |> List.map rewrite })
+            | TagTest(receiver, constructorName) ->
+                TagTest(rewrite receiver, constructorName)
+            | Do statements ->
+                let rec rewriteDoStatement statement =
+                    match statement with
+                    | DoLet(binding, value) -> DoLet(binding, rewrite value)
+                    | DoLetQuestion(binding, value, failure) ->
+                        let rewrittenFailure =
+                            failure
+                            |> Option.map (fun block ->
+                                { block with
+                                    Body = block.Body |> List.map rewriteDoStatement })
+
+                        DoLetQuestion(binding, rewrite value, rewrittenFailure)
+                    | DoBind(binding, value) -> DoBind(binding, rewrite value)
+                    | DoUsing(binding, value) -> DoUsing(binding, rewrite value)
+                    | DoVar(name, value) -> DoVar(name, rewrite value)
+                    | DoAssign(name, value) -> DoAssign(name, rewrite value)
+                    | DoDefer value -> DoDefer(rewrite value)
+                    | DoExpression value -> DoExpression(rewrite value)
+                    | DoReturn value -> DoReturn(rewrite value)
+                    | DoIf(condition, whenTrue, whenFalse) ->
+                        DoIf(rewrite condition, whenTrue |> List.map rewriteDoStatement, whenFalse |> List.map rewriteDoStatement)
+                    | DoWhile(condition, body) ->
+                        DoWhile(rewrite condition, body |> List.map rewriteDoStatement)
+
+                Do(statements |> List.map rewriteDoStatement)
+            | MonadicSplice inner ->
+                MonadicSplice(rewrite inner)
+            | ExplicitImplicitArgument inner ->
+                ExplicitImplicitArgument(rewrite inner)
+            | NamedApplicationBlock fields ->
+                NamedApplicationBlock(fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+            | InoutArgument inner ->
+                InoutArgument(rewrite inner)
+            | Unary(operatorName, inner) ->
+                Unary(operatorName, rewrite inner)
+            | Apply(callee, arguments) ->
+                Apply(rewrite callee, arguments |> List.map rewrite)
+            | Binary(left, operatorName, right) ->
+                Binary(rewrite left, operatorName, rewrite right)
+            | Elvis(left, right) ->
+                Elvis(rewrite left, rewrite right)
+            | Comprehension comprehension ->
+                Comprehension { comprehension with Lowered = rewrite comprehension.Lowered }
+            | PrefixedString(prefix, parts) ->
+                PrefixedString(
+                    prefix,
+                    parts
+                    |> List.map (function
+                        | StringText text -> StringText text
+                        | StringInterpolation(inner, format) -> StringInterpolation(rewrite inner, format))
+                )
+            | Literal _
+            | NumericLiteral _
+            | KindQualifiedName _ ->
+                current
+
         match expression with
         | CodeQuote inner ->
             state
@@ -5045,6 +5190,16 @@ module ResourceChecking =
                 |> Option.map (fun (aliasName, aliasInfo) ->
                         rewriteProjectionDescriptorApplications (Map.ofList [ aliasName, aliasInfo ]) body)
                 |> Option.defaultValue body
+
+            let bodyForChecking =
+                match binding.Pattern, value with
+                | NamePattern aliasName, Name [ effectName ] when tryFindScopedEffectDeclaration effectName |> Option.isSome ->
+                    rewriteEffectLabelAliasUse aliasName effectName bodyForChecking
+                | NamePattern aliasName, KindQualifiedName(EffectLabelKind, [ effectName ])
+                    when tryFindScopedEffectDeclaration effectName |> Option.isSome ->
+                    rewriteEffectLabelAliasUse aliasName effectName bodyForChecking
+                | _ ->
+                    bodyForChecking
 
             let projectionDescriptorAliasUse =
                 projectionDescriptorAlias

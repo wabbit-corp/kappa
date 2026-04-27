@@ -985,12 +985,24 @@ module SurfaceElaboration =
         let scopedEffectNames = currentScopedEffectNames ()
 
         match expression with
+        | Name [ name ] when Set.contains name scopedEffectNames ->
+            Some(scopedEffectLabelStaticObject name)
         | KindQualifiedName(TypeKind, [ name ]) when Set.contains name scopedEffectNames ->
             Some(scopedEffectTypeStaticObject name)
         | KindQualifiedName(EffectLabelKind, [ name ]) when Set.contains name scopedEffectNames ->
             Some(scopedEffectLabelStaticObject name)
         | _ ->
             tryResolveStaticObject environment expression
+
+    let private tryResolveHandledEffectName
+        (environment: BindingLoweringEnvironment)
+        expression
+        =
+        tryResolveScopedStaticObject environment expression
+        |> Option.bind (fun staticObject ->
+            match staticObject.ObjectKind, staticObject.NameSegments with
+            | StaticEffectLabelObject, [ effectName ] -> Some effectName
+            | _ -> None)
 
     let private kindSelectorText selector =
         match selector with
@@ -9597,8 +9609,8 @@ module SurfaceElaboration =
                     inferValidationExpressionType environment freshCounter returnClauseLocals returnClause.Body
 
                 let tryOperationClauseLocals (clause: SurfaceEffectHandlerClause) =
-                    match label with
-                    | Name [ effectName ] ->
+                    match tryResolveHandledEffectName environment label with
+                    | Some effectName ->
                         tryFindScopedEffectOperation effectName clause.OperationName
                         |> Option.bind (fun (_, operation) ->
                             operation.SignatureTokens
@@ -9672,20 +9684,32 @@ module SurfaceElaboration =
                     carrierDiagnostics @ returnDiagnostics @ operationDiagnostics
 
                 let handledEffectRowDiagnostics =
-                    let tryClosedRowContainsLabel effectName effectRow =
+                    let tryClosedRowMatch effectName effectRow =
+                        let rec isSimpleName expected typeExpr =
+                            match normalizeTypeAliases environment.VisibleTypeAliases typeExpr with
+                            | TypeName([ name ], []) ->
+                                String.Equals(name, expected, StringComparison.Ordinal)
+                            | _ ->
+                                false
+
                         match normalizeTypeAliases environment.VisibleTypeAliases effectRow with
                         | TypeEffectRow(entries, tail) ->
-                            let containsLabel =
+                            let containsExactEntry =
                                 entries
                                 |> List.exists (fun entry ->
-                                    match normalizeTypeAliases environment.VisibleTypeAliases entry.Label with
-                                    | TypeName([ labelName ], []) ->
-                                        String.Equals(labelName, effectName, StringComparison.Ordinal)
-                                    | _ ->
-                                        false)
+                                    isSimpleName effectName entry.Label
+                                    && isSimpleName effectName entry.Effect)
 
-                            if containsLabel then
+                            let containsMismatchedHandledLabel =
+                                entries
+                                |> List.exists (fun entry ->
+                                    isSimpleName effectName entry.Label
+                                    && not (isSimpleName effectName entry.Effect))
+
+                            if containsExactEntry then
                                 Some true
+                            elif containsMismatchedHandledLabel then
+                                Some false
                             elif tail.IsSome then
                                 None
                             else
@@ -9693,11 +9717,11 @@ module SurfaceElaboration =
                         | _ ->
                             None
 
-                    match label, handledBodyType with
-                    | Name [ effectName ], Some handledType ->
+                    match tryResolveHandledEffectName environment label, handledBodyType with
+                    | Some effectName, Some handledType ->
                         match tryUnwrapEffType handledType with
                         | Some(effectRow, _) ->
-                            match tryClosedRowContainsLabel effectName effectRow with
+                            match tryClosedRowMatch effectName effectRow with
                             | Some false ->
                                 [
                                     makeDiagnostic
@@ -9712,12 +9736,12 @@ module SurfaceElaboration =
                                     DiagnosticCode.HandlerEffectRowMismatch
                                     $"Handler for '{effectName}' expects an Eff computation, but the handled expression has type '{TypeSignatures.toText handledType}'."
                             ]
-                    | _ ->
+                    | _ , _ ->
                         []
 
                 let handlerDiagnostics =
-                    match label with
-                    | Name [ effectName ] ->
+                    match tryResolveHandledEffectName environment label with
+                    | Some effectName ->
                         match tryFindScopedEffectDeclaration effectName with
                         | Some declaration ->
                             let declaredOperationNames =
@@ -12749,6 +12773,105 @@ module SurfaceElaboration =
                     let multishotInvocationMessage context effectName operationName =
                         $"Backend profile '{normalizedBackendProfile}' does not provide capability 'rt-multishot-effects' required by multi-shot operation '{effectName}.{operationName}' {context}."
 
+                    let rec rewriteEffectLabelAliasUse aliasName effectName current =
+                        let rewrite = rewriteEffectLabelAliasUse aliasName effectName
+
+                        match current with
+                        | Name [ name ] when String.Equals(name, aliasName, StringComparison.Ordinal) ->
+                            KindQualifiedName(EffectLabelKind, [ effectName ])
+                        | Name(root :: path) when String.Equals(root, aliasName, StringComparison.Ordinal) ->
+                            Name(effectName :: path)
+                        | Name _ ->
+                            current
+                        | SyntaxQuote inner ->
+                            SyntaxQuote(rewrite inner)
+                        | SyntaxSplice inner ->
+                            SyntaxSplice(rewrite inner)
+                        | TopLevelSyntaxSplice inner ->
+                            TopLevelSyntaxSplice(rewrite inner)
+                        | CodeQuote inner ->
+                            CodeQuote(rewrite inner)
+                        | CodeSplice inner ->
+                            CodeSplice(rewrite inner)
+                        | Handle(isDeep, label, body, returnClause, operationClauses) ->
+                            let rewriteClause (clause: SurfaceEffectHandlerClause) =
+                                { clause with Body = rewrite clause.Body }
+
+                            Handle(isDeep, rewrite label, rewrite body, rewriteClause returnClause, operationClauses |> List.map rewriteClause)
+                        | LocalLet(binding, value, body) ->
+                            let shadowsAlias =
+                                collectPatternNames binding.Pattern
+                                |> List.exists (fun name -> String.Equals(name, aliasName, StringComparison.Ordinal))
+
+                            LocalLet(binding, rewrite value, if shadowsAlias then body else rewrite body)
+                        | LocalSignature(declaration, body) ->
+                            if String.Equals(declaration.Name, aliasName, StringComparison.Ordinal) then current else LocalSignature(declaration, rewrite body)
+                        | LocalTypeAlias(declaration, body) ->
+                            LocalTypeAlias(declaration, rewrite body)
+                        | LocalScopedEffect(declaration, body) ->
+                            if String.Equals(declaration.Name, aliasName, StringComparison.Ordinal) then current else LocalScopedEffect(declaration, rewrite body)
+                        | Lambda(parameters, body) ->
+                            if parameters |> List.exists (fun parameter -> String.Equals(parameter.Name, aliasName, StringComparison.Ordinal)) then current else Lambda(parameters, rewrite body)
+                        | IfThenElse(condition, whenTrue, whenFalse) ->
+                            IfThenElse(rewrite condition, rewrite whenTrue, rewrite whenFalse)
+                        | Match(scrutinee, cases) ->
+                            Match(
+                                rewrite scrutinee,
+                                cases
+                                |> List.map (fun caseClause ->
+                                    let shadowsAlias =
+                                        collectPatternNames caseClause.Pattern
+                                        |> List.exists (fun name -> String.Equals(name, aliasName, StringComparison.Ordinal))
+
+                                    { caseClause with
+                                        Guard = caseClause.Guard |> Option.map rewrite
+                                        Body = if shadowsAlias then caseClause.Body else rewrite caseClause.Body })
+                            )
+                        | RecordLiteral fields ->
+                            RecordLiteral(fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+                        | Seal(value, ascriptionTokens) ->
+                            Seal(rewrite value, ascriptionTokens)
+                        | RecordUpdate(receiver, fields) ->
+                            RecordUpdate(rewrite receiver, fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+                        | MemberAccess(receiver, segments, arguments) ->
+                            MemberAccess(rewrite receiver, segments, arguments |> List.map rewrite)
+                        | SafeNavigation(receiver, navigation) ->
+                            SafeNavigation(rewrite receiver, { navigation with Arguments = navigation.Arguments |> List.map rewrite })
+                        | TagTest(receiver, constructorName) ->
+                            TagTest(rewrite receiver, constructorName)
+                        | Do statements ->
+                            Do(statements)
+                        | MonadicSplice inner ->
+                            MonadicSplice(rewrite inner)
+                        | ExplicitImplicitArgument inner ->
+                            ExplicitImplicitArgument(rewrite inner)
+                        | NamedApplicationBlock fields ->
+                            NamedApplicationBlock(fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+                        | InoutArgument inner ->
+                            InoutArgument(rewrite inner)
+                        | Unary(operatorName, inner) ->
+                            Unary(operatorName, rewrite inner)
+                        | Apply(callee, arguments) ->
+                            Apply(rewrite callee, arguments |> List.map rewrite)
+                        | Binary(left, operatorName, right) ->
+                            Binary(rewrite left, operatorName, rewrite right)
+                        | Elvis(left, right) ->
+                            Elvis(rewrite left, rewrite right)
+                        | Comprehension comprehension ->
+                            Comprehension { comprehension with Lowered = rewrite comprehension.Lowered }
+                        | PrefixedString(prefix, parts) ->
+                            PrefixedString(
+                                prefix,
+                                parts
+                                |> List.map (function
+                                    | StringText text -> StringText text
+                                    | StringInterpolation(inner, format) -> StringInterpolation(rewrite inner, format))
+                            )
+                        | Literal _
+                        | NumericLiteral _
+                        | KindQualifiedName _ ->
+                            current
+
                     let tryMatchMultishotInvocation expression =
                         match expression with
                         | Apply(Name [ effectName; operationName ], _) ->
@@ -12759,6 +12882,13 @@ module SurfaceElaboration =
                                 else
                                     None)
                         | Apply(MemberAccess(Name [ effectName ], [ operationName ], []), _) ->
+                            tryFindScopedEffectOperation effectName operationName
+                            |> Option.bind (fun (_, operation) ->
+                                if quantityPermitsMultipleResumptions operation.ResumptionQuantity then
+                                    Some(effectName, operationName)
+                                else
+                                    None)
+                        | Apply(MemberAccess(KindQualifiedName(EffectLabelKind, [ effectName ]), [ operationName ], []), _) ->
                             tryFindScopedEffectOperation effectName operationName
                             |> Option.bind (fun (_, operation) ->
                                 if quantityPermitsMultipleResumptions operation.ResumptionQuantity then
@@ -12777,8 +12907,18 @@ module SurfaceElaboration =
                             | CodeQuote _
                             | CodeSplice _ ->
                                 []
-                            | LocalLet(_, value, body) ->
-                                collectMultishotInvocations value @ collectMultishotInvocations body
+                            | LocalLet(binding, value, body) ->
+                                let bodyForCollection =
+                                    match binding.Pattern, value with
+                                    | NamePattern aliasName, Name [ effectName ] when tryFindScopedEffectDeclaration effectName |> Option.isSome ->
+                                        rewriteEffectLabelAliasUse aliasName effectName body
+                                    | NamePattern aliasName, KindQualifiedName(EffectLabelKind, [ effectName ])
+                                        when tryFindScopedEffectDeclaration effectName |> Option.isSome ->
+                                        rewriteEffectLabelAliasUse aliasName effectName body
+                                    | _ ->
+                                        body
+
+                                collectMultishotInvocations value @ collectMultishotInvocations bodyForCollection
                             | LocalSignature(_, body)
                             | LocalTypeAlias(_, body) ->
                                 collectMultishotInvocations body
@@ -14774,18 +14914,30 @@ module SurfaceElaboration =
                     KCoreWildcardPattern
 
         and lowerStaticObject staticObject =
-            let kind =
-                match staticObject.ObjectKind with
-                | StaticTypeObject -> KCoreTypeObject
-                | StaticTraitObject -> KCoreTraitObject
-                | StaticEffectLabelObject -> KCoreEffectLabelObject
-                | StaticModuleObject -> KCoreModuleObject
+            match staticObject.ObjectKind, staticObject.NameSegments with
+            | StaticEffectLabelObject, [ effectName ] ->
+                match tryFindScopedEffectDeclaration effectName with
+                | Some declaration ->
+                    KCoreEffectLabel(effectName, scopedEffectOperationMetadata declaration)
+                | None ->
+                    KCoreStaticObject
+                        { ObjectKind = KCoreEffectLabelObject
+                          Name = staticObject.NameSegments
+                          Type = staticObjectTypeText staticObject |> Option.bind tryParseTypeText
+                          TypeText = staticObjectTypeText staticObject }
+            | _ ->
+                let kind =
+                    match staticObject.ObjectKind with
+                    | StaticTypeObject -> KCoreTypeObject
+                    | StaticTraitObject -> KCoreTraitObject
+                    | StaticEffectLabelObject -> KCoreEffectLabelObject
+                    | StaticModuleObject -> KCoreModuleObject
 
-            KCoreStaticObject
-                { ObjectKind = kind
-                  Name = staticObject.NameSegments
-                  Type = staticObjectTypeText staticObject |> Option.bind tryParseTypeText
-                  TypeText = staticObjectTypeText staticObject }
+                KCoreStaticObject
+                    { ObjectKind = kind
+                      Name = staticObject.NameSegments
+                      Type = staticObjectTypeText staticObject |> Option.bind tryParseTypeText
+                      TypeText = staticObjectTypeText staticObject }
 
         and tryLowerRecordProjectionPath
             localTypes
@@ -15490,9 +15642,7 @@ module SurfaceElaboration =
                     |> Option.defaultValue (TypeVariable $"handlePayload{freshCounter.Value}")
 
                 let handledEffectName =
-                    match label with
-                    | Name [ effectName ] -> Some effectName
-                    | _ -> None
+                    tryResolveHandledEffectName environment label
 
                 let lowerClause
                     (argumentTypes: TypeExpr list)
