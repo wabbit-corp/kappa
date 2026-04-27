@@ -74,3 +74,23 @@ let ``multishot scoped effect invocation rejects captured linear suffix at the o
     let diagnosticText = diagnosticsText workspace.Diagnostics
     Assert.Contains("choose", diagnosticText)
     Assert.Matches("(?i)(multi[- ]shot|resumption|continuation).*(linear|borrow)|(?:linear|borrow).*(multi[- ]shot|resumption|continuation)", diagnosticText)
+
+[<Fact>]
+let ``one shot resumptions cannot be resumed twice`` () =
+    let fixturePath =
+        Path.Combine(
+            __SOURCE_DIRECTORY__,
+            "Fixtures",
+            "borrow_qtt.100_interactions.handler_reject_oneshot_resumption_overuse",
+            "main.kp"
+        )
+
+    let mainSource = File.ReadAllText fixturePath
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-oneshot-overuse-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected one-shot resumption overuse to be rejected.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttLinearOveruse)

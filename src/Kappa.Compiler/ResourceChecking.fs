@@ -818,6 +818,36 @@ module ResourceChecking =
         | _ ->
             None
 
+    let private tryParseHandlerArgumentName (tokens: Token list) =
+        let significantTokens =
+            tokens
+            |> List.filter (fun token ->
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent
+                | EndOfFile -> false
+                | _ -> true)
+
+        match significantTokens with
+        | [ token ] when Token.isName token ->
+            let name = SyntaxFacts.trimIdentifierQuotes token.Text
+
+            if String.Equals(name, "_", StringComparison.Ordinal) then
+                None
+            else
+                Some name
+        | leftParen :: nameToken :: colonToken :: _
+            when leftParen.Kind = LeftParen && Token.isName nameToken && colonToken.Kind = Colon ->
+            let name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
+
+            if String.Equals(name, "_", StringComparison.Ordinal) then
+                None
+            else
+                Some name
+        | _ ->
+            None
+
     let private inferredClosureQuantity state expression =
         match expression with
         | Name [ name ] ->
@@ -4114,6 +4144,7 @@ module ResourceChecking =
         | DiagnosticCode.QttBorrowConsume
         | DiagnosticCode.QttBorrowOverlap
         | DiagnosticCode.QttBorrowEscape
+        | DiagnosticCode.QttContinuationCapture
         | DiagnosticCode.QttErasedRuntimeUse
         | DiagnosticCode.QttInoutMarkerRequired
         | DiagnosticCode.QttInoutMarkerUnexpected
@@ -4883,16 +4914,63 @@ module ResourceChecking =
         | CodeSplice inner ->
             checkExpression projectionSummaries document signatures localTypes state inner
         | Handle(_, label, body, returnClause, operationClauses) ->
+            let bindHandlerClauseNames quantity argumentNames resumptionName current =
+                let current =
+                    argumentNames
+                    |> List.fold (fun state name -> addBinding LocalBinding name None None Set.empty [] false None None None state) current
+
+                match resumptionName with
+                | Some name ->
+                    addBinding LocalBinding name quantity None Set.empty [] false None None None current
+                | None ->
+                    current
+
+            let checkHandlerClause quantity argumentNames resumptionName bodyExpression current =
+                withScope
+                    "handler_clause"
+                    (fun scopedState ->
+                        scopedState
+                        |> bindHandlerClauseNames quantity argumentNames resumptionName
+                        |> checkExpression projectionSummaries document signatures localTypes <| bodyExpression)
+                    current
+
             let nextState =
                 state
                 |> checkExpression projectionSummaries document signatures localTypes <| label
                 |> checkExpression projectionSummaries document signatures localTypes <| body
-                |> checkExpression projectionSummaries document signatures localTypes <| returnClause.Body
+
+            let returnArgumentNames =
+                returnClause.ArgumentTokens
+                |> List.choose tryParseHandlerArgumentName
+
+            let nextState =
+                checkHandlerClause None returnArgumentNames None returnClause.Body nextState
+
+            let handledEffectName =
+                match label with
+                | Name [ effectName ] -> Some effectName
+                | _ -> None
 
             operationClauses
             |> List.fold
                 (fun clauseState clause ->
-                    checkExpression projectionSummaries document signatures localTypes clauseState clause.Body)
+                    let argumentNames =
+                        clause.ArgumentTokens
+                        |> List.choose tryParseHandlerArgumentName
+
+                    let resumptionQuantity =
+                        handledEffectName
+                        |> Option.bind (fun effectName ->
+                            tryFindScopedEffectDeclaration effectName
+                            |> Option.bind (fun declaration ->
+                                declaration.Operations
+                                |> List.tryFind (fun operation -> String.Equals(operation.Name, clause.OperationName, StringComparison.Ordinal))
+                                |> Option.map (fun operation ->
+                                    operation.ResumptionQuantity
+                                    |> Option.defaultValue QuantityOne
+                                    |> ResourceQuantity.ofSurface)))
+
+                    checkHandlerClause resumptionQuantity argumentNames clause.ResumptionName clause.Body clauseState)
                 nextState
         | Literal _
         | NumericLiteral _
