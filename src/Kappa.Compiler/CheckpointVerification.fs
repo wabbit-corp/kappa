@@ -437,6 +437,74 @@ module CheckpointVerification =
         let isGeneratedHostBinding provenance =
             String.Equals(provenance.IntroductionKind, "host-binding", StringComparison.Ordinal)
 
+        let rec runtimeEffectConstructs expression =
+            let recurse = runtimeEffectConstructs
+
+            match expression with
+            | KRuntimeEffectLabel _ ->
+                Set.singleton "effect-label"
+            | KRuntimeEffectOperation(label, _) ->
+                Set.add "effect-operation" (recurse label)
+            | KRuntimeHandle(isDeep, label, body, returnClause, operationClauses) ->
+                let handlerKind = if isDeep then "deep-handler" else "shallow-handler"
+
+                Set.singleton handlerKind
+                |> Set.union (recurse label)
+                |> Set.union (recurse body)
+                |> Set.union (recurse returnClause.Body)
+                |> fun current ->
+                    operationClauses
+                    |> List.fold (fun state clause -> Set.union state (recurse clause.Body)) current
+            | KRuntimeClosure(_, body)
+            | KRuntimeExecute body
+            | KRuntimeDoScope(_, body)
+            | KRuntimeUnary(_, body) ->
+                recurse body
+            | KRuntimeIfThenElse(condition, whenTrue, whenFalse) ->
+                recurse condition
+                |> Set.union (recurse whenTrue)
+                |> Set.union (recurse whenFalse)
+            | KRuntimeLet(_, value, body)
+            | KRuntimeSequence(value, body) ->
+                recurse value |> Set.union (recurse body)
+            | KRuntimeScheduleExit(_, KRuntimeDeferred deferred, body) ->
+                recurse deferred |> Set.union (recurse body)
+            | KRuntimeScheduleExit(_, KRuntimeRelease(_, release, resource), body) ->
+                recurse release
+                |> Set.union (recurse resource)
+                |> Set.union (recurse body)
+            | KRuntimeWhile(condition, body)
+            | KRuntimeBinary(condition, _, body) ->
+                recurse condition |> Set.union (recurse body)
+            | KRuntimeApply(callee, arguments) ->
+                arguments
+                |> List.fold (fun state argument -> Set.union state (recurse argument)) (recurse callee)
+            | KRuntimeTraitCall(_, _, dictionary, arguments) ->
+                arguments
+                |> List.fold (fun state argument -> Set.union state (recurse argument)) (recurse dictionary)
+            | KRuntimeMatch(scrutinee, cases) ->
+                cases
+                |> List.fold
+                    (fun state caseClause ->
+                        state
+                        |> Set.union (caseClause.Guard |> Option.map recurse |> Option.defaultValue Set.empty)
+                        |> Set.union (recurse caseClause.Body))
+                    (recurse scrutinee)
+            | KRuntimePrefixedString(_, parts) ->
+                parts
+                |> List.fold
+                    (fun state part ->
+                        match part with
+                        | KRuntimeStringText _ ->
+                            state
+                        | KRuntimeStringInterpolation(inner, _) ->
+                            Set.union state (recurse inner))
+                    Set.empty
+            | KRuntimeLiteral _
+            | KRuntimeName _
+            | KRuntimeDictionaryValue _ ->
+                Set.empty
+
         let backendModules =
             workspace.KBackendIR
             |> List.sortBy (fun (moduleDump: KBackendModule) -> moduleDump.SourceFile)
@@ -471,6 +539,18 @@ module CheckpointVerification =
             [
                 for runtimeModule in workspace.KRuntimeIR do
                     for binding in runtimeModule.Bindings do
+                        match binding.Body with
+                        | Some body ->
+                            let constructs = runtimeEffectConstructs body
+
+                            if not (Set.isEmpty constructs) then
+                                let constructsText = constructs |> Set.toList |> String.concat ", "
+                                yield
+                                    makeDiagnostic
+                                        $"Checkpoint 'KBackendIR' requires effect runtime constructs to be lowered before backend lowering, but binding '{runtimeModule.Name}.{binding.Name}' still contains [{constructsText}] in KRuntimeIR."
+                        | None ->
+                            ()
+
                         for parameter in binding.Parameters do
                             match parameter.TypeText with
                             | Some typeText when runtimeTypeLeaksErasureMetadata typeText ->
