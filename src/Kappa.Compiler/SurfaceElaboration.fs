@@ -930,6 +930,36 @@ module SurfaceElaboration =
             |> List.tryFind (fun operation -> String.Equals(operation.Name, operationName, StringComparison.Ordinal))
             |> Option.map (fun operation -> declaration, operation))
 
+    let private significantEffectHandlerTokens tokens =
+        tokens
+        |> List.filter (fun token ->
+            match token.Kind with
+            | Newline
+            | Indent
+            | Dedent
+            | EndOfFile -> false
+            | _ -> true)
+
+    let private tryParseEffectHandlerArgumentName tokens =
+        match significantEffectHandlerTokens tokens with
+        | [ token ] when Token.isName token ->
+            let name = SyntaxFacts.trimIdentifierQuotes token.Text
+
+            if String.Equals(name, "_", StringComparison.Ordinal) then
+                None
+            else
+                Some name
+        | leftParen :: nameToken :: colonToken :: _
+            when leftParen.Kind = LeftParen && Token.isName nameToken && colonToken.Kind = Colon ->
+            let name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
+
+            if String.Equals(name, "_", StringComparison.Ordinal) then
+                None
+            else
+                Some name
+        | _ ->
+            None
+
     let private scopedEffectRowType effectName =
         TypeEffectRow(
             [
@@ -2066,6 +2096,22 @@ module SurfaceElaboration =
         | Some Visibility.Public -> true
         | Some Visibility.Private -> false
         | None -> not isPrivateByDefault
+
+    let private backendSupportsMultishotEffects (backendProfile: string) =
+        match Stdlib.normalizeBackendProfile backendProfile with
+        | _ -> false
+
+    let private quantityPermitsMultipleResumptions quantity =
+        match quantity |> Option.defaultValue QuantityOne with
+        | QuantityOmega
+        | QuantityAtLeastOne
+        | QuantityVariable _ ->
+            true
+        | QuantityZero
+        | QuantityOne
+        | QuantityBorrow _
+        | QuantityAtMostOne ->
+            false
 
     let private itemImportsTermName (item: ImportItem) =
         item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Term
@@ -8356,6 +8402,44 @@ module SurfaceElaboration =
 
                         List.ofSeq diagnostics
 
+        let localApplicationExpectedArgumentDiagnostics locals refinements calleeType arguments =
+            let inferArgumentTypeForParameter parameterType argument =
+                tryInferNumericExpressionTypeFromContext environment parameterType argument
+                |> Option.orElseWith (fun () -> inferValidationExpressionType environment freshCounter locals argument)
+
+            let hasApplicationOnlyArgument =
+                arguments
+                |> List.exists (function
+                    | ExplicitImplicitArgument _
+                    | NamedApplicationBlock _ -> true
+                    | _ -> false)
+
+            if hasApplicationOnlyArgument then
+                []
+            else
+                let parameterTypes, _ = TypeSignatures.functionParts calleeType
+
+                List.zip (parameterTypes |> List.truncate arguments.Length) (arguments |> List.truncate parameterTypes.Length)
+                |> List.choose (fun (parameterType, argument) ->
+                    match inferArgumentTypeForParameter parameterType argument with
+                    | Some argumentType ->
+                        match tryNumericLiteralRangeDiagnostic parameterType argument with
+                        | Some diagnostic ->
+                            Some diagnostic
+                        | None when not (expectedTypeAccepts locals refinements parameterType argumentType) ->
+                            Some(
+                                expectedMismatchDiagnostic
+                                    locals
+                                    refinements
+                                    "Application argument"
+                                    parameterType
+                                    argumentType
+                            )
+                        | None ->
+                            None
+                    | None ->
+                        None)
+
         let rec validateExpressionWithFlow locals refinements lexicalNames aliases constructorFacts expression =
             let recurse = validateExpressionWithFlow locals refinements lexicalNames aliases constructorFacts
 
@@ -9469,9 +9553,64 @@ module SurfaceElaboration =
             | CodeQuote inner
             | CodeSplice inner ->
                 recurse inner
-            | Handle(_, label, body, returnClause, operationClauses) ->
+            | Handle(isDeep, label, body, returnClause, operationClauses) ->
                 let returnClauseLexicalNames =
                     Set.union lexicalNames (clauseBoundNames returnClause)
+
+                let handledBodyType =
+                    inferValidationExpressionType environment freshCounter locals body
+
+                let handledPayloadType =
+                    handledBodyType
+                    |> Option.bind tryUnwrapEffType
+                    |> Option.map snd
+                    |> Option.defaultValue (TypeVariable $"handlePayload{freshCounter.Value}")
+
+                let handledResultType =
+                    inferValidationExpressionType environment freshCounter locals returnClause.Body
+
+                let extendHandlerLocals argumentTokens argumentTypes resumptionName resumptionType currentLocals =
+                    let nextLocals =
+                        List.zip argumentTokens argumentTypes
+                        |> List.fold (fun state (tokens, argumentType) ->
+                            match tryParseEffectHandlerArgumentName tokens with
+                            | Some name -> Map.add name argumentType state
+                            | None -> state) currentLocals
+
+                    match resumptionName, resumptionType with
+                    | Some name, Some currentResumptionType ->
+                        Map.add name currentResumptionType nextLocals
+                    | _ ->
+                        nextLocals
+
+                let tryOperationClauseLocals (clause: SurfaceEffectHandlerClause) =
+                    match label with
+                    | Name [ effectName ] ->
+                        tryFindScopedEffectOperation effectName clause.OperationName
+                        |> Option.bind (fun (_, operation) ->
+                            operation.SignatureTokens
+                            |> TypeSignatures.parseType
+                            |> Option.map (qualifyVisibleTypeNames environment)
+                            |> Option.map TypeSignatures.functionParts
+                            |> Option.map (fun (parameterTypes, resultType) ->
+                                let resumptionResultType =
+                                    if isDeep then
+                                        handledResultType
+                                    else
+                                        handledBodyType
+
+                                let resumptionType =
+                                    resumptionResultType
+                                    |> Option.map (fun currentResultType -> TypeArrow(QuantityOne, resultType, currentResultType))
+
+                                extendHandlerLocals
+                                    clause.ArgumentTokens
+                                    parameterTypes
+                                    clause.ResumptionName
+                                    resumptionType
+                                    locals))
+                    | _ ->
+                        None
 
                 let handlerDiagnostics =
                     match label with
@@ -9509,11 +9648,23 @@ module SurfaceElaboration =
 
                 recurse label
                 @ recurse body
-                @ validateExpressionWithFlow locals refinements returnClauseLexicalNames aliases constructorFacts returnClause.Body
+                @ validateExpressionWithFlow
+                    (extendHandlerLocals returnClause.ArgumentTokens [ handledPayloadType ] None None locals)
+                    refinements
+                    returnClauseLexicalNames
+                    aliases
+                    constructorFacts
+                    returnClause.Body
                 @ (operationClauses
                    |> List.collect (fun clause ->
                        let clauseLexicalNames = Set.union lexicalNames (clauseBoundNames clause)
-                       validateExpressionWithFlow locals refinements clauseLexicalNames aliases constructorFacts clause.Body))
+                       validateExpressionWithFlow
+                           (tryOperationClauseLocals clause |> Option.defaultValue locals)
+                           refinements
+                           clauseLexicalNames
+                           aliases
+                           constructorFacts
+                           clause.Body))
                 @ handlerDiagnostics
             | Literal _ ->
                 []
@@ -10229,6 +10380,8 @@ module SurfaceElaboration =
                                 let isLexicallyBoundName =
                                     Map.containsKey calleeName locals || Set.contains calleeName lexicalNames
 
+                                let localBindingType = Map.tryFind calleeName locals
+
                                 let bindingInfo =
                                     if isLexicallyBoundName then
                                         None
@@ -10353,6 +10506,12 @@ module SurfaceElaboration =
                                     when allowUnresolvedCallDiagnostics
                                          && not isKnownVisibleCallee ->
                                     [ makeDiagnostic DiagnosticCode.NameUnresolved $"Name '{calleeName}' is not in scope." ]
+                                | None when localBindingType |> Option.exists (fun _ -> not hasNamedBlock) ->
+                                    localApplicationExpectedArgumentDiagnostics
+                                        locals
+                                        refinements
+                                        (localBindingType.Value)
+                                        arguments
                                 | None when hasNamedBlock ->
                                     [ makeDiagnostic DiagnosticCode.TypeEqualityMismatch "Named application requires a callee with preserved parameter metadata." ]
                                 | _ ->
@@ -11402,6 +11561,7 @@ module SurfaceElaboration =
             | None -> []
 
     let validateSurfaceModules
+        (backendProfile: string)
         (frontendModules: KFrontIRModule list)
         (hostModules: Map<string, HostBindings.HostModuleDescription>)
         =
@@ -12404,10 +12564,181 @@ module SurfaceElaboration =
                 @ instanceSupertraitDiagnostics
                 @ instanceMemberSignatureDiagnostics
 
+            let multishotBackendCapabilityDiagnostics =
+                if backendSupportsMultishotEffects backendProfile then
+                    []
+                else
+                    let normalizedBackendProfile = Stdlib.normalizeBackendProfile backendProfile
+                    let privateByDefault = isPrivateByDefault frontendModule
+
+                    let multishotInvocationMessage context effectName operationName =
+                        $"Backend profile '{normalizedBackendProfile}' does not provide capability 'rt-multishot-effects' required by multi-shot operation '{effectName}.{operationName}' {context}."
+
+                    let tryMatchMultishotInvocation expression =
+                        match expression with
+                        | Apply(Name [ effectName; operationName ], _) ->
+                            tryFindScopedEffectOperation effectName operationName
+                            |> Option.bind (fun (_, operation) ->
+                                if quantityPermitsMultipleResumptions operation.ResumptionQuantity then
+                                    Some(effectName, operationName)
+                                else
+                                    None)
+                        | Apply(MemberAccess(Name [ effectName ], [ operationName ], []), _) ->
+                            tryFindScopedEffectOperation effectName operationName
+                            |> Option.bind (fun (_, operation) ->
+                                if quantityPermitsMultipleResumptions operation.ResumptionQuantity then
+                                    Some(effectName, operationName)
+                                else
+                                    None)
+                        | _ ->
+                            None
+
+                    let rec collectMultishotInvocations expression =
+                        let nested =
+                            match expression with
+                            | SyntaxQuote _
+                            | SyntaxSplice _
+                            | TopLevelSyntaxSplice _
+                            | CodeQuote _
+                            | CodeSplice _ ->
+                                []
+                            | LocalLet(_, value, body) ->
+                                collectMultishotInvocations value @ collectMultishotInvocations body
+                            | LocalSignature(_, body)
+                            | LocalTypeAlias(_, body) ->
+                                collectMultishotInvocations body
+                            | LocalScopedEffect(declaration, body) ->
+                                withScopedEffectDeclaration declaration (fun () -> collectMultishotInvocations body)
+                            | Lambda(_, body) ->
+                                collectMultishotInvocations body
+                            | Handle(_, label, body, returnClause, operationClauses) ->
+                                collectMultishotInvocations label
+                                @ collectMultishotInvocations body
+                                @ collectMultishotInvocations returnClause.Body
+                                @ (operationClauses |> List.collect (fun clause -> collectMultishotInvocations clause.Body))
+                            | Match(scrutinee, cases) ->
+                                collectMultishotInvocations scrutinee
+                                @ (cases
+                                   |> List.collect (fun caseClause ->
+                                       (caseClause.Guard
+                                        |> Option.map collectMultishotInvocations
+                                        |> Option.defaultValue [])
+                                       @ collectMultishotInvocations caseClause.Body))
+                            | IfThenElse(condition, whenTrue, whenFalse) ->
+                                collectMultishotInvocations condition
+                                @ collectMultishotInvocations whenTrue
+                                @ collectMultishotInvocations whenFalse
+                            | RecordLiteral fields ->
+                                fields |> List.collect (fun field -> collectMultishotInvocations field.Value)
+                            | Seal(value, _) ->
+                                collectMultishotInvocations value
+                            | RecordUpdate(receiver, fields) ->
+                                collectMultishotInvocations receiver
+                                @ (fields |> List.collect (fun field -> collectMultishotInvocations field.Value))
+                            | MemberAccess(receiver, _, arguments) ->
+                                collectMultishotInvocations receiver
+                                @ (arguments |> List.collect collectMultishotInvocations)
+                            | SafeNavigation(receiver, navigation) ->
+                                collectMultishotInvocations receiver
+                                @ (navigation.Arguments |> List.collect collectMultishotInvocations)
+                            | TagTest(receiver, _) ->
+                                collectMultishotInvocations receiver
+                            | Do statements ->
+                                let rec collectDo statements =
+                                    match statements with
+                                    | [] ->
+                                        []
+                                    | statement :: rest ->
+                                        let restInvocations = collectDo rest
+
+                                        match statement with
+                                        | DoLet(_, value)
+                                        | DoBind(_, value)
+                                        | DoUsing(_, value)
+                                        | DoVar(_, value)
+                                        | DoAssign(_, value)
+                                        | DoDefer value
+                                        | DoExpression value
+                                        | DoReturn value ->
+                                            collectMultishotInvocations value @ restInvocations
+                                        | DoLetQuestion(_, value, failure) ->
+                                            let failureInvocations =
+                                                failure
+                                                |> Option.map (fun block -> collectDo block.Body)
+                                                |> Option.defaultValue []
+
+                                            collectMultishotInvocations value @ failureInvocations @ restInvocations
+                                        | DoIf(condition, whenTrue, whenFalse) ->
+                                            collectMultishotInvocations condition
+                                            @ collectDo whenTrue
+                                            @ collectDo whenFalse
+                                            @ restInvocations
+                                        | DoWhile(condition, body) ->
+                                            collectMultishotInvocations condition @ collectDo body @ restInvocations
+
+                                collectDo statements
+                            | MonadicSplice inner
+                            | ExplicitImplicitArgument inner
+                            | InoutArgument inner
+                            | Unary(_, inner) ->
+                                collectMultishotInvocations inner
+                            | NamedApplicationBlock fields ->
+                                fields |> List.collect (fun field -> collectMultishotInvocations field.Value)
+                            | Apply(callee, arguments) ->
+                                collectMultishotInvocations callee
+                                @ (arguments |> List.collect collectMultishotInvocations)
+                            | Binary(left, _, right)
+                            | Elvis(left, right) ->
+                                collectMultishotInvocations left @ collectMultishotInvocations right
+                            | Comprehension comprehension ->
+                                collectMultishotInvocations comprehension.Lowered
+                            | PrefixedString(_, parts) ->
+                                parts
+                                |> List.collect (function
+                                    | StringText _ -> []
+                                    | StringInterpolation(inner, _) -> collectMultishotInvocations inner)
+                            | Literal _
+                            | NumericLiteral _
+                            | KindQualifiedName _
+                            | Name _ ->
+                                []
+
+                        match tryMatchMultishotInvocation expression with
+                        | Some invocation -> invocation :: nested
+                        | None -> nested
+
+                    let uniqueMultishotInvocations expression =
+                        collectMultishotInvocations expression
+                        |> List.distinct
+
+                    let exportedDeclarationDiagnostics =
+                        frontendModule.Declarations
+                        |> List.choose (function
+                            | LetDeclaration definition when definition.Name.IsSome && definition.Body.IsSome ->
+                                let bindingName = definition.Name.Value
+
+                                if isExportedVisibility privateByDefault definition.Visibility then
+                                    uniqueMultishotInvocations definition.Body.Value
+                                    |> List.tryHead
+                                    |> Option.map (fun (effectName, operationName) ->
+                                        makeDiagnostic
+                                            DiagnosticCode.MultishotEffectUnsupportedBackend
+                                            (multishotInvocationMessage
+                                                $"from exported declaration '{bindingName}'"
+                                                effectName
+                                                operationName))
+                                else
+                                    None
+                            | _ ->
+                                None)
+
+                    exportedDeclarationDiagnostics
+
             if not (List.isEmpty typeAliasCycleDiagnostics) then
-                structuralDiagnostics
+                structuralDiagnostics @ multishotBackendCapabilityDiagnostics
             else
                 structuralDiagnostics
+                @ multishotBackendCapabilityDiagnostics
                 @ (frontendModule.Declarations
                 |> List.collect (function
                     | TypeAliasNode declaration ->
@@ -14448,18 +14779,8 @@ module SurfaceElaboration =
                     )
                 )
 
-            let significantHandlerTokens tokens =
-                tokens
-                |> List.filter (fun token ->
-                    match token.Kind with
-                    | Newline
-                    | Indent
-                    | Dedent
-                    | EndOfFile -> false
-                    | _ -> true)
-
             let tryLowerEffectHandlerArgument tokens =
-                match significantHandlerTokens tokens with
+                match significantEffectHandlerTokens tokens with
                 | [ leftParen; rightParen ] when leftParen.Kind = LeftParen && rightParen.Kind = RightParen ->
                     Some KCoreEffectUnitArgument
                 | [ nameToken ] when Token.isName nameToken ->
@@ -15038,11 +15359,19 @@ module SurfaceElaboration =
                                     operation.SignatureTokens
                                     |> TypeSignatures.parseType
                                     |> Option.map (qualifyVisibleTypeNames environment)
-                                    |> Option.map TypeSignatures.functionParts))
+                                    |> Option.map TypeSignatures.functionParts
+                                    |> Option.map (fun (parameterTypes, resultType) -> parameterTypes, resultType)))
                             |> Option.defaultValue ([], TypeVariable $"opResult{freshCounter.Value}")
 
+                        let resumptionResultType =
+                            if isDeep then
+                                handledType
+                            else
+                                inferExpressionType localTypes body
+
                         let resumptionType =
-                            handledType |> Option.map (fun currentHandledType -> TypeArrow(QuantityOmega, resultType, currentHandledType))
+                            resumptionResultType
+                            |> Option.map (fun currentHandledType -> TypeArrow(QuantityOne, resultType, currentHandledType))
 
                         lowerClause parameterTypes resumptionType clause)
 

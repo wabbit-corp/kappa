@@ -30,9 +30,13 @@ module ResourceChecking =
           Body: TypeSignatures.TypeExpr }
 
     let private scopedEffects = AsyncLocal<Map<string, EffectDeclaration> option>()
+    let private backendProfile = AsyncLocal<string option>()
 
     let private currentScopedEffects () =
         scopedEffects.Value |> Option.defaultValue Map.empty
+
+    let private currentBackendProfile () =
+        backendProfile.Value |> Option.defaultValue "interpreter"
 
     let private tryFindScopedEffectDeclaration name =
         currentScopedEffects () |> Map.tryFind name
@@ -46,9 +50,25 @@ module ResourceChecking =
         finally
             scopedEffects.Value <- Some saved
 
+    let private withBackendProfile configuredBackendProfile work =
+        let saved = currentBackendProfile ()
+        backendProfile.Value <- Some(Stdlib.normalizeBackendProfile configuredBackendProfile)
+
+        try
+            work ()
+        finally
+            backendProfile.Value <- Some saved
+
+    let private backendSupportsMultishotEffects configuredBackendProfile =
+        match Stdlib.normalizeBackendProfile configuredBackendProfile with
+        | _ -> false
+
     let private isMultiShotResumptionQuantity quantity =
         match quantity |> Option.defaultValue QuantityOne with
-        | QuantityOmega -> true
+        | QuantityOmega
+        | QuantityAtLeastOne
+        | QuantityVariable _ ->
+            true
         | _ -> false
 
     let private emptyState scopeId =
@@ -5604,6 +5624,19 @@ module ResourceChecking =
 
             checkExpression projectionSummaries document signatures localTypes state (Apply(Name [ memberName ], receiverArguments))
         | Apply(callee, arguments) ->
+            let state =
+                match tryFindMultiShotScopedOperation expression with
+                | Some(effectName, operation) when not (backendSupportsMultishotEffects (currentBackendProfile ())) ->
+                    addDiagnostic
+                        DiagnosticCode.MultishotEffectUnsupportedBackend
+                        $"Backend profile '{currentBackendProfile ()}' does not provide capability 'rt-multishot-effects' required by multi-shot operation '{effectName}.{operation.Name}' at this invocation site."
+                        (argumentLocation document expression)
+                        []
+                        document
+                        state
+                | _ ->
+                    state
+
             let state = checkExpression projectionSummaries document signatures localTypes state callee
             let state =
                 match callee with
@@ -7025,26 +7058,33 @@ module ResourceChecking =
 
         diagnostics, factsForDocument document states
 
+    let checkDocumentsWithFactsForBackend (configuredBackendProfile: string) (documents: ParsedDocument list) =
+        withBackendProfile configuredBackendProfile (fun () ->
+            let signatures = collectSignatures documents
+            let aliasMap = collectRecordTypeAliases documents
+            let quantityAliasMap = collectRecordTypeQuantityAliases documents
+            let typeAliasMap = collectTypeAliases documents
+            let projectionSummaries = collectProjectionSummaries documents
+
+            let checkedDocuments =
+                documents
+                |> List.map (fun document ->
+                    let diagnostics, facts = checkDocument aliasMap quantityAliasMap typeAliasMap projectionSummaries signatures document
+                    document.Source.FilePath, diagnostics, facts)
+
+            { Diagnostics =
+                checkedDocuments
+                |> List.collect (fun (_, diagnostics, _) -> diagnostics)
+              OwnershipFactsByFile =
+                checkedDocuments
+                |> List.map (fun (filePath, _, facts) -> filePath, facts)
+                |> Map.ofList })
+
     let checkDocumentsWithFacts (documents: ParsedDocument list) =
-        let signatures = collectSignatures documents
-        let aliasMap = collectRecordTypeAliases documents
-        let quantityAliasMap = collectRecordTypeQuantityAliases documents
-        let typeAliasMap = collectTypeAliases documents
-        let projectionSummaries = collectProjectionSummaries documents
+        checkDocumentsWithFactsForBackend "interpreter" documents
 
-        let checkedDocuments =
-            documents
-            |> List.map (fun document ->
-                let diagnostics, facts = checkDocument aliasMap quantityAliasMap typeAliasMap projectionSummaries signatures document
-                document.Source.FilePath, diagnostics, facts)
-
-        { Diagnostics =
-            checkedDocuments
-            |> List.collect (fun (_, diagnostics, _) -> diagnostics)
-          OwnershipFactsByFile =
-            checkedDocuments
-            |> List.map (fun (filePath, _, facts) -> filePath, facts)
-            |> Map.ofList }
+    let checkDocumentsForBackend configuredBackendProfile documents =
+        (checkDocumentsWithFactsForBackend configuredBackendProfile documents).Diagnostics
 
     let checkDocuments documents =
         (checkDocumentsWithFacts documents).Diagnostics

@@ -3049,7 +3049,7 @@ type private ExpressionParser
 
             result
 
-        let stripBindingTypeAnnotation tokens =
+        let splitBindingTypeAnnotation tokens =
             let tokenArray = List.toArray tokens
             let mutable depth = 0
             let mutable index = 0
@@ -3075,9 +3075,10 @@ type private ExpressionParser
                 index <- index + 1
 
             if splitIndex >= 0 then
-                tokenArray[0 .. splitIndex - 1] |> Array.toList
+                tokenArray[0 .. splitIndex - 1] |> Array.toList,
+                Some(tokenArray[splitIndex + 1 ..] |> Array.toList)
             else
-                tokens
+                tokens, None
 
         let tryFindTopLevelColon tokens =
             let tokenArray = List.toArray tokens
@@ -3169,7 +3170,7 @@ type private ExpressionParser
                 else
                     tokens, None
 
-            let parameterTokens, _ =
+            let parameterTokens, returnTypeTokens =
                 splitReturnTypeTokens parameterHeaderTokens
 
             let tokenArray = List.toArray parameterTokens
@@ -3284,8 +3285,10 @@ type private ExpressionParser
                     diagnostics.AddError(DiagnosticCode.ParseError, "Unsupported local function header syntax.", source.GetLocation(tokenArray[index].Span))
                     index <- index + 1
 
+            let parsedParameters = List.ofSeq parameters
+
             let value =
-                match List.ofSeq parameters with
+                match parsedParameters with
                 | [] ->
                     this.ParseStandaloneExpression(valueTokens)
                 | parsedParameters ->
@@ -3295,7 +3298,7 @@ type private ExpressionParser
                 { Pattern = NamePattern bindingName
                   Quantity = None
                   IsImplicit = false
-                  TypeTokens = None
+                  TypeTokens = if List.isEmpty parsedParameters then returnTypeTokens else None
                   BinderSpans = Map.ofList [ bindingName, [ bindingNameSpan ] ] }
 
             binding, value
@@ -3351,11 +3354,16 @@ type private ExpressionParser
                                  && restHeader.Head.Kind <> Colon ->
                             parseNamedLocalBinding headerTokens valueTokens
                         | _ ->
-                            let bindingTokens =
-                                headerTokens
-                                |> stripBindingTypeAnnotation
+                            let bindingTokens, bindingTypeTokens =
+                                splitBindingTypeAnnotation headerTokens
 
-                            this.ParseBindPatternFromTokens bindingTokens,
+                            let binding =
+                                this.ParseBindPatternFromTokens bindingTokens
+                                |> fun current ->
+                                    { current with
+                                        TypeTokens = bindingTypeTokens |> Option.orElse current.TypeTokens }
+
+                            binding,
                             this.ParseStandaloneExpression(valueTokens)
 
                     Some(LocalPureBinding parsed)
@@ -4165,12 +4173,13 @@ type private ExpressionParser
             |> List.filter (List.isEmpty >> not)
             |> List.map this.ParseDoLine
 
-        let stripBindingTypeAnnotation (tokens: Token list) =
+        let splitBindingTypeAnnotation (tokens: Token list) =
             match tryFindTopLevelSplit tokens (fun token -> token.Kind = Colon) with
             | Some(tokenArray, splitIndex) ->
-                tokenArray[0 .. splitIndex - 1] |> Array.toList
+                tokenArray[0 .. splitIndex - 1] |> Array.toList,
+                Some(tokenArray[splitIndex + 1 ..] |> Array.toList)
             | None ->
-                tokens
+                tokens, None
 
         let parseLetQuestion (letQuestionToken: Token) (rest: Token list) =
             match tryFindTopLevelSplit rest (fun token -> token.Kind = Equals) with
@@ -4295,13 +4304,18 @@ type private ExpressionParser
                     (fun token -> token.Kind = Equals || (token.Kind = Operator && token.Text = "<-"))
             with
             | Some(tokenArray, splitIndex) ->
-                let bindingTokens =
-                    tokenArray[0 .. splitIndex - 1]
-                    |> Array.toList
-                    |> stripBindingTypeAnnotation
+                let rawBindingTokens =
+                    tokenArray[0 .. splitIndex - 1] |> Array.toList
+
+                let bindingTokens, bindingTypeTokens =
+                    splitBindingTypeAnnotation rawBindingTokens
 
                 let expressionTokens = tokenArray[splitIndex + 1 ..] |> Array.toList
-                let binding = this.ParseBindPatternFromTokens bindingTokens
+                let binding =
+                    this.ParseBindPatternFromTokens bindingTokens
+                    |> fun current ->
+                        { current with
+                            TypeTokens = bindingTypeTokens |> Option.orElse current.TypeTokens }
 
                 if tokenArray[splitIndex].Kind = Operator && tokenArray[splitIndex].Text = "<-" then
                     DoBind(binding, this.ParseStandaloneExpression(expressionTokens))
@@ -5288,7 +5302,7 @@ type private ExpressionParser
 
             result
 
-        let stripBindingTypeAnnotation tokens =
+        let splitBindingTypeAnnotation tokens =
             let tokenArray = List.toArray tokens
             let mutable depth = 0
             let mutable index = 0
@@ -5314,9 +5328,10 @@ type private ExpressionParser
                 index <- index + 1
 
             if splitIndex >= 0 then
-                tokenArray[0 .. splitIndex - 1] |> Array.toList
+                tokenArray[0 .. splitIndex - 1] |> Array.toList,
+                Some(tokenArray[splitIndex + 1 ..] |> Array.toList)
             else
-                tokens
+                tokens, None
 
         let parseNamedLocalBinding headerTokens valueTokens =
             let headerTokens =
@@ -5367,7 +5382,7 @@ type private ExpressionParser
                 else
                     tokens, None
 
-            let parameterTokens, _ =
+            let parameterTokens, returnTypeTokens =
                 splitReturnTypeTokens parameterHeaderTokens
 
             let tokenArray = List.toArray parameterTokens
@@ -5507,8 +5522,10 @@ type private ExpressionParser
 
                     index <- index + 1
 
+            let parsedParameters = List.ofSeq parameters
+
             let value =
-                match List.ofSeq parameters with
+                match parsedParameters with
                 | [] ->
                     this.ParseStandaloneExpression(valueTokens)
                 | parsedParameters ->
@@ -5518,7 +5535,7 @@ type private ExpressionParser
                 { Pattern = NamePattern bindingName
                   Quantity = None
                   IsImplicit = false
-                  TypeTokens = None
+                  TypeTokens = if List.isEmpty parsedParameters then returnTypeTokens else None
                   BinderSpans = Map.ofList [ bindingName, [ bindingNameSpan ] ] }
 
             binding, value
@@ -5584,8 +5601,13 @@ type private ExpressionParser
                              && restHeader.Head.Kind <> Colon ->
                         parseNamedLocalBinding headerTokens valueTokens
                     | _ ->
-                        let bindingTokens = stripBindingTypeAnnotation headerTokens
-                        this.ParseBindPatternFromTokens bindingTokens,
+                        let bindingTokens, bindingTypeTokens = splitBindingTypeAnnotation headerTokens
+                        let binding =
+                            this.ParseBindPatternFromTokens bindingTokens
+                            |> fun current ->
+                                { current with
+                                    TypeTokens = bindingTypeTokens |> Option.orElse current.TypeTokens }
+                        binding,
                         this.ParseStandaloneExpression(valueTokens)
 
                 let body = this.ParseExpression(0)
@@ -7058,7 +7080,7 @@ module CoreParsing =
 
             result
 
-        let stripBindingTypeAnnotation tokens =
+        let splitBindingTypeAnnotation tokens =
             let tokenArray = List.toArray tokens
             let mutable depth = 0
             let mutable index = 0
@@ -7084,9 +7106,10 @@ module CoreParsing =
                 index <- index + 1
 
             if splitIndex >= 0 then
-                tokenArray[0 .. splitIndex - 1] |> Array.toList
+                tokenArray[0 .. splitIndex - 1] |> Array.toList,
+                Some(tokenArray[splitIndex + 1 ..] |> Array.toList)
             else
-                tokens
+                tokens, None
 
         let parseBindingLineCore (bindingTokens: Token list) (valueTokens: Token list) =
             SurfaceBinderParsing.parseBindPatternFromTokens
@@ -7101,12 +7124,20 @@ module CoreParsing =
             match tryFindTopLevelEquals tokens with
             | Some index ->
                 let tokenArray = List.toArray tokens
-                let bindingTokens =
-                    tokenArray[0 .. index - 1]
-                    |> Array.toList
-                    |> stripBindingTypeAnnotation
+                let rawBindingTokens =
+                    tokenArray[0 .. index - 1] |> Array.toList
+
+                let bindingTokens, bindingTypeTokens =
+                    splitBindingTypeAnnotation rawBindingTokens
+
                 let valueTokens = tokenArray[index + 1 ..] |> Array.toList
-                Some(parseBindingLineCore bindingTokens valueTokens)
+                parseBindingLineCore bindingTokens valueTokens
+                |> fun (binding, value) ->
+                    Some(
+                        { binding with
+                            TypeTokens = bindingTypeTokens |> Option.orElse binding.TypeTokens },
+                        value
+                    )
             | None ->
                 None
 

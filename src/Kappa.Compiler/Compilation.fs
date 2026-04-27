@@ -104,7 +104,7 @@ module Compilation =
             @ validateImportSelections options.PackageMode normalizedBackendProfile documents
             @ CompilationFrontend.validateReflEqualityDeclarations documents
             @ CompilationFrontend.validateTopLevelSignatureDeclarations documents
-            @ SurfaceElaboration.validateSurfaceModules frontendModulesForValidation hostBindingModules
+            @ SurfaceElaboration.validateSurfaceModules normalizedBackendProfile frontendModulesForValidation hostBindingModules
             @ validateExpectDeclarations normalizedBackendProfile options.AllowUnsafeConsume documents
 
         let resourceCheckResult: ResourceChecking.CheckResult =
@@ -112,7 +112,7 @@ module Compilation =
                 { Diagnostics = []
                   OwnershipFactsByFile = Map.empty }
             else
-                ResourceChecking.checkDocumentsWithFacts documents
+                ResourceChecking.checkDocumentsWithFactsForBackend normalizedBackendProfile documents
 
         let sourceDiagnostics =
             frontendDiagnostics @ resourceCheckResult.Diagnostics

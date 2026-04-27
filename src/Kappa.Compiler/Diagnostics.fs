@@ -22,6 +22,7 @@ type DiagnosticCode =
     | UrlImportRefPinRequiresLock
     | HostModuleReservedRoot
     | HostModuleUnsupportedBackend
+    | MultishotEffectUnsupportedBackend
     | ModuleNameUnresolved
     | ModulePathMismatch
     | StaticObjectUnresolved
@@ -101,6 +102,7 @@ module DiagnosticCode =
         | UrlImportRefPinRequiresLock -> "E_URL_IMPORT_REF_PIN_REQUIRES_LOCK"
         | HostModuleReservedRoot -> "E_HOST_MODULE_RESERVED_ROOT"
         | HostModuleUnsupportedBackend -> "E_HOST_MODULE_UNSUPPORTED_BACKEND"
+        | MultishotEffectUnsupportedBackend -> "E_MULTISHOT_EFFECT_UNSUPPORTED_BACKEND"
         | ModuleNameUnresolved -> "E_MODULE_NAME_UNRESOLVED"
         | ModulePathMismatch -> "E_MODULE_PATH_MISMATCH"
         | StaticObjectUnresolved -> "E_STATIC_OBJECT_UNRESOLVED"
@@ -179,6 +181,7 @@ module DiagnosticCode =
         | "E_URL_IMPORT_REF_PIN_REQUIRES_LOCK" -> Some UrlImportRefPinRequiresLock
         | "E_HOST_MODULE_RESERVED_ROOT" -> Some HostModuleReservedRoot
         | "E_HOST_MODULE_UNSUPPORTED_BACKEND" -> Some HostModuleUnsupportedBackend
+        | "E_MULTISHOT_EFFECT_UNSUPPORTED_BACKEND" -> Some MultishotEffectUnsupportedBackend
         | "E_MODULE_NAME_UNRESOLVED" -> Some ModuleNameUnresolved
         | "E_MODULE_PATH_MISMATCH" -> Some ModulePathMismatch
         | "E_STATIC_OBJECT_UNRESOLVED" -> Some StaticObjectUnresolved
@@ -256,6 +259,8 @@ module DiagnosticCode =
             Some "A numeric literal cannot be represented at the target numeric type required by the surrounding typing context."
         | QttContinuationCapture ->
             Some "A multi-shot continuation cannot capture live linear or borrowed resources across the operation site."
+        | MultishotEffectUnsupportedBackend ->
+            Some "The selected backend profile does not advertise rt-multishot-effects, so reachable multi-shot effect invocations and exported declarations that may invoke them must be rejected."
         | UnicodeInvalidScalarLiteral ->
             Some "A Unicode scalar literal must decode to exactly one valid Unicode scalar value and must not contain surrogate or out-of-range code points."
         | UnicodeInvalidGraphemeLiteral ->
