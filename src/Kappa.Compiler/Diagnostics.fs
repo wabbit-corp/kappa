@@ -20,6 +20,7 @@ type DiagnosticCode =
     | ImportItemNotFound
     | UrlImportUnpinnedInPackageMode
     | UrlImportRefPinRequiresLock
+    | UrlImportUnsupported
     | HostModuleReservedRoot
     | HostModuleUnsupportedBackend
     | MultishotEffectUnsupportedBackend
@@ -109,6 +110,7 @@ module DiagnosticCode =
         | ImportItemNotFound -> "E_IMPORT_ITEM_NOT_FOUND"
         | UrlImportUnpinnedInPackageMode -> "E_URL_IMPORT_UNPINNED_IN_PACKAGE_MODE"
         | UrlImportRefPinRequiresLock -> "E_URL_IMPORT_REF_PIN_REQUIRES_LOCK"
+        | UrlImportUnsupported -> "E_URL_IMPORT_UNSUPPORTED"
         | HostModuleReservedRoot -> "E_HOST_MODULE_RESERVED_ROOT"
         | HostModuleUnsupportedBackend -> "E_HOST_MODULE_UNSUPPORTED_BACKEND"
         | MultishotEffectUnsupportedBackend -> "E_MULTISHOT_EFFECT_UNSUPPORTED_BACKEND"
@@ -197,6 +199,7 @@ module DiagnosticCode =
         | "E_IMPORT_ITEM_NOT_FOUND" -> Some ImportItemNotFound
         | "E_URL_IMPORT_UNPINNED_IN_PACKAGE_MODE" -> Some UrlImportUnpinnedInPackageMode
         | "E_URL_IMPORT_REF_PIN_REQUIRES_LOCK" -> Some UrlImportRefPinRequiresLock
+        | "E_URL_IMPORT_UNSUPPORTED" -> Some UrlImportUnsupported
         | "E_HOST_MODULE_RESERVED_ROOT" -> Some HostModuleReservedRoot
         | "E_HOST_MODULE_UNSUPPORTED_BACKEND" -> Some HostModuleUnsupportedBackend
         | "E_MULTISHOT_EFFECT_UNSUPPORTED_BACKEND" -> Some MultishotEffectUnsupportedBackend

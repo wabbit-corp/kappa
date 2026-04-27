@@ -1435,6 +1435,8 @@ module internal CompilationFrontend =
                             | HostBindings.UnsupportedBackend _ -> true
                             | _ -> false
 
+                        let mutable urlImportBlocked = false
+
                         match spec.Source with
                         | Url specifier ->
                             match validateUrlImportSpecifier packageMode specifier with
@@ -1446,8 +1448,16 @@ module internal CompilationFrontend =
                                     stage = "KFrontIR",
                                     phase = KFrontIRPhase.phaseName CHECKERS
                                 )
+                                urlImportBlocked <- true
                             | UrlImportValid ->
-                                ()
+                                diagnostics.AddError(
+                                    DiagnosticCode.UrlImportUnsupported,
+                                    $"URL module specifier '{specifier.OriginalText}' is not supported by this toolchain. URL imports and exports require fetch/cache/lock resolution, which is not implemented.",
+                                    specLocation,
+                                    stage = "KFrontIR",
+                                    phase = KFrontIRPhase.phaseName CHECKERS
+                                )
+                                urlImportBlocked <- true
                         | Dotted _ ->
                             match HostBindings.tryResolveImport backendProfile spec.Source with
                             | HostBindings.UnsupportedBackend rootText ->
@@ -1461,7 +1471,7 @@ module internal CompilationFrontend =
                             | _ ->
                                 ()
 
-                        if not skipFurtherValidation then
+                        if not skipFurtherValidation && not urlImportBlocked then
                             match resolveQualifiedOnlyImportSpec exportInventories spec with
                             | AmbiguousBareImport(fullModuleName, parentModuleName, itemName) ->
                                 diagnostics.AddError(

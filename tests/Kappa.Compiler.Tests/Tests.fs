@@ -1022,7 +1022,7 @@ let ``package mode rejects ref pinned URL imports without a locked immutable res
     Assert.DoesNotContain(DiagnosticCode.ModuleNameUnresolved, codes)
 
 [<Fact>]
-let ``package mode accepts sha256 pinned URL syntax without reproducibility diagnostics`` () =
+let ``package mode rejects sha256 pinned URL imports explicitly when URL providers are unavailable`` () =
     let workspace =
         compileInMemoryWorkspace
             "memory-package-sha-url"
@@ -1039,10 +1039,11 @@ let ``package mode accepts sha256 pinned URL syntax without reproducibility diag
     let codes = workspace.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code)
     Assert.DoesNotContain(DiagnosticCode.UrlImportUnpinnedInPackageMode, codes)
     Assert.DoesNotContain(DiagnosticCode.UrlImportRefPinRequiresLock, codes)
-    Assert.Contains(DiagnosticCode.ModuleNameUnresolved, codes)
+    Assert.Contains(DiagnosticCode.UrlImportUnsupported, codes)
+    Assert.DoesNotContain(DiagnosticCode.ModuleNameUnresolved, codes)
 
 [<Fact>]
-let ``script mode permits unpinned and ref pinned URL imports without package-mode reproducibility diagnostics`` () =
+let ``script mode rejects URL imports explicitly without package mode reproducibility diagnostics`` () =
     let workspace =
         compileInMemoryWorkspaceWithPackageMode
             "memory-script-url-imports"
@@ -1061,7 +1062,8 @@ let ``script mode permits unpinned and ref pinned URL imports without package-mo
     let codes = workspace.Diagnostics |> List.map (fun diagnostic -> diagnostic.Code)
     Assert.DoesNotContain(DiagnosticCode.UrlImportUnpinnedInPackageMode, codes)
     Assert.DoesNotContain(DiagnosticCode.UrlImportRefPinRequiresLock, codes)
-    Assert.Equal(2, codes |> List.filter ((=) DiagnosticCode.ModuleNameUnresolved) |> List.length)
+    Assert.Equal(2, codes |> List.filter ((=) DiagnosticCode.UrlImportUnsupported) |> List.length)
+    Assert.DoesNotContain(DiagnosticCode.ModuleNameUnresolved, codes)
 
 [<Fact>]
 let ``frontend rejects unknown module attributes`` () =
