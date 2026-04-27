@@ -2627,6 +2627,132 @@ let ``source compilation surfaces malformed constructor pattern arity mismatches
     Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.DuplicateDeclaration)
 
 [<Fact>]
+let ``source compilation allows a single top level signature paired with one let definition`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-duplicate-terms-valid-signature-let-pair-root"
+            [
+                "main.kp",
+                [
+                    "@PrivateByDefault module main"
+                    "answer : Int"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected a single signature paired with one let definition to remain valid, got %A" workspace.Diagnostics)
+
+[<Fact>]
+let ``source compilation rejects duplicate ordinary term namespace declarations including projections`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-duplicate-term-namespace-root"
+            [
+                "main.kp",
+                [
+                    "@PrivateByDefault module main"
+                    "x : Int"
+                    "x : Int"
+                    "projection y (place this : Int) : Int = yield this"
+                    "let y = 0"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected duplicate ordinary term-namespace declarations to be rejected.")
+
+    let duplicateMessages =
+        workspace.Diagnostics
+        |> List.filter (fun diagnostic -> diagnostic.Code = DiagnosticCode.DuplicateDeclaration)
+        |> List.map (fun diagnostic -> diagnostic.Message)
+
+    Assert.Contains(duplicateMessages, fun message -> message.Contains("'x'"))
+    Assert.Contains(duplicateMessages, fun message -> message.Contains("'y'"))
+
+[<Fact>]
+let ``source compilation allows ordinary term declarations to coexist with reified static object facets`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-term-and-static-facet-coexist-root"
+            [
+                "main.kp",
+                [
+                    "@PrivateByDefault module main"
+                    "data Box : Type ="
+                    "    MkBox"
+                    "trait Shape ="
+                    "    marker : Unit"
+                    "let Box = 0"
+                    "let Shape = 1"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(
+        workspace.Diagnostics |> List.exists (fun diagnostic -> diagnostic.Code = DiagnosticCode.DuplicateDeclaration),
+        sprintf "Expected ordinary term declarations to coexist with reified static object facets, got %A" workspace.Diagnostics
+    )
+
+[<Fact>]
+let ``source compilation rejects duplicate traits and effects across module fragments`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-duplicate-fragment-declarations-root"
+            [
+                "main.kp",
+                [
+                    "@PrivateByDefault module main"
+                    "trait Display a ="
+                    "    show : a -> String"
+                    "effect State ="
+                    "    1 get : Unit -> Int"
+                ]
+                |> String.concat "\n"
+                "main.extra.kp",
+                [
+                    "@PrivateByDefault module main"
+                    "trait Display a ="
+                    "    show : a -> String"
+                    "effect State ="
+                    "    1 get : Unit -> Int"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected duplicate trait and effect declarations across same-module fragments to be rejected.")
+
+    let duplicateMessages =
+        workspace.Diagnostics
+        |> List.filter (fun diagnostic -> diagnostic.Code = DiagnosticCode.DuplicateDeclaration)
+        |> List.map (fun diagnostic -> diagnostic.Message)
+
+    Assert.Contains(duplicateMessages, fun message -> message.Contains("'Display'"))
+    Assert.Contains(duplicateMessages, fun message -> message.Contains("'State'"))
+
+[<Fact>]
+let ``source compilation rejects duplicate instance heads in the same module`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-duplicate-instance-head-root"
+            [
+                "main.kp",
+                [
+                    "@PrivateByDefault module main"
+                    "trait Flag a ="
+                    "    flag : a -> Bool"
+                    "instance Flag Int ="
+                    "    let flag x = True"
+                    "instance Flag Int ="
+                    "    let flag x = False"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected duplicate instance heads in the same module to be rejected.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.DuplicateDeclaration)
+
+[<Fact>]
 let ``backend verification accepts constructor underapplication as ordinary application`` () =
     let source =
         [

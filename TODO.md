@@ -108,11 +108,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Do not leave them in a half-state where syntax and policy validate but semantic resolution fails generically.
   - Sources: `reviews/frontend1.md`, `reviews/general1.md`.
 
-- `[Medium] Complete duplicate declaration checking across all top-level declaration categories.`
-  - Current duplicate checks appear to focus mainly on `let`, `data`, `type`, and constructors.
-  - Audit and add checks for signatures, projections, effects, traits, instances, and any other declaration categories that can collide.
-  - Sources: `reviews/frontend1.md`.
-
 - `[High] Upgrade diagnostics toward the spec’s machine-readable contract.`
   - Diagnostic records are currently much thinner than the spec requires.
   - Many diagnostics lack source locations or the richer payload/label/related/fix structure expected by the harness appendix and Chapter 17.

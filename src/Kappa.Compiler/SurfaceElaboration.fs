@@ -86,6 +86,21 @@ module SurfaceElaboration =
         { Projection: ProjectionInfo
           RemainingPlaceBinders: ProjectionPlaceBinder list }
 
+    type private TermNamespaceContributor =
+        | TermSignatureContributor
+        | TermLetContributor
+        | TermProjectionContributor
+        | TermExpectationContributor
+
+    type private TypeNamespaceContributor =
+        | ExpectTypeContributor
+        | OrdinaryTypeContributor
+        | EffectTypeContributor
+
+    type private TraitNamespaceContributor =
+        | ExpectTraitContributor
+        | OrdinaryTraitContributor
+
     type private ModuleSurfaceInfo =
         { TypeAliases: Map<string, TypeAliasInfo>
           TypeFacets: Map<string, TypeFacetInfo>
@@ -15174,8 +15189,197 @@ module SurfaceElaboration =
         let surfaceIndex = buildSurfaceIndex frontendModules hostModules
         let effectDeclarationsByModule = buildEffectDeclarationIndex frontendModules
 
-        frontendModules
-        |> List.collect (fun frontendModule ->
+        let duplicateDeclarationDiagnostics =
+            let moduleKey (frontendModule: KFrontIRModule) =
+                frontendModule.ModuleIdentity
+                |> Option.map SyntaxFacts.moduleNameToText
+                |> Option.defaultValue $"<file:{frontendModule.FilePath}>"
+
+            let makeDuplicateDiagnostic moduleName message =
+                { Severity = DiagnosticSeverity.Error
+                  Code = DiagnosticCode.DuplicateDeclaration
+                  Stage = Some "KFrontIR"
+                  Phase = Some(KFrontIRPhase.phaseName CORE_LOWERING)
+                  Message = $"{message} in module '{moduleName}'."
+                  Location = None
+                  RelatedLocations = [] }
+
+            frontendModules
+            |> List.groupBy moduleKey
+            |> List.collect (fun (_, moduleGroup) ->
+                let moduleName =
+                    moduleGroup
+                    |> List.tryHead
+                    |> Option.map (fun frontendModule -> moduleNameText frontendModule.ModuleIdentity)
+                    |> Option.defaultValue "<unknown>"
+
+                let groupedDeclarations =
+                    moduleGroup
+                    |> List.collect (fun frontendModule ->
+                        frontendModule.Declarations
+                        |> List.map (fun declaration -> frontendModule.FilePath, declaration))
+
+                let termNamespaceDiagnostics =
+                    groupedDeclarations
+                    |> List.collect (fun (filePath, declaration) ->
+                        match declaration with
+                        | SignatureDeclaration declaration ->
+                            [ declaration.Name, TermSignatureContributor, Some filePath ]
+                        | LetDeclaration declaration ->
+                            declaration.Name
+                            |> Option.map (fun name -> [ name, TermLetContributor, Some filePath ])
+                            |> Option.defaultValue []
+                        | ProjectionDeclarationNode declaration ->
+                            [ declaration.Name, TermProjectionContributor, Some filePath ]
+                        | ExpectDeclarationNode (ExpectTermDeclaration declaration) ->
+                            [ declaration.Name, TermExpectationContributor, Some filePath ]
+                        | _ ->
+                            [])
+                    |> List.groupBy (fun (name, _, _) -> name)
+                    |> List.choose (fun (name, entries) ->
+                        let count contributor =
+                            entries
+                            |> List.filter (fun (_, currentContributor, _) -> currentContributor = contributor)
+                            |> List.length
+
+                        let trySingleFile contributor =
+                            entries
+                            |> List.tryPick (fun (_, currentContributor, filePath) ->
+                                if currentContributor = contributor then
+                                    filePath
+                                else
+                                    None)
+
+                        let signatureCount = count TermSignatureContributor
+                        let letCount = count TermLetContributor
+                        let projectionCount = count TermProjectionContributor
+                        let expectationCount = count TermExpectationContributor
+                        let totalCount = entries.Length
+
+                        let signatureLetsShareAFile =
+                            match trySingleFile TermSignatureContributor, trySingleFile TermLetContributor with
+                            | Some signatureFilePath, Some letFilePath ->
+                                String.Equals(signatureFilePath, letFilePath, StringComparison.Ordinal)
+                            | _ ->
+                                false
+
+                        let isAllowedTermNamespaceShape =
+                            match totalCount with
+                            | 0
+                            | 1 -> true
+                            | _ when letCount = 1 && projectionCount = 0 && expectationCount <= 1 ->
+                                signatureCount = 0 || (signatureCount = 1 && signatureLetsShareAFile)
+                            | _ when letCount = 0 && projectionCount = 1 && signatureCount = 0 ->
+                                expectationCount <= 1
+                            | _ -> false
+
+                        if totalCount <= 1 || isAllowedTermNamespaceShape then
+                            None
+                        else
+                            Some(makeDuplicateDiagnostic moduleName $"Term namespace name '{name}' is declared more than once"))
+
+                let typeNamespaceDiagnostics =
+                    groupedDeclarations
+                    |> List.collect (fun (_, declaration) ->
+                        match declaration with
+                        | DataDeclarationNode declaration ->
+                            [ declaration.Name, OrdinaryTypeContributor ]
+                        | TypeAliasNode declaration ->
+                            [ declaration.Name, OrdinaryTypeContributor ]
+                        | EffectDeclarationNode declaration ->
+                            [ declaration.Name, EffectTypeContributor ]
+                        | ExpectDeclarationNode (ExpectTypeDeclaration declaration) ->
+                            [ declaration.Name, ExpectTypeContributor ]
+                        | _ ->
+                            [])
+                    |> List.groupBy fst
+                    |> List.choose (fun (name, entries) ->
+                        let count contributor =
+                            entries
+                            |> List.filter (fun (_, currentContributor) -> currentContributor = contributor)
+                            |> List.length
+
+                        let ordinaryTypeCount = count OrdinaryTypeContributor
+                        let effectTypeCount = count EffectTypeContributor
+                        let expectTypeCount = count ExpectTypeContributor
+                        let totalCount = entries.Length
+
+                        let isAllowedTypeNamespaceShape =
+                            ordinaryTypeCount = 1 && effectTypeCount = 0 && expectTypeCount = 1 && totalCount = 2
+
+                        if totalCount <= 1 || isAllowedTypeNamespaceShape then
+                            None
+                        else
+                            Some(makeDuplicateDiagnostic moduleName $"Type declaration '{name}' is declared more than once"))
+
+                let traitNamespaceDiagnostics =
+                    groupedDeclarations
+                    |> List.collect (fun (_, declaration) ->
+                        match declaration with
+                        | TraitDeclarationNode declaration ->
+                            [ declaration.Name, OrdinaryTraitContributor ]
+                        | ExpectDeclarationNode (ExpectTraitDeclaration declaration) ->
+                            [ declaration.Name, ExpectTraitContributor ]
+                        | _ ->
+                            [])
+                    |> List.groupBy fst
+                    |> List.choose (fun (name, entries) ->
+                        let count contributor =
+                            entries
+                            |> List.filter (fun (_, currentContributor) -> currentContributor = contributor)
+                            |> List.length
+
+                        let ordinaryTraitCount = count OrdinaryTraitContributor
+                        let expectTraitCount = count ExpectTraitContributor
+                        let totalCount = entries.Length
+
+                        let isAllowedTraitNamespaceShape =
+                            ordinaryTraitCount = 1 && expectTraitCount = 1 && totalCount = 2
+
+                        if totalCount <= 1 || isAllowedTraitNamespaceShape then
+                            None
+                        else
+                            Some(makeDuplicateDiagnostic moduleName $"Trait declaration '{name}' is declared more than once"))
+
+                let constructorNamespaceDiagnostics =
+                    groupedDeclarations
+                    |> List.collect (fun (_, declaration) ->
+                        match declaration with
+                        | DataDeclarationNode declaration ->
+                            declaration.Constructors
+                            |> List.map (fun constructor -> constructor.Name)
+                            |> List.filter (fun name -> not (String.Equals(name, "<anonymous>", StringComparison.Ordinal)))
+                        | _ ->
+                            [])
+                    |> List.countBy id
+                    |> List.choose (fun (name, count) ->
+                        if count > 1 then
+                            Some(makeDuplicateDiagnostic moduleName $"Constructor declaration '{name}' is declared more than once")
+                        else
+                            None)
+
+                let instanceDiagnostics =
+                    groupedDeclarations
+                    |> List.choose (fun (_, declaration) ->
+                        match declaration with
+                        | InstanceDeclarationNode declaration ->
+                            Some(tokensText declaration.FullHeaderTokens)
+                        | _ ->
+                            None)
+                    |> List.countBy id
+                    |> List.choose (fun (headerText, count) ->
+                        if count > 1 then
+                            Some(makeDuplicateDiagnostic moduleName $"Instance declaration '{headerText}' is declared more than once")
+                        else
+                            None)
+
+                termNamespaceDiagnostics
+                @ typeNamespaceDiagnostics
+                @ traitNamespaceDiagnostics
+                @ constructorNamespaceDiagnostics
+                @ instanceDiagnostics)
+
+        let validateFrontendModule (frontendModule: KFrontIRModule) =
             let moduleName = moduleNameText frontendModule.ModuleIdentity
 
             let topLevelNames =
@@ -15379,51 +15583,6 @@ module SurfaceElaboration =
                                 []
 
                     missingPlaceDiagnostics @ expandedDiagnostics
-
-                let duplicateDeclarationDiagnostics =
-                    let duplicateNames messagePrefix names =
-                        names
-                        |> List.countBy id
-                        |> List.choose (fun (name, count) ->
-                            if count > 1 then
-                                Some(makeDiagnostic DiagnosticCode.DuplicateDeclaration $"{messagePrefix} '{name}' is declared more than once in module '{moduleName}'.")
-                            else
-                                None)
-
-                    let termDefinitions =
-                        let expectedTerms =
-                            frontendModule.Declarations
-                            |> List.choose (function
-                                | ExpectDeclarationNode (ExpectTermDeclaration declaration) -> Some declaration.Name
-                                | _ -> None)
-                            |> Set.ofList
-
-                        frontendModule.Declarations
-                        |> List.choose (function
-                            | LetDeclaration definition ->
-                                definition.Name
-                                |> Option.filter (fun name -> not (Set.contains name expectedTerms))
-                            | _ -> None)
-
-                    let typeDeclarations =
-                        frontendModule.Declarations
-                        |> List.choose (function
-                            | DataDeclarationNode declaration -> Some declaration.Name
-                            | TypeAliasNode declaration -> Some declaration.Name
-                            | _ -> None)
-
-                    let constructorDeclarations =
-                        frontendModule.Declarations
-                        |> List.collect (function
-                            | DataDeclarationNode declaration ->
-                                declaration.Constructors
-                                |> List.map (fun constructor -> constructor.Name)
-                                |> List.filter (fun name -> not (String.Equals(name, "<anonymous>", StringComparison.Ordinal)))
-                            | _ -> [])
-
-                    duplicateNames "Term declaration" termDefinitions
-                    @ duplicateNames "Type declaration" typeDeclarations
-                    @ duplicateNames "Constructor declaration" constructorDeclarations
 
                 let moduleAttributeDiagnostics =
                     let supportedAttributes =
@@ -16210,7 +16369,6 @@ module SurfaceElaboration =
 
                 let structuralDiagnostics =
                     moduleAttributeDiagnostics
-                    @ duplicateDeclarationDiagnostics
                     @ totalityAssertionDiagnostics
                     @ typeAliasCycleDiagnostics
                     @ malformedConstructorDiagnostics
@@ -16612,7 +16770,9 @@ module SurfaceElaboration =
                         | ProjectionDeclarationNode declaration ->
                             validateProjectionDeclaration declaration
                         | _ ->
-                            []))))
+                            [])))
+
+        duplicateDeclarationDiagnostics @ (frontendModules |> List.collect validateFrontendModule)
 
     let private makeSyntheticBindingDeclaration
         (name: string)
