@@ -2302,6 +2302,27 @@ let ``source compilation rejects compile time parameters used as runtime numeric
     Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TypeEqualityMismatch)
 
 [<Fact>]
+let ``source compilation rejects unconstrained polymorphic parameters used in arithmetic`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-compile-polymorphic-parameter-runtime-arithmetic-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "i0 : a -> Int"
+                    "let i0 i0 ="
+                    "    i0 + 1"
+                    "result : Int"
+                    "let result = 0"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected an unconstrained polymorphic parameter consumed by arithmetic to be rejected in the frontend.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TypeEqualityMismatch)
+
+[<Fact>]
 let ``source compilation rejects malformed instance declarations without crashing`` () =
     let workspace =
         compileInMemoryWorkspace
@@ -2374,6 +2395,45 @@ let ``source compilation rejects unused ill typed top level bindings`` () =
             ]
 
     Assert.True(workspace.HasErrors, "Expected an unused top-level binding with a mismatched body to still be rejected.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TypeEqualityMismatch)
+
+[<Fact>]
+let ``source compilation rejects parenthesized record literal bodies under incompatible term signatures`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-compile-parenthesized-record-literal-body-term-result-mismatch-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "result : Int"
+                    "let result = (i0 = 20)"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected a parenthesized record-literal body to be rejected when it does not typecheck as the declared Int result.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TypeEqualityMismatch)
+
+[<Fact>]
+let ``source compilation rejects ill typed list cons bodies under explicit result signatures`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-compile-list-cons-body-result-mismatch-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "i0 : IO Int -> Int"
+                    "let i0 i0 ="
+                    "    i0 :: Int"
+                    "result : Int"
+                    "let result = 0"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected an ill-typed list cons body to be rejected when the remaining declared result type is Int.")
     Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TypeEqualityMismatch)
 
 [<Fact>]

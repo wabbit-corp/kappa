@@ -6847,16 +6847,11 @@ module SurfaceElaboration =
 
         let declaredParameterLocalTypes = buildLocalTypes effectiveScheme effectiveParameters
 
-        let inferredParameterLocalTypes =
+        let bodyInferredNumericParameterTypes =
             let parameterNames =
                 effectiveParameters
                 |> List.map (fun parameter -> parameter.Name)
                 |> Set.ofList
-
-            let declaredParameterNames =
-                declaredParameterLocalTypes
-                |> Map.keys
-                |> Set.ofSeq
 
             let annotatedParameterLocals =
                 effectiveParameters
@@ -6904,8 +6899,7 @@ module SurfaceElaboration =
                 let addFromOperand parameterExpression counterpart currentExpectations =
                     match parameterExpression with
                     | Name [ parameterName ]
-                        when Set.contains parameterName parameterNames
-                             && not (Set.contains parameterName declaredParameterNames) ->
+                        when Set.contains parameterName parameterNames ->
                         match tryInferNumericOperandType counterpart with
                         | Some inferredType ->
                             addExpectation parameterName inferredType currentExpectations
@@ -7111,7 +7105,11 @@ module SurfaceElaboration =
             effectiveBody
             |> Option.map (walk Map.empty)
             |> Option.defaultValue Map.empty
+
+        let inferredParameterLocalTypes =
+            bodyInferredNumericParameterTypes
             |> Map.toList
+            |> List.filter (fun (name, _) -> not (Map.containsKey name declaredParameterLocalTypes))
 
         let localTypes =
             (inferredParameterLocalTypes @ tupleParameterLocalTypes @ recordParameterLocalTypes)
@@ -7183,6 +7181,27 @@ module SurfaceElaboration =
               Message = message
               Location = None
               RelatedLocations = [] }
+
+        let declaredParameterContextConflictDiagnostics =
+            bodyInferredNumericParameterTypes
+            |> Map.toList
+            |> List.choose (fun (parameterName, inferredType) ->
+                declaredParameterLocalTypes
+                |> Map.tryFind parameterName
+                |> Option.bind (fun declaredType ->
+                    let normalizedDeclaredType = normalizeTypeAliases environment.VisibleTypeAliases declaredType
+                    let normalizedInferredType = normalizeTypeAliases environment.VisibleTypeAliases inferredType
+
+                    match normalizedDeclaredType with
+                    | TypeVariable _
+                        when not (TypeSignatures.definitionallyEqual normalizedDeclaredType normalizedInferredType) ->
+                        Some(
+                            makeDiagnostic
+                                DiagnosticCode.TypeEqualityMismatch
+                                $"Parameter '{parameterName}' is used in a numeric context that requires '{TypeSignatures.toText inferredType}', but its declared type is '{TypeSignatures.toText declaredType}'."
+                        )
+                    | _ ->
+                        None))
 
         let tryInstantiateVisibleBindingType name =
             let instantiate (bindingInfo: BindingSchemeInfo) =
@@ -10088,6 +10107,44 @@ module SurfaceElaboration =
                 | _ ->
                     []
 
+            let listConsExpectedBodyDiagnostics =
+                match expectedBodyType, body with
+                | Some expectedType, Binary(left, "::", right) ->
+                    match normalizeExpectedType Map.empty expectedType with
+                    | TypeName(([ "List" ] | [ "std"; "prelude"; "List" ]), [ expectedElementType ]) ->
+                        match
+                            inferValidationExpressionType environment freshCounter locals left,
+                            inferValidationExpressionType environment freshCounter locals right
+                        with
+                        | Some headType, Some tailType ->
+                            let headDiagnostics =
+                                if expectedTypeAccepts locals Map.empty expectedElementType headType then
+                                    []
+                                else
+                                    [ expectedMismatchDiagnostic locals Map.empty "List cons head" expectedElementType headType ]
+
+                            let tailDiagnostics =
+                                if expectedTypeAccepts locals Map.empty expectedType tailType then
+                                    []
+                                else
+                                    [
+                                        makeDiagnostic
+                                            DiagnosticCode.TypeEqualityMismatch
+                                            $"List cons tail must have type '{TypeSignatures.toText expectedType}', but found '{TypeSignatures.toText tailType}'."
+                                    ]
+
+                            headDiagnostics @ tailDiagnostics
+                        | _ ->
+                            []
+                    | normalizedExpectedType ->
+                        [
+                            makeDiagnostic
+                                DiagnosticCode.TypeEqualityMismatch
+                                $"Definition body uses list-cons syntax and therefore must have a List result type, but the declared result type is '{TypeSignatures.toText normalizedExpectedType}'."
+                        ]
+                | _ ->
+                    []
+
             let staticObjectResultDiagnostics =
                 match expectedBodyType, inferValidationExpressionType environment freshCounter locals body with
                 | Some expectedType, Some actualType
@@ -10230,6 +10287,30 @@ module SurfaceElaboration =
                 | _ ->
                     []
 
+            let recordLiteralExpectedBodyDiagnostics =
+                match expectedBodyType, body, inferValidationExpressionType environment freshCounter locals body with
+                | Some expectedType, RecordLiteral _, Some actualType
+                    when not doBlockExpectedBodySatisfied
+                         && List.isEmpty projectionTypeMismatchDiagnostics
+                         && List.isEmpty staticObjectResultDiagnostics
+                         && List.isEmpty constructorAsStaticObjectDiagnostics
+                         && List.isEmpty expectedUnionDiagnostics
+                         && List.isEmpty binaryExpectedBodyDiagnostics
+                         && List.isEmpty listConsExpectedBodyDiagnostics
+                         && List.isEmpty contextualNumericBodyDiagnostics
+                         && List.isEmpty doBlockExpectedBodyDiagnostics
+                         && List.isEmpty lambdaExpectedBodyDiagnostics
+                         && List.isEmpty callableExpectedBodyDiagnostics
+                         && List.isEmpty macroExpectedBodyDiagnostics
+                         && List.isEmpty textBinaryExpectedBodyDiagnostics ->
+                    match normalizeTypeAliases environment.VisibleTypeAliases expectedType with
+                    | TypeRecord _ ->
+                        []
+                    | _ ->
+                        [ expectedMismatchDiagnostic locals Map.empty "Definition body" expectedType actualType ]
+                | _ ->
+                    []
+
             let generalInferredExpectedBodyDiagnostics = []
 
             let generalExpectedBodyDiagnostics =
@@ -10281,12 +10362,14 @@ module SurfaceElaboration =
             @ constructorAsStaticObjectDiagnostics
             @ expectedUnionDiagnostics
             @ binaryExpectedBodyDiagnostics
+            @ listConsExpectedBodyDiagnostics
             @ contextualNumericBodyDiagnostics
             @ doBlockExpectedBodyDiagnostics
             @ lambdaExpectedBodyDiagnostics
             @ callableExpectedBodyDiagnostics
             @ macroExpectedBodyDiagnostics
             @ textBinaryExpectedBodyDiagnostics
+            @ recordLiteralExpectedBodyDiagnostics
             @ generalInferredExpectedBodyDiagnostics
             @ generalExpectedBodyDiagnostics
 
@@ -13719,9 +13802,6 @@ module SurfaceElaboration =
                                         DiagnosticCode.TypeEqualityMismatch
                                         $"Arithmetic operator operands must both be numeric, but found '{TypeSignatures.toText leftType}' and '{TypeSignatures.toText rightType}'."
                                 ]
-                            | TypeVariable _, _
-                            | _, TypeVariable _ ->
-                                []
                             | _ when isSupportedArithmeticType normalizedLeftType && isSupportedArithmeticType normalizedRightType ->
                                 []
                             | _ when not (canCompareInferredValidationTypes locals leftType rightType) ->
@@ -13743,14 +13823,31 @@ module SurfaceElaboration =
                        else
                            [])
                 | _ ->
+                    let operatorBindingDiagnostics =
+                        environment.VisibleConstructors
+                        |> Map.tryFind operatorName
+                        |> Option.orElseWith (fun () -> environment.VisibleBindings |> Map.tryFind operatorName)
+                        |> Option.map (fun bindingInfo ->
+                            let instantiated = TypeSignatures.instantiate "v" freshCounter.Value bindingInfo.Scheme
+
+                            localApplicationExpectedArgumentDiagnostics
+                                locals
+                                refinements
+                                instantiated.Body
+                                [ left; right ])
+                        |> Option.defaultValue []
+
                     diagnostics
-                    @ (validateExpressionWithFlow
-                        locals
-                        refinements
-                        lexicalNames
-                        aliases
-                        constructorFacts
-                        (Apply(Name [ operatorName ], [ left; right ])))
+                    @ (if List.isEmpty operatorBindingDiagnostics then
+                           validateExpressionWithFlow
+                               locals
+                               refinements
+                               lexicalNames
+                               aliases
+                               constructorFacts
+                               (Apply(Name [ operatorName ], [ left; right ]))
+                       else
+                           operatorBindingDiagnostics)
             | PrefixedString(prefix, parts) ->
                 prefixedStringPrefixDiagnostics locals lexicalNames prefix
                 @ (tryResolvePrefixedStringFailureDiagnostic prefix
@@ -14583,6 +14680,7 @@ module SurfaceElaboration =
 
         parameterRecordDiagnostics
         @ activePatternDeclarationDiagnostics
+        @ declaredParameterContextConflictDiagnostics
         @
             match effectiveBody with
             | Some body ->
