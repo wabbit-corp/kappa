@@ -5,6 +5,4 @@ import hidden.secret as secret
 result : Int
 let result = secret.secret
 
---! assertNoErrors
---! assertType result Int
---! x-assertEvalErrorContains result not exported
+--! assertDiagnosticCodes E_NAME_UNRESOLVED

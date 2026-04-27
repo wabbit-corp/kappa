@@ -1078,6 +1078,10 @@ module internal CompilationFrontend =
                     { current with
                         Types = Set.add declaration.Name current.Types }
                     |> recomputeUnqualifiedBindings
+                | EffectDeclarationNode declaration when isExportedVisibility (isPrivateByDefault document) declaration.Visibility ->
+                    { current with
+                        Types = Set.add declaration.Name current.Types }
+                    |> recomputeUnqualifiedBindings
                 | TraitDeclarationNode declaration when exportedTraitDeclaration document declaration ->
                     { current with
                         Traits = Set.add declaration.Name current.Traits }

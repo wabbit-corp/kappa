@@ -378,12 +378,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Do not maintain divergent parsers for nearly the same declaration form.
   - Sources: `reviews/effects1.md`.
 
-- `[Medium] Apply ordinary import/visibility rules to top-level effect declarations.`
-  - Audit private effect leakage and missing selective/wildcard import behavior for effects.
-  - Effects should participate in qualified import, wildcard import, selective import, aliases, and visibility filtering the same way as other declarations.
-  - Add tests for private-effect leakage and public-effect import under each import form.
-  - Sources: `reviews/effects1.md`.
-
 - `[Medium] Replace token-preserved effect operation signatures with typed telescopes.`
   - Operation signatures and handler clause binders currently preserve too much token trivia and too little elaborated type structure.
   - Dependent operation signatures require elaborated parameter telescopes, result types, quantities, and substitution support.

@@ -104,6 +104,7 @@ module SurfaceElaboration =
 
     type private BindingLoweringEnvironment =
         { CurrentModuleName: string
+          SurfaceIndex: Map<string, ModuleSurfaceInfo>
           VisibleTypeAliases: Map<string, TypeAliasInfo>
           VisibleTypeFacets: Map<string, TypeFacetInfo>
           VisibleStaticObjects: Map<string, StaticObjectInfo>
@@ -2712,26 +2713,6 @@ module SurfaceElaboration =
                      | _ -> None))))
         |> Map.ofList
 
-    let private qualifiedImportedEffectDeclarations
-        (effectDeclarationsByModule: Map<string, EffectDeclaration list>)
-        (imports: ImportSpec list)
-        =
-        imports
-        |> List.collect (fun spec ->
-            match spec.Source, spec.Selection with
-            | Dotted moduleSegments, QualifiedOnly ->
-                let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
-                let qualifiedPrefix = spec.Alias |> Option.defaultValue importedModuleName
-
-                effectDeclarationsByModule
-                |> Map.tryFind importedModuleName
-                |> Option.defaultValue []
-                |> List.map (fun declaration ->
-                    { declaration with
-                        Name = qualifiedPrefix + "." + declaration.Name })
-            | _ ->
-                [])
-
     let private buildHostModuleSurfaceInfo (description: HostBindings.HostModuleDescription) =
         let bindingSchemes =
             description.Terms
@@ -3052,6 +3033,45 @@ module SurfaceElaboration =
                     |> Map.tryFind importedModuleName
                     |> Option.map (fun importedModule -> spec, importedModule)))
         |> Option.defaultValue []
+
+    let private importedEffectDeclarations
+        (surfaceIndex: Map<string, ModuleSurfaceInfo>)
+        (effectDeclarationsByModule: Map<string, EffectDeclaration list>)
+        (moduleName: string)
+        =
+        let importedEffectsForSpec (spec: ImportSpec, importedModule: ModuleSurfaceInfo) =
+            let importedModuleName =
+                match spec.Source with
+                | Dotted moduleSegments -> Some(SyntaxFacts.moduleNameToText moduleSegments)
+                | Url _ -> None
+
+            importedModuleName
+            |> Option.bind effectDeclarationsByModule.TryFind
+            |> Option.defaultValue []
+            |> List.choose (fun declaration ->
+                let importedName =
+                    match spec.Selection with
+                    | QualifiedOnly ->
+                        if Set.contains declaration.Name importedModule.ExportedTypes then
+                            let qualifiedPrefix = spec.Alias |> Option.defaultValue importedModuleName.Value
+                            Some(qualifiedPrefix + "." + declaration.Name)
+                        else
+                            None
+                    | _ ->
+                        selectionImportedName
+                            ImportNamespace.Type
+                            importedModule.ExportedTypes
+                            itemImportsTypeName
+                            spec.Selection
+                            declaration.Name
+
+                importedName
+                |> Option.map (fun localName ->
+                    { declaration with
+                        Name = localName }))
+
+        importedModuleInfos surfaceIndex moduleName
+        |> List.collect importedEffectsForSpec
 
     let private mergeVisibleBindings (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
         let importedBindings =
@@ -8507,6 +8527,51 @@ module SurfaceElaboration =
             || isTopLevelManifestStaticObjectRoot name
             || (tryResolveScopedStaticObject environment (Name [ name ]) |> Option.isSome)
 
+        let qualifiedNamePreservesResolution nameSegments =
+            let qualifiedName = SyntaxFacts.moduleNameToText nameSegments
+
+            let isVisibleQualifiedModule =
+                environment.VisibleModules
+                |> Seq.exists (fun visibleModule ->
+                    String.Equals(visibleModule, qualifiedName, StringComparison.Ordinal)
+                    || visibleModule.StartsWith(qualifiedName + ".", StringComparison.Ordinal))
+
+            let resolveQualifiedModuleAlias moduleName =
+                environment.SurfaceIndex
+                |> Map.tryFind environment.CurrentModuleName
+                |> Option.bind (fun currentModule ->
+                    currentModule.Imports
+                    |> List.tryPick (fun spec ->
+                        match spec.Source, spec.Selection, spec.Alias with
+                        | Dotted moduleSegments, QualifiedOnly, Some alias
+                            when String.Equals(alias, moduleName, StringComparison.Ordinal) ->
+                            Some(SyntaxFacts.moduleNameToText moduleSegments)
+                        | _ ->
+                            None))
+                |> Option.defaultValue moduleName
+
+            let resolvesAsQualifiedDeclaration =
+                match List.rev nameSegments with
+                | [] -> false
+                | declaredName :: reversedModuleSegments ->
+                    let declaringModuleName =
+                        List.rev reversedModuleSegments
+                        |> SyntaxFacts.moduleNameToText
+                        |> resolveQualifiedModuleAlias
+
+                    environment.SurfaceIndex
+                    |> Map.tryFind declaringModuleName
+                    |> Option.exists (fun moduleInfo ->
+                        Set.contains declaredName moduleInfo.ExportedTerms
+                        || Set.contains declaredName moduleInfo.ExportedTypes
+                        || Set.contains declaredName moduleInfo.ExportedTraits
+                        || Set.contains declaredName moduleInfo.ExportedConstructors)
+
+            isVisibleQualifiedModule
+            || (tryResolveScopedStaticObject environment (Name nameSegments) |> Option.isSome)
+            || (tryResolveVisibleTypeFacetInfo environment nameSegments |> Option.isSome)
+            || resolvesAsQualifiedDeclaration
+
         let expressionSelectsOpaqueField expression =
             let tryRecordInfoFromType typeExpr =
                 match typeExpr with
@@ -12459,7 +12524,30 @@ module SurfaceElaboration =
                     else
                         []
 
-                missingFieldDiagnostics @ staticMemberDiagnostics @ unresolvedMemberDiagnostics @ unresolvedRootDiagnostics
+                let unresolvedQualifiedMemberDiagnostics =
+                    let rootNamesRuntimeValue =
+                        Map.containsKey root locals
+                        || Set.contains root lexicalNames
+                        || Set.contains root knownValueNames
+                        || String.Equals(root, "this", StringComparison.Ordinal)
+                        || isTopLevelManifestStaticObjectRoot root
+                        || (tryResolveScopedStaticObject environment (Name [ root ]) |> Option.isSome)
+
+                    if allowUnresolvedCallDiagnostics
+                       && List.isEmpty missingFieldDiagnostics
+                       && List.isEmpty staticMemberDiagnostics
+                       && not rootNamesRuntimeValue
+                       && isVisibleQualifiedRootName locals lexicalNames root
+                       && not (qualifiedNamePreservesResolution (root :: fieldName :: [])) then
+                        [ makeDiagnostic DiagnosticCode.NameUnresolved $"Name '{fieldName}' is not in scope." ]
+                    else
+                        []
+
+                missingFieldDiagnostics
+                @ staticMemberDiagnostics
+                @ unresolvedMemberDiagnostics
+                @ unresolvedRootDiagnostics
+                @ unresolvedQualifiedMemberDiagnostics
             | Name [ name ]
                 when allowUnresolvedCallDiagnostics
                      && not (Map.containsKey name locals)
@@ -14762,7 +14850,7 @@ module SurfaceElaboration =
                         | EffectDeclarationNode declaration -> Some declaration
                         | _ -> None)
 
-                localEffects @ qualifiedImportedEffectDeclarations effectDeclarationsByModule frontendModule.Imports
+                localEffects @ importedEffectDeclarations surfaceIndex effectDeclarationsByModule moduleName
 
             withScopedEffectDeclarations topLevelEffects (fun () ->
                 let makeDiagnostic code message =
@@ -14776,6 +14864,7 @@ module SurfaceElaboration =
 
                 let baseEnvironment =
                     { CurrentModuleName = moduleName
+                      SurfaceIndex = surfaceIndex
                       VisibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleName
                       VisibleTypeFacets = mergeVisibleTypeFacets surfaceIndex moduleName
                       VisibleStaticObjects = Map.empty
@@ -20379,6 +20468,7 @@ module SurfaceElaboration =
 
         let environment =
             { CurrentModuleName = moduleName
+              SurfaceIndex = surfaceIndex
               VisibleTypeAliases = visibleTypeAliases
               VisibleTypeFacets = visibleTypeFacets
               VisibleStaticObjects = Map.empty
@@ -20495,7 +20585,7 @@ module SurfaceElaboration =
                         | EffectDeclarationNode declaration -> Some declaration
                         | _ -> None)
 
-                localEffects @ qualifiedImportedEffectDeclarations effectDeclarationsByModule frontendModule.Imports
+                localEffects @ importedEffectDeclarations surfaceIndex effectDeclarationsByModule moduleName
 
             withScopedEffectDeclarations topLevelEffects (fun () ->
                 let moduleInfo = surfaceIndex[moduleName]
@@ -20503,6 +20593,7 @@ module SurfaceElaboration =
 
                 let baseEnvironment =
                     { CurrentModuleName = moduleName
+                      SurfaceIndex = surfaceIndex
                       VisibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleName
                       VisibleTypeFacets = mergeVisibleTypeFacets surfaceIndex moduleName
                       VisibleStaticObjects = Map.empty

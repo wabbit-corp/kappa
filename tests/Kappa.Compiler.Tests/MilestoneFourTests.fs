@@ -1438,6 +1438,191 @@ let ``qualified imported effect labels remain usable across modules`` () =
         failwithf "Expected imported effect label evaluation to succeed, got %s" issue.Message
 
 [<Fact>]
+let ``selectively imported effect labels remain usable across modules`` () =
+    let libSource =
+        [
+            "module lib"
+            ""
+            "effect Ask ="
+            "    1 ask : Unit -> Bool"
+        ]
+        |> String.concat "\n"
+
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            "import lib.(Ask)"
+            ""
+            "ok : Int"
+            "let ok : Int ="
+            "    block"
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let b <- Ask.ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        let handled : Eff <[ ]> Int ="
+            "            deep handle Ask comp with"
+            "                case return x -> pure x"
+            "                case ask () k -> k True"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-m4-selective-imported-effect-label-root"
+            "main.ok"
+            [ "lib.kp", libSource
+              "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected selectively imported effect labels to resolve, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("1", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected selectively imported effect label evaluation to succeed, got %s" issue.Message
+
+[<Fact>]
+let ``wildcard imported effect labels remain usable across modules`` () =
+    let libSource =
+        [
+            "module lib"
+            ""
+            "effect Ask ="
+            "    1 ask : Unit -> Bool"
+        ]
+        |> String.concat "\n"
+
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            "import lib.*"
+            ""
+            "ok : Int"
+            "let ok : Int ="
+            "    block"
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let b <- Ask.ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        let handled : Eff <[ ]> Int ="
+            "            deep handle Ask comp with"
+            "                case return x -> pure x"
+            "                case ask () k -> k True"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-m4-wildcard-imported-effect-label-root"
+            "main.ok"
+            [ "lib.kp", libSource
+              "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected wildcard imported effect labels to resolve, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("1", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected wildcard imported effect label evaluation to succeed, got %s" issue.Message
+
+[<Fact>]
+let ``aliased imported effect labels remain usable across modules`` () =
+    let libSource =
+        [
+            "module lib"
+            ""
+            "effect Ask ="
+            "    1 ask : Unit -> Bool"
+        ]
+        |> String.concat "\n"
+
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            "import lib.(Ask as Query)"
+            ""
+            "ok : Int"
+            "let ok : Int ="
+            "    block"
+            "        let comp : Eff <[Query : Query]> Int ="
+            "            do"
+            "                let b <- Query.ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        let handled : Eff <[ ]> Int ="
+            "            deep handle Query comp with"
+            "                case return x -> pure x"
+            "                case ask () k -> k True"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-m4-aliased-imported-effect-label-root"
+            "main.ok"
+            [ "lib.kp", libSource
+              "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected aliased imported effect labels to resolve, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("1", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected aliased imported effect label evaluation to succeed, got %s" issue.Message
+
+[<Fact>]
+let ``private top level effects do not leak through qualified imports`` () =
+    let libSource =
+        [
+            "@PrivateByDefault module lib"
+            ""
+            "effect Ask ="
+            "    1 ask : Unit -> Bool"
+        ]
+        |> String.concat "\n"
+
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            "import lib"
+            ""
+            "ok : Int"
+            "let ok : Int ="
+            "    block"
+            "        let comp : Eff <[lib.Ask : lib.Ask]> Int ="
+            "            do"
+            "                let b <- lib.Ask.ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        let handled : Eff <[ ]> Int ="
+            "            deep handle lib.Ask comp with"
+            "                case return x -> pure x"
+            "                case ask () k -> k True"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-private-imported-effect-label-root"
+            [ "lib.kp", libSource
+              "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected private top-level effects not to leak through qualified imports.")
+
+[<Fact>]
 let ``handlers reject open rows whose declared remainder does not account for the handled label`` () =
     let mainSource =
         [
