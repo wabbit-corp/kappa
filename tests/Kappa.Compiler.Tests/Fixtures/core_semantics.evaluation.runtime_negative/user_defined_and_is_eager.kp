@@ -4,8 +4,9 @@ infix left 40 (&&)
 let (&&) x y = x
 
 result : Bool
-let result = False && ((1 / 0) == 0)
+let result = False && (match Nil
+                       case _ :: _ -> True)
 
 --! assertNoErrors
 --! assertType result Bool
---! x-assertEvalErrorContains result Division by zero
+--! x-assertEvalErrorContains result Non-exhaustive match

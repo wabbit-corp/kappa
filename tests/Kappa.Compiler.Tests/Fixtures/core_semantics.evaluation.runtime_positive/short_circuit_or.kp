@@ -1,7 +1,8 @@
 module short_circuit_or
 
 result : Bool
-let result = True || ((1 / 0) == 0)
+let result = True || (match Nil
+                      case _ :: _ -> True)
 
 --! assertNoErrors
 --! assertType result Bool

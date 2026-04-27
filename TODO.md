@@ -919,12 +919,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - message text only as a secondary check.
   - Sources: `reviews/tests1.md`.
 
-- `[Medium] Replace the current short-circuit boolean regression that uses `1 / 0` with a well-typed RHS that fails only if evaluated.`
-  - The current short-circuit test is trying to test runtime laziness, but it uses checked division by zero in the RHS.
-  - Under the spec, division by zero should not silently typecheck just because it appears in a branch that is not evaluated at runtime.
-  - Keep the short-circuit test, but use a statically valid RHS that would only fail if actually evaluated.
-  - Sources: `reviews/tests1.md`.
-
 - `[Medium] Rename or redesign misleading tests whose names overclaim what they prove.`
   - Example called out in the review:
   - “type imports from modules with identical export shapes stay distinct” uses transparent aliases to `Int`, which does not prove distinct nominal identity.

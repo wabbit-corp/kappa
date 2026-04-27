@@ -676,7 +676,11 @@ let ``interpreter short circuits boolean operators`` () =
     let mainSource =
         [
             "module main"
-            "let result = if False && ((1 / 0) == 0) then 0 else 42"
+            "let result ="
+            "    if False && (match Nil"
+            "                   case _ :: _ -> True)"
+            "    then 0"
+            "    else 42"
         ]
         |> String.concat "\n"
 

@@ -1,7 +1,11 @@
 module if_branch_not_evaluated
 
 result : Int
-let result = if True then 42 else 1 / 0
+let result =
+    if True
+    then 42
+    else match Nil
+         case _ :: _ -> 0
 
 --! assertNoErrors
 --! assertType result Int
