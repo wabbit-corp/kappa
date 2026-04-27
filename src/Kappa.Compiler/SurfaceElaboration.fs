@@ -9571,11 +9571,12 @@ module SurfaceElaboration =
 
                 let extendHandlerLocals argumentTokens argumentTypes resumptionName resumptionType currentLocals =
                     let nextLocals =
-                        List.zip argumentTokens argumentTypes
+                        argumentTokens
+                        |> List.mapi (fun index tokens -> tokens, argumentTypes |> List.tryItem index)
                         |> List.fold (fun state (tokens, argumentType) ->
-                            match tryParseEffectHandlerArgumentName tokens with
-                            | Some name -> Map.add name argumentType state
-                            | None -> state) currentLocals
+                            match tryParseEffectHandlerArgumentName tokens, argumentType with
+                            | Some name, Some currentArgumentType -> Map.add name currentArgumentType state
+                            | _ -> state) currentLocals
 
                     match resumptionName, resumptionType with
                     | Some name, Some currentResumptionType ->
@@ -9617,30 +9618,79 @@ module SurfaceElaboration =
                     | Name [ effectName ] ->
                         match tryFindScopedEffectDeclaration effectName with
                         | Some declaration ->
-                            operationClauses
-                            |> List.collect (fun clause ->
-                                match
-                                    declaration.Operations
-                                    |> List.tryFind (fun operation -> String.Equals(operation.Name, clause.OperationName, StringComparison.Ordinal))
-                                with
-                                | Some operation ->
-                                    match operation.ResumptionQuantity, clause.ResumptionName with
-                                    | Some QuantityZero, _
-                                    | Some QuantityAtMostOne, _
-                                    | None, _ ->
-                                        []
-                                    | Some _, Some resumptionName
-                                        when not (expressionReferencesName resumptionName Set.empty clause.Body) ->
+                            let declaredOperationNames =
+                                declaration.Operations
+                                |> List.map (fun operation -> operation.Name)
+                                |> Set.ofList
+
+                            let declaredOperationMap =
+                                declaration.Operations
+                                |> List.map (fun operation -> operation.Name, operation)
+                                |> Map.ofList
+
+                            let clauseGroups =
+                                operationClauses
+                                |> List.groupBy (fun clause -> clause.OperationName)
+
+                            let missingDiagnostics =
+                                declaration.Operations
+                                |> List.choose (fun operation ->
+                                    if clauseGroups |> List.exists (fun (name, _) -> String.Equals(name, operation.Name, StringComparison.Ordinal)) then
+                                        None
+                                    else
+                                        Some(
+                                            makeDiagnostic
+                                                DiagnosticCode.HandlerClauseMissing
+                                                $"Handler for '{effectName}' is missing a clause for operation '{operation.Name}'."
+                                        ))
+
+                            let duplicateDiagnostics =
+                                clauseGroups
+                                |> List.collect (fun (operationName, clauses) ->
+                                    if List.length clauses > 1 then
                                         [
                                             makeDiagnostic
-                                                DiagnosticCode.QttLinearDrop
-                                                $"Handler clause for operation '{clause.OperationName}' must use relevant resumption '{resumptionName}'."
+                                                DiagnosticCode.HandlerClauseDuplicate
+                                                $"Handler for '{effectName}' defines more than one clause for operation '{operationName}'."
                                         ]
-                                    | Some _, _ ->
+                                    else
+                                        [])
+
+                            let unexpectedDiagnostics =
+                                clauseGroups
+                                |> List.collect (fun (operationName, _) ->
+                                    if Set.contains operationName declaredOperationNames then
                                         []
-                                | None ->
-                                    []
-                                )
+                                    else
+                                        [
+                                            makeDiagnostic
+                                                DiagnosticCode.HandlerClauseUnexpected
+                                                $"Handler for '{effectName}' defines a clause for undeclared operation '{operationName}'."
+                                        ])
+
+                            let resumptionDiagnostics =
+                                operationClauses
+                                |> List.collect (fun clause ->
+                                    match Map.tryFind clause.OperationName declaredOperationMap with
+                                    | Some operation ->
+                                        match operation.ResumptionQuantity, clause.ResumptionName with
+                                        | Some QuantityZero, _
+                                        | Some QuantityAtMostOne, _
+                                        | None, _ ->
+                                            []
+                                        | Some _, Some resumptionName
+                                            when not (expressionReferencesName resumptionName Set.empty clause.Body) ->
+                                            [
+                                                makeDiagnostic
+                                                    DiagnosticCode.QttLinearDrop
+                                                    $"Handler clause for operation '{clause.OperationName}' must use relevant resumption '{resumptionName}'."
+                                            ]
+                                        | Some _, _ ->
+                                            []
+                                    | None ->
+                                        [])
+
+                            missingDiagnostics @ duplicateDiagnostics @ unexpectedDiagnostics @ resumptionDiagnostics
                         | None ->
                             []
                     | _ ->
@@ -15305,8 +15355,11 @@ module SurfaceElaboration =
                     expectedType
                     |> Option.orElseWith (fun () -> inferExpressionType localTypes expression)
 
-                let handledPayloadType =
+                let handledBodyType =
                     inferExpressionType localTypes body
+
+                let handledPayloadType =
+                    handledBodyType
                     |> Option.bind tryUnwrapEffType
                     |> Option.map snd
                     |> Option.defaultValue (TypeVariable $"handlePayload{freshCounter.Value}")
@@ -15328,10 +15381,10 @@ module SurfaceElaboration =
                             |> Option.defaultValue KCoreEffectWildcardArgument)
 
                     let clauseLocals =
-                        (localTypes, List.zip loweredArguments argumentTypes)
+                        (localTypes, loweredArguments |> List.mapi (fun index argument -> argument, argumentTypes |> List.tryItem index))
                         ||> List.fold (fun state (argument, argumentType) ->
-                            match argument with
-                            | KCoreEffectNameArgument name -> Map.add name argumentType state
+                            match argument, argumentType with
+                            | KCoreEffectNameArgument name, Some currentArgumentType -> Map.add name currentArgumentType state
                             | _ -> state)
                         |> fun state ->
                             match clause.ResumptionName, resumptionType with
@@ -15367,21 +15420,90 @@ module SurfaceElaboration =
                             if isDeep then
                                 handledType
                             else
-                                inferExpressionType localTypes body
+                                handledBodyType
 
                         let resumptionType =
                             resumptionResultType
                             |> Option.map (fun currentHandledType -> TypeArrow(QuantityOne, resultType, currentHandledType))
 
-                        lowerClause parameterTypes resumptionType clause)
+                        lowerClause parameterTypes resumptionType clause, resultType)
 
-                KCoreHandle(
-                    isDeep,
-                    lowerExpressionWithExpectedType localTypes None label,
-                    lowerExpressionWithExpectedType localTypes handledType body,
-                    loweredReturnClause,
-                    loweredOperationClauses
-                )
+                let loweredLabel = lowerExpressionWithExpectedType localTypes None label
+                let loweredBody = lowerExpressionWithExpectedType localTypes handledType body
+
+                if not isDeep then
+                    KCoreHandle(
+                        false,
+                        loweredLabel,
+                        loweredBody,
+                        loweredReturnClause,
+                        loweredOperationClauses |> List.map fst
+                    )
+                else
+                    let goName = $"__kappa_deep_go_{freshCounter.Value}"
+                    freshCounter.Value <- freshCounter.Value + 1
+                    let compName = $"__kappa_deep_comp_{freshCounter.Value}"
+                    freshCounter.Value <- freshCounter.Value + 1
+
+                    let lowerDeepClause ((clause: KCoreEffectHandlerClause), resultType: TypeExpr) =
+                        match clause.ResumptionName with
+                        | Some resumptionName ->
+                            let shallowResumptionName = $"__kappa_deep_shallow_k_{freshCounter.Value}"
+                            freshCounter.Value <- freshCounter.Value + 1
+                            let resultName = $"__kappa_deep_res_{freshCounter.Value}"
+                            freshCounter.Value <- freshCounter.Value + 1
+
+                            let wrapperParameter =
+                                { Name = resultName
+                                  Quantity = Some QuantityOne
+                                  IsImplicit = false
+                                  Type = Some resultType
+                                  TypeText = Some(TypeSignatures.toText resultType) }
+
+                            let wrapperBody =
+                                KCoreAppSpine(
+                                    KCoreName [ goName ],
+                                    [
+                                        explicitKCoreArgument
+                                            (KCoreAppSpine(
+                                                KCoreName [ shallowResumptionName ],
+                                                [ explicitKCoreArgument(KCoreName [ resultName ]) ]
+                                            ))
+                                    ]
+                                )
+
+                            { clause with
+                                ResumptionName = Some shallowResumptionName
+                                Body =
+                                    KCoreLet(
+                                        resumptionName,
+                                        KCoreLambda([ wrapperParameter ], wrapperBody),
+                                        clause.Body
+                                    ) }
+                        | None ->
+                            clause
+
+                    let driverParameter =
+                        { Name = compName
+                          Quantity = None
+                          IsImplicit = false
+                          Type = handledBodyType
+                          TypeText = handledBodyType |> Option.map TypeSignatures.toText }
+
+                    let driverBody =
+                        KCoreHandle(
+                            false,
+                            loweredLabel,
+                            KCoreName [ compName ],
+                            loweredReturnClause,
+                            loweredOperationClauses |> List.map lowerDeepClause
+                        )
+
+                    KCoreLet(
+                        goName,
+                        KCoreLambda([ driverParameter ], driverBody),
+                        KCoreAppSpine(KCoreName [ goName ], [ explicitKCoreArgument loweredBody ])
+                    )
             | KindQualifiedName _ ->
                 tryResolveScopedStaticObject environment expression
                 |> Option.map lowerStaticObject

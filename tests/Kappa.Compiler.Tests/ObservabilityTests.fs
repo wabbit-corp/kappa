@@ -140,6 +140,83 @@ let rec private containsRuntimeSyntheticRecordApply expression =
     | KRuntimeDictionaryValue _ ->
         false
 
+let rec private reintroduceDeepRuntimeHandle expression =
+    match expression with
+    | KRuntimeHandle(false, label, body, returnClause, operationClauses) ->
+        KRuntimeHandle(true, label, body, returnClause, operationClauses)
+    | KRuntimeHandle(isDeep, label, body, returnClause, operationClauses) ->
+        KRuntimeHandle(
+            isDeep,
+            reintroduceDeepRuntimeHandle label,
+            reintroduceDeepRuntimeHandle body,
+            { returnClause with Body = reintroduceDeepRuntimeHandle returnClause.Body },
+            operationClauses
+            |> List.map (fun clause -> { clause with Body = reintroduceDeepRuntimeHandle clause.Body })
+        )
+    | KRuntimeClosure(parameters, body) ->
+        KRuntimeClosure(parameters, reintroduceDeepRuntimeHandle body)
+    | KRuntimeIfThenElse(condition, whenTrue, whenFalse) ->
+        KRuntimeIfThenElse(
+            reintroduceDeepRuntimeHandle condition,
+            reintroduceDeepRuntimeHandle whenTrue,
+            reintroduceDeepRuntimeHandle whenFalse
+        )
+    | KRuntimeMatch(scrutinee, cases) ->
+        KRuntimeMatch(
+            reintroduceDeepRuntimeHandle scrutinee,
+            cases
+            |> List.map (fun caseClause ->
+                { caseClause with
+                    Guard = caseClause.Guard |> Option.map reintroduceDeepRuntimeHandle
+                    Body = reintroduceDeepRuntimeHandle caseClause.Body })
+        )
+    | KRuntimeExecute inner ->
+        KRuntimeExecute(reintroduceDeepRuntimeHandle inner)
+    | KRuntimeLet(bindingName, value, body) ->
+        KRuntimeLet(bindingName, reintroduceDeepRuntimeHandle value, reintroduceDeepRuntimeHandle body)
+    | KRuntimeDoScope(scopeLabel, body) ->
+        KRuntimeDoScope(scopeLabel, reintroduceDeepRuntimeHandle body)
+    | KRuntimeScheduleExit(scopeLabel, KRuntimeDeferred deferred, body) ->
+        KRuntimeScheduleExit(scopeLabel, KRuntimeDeferred(reintroduceDeepRuntimeHandle deferred), reintroduceDeepRuntimeHandle body)
+    | KRuntimeScheduleExit(scopeLabel, KRuntimeRelease(typeText, release, resource), body) ->
+        KRuntimeScheduleExit(
+            scopeLabel,
+            KRuntimeRelease(typeText, reintroduceDeepRuntimeHandle release, reintroduceDeepRuntimeHandle resource),
+            reintroduceDeepRuntimeHandle body
+        )
+    | KRuntimeSequence(first, second) ->
+        KRuntimeSequence(reintroduceDeepRuntimeHandle first, reintroduceDeepRuntimeHandle second)
+    | KRuntimeWhile(condition, body) ->
+        KRuntimeWhile(reintroduceDeepRuntimeHandle condition, reintroduceDeepRuntimeHandle body)
+    | KRuntimeApply(callee, arguments) ->
+        KRuntimeApply(reintroduceDeepRuntimeHandle callee, arguments |> List.map reintroduceDeepRuntimeHandle)
+    | KRuntimeTraitCall(traitName, memberName, dictionary, arguments) ->
+        KRuntimeTraitCall(
+            traitName,
+            memberName,
+            reintroduceDeepRuntimeHandle dictionary,
+            arguments |> List.map reintroduceDeepRuntimeHandle
+        )
+    | KRuntimeUnary(operatorName, operand) ->
+        KRuntimeUnary(operatorName, reintroduceDeepRuntimeHandle operand)
+    | KRuntimeBinary(left, operatorName, right) ->
+        KRuntimeBinary(reintroduceDeepRuntimeHandle left, operatorName, reintroduceDeepRuntimeHandle right)
+    | KRuntimePrefixedString(prefix, parts) ->
+        KRuntimePrefixedString(
+            prefix,
+            parts
+            |> List.map (function
+                | KRuntimeStringText text -> KRuntimeStringText text
+                | KRuntimeStringInterpolation(inner, format) -> KRuntimeStringInterpolation(reintroduceDeepRuntimeHandle inner, format))
+        )
+    | KRuntimeEffectOperation(label, operationName) ->
+        KRuntimeEffectOperation(reintroduceDeepRuntimeHandle label, operationName)
+    | KRuntimeLiteral _
+    | KRuntimeName _
+    | KRuntimeEffectLabel _
+    | KRuntimeDictionaryValue _ ->
+        expression
+
 [<Fact>]
 let ``workspace exposes spec-shaped checkpoints and portable pipeline trace events`` () =
     let workspace =
@@ -2302,6 +2379,56 @@ let ``backend verification rejects intrinsic bindings with bodies`` () =
 
     Assert.Single(diagnostics) |> ignore
     Assert.Contains(diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
+
+[<Fact>]
+let ``KRuntimeIR verification rejects direct deep handler nodes after desugaring`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-verify-deep-handler-runtime-root"
+            [
+                "main.kp",
+                [
+                    "@PrivateByDefault module main"
+                    "handled : Eff <[ ]> Int"
+                    "let handled : Eff <[ ]> Int ="
+                    "    block"
+                    "        scoped effect Ask ="
+                    "            ask : Unit -> Bool"
+                    ""
+                    "        let comp : Eff <[Ask : Ask]> Int ="
+                    "            do"
+                    "                let b <- Ask.ask ()"
+                    "                if b then 1 else 0"
+                    ""
+                    "        deep handle Ask comp with"
+                    "            case return x -> pure x"
+                    "            case ask () k -> k True"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let malformedWorkspace =
+        { workspace with
+            KRuntimeIR =
+                workspace.KRuntimeIR
+                |> List.map (fun moduleDump ->
+                    if moduleDump.Name = "main" then
+                        { moduleDump with
+                            Bindings =
+                                moduleDump.Bindings
+                                |> List.map (fun binding ->
+                                    if binding.Name = "handled" then
+                                        { binding with Body = binding.Body |> Option.map reintroduceDeepRuntimeHandle }
+                                    else
+                                        binding) }
+                    else
+                        moduleDump) }
+
+    let diagnostics = Compilation.verifyCheckpoint malformedWorkspace "KRuntimeIR"
+
+    Assert.Single(diagnostics) |> ignore
+    Assert.Contains(diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
+    Assert.Contains("direct deep-handle runtime nodes", diagnosticsText diagnostics)
 
 [<Fact>]
 let ``backend verification rejects intrinsic bindings missing intrinsic listings`` () =

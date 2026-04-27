@@ -241,7 +241,7 @@ module CheckpointVerification =
                 duplicateParameters @ verify extendedLocals body
             | KRuntimeIfThenElse(condition, whenTrue, whenFalse) ->
                 verify locals condition @ verify locals whenTrue @ verify locals whenFalse
-            | KRuntimeHandle(_, label, body, returnClause, operationClauses) ->
+            | KRuntimeHandle(isDeep, label, body, returnClause, operationClauses) ->
                 let verifyClause (clause: KRuntimeEffectHandlerClause) =
                     let clauseLocals =
                         clause.Arguments
@@ -256,7 +256,14 @@ module CheckpointVerification =
 
                     verify clauseLocals clause.Body
 
-                verify locals label
+                let deepHandlerDiagnostics =
+                    if isDeep then
+                        [ makeDiagnostic $"Checkpoint '{checkpoint}' requires direct deep-handle runtime nodes in '{bindingLabel}' to be desugared into the recursive shallow-handler driver before KRuntimeIR verification." ]
+                    else
+                        []
+
+                deepHandlerDiagnostics
+                @ verify locals label
                 @ verify locals body
                 @ verifyClause returnClause
                 @ (operationClauses |> List.collect verifyClause)

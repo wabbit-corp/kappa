@@ -12,6 +12,173 @@ let private diagnosticsText diagnostics =
     |> List.map (fun diagnostic -> $"{DiagnosticCode.toIdentifier diagnostic.Code}: {diagnostic.Message}")
     |> String.concat Environment.NewLine
 
+let rec private containsDeepCoreHandle expression =
+    match expression with
+    | KCoreHandle(true, _, _, _, _) ->
+        true
+    | KCoreHandle(_, label, body, returnClause, operationClauses) ->
+        containsDeepCoreHandle label
+        || containsDeepCoreHandle body
+        || containsDeepCoreHandle returnClause.Body
+        || (operationClauses |> List.exists (fun clause -> containsDeepCoreHandle clause.Body))
+    | KCoreLambda(_, body)
+    | KCoreExecute body
+    | KCoreDoScope(_, body)
+    | KCoreUnary(_, body)
+    | KCoreSyntaxQuote body
+    | KCoreSyntaxSplice body
+    | KCoreTopLevelSyntaxSplice body
+    | KCoreCodeQuote body
+    | KCoreCodeSplice body ->
+        containsDeepCoreHandle body
+    | KCoreIfThenElse(condition, whenTrue, whenFalse) ->
+        containsDeepCoreHandle condition || containsDeepCoreHandle whenTrue || containsDeepCoreHandle whenFalse
+    | KCoreLet(_, value, body)
+    | KCoreSequence(value, body) ->
+        containsDeepCoreHandle value || containsDeepCoreHandle body
+    | KCoreScheduleExit(_, KCoreDeferred deferred, body) ->
+        containsDeepCoreHandle deferred || containsDeepCoreHandle body
+    | KCoreScheduleExit(_, KCoreRelease(_, release, resource), body) ->
+        containsDeepCoreHandle release || containsDeepCoreHandle resource || containsDeepCoreHandle body
+    | KCoreWhile(condition, body)
+    | KCoreBinary(condition, _, body) ->
+        containsDeepCoreHandle condition || containsDeepCoreHandle body
+    | KCoreAppSpine(callee, arguments) ->
+        containsDeepCoreHandle callee
+        || (arguments |> List.exists (fun argument -> containsDeepCoreHandle argument.Expression))
+    | KCoreTraitCall(_, _, dictionary, arguments) ->
+        containsDeepCoreHandle dictionary || (arguments |> List.exists containsDeepCoreHandle)
+    | KCoreMatch(scrutinee, cases) ->
+        containsDeepCoreHandle scrutinee
+        || (cases
+            |> List.exists (fun caseClause ->
+                caseClause.Guard |> Option.exists containsDeepCoreHandle
+                || containsDeepCoreHandle caseClause.Body))
+    | KCorePrefixedString(_, parts) ->
+        parts
+        |> List.exists (function
+            | KCoreStringText _ -> false
+            | KCoreStringInterpolation inner -> containsDeepCoreHandle inner)
+    | KCoreEffectOperation(label, _) ->
+        containsDeepCoreHandle label
+    | KCoreLiteral _
+    | KCoreName _
+    | KCoreStaticObject _
+    | KCoreDictionaryValue _
+    | KCoreEffectLabel _ ->
+        false
+
+let rec private containsDeepRuntimeHandle expression =
+    match expression with
+    | KRuntimeHandle(true, _, _, _, _) ->
+        true
+    | KRuntimeHandle(_, label, body, returnClause, operationClauses) ->
+        containsDeepRuntimeHandle label
+        || containsDeepRuntimeHandle body
+        || containsDeepRuntimeHandle returnClause.Body
+        || (operationClauses |> List.exists (fun clause -> containsDeepRuntimeHandle clause.Body))
+    | KRuntimeClosure(_, body)
+    | KRuntimeExecute body
+    | KRuntimeDoScope(_, body)
+    | KRuntimeUnary(_, body) ->
+        containsDeepRuntimeHandle body
+    | KRuntimeIfThenElse(condition, whenTrue, whenFalse) ->
+        containsDeepRuntimeHandle condition || containsDeepRuntimeHandle whenTrue || containsDeepRuntimeHandle whenFalse
+    | KRuntimeLet(_, value, body)
+    | KRuntimeSequence(value, body) ->
+        containsDeepRuntimeHandle value || containsDeepRuntimeHandle body
+    | KRuntimeScheduleExit(_, KRuntimeDeferred deferred, body) ->
+        containsDeepRuntimeHandle deferred || containsDeepRuntimeHandle body
+    | KRuntimeScheduleExit(_, KRuntimeRelease(_, release, resource), body) ->
+        containsDeepRuntimeHandle release || containsDeepRuntimeHandle resource || containsDeepRuntimeHandle body
+    | KRuntimeWhile(condition, body)
+    | KRuntimeBinary(condition, _, body) ->
+        containsDeepRuntimeHandle condition || containsDeepRuntimeHandle body
+    | KRuntimeApply(callee, arguments) ->
+        containsDeepRuntimeHandle callee || (arguments |> List.exists containsDeepRuntimeHandle)
+    | KRuntimeTraitCall(_, _, dictionary, arguments) ->
+        containsDeepRuntimeHandle dictionary || (arguments |> List.exists containsDeepRuntimeHandle)
+    | KRuntimeMatch(scrutinee, cases) ->
+        containsDeepRuntimeHandle scrutinee
+        || (cases
+            |> List.exists (fun caseClause ->
+                caseClause.Guard |> Option.exists containsDeepRuntimeHandle
+                || containsDeepRuntimeHandle caseClause.Body))
+    | KRuntimePrefixedString(_, parts) ->
+        parts
+        |> List.exists (function
+            | KRuntimeStringText _ -> false
+            | KRuntimeStringInterpolation(inner, _) -> containsDeepRuntimeHandle inner)
+    | KRuntimeEffectOperation(label, _) ->
+        containsDeepRuntimeHandle label
+    | KRuntimeLiteral _
+    | KRuntimeName _
+    | KRuntimeDictionaryValue _
+    | KRuntimeEffectLabel _ ->
+        false
+
+let rec private containsRecursiveShallowCoreDriver expression =
+    let recurse current = containsRecursiveShallowCoreDriver current
+
+    match expression with
+    | KCoreLet(
+        goName,
+        KCoreLambda([ parameter ], KCoreHandle(false, _, KCoreName [ compName ], _, _)),
+        KCoreAppSpine(KCoreName [ invokedName ], [ argument ])
+      )
+        when String.Equals(goName, invokedName, StringComparison.Ordinal)
+             && String.Equals(parameter.Name, compName, StringComparison.Ordinal) ->
+        true || recurse argument.Expression
+    | KCoreHandle(_, label, body, returnClause, operationClauses) ->
+        recurse label
+        || recurse body
+        || recurse returnClause.Body
+        || (operationClauses |> List.exists (fun clause -> recurse clause.Body))
+    | KCoreLambda(_, body)
+    | KCoreExecute body
+    | KCoreDoScope(_, body)
+    | KCoreUnary(_, body)
+    | KCoreSyntaxQuote body
+    | KCoreSyntaxSplice body
+    | KCoreTopLevelSyntaxSplice body
+    | KCoreCodeQuote body
+    | KCoreCodeSplice body ->
+        recurse body
+    | KCoreIfThenElse(condition, whenTrue, whenFalse) ->
+        recurse condition || recurse whenTrue || recurse whenFalse
+    | KCoreLet(_, value, body)
+    | KCoreSequence(value, body) ->
+        recurse value || recurse body
+    | KCoreScheduleExit(_, KCoreDeferred deferred, body) ->
+        recurse deferred || recurse body
+    | KCoreScheduleExit(_, KCoreRelease(_, release, resource), body) ->
+        recurse release || recurse resource || recurse body
+    | KCoreWhile(condition, body)
+    | KCoreBinary(condition, _, body) ->
+        recurse condition || recurse body
+    | KCoreAppSpine(callee, arguments) ->
+        recurse callee || (arguments |> List.exists (fun argument -> recurse argument.Expression))
+    | KCoreTraitCall(_, _, dictionary, arguments) ->
+        recurse dictionary || (arguments |> List.exists recurse)
+    | KCoreMatch(scrutinee, cases) ->
+        recurse scrutinee
+        || (cases
+            |> List.exists (fun caseClause ->
+                caseClause.Guard |> Option.exists recurse || recurse caseClause.Body))
+    | KCorePrefixedString(_, parts) ->
+        parts
+        |> List.exists (function
+            | KCoreStringText _ -> false
+            | KCoreStringInterpolation inner -> recurse inner)
+    | KCoreEffectOperation(label, _) ->
+        recurse label
+    | KCoreLiteral _
+    | KCoreName _
+    | KCoreStaticObject _
+    | KCoreDictionaryValue _
+    | KCoreEffectLabel _ ->
+        false
+
 [<Fact>]
 let ``interpreter executes a one shot deep handler over a scoped effect`` () =
     let mainSource =
@@ -51,6 +218,68 @@ let ``interpreter executes a one shot deep handler over a scoped effect`` () =
         Assert.Equal("1", RuntimeValue.format value)
     | Result.Error issue ->
         failwithf "Expected deep handler evaluation to succeed, got %s" issue.Message
+
+[<Fact>]
+let ``deep handlers elaborate to a recursive shallow driver before KCore and KRuntimeIR`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "handled : Eff <[ ]> Int"
+            "let handled : Eff <[ ]> Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            ask : Unit -> Bool"
+            ""
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let b <- Ask.ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        deep handle Ask comp with"
+            "            case return x -> pure x"
+            "            case ask () k -> k True"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-deep-driver-root"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+    let coreModule =
+        workspace.KCore
+        |> List.find (fun moduleDump -> moduleDump.Name = "main")
+
+    let coreBinding =
+        coreModule.Declarations
+        |> List.pick (fun declaration ->
+            match declaration.Binding with
+            | Some binding when binding.Name = Some "handled" -> Some binding
+            | _ -> None)
+
+    match coreBinding.Body with
+    | Some body ->
+        Assert.False(containsDeepCoreHandle body, "Expected KCore lowering to remove direct deep-handle nodes.")
+        Assert.True(containsRecursiveShallowCoreDriver body, "Expected KCore lowering to synthesize a recursive shallow-handler driver.")
+    | None ->
+        failwith "Expected handled binding to have a KCore body."
+
+    let runtimeModule =
+        workspace.KRuntimeIR
+        |> List.find (fun moduleDump -> moduleDump.Name = "main")
+
+    let runtimeBinding =
+        runtimeModule.Bindings
+        |> List.find (fun binding -> binding.Name = "handled")
+
+    match runtimeBinding.Body with
+    | Some body ->
+        Assert.False(containsDeepRuntimeHandle body, "Expected KRuntimeIR lowering to remove direct deep-handle nodes.")
+    | None ->
+        failwith "Expected handled binding to have a KRuntimeIR body."
 
 [<Fact>]
 let ``shallow handler resumptions remain in the unhandled effect carrier`` () =
@@ -97,6 +326,73 @@ let ``shallow handler resumptions remain in the unhandled effect carrier`` () =
         Assert.Equal("1", RuntimeValue.format value)
     | Result.Error issue ->
         failwithf "Expected shallow handler rehandle evaluation to succeed, got %s" issue.Message
+
+[<Fact>]
+let ``handlers reject missing operation clauses for the handled effect`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "bad : Eff <[ ]> Int"
+            "let bad : Eff <[ ]> Int ="
+            "    block"
+            "        scoped effect State ="
+            "            get : Unit -> Int"
+            "            put : Int -> Unit"
+            ""
+            "        let comp : Eff <[State : State]> Int ="
+            "            do"
+            "                let n <- State.get ()"
+            "                State.put (n + 1)"
+            "                n"
+            ""
+            "        handle State comp with"
+            "            case return x -> pure x"
+            "            case get () k -> k 0"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-missing-handler-clause-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected handlers with missing operation clauses to be rejected.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseMissing)
+
+[<Fact>]
+let ``handlers reject unexpected and duplicate operation clauses`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "bad : Eff <[ ]> Int"
+            "let bad : Eff <[ ]> Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            ask : Unit -> Bool"
+            ""
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let b <- Ask.ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        handle Ask comp with"
+            "            case return x -> pure x"
+            "            case ask () k -> k True"
+            "            case ask () k -> k False"
+            "            case nope () k -> k 0"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-unexpected-handler-clause-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected handlers with duplicate and unexpected clauses to be rejected.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseDuplicate)
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerClauseUnexpected)
 
 [<Fact>]
 let ``multishot scoped effect invocation rejects captured linear suffix at the operation site`` () =

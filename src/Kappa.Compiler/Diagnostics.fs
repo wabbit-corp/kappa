@@ -32,6 +32,9 @@ type DiagnosticCode =
     | DuplicatePatternBinder
     | TraitInstanceAmbiguous
     | TraitSupertraitUnsatisfied
+    | HandlerClauseMissing
+    | HandlerClauseDuplicate
+    | HandlerClauseUnexpected
     | NameUnresolved
     | RecursiveTypeAlias
     | MalformedConstructorDeclaration
@@ -112,6 +115,9 @@ module DiagnosticCode =
         | DuplicatePatternBinder -> "E_DUPLICATE_PATTERN_BINDER"
         | TraitInstanceAmbiguous -> "E_TRAIT_INSTANCE_AMBIGUOUS"
         | TraitSupertraitUnsatisfied -> "E_TRAIT_SUPERTRAIT_UNSATISFIED"
+        | HandlerClauseMissing -> "E_HANDLER_CLAUSE_MISSING"
+        | HandlerClauseDuplicate -> "E_HANDLER_CLAUSE_DUPLICATE"
+        | HandlerClauseUnexpected -> "E_HANDLER_CLAUSE_UNEXPECTED"
         | NameUnresolved -> "E_NAME_UNRESOLVED"
         | RecursiveTypeAlias -> "E_RECURSIVE_TYPE_ALIAS"
         | MalformedConstructorDeclaration -> "E_MALFORMED_CONSTRUCTOR_DECLARATION"
@@ -191,6 +197,9 @@ module DiagnosticCode =
         | "E_DUPLICATE_PATTERN_BINDER" -> Some DuplicatePatternBinder
         | "E_TRAIT_INSTANCE_AMBIGUOUS" -> Some TraitInstanceAmbiguous
         | "E_TRAIT_SUPERTRAIT_UNSATISFIED" -> Some TraitSupertraitUnsatisfied
+        | "E_HANDLER_CLAUSE_MISSING" -> Some HandlerClauseMissing
+        | "E_HANDLER_CLAUSE_DUPLICATE" -> Some HandlerClauseDuplicate
+        | "E_HANDLER_CLAUSE_UNEXPECTED" -> Some HandlerClauseUnexpected
         | "E_NAME_UNRESOLVED" -> Some NameUnresolved
         | "E_RECURSIVE_TYPE_ALIAS" -> Some RecursiveTypeAlias
         | "E_MALFORMED_CONSTRUCTOR_DECLARATION" -> Some MalformedConstructorDeclaration
@@ -261,6 +270,12 @@ module DiagnosticCode =
             Some "A multi-shot continuation cannot capture live linear or borrowed resources across the operation site."
         | MultishotEffectUnsupportedBackend ->
             Some "The selected backend profile does not advertise rt-multishot-effects, so reachable multi-shot effect invocations and exported declarations that may invoke them must be rejected."
+        | HandlerClauseMissing ->
+            Some "A handler must define exactly one operation clause for every operation declared by the handled effect interface."
+        | HandlerClauseDuplicate ->
+            Some "A handler must not define more than one clause for the same effect operation."
+        | HandlerClauseUnexpected ->
+            Some "A handler clause names an operation that is not declared by the handled effect interface."
         | UnicodeInvalidScalarLiteral ->
             Some "A Unicode scalar literal must decode to exactly one valid Unicode scalar value and must not contain surrogate or out-of-range code points."
         | UnicodeInvalidGraphemeLiteral ->

@@ -246,7 +246,7 @@ Preferred resolution: adjust the compiler, keeping M3 ownership facts authoritat
 - [x] Fix parser/layout handling so multiline handler clause bodies and nested `do` blocks survive real effect-handler syntax instead of flattening into malformed local-`let` parses.
 - [ ] Implement row-polymorphic effect solving for `EffRow`, including normalization plus `SplitEff`-style reasoning instead of the current single-label scoped-effect approximation.
 - [ ] Type handler clauses against the handled computation precisely, including remainder-row reasoning and resumption types derived from the clause result type instead of the current conservative `TypeArrow(ω, opResult, handledType)` approximation.
-- [ ] Desugar `deep handle` through the spec-shaped recursive shallow-handler driver so the runtime model matches section 8.1.5 instead of relying on a direct implementation-defined deep-handler node.
+- [x] Desugar `deep handle` through the spec-shaped recursive shallow-handler driver so the runtime model matches section 8.1.5 instead of relying on a direct implementation-defined deep-handler node.
 - [ ] Lower one-shot handlers through `KBackendIR` and into at least the public CLR-backed `dotnet` profile; interpreter-only support is not sufficient to close M4.
 - [x] Add an explicit backend capability split for reachable multi-shot resumptions: either implement CPS/cloneable-state-machine lowering or emit stable target diagnostics when a backend cannot realize the handler semantics.
 - [ ] Extend checkpoint verification and observability so post-erasure stages can prove that effect rows are gone while handler/resumption legality is still checked at the last effect-aware checkpoint.
