@@ -177,7 +177,6 @@ module internal IntrinsicCatalog =
         | "isNormalized"
         | "canonicalEquivalent"
         | "hashWith"
-        | "hashUnit"
         | "hashBool"
         | "hashChar"
         | "hashString"
@@ -188,8 +187,10 @@ module internal IntrinsicCatalog =
         | "hashDoubleRaw"
         | "hashNatTag" ->
             2
+        | "hashUnit" ->
+            1
         | "hashField" ->
-            3
+            2
         | _ when isBuiltinBinaryOperator name ->
             2
         | _ ->
@@ -247,9 +248,6 @@ module internal IntrinsicCatalog =
         | "defaultHashSeed" ->
             Some(BackendRepOpaque(Some "HashSeed"))
         | "newHashState"
-        | "hashField" ->
-            Some(BackendRepOpaque(Some "HashState"))
-        | "finishHashState"
         | "hashUnit"
         | "hashBool"
         | "hashChar"
@@ -260,6 +258,9 @@ module internal IntrinsicCatalog =
         | "hashFloatRaw"
         | "hashDoubleRaw"
         | "hashNatTag"
+        | "hashField" ->
+            Some(BackendRepOpaque(Some "HashState"))
+        | "finishHashState"
         | "hashWith" ->
             Some(BackendRepOpaque(Some "HashCode"))
         | "unsafeConsume" ->

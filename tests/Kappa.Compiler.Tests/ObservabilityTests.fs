@@ -2047,6 +2047,161 @@ let ``source compilation surfaces non callable applications before backend lower
     Assert.DoesNotContain("requires a backend module", diagnosticsText workspace.Diagnostics)
 
 [<Fact>]
+let ``source compilation surfaces non callable top level value applications before runtime`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-compile-top-level-non-callable-application-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let i0 = 42"
+                    "let result = i0 ()"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected applying a top-level Int binding to become a frontend compile diagnostic.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.ApplicationNonCallable)
+
+[<Fact>]
+let ``source compilation surfaces non callable literal applications before runtime`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-compile-literal-non-callable-application-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "result : Int"
+                    "let result = 42()"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected applying a literal Int value to become a frontend compile diagnostic.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.ApplicationNonCallable)
+
+[<Fact>]
+let ``source compilation rejects top level lambda applications with incompatible arguments`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-compile-top-level-lambda-argument-mismatch-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "i0 : Unit -> Int"
+                    "let i0 = \\() -> 42"
+                    "main : IO Int"
+                    "let main ="
+                    "    pure (i0 (10 :: 12 :: 20 :: Nil))"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected applying a Unit function to a List argument to be rejected in the frontend.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TypeEqualityMismatch)
+
+[<Fact>]
+let ``source compilation rejects non bindable do bind sources`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-compile-do-bind-non-bindable-source-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let i0 = \\() -> 42"
+                    "let main = do"
+                    "    i1 <- i0"
+                    "    pure (i1 * 10 + i1)"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected a do-bind source that is not a bindable carrier to be rejected in the frontend.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TypeEqualityMismatch)
+
+[<Fact>]
+let ``source compilation rejects sibling callable values in arithmetic before runtime`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-compile-sibling-callable-arithmetic-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let i0 = \\() -> 42"
+                    "result : Int"
+                    "let result = i0 * 2"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected arithmetic over a sibling callable binding to be rejected in the frontend.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TypeEqualityMismatch)
+
+[<Fact>]
+let ``source compilation rejects unused ill typed top level bindings`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-compile-unused-ill-typed-top-level-binding-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "i0 : IO Int"
+                    "let i0 = \\() -> 42"
+                    "result : Int"
+                    "let result = 0"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected an unused top-level binding with a mismatched body to still be rejected.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TypeEqualityMismatch)
+
+[<Fact>]
+let ``source compilation rejects do blocks whose inferred result disagrees with the signature`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-compile-do-tail-unit-signature-mismatch-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "main : IO Int"
+                    "let main = do"
+                    "    i0 <- pure 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected a do block that ends in Unit to be rejected against IO Int.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TypeEqualityMismatch)
+
+[<Fact>]
+let ``source compilation rejects unresolved dotted member access on literals`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-compile-literal-dotted-member-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let result = 21.i0"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected dotted member access on an Int literal with no matching member to be rejected.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.NameUnresolved)
+
+[<Fact>]
 let ``source compilation does not treat ordinary visible function calls as non callable`` () =
     let workspace =
         compileInMemoryWorkspace

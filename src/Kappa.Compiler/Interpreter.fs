@@ -1153,6 +1153,32 @@ module Interpreter =
                 ))
 
         and invokeBuiltin (builtin: BuiltinFunction) : Result<RuntimeValue option, EvaluationError> =
+            let hashStateWithBytes state bytes =
+                HashStateValue(UnicodeText.hashBytesWithSeed state bytes)
+
+            let hashIntoState state value =
+                match value with
+                | StringValue text ->
+                    Some(hashStateWithBytes state (UnicodeText.encodeUtf8 text))
+                | BytesValue bytes ->
+                    Some(hashStateWithBytes state bytes)
+                | CharacterValue scalar ->
+                    Some(hashStateWithBytes state (UnicodeText.encodeUtf8 scalar))
+                | GraphemeValue grapheme ->
+                    Some(hashStateWithBytes state (UnicodeText.encodeUtf8 grapheme))
+                | ByteValue value ->
+                    Some(hashStateWithBytes state [| value |])
+                | IntegerValue value ->
+                    Some(hashStateWithBytes state (BitConverter.GetBytes value))
+                | FloatValue value ->
+                    Some(hashStateWithBytes state (BitConverter.GetBytes value))
+                | BooleanValue value ->
+                    Some(hashStateWithBytes state [| if value then 1uy else 0uy |])
+                | UnitValue ->
+                    Some(hashStateWithBytes state [||])
+                | _ ->
+                    None
+
             match builtin.Name, builtin.Arguments with
             | "not", [ BooleanValue value ] ->
                 ok (Some(BooleanValue(not value)))
@@ -1484,6 +1510,30 @@ module Interpreter =
                 error $"Intrinsic 'finishHashState' expects a HashState, but got {RuntimeValue.format value}."
             | "finishHashState", _ ->
                 error "Intrinsic 'finishHashState' received too many arguments."
+            | "hashUnit", [ HashStateValue state ] ->
+                ok (Some(hashStateWithBytes state [||]))
+            | "hashUnit", arguments when List.length arguments < 1 ->
+                ok None
+            | "hashUnit", [ value ] ->
+                error $"Intrinsic 'hashUnit' expects a HashState, but got {RuntimeValue.format value}."
+            | "hashUnit", _ ->
+                error "Intrinsic 'hashUnit' received too many arguments."
+            | ("hashBool" | "hashChar" | "hashString" | "hashBytes" | "hashInt" | "hashInteger" | "hashFloatRaw" | "hashDoubleRaw" | "hashNatTag"), [ value; HashStateValue state ] ->
+                hashIntoState state value |> optionValue |> Result.map Some
+            | ("hashBool" | "hashChar" | "hashString" | "hashBytes" | "hashInt" | "hashInteger" | "hashFloatRaw" | "hashDoubleRaw" | "hashNatTag"), arguments when List.length arguments < 2 ->
+                ok None
+            | ("hashBool" | "hashChar" | "hashString" | "hashBytes" | "hashInt" | "hashInteger" | "hashFloatRaw" | "hashDoubleRaw" | "hashNatTag"), [ value; state ] ->
+                error $"Intrinsic '{builtin.Name}' is not supported for {RuntimeValue.format value} and {RuntimeValue.format state}."
+            | ("hashBool" | "hashChar" | "hashString" | "hashBytes" | "hashInt" | "hashInteger" | "hashFloatRaw" | "hashDoubleRaw" | "hashNatTag"), _ ->
+                error $"Intrinsic '{builtin.Name}' received too many arguments."
+            | "hashField", [ value; HashStateValue state ] ->
+                hashIntoState state value |> optionValue |> Result.map Some
+            | "hashField", arguments when List.length arguments < 2 ->
+                ok None
+            | "hashField", [ value; state ] ->
+                error $"Intrinsic 'hashField' is not supported for {RuntimeValue.format value} and {RuntimeValue.format state}."
+            | "hashField", _ ->
+                error "Intrinsic 'hashField' received too many arguments."
             | "hashWith", [ HashSeedValue seed; StringValue value ] ->
                 ok (Some(HashCodeValue(UnicodeText.hashBytesWithSeed seed (UnicodeText.encodeUtf8 value))))
             | "hashWith", [ HashSeedValue seed; BytesValue value ] ->

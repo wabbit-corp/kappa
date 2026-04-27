@@ -1,3 +1,3 @@
 --! mode check
 --! packageMode
---! assertDiagnosticCodes E_APPLICATION_NONCALLABLE
+--! assertDiagnosticCodes E_TYPE_EQUALITY_MISMATCH, E_APPLICATION_NONCALLABLE

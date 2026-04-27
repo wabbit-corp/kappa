@@ -68,19 +68,19 @@ module internal StandardModules =
           Terms =
             [ { Name = "defaultHashSeed"; TypeText = "HashSeed" }
               { Name = "newHashState"; TypeText = "HashSeed -> HashState" }
-              { Name = "finishHashState"; TypeText = "HashState -> HashCode" }
-              { Name = "hashUnit"; TypeText = "HashSeed -> Unit -> HashCode" }
-              { Name = "hashBool"; TypeText = "HashSeed -> Bool -> HashCode" }
-              { Name = "hashChar"; TypeText = "HashSeed -> Char -> HashCode" }
-              { Name = "hashString"; TypeText = "HashSeed -> String -> HashCode" }
-              { Name = "hashBytes"; TypeText = "HashSeed -> Bytes -> HashCode" }
-              { Name = "hashInt"; TypeText = "HashSeed -> Int -> HashCode" }
-              { Name = "hashInteger"; TypeText = "HashSeed -> Integer -> HashCode" }
-              { Name = "hashFloatRaw"; TypeText = "HashSeed -> Float -> HashCode" }
-              { Name = "hashDoubleRaw"; TypeText = "HashSeed -> Double -> HashCode" }
-              { Name = "hashNatTag"; TypeText = "HashSeed -> Nat -> HashCode" }
-              { Name = "hashField"; TypeText = "HashState -> String -> HashCode -> HashState" }
-              { Name = "hashWith"; TypeText = "HashSeed -> a -> HashCode" } ]
+              { Name = "finishHashState"; TypeText = "(1 state : HashState) -> HashCode" }
+              { Name = "hashUnit"; TypeText = "(1 state : HashState) -> HashState" }
+              { Name = "hashBool"; TypeText = "Bool -> (1 state : HashState) -> HashState" }
+              { Name = "hashChar"; TypeText = "Char -> (1 state : HashState) -> HashState" }
+              { Name = "hashString"; TypeText = "String -> (1 state : HashState) -> HashState" }
+              { Name = "hashBytes"; TypeText = "Bytes -> (1 state : HashState) -> HashState" }
+              { Name = "hashInt"; TypeText = "Int -> (1 state : HashState) -> HashState" }
+              { Name = "hashInteger"; TypeText = "Integer -> (1 state : HashState) -> HashState" }
+              { Name = "hashFloatRaw"; TypeText = "Float -> (1 state : HashState) -> HashState" }
+              { Name = "hashDoubleRaw"; TypeText = "Double -> (1 state : HashState) -> HashState" }
+              { Name = "hashNatTag"; TypeText = "Nat -> (1 state : HashState) -> HashState" }
+              { Name = "hashField"; TypeText = "(@_ : Hashable a) -> (& value : a) -> (1 state : HashState) -> HashState" }
+              { Name = "hashWith"; TypeText = "(@_ : Hashable a) -> HashSeed -> (& value : a) -> HashCode" } ]
           Traits = [ { Name = "Hashable"; TypeParameterCount = 1; Members = [] } ] }
 
     let all =

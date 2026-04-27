@@ -114,6 +114,40 @@ let ``il backend emits executable conditional logic as IL`` () =
     Assert.Equal(1L, resultMethod.Invoke(null, [||]) |> unbox<int64>)
 
 [<Fact>]
+let ``il backend executes direct calls to top level zero capture lambda bindings`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-il-top-level-zero-capture-lambda-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let i0 = \\() -> 42"
+                    "result : Int"
+                    "let result = i0 ()"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected zero-capture lambda binding to compile, got %A" workspace.Diagnostics)
+
+    let outputDirectory = createScratchDirectory "il-top-level-zero-capture-lambda"
+
+    let artifact =
+        match Backend.emitIlAssemblyArtifact workspace outputDirectory with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    use loaded = loadManagedAssembly artifact.AssemblyFilePath
+
+    let moduleType = loaded.Assembly.GetType("Kappa.Generated.main", throwOnError = true, ignoreCase = false)
+    let resultMethod = moduleType.GetMethod("result", BindingFlags.Public ||| BindingFlags.Static)
+
+    Assert.NotNull(resultMethod)
+    Assert.Equal(typeof<int64>, resultMethod.ReturnType)
+    Assert.Equal(42L, resultMethod.Invoke(null, [||]) |> unbox<int64>)
+
+[<Fact>]
 let ``il backend emits callable wrappers for host dotnet type modules`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend
