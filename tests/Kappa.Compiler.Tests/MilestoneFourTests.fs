@@ -1078,3 +1078,70 @@ let ``qualified imported effect labels remain usable across modules`` () =
         Assert.Equal("1", RuntimeValue.format value)
     | Result.Error issue ->
         failwithf "Expected imported effect label evaluation to succeed, got %s" issue.Message
+
+[<Fact>]
+let ``handlers reject open rows whose declared remainder does not account for the handled label`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "probe : Int"
+            "let probe : Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            1 ask : Unit -> Bool"
+            ""
+            "        scoped effect Other ="
+            "            other : Unit -> Int"
+            ""
+            "        let badHandle : forall (r : EffRow). Eff <[Other : Other | r]> Int -> Eff r Int ="
+            "            \\(comp : Eff <[Other : Other | r]> Int) ->"
+            "                handle Ask comp with"
+            "                    case return y -> pure y"
+            "                    case ask () k -> k True"
+            ""
+            "        0"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-open-row-mismatch-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected handler typing to reject open rows whose declared remainder cannot account for the handled label.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerEffectRowMismatch || diagnostic.Code = DiagnosticCode.TypeEqualityMismatch)
+
+[<Fact>]
+let ``handlers can split a handled label out of a normalized tail alias`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "effect Ask ="
+            "    1 ask : Unit -> Bool"
+            ""
+            "effect Other ="
+            "    other : Unit -> Int"
+            ""
+            "type AskTail (r : EffRow) = <[Ask : Ask | r]>"
+            ""
+            "probe : Int"
+            "let probe : Int ="
+            "    block"
+            "        let handleAsk : forall (r : EffRow). Eff <[Other : Other | AskTail r]> Int -> Eff <[Other : Other | r]> Int ="
+            "            \\(comp : Eff <[Other : Other | AskTail r]> Int) ->"
+            "                handle Ask comp with"
+            "                    case return y -> pure y"
+            "                    case ask () k -> k True"
+            ""
+            "        0"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-open-row-tail-alias-root"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected handler typing to split handled labels from normalized tail aliases, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))

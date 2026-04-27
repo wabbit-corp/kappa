@@ -3448,6 +3448,85 @@ module SurfaceElaboration =
 
         loop Set.empty
 
+    type private EffectRowSplitResult =
+        | SplitResolved of TypeExpr
+        | SplitMismatch
+        | SplitNeedsTailRefinement
+
+    let private trySplitHandledEffectRow
+        (aliases: Map<string, TypeAliasInfo>)
+        (effectName: string)
+        effectRow
+        =
+        let normalize = normalizeTypeAliases aliases
+
+        let isResolvedEffectName expected typeExpr =
+            match normalize typeExpr with
+            | TypeName(nameSegments, []) ->
+                String.Equals(SyntaxFacts.moduleNameToText nameSegments, expected, StringComparison.Ordinal)
+            | _ ->
+                false
+
+        let rec split current =
+            match normalize current with
+            | TypeEffectRow(entries, tail) ->
+                let handledEntryIndex =
+                    entries
+                    |> List.tryFindIndex (fun entry ->
+                        isResolvedEffectName effectName entry.Label
+                        && isResolvedEffectName effectName entry.Effect)
+
+                match handledEntryIndex with
+                | Some entryIndex ->
+                    let remainingEntries =
+                        entries
+                        |> List.mapi (fun index entry -> index, entry)
+                        |> List.choose (fun (index, entry) ->
+                            if index = entryIndex then
+                                None
+                            else
+                                Some entry)
+
+                    match remainingEntries, tail |> Option.map normalize with
+                    | [], Some tailExpr ->
+                        SplitResolved tailExpr
+                    | _ ->
+                        SplitResolved(TypeEffectRow(remainingEntries, tail |> Option.map normalize))
+                | None ->
+                    let mismatchedHandledLabel =
+                        entries
+                        |> List.exists (fun entry ->
+                            isResolvedEffectName effectName entry.Label
+                            && not (isResolvedEffectName effectName entry.Effect))
+
+                    if mismatchedHandledLabel then
+                        SplitMismatch
+                    else
+                        match tail with
+                        | Some tailExpr ->
+                            match split tailExpr with
+                            | SplitResolved remainderTail ->
+                                if List.isEmpty entries then
+                                    SplitResolved remainderTail
+                                else
+                                    match normalize remainderTail with
+                                    | TypeEffectRow(remainderEntries, remainderTailTail) ->
+                                        SplitResolved(TypeEffectRow(entries @ remainderEntries, remainderTailTail))
+                                    | _ ->
+                                        SplitResolved(TypeEffectRow(entries, Some remainderTail))
+                            | SplitMismatch ->
+                                SplitMismatch
+                            | SplitNeedsTailRefinement ->
+                                SplitNeedsTailRefinement
+                        | None ->
+                            SplitMismatch
+            | TypeVariable _ ->
+                SplitNeedsTailRefinement
+            | _ ->
+                SplitMismatch
+
+        split effectRow
+
     let private tryUnwrapElabType aliases typeExpr =
         let normalize = normalizeTypeAliases aliases
 
@@ -9846,51 +9925,24 @@ module SurfaceElaboration =
                     carrierDiagnostics @ returnDiagnostics @ operationDiagnostics
 
                 let handledEffectRowDiagnostics =
-                    let tryClosedRowMatch effectName effectRow =
-                        let rec isResolvedEffectName expected typeExpr =
-                            match normalizeTypeAliases environment.VisibleTypeAliases typeExpr with
-                            | TypeName(nameSegments, []) ->
-                                String.Equals(SyntaxFacts.moduleNameToText nameSegments, expected, StringComparison.Ordinal)
-                            | _ ->
-                                false
-
-                        match normalizeTypeAliases environment.VisibleTypeAliases effectRow with
-                        | TypeEffectRow(entries, tail) ->
-                            let containsExactEntry =
-                                entries
-                                |> List.exists (fun entry ->
-                                    isResolvedEffectName effectName entry.Label
-                                    && isResolvedEffectName effectName entry.Effect)
-
-                            let containsMismatchedHandledLabel =
-                                entries
-                                |> List.exists (fun entry ->
-                                    isResolvedEffectName effectName entry.Label
-                                    && not (isResolvedEffectName effectName entry.Effect))
-
-                            if containsExactEntry then
-                                Some true
-                            elif containsMismatchedHandledLabel then
-                                Some false
-                            elif tail.IsSome then
-                                None
-                            else
-                                Some false
-                        | _ ->
-                            None
-
                     match tryResolveHandledEffectName environment label, handledBodyType with
                     | Some effectName, Some handledType ->
                         match tryUnwrapEffType handledType with
                         | Some(effectRow, _) ->
-                            match tryClosedRowMatch effectName effectRow with
-                            | Some false ->
+                            match trySplitHandledEffectRow environment.VisibleTypeAliases effectName effectRow with
+                            | SplitMismatch ->
                                 [
                                     makeDiagnostic
                                         DiagnosticCode.HandlerEffectRowMismatch
                                         $"Handler for '{effectName}' expects the handled computation to carry label '{effectName}' in its effect row, but found '{TypeSignatures.toText effectRow}'."
                                 ]
-                            | _ ->
+                            | SplitNeedsTailRefinement ->
+                                [
+                                    makeDiagnostic
+                                        DiagnosticCode.HandlerEffectRowMismatch
+                                        $"Handler for '{effectName}' cannot split label '{effectName}' out of open effect row '{TypeSignatures.toText effectRow}' without explicit row refinement. Mention '{effectName}' explicitly in the handled computation type."
+                                ]
+                            | SplitResolved _ ->
                                 []
                         | None ->
                             [
