@@ -16,13 +16,31 @@ trait GeneratedScore a =
 instance GeneratedScore Int =
     let score x = x
 
-generated_66 : Int
-let generated_66 = (40 + 66)
+generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
+let generatedResize image width height = image + width * 10 + height
 
-result : Int
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
+
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
+
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
+
+generatedSize : List Int -> Int
+let generatedSize xs decreases structural xs =
+    match xs
+    case Nil -> 0
+    case _ :: tail -> 1 + generatedSize tail
+
+generated_66 : String
+let generated_66 = ((generatedMakeConst "nested") ())
+
+result : String
 let result = generated_66
 
 --! assertNoErrors
---! assertType generated_66 Int
---! assertType result Int
---! assertDeclKinds type, type, type, data, trait, instance, signature, let, signature, let
+--! assertType generated_66 String
+--! assertType result String
+--! assertDeclKinds type, type, type, data, trait, instance, signature, let, signature, let, signature, let, signature, let, signature, let, signature, let, signature, let

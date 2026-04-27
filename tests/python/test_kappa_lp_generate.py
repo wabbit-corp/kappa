@@ -48,7 +48,7 @@ let result = ()
         output = kappa_lp_generate.run_elpi(
             elpi,
             kappa_lp_generate.DEFAULT_ELPI_PROGRAM,
-            count=22,
+            count=38,
             depth=4,
         )
         combined_source = "\n".join(sample.source for sample in kappa_lp_generate.parse_elpi_samples(output))
@@ -61,6 +61,15 @@ let result = ()
         self.assertIn("[ for i in 1 .. 3, yield (i + 1) ]", combined_source)
         self.assertIn("generated_19 : IO Int", combined_source)
         self.assertIn("summon (GeneratedScore Int)", combined_source)
+        self.assertIn("generatedResize { height = 3, image = 1, width = 2 }", combined_source)
+        self.assertIn("((generatedMakeConst 41) ())", combined_source)
+        self.assertIn("((\\() -> 42) ())", combined_source)
+        self.assertIn("let (@x : Int) = 7", combined_source)
+        self.assertIn("match 0x100", combined_source)
+        self.assertIn("{ \"ada\": 1, \"grace\": 2 }", combined_source)
+        self.assertIn("base.{ y := 41 }", combined_source)
+        self.assertIn("42.generatedEcho", combined_source)
+        self.assertIn("generatedSize (1 :: 2 :: 3 :: Nil)", combined_source)
 
     def test_local_elpi_can_start_from_later_candidate_when_available(self) -> None:
         elpi = kappa_lp_generate.resolve_elpi()
