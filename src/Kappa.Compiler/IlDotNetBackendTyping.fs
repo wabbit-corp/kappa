@@ -391,6 +391,10 @@ module internal IlDotNetBackendTyping =
                         ensureExpected (IlPrimitive IlInt64)
                     | KRuntimeLiteral LiteralValue.Unit ->
                         ensureExpected unitIlType
+                    | KRuntimeEffectLabel _
+                    | KRuntimeEffectOperation _
+                    | KRuntimeHandle _ ->
+                        Result.Error "IL backend does not support effect handlers yet."
                     | KRuntimeName segments ->
                         inferNamedValue segments
                     | KRuntimeUnary("-", operand) ->

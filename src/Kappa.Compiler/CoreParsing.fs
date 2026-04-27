@@ -3847,6 +3847,8 @@ type private ExpressionParser
 
             if this.Current.Kind = Dedent then
                 this.Advance() |> ignore
+            elif this.Current.Kind = EndOfFile && nestedIndents = 0 then
+                ()
             else
                 diagnostics.AddError(DiagnosticCode.ParseError, "Expected the do block to dedent.", source.GetLocation(this.Current.Span))
         else
@@ -4141,6 +4143,8 @@ type private ExpressionParser
 
                 if (current ()).Kind = Dedent then
                     advance () |> ignore
+                elif (current ()).Kind = EndOfFile && nestedIndents = 0 then
+                    ()
                 else
                     diagnostics.AddError(DiagnosticCode.ParseError, "Expected the while body to dedent.", source.GetLocation((current ()).Span))
             else
@@ -5092,8 +5096,23 @@ type private ExpressionParser
         loop tokens []
 
     member private this.ParseEffectHandlerClause(lineTokens: Token list) =
-        let significantTokens =
-            lineTokens
+        let trimLineTokens tokens =
+            let isLayoutToken token =
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent
+                | EndOfFile -> true
+                | _ -> false
+
+            tokens
+            |> List.skipWhile isLayoutToken
+            |> List.rev
+            |> List.skipWhile isLayoutToken
+            |> List.rev
+
+        let significantTokens tokens =
+            tokens
             |> List.filter (fun token ->
                 match token.Kind with
                 | Newline
@@ -5102,7 +5121,9 @@ type private ExpressionParser
                 | EndOfFile -> false
                 | _ -> true)
 
-        match significantTokens with
+        let trimmedTokens = trimLineTokens lineTokens
+
+        match trimmedTokens with
         | caseToken :: rest when Token.isKeyword Keyword.Case caseToken ->
             let tokenArray = rest |> List.toArray
             let mutable depth = 0
@@ -5111,6 +5132,10 @@ type private ExpressionParser
 
             while index < tokenArray.Length && splitIndex < 0 do
                 match tokenArray[index].Kind with
+                | Newline
+                | Indent
+                | Dedent
+                | EndOfFile -> ()
                 | LeftParen
                 | LeftBracket
                 | LeftEffectRow
@@ -5137,7 +5162,7 @@ type private ExpressionParser
                   ResumptionName = None
                   Body = Literal LiteralValue.Unit }
             else
-                let headerTokens = tokenArray[0 .. splitIndex - 1] |> Array.toList
+                let headerTokens = tokenArray[0 .. splitIndex - 1] |> Array.toList |> significantTokens
                 let bodyTokens = tokenArray[splitIndex + 1 ..] |> Array.toList
 
                 match headerTokens with

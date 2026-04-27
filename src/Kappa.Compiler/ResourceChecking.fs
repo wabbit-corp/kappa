@@ -1,6 +1,7 @@
 namespace Kappa.Compiler
 
 open System
+open System.Threading
 open Kappa.Compiler.ResourceModel
 open Kappa.Compiler.ResourceCheckingDiagnostics
 open Kappa.Compiler.ResourceCheckingSignatures
@@ -27,6 +28,28 @@ module ResourceChecking =
     type private TypeAliasSummary =
         { Parameters: string list
           Body: TypeSignatures.TypeExpr }
+
+    let private scopedEffects = AsyncLocal<Map<string, EffectDeclaration> option>()
+
+    let private currentScopedEffects () =
+        scopedEffects.Value |> Option.defaultValue Map.empty
+
+    let private tryFindScopedEffectDeclaration name =
+        currentScopedEffects () |> Map.tryFind name
+
+    let private withScopedEffectDeclaration (declaration: EffectDeclaration) work =
+        let saved = currentScopedEffects ()
+        scopedEffects.Value <- Some(Map.add declaration.Name declaration saved)
+
+        try
+            work ()
+        finally
+            scopedEffects.Value <- Some saved
+
+    let private isMultiShotResumptionQuantity quantity =
+        match quantity |> Option.defaultValue QuantityOne with
+        | QuantityOmega -> true
+        | _ -> false
 
     let private emptyState scopeId =
         ResourceModel.ResourceContext.empty scopeId
@@ -762,6 +785,38 @@ module ResourceChecking =
                 yield! binding.CapturedRegions
             })
         |> Set.ofSeq
+
+    let private continuationCaptureHazards (state: CheckState) (statements: SurfaceDoStatement list) =
+        let riskyBindings =
+            Do statements
+            |> capturedBindings state
+            |> List.filter (fun binding -> isExactOneBinding binding || binding.BorrowRegion.IsSome)
+
+        let linearNames =
+            riskyBindings
+            |> List.filter isExactOneBinding
+            |> List.map (fun binding -> binding.Name)
+            |> List.distinct
+
+        let borrowedNames =
+            riskyBindings
+            |> List.filter (fun binding -> binding.BorrowRegion.IsSome)
+            |> List.map (fun binding -> binding.Name)
+            |> List.distinct
+
+        riskyBindings, linearNames, borrowedNames
+
+    let private tryFindMultiShotScopedOperation expression =
+        match expression with
+        | Apply(Name [ effectName; operationName ], _) ->
+            tryFindScopedEffectDeclaration effectName
+            |> Option.bind (fun declaration ->
+                declaration.Operations
+                |> List.tryFind (fun operation -> String.Equals(operation.Name, operationName, StringComparison.Ordinal))
+                |> Option.filter (fun operation -> isMultiShotResumptionQuantity operation.ResumptionQuantity)
+                |> Option.map (fun operation -> effectName, operation))
+        | _ ->
+            None
 
     let private inferredClosureQuantity state expression =
         match expression with
@@ -4848,8 +4903,9 @@ module ResourceChecking =
             checkExpression projectionSummaries document signatures localTypes state body
         | LocalTypeAlias(_, body) ->
             checkExpression projectionSummaries document signatures localTypes state body
-        | LocalScopedEffect(_, body) ->
-            checkExpression projectionSummaries document signatures localTypes state body
+        | LocalScopedEffect(declaration, body) ->
+            withScopedEffectDeclaration declaration (fun () ->
+                checkExpression projectionSummaries document signatures localTypes state body)
         | Name(root :: path) ->
             validatePlaceAccess
                 document
@@ -6292,6 +6348,42 @@ module ResourceChecking =
 
                 loop successLocalTypes current rest
             | DoBind(binding, expression) :: rest ->
+                let current =
+                    match tryFindMultiShotScopedOperation expression with
+                    | Some(effectName, operation) ->
+                        let riskyBindings, linearNames, borrowedNames = continuationCaptureHazards current rest
+
+                        if List.isEmpty riskyBindings then
+                            current
+                        else
+                            let linearNamesText = String.concat ", " linearNames
+                            let borrowedNamesText = String.concat ", " borrowedNames
+
+                            let linearSummary =
+                                match linearNames with
+                                | [] -> None
+                                | _ -> Some($"linear bindings {linearNamesText}")
+
+                            let borrowedSummary =
+                                match borrowedNames with
+                                | [] -> None
+                                | _ -> Some($"borrowed bindings {borrowedNamesText}")
+
+                            let capturedSummary =
+                                [ linearSummary; borrowedSummary ]
+                                |> List.choose id
+                                |> String.concat " and "
+
+                            addDiagnostic
+                                DiagnosticCode.QttContinuationCapture
+                                $"Multi-shot operation '{effectName}.{operation.Name}' cannot capture {capturedSummary} in its continuation."
+                                (argumentLocation document expression)
+                                []
+                                document
+                                current
+                    | None ->
+                        current
+
                 let current = checkExpression projectionSummaries document signatures localTypes current expression
                 let declaredQuantity = binding.Quantity |> Option.map ResourceQuantity.ofSurface
                 let checkDrop = declaredQuantity |> Option.exists ResourceQuantity.requiresUse

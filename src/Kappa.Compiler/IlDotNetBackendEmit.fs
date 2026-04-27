@@ -409,6 +409,10 @@ module internal IlDotNetBackendEmit =
                     ensureExpected (IlPrimitive IlInt64)
                 | KRuntimeLiteral LiteralValue.Unit ->
                     ensureExpected unitIlType
+                | KRuntimeEffectLabel _
+                | KRuntimeEffectOperation _
+                | KRuntimeHandle _ ->
+                    Result.Error "IL backend does not support effect handlers yet."
                 | KRuntimeName [ "True" ]
                 | KRuntimeName [ "False" ] ->
                     ensureExpected (IlPrimitive IlBool)
@@ -1115,6 +1119,10 @@ module internal IlDotNetBackendEmit =
         match expression with
         | KRuntimeLiteral literal ->
             emitLiteral il literal
+        | KRuntimeEffectLabel _
+        | KRuntimeEffectOperation _
+        | KRuntimeHandle _ ->
+            Result.Error "IL backend does not support effect handlers yet."
         | KRuntimeName [ "True" ] ->
             il.Emit(OpCodes.Ldc_I4_1)
             Result.Ok()

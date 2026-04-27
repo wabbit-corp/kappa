@@ -222,6 +222,10 @@ module CheckpointVerification =
             | KRuntimeLiteral _
             | KRuntimeName _ ->
                 []
+            | KRuntimeEffectLabel _ ->
+                []
+            | KRuntimeEffectOperation(label, _) ->
+                verify locals label
             | KRuntimeClosure(parameters, body) ->
                 let duplicateParameters =
                     parameters
@@ -237,6 +241,25 @@ module CheckpointVerification =
                 duplicateParameters @ verify extendedLocals body
             | KRuntimeIfThenElse(condition, whenTrue, whenFalse) ->
                 verify locals condition @ verify locals whenTrue @ verify locals whenFalse
+            | KRuntimeHandle(_, label, body, returnClause, operationClauses) ->
+                let verifyClause (clause: KRuntimeEffectHandlerClause) =
+                    let clauseLocals =
+                        clause.Arguments
+                        |> List.choose (function
+                            | KRuntimeEffectNameArgument name -> Some name
+                            | _ -> None)
+                        |> List.fold (fun state name -> Set.add name state) locals
+                        |> fun state ->
+                            clause.ResumptionName
+                            |> Option.map (fun name -> Set.add name state)
+                            |> Option.defaultValue state
+
+                    verify clauseLocals clause.Body
+
+                verify locals label
+                @ verify locals body
+                @ verifyClause returnClause
+                @ (operationClauses |> List.collect verifyClause)
             | KRuntimeMatch(scrutinee, cases) ->
                 verify locals scrutinee
                 @ (cases

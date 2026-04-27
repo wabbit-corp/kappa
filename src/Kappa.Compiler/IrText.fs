@@ -58,6 +58,18 @@ module internal IrText =
             let nameText = String.concat "." staticObject.Name
             let typeText = staticObject.TypeText |> Option.defaultValue "_"
             $"({kindText} {nameText} : {typeText})"
+        | KCoreEffectLabel(labelName, operations) ->
+            let operationText =
+                operations
+                |> List.map (fun operation -> operation.Name)
+                |> String.concat " "
+
+            let suffix =
+                if String.IsNullOrWhiteSpace(operationText) then "" else " " + operationText
+
+            $"(effect-label {labelName}{suffix})"
+        | KCoreEffectOperation(label, operationName) ->
+            $"(effect-op {kcoreExpressionText label} {operationName})"
         | KCoreSyntaxQuote inner ->
             $"('{{ {kcoreExpressionText inner} }})"
         | KCoreSyntaxSplice inner ->
@@ -73,6 +85,30 @@ module internal IrText =
             $"(lambda ({names}) {kcoreExpressionText body})"
         | KCoreIfThenElse(condition, whenTrue, whenFalse) ->
             $"(if {kcoreExpressionText condition} {kcoreExpressionText whenTrue} {kcoreExpressionText whenFalse})"
+        | KCoreHandle(isDeep, label, body, returnClause, operationClauses) ->
+            let clauseText (clause: KCoreEffectHandlerClause) =
+                let argumentText =
+                    clause.Arguments
+                    |> List.map (function
+                        | KCoreEffectUnitArgument -> "()"
+                        | KCoreEffectWildcardArgument -> "_"
+                        | KCoreEffectNameArgument name -> name)
+                    |> String.concat " "
+
+                let resumptionText =
+                    clause.ResumptionName
+                    |> Option.map (fun name -> $" {name}")
+                    |> Option.defaultValue ""
+
+                let argumentSuffix =
+                    if String.IsNullOrWhiteSpace(argumentText) then "" else " " + argumentText
+
+                $"(case {clause.OperationName}{argumentSuffix}{resumptionText} -> {kcoreExpressionText clause.Body})"
+
+            let handlerKind = if isDeep then "deep-handle" else "handle"
+            let operationClauseText = operationClauses |> List.map clauseText |> String.concat " "
+
+            $"({handlerKind} {kcoreExpressionText label} {kcoreExpressionText body} {clauseText returnClause} {operationClauseText})"
         | KCoreMatch(scrutinee, cases) ->
             let caseText =
                 cases
@@ -183,12 +219,48 @@ module internal IrText =
         | KRuntimeLiteral(LiteralValue.Grapheme value) -> $"g'{value}'"
         | KRuntimeLiteral(LiteralValue.Byte value) -> $"b'\\x{int value:X2}'"
         | KRuntimeLiteral LiteralValue.Unit -> "()"
+        | KRuntimeEffectLabel(labelName, operations) ->
+            let operationText =
+                operations
+                |> List.map (fun operation -> operation.Name)
+                |> String.concat " "
+
+            let suffix =
+                if String.IsNullOrWhiteSpace(operationText) then "" else " " + operationText
+
+            $"(effect-label {labelName}{suffix})"
+        | KRuntimeEffectOperation(label, operationName) ->
+            $"(effect-op {runtimeExpressionText label} {operationName})"
         | KRuntimeName segments -> String.concat "." segments
         | KRuntimeClosure(parameters, body) ->
             let names = String.concat " " parameters
             $"(closure ({names}) {runtimeExpressionText body})"
         | KRuntimeIfThenElse(condition, whenTrue, whenFalse) ->
             $"(if {runtimeExpressionText condition} {runtimeExpressionText whenTrue} {runtimeExpressionText whenFalse})"
+        | KRuntimeHandle(isDeep, label, body, returnClause, operationClauses) ->
+            let clauseText (clause: KRuntimeEffectHandlerClause) =
+                let argumentText =
+                    clause.Arguments
+                    |> List.map (function
+                        | KRuntimeEffectUnitArgument -> "()"
+                        | KRuntimeEffectWildcardArgument -> "_"
+                        | KRuntimeEffectNameArgument name -> name)
+                    |> String.concat " "
+
+                let argumentSuffix =
+                    if String.IsNullOrWhiteSpace(argumentText) then "" else " " + argumentText
+
+                let resumptionText =
+                    clause.ResumptionName
+                    |> Option.map (fun name -> $" {name}")
+                    |> Option.defaultValue ""
+
+                $"(case {clause.OperationName}{argumentSuffix}{resumptionText} -> {runtimeExpressionText clause.Body})"
+
+            let handlerKind = if isDeep then "deep-handle" else "handle"
+            let operationClauseText = operationClauses |> List.map clauseText |> String.concat " "
+
+            $"({handlerKind} {runtimeExpressionText label} {runtimeExpressionText body} {clauseText returnClause} {operationClauseText})"
         | KRuntimeMatch(scrutinee, cases) ->
             let caseText =
                 cases

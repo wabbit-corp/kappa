@@ -27,6 +27,7 @@
     <Compile Include="ZigBackendTests.fs" />
     <Compile Include="MilestoneTwoTests.fs" />
     <Compile Include="MilestoneThreeTests.fs" />
+    <Compile Include="MilestoneFourTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

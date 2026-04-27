@@ -1,15 +1,28 @@
 namespace Kappa.Compiler
 
 // The implementation-defined runtime IR that sits between KCore and KBackendIR.
-type KRuntimeExitAction =
-    | KRuntimeDeferred of KRuntimeExpression
-    | KRuntimeRelease of resourceTypeText: string option * release: KRuntimeExpression * resource: KRuntimeExpression
+type KRuntimeEffectOperation =
+    { Name: string
+      ResumptionQuantity: Quantity option }
 
-and KRuntimeExpression =
+type KRuntimeEffectHandlerArgument =
+    | KRuntimeEffectUnitArgument
+    | KRuntimeEffectWildcardArgument
+    | KRuntimeEffectNameArgument of string
+
+type KRuntimeExpression =
     | KRuntimeLiteral of LiteralValue
     | KRuntimeName of string list
+    | KRuntimeEffectLabel of labelName: string * operations: KRuntimeEffectOperation list
+    | KRuntimeEffectOperation of label: KRuntimeExpression * operationName: string
     | KRuntimeClosure of string list * KRuntimeExpression
     | KRuntimeIfThenElse of KRuntimeExpression * KRuntimeExpression * KRuntimeExpression
+    | KRuntimeHandle of
+        isDeep: bool *
+        label: KRuntimeExpression *
+        body: KRuntimeExpression *
+        returnClause: KRuntimeEffectHandlerClause *
+        operationClauses: KRuntimeEffectHandlerClause list
     | KRuntimeMatch of KRuntimeExpression * KRuntimeMatchCase list
     | KRuntimeExecute of KRuntimeExpression
     | KRuntimeLet of bindingName: string * value: KRuntimeExpression * body: KRuntimeExpression
@@ -23,6 +36,10 @@ and KRuntimeExpression =
     | KRuntimeUnary of operatorName: string * KRuntimeExpression
     | KRuntimeBinary of KRuntimeExpression * operatorName: string * KRuntimeExpression
     | KRuntimePrefixedString of prefix: string * parts: KRuntimeStringPart list
+
+and KRuntimeExitAction =
+    | KRuntimeDeferred of KRuntimeExpression
+    | KRuntimeRelease of resourceTypeText: string option * release: KRuntimeExpression * resource: KRuntimeExpression
 
 and KRuntimeStringPart =
     | KRuntimeStringText of string
@@ -38,6 +55,12 @@ and KRuntimePattern =
 and KRuntimeMatchCase =
     { Pattern: KRuntimePattern
       Guard: KRuntimeExpression option
+      Body: KRuntimeExpression }
+
+and KRuntimeEffectHandlerClause =
+    { OperationName: string
+      Arguments: KRuntimeEffectHandlerArgument list
+      ResumptionName: string option
       Body: KRuntimeExpression }
 
 type KRuntimeParameter =

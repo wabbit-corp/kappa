@@ -74,6 +74,7 @@ type DiagnosticCode =
     | QttBorrowConsume
     | QttBorrowOverlap
     | QttBorrowEscape
+    | QttContinuationCapture
     | QttErasedRuntimeUse
     | QttUsingExplicitQuantity
     | QttInoutMarkerRequired
@@ -152,6 +153,7 @@ module DiagnosticCode =
         | QttBorrowConsume -> "E_QTT_BORROW_CONSUME"
         | QttBorrowOverlap -> "E_QTT_BORROW_OVERLAP"
         | QttBorrowEscape -> "E_QTT_BORROW_ESCAPE"
+        | QttContinuationCapture -> "E_QTT_CONTINUATION_CAPTURE"
         | QttErasedRuntimeUse -> "E_QTT_ERASED_RUNTIME_USE"
         | QttUsingExplicitQuantity -> "E_QTT_USING_EXPLICIT_QUANTITY"
         | QttInoutMarkerRequired -> "E_QTT_INOUT_MARKER_REQUIRED"
@@ -231,6 +233,7 @@ module DiagnosticCode =
         | "E_QTT_BORROW_CONSUME" -> Some QttBorrowConsume
         | "E_QTT_BORROW_OVERLAP" -> Some QttBorrowOverlap
         | "E_QTT_BORROW_ESCAPE" -> Some QttBorrowEscape
+        | "E_QTT_CONTINUATION_CAPTURE" -> Some QttContinuationCapture
         | "E_QTT_ERASED_RUNTIME_USE" -> Some QttErasedRuntimeUse
         | "E_QTT_USING_EXPLICIT_QUANTITY" -> Some QttUsingExplicitQuantity
         | "E_QTT_INOUT_MARKER_REQUIRED" -> Some QttInoutMarkerRequired
@@ -251,6 +254,8 @@ module DiagnosticCode =
             Some "Two types that must agree after normalization do not definitionally equal one another."
         | NumericLiteralOutOfRange ->
             Some "A numeric literal cannot be represented at the target numeric type required by the surrounding typing context."
+        | QttContinuationCapture ->
+            Some "A multi-shot continuation cannot capture live linear or borrowed resources across the operation site."
         | UnicodeInvalidScalarLiteral ->
             Some "A Unicode scalar literal must decode to exactly one valid Unicode scalar value and must not contain surrogate or out-of-range code points."
         | UnicodeInvalidGraphemeLiteral ->

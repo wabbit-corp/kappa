@@ -76,6 +76,10 @@ module internal KBackendLowering =
         | KRuntimeName [ "True" ]
         | KRuntimeName [ "False" ] ->
             BackendRepBoolean
+        | KRuntimeEffectLabel _ ->
+            backendOpaqueRepresentation (Some "EffectLabel")
+        | KRuntimeEffectOperation _ ->
+            backendOpaqueRepresentation (Some "EffectOperation")
         | KRuntimeName _ ->
             backendOpaqueRepresentation None
         | KRuntimeClosure _ ->
@@ -93,6 +97,12 @@ module internal KBackendLowering =
                     (fun state caseClause ->
                         mergeBackendRepresentations state (inferKRuntimeExpressionRepresentation caseClause.Body))
                     (inferKRuntimeExpressionRepresentation firstCase.Body)
+        | KRuntimeHandle(_, _, _, returnClause, operationClauses) ->
+            operationClauses
+            |> List.fold
+                (fun state clause ->
+                    mergeBackendRepresentations state (inferKRuntimeExpressionRepresentation clause.Body))
+                (inferKRuntimeExpressionRepresentation returnClause.Body)
         | KRuntimeExecute(KRuntimeApply(KRuntimeName [ intrinsicName ], _)) ->
             IntrinsicCatalog.executedIntrinsicResultRepresentation intrinsicName
             |> Option.defaultValue (backendOpaqueRepresentation None)
@@ -390,6 +400,10 @@ module internal KBackendLowering =
             match expression with
             | KRuntimeLiteral _ ->
                 Set.empty
+            | KRuntimeEffectLabel _ ->
+                Set.empty
+            | KRuntimeEffectOperation(label, _) ->
+                collectClosureCaptures locals bound label
             | KRuntimeName [ name ] when Set.contains name locals && not (Set.contains name bound) ->
                 Set.singleton name
             | KRuntimeName _ ->
@@ -400,6 +414,27 @@ module internal KBackendLowering =
                 collectClosureCaptures locals bound condition
                 |> Set.union (collectClosureCaptures locals bound whenTrue)
                 |> Set.union (collectClosureCaptures locals bound whenFalse)
+            | KRuntimeHandle(_, label, body, returnClause, operationClauses) ->
+                let clauseCaptures (clause: KRuntimeEffectHandlerClause) =
+                    let clauseBound =
+                        clause.Arguments
+                        |> List.choose (function
+                            | KRuntimeEffectNameArgument name -> Some name
+                            | _ -> None)
+                        |> fun names ->
+                            names
+                            |> List.fold (fun state name -> Set.add name state) bound
+                        |> fun state ->
+                            clause.ResumptionName
+                            |> Option.map (fun name -> Set.add name state)
+                            |> Option.defaultValue state
+
+                    collectClosureCaptures locals clauseBound clause.Body
+
+                collectClosureCaptures locals bound label
+                |> Set.union (collectClosureCaptures locals bound body)
+                |> Set.union (clauseCaptures returnClause)
+                |> Set.union (operationClauses |> List.fold (fun state clause -> Set.union state (clauseCaptures clause)) Set.empty)
             | KRuntimeMatch(scrutinee, cases) ->
                 let scrutineeCaptures = collectClosureCaptures locals bound scrutinee
 
@@ -853,6 +888,10 @@ module internal KBackendLowering =
                 | KRuntimeLiteral literal ->
                     let representation = backendLiteralRepresentation literal
                     Result.Ok(BackendLiteral(literal, representation), representation)
+                | KRuntimeEffectLabel _
+                | KRuntimeEffectOperation _
+                | KRuntimeHandle _ ->
+                    Result.Error "KBackendIR lowering does not support effect handlers yet."
                 | KRuntimeName segments ->
                     resolveRuntimeName runtimeModule locals segments
                     |> Result.bind (fun (resolvedName, representation) ->

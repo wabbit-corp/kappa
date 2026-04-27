@@ -30,13 +30,31 @@ type RuntimeValue =
     | HashStateValue of int64
     | HashCodeValue of int64
     | UnitValue
+    | EffectLabelValue of RuntimeEffectLabel
     | ConstructorFunctionValue of RuntimeConstructor * RuntimeValue list
     | ConstructedValue of RuntimeConstructed
-    | IOActionValue of (unit -> Result<RuntimeValue, EvaluationError>)
+    | NativeFunctionValue of RuntimeNativeFunction
+    | IOActionValue of (unit -> Result<RuntimeActionResult, EvaluationError>)
     | FunctionValue of RuntimeClosure
     | BuiltinFunctionValue of BuiltinFunction
     | RefCellValue of RuntimeRefCell
     | DictionaryValue of RuntimeDictionary
+and RuntimeEffectLabel =
+    { Name: string
+      Operations: Map<string, Quantity option> }
+and RuntimeActionResult =
+    | RuntimeActionReturn of RuntimeValue
+    | RuntimeActionRequest of RuntimeEffectRequest
+and RuntimeEffectRequest =
+    { Label: RuntimeEffectLabel
+      OperationName: string
+      Arguments: RuntimeValue list
+      ContinueWith: RuntimeValue -> Result<RuntimeActionResult, EvaluationError> }
+and RuntimeNativeFunction =
+    { Name: string
+      Arity: int
+      AppliedArguments: RuntimeValue list
+      Invoke: RuntimeValue list -> Result<RuntimeValue, EvaluationError> }
 and RuntimeConstructor =
     { Name: string
       QualifiedName: string
@@ -103,6 +121,7 @@ module RuntimeValue =
         | HashStateValue value -> $"HashState({value})"
         | HashCodeValue value -> $"HashCode({value})"
         | UnitValue -> "()"
+        | EffectLabelValue label -> $"<effect-label {label.Name}>"
         | ConstructorFunctionValue(constructor, arguments) ->
             $"<constructor {constructor.Name}/{constructor.Arity} [{arguments.Length}]>"
         | ConstructedValue constructed ->
@@ -115,6 +134,7 @@ module RuntimeValue =
                 let fieldText = fields |> List.map format |> String.concat " "
                 $"{constructorName} {fieldText}"
         | IOActionValue _ -> "<io>"
+        | NativeFunctionValue nativeFunction -> $"<native {nativeFunction.Name}>"
         | FunctionValue _ -> "<function>"
         | BuiltinFunctionValue builtin -> $"<builtin {builtin.Name}>"
         | RefCellValue _ -> "<ref>"
@@ -291,6 +311,7 @@ module Interpreter =
             | "pure"
             | ">>="
             | ">>"
+            | "runPure"
             | "not"
             | "and"
             | "or"
@@ -500,9 +521,11 @@ module Interpreter =
             | HashStateValue value -> ok (string value)
             | HashCodeValue value -> ok (string value)
             | UnitValue -> ok "()"
+            | EffectLabelValue _
             | ConstructedValue _
             | ConstructorFunctionValue _
             | IOActionValue _
+            | NativeFunctionValue _
             | FunctionValue _
             | BuiltinFunctionValue _
             | RefCellValue _
@@ -513,6 +536,47 @@ module Interpreter =
             match expression with
             | KRuntimeLiteral literal ->
                 ok (literalToValue literal)
+            | KRuntimeEffectLabel(labelName, operations) ->
+                ok
+                    (EffectLabelValue
+                        { Name = labelName
+                          Operations =
+                            operations
+                            |> List.map (fun operation -> operation.Name, operation.ResumptionQuantity)
+                            |> Map.ofList })
+            | KRuntimeEffectOperation(labelExpression, operationName) ->
+                evaluateExpression scope labelExpression
+                |> Result.bind (function
+                    | EffectLabelValue label ->
+                        let invoke arguments =
+                            ok
+                                (IOActionValue(fun () ->
+                                    ok
+                                        (RuntimeActionRequest
+                                            { Label = label
+                                              OperationName = operationName
+                                              Arguments = arguments
+                                              ContinueWith = runtimeActionReturn })))
+
+                        ok
+                            (NativeFunctionValue
+                                { Name = $"{label.Name}.{operationName}"
+                                  Arity = 1
+                                  AppliedArguments = []
+                                  Invoke = invoke })
+                    | other ->
+                        error $"Expected an effect label for '{operationName}', but got {RuntimeValue.format other}.")
+            | KRuntimeHandle(isDeep, labelExpression, bodyExpression, returnClause, operationClauses) ->
+                evaluateExpression scope labelExpression
+                |> Result.bind (function
+                    | EffectLabelValue label ->
+                        evaluateExpression scope bodyExpression
+                        |> Result.map (fun bodyValue ->
+                            IOActionValue(fun () ->
+                                executeIoAction bodyValue
+                                |> Result.bind (handleActionResult scope isDeep label returnClause operationClauses)))
+                    | other ->
+                        error $"Expected an effect label in handle, but got {RuntimeValue.format other}.")
             | KRuntimeName segments ->
                 resolveName scope segments
             | KRuntimePrefixedString (prefix, parts) ->
@@ -535,11 +599,12 @@ module Interpreter =
                 |> Result.bind (fun value -> evaluateMatch scope value cases)
             | KRuntimeExecute inner ->
                 evaluateExpression scope inner
+                |> Result.bind executeIoAction
                 |> Result.bind (function
-                    | IOActionValue action ->
-                        action ()
-                    | value ->
-                        ok value)
+                    | RuntimeActionReturn value ->
+                        ok value
+                    | RuntimeActionRequest request ->
+                        error $"Unhandled effect operation '{request.Label.Name}.{request.OperationName}'.")
             | KRuntimeLet (bindingName, valueExpression, bodyExpression) ->
                 match valueExpression with
                 | KRuntimeClosure(parameters, body) ->
@@ -592,19 +657,26 @@ module Interpreter =
                             error $"Expected a Boolean in the while condition, but got {RuntimeValue.format value}.")
 
                 loop ()
+            | KRuntimeApply (KRuntimeEffectOperation(labelExpression, operationName), arguments) ->
+                evaluateExpression scope labelExpression
+                |> Result.bind (function
+                    | EffectLabelValue label ->
+                        evaluateArguments scope arguments
+                        |> Result.map (fun values ->
+                            IOActionValue(fun () ->
+                                ok
+                                    (RuntimeActionRequest
+                                        { Label = label
+                                          OperationName = operationName
+                                          Arguments = values
+                                          ContinueWith = runtimeActionReturn })))
+                    | other ->
+                        error $"Expected an effect label for '{operationName}', but got {RuntimeValue.format other}.")
             | KRuntimeApply (callee, arguments) ->
                 evaluateExpression scope callee
                 |> Result.bind (fun functionValue ->
-                    arguments
-                    |> List.map (evaluateExpression scope)
-                    |> List.fold
-                        (fun state next ->
-                            match state, next with
-                            | Result.Ok values, Result.Ok value -> Result.Ok(value :: values)
-                            | Result.Error issue, _ -> Result.Error issue
-                            | _, Result.Error issue -> Result.Error issue)
-                        (Result.Ok [])
-                    |> Result.bind (fun values -> apply functionValue (List.rev values)))
+                    evaluateArguments scope arguments
+                    |> Result.bind (apply functionValue))
             | KRuntimeDictionaryValue (moduleName, traitName, instanceKey) ->
                 ok
                     (DictionaryValue
@@ -682,6 +754,127 @@ module Interpreter =
                             |> Result.bind (fun functionValue -> apply functionValue [ leftValue; rightValue ])
                         else
                             applyBuiltinBinary operatorName leftValue rightValue))
+
+        and evaluateArguments scope arguments =
+            arguments
+            |> List.map (evaluateExpression scope)
+            |> List.fold
+                (fun state next ->
+                    match state, next with
+                    | Result.Ok values, Result.Ok value -> Result.Ok(value :: values)
+                    | Result.Error issue, _ -> Result.Error issue
+                    | _, Result.Error issue -> Result.Error issue)
+                (Result.Ok [])
+            |> Result.map List.rev
+
+        and bindHandlerClauseArguments
+            (scope: RuntimeScope)
+            (clause: KRuntimeEffectHandlerClause)
+            (argumentValues: RuntimeValue list)
+            (resumptionValue: RuntimeValue option)
+            =
+            if List.length clause.Arguments <> List.length argumentValues then
+                error $"Handler clause '{clause.OperationName}' expected {clause.Arguments.Length} arguments, but received {argumentValues.Length}."
+            else
+                let boundLocals =
+                    List.zip clause.Arguments argumentValues
+                    |> List.fold
+                        (fun state (argument, value) ->
+                            state
+                            |> Result.bind (fun locals ->
+                                match argument with
+                                | KRuntimeEffectNameArgument name ->
+                                    Result.Ok(Map.add name value locals)
+                                | KRuntimeEffectWildcardArgument ->
+                                    Result.Ok locals
+                                | KRuntimeEffectUnitArgument ->
+                                    match value with
+                                    | UnitValue -> Result.Ok locals
+                                    | _ ->
+                                        Result.Error
+                                            { Message =
+                                                $"Handler clause '{clause.OperationName}' expected a Unit argument, but received {RuntimeValue.format value}." }))
+                        (Result.Ok scope.Locals)
+
+                boundLocals
+                |> Result.map (fun locals ->
+                    let localsWithResumption =
+                        match clause.ResumptionName, resumptionValue with
+                        | Some name, Some value -> Map.add name value locals
+                        | _ -> locals
+
+                    { scope with Locals = localsWithResumption })
+
+        and makeResumptionValue
+            (scope: RuntimeScope)
+            isDeep
+            (label: RuntimeEffectLabel)
+            (returnClause: KRuntimeEffectHandlerClause)
+            (operationClauses: KRuntimeEffectHandlerClause list)
+            continueWith
+            =
+            NativeFunctionValue
+                { Name = $"{label.Name}.resume"
+                  Arity = 1
+                  AppliedArguments = []
+                  Invoke =
+                    (fun arguments ->
+                        match arguments with
+                        | [ value ] ->
+                            ok
+                                (IOActionValue(fun () ->
+                                    continueWith value
+                                    |> Result.bind (fun step ->
+                                        if isDeep then
+                                            handleActionResult scope isDeep label returnClause operationClauses step
+                                        else
+                                            ok step)))
+                        | _ ->
+                            error "Resumptions expect exactly one argument.") }
+
+        and executeHandlerClause
+            (scope: RuntimeScope)
+            isDeep
+            (label: RuntimeEffectLabel)
+            (returnClause: KRuntimeEffectHandlerClause)
+            (operationClauses: KRuntimeEffectHandlerClause list)
+            (clause: KRuntimeEffectHandlerClause)
+            argumentValues
+            (resumptionValue: RuntimeValue option)
+            =
+            bindHandlerClauseArguments scope clause argumentValues resumptionValue
+            |> Result.bind (fun clauseScope ->
+                evaluateExpression clauseScope clause.Body
+                |> Result.bind executeIoAction)
+
+        and handleActionResult
+            (scope: RuntimeScope)
+            isDeep
+            (label: RuntimeEffectLabel)
+            (returnClause: KRuntimeEffectHandlerClause)
+            (operationClauses: KRuntimeEffectHandlerClause list)
+            step
+            =
+            match step with
+            | RuntimeActionReturn value ->
+                executeHandlerClause scope isDeep label returnClause operationClauses returnClause [ value ] None
+            | RuntimeActionRequest request when String.Equals(request.Label.Name, label.Name, StringComparison.Ordinal) ->
+                match operationClauses |> List.tryFind (fun clause -> String.Equals(clause.OperationName, request.OperationName, StringComparison.Ordinal)) with
+                | Some clause ->
+                    let resumptionValue =
+                        makeResumptionValue scope isDeep label returnClause operationClauses request.ContinueWith
+
+                    executeHandlerClause scope isDeep label returnClause operationClauses clause request.Arguments (Some resumptionValue)
+                | None ->
+                    error $"Handler for '{label.Name}' does not define a clause for operation '{request.OperationName}'."
+            | RuntimeActionRequest request ->
+                ok
+                    (RuntimeActionRequest
+                        { request with
+                            ContinueWith =
+                                fun value ->
+                                    request.ContinueWith value
+                                    |> Result.bind (handleActionResult scope isDeep label returnClause operationClauses) })
 
         and evaluatePrefixedString (scope: RuntimeScope) (prefix: string) (parts: KRuntimeStringPart list) =
             if not (String.Equals(prefix, "f", StringComparison.Ordinal)) then
@@ -805,6 +998,8 @@ module Interpreter =
                 applyClosure closure arguments
             | ConstructorFunctionValue(constructor, existingArguments) ->
                 applyConstructor constructor existingArguments arguments
+            | NativeFunctionValue nativeFunction ->
+                applyNativeFunction nativeFunction arguments
             | BuiltinFunctionValue builtin ->
                 applyBuiltinFunction builtin arguments
             | value ->
@@ -841,6 +1036,34 @@ module Interpreter =
 
             invoke existingArguments arguments
 
+        and applyNativeFunction (nativeFunction: RuntimeNativeFunction) (arguments: RuntimeValue list) =
+            let rec invoke collected remainingArguments =
+                match remainingArguments with
+                | [] ->
+                    if List.length collected = nativeFunction.Arity then
+                        nativeFunction.Invoke collected
+                    else
+                        ok
+                            (NativeFunctionValue
+                                { nativeFunction with
+                                    AppliedArguments = collected })
+                | argument :: rest ->
+                    let nextArguments = collected @ [ argument ]
+
+                    if List.length nextArguments > nativeFunction.Arity then
+                        error $"Native function '{nativeFunction.Name}' received too many arguments."
+                    elif List.length nextArguments = nativeFunction.Arity then
+                        nativeFunction.Invoke nextArguments
+                        |> Result.bind (fun value ->
+                            if List.isEmpty rest then
+                                ok value
+                            else
+                                apply value rest)
+                    else
+                        invoke nextArguments rest
+
+            invoke nativeFunction.AppliedArguments arguments
+
         and applyBuiltinFunction (builtin: BuiltinFunction) (arguments: RuntimeValue list) : Result<RuntimeValue, EvaluationError> =
             let rec invoke (currentBuiltin: BuiltinFunction) (remainingArguments: RuntimeValue list) =
                 match remainingArguments with
@@ -863,19 +1086,52 @@ module Interpreter =
 
             invoke builtin arguments
 
+        and runtimeActionReturn value =
+            ok (RuntimeActionReturn value)
+
         and executeIoAction value =
             match value with
             | IOActionValue action ->
                 action ()
             | other ->
-                error $"Expected an IO action, but got {RuntimeValue.format other}."
+                runtimeActionReturn other
+
+        and bindActionResult continuation step =
+            match step with
+            | RuntimeActionReturn value ->
+                apply continuation [ value ]
+                |> Result.bind executeIoAction
+            | RuntimeActionRequest request ->
+                ok
+                    (RuntimeActionRequest
+                        { request with
+                            ContinueWith =
+                                fun value ->
+                                    request.ContinueWith value
+                                    |> Result.bind (bindActionResult continuation) })
+
+        and sequenceActionResult rightAction step =
+            match step with
+            | RuntimeActionReturn _ ->
+                executeIoAction rightAction
+            | RuntimeActionRequest request ->
+                ok
+                    (RuntimeActionRequest
+                        { request with
+                            ContinueWith =
+                                fun value ->
+                                    request.ContinueWith value
+                                    |> Result.bind (sequenceActionResult rightAction) })
 
         and executeExitAction scope action =
             match action with
             | KRuntimeDeferred expression ->
                 evaluateExpression scope expression
                 |> Result.bind executeIoAction
-                |> Result.map (fun _ -> ())
+                |> Result.bind (function
+                    | RuntimeActionReturn _ -> ok ()
+                    | RuntimeActionRequest _ ->
+                        error "Deferred exit actions cannot suspend with unhandled effects.")
             | KRuntimeRelease(_, releaseExpression, resourceExpression) ->
                 evaluateExpression scope releaseExpression
                 |> Result.bind (fun releaseValue ->
@@ -883,14 +1139,17 @@ module Interpreter =
                     |> Result.bind (fun resourceValue ->
                         apply releaseValue [ resourceValue ]
                         |> Result.bind executeIoAction
-                        |> Result.map (fun _ -> ())))
+                        |> Result.bind (function
+                            | RuntimeActionReturn _ -> ok ()
+                            | RuntimeActionRequest _ ->
+                                error "Release actions cannot suspend with unhandled effects.")))
 
         and toUnitIoAction (action: unit -> unit) =
             ok
                 (Some(
                     IOActionValue(fun () ->
                         action ()
-                        ok UnitValue)
+                        runtimeActionReturn UnitValue)
                 ))
 
         and invokeBuiltin (builtin: BuiltinFunction) : Result<RuntimeValue option, EvaluationError> =
@@ -930,7 +1189,7 @@ module Interpreter =
             | "or", _ ->
                 error "Intrinsic 'or' received too many arguments."
             | "pure", [ value ] ->
-                ok (Some(IOActionValue(fun () -> ok value)))
+                ok (Some(IOActionValue(fun () -> runtimeActionReturn value)))
             | "pure", arguments when List.length arguments < 1 ->
                 ok None
             | "pure", _ ->
@@ -940,9 +1199,7 @@ module Interpreter =
                     (Some(
                         IOActionValue(fun () ->
                             executeIoAction action
-                            |> Result.bind (fun value ->
-                                apply continuation [ value ]
-                                |> Result.bind executeIoAction))
+                            |> Result.bind (bindActionResult continuation))
                     ))
             | ">>=", arguments when List.length arguments < 2 ->
                 ok None
@@ -953,12 +1210,22 @@ module Interpreter =
                     (Some(
                         IOActionValue(fun () ->
                             executeIoAction leftAction
-                            |> Result.bind (fun _ -> executeIoAction rightAction))
+                            |> Result.bind (sequenceActionResult rightAction))
                     ))
             | ">>", arguments when List.length arguments < 2 ->
                 ok None
             | ">>", _ ->
                 error "Intrinsic '>>' received too many arguments."
+            | "runPure", [ action ] ->
+                executeIoAction action
+                |> Result.bind (function
+                    | RuntimeActionReturn value -> ok (Some value)
+                    | RuntimeActionRequest request ->
+                        error $"runPure encountered an unhandled effect operation '{request.Label.Name}.{request.OperationName}'.")
+            | "runPure", arguments when List.length arguments < 1 ->
+                ok None
+            | "runPure", _ ->
+                error "Intrinsic 'runPure' received too many arguments."
             | "print", [ StringValue value ] ->
                 toUnitIoAction (fun () -> output.Write(value))
             | "print", arguments when List.length arguments < 1 ->
@@ -1024,7 +1291,7 @@ module Interpreter =
             | "unsafeConsume", _ ->
                 error "Intrinsic 'unsafeConsume' received too many arguments."
             | "openFile", [ StringValue value ] ->
-                ok (Some(IOActionValue(fun () -> ok (StringValue($"<file:{value}>")))))
+                ok (Some(IOActionValue(fun () -> runtimeActionReturn (StringValue($"<file:{value}>")))))
             | "openFile", arguments when List.length arguments < 1 ->
                 ok None
             | "openFile", [ value ] ->
@@ -1032,7 +1299,7 @@ module Interpreter =
             | "openFile", _ ->
                 error "Intrinsic 'openFile' received too many arguments."
             | ("primitiveReadData" | "readData"), [ _ ] ->
-                ok (Some(IOActionValue(fun () -> ok (StringValue "chunk"))))
+                ok (Some(IOActionValue(fun () -> runtimeActionReturn (StringValue "chunk"))))
             | ("primitiveReadData" | "readData"), arguments when List.length arguments < 1 ->
                 ok None
             | ("primitiveReadData" | "readData"), _ ->
@@ -1044,13 +1311,13 @@ module Interpreter =
             | "primitiveCloseFile", _ ->
                 error "Intrinsic 'primitiveCloseFile' received too many arguments."
             | "newRef", [ value ] ->
-                ok (Some(IOActionValue(fun () -> ok (RefCellValue { Value = value }))))
+                ok (Some(IOActionValue(fun () -> runtimeActionReturn (RefCellValue { Value = value }))))
             | "newRef", arguments when List.length arguments < 1 ->
                 ok None
             | "newRef", _ ->
                 error "Intrinsic 'newRef' received too many arguments."
             | "readRef", [ RefCellValue cell ] ->
-                ok (Some(IOActionValue(fun () -> ok cell.Value)))
+                ok (Some(IOActionValue(fun () -> runtimeActionReturn cell.Value)))
             | "readRef", arguments when List.length arguments < 1 ->
                 ok None
             | "readRef", [ value ] ->
@@ -1062,7 +1329,7 @@ module Interpreter =
                     (Some(
                         IOActionValue(fun () ->
                             cell.Value <- value
-                            ok UnitValue)
+                            runtimeActionReturn UnitValue)
                     ))
             | "writeRef", arguments when List.length arguments < 2 ->
                 ok None
@@ -1628,7 +1895,11 @@ module Interpreter =
             match value with
             | IOActionValue action ->
                 action ()
-                |> Result.bind execute
+                |> Result.bind (function
+                    | RuntimeActionReturn nextValue ->
+                        execute nextValue
+                    | RuntimeActionRequest request ->
+                        error $"Unhandled effect operation '{request.Label.Name}.{request.OperationName}'.")
             | other ->
                 ok other
 

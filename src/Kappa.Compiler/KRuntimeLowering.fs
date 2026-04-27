@@ -373,6 +373,19 @@ module internal KRuntimeLowering =
                 lowerKRuntimeExpression runtimeParameterMasks resource
             )
 
+    and private lowerKRuntimeHandlerArgument argument =
+        match argument with
+        | KCoreEffectUnitArgument -> KRuntimeEffectUnitArgument
+        | KCoreEffectWildcardArgument -> KRuntimeEffectWildcardArgument
+        | KCoreEffectNameArgument name -> KRuntimeEffectNameArgument name
+
+    and private lowerKRuntimeHandlerClause runtimeParameterMasks (clause: KCoreEffectHandlerClause) =
+        ({ OperationName = clause.OperationName
+           Arguments = clause.Arguments |> List.map lowerKRuntimeHandlerArgument
+           ResumptionName = clause.ResumptionName
+           Body = lowerKRuntimeExpression runtimeParameterMasks clause.Body }
+         : KRuntimeEffectHandlerClause)
+
     and private lowerKRuntimeExpression runtimeParameterMasks expression =
         let rec tryDecodeInterpolatedFragments expression =
             let rec decodeList current =
@@ -418,6 +431,16 @@ module internal KRuntimeLowering =
             KRuntimeLiteral literal
         | KCoreStaticObject _ ->
             KRuntimeLiteral LiteralValue.Unit
+        | KCoreEffectLabel(labelName, operations) ->
+            KRuntimeEffectLabel(
+                labelName,
+                operations
+                |> List.map (fun operation ->
+                    { KRuntimeEffectOperation.Name = operation.Name
+                      ResumptionQuantity = operation.ResumptionQuantity })
+            )
+        | KCoreEffectOperation(label, operationName) ->
+            KRuntimeEffectOperation(lowerKRuntimeExpression runtimeParameterMasks label, operationName)
         | KCoreName segments ->
             KRuntimeName segments
         | KCoreTopLevelSyntaxSplice inner ->
@@ -450,6 +473,14 @@ module internal KRuntimeLowering =
                 lowerKRuntimeExpression runtimeParameterMasks condition,
                 lowerKRuntimeExpression runtimeParameterMasks whenTrue,
                 lowerKRuntimeExpression runtimeParameterMasks whenFalse
+            )
+        | KCoreHandle(isDeep, label, body, returnClause, operationClauses) ->
+            KRuntimeHandle(
+                isDeep,
+                lowerKRuntimeExpression runtimeParameterMasks label,
+                lowerKRuntimeExpression runtimeParameterMasks body,
+                lowerKRuntimeHandlerClause runtimeParameterMasks returnClause,
+                operationClauses |> List.map (lowerKRuntimeHandlerClause runtimeParameterMasks)
             )
         | KCoreMatch(scrutinee, cases) ->
             KRuntimeMatch(

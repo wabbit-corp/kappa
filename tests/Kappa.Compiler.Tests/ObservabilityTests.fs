@@ -35,6 +35,10 @@ let rec private containsCoreSyntheticRecordApply expression =
         containsCoreSyntheticRecordApply release
         || containsCoreSyntheticRecordApply resource
         || containsCoreSyntheticRecordApply body
+    | KCoreEffectLabel _ ->
+        false
+    | KCoreEffectOperation(label, _) ->
+        containsCoreSyntheticRecordApply label
     | KCoreSequence(first, second)
     | KCoreBinary(first, _, second) ->
         containsCoreSyntheticRecordApply first || containsCoreSyntheticRecordApply second
@@ -48,6 +52,11 @@ let rec private containsCoreSyntheticRecordApply expression =
         containsCoreSyntheticRecordApply condition
         || containsCoreSyntheticRecordApply whenTrue
         || containsCoreSyntheticRecordApply whenFalse
+    | KCoreHandle(_, label, body, returnClause, operationClauses) ->
+        containsCoreSyntheticRecordApply label
+        || containsCoreSyntheticRecordApply body
+        || containsCoreSyntheticRecordApply returnClause.Body
+        || (operationClauses |> List.exists (fun clause -> containsCoreSyntheticRecordApply clause.Body))
     | KCoreMatch(scrutinee, cases) ->
         containsCoreSyntheticRecordApply scrutinee
         || (cases
@@ -91,6 +100,10 @@ let rec private containsRuntimeSyntheticRecordApply expression =
         containsRuntimeSyntheticRecordApply release
         || containsRuntimeSyntheticRecordApply resource
         || containsRuntimeSyntheticRecordApply body
+    | KRuntimeEffectLabel _ ->
+        false
+    | KRuntimeEffectOperation(label, _) ->
+        containsRuntimeSyntheticRecordApply label
     | KRuntimeSequence(first, second)
     | KRuntimeBinary(first, _, second) ->
         containsRuntimeSyntheticRecordApply first || containsRuntimeSyntheticRecordApply second
@@ -98,6 +111,11 @@ let rec private containsRuntimeSyntheticRecordApply expression =
         containsRuntimeSyntheticRecordApply condition
         || containsRuntimeSyntheticRecordApply whenTrue
         || containsRuntimeSyntheticRecordApply whenFalse
+    | KRuntimeHandle(_, label, body, returnClause, operationClauses) ->
+        containsRuntimeSyntheticRecordApply label
+        || containsRuntimeSyntheticRecordApply body
+        || containsRuntimeSyntheticRecordApply returnClause.Body
+        || (operationClauses |> List.exists (fun clause -> containsRuntimeSyntheticRecordApply clause.Body))
     | KRuntimeMatch(scrutinee, cases) ->
         containsRuntimeSyntheticRecordApply scrutinee
         || (cases

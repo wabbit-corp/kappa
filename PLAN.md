@@ -234,3 +234,21 @@ Preferred resolution: adjust the compiler, keeping QTT information explicit thro
   The M3 cleanup split is now established across `ResourceModel.fs`, `ResourceCheckingSurface.fs`, `ResourceCheckingSignatures.fs`, the main checker, KCore/KRuntime protected-scope lowering, and post-erasure checkpoint verification.
 
 Current M3 status note: complete. The compiler now carries typed quantity metadata through frontend elaboration, checks ownership and borrow obligations in `KFrontIR.BODY_RESOLVE` with a real lexical `ResourceContext`, preserves deterministic ownership facts through `KFrontIR.CHECKERS` and `KCore`, lowers protected scopes through `DoScope` / `ScheduleExit` / `Release`, erases quantity/region/capture-only runtime metadata before `KBackendIR`, and verifies that leaked pre-erasure runtime metadata is rejected. The resource checker covers the M3 supported surface for linear drop/overuse, borrowed-vs-consuming separation, positive lower-bound obligations, hidden borrow roots, path-sensitive stable places, borrowed-region escape, one-region-per-`using` protected scopes, and `inout` rewriting across whole roots, subplaces, selector-form projections, projector descriptors, accessor-bundle openers, and multi-root record packs. Interpreter, Zig, and public Dotnet backend regressions remain green for deterministic cleanup and `inout` execution.
+
+## 12. Milestone 4 (`Effects` + handlers + row polymorphism)
+
+Preferred resolution: adjust the compiler, keeping M3 ownership facts authoritative for continuation capture and erasing effect rows before backend-specific lowering.
+
+- [x] Add the first real M4 tests before broad implementation: one positive one-shot `deep handle` interpreter case and one negative multi-shot capture-rule case that exercises a live linear suffix across the operation site.
+- [x] Preserve effect declarations, scoped effect labels, handler clauses, and resumptions through surface elaboration into explicit `KCore` / `KRuntimeIR` forms rather than erasing handlers back into ordinary expressions.
+- [x] Implement the first interpreter/runtime slice for one-shot scoped effects and `deep handle`, including `runPure` rejection of unhandled operations.
+- [x] Enforce the first M4 call-site capture rule from the ownership checker: a multi-shot scoped operation cannot capture live linear or borrowed bindings in the continuation suffix.
+- [x] Fix parser/layout handling so multiline handler clause bodies and nested `do` blocks survive real effect-handler syntax instead of flattening into malformed local-`let` parses.
+- [ ] Implement row-polymorphic effect solving for `EffRow`, including normalization plus `SplitEff`-style reasoning instead of the current single-label scoped-effect approximation.
+- [ ] Type handler clauses against the handled computation precisely, including remainder-row reasoning and resumption types derived from the clause result type instead of the current conservative `TypeArrow(ω, opResult, handledType)` approximation.
+- [ ] Desugar `deep handle` through the spec-shaped recursive shallow-handler driver so the runtime model matches section 8.1.5 instead of relying on a direct implementation-defined deep-handler node.
+- [ ] Lower one-shot handlers through `KBackendIR` and into at least the public CLR-backed `dotnet` profile; interpreter-only support is not sufficient to close M4.
+- [ ] Add an explicit backend capability split for reachable multi-shot resumptions: either implement CPS/cloneable-state-machine lowering or emit stable target diagnostics when a backend cannot realize the handler semantics.
+- [ ] Extend checkpoint verification and observability so post-erasure stages can prove that effect rows are gone while handler/resumption legality is still checked at the last effect-aware checkpoint.
+
+Current M4 status note: started, not complete. The compiler now has a real effect-handler kernel in `KCore` / `KRuntimeIR`, one-shot scoped-effect execution in the interpreter, parser support for multiline handler clause bodies, and an ownership-checked multi-shot capture rejection for live linear or borrowed continuation suffixes. The remaining work is the full row-polymorphic type/effect solver, spec-shaped deep-handler elaboration, and non-interpreter backend support.

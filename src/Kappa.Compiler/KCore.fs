@@ -27,18 +27,21 @@ type KCoreStaticObject =
       Type: KCoreType option
       TypeText: string option }
 
-type KCoreExitAction =
-    | KCoreDeferred of KCoreExpression
-    | KCoreRelease of resourceTypeText: string option * release: KCoreExpression * resource: KCoreExpression
+type KCoreEffectOperation =
+    { Name: string
+      ResumptionQuantity: Quantity option }
 
-and KCoreArgument =
-    { ArgumentKind: KCoreArgumentKind
-      Expression: KCoreExpression }
+type KCoreEffectHandlerArgument =
+    | KCoreEffectUnitArgument
+    | KCoreEffectWildcardArgument
+    | KCoreEffectNameArgument of string
 
-and KCoreExpression =
+type KCoreExpression =
     | KCoreLiteral of LiteralValue
     | KCoreName of string list
     | KCoreStaticObject of KCoreStaticObject
+    | KCoreEffectLabel of labelName: string * operations: KCoreEffectOperation list
+    | KCoreEffectOperation of label: KCoreExpression * operationName: string
     | KCoreSyntaxQuote of KCoreExpression
     | KCoreSyntaxSplice of KCoreExpression
     | KCoreTopLevelSyntaxSplice of KCoreExpression
@@ -46,6 +49,12 @@ and KCoreExpression =
     | KCoreCodeSplice of KCoreExpression
     | KCoreLambda of KCoreParameter list * KCoreExpression
     | KCoreIfThenElse of KCoreExpression * KCoreExpression * KCoreExpression
+    | KCoreHandle of
+        isDeep: bool *
+        label: KCoreExpression *
+        body: KCoreExpression *
+        returnClause: KCoreEffectHandlerClause *
+        operationClauses: KCoreEffectHandlerClause list
     | KCoreMatch of KCoreExpression * KCoreMatchCase list
     | KCoreExecute of KCoreExpression
     | KCoreLet of bindingName: string * value: KCoreExpression * body: KCoreExpression
@@ -59,6 +68,14 @@ and KCoreExpression =
     | KCoreUnary of operatorName: string * KCoreExpression
     | KCoreBinary of KCoreExpression * operatorName: string * KCoreExpression
     | KCorePrefixedString of prefix: string * parts: KCoreStringPart list
+
+and KCoreArgument =
+    { ArgumentKind: KCoreArgumentKind
+      Expression: KCoreExpression }
+
+and KCoreExitAction =
+    | KCoreDeferred of KCoreExpression
+    | KCoreRelease of resourceTypeText: string option * release: KCoreExpression * resource: KCoreExpression
 
 and KCoreStringPart =
     | KCoreStringText of string
@@ -74,6 +91,12 @@ and KCorePattern =
 and KCoreMatchCase =
     { Pattern: KCorePattern
       Guard: KCoreExpression option
+      Body: KCoreExpression }
+
+and KCoreEffectHandlerClause =
+    { OperationName: string
+      Arguments: KCoreEffectHandlerArgument list
+      ResumptionName: string option
       Body: KCoreExpression }
 
 type KCoreBinding =

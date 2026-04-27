@@ -911,6 +911,34 @@ module SurfaceElaboration =
     let private tryFindScopedEffectDeclaration name =
         currentScopedEffects () |> Map.tryFind name
 
+    let private scopedEffectOperationMetadata (declaration: EffectDeclaration) =
+        declaration.Operations
+        |> List.map (fun operation ->
+            { KCoreEffectOperation.Name = operation.Name
+              ResumptionQuantity = operation.ResumptionQuantity |> Option.orElse (Some QuantityOne) })
+
+    let private scopedRuntimeEffectOperationMetadata (declaration: EffectDeclaration) =
+        declaration.Operations
+        |> List.map (fun operation ->
+            { KRuntimeEffectOperation.Name = operation.Name
+              ResumptionQuantity = operation.ResumptionQuantity |> Option.orElse (Some QuantityOne) })
+
+    let private tryFindScopedEffectOperation effectName operationName =
+        tryFindScopedEffectDeclaration effectName
+        |> Option.bind (fun declaration ->
+            declaration.Operations
+            |> List.tryFind (fun operation -> String.Equals(operation.Name, operationName, StringComparison.Ordinal))
+            |> Option.map (fun operation -> declaration, operation))
+
+    let private scopedEffectRowType effectName =
+        TypeEffectRow(
+            [
+                { Label = TypeName([ effectName ], [])
+                  Effect = TypeName([ effectName ], []) }
+            ],
+            None
+        )
+
     let private withScopedEffectDeclaration (declaration: EffectDeclaration) work =
         let saved = currentScopedEffects ()
         scopedEffects.Value <- Some(Map.add declaration.Name declaration saved)
@@ -1631,6 +1659,9 @@ module SurfaceElaboration =
     let private ioType argumentType =
         TypeName([ "IO" ], [ argumentType ])
 
+    let private effType effectRow payloadType =
+        TypeName([ "Eff" ], [ effectRow; payloadType ])
+
     let private refType argumentType =
         TypeName([ "Ref" ], [ argumentType ])
 
@@ -1644,8 +1675,14 @@ module SurfaceElaboration =
         | TypeName([ "UIO" ], [ inner ]) -> inner
         | other -> other
 
+    let private tryUnwrapEffType typeExpr =
+        match typeExpr with
+        | TypeName([ "Eff" ], [ effectRow; inner ]) -> Some(effectRow, inner)
+        | _ -> None
+
     let private unwrapBindPayloadType typeExpr =
         match typeExpr with
+        | TypeName([ "Eff" ], [ _; inner ]) -> inner
         | TypeName(_, [ inner ]) -> inner
         | other -> unwrapIoType other
 
@@ -5224,7 +5261,20 @@ module SurfaceElaboration =
             tryResolveScopedStaticObject environment expression
             |> Option.bind (fun staticObject -> staticObject.Scheme)
             |> Option.map (fun scheme -> scheme.Body)
+        | Name [ effectName ] when tryFindScopedEffectDeclaration effectName |> Option.isSome ->
+            Some(TypeIntrinsic EffLabelClassifier)
         | Name(root :: path) ->
+            let scopedEffectOperationType =
+                match path with
+                | [ operationName ] ->
+                    tryFindScopedEffectOperation root operationName
+                    |> Option.bind (fun (_, operation) ->
+                        operation.SignatureTokens
+                        |> TypeSignatures.parseType
+                        |> Option.map (qualifyVisibleTypeNames environment))
+                | _ ->
+                    None
+
             let ordinaryResolution =
                 localTypes
                 |> Map.tryFind root
@@ -5247,18 +5297,37 @@ module SurfaceElaboration =
 
             match path with
             | [ memberName ] ->
-                tryInferStaticConstructorCall
-                    environment
-                    freshCounter
-                    (inferValidationExpressionType environment freshCounter localTypes)
-                    (Name [ root ])
-                    memberName
-                    []
+                scopedEffectOperationType
+                |> Option.orElseWith (fun () ->
+                    tryInferStaticConstructorCall
+                        environment
+                        freshCounter
+                        (inferValidationExpressionType environment freshCounter localTypes)
+                        (Name [ root ])
+                        memberName
+                        [])
                 |> Option.orElse ordinaryResolution
             | _ ->
                 ordinaryResolution
         | Name [] ->
             None
+        | Apply(Name [ effectName; operationName ], arguments) ->
+            match
+                tryFindScopedEffectOperation effectName operationName
+                |> Option.bind (fun (_, operation) ->
+                    operation.SignatureTokens
+                    |> TypeSignatures.parseType
+                    |> Option.map (qualifyVisibleTypeNames environment)
+                    |> Option.map TypeSignatures.functionParts)
+            with
+            | Some(parameterTypes, resultType) when List.length parameterTypes = List.length arguments ->
+                Some(effType (scopedEffectRowType effectName) resultType)
+            | _ ->
+                match tryInferQueryCarrierType environment freshCounter localTypes (inferValidationExpressionType environment freshCounter) expression with
+                | Some queryCarrierType ->
+                    Some queryCarrierType
+                | None ->
+                    inferValidationApplicationType environment freshCounter localTypes expression
         | LocalSignature(_, body) ->
             inferValidationExpressionType environment freshCounter localTypes body
         | LocalTypeAlias(_, body) ->
@@ -5426,71 +5495,7 @@ module SurfaceElaboration =
         | InoutArgument inner ->
             inferValidationExpressionType environment freshCounter localTypes inner
         | Apply _ as application ->
-            tryInferQueryCarrierType
-                environment
-                freshCounter
-                localTypes
-                (fun currentLocals currentExpression ->
-                    inferValidationExpressionType environment freshCounter currentLocals currentExpression)
-                application
-            |> Option.orElseWith (fun () ->
-                match application with
-                | Apply(Name [ receiverName; memberName ], arguments) ->
-                    tryInferStaticConstructorCall
-                        environment
-                        freshCounter
-                        (inferValidationExpressionType environment freshCounter localTypes)
-                        (Name [ receiverName ])
-                        memberName
-                        arguments
-                    |> Option.orElseWith (fun () ->
-                        environment.VisibleBindings
-                        |> Map.tryFind memberName
-                        |> Option.bind (fun bindingInfo ->
-                            tryBuildReceiverMethodArguments bindingInfo (Name [ receiverName ]) arguments
-                            |> Option.bind (fun receiverArguments ->
-                                tryPrepareVisibleBindingCall
-                                    environment
-                                    freshCounter
-                                    bindingInfo
-                                    (inferValidationExpressionType environment freshCounter localTypes)
-                                    (tryResolveUniqueLocalImplicitByType environment localTypes)
-                                    receiverArguments
-                                |> Option.map (fun preparedCall -> preparedCall.ResultType))))
-                | Apply(Name [ calleeName ], arguments) ->
-                    environment.VisibleBindings
-                    |> Map.tryFind calleeName
-                    |> Option.bind (fun bindingInfo ->
-                        tryPrepareVisibleBindingCall
-                            environment
-                            freshCounter
-                            bindingInfo
-                            (inferValidationExpressionType environment freshCounter localTypes)
-                            (tryResolveUniqueLocalImplicitByType environment localTypes)
-                            arguments
-                        |> Option.map (fun preparedCall -> preparedCall.ResultType))
-                    |> Option.orElseWith (fun () ->
-                        environment.VisibleConstructors
-                        |> Map.tryFind calleeName
-                        |> Option.bind (fun constructorInfo ->
-                            tryPrepareVisibleBindingCall
-                                environment
-                                freshCounter
-                                constructorInfo
-                                (inferValidationExpressionType environment freshCounter localTypes)
-                                (tryResolveUniqueLocalImplicitByType environment localTypes)
-                                arguments
-                            |> Option.map (fun preparedCall -> preparedCall.ResultType)))
-                    |> Option.orElseWith (fun () ->
-                        tryPrepareVisibleTraitMemberCall
-                            environment
-                            freshCounter
-                            calleeName
-                            (inferValidationExpressionType environment freshCounter localTypes)
-                            arguments
-                        |> Option.map (fun (_, _, preparedCall, _) -> preparedCall.ResultType))
-                | _ ->
-                    None)
+            inferValidationApplicationType environment freshCounter localTypes application
         | Unary("not", _) ->
             Some boolType
         | Unary("negate", operand) ->
@@ -5537,6 +5542,78 @@ module SurfaceElaboration =
             inferValidationExpressionType environment freshCounter localTypes comprehension.Lowered
         | PrefixedString(prefix, _) ->
             tryInferPrefixedStringMacroResultType environment freshCounter localTypes prefix
+
+    and private inferValidationApplicationType
+        (environment: BindingLoweringEnvironment)
+        (freshCounter: int ref)
+        (localTypes: Map<string, TypeExpr>)
+        application
+        =
+        tryInferQueryCarrierType
+            environment
+            freshCounter
+            localTypes
+            (fun currentLocals currentExpression ->
+                inferValidationExpressionType environment freshCounter currentLocals currentExpression)
+            application
+        |> Option.orElseWith (fun () ->
+            match application with
+            | Apply(Name [ receiverName; memberName ], arguments) ->
+                tryInferStaticConstructorCall
+                    environment
+                    freshCounter
+                    (inferValidationExpressionType environment freshCounter localTypes)
+                    (Name [ receiverName ])
+                    memberName
+                    arguments
+                |> Option.orElseWith (fun () ->
+                    environment.VisibleBindings
+                    |> Map.tryFind memberName
+                    |> Option.bind (fun bindingInfo ->
+                        tryBuildReceiverMethodArguments bindingInfo (Name [ receiverName ]) arguments
+                        |> Option.bind (fun receiverArguments ->
+                            tryPrepareVisibleBindingCall
+                                environment
+                                freshCounter
+                                bindingInfo
+                                (inferValidationExpressionType environment freshCounter localTypes)
+                                (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                receiverArguments
+                            |> Option.map (fun preparedCall -> preparedCall.ResultType))))
+            | Apply(Name [ calleeName ], arguments) ->
+                environment.VisibleBindings
+                |> Map.tryFind calleeName
+                |> Option.bind (fun bindingInfo ->
+                    tryPrepareVisibleBindingCall
+                        environment
+                        freshCounter
+                        bindingInfo
+                        (inferValidationExpressionType environment freshCounter localTypes)
+                        (tryResolveUniqueLocalImplicitByType environment localTypes)
+                        arguments
+                    |> Option.map (fun preparedCall -> preparedCall.ResultType))
+                |> Option.orElseWith (fun () ->
+                    environment.VisibleConstructors
+                    |> Map.tryFind calleeName
+                    |> Option.bind (fun constructorInfo ->
+                        tryPrepareVisibleBindingCall
+                            environment
+                            freshCounter
+                            constructorInfo
+                            (inferValidationExpressionType environment freshCounter localTypes)
+                            (tryResolveUniqueLocalImplicitByType environment localTypes)
+                            arguments
+                        |> Option.map (fun preparedCall -> preparedCall.ResultType)))
+                |> Option.orElseWith (fun () ->
+                    tryPrepareVisibleTraitMemberCall
+                        environment
+                        freshCounter
+                        calleeName
+                        (inferValidationExpressionType environment freshCounter localTypes)
+                        arguments
+                    |> Option.map (fun (_, _, preparedCall, _) -> preparedCall.ResultType))
+            | _ ->
+                None)
 
     and private inferValidationDoResultType
         (environment: BindingLoweringEnvironment)
@@ -12838,7 +12915,20 @@ module SurfaceElaboration =
                 tryResolveScopedStaticObject environment expression
                 |> Option.bind (fun staticObject -> staticObject.Scheme)
                 |> Option.map (fun scheme -> scheme.Body)
+            | Name [ effectName ] when tryFindScopedEffectDeclaration effectName |> Option.isSome ->
+                Some(TypeIntrinsic EffLabelClassifier)
             | Name(root :: path) ->
+                let scopedEffectOperationType =
+                    match path with
+                    | [ operationName ] ->
+                        tryFindScopedEffectOperation root operationName
+                        |> Option.bind (fun (_, operation) ->
+                            operation.SignatureTokens
+                            |> TypeSignatures.parseType
+                            |> Option.map (qualifyVisibleTypeNames environment))
+                    | _ ->
+                        None
+
                 let ordinaryResolution =
                     localTypes
                     |> Map.tryFind root
@@ -12884,8 +12974,8 @@ module SurfaceElaboration =
 
                 match path with
                 | [ memberName ] ->
-                    tryReceiverProjection environment localTypes root memberName
-                    |> Option.map (fun projectionInfo -> projectionInfo.ReturnType)
+                    scopedEffectOperationType
+                    |> Option.orElseWith (fun () -> tryReceiverProjection environment localTypes root memberName |> Option.map (fun projectionInfo -> projectionInfo.ReturnType))
                     |> Option.orElseWith (fun () ->
                         tryInferStaticConstructorCall
                             environment
@@ -12899,6 +12989,23 @@ module SurfaceElaboration =
                     ordinaryResolution
             | Name [] ->
                 None
+            | Apply(Name [ effectName; operationName ], arguments) ->
+                match
+                    tryFindScopedEffectOperation effectName operationName
+                    |> Option.bind (fun (_, operation) ->
+                        operation.SignatureTokens
+                        |> TypeSignatures.parseType
+                        |> Option.map (qualifyVisibleTypeNames environment)
+                        |> Option.map TypeSignatures.functionParts)
+                with
+                | Some(parameterTypes, resultType) when List.length parameterTypes = List.length arguments ->
+                    Some(effType (scopedEffectRowType effectName) resultType)
+                | _ ->
+                    match tryInferQueryCarrierType environment freshCounter localTypes inferExpressionType expression with
+                    | Some queryCarrierType ->
+                        Some queryCarrierType
+                    | None ->
+                        inferApplicationType localTypes expression
             | LocalSignature(_, body) ->
                 inferExpressionType localTypes body
             | LocalTypeAlias(_, body) ->
@@ -13052,75 +13159,7 @@ module SurfaceElaboration =
             | InoutArgument inner ->
                 inferExpressionType localTypes inner
             | Apply _ as application ->
-                tryInferQueryCarrierType
-                    environment
-                    freshCounter
-                    localTypes
-                    (fun currentLocals currentExpression -> inferExpressionType currentLocals currentExpression)
-                    application
-                |> Option.orElseWith (fun () ->
-                    match application with
-                    | Apply(Name [ receiverName; memberName ], arguments) ->
-                        tryInferStaticConstructorCall
-                            environment
-                            freshCounter
-                            (inferExpressionType localTypes)
-                            (Name [ receiverName ])
-                            memberName
-                            arguments
-                        |> Option.orElseWith (fun () ->
-                            environment.VisibleBindings
-                            |> Map.tryFind memberName
-                            |> Option.bind (fun bindingInfo ->
-                                tryBuildReceiverMethodArguments bindingInfo (Name [ receiverName ]) arguments
-                                |> Option.bind (fun receiverArguments ->
-                                    tryPrepareVisibleBindingCall
-                                        environment
-                                        freshCounter
-                                        bindingInfo
-                                        (inferExpressionType localTypes)
-                                        (tryResolveUniqueLocalImplicitByType environment localTypes)
-                                        receiverArguments
-                                    |> Option.map (fun preparedCall -> preparedCall.ResultType))))
-                    | Apply(Name [ calleeName ], arguments) ->
-                        environment.VisibleBindings
-                        |> Map.tryFind calleeName
-                        |> Option.bind (fun bindingInfo ->
-                            tryPrepareVisibleBindingCall
-                                environment
-                                freshCounter
-                                bindingInfo
-                                (inferExpressionType localTypes)
-                                (tryResolveUniqueLocalImplicitByType environment localTypes)
-                                arguments
-                            |> Option.map (fun preparedCall -> preparedCall.ResultType))
-                        |> Option.orElseWith (fun () ->
-                            environment.VisibleConstructors
-                            |> Map.tryFind calleeName
-                            |> Option.bind (fun constructorInfo ->
-                                tryPrepareVisibleBindingCall
-                                    environment
-                                    freshCounter
-                                    constructorInfo
-                                    (inferExpressionType localTypes)
-                                    (tryResolveUniqueLocalImplicitByType environment localTypes)
-                                    arguments
-                                |> Option.map (fun preparedCall -> preparedCall.ResultType)))
-                        |> Option.orElseWith (fun () ->
-                            tryPrepareVisibleTraitMemberCall
-                                environment
-                                freshCounter
-                                calleeName
-                                (inferExpressionType localTypes)
-                                arguments
-                            |> Option.map (fun (_, _, preparedCall, _) -> preparedCall.ResultType))
-                        |> Option.orElseWith (fun () ->
-                            environment.VisibleProjections
-                            |> Map.tryFind calleeName
-                            |> Option.bind (fun projectionInfo ->
-                                tryInferProjectionCallResultType localTypes projectionInfo arguments))
-                    | _ ->
-                        None)
+                inferApplicationType localTypes application
             | Unary("not", _) ->
                 Some boolType
             | Unary(("negate" | "-"), operand) ->
@@ -13162,6 +13201,77 @@ module SurfaceElaboration =
                 inferExpressionType localTypes comprehension.Lowered
             | PrefixedString(prefix, _) ->
                 tryInferPrefixedStringMacroResultType environment freshCounter localTypes prefix
+
+        and inferApplicationType localTypes application =
+            tryInferQueryCarrierType
+                environment
+                freshCounter
+                localTypes
+                (fun currentLocals currentExpression -> inferExpressionType currentLocals currentExpression)
+                application
+            |> Option.orElseWith (fun () ->
+                match application with
+                | Apply(Name [ receiverName; memberName ], arguments) ->
+                    tryInferStaticConstructorCall
+                        environment
+                        freshCounter
+                        (inferExpressionType localTypes)
+                        (Name [ receiverName ])
+                        memberName
+                        arguments
+                    |> Option.orElseWith (fun () ->
+                        environment.VisibleBindings
+                        |> Map.tryFind memberName
+                        |> Option.bind (fun bindingInfo ->
+                            tryBuildReceiverMethodArguments bindingInfo (Name [ receiverName ]) arguments
+                            |> Option.bind (fun receiverArguments ->
+                                tryPrepareVisibleBindingCall
+                                    environment
+                                    freshCounter
+                                    bindingInfo
+                                    (inferExpressionType localTypes)
+                                    (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                    receiverArguments
+                                |> Option.map (fun preparedCall -> preparedCall.ResultType))))
+                | Apply(Name [ calleeName ], arguments) ->
+                    environment.VisibleBindings
+                    |> Map.tryFind calleeName
+                    |> Option.bind (fun bindingInfo ->
+                        tryPrepareVisibleBindingCall
+                            environment
+                            freshCounter
+                            bindingInfo
+                            (inferExpressionType localTypes)
+                            (tryResolveUniqueLocalImplicitByType environment localTypes)
+                            arguments
+                        |> Option.map (fun preparedCall -> preparedCall.ResultType))
+                    |> Option.orElseWith (fun () ->
+                        environment.VisibleConstructors
+                        |> Map.tryFind calleeName
+                        |> Option.bind (fun constructorInfo ->
+                            tryPrepareVisibleBindingCall
+                                environment
+                                freshCounter
+                                constructorInfo
+                                (inferExpressionType localTypes)
+                                (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                arguments
+                            |> Option.map (fun preparedCall -> preparedCall.ResultType)))
+                    |> Option.orElseWith (fun () ->
+                        tryPrepareVisibleTraitMemberCall
+                            environment
+                            freshCounter
+                            calleeName
+                            (inferExpressionType localTypes)
+                            arguments
+                        |> Option.map (fun (_, _, preparedCall, _) -> preparedCall.ResultType))
+                    |> Option.orElseWith (fun () ->
+                        environment.VisibleProjections
+                        |> Map.tryFind calleeName
+                        |> Option.bind (fun projectionInfo ->
+                            tryInferProjectionCallResultType localTypes projectionInfo arguments))
+                | _ ->
+                    None)
 
         and tryInferProjectionCallResultType localTypes (projectionInfo: ProjectionInfo) arguments =
             if List.length projectionInfo.Binders <> List.length arguments then
@@ -14338,6 +14448,195 @@ module SurfaceElaboration =
                     )
                 )
 
+            let significantHandlerTokens tokens =
+                tokens
+                |> List.filter (fun token ->
+                    match token.Kind with
+                    | Newline
+                    | Indent
+                    | Dedent
+                    | EndOfFile -> false
+                    | _ -> true)
+
+            let tryLowerEffectHandlerArgument tokens =
+                match significantHandlerTokens tokens with
+                | [ leftParen; rightParen ] when leftParen.Kind = LeftParen && rightParen.Kind = RightParen ->
+                    Some KCoreEffectUnitArgument
+                | [ nameToken ] when Token.isName nameToken ->
+                    let name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
+
+                    if String.Equals(name, "_", StringComparison.Ordinal) then
+                        Some KCoreEffectWildcardArgument
+                    else
+                        Some(KCoreEffectNameArgument name)
+                | leftParen :: nameToken :: colonToken :: _
+                    when leftParen.Kind = LeftParen && Token.isName nameToken && colonToken.Kind = Colon ->
+                    let name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
+
+                    if String.Equals(name, "_", StringComparison.Ordinal) then
+                        Some KCoreEffectWildcardArgument
+                    else
+                        Some(KCoreEffectNameArgument name)
+                | _ ->
+                    None
+
+            let effectHandlerArgumentName argument =
+                match argument with
+                | KCoreEffectNameArgument name -> Some name
+                | _ -> None
+
+            let asEffectComputation currentLocals innerExpression =
+                let lowered = lowerExpression currentLocals innerExpression
+
+                match inferExpressionType currentLocals innerExpression |> Option.bind tryUnwrapEffType with
+                | Some _ ->
+                    lowered
+                | None ->
+                    KCoreAppSpine(KCoreName [ "pure" ], [ explicitKCoreArgument lowered ])
+
+            let rec tryLowerEffectfulDoStatements currentLocals statements =
+                match statements with
+                | [] ->
+                    Some(KCoreAppSpine(KCoreName [ "pure" ], [ explicitKCoreArgument (KCoreLiteral LiteralValue.Unit) ]))
+                | [ DoReturn expression ] ->
+                    Some(KCoreAppSpine(KCoreName [ "pure" ], [ explicitKCoreArgument (lowerExpression currentLocals expression) ]))
+                | [ DoExpression expression ] ->
+                    Some(asEffectComputation currentLocals expression)
+                | DoExpression expression :: rest ->
+                    tryLowerEffectfulDoStatements currentLocals rest
+                    |> Option.map (fun loweredRest ->
+                        KCoreAppSpine(
+                            KCoreName [ ">>" ],
+                            [
+                                explicitKCoreArgument (asEffectComputation currentLocals expression)
+                                explicitKCoreArgument loweredRest
+                            ]
+                        ))
+                | DoReturn expression :: rest ->
+                    tryLowerEffectfulDoStatements currentLocals rest
+                    |> Option.map (fun loweredRest ->
+                        KCoreAppSpine(
+                            KCoreName [ ">>" ],
+                            [
+                                explicitKCoreArgument
+                                    (KCoreAppSpine(
+                                        KCoreName [ "pure" ],
+                                        [ explicitKCoreArgument (lowerExpression currentLocals expression) ]
+                                    ))
+                                explicitKCoreArgument loweredRest
+                            ]
+                        ))
+                | DoLet(binding, value) :: rest ->
+                    match tryLowerEffectfulDoStatements currentLocals rest with
+                    | Some loweredRest ->
+                        let bindingExpectedType =
+                            binding.TypeTokens
+                            |> Option.bind TypeSignatures.parseType
+                            |> Option.map (qualifyVisibleTypeNames environment)
+
+                        let loweredValue = lowerExpressionWithExpectedType currentLocals bindingExpectedType value
+                        let valueType = bindingExpectedType |> Option.orElseWith (fun () -> inferExpressionType currentLocals value)
+
+                        Some(
+                            lowerPatternBinding
+                                currentLocals
+                                valueType
+                                binding
+                                loweredValue
+                                (fun _ -> loweredRest))
+                    | None ->
+                        None
+                | DoBind(binding, expression) :: rest ->
+                    let payloadType = inferExpressionType currentLocals expression |> Option.map unwrapBindPayloadType
+                    let parameterName = freshSyntheticName "__kappa_eff_bind_"
+
+                    let parameter =
+                        { Name = parameterName
+                          Quantity = Some QuantityOne
+                          IsImplicit = false
+                          Type = payloadType
+                          TypeText = payloadType |> Option.map TypeSignatures.toText }
+
+                    let parameterLocals =
+                        payloadType
+                        |> Option.map (fun typeExpr -> Map.add parameterName typeExpr currentLocals)
+                        |> Option.defaultValue currentLocals
+
+                    match tryLowerEffectfulDoStatements parameterLocals rest with
+                    | Some loweredRest ->
+                        let lambdaBody =
+                            lowerPatternBinding
+                                parameterLocals
+                                payloadType
+                                binding
+                                (KCoreName [ parameterName ])
+                                (fun _ -> loweredRest)
+
+                        Some(
+                            KCoreAppSpine(
+                                KCoreName [ ">>=" ],
+                                [
+                                    explicitKCoreArgument (asEffectComputation currentLocals expression)
+                                    explicitKCoreArgument (KCoreLambda([ parameter ], lambdaBody))
+                                ]
+                            ))
+                    | None ->
+                        None
+                | DoIf(condition, whenTrue, whenFalse) :: rest ->
+                    match tryLowerEffectfulDoStatements currentLocals whenTrue, tryLowerEffectfulDoStatements currentLocals whenFalse with
+                    | Some loweredWhenTrue, Some loweredWhenFalse ->
+                        let loweredIf = KCoreIfThenElse(lowerExpression currentLocals condition, loweredWhenTrue, loweredWhenFalse)
+
+                        match rest with
+                        | [] ->
+                            Some loweredIf
+                        | _ ->
+                            match tryLowerEffectfulDoStatements currentLocals rest with
+                            | Some loweredRest ->
+                                Some(
+                                    KCoreAppSpine(
+                                        KCoreName [ ">>" ],
+                                        [
+                                            explicitKCoreArgument loweredIf
+                                            explicitKCoreArgument loweredRest
+                                        ]
+                                    ))
+                            | None ->
+                                None
+                    | _ ->
+                        None
+                | DoLetQuestion _ :: _
+                | DoVar _ :: _
+                | DoAssign _ :: _
+                | DoUsing _ :: _
+                | DoDefer _ :: _
+                | DoWhile _ :: _ ->
+                    None
+
+            let rec hasEffectfulDoFlow currentLocals statements =
+                statements
+                |> List.exists (function
+                    | DoBind(_, innerExpression) ->
+                        inferExpressionType currentLocals innerExpression
+                        |> Option.bind tryUnwrapEffType
+                        |> Option.isSome
+                    | DoExpression innerExpression ->
+                        inferExpressionType currentLocals innerExpression
+                        |> Option.bind tryUnwrapEffType
+                        |> Option.isSome
+                    | DoIf(_, whenTrue, whenFalse) ->
+                        hasEffectfulDoFlow currentLocals whenTrue || hasEffectfulDoFlow currentLocals whenFalse
+                    | DoWhile(_, body) ->
+                        hasEffectfulDoFlow currentLocals body
+                    | DoLet _
+                    | DoLetQuestion _
+                    | DoVar _
+                    | DoAssign _
+                    | DoUsing _
+                    | DoDefer _
+                    | DoReturn _ ->
+                        false)
+
             let tryInferSeededLambdaParameterTypes helperName parameters bodyExpression =
                 let rec tryFind shadowed expression =
                     match expression with
@@ -14483,6 +14782,10 @@ module SurfaceElaboration =
                 | KCoreDictionaryValue _
                 | KCoreStaticObject _ ->
                     current
+                | KCoreEffectLabel(labelName, operations) ->
+                    KCoreEffectLabel(labelName, operations)
+                | KCoreEffectOperation(label, operationName) ->
+                    KCoreEffectOperation(substituteKCoreNames substitutions label, operationName)
                 | KCoreLambda(parameters, body) ->
                     let nextSubstitutions =
                         parameters
@@ -14494,6 +14797,27 @@ module SurfaceElaboration =
                         substituteKCoreNames substitutions condition,
                         substituteKCoreNames substitutions whenTrue,
                         substituteKCoreNames substitutions whenFalse
+                    )
+                | KCoreHandle(isDeep, label, body, returnClause, operationClauses) ->
+                    let lowerClause (clause: KCoreEffectHandlerClause) =
+                        let nextSubstitutions =
+                            clause.Arguments
+                            |> List.choose effectHandlerArgumentName
+                            |> List.fold (fun state name -> Map.remove name state) substitutions
+                            |> fun state ->
+                                clause.ResumptionName
+                                |> Option.map (fun name -> Map.remove name state)
+                                |> Option.defaultValue state
+
+                        { clause with
+                            Body = substituteKCoreNames nextSubstitutions clause.Body }
+
+                    KCoreHandle(
+                        isDeep,
+                        substituteKCoreNames substitutions label,
+                        substituteKCoreNames substitutions body,
+                        lowerClause returnClause,
+                        operationClauses |> List.map lowerClause
                     )
                 | KCoreMatch(scrutinee, cases) ->
                     KCoreMatch(
@@ -14655,8 +14979,80 @@ module SurfaceElaboration =
                 KCoreCodeSplice(lowerExpressionWithExpectedType localTypes None inner)
             | Comprehension comprehension ->
                 lowerExpressionWithExpectedType localTypes expectedType comprehension.Lowered
-            | Handle(_, _, _, returnClause, _) ->
-                lowerExpressionWithExpectedType localTypes expectedType returnClause.Body
+            | Handle(isDeep, label, body, returnClause, operationClauses) ->
+                let handledType =
+                    expectedType
+                    |> Option.orElseWith (fun () -> inferExpressionType localTypes expression)
+
+                let handledPayloadType =
+                    inferExpressionType localTypes body
+                    |> Option.bind tryUnwrapEffType
+                    |> Option.map snd
+                    |> Option.defaultValue (TypeVariable $"handlePayload{freshCounter.Value}")
+
+                let handledEffectName =
+                    match label with
+                    | Name [ effectName ] -> Some effectName
+                    | _ -> None
+
+                let lowerClause
+                    (argumentTypes: TypeExpr list)
+                    (resumptionType: TypeExpr option)
+                    (clause: SurfaceEffectHandlerClause)
+                    =
+                    let loweredArguments =
+                        clause.ArgumentTokens
+                        |> List.map (fun tokens ->
+                            tryLowerEffectHandlerArgument tokens
+                            |> Option.defaultValue KCoreEffectWildcardArgument)
+
+                    let clauseLocals =
+                        (localTypes, List.zip loweredArguments argumentTypes)
+                        ||> List.fold (fun state (argument, argumentType) ->
+                            match argument with
+                            | KCoreEffectNameArgument name -> Map.add name argumentType state
+                            | _ -> state)
+                        |> fun state ->
+                            match clause.ResumptionName, resumptionType with
+                            | Some resumptionName, Some currentResumptionType ->
+                                Map.add resumptionName currentResumptionType state
+                            | _ ->
+                                state
+
+                    { OperationName = clause.OperationName
+                      Arguments = loweredArguments
+                      ResumptionName = clause.ResumptionName
+                      Body = lowerExpressionWithExpectedType clauseLocals handledType clause.Body }
+
+                let loweredReturnClause =
+                    lowerClause [ handledPayloadType ] None returnClause
+
+                let loweredOperationClauses =
+                    operationClauses
+                    |> List.map (fun clause ->
+                        let parameterTypes, resultType =
+                            handledEffectName
+                            |> Option.bind (fun effectName ->
+                                tryFindScopedEffectOperation effectName clause.OperationName
+                                |> Option.bind (fun (_, operation) ->
+                                    operation.SignatureTokens
+                                    |> TypeSignatures.parseType
+                                    |> Option.map (qualifyVisibleTypeNames environment)
+                                    |> Option.map TypeSignatures.functionParts))
+                            |> Option.defaultValue ([], TypeVariable $"opResult{freshCounter.Value}")
+
+                        let resumptionType =
+                            handledType |> Option.map (fun currentHandledType -> TypeArrow(QuantityOmega, resultType, currentHandledType))
+
+                        lowerClause parameterTypes resumptionType clause)
+
+                KCoreHandle(
+                    isDeep,
+                    lowerExpressionWithExpectedType localTypes None label,
+                    lowerExpressionWithExpectedType localTypes handledType body,
+                    loweredReturnClause,
+                    loweredOperationClauses
+                )
             | KindQualifiedName _ ->
                 tryResolveScopedStaticObject environment expression
                 |> Option.map lowerStaticObject
@@ -14680,32 +15076,52 @@ module SurfaceElaboration =
                     KCoreName [ bindingName ]
             | Name [ bindingName ]
                 when not (Map.containsKey bindingName localTypes) ->
-                match tryResolveScopedStaticObject environment expression with
-                | Some staticObject ->
-                    lowerStaticObject staticObject
+                match tryFindScopedEffectDeclaration bindingName with
+                | Some declaration ->
+                    KCoreEffectLabel(bindingName, scopedEffectOperationMetadata declaration)
                 | None ->
-                    KCoreName [ bindingName ]
-            | Name (receiverName :: path) when not (List.isEmpty path) ->
-                let loweredReceiver = lowerExpression localTypes (Name [ receiverName ])
-
-                let recordProjection =
-                    inferExpressionType localTypes (Name [ receiverName ])
-                    |> Option.bind (fun receiverType ->
-                        tryLowerRecordProjectionPath localTypes loweredReceiver receiverType path)
-
-                match path with
-                | [ memberName ] ->
-                    match tryResolveStaticConstructor environment (Name [ receiverName ]) memberName with
-                    | Some _ ->
-                        KCoreName [ memberName ]
+                    match tryResolveScopedStaticObject environment expression with
+                    | Some staticObject ->
+                        lowerStaticObject staticObject
                     | None ->
-                        match tryReceiverProjection environment localTypes receiverName memberName with
+                        KCoreName [ bindingName ]
+            | Name [ bindingName ] ->
+                KCoreName [ bindingName ]
+            | Name (receiverName :: path) when not (List.isEmpty path) ->
+                match path with
+                | [ operationName ] ->
+                    match tryFindScopedEffectOperation receiverName operationName with
+                    | Some(declaration, _) ->
+                        KCoreEffectOperation(
+                            KCoreEffectLabel(receiverName, scopedEffectOperationMetadata declaration),
+                            operationName
+                        )
+                    | None ->
+                        let loweredReceiver = lowerExpression localTypes (Name [ receiverName ])
+
+                        let recordProjection =
+                            inferExpressionType localTypes (Name [ receiverName ])
+                            |> Option.bind (fun receiverType ->
+                                tryLowerRecordProjectionPath localTypes loweredReceiver receiverType path)
+
+                        match tryResolveStaticConstructor environment (Name [ receiverName ]) operationName with
                         | Some _ ->
-                            KCoreAppSpine(KCoreName [ memberName ], [ explicitKCoreArgument loweredReceiver ])
+                            KCoreName [ operationName ]
                         | None ->
-                            recordProjection
-                            |> Option.defaultValue (KCoreName [ receiverName; memberName ])
+                            match tryReceiverProjection environment localTypes receiverName operationName with
+                            | Some _ ->
+                                KCoreAppSpine(KCoreName [ operationName ], [ explicitKCoreArgument loweredReceiver ])
+                            | None ->
+                                recordProjection
+                                |> Option.defaultValue (KCoreName [ receiverName; operationName ])
                 | _ ->
+                    let loweredReceiver = lowerExpression localTypes (Name [ receiverName ])
+
+                    let recordProjection =
+                        inferExpressionType localTypes (Name [ receiverName ])
+                        |> Option.bind (fun receiverType ->
+                            tryLowerRecordProjectionPath localTypes loweredReceiver receiverType path)
+
                     recordProjection
                     |> Option.defaultValue (KCoreName(receiverName :: path))
             | Name segments ->
@@ -14716,6 +15132,10 @@ module SurfaceElaboration =
                 lowerExpressionWithExpectedType localTypes expectedType body
             | LocalLet(binding, value, body) ->
                 let bindingNames = collectPatternNames binding.Pattern
+                let bindingExpectedType =
+                    binding.TypeTokens
+                    |> Option.bind TypeSignatures.parseType
+                    |> Option.map (qualifyVisibleTypeNames environment)
 
                 let loweredValue =
                     match binding.Pattern, value with
@@ -14725,7 +15145,7 @@ module SurfaceElaboration =
                             lambdaParameters
                             lambdaBody
                     | _ ->
-                        lowerExpressionWithExpectedType localTypes None value
+                        lowerExpressionWithExpectedType localTypes bindingExpectedType value
                 let bodyForLowering =
                     match bindingNames, tryResolveScopedStaticObject environment value with
                     | [ aliasName ], Some staticObject ->
@@ -14746,7 +15166,7 @@ module SurfaceElaboration =
                     | _ ->
                         body
 
-                let valueType = inferExpressionType localTypes value
+                let valueType = bindingExpectedType |> Option.orElseWith (fun () -> inferExpressionType localTypes value)
 
                 lowerPatternBinding
                     localTypes
@@ -15000,8 +15420,20 @@ module SurfaceElaboration =
             | TagTest(receiver, constructorName) ->
                 KCoreBinary(lowerExpression localTypes receiver, "is", KCoreName constructorName)
             | Do statements ->
-                let scopeLabel = freshDoScopeLabel ()
-                KCoreDoScope(scopeLabel, lowerDoStatements scopeLabel localTypes statements)
+                match
+                    expectedType |> Option.bind tryUnwrapEffType |> Option.isSome
+                    || hasEffectfulDoFlow localTypes statements
+                with
+                | true ->
+                    match tryLowerEffectfulDoStatements localTypes statements with
+                    | Some loweredEffectBody ->
+                        loweredEffectBody
+                    | None ->
+                        let scopeLabel = freshDoScopeLabel ()
+                        KCoreDoScope(scopeLabel, lowerDoStatements scopeLabel localTypes statements)
+                | false ->
+                    let scopeLabel = freshDoScopeLabel ()
+                    KCoreDoScope(scopeLabel, lowerDoStatements scopeLabel localTypes statements)
             | MonadicSplice inner ->
                 KCoreExecute(lowerExpressionWithExpectedType localTypes None inner)
             | ExplicitImplicitArgument inner ->
@@ -15014,40 +15446,50 @@ module SurfaceElaboration =
                 let carrier = tryMatchQueryCarrierShape application |> Option.get
                 lowerExpressionWithExpectedType localTypes expectedType carrier.Comprehension.Lowered
             | Apply(Name [ receiverName; memberName ], arguments) ->
-                match tryResolveStaticConstructor environment (Name [ receiverName ]) memberName with
-                | Some _ ->
-                    KCoreAppSpine(KCoreName [ memberName ], lowerArguments arguments)
+                match tryFindScopedEffectOperation receiverName memberName with
+                | Some(declaration, _) ->
+                    KCoreAppSpine(
+                        KCoreEffectOperation(
+                            KCoreEffectLabel(receiverName, scopedEffectOperationMetadata declaration),
+                            memberName
+                        ),
+                        lowerArguments arguments
+                    )
                 | None ->
-                    match tryResolveTraitMemberProjection environment localTypes [ receiverName; memberName ] with
-                    | Some(traitInfo, resolvedMemberName, _, resolvedReceiverName) ->
-                            KCoreTraitCall(
-                                traitInfo.Name,
-                                resolvedMemberName,
-                                lowerExpressionWithExpectedType localTypes None (Name [ resolvedReceiverName ]),
-                                lowerArgumentExpressions arguments
-                            )
+                    match tryResolveStaticConstructor environment (Name [ receiverName ]) memberName with
+                    | Some _ ->
+                        KCoreAppSpine(KCoreName [ memberName ], lowerArguments arguments)
                     | None ->
-                        match environment.VisibleBindings |> Map.tryFind memberName with
-                        | Some bindingInfo ->
-                            match tryBuildReceiverMethodArguments bindingInfo (Name [ receiverName ]) arguments with
-                            | Some receiverArguments ->
-                                match
-                                    tryPrepareVisibleBindingCall
-                                        environment
-                                        freshCounter
-                                        bindingInfo
-                                        (inferExpressionType localTypes)
-                                        (tryResolveUniqueLocalImplicitByType environment localTypes)
-                                        receiverArguments
-                                with
-                                | Some preparedCall ->
-                                    KCoreAppSpine(KCoreName [ memberName ], lowerPreparedBindingCallArguments bindingInfo preparedCall)
+                        match tryResolveTraitMemberProjection environment localTypes [ receiverName; memberName ] with
+                        | Some(traitInfo, resolvedMemberName, _, resolvedReceiverName) ->
+                                KCoreTraitCall(
+                                    traitInfo.Name,
+                                    resolvedMemberName,
+                                    lowerExpressionWithExpectedType localTypes None (Name [ resolvedReceiverName ]),
+                                    lowerArgumentExpressions arguments
+                                )
+                        | None ->
+                            match environment.VisibleBindings |> Map.tryFind memberName with
+                            | Some bindingInfo ->
+                                match tryBuildReceiverMethodArguments bindingInfo (Name [ receiverName ]) arguments with
+                                | Some receiverArguments ->
+                                    match
+                                        tryPrepareVisibleBindingCall
+                                            environment
+                                            freshCounter
+                                            bindingInfo
+                                            (inferExpressionType localTypes)
+                                            (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                            receiverArguments
+                                    with
+                                    | Some preparedCall ->
+                                        KCoreAppSpine(KCoreName [ memberName ], lowerPreparedBindingCallArguments bindingInfo preparedCall)
+                                    | None ->
+                                        KCoreAppSpine(KCoreName [ memberName ], lowerArguments receiverArguments)
                                 | None ->
-                                    KCoreAppSpine(KCoreName [ memberName ], lowerArguments receiverArguments)
+                                    KCoreAppSpine(lowerExpression localTypes (Name [ receiverName; memberName ]), lowerArguments arguments)
                             | None ->
                                 KCoreAppSpine(lowerExpression localTypes (Name [ receiverName; memberName ]), lowerArguments arguments)
-                        | None ->
-                            KCoreAppSpine(lowerExpression localTypes (Name [ receiverName; memberName ]), lowerArguments arguments)
             | Apply(Name nameSegments, arguments) ->
                 match tryResolveTraitMemberProjection environment localTypes nameSegments with
                 | Some(traitInfo, memberName, _, receiverName) ->
@@ -15333,6 +15775,10 @@ module SurfaceElaboration =
                 KCoreCodeSplice(substituteSelfDictionary inner)
             | KCoreStaticObject _ ->
                 expression
+            | KCoreEffectLabel(labelName, operations) ->
+                KCoreEffectLabel(labelName, operations)
+            | KCoreEffectOperation(label, operationName) ->
+                KCoreEffectOperation(substituteSelfDictionary label, operationName)
             | KCoreLambda(parameters, body) ->
                 KCoreLambda(parameters, substituteSelfDictionary body)
             | KCoreIfThenElse(condition, whenTrue, whenFalse) ->
@@ -15340,6 +15786,18 @@ module SurfaceElaboration =
                     substituteSelfDictionary condition,
                     substituteSelfDictionary whenTrue,
                     substituteSelfDictionary whenFalse
+                )
+            | KCoreHandle(isDeep, label, body, returnClause, operationClauses) ->
+                let lowerClause (clause: KCoreEffectHandlerClause) =
+                    { clause with
+                        Body = substituteSelfDictionary clause.Body }
+
+                KCoreHandle(
+                    isDeep,
+                    substituteSelfDictionary label,
+                    substituteSelfDictionary body,
+                    lowerClause returnClause,
+                    operationClauses |> List.map lowerClause
                 )
             | KCoreMatch(scrutinee, cases) ->
                 KCoreMatch(
