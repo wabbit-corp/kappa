@@ -1974,6 +1974,49 @@ let ``source compilation surfaces unresolved lowercase applied names before back
     Assert.DoesNotContain("requires a backend module", diagnosticsText workspace.Diagnostics)
 
 [<Fact>]
+let ``source compilation rejects bare module names used as ordinary terms`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-compile-bare-module-name-term-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let result = block main"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected a bare module name in term position to be rejected during frontend validation.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.NameUnresolved)
+    Assert.Contains("Name 'main' is not in scope", diagnosticsText workspace.Diagnostics)
+
+[<Fact>]
+let ``source compilation rejects dotted value roots that are not valid module qualifiers or projections`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-compile-dotted-value-root-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let i0 = i0.right"
+                    "let result = i0 String 0"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected dotted access on an ordinary value root to be rejected before runtime.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.NameUnresolved)
+    let diagnostics = diagnosticsText workspace.Diagnostics
+    Assert.True(
+        diagnostics.Contains("Name 'i0' is not in scope") || diagnostics.Contains("Name 'right' is not in scope"),
+        $"Expected an unresolved-name diagnostic for the invalid dotted value root, but saw:{Environment.NewLine}{diagnostics}"
+    )
+
+[<Fact>]
 let ``source compilation surfaces unresolved dotted receiver names before backend lowering`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend

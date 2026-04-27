@@ -1,0 +1,2 @@
+--! mode check
+--! assertDiagnosticCodes E_NAME_UNRESOLVED, E_NAME_UNRESOLVED

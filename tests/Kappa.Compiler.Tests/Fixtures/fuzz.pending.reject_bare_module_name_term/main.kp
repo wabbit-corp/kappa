@@ -1,0 +1,3 @@
+module main
+
+let result = block main

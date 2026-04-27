@@ -6001,6 +6001,53 @@ module SurfaceElaboration =
         (localTypes: Map<string, TypeExpr>)
         expression
         =
+        let inferExpressionType = inferValidationExpressionType environment freshCounter localTypes
+
+        let tryInferMemberAccessType receiver segments arguments =
+            match segments with
+            | [] ->
+                inferExpressionType receiver
+                |> Option.bind (fun receiverType ->
+                    tryInferVisibleAppliedType environment.VisibleTypeAliases inferExpressionType receiverType arguments)
+            | [ memberName ] ->
+                (tryResolveHandledEffectName environment receiver
+                 |> Option.bind (fun effectName ->
+                     tryFindScopedEffectOperation effectName memberName
+                     |> Option.bind (fun (_, operation) ->
+                         operation.SignatureTokens
+                         |> TypeSignatures.parseType
+                         |> Option.map (qualifyVisibleTypeNames environment)))
+                 |> Option.bind (fun operationType ->
+                     tryInferVisibleAppliedType environment.VisibleTypeAliases inferExpressionType operationType arguments))
+                |> Option.orElseWith (fun () ->
+                    tryInferStaticConstructorCall environment freshCounter inferExpressionType receiver memberName arguments)
+                |> Option.orElseWith (fun () ->
+                    environment.VisibleBindings
+                    |> Map.tryFind memberName
+                    |> Option.bind (fun bindingInfo ->
+                        tryBuildReceiverMethodArguments bindingInfo receiver arguments
+                        |> Option.bind (fun receiverArguments ->
+                            tryPrepareVisibleBindingCall
+                                environment
+                                freshCounter
+                                bindingInfo
+                                inferExpressionType
+                                (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                receiverArguments
+                            |> Option.map (fun preparedCall -> preparedCall.ResultType))))
+                |> Option.orElseWith (fun () ->
+                    inferExpressionType receiver
+                    |> Option.bind (fun receiverType ->
+                        tryProjectVisibleRecordType environment.VisibleTypeAliases receiverType [ memberName ]
+                        |> Option.bind (fun memberType ->
+                            tryInferVisibleAppliedType
+                                environment.VisibleTypeAliases
+                                inferExpressionType
+                                memberType
+                                arguments)))
+            | memberName :: rest ->
+                inferExpressionType (MemberAccess(MemberAccess(receiver, [ memberName ], []), rest, arguments))
+
         match expression with
         | Literal literal ->
             Some(inferLiteralType literal)
@@ -6075,10 +6122,43 @@ module SurfaceElaboration =
                             None))
                 |> Option.bind (fun rootType -> tryProjectVisibleRecordType environment.VisibleTypeAliases rootType path)
 
+            let receiverBindingResolution memberName =
+                environment.VisibleBindings
+                |> Map.tryFind memberName
+                |> Option.bind (fun bindingInfo ->
+                    tryBuildReceiverMethodArguments bindingInfo (Name [ root ]) []
+                    |> Option.bind (fun receiverArguments ->
+                        tryPrepareVisibleBindingCall
+                            environment
+                            freshCounter
+                            bindingInfo
+                            (inferValidationExpressionType environment freshCounter localTypes)
+                            (tryResolveUniqueLocalImplicitByType environment localTypes)
+                            receiverArguments
+                        |> Option.map (fun preparedCall -> preparedCall.ResultType)))
+                |> Option.orElseWith (fun () ->
+                    tryPrepareResolvedTraitProjectionCall
+                        environment
+                        freshCounter
+                        localTypes
+                        [ root; memberName ]
+                        (inferValidationExpressionType environment freshCounter localTypes)
+                        []
+                    |> Option.map (fun preparedCall -> preparedCall.ResultType))
+                |> Option.orElseWith (fun () ->
+                    tryPrepareVisibleTraitMemberCall
+                        environment
+                        freshCounter
+                        memberName
+                        (inferValidationExpressionType environment freshCounter localTypes)
+                        [ Name [ root ] ]
+                    |> Option.map (fun (_, _, preparedCall, _) -> preparedCall.ResultType))
+
             match path with
             | [ memberName ] ->
                 scopedEffectOperationType
                 |> Option.orElse resolvedEffectOperationType
+                |> Option.orElseWith (fun () -> receiverBindingResolution memberName)
                 |> Option.orElseWith (fun () ->
                     tryInferStaticConstructorCall
                         environment
@@ -6206,67 +6286,7 @@ module SurfaceElaboration =
         | RecordUpdate(receiver, _) ->
             inferValidationExpressionType environment freshCounter localTypes receiver
         | MemberAccess(receiver, segments, arguments) ->
-            match segments with
-            | [] ->
-                inferValidationExpressionType environment freshCounter localTypes receiver
-                |> Option.bind (fun receiverType ->
-                    tryInferVisibleAppliedType
-                        environment.VisibleTypeAliases
-                        (inferValidationExpressionType environment freshCounter localTypes)
-                        receiverType
-                        arguments)
-            | [ memberName ] ->
-                (tryResolveHandledEffectName environment receiver
-                 |> Option.bind (fun effectName ->
-                     tryFindScopedEffectOperation effectName memberName
-                     |> Option.bind (fun (_, operation) ->
-                         operation.SignatureTokens
-                         |> TypeSignatures.parseType
-                         |> Option.map (qualifyVisibleTypeNames environment)))
-                 |> Option.bind (fun operationType ->
-                     tryInferVisibleAppliedType
-                         environment.VisibleTypeAliases
-                         (inferValidationExpressionType environment freshCounter localTypes)
-                         operationType
-                         arguments))
-                |> Option.orElseWith (fun () ->
-                    tryInferStaticConstructorCall
-                        environment
-                        freshCounter
-                        (inferValidationExpressionType environment freshCounter localTypes)
-                        receiver
-                        memberName
-                        arguments)
-                |> Option.orElseWith (fun () ->
-                    environment.VisibleBindings
-                    |> Map.tryFind memberName
-                    |> Option.bind (fun bindingInfo ->
-                        tryBuildReceiverMethodArguments bindingInfo receiver arguments
-                        |> Option.bind (fun receiverArguments ->
-                            tryPrepareVisibleBindingCall
-                                environment
-                                freshCounter
-                                bindingInfo
-                                (inferValidationExpressionType environment freshCounter localTypes)
-                                (tryResolveUniqueLocalImplicitByType environment localTypes)
-                                receiverArguments
-                            |> Option.map (fun preparedCall -> preparedCall.ResultType))))
-                |> Option.orElseWith (fun () ->
-                    inferValidationExpressionType environment freshCounter localTypes receiver
-                    |> Option.bind (fun receiverType ->
-                        tryProjectVisibleRecordType environment.VisibleTypeAliases receiverType [ memberName ]
-                        |> Option.bind (fun memberType ->
-                            tryInferVisibleAppliedType
-                                environment.VisibleTypeAliases
-                                (inferValidationExpressionType environment freshCounter localTypes)
-                                memberType
-                                arguments)))
-            | memberName :: rest ->
-                inferValidationExpressionType
-                    environment
-                    freshCounter
-                    localTypes
-                    (MemberAccess(MemberAccess(receiver, [ memberName ], []), rest, arguments))
+            tryInferMemberAccessType receiver segments arguments
         | SafeNavigation(receiver, navigation) ->
             inferValidationExpressionType environment freshCounter localTypes receiver
             |> Option.bind (fun receiverType ->
@@ -7143,6 +7163,16 @@ module SurfaceElaboration =
               visibleTraitMemberNames
               environment.ConstrainedMembers |> Map.keys |> Set.ofSeq ]
             |> Set.unionMany
+            |> Set.remove "<anonymous>"
+
+        let knownTermLikeNames =
+            [ knownSurfaceTermNames
+              knownValueNames
+              topLevelDefinitionsByName |> Map.keys |> Set.ofSeq
+              explicitSignatureNames
+              environment.VisibleProjections |> Map.keys |> Set.ofSeq ]
+            |> Set.unionMany
+            |> fun names -> Set.difference names environment.VisibleModules
             |> Set.remove "<anonymous>"
 
         let makeDiagnostic code message =
@@ -8395,7 +8425,27 @@ module SurfaceElaboration =
         let isVisibleConstructorName name =
             environment.VisibleConstructors |> Map.containsKey name
 
-        let isVisibleRootName locals lexicalNames name =
+        let rec expressionExposesManifestStaticObject expression =
+            match tryResolveScopedStaticObject environment expression with
+            | Some _ ->
+                true
+            | None ->
+                match expression with
+                | RecordLiteral _ ->
+                    true
+                | Seal(inner, _) ->
+                    expressionExposesManifestStaticObject inner
+                | _ ->
+                    false
+
+        let isTopLevelManifestStaticObjectRoot name =
+            topLevelDefinitionsByName
+            |> Map.tryFind name
+            |> Option.exists (fun definition ->
+                List.isEmpty definition.Parameters
+                && (definition.Body |> Option.exists expressionExposesManifestStaticObject))
+
+        let isVisibleQualifiedRootName locals lexicalNames name =
             let isVisibleModuleRoot =
                 environment.VisibleModules
                 |> Seq.exists (fun visibleModule ->
@@ -8404,10 +8454,10 @@ module SurfaceElaboration =
 
             (Map.containsKey name locals)
             || (Set.contains name lexicalNames)
-            || (Set.contains name knownSurfaceTermNames)
             || (Set.contains name knownValueNames)
             || String.Equals(name, "this", StringComparison.Ordinal)
             || isVisibleModuleRoot
+            || isTopLevelManifestStaticObjectRoot name
             || (tryResolveScopedStaticObject environment (Name [ name ]) |> Option.isSome)
 
         let expressionSelectsOpaqueField expression =
@@ -9780,6 +9830,31 @@ module SurfaceElaboration =
             else
                 []
 
+        let validateRecordLiteralFieldValuesWithRecordInfo
+            (validateNested: SurfaceExpression -> Diagnostic list)
+            (recordInfo: RecordSurfaceInfo)
+            (fields: SurfaceRecordLiteralField list)
+            =
+            fields
+            |> List.collect (fun literalField ->
+                match recordInfo.Fields |> List.tryFind (fun field -> String.Equals(field.Name, literalField.Name, StringComparison.Ordinal)) with
+                | Some recordField ->
+                    match recordField.TypeTokens |> TypeSignatures.parseType with
+                    | Some fieldType when isCompileTimeArgumentType environment.VisibleTypeAliases fieldType ->
+                        match tryParseTypeLikeSurfaceExpression literalField.Value with
+                        | Some _ ->
+                            []
+                        | None ->
+                            match tryResolveScopedStaticObject environment literalField.Value with
+                            | Some _ ->
+                                []
+                            | None ->
+                                validateNested literalField.Value
+                    | _ ->
+                        validateNested literalField.Value
+                | None ->
+                    validateNested literalField.Value)
+
         let recordInfoHasOpaqueMembers (recordInfo: RecordSurfaceInfo) =
             recordInfo.Fields |> List.exists (fun (field: RecordSurfaceFieldInfo) -> field.IsOpaque)
 
@@ -10006,6 +10081,13 @@ module SurfaceElaboration =
                 | _ ->
                     []
 
+            let binaryExpectedBodyDiagnostics =
+                match expectedBodyType, body with
+                | Some expectedType, Binary(_, _, _) when isSimpleExpectedBodyType locals (normalizeExpectedType Map.empty expectedType) ->
+                    expectedTypeDiagnostics locals Map.empty "Definition body" expectedType body
+                | _ ->
+                    []
+
             let staticObjectResultDiagnostics =
                 match expectedBodyType, inferValidationExpressionType environment freshCounter locals body with
                 | Some expectedType, Some actualType
@@ -10198,6 +10280,7 @@ module SurfaceElaboration =
             @ staticObjectResultDiagnostics
             @ constructorAsStaticObjectDiagnostics
             @ expectedUnionDiagnostics
+            @ binaryExpectedBodyDiagnostics
             @ contextualNumericBodyDiagnostics
             @ doBlockExpectedBodyDiagnostics
             @ lambdaExpectedBodyDiagnostics
@@ -10207,7 +10290,7 @@ module SurfaceElaboration =
             @ generalInferredExpectedBodyDiagnostics
             @ generalExpectedBodyDiagnostics
 
-        let applicationExpectedArgumentDiagnostics locals refinements (bindingInfo: BindingSchemeInfo) arguments =
+        let applicationExpectedArgumentDiagnostics locals refinements lexicalNames (bindingInfo: BindingSchemeInfo) arguments =
             let inferArgumentTypeForParameter parameterType argument =
                 tryInferNumericExpressionTypeFromContext environment parameterType argument
                 |> Option.orElseWith (fun () -> inferValidationExpressionType environment freshCounter locals argument)
@@ -10221,7 +10304,7 @@ module SurfaceElaboration =
             else
                 match bindingInfo.ParameterLayouts with
                 | None ->
-                    []
+                        []
                 | Some parameterLayouts ->
                     let instantiated = TypeSignatures.instantiate "v" freshCounter.Value bindingInfo.Scheme
                     let schemeParameterTypes, _ = TypeSignatures.schemeParts instantiated
@@ -10499,11 +10582,16 @@ module SurfaceElaboration =
                 | CodeQuote inner
                 | CodeSplice inner
                 | MonadicSplice inner
-                | ExplicitImplicitArgument inner
                 | InoutArgument inner
                 | Unary(_, inner)
                 | Seal(inner, _) ->
                     recurse inner
+                | ExplicitImplicitArgument inner ->
+                    match tryParseTypeLikeSurfaceExpression inner with
+                    | Some _ ->
+                        []
+                    | None ->
+                        recurse inner
                 | Handle(_, label, body, returnClause, operationClauses) ->
                     recurse label
                     @ recurse body
@@ -12164,19 +12252,52 @@ module SurfaceElaboration =
                             $"No {kindText} static object named '{nameText}' is visible."
                     ]
             | Name(root :: fieldName :: _) ->
+                let receiverResolvesAsMemberCall =
+                    (environment.VisibleBindings
+                     |> Map.tryFind fieldName
+                     |> Option.bind (fun bindingInfo -> tryBuildReceiverMethodArguments bindingInfo (Name [ root ]) [])
+                     |> Option.isSome)
+                    || (tryResolveTraitMemberProjection environment locals [ root; fieldName ] |> Option.isSome)
+                    || ((tryPrepareVisibleTraitMemberCall
+                            environment
+                            (ref freshCounter.Value)
+                            fieldName
+                            (inferValidationExpressionType environment (ref freshCounter.Value) locals)
+                            [ Name [ root ] ])
+                        |> Option.isSome)
+
+                let receiverHasStructuredProjectionTarget =
+                    if receiverResolvesAsMemberCall then
+                        true
+                    else
+                        match tryReceiverProjection environment locals root fieldName with
+                        | Some _ ->
+                            true
+                        | None ->
+                            match tryRecordInfoForRoot locals root with
+                            | Some recordInfo ->
+                                recordInfo.Fields
+                                |> List.exists (fun (field: RecordSurfaceFieldInfo) -> String.Equals(field.Name, fieldName, StringComparison.Ordinal))
+                            | None ->
+                                possibleConstructorsForRoot aliases constructorFacts locals root
+                                |> Option.isSome
+
                 let missingFieldDiagnostics =
-                    match tryReceiverProjection environment locals root fieldName with
-                    | Some _ ->
+                    if receiverResolvesAsMemberCall then
                         []
-                    | None ->
-                        match tryRecordInfoForRoot locals root with
-                        | Some recordInfo
-                            when recordInfo.Fields
-                                 |> List.exists (fun (field: RecordSurfaceFieldInfo) -> String.Equals(field.Name, fieldName, StringComparison.Ordinal))
-                                 |> not ->
-                            [ makeDiagnostic DiagnosticCode.RecordProjectionMissingField $"Record type has no field named '{fieldName}'." ]
-                        | _ ->
-                            constructorProjectionDiagnostics aliases constructorFacts locals root fieldName
+                    else
+                        match tryReceiverProjection environment locals root fieldName with
+                        | Some _ ->
+                            []
+                        | None ->
+                            match tryRecordInfoForRoot locals root with
+                            | Some recordInfo
+                                when recordInfo.Fields
+                                     |> List.exists (fun (field: RecordSurfaceFieldInfo) -> String.Equals(field.Name, fieldName, StringComparison.Ordinal))
+                                     |> not ->
+                                [ makeDiagnostic DiagnosticCode.RecordProjectionMissingField $"Record type has no field named '{fieldName}'." ]
+                            | _ ->
+                                constructorProjectionDiagnostics aliases constructorFacts locals root fieldName
                 let staticMemberDiagnostics =
                         match expression with
                         | Name segments ->
@@ -12187,11 +12308,32 @@ module SurfaceElaboration =
                                 []
                         | _ ->
                             []
+                let unresolvedMemberDiagnostics =
+                    let visibleRuntimeRoot =
+                        environment.VisibleBindings.ContainsKey(root)
+                        || environment.VisibleConstructors.ContainsKey(root)
+                        || (topLevelDefinitionsByName |> Map.containsKey root)
+
+                    let rootPreservesStaticObjectIdentity =
+                        isTopLevelManifestStaticObjectRoot root
+                        || environment.VisibleTypeFacets.ContainsKey(root)
+                        || environment.VisibleStaticObjects.ContainsKey(root)
+                        || (tryResolveScopedStaticObject environment (Name [ root ]) |> Option.isSome)
+
+                    if allowUnresolvedCallDiagnostics
+                       && visibleRuntimeRoot
+                       && not rootPreservesStaticObjectIdentity
+                       && not receiverHasStructuredProjectionTarget
+                       && List.isEmpty missingFieldDiagnostics
+                       && List.isEmpty staticMemberDiagnostics then
+                        [ makeDiagnostic DiagnosticCode.NameUnresolved $"Name '{fieldName}' is not in scope." ]
+                    else
+                        []
                 let unresolvedRootDiagnostics =
                     if allowUnresolvedCallDiagnostics
                        && List.isEmpty missingFieldDiagnostics
                        && List.isEmpty staticMemberDiagnostics
-                       && not (isVisibleRootName locals lexicalNames root) then
+                       && not (isVisibleQualifiedRootName locals lexicalNames root) then
                         let message =
                             if not (String.IsNullOrEmpty(root)) && Char.IsUpper(root[0]) then
                                 $"Module qualifier '{root}' is not in scope."
@@ -12202,14 +12344,17 @@ module SurfaceElaboration =
                     else
                         []
 
-                missingFieldDiagnostics @ staticMemberDiagnostics @ unresolvedRootDiagnostics
+                missingFieldDiagnostics @ staticMemberDiagnostics @ unresolvedMemberDiagnostics @ unresolvedRootDiagnostics
             | Name [ name ]
                 when allowUnresolvedCallDiagnostics
                      && not (Map.containsKey name locals)
                      && not (Set.contains name lexicalNames)
-                     && not (Set.contains name knownSurfaceTermNames)
-                     && not (Set.contains name knownValueNames) ->
-                [ makeDiagnostic DiagnosticCode.NameUnresolved $"Name '{name}' is not in scope." ]
+                     && not (Set.contains name knownTermLikeNames) ->
+                match tryResolveScopedStaticObject environment expression with
+                | Some _ ->
+                    []
+                | None ->
+                    [ makeDiagnostic DiagnosticCode.NameUnresolved $"Name '{name}' is not in scope." ]
             | Name _ ->
                 []
             | Comprehension comprehension ->
@@ -12506,6 +12651,15 @@ module SurfaceElaboration =
                 recurse scrutinee @ validateCases constructorFacts cases
             | RecordLiteral fields ->
                 validateRecordLiteral fields @ (fields |> List.collect (fun field -> recurse field.Value))
+            | Seal(RecordLiteral fields, ascriptionTokens) ->
+                let nestedDiagnostics =
+                    match tryParseRecordSurfaceInfo ascriptionTokens with
+                    | Some recordInfo ->
+                        validateRecordLiteralFieldValuesWithRecordInfo recurse recordInfo fields
+                    | None ->
+                        fields |> List.collect (fun field -> recurse field.Value)
+
+                validateRecordLiteral fields @ nestedDiagnostics
             | Seal(value, _) ->
                 recurse value
             | RecordUpdate(receiver, fields) ->
@@ -12590,6 +12744,8 @@ module SurfaceElaboration =
                                 []
                             | None when not (List.isEmpty (receiverStaticDiagnostics @ receiverMethodDiagnostics @ receiverProjectionDiagnostics)) ->
                                 []
+                            | None when tryResolveScopedStaticObject environment receiver |> Option.isSome ->
+                                []
                             | None ->
                                 match inferValidationExpressionType environment freshCounter locals receiver with
                                 | Some receiverType when not (Set.contains memberName knownValueNames) ->
@@ -12645,10 +12801,15 @@ module SurfaceElaboration =
             | Do statements ->
                 validateDoStatementsWithFlow locals refinements lexicalNames aliases constructorFacts statements
             | MonadicSplice inner
-            | ExplicitImplicitArgument inner
             | InoutArgument inner
             | Unary(_, inner) ->
                 recurse inner
+            | ExplicitImplicitArgument inner ->
+                match tryParseTypeLikeSurfaceExpression inner with
+                | Some _ ->
+                    []
+                | None ->
+                    recurse inner
             | NamedApplicationBlock fields ->
                 fields |> List.collect (fun field -> recurse field.Value)
             | Apply _ as application ->
@@ -12753,16 +12914,6 @@ module SurfaceElaboration =
                             | _ ->
                                 []
 
-                        let argumentDiagnostics =
-                            if isConstructorSpine then
-                                let _, constructorArguments = collectApplicationSpine application []
-                                constructorArguments |> List.collect recurse
-                            else
-                                (match callee with
-                                 | Name [ _ ] -> []
-                                 | _ -> recurse callee)
-                                @ (arguments |> List.collect recurse)
-
                         let hasNamedBlock =
                             arguments
                             |> List.exists (function
@@ -12774,6 +12925,159 @@ module SurfaceElaboration =
                             |> List.exists (function
                                 | ExplicitImplicitArgument _ -> true
                                 | _ -> false)
+
+                        let validateCompileTimeArgument argument =
+                            match tryParseTypeLikeSurfaceExpression argument with
+                            | Some _ ->
+                                []
+                            | None ->
+                                recurse argument
+
+                        let validateArgumentsAgainstAlignedLayouts
+                            (parameterLayouts: Parameter list)
+                            (parameterTypes: TypeExpr list)
+                            pendingArguments
+                            =
+                            let parameterConsumesCompileTimeArgument (layout: Parameter) (parameterType: TypeExpr) =
+                                match tryParseParameterType layout with
+                                | Some declaredParameterType ->
+                                    isCompileTimeArgumentType environment.VisibleTypeAliases declaredParameterType
+                                | None ->
+                                    isCompileTimeArgumentType environment.VisibleTypeAliases parameterType
+
+                            let rec walk (layouts: Parameter list) (types: TypeExpr list) remainingArguments =
+                                match layouts, types, remainingArguments with
+                                | [], _, remaining
+                                | _, [], remaining ->
+                                    remaining |> List.collect recurse
+                                | layout :: restLayouts, parameterType :: restTypes, ExplicitImplicitArgument explicitArgument :: restArguments ->
+                                    let consumesCompileTimeArgument =
+                                        parameterConsumesCompileTimeArgument layout parameterType
+
+                                    if consumesCompileTimeArgument then
+                                        validateCompileTimeArgument explicitArgument
+                                        @ walk restLayouts restTypes restArguments
+                                    else
+                                        recurse explicitArgument @ walk restLayouts restTypes restArguments
+                                | layout :: restLayouts, parameterType :: restTypes, nextArgument :: restArguments when layout.IsImplicit ->
+                                    if parameterConsumesCompileTimeArgument layout parameterType
+                                       && (tryParseTypeLikeSurfaceExpression nextArgument |> Option.isSome) then
+                                        validateCompileTimeArgument nextArgument
+                                        @ walk restLayouts restTypes restArguments
+                                    else
+                                        walk restLayouts restTypes (nextArgument :: restArguments)
+                                | layout :: restLayouts, parameterType :: restTypes, nextArgument :: restArguments ->
+                                    let currentDiagnostics =
+                                        if parameterConsumesCompileTimeArgument layout parameterType then
+                                            validateCompileTimeArgument nextArgument
+                                        else
+                                            recurse nextArgument
+
+                                    currentDiagnostics @ walk restLayouts restTypes restArguments
+                                | _ :: restLayouts, _ :: restTypes, [] ->
+                                    walk restLayouts restTypes []
+
+                            walk parameterLayouts parameterTypes pendingArguments
+
+                        let argumentDiagnosticsForBindingInfo (bindingInfo: BindingSchemeInfo) =
+                            let preserveOrdinaryConstructorApplication =
+                                bindingInfo.ConstructorTypeName.IsSome
+                                || environment.VisibleConstructors.ContainsKey(bindingInfo.Name)
+
+                            if preserveOrdinaryConstructorApplication then
+                                let _, constructorArguments = collectApplicationSpine application []
+                                constructorArguments |> List.collect recurse
+                            else
+                                match bindingInfo.ParameterLayouts with
+                                | Some parameterLayouts ->
+                                    let instantiated = TypeSignatures.instantiate "v" freshCounter.Value bindingInfo.Scheme
+                                    let rec consumeLeadingExplicitTypeApplications
+                                        (remainingForall: TypeSignatures.ForallBinder list)
+                                        (remainingArguments: SurfaceExpression list)
+                                        =
+                                        match remainingForall, remainingArguments with
+                                        | _ :: restForall, ExplicitImplicitArgument explicitArgument :: restArguments ->
+                                            let currentDiagnostics = validateCompileTimeArgument explicitArgument
+                                            let remainingDiagnostics, finalArguments =
+                                                consumeLeadingExplicitTypeApplications restForall restArguments
+
+                                            currentDiagnostics @ remainingDiagnostics, finalArguments
+                                        | _ ->
+                                            [], remainingArguments
+
+                                    let explicitTypeArgumentDiagnostics, alignedArguments =
+                                        consumeLeadingExplicitTypeApplications instantiated.Forall arguments
+
+                                    let schemeParameterTypes, _ = TypeSignatures.schemeParts instantiated
+
+                                    match tryAlignParameterTypesWithLayouts environment parameterLayouts schemeParameterTypes with
+                                    | Some(alignedParameterTypes, []) ->
+                                        explicitTypeArgumentDiagnostics
+                                        @ validateArgumentsAgainstAlignedLayouts parameterLayouts alignedParameterTypes alignedArguments
+                                    | Some _
+                                    | None ->
+                                        explicitTypeArgumentDiagnostics @ (alignedArguments |> List.collect recurse)
+                                | None ->
+                                    arguments |> List.collect recurse
+
+                        let argumentDiagnosticsForLocalBindingType calleeType =
+                            let parameterTypes, _ = TypeSignatures.functionParts calleeType
+                            let pairedArguments =
+                                List.zip
+                                    (arguments |> List.truncate parameterTypes.Length)
+                                    (parameterTypes |> List.truncate arguments.Length)
+
+                            let pairedDiagnostics =
+                                pairedArguments
+                                |> List.collect (fun (argument, parameterType) ->
+                                    if isCompileTimeArgumentType environment.VisibleTypeAliases parameterType then
+                                        validateCompileTimeArgument argument
+                                    else
+                                        recurse argument)
+
+                            let remainingDiagnostics =
+                                arguments
+                                |> List.skip (min arguments.Length parameterTypes.Length)
+                                |> List.collect recurse
+
+                            pairedDiagnostics @ remainingDiagnostics
+
+                        let argumentDiagnostics =
+                            if isConstructorSpine then
+                                let _, constructorArguments = collectApplicationSpine application []
+                                constructorArguments |> List.collect recurse
+                            else
+                                match callee with
+                                | Name [ calleeName ] ->
+                                    let isLexicallyBoundName =
+                                        Map.containsKey calleeName locals || Set.contains calleeName lexicalNames
+
+                                    let localBindingType = Map.tryFind calleeName locals
+
+                                    let bindingInfo =
+                                        if isLexicallyBoundName then
+                                            None
+                                        else
+                                            environment.VisibleConstructors
+                                            |> Map.tryFind calleeName
+                                            |> Option.orElseWith (fun () -> environment.VisibleBindings |> Map.tryFind calleeName)
+
+                                    match bindingInfo, localBindingType with
+                                    | Some bindingInfo, _ ->
+                                        argumentDiagnosticsForBindingInfo bindingInfo
+                                    | None, Some localType ->
+                                        argumentDiagnosticsForLocalBindingType localType
+                                    | _ ->
+                                        arguments |> List.collect recurse
+                                | _ ->
+                                    let argumentDiagnostics =
+                                        match inferValidationExpressionType environment (ref freshCounter.Value) locals callee with
+                                        | Some calleeType ->
+                                            argumentDiagnosticsForLocalBindingType calleeType
+                                        | None ->
+                                            arguments |> List.collect recurse
+
+                                    recurse callee @ argumentDiagnostics
 
                         let runtimeRelevantParameterLayouts (bindingInfo: BindingSchemeInfo) =
                             bindingInfo.ParameterLayouts
@@ -13090,7 +13394,7 @@ module SurfaceElaboration =
                                             if not (List.isEmpty siblingFallbackArgumentDiagnostics) then
                                                 siblingFallbackArgumentDiagnostics
                                             else
-                                                applicationExpectedArgumentDiagnostics locals refinements bindingInfo arguments
+                                                applicationExpectedArgumentDiagnostics locals refinements lexicalNames bindingInfo arguments
                                         let traitConstraintDiagnostics = implicitTraitConstraintDiagnostics bindingInfo
                                         let zeroExplicitParameterCallDiagnostics () =
                                             let instantiated =
@@ -14262,12 +14566,27 @@ module SurfaceElaboration =
 
                 binderDiagnostics @ resultDiagnostics
 
+        let directRecordLiteralBodyDiagnostics body =
+            let expectedRecordInfo =
+                definition.ReturnTypeTokens
+                |> Option.bind tryRecordInfoFromTypeTokens
+
+            match body, expectedRecordInfo with
+            | RecordLiteral fields, Some recordInfo when recordInfoHasOpaqueMembers recordInfo ->
+                validateRecordLiteral fields
+                @ validateRecordLiteralFieldValuesWithRecordInfo
+                    (validateExpression localTypes Map.empty parameterNames)
+                    recordInfo
+                    fields
+            | _ ->
+                validateExpression localTypes Map.empty parameterNames body
+
         parameterRecordDiagnostics
         @ activePatternDeclarationDiagnostics
         @
             match effectiveBody with
             | Some body ->
-                validateExpression localTypes Map.empty parameterNames body
+                directRecordLiteralBodyDiagnostics body
                 @ siblingFallbackDiagnostics body
                 @ validateLocalImplicitResolution body
                 @ validateExpectedBody localTypes body
