@@ -978,6 +978,20 @@ module SurfaceElaboration =
         finally
             scopedEffects.Value <- Some saved
 
+    let private withScopedEffectDeclarations (declarations: EffectDeclaration list) work =
+        let saved = currentScopedEffects ()
+
+        let merged =
+            declarations
+            |> List.fold (fun state declaration -> Map.add declaration.Name declaration state) saved
+
+        scopedEffects.Value <- Some merged
+
+        try
+            work ()
+        finally
+            scopedEffects.Value <- Some saved
+
     let private tryResolveScopedStaticObject
         (environment: BindingLoweringEnvironment)
         expression
@@ -2354,6 +2368,9 @@ module SurfaceElaboration =
                 | DataDeclarationNode declaration ->
                     buildTypeFacetInfo moduleName declaration.Name declaration.HeaderTokens
                     |> Some
+                | EffectDeclarationNode declaration ->
+                    buildTypeFacetInfo moduleName declaration.Name declaration.HeaderTokens
+                    |> Some
                 | TypeAliasNode declaration ->
                     buildTypeFacetInfo moduleName declaration.Name declaration.HeaderTokens
                     |> Some
@@ -2521,6 +2538,8 @@ module SurfaceElaboration =
             frontendModule.Declarations
             |> List.choose (function
                 | DataDeclarationNode declaration when isExportedVisibility privateByDefault declaration.Visibility ->
+                    Some declaration.Name
+                | EffectDeclarationNode declaration when isExportedVisibility privateByDefault declaration.Visibility ->
                     Some declaration.Name
                 | TypeAliasNode declaration when isExportedVisibility privateByDefault declaration.Visibility ->
                     Some declaration.Name
@@ -11884,6 +11903,7 @@ module SurfaceElaboration =
                     | ProjectionDeclarationNode declaration -> [ declaration.Name ]
                     | DataDeclarationNode declaration ->
                         declaration.Name :: (declaration.Constructors |> List.map (fun constructor -> constructor.Name))
+                    | EffectDeclarationNode declaration -> [ declaration.Name ]
                     | TypeAliasNode declaration -> [ declaration.Name ]
                     | TraitDeclarationNode declaration -> [ declaration.Name ]
                     | ExpectDeclarationNode (ExpectTermDeclaration declaration) -> [ declaration.Name ]
@@ -11892,1352 +11912,1359 @@ module SurfaceElaboration =
                     | _ -> [])
                 |> Set.ofList
 
-            let makeDiagnostic code message =
-                { Severity = DiagnosticSeverity.Error
-                  Code = code
-                  Stage = Some "KFrontIR"
-                  Phase = Some(KFrontIRPhase.phaseName CORE_LOWERING)
-                  Message = message
-                  Location = None
-                  RelatedLocations = [] }
-
-            let baseEnvironment =
-                { CurrentModuleName = moduleName
-                  VisibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleName
-                  VisibleTypeFacets = mergeVisibleTypeFacets surfaceIndex moduleName
-                  VisibleStaticObjects = Map.empty
-                  VisibleModules = mergeVisibleModules surfaceIndex moduleName
-                  VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleName
-                  VisibleBindings = mergeVisibleBindings surfaceIndex moduleName
-                  VisibleConstructors = mergeVisibleConstructors surfaceIndex moduleName
-                  VisibleProjections = mergeVisibleProjections surfaceIndex moduleName
-                  VisibleTraits = mergeVisibleTraits surfaceIndex moduleName
-                  VisibleInstances = visibleInstances surfaceIndex moduleName
-                  ElaborationAvailableBindings =
-                    mergeVisibleBindings surfaceIndex moduleName
-                    |> Map.keys
-                    |> Set.ofSeq
-                    |> Set.intersect (IntrinsicCatalog.elaborationAvailableIntrinsicTermNames ())
-                  ConstrainedMembers = Map.empty }
-
-            let environment =
-                { baseEnvironment with
-                    VisibleStaticObjects = buildStaticObjectAliasesForModule baseEnvironment frontendModule.Declarations }
-
-            let hasNonQualifiedImports =
-                frontendModule.Declarations
-                |> List.exists (function
-                    | ImportDeclaration (_, specs) ->
-                        specs
-                        |> List.exists (fun spec ->
-                            match spec.Selection with
-                            | QualifiedOnly -> false
-                            | _ -> true)
-                    | _ ->
-                        false)
-
-            let allowUnresolvedCallDiagnostics =
-                not hasNonQualifiedImports
-                && not (frontendModule.Diagnostics |> List.exists (fun diagnostic -> diagnostic.Severity = Error))
-
-            let knownSurfaceTermNames =
-                let preludeContract = IntrinsicCatalog.bundledPreludeExpectContract ()
-                let standardRuntimeNames =
-                    Set.ofList
-                        [ "bindModule"; "bindModuleOwned"; "bridgePackageValue"; "bridgePackageOrigin"; "bridgeFailureToCastBlame"
-                          "checkedCast"; "checkedCastWith"; "sameDynRep"; "toDyn"; "toDynWith"
-                          "Conservative"; "Exact"; "IntoKappa"; "LaterUse"; "Lossy"; "OutOfKappa" ]
-
-                let compilerKnownSurfaceTerms =
-                    Set.ofList
-                        [ "thunk"
-                          "lazy"
-                          "force"
-                          "captureBorrow"
-                          "withBorrowView"
-                          "fork"
-                          "defEqSyntax"
-                          "headSymbolSyntax"
-                          "sameSymbol" ]
-
-                let visibleTraitMemberNames =
-                    environment.VisibleTraits
-                    |> Map.values
-                    |> Seq.collect (fun traitInfo -> traitInfo.Members.Keys)
-                    |> Set.ofSeq
-
-                [ topLevelNames
-                  preludeContract.TermNames
-                  preludeContract.TypeNames
-                  preludeContract.TraitNames
-                  Set.ofList Stdlib.FixedPreludeConstructors
-                  IntrinsicCatalog.namedIntrinsicTermNames ()
-                  standardRuntimeNames
-                  compilerKnownSurfaceTerms
-                  environment.VisibleBindings |> Map.keys |> Set.ofSeq
-                  environment.VisibleConstructors |> Map.keys |> Set.ofSeq
-                  environment.VisibleModules
-                  environment.VisibleStaticObjects |> Map.keys |> Set.ofSeq
-                  environment.VisibleTypeFacets |> Map.keys |> Set.ofSeq
-                  environment.VisibleTraits |> Map.keys |> Set.ofSeq
-                  visibleTraitMemberNames
-                  environment.ConstrainedMembers |> Map.keys |> Set.ofSeq ]
-                |> Set.unionMany
-                |> Set.remove "<anonymous>"
-
-            let validateProjectionDeclaration (declaration: ProjectionDeclaration) =
-                let placeBinders =
-                    declaration.Binders
-                    |> List.choose (function
-                        | ProjectionPlaceBinder binder -> Some binder
-                        | ProjectionValueBinder _ -> None)
-
-                let placeBinderNames = placeBinders |> List.map (fun binder -> binder.Name) |> Set.ofList
-
-                let missingPlaceDiagnostics =
-                    if List.isEmpty placeBinders then
-                        [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "A projection definition must declare at least one place binder." ]
-                    else
-                        []
-
-                let rec selectorYieldDiagnostics body =
-                    match body with
-                    | ProjectionYield(Name(root :: _)) when Set.contains root placeBinderNames ->
-                        []
-                    | ProjectionYield(Apply(Name [ projectionName ], _)) ->
-                        match environment.VisibleProjections |> Map.tryFind projectionName with
-                        | Some nestedProjection ->
-                            match nestedProjection.Body with
-                            | Some(ProjectionAccessors _) ->
-                                [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "A selector projection yield must denote a stable place, not an accessor bundle." ]
-                            | _ ->
-                                []
-                        | None ->
-                            [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "A selector projection yield must denote a stable place." ]
-                    | ProjectionYield _ ->
-                        [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "A selector projection yield must denote a stable place rooted in a place binder." ]
-                    | ProjectionIfThenElse(_, whenTrue, whenFalse) ->
-                        selectorYieldDiagnostics whenTrue @ selectorYieldDiagnostics whenFalse
-                    | ProjectionMatch(_, cases) ->
-                        cases |> List.collect (fun caseClause -> selectorYieldDiagnostics caseClause.Body)
-                    | ProjectionAccessors _ ->
-                        []
-
-                let expandedDiagnostics =
-                    if List.isEmpty placeBinders then
-                        []
-                    else
-                        match declaration.Body with
-                        | Some(ProjectionAccessors clauses) ->
-                            let placeCountDiagnostics =
-                                if List.length placeBinders = 1 then
-                                    []
-                                else
-                                    [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "An expanded accessor projection must declare exactly one place binder." ]
-
-                            let duplicateDiagnostics =
-                                clauses
-                                |> List.map (function
-                                    | ProjectionGet _ -> "get"
-                                    | ProjectionInout _ -> "inout"
-                                    | ProjectionSet _ -> "set"
-                                    | ProjectionSink _ -> "sink")
-                                |> List.countBy id
-                                |> List.choose (fun (kind, count) ->
-                                    if count > 1 then
-                                        Some(makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported $"Projection accessor clause '{kind}' is declared more than once.")
-                                    else
-                                        None)
-
-                            placeCountDiagnostics @ duplicateDiagnostics
-                        | Some body ->
-                            selectorYieldDiagnostics body
-                        | None ->
-                            []
-
-                missingPlaceDiagnostics @ expandedDiagnostics
-
-            let duplicateDeclarationDiagnostics =
-                let duplicateNames messagePrefix names =
-                    names
-                    |> List.countBy id
-                    |> List.choose (fun (name, count) ->
-                        if count > 1 then
-                            Some(makeDiagnostic DiagnosticCode.DuplicateDeclaration $"{messagePrefix} '{name}' is declared more than once in module '{moduleName}'.")
-                        else
-                            None)
-
-                let termDefinitions =
-                    let expectedTerms =
-                        frontendModule.Declarations
-                        |> List.choose (function
-                            | ExpectDeclarationNode (ExpectTermDeclaration declaration) -> Some declaration.Name
-                            | _ -> None)
-                        |> Set.ofList
-
-                    frontendModule.Declarations
-                    |> List.choose (function
-                        | LetDeclaration definition ->
-                            definition.Name
-                            |> Option.filter (fun name -> not (Set.contains name expectedTerms))
-                        | _ -> None)
-
-                let typeDeclarations =
-                    frontendModule.Declarations
-                    |> List.choose (function
-                        | DataDeclarationNode declaration -> Some declaration.Name
-                        | TypeAliasNode declaration -> Some declaration.Name
-                        | _ -> None)
-
-                let constructorDeclarations =
-                    frontendModule.Declarations
-                    |> List.collect (function
-                        | DataDeclarationNode declaration ->
-                            declaration.Constructors
-                            |> List.map (fun constructor -> constructor.Name)
-                            |> List.filter (fun name -> not (String.Equals(name, "<anonymous>", StringComparison.Ordinal)))
-                        | _ -> [])
-
-                duplicateNames "Term declaration" termDefinitions
-                @ duplicateNames "Type declaration" typeDeclarations
-                @ duplicateNames "Constructor declaration" constructorDeclarations
-
-            let totalityAssertionDiagnostics =
-                let allowAssertTerminates = moduleHasAttribute frontendModule "allow_assert_terminates"
-                let allowAssertReducible = moduleHasAttribute frontendModule "allow_assert_reducible"
-
+            let topLevelEffects =
                 frontendModule.Declarations
                 |> List.choose (function
-                    | LetDeclaration definition ->
-                        match definition.TotalityAssertion with
-                        | Some AssertTerminatesAssertion when not allowAssertTerminates ->
-                            let bindingName = definition.Name |> Option.defaultValue "<anonymous>"
-                            Some(makeDiagnostic DiagnosticCode.FrontendValidation $"Declaration '{bindingName}' uses assertTerminates/assertTotal without enabling module attribute 'allow_assert_terminates'.")
-                        | Some AssertReducibleAssertion when not allowAssertReducible ->
-                            let bindingName = definition.Name |> Option.defaultValue "<anonymous>"
-                            Some(makeDiagnostic DiagnosticCode.FrontendValidation $"Declaration '{bindingName}' uses assertReducible without enabling module attribute 'allow_assert_reducible'.")
-                        | _ ->
-                            None
-                    | _ ->
-                        None)
+                    | EffectDeclarationNode declaration -> Some declaration
+                    | _ -> None)
 
-            let typeAliasCycleDiagnostics =
-                let rec referencedTypeNames typeExpr =
-                    seq {
-                        match typeExpr with
-                        | TypeLevelLiteral _ ->
-                            ()
-                        | TypeUniverse None ->
-                            ()
-                        | TypeUniverse(Some universeExpr) ->
-                            yield! referencedTypeNames universeExpr
-                        | TypeIntrinsic _ ->
-                            ()
-                        | TypeApply(callee, arguments) ->
-                            yield! referencedTypeNames callee
+            withScopedEffectDeclarations topLevelEffects (fun () ->
+                let makeDiagnostic code message =
+                    { Severity = DiagnosticSeverity.Error
+                      Code = code
+                      Stage = Some "KFrontIR"
+                      Phase = Some(KFrontIRPhase.phaseName CORE_LOWERING)
+                      Message = message
+                      Location = None
+                      RelatedLocations = [] }
 
-                            for argument in arguments do
-                                yield! referencedTypeNames argument
-                        | TypeLambda(_, parameterSort, body) ->
-                            yield! referencedTypeNames parameterSort
-                            yield! referencedTypeNames body
-                        | TypeDelay inner
-                        | TypeMemo inner
-                        | TypeForce inner ->
-                            yield! referencedTypeNames inner
-                        | TypeProject(target, _) ->
-                            yield! referencedTypeNames target
-                        | TypeName(name, arguments) ->
-                            match name with
-                            | [ localName ] -> yield localName
-                            | _ -> ()
+                let baseEnvironment =
+                    { CurrentModuleName = moduleName
+                      VisibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleName
+                      VisibleTypeFacets = mergeVisibleTypeFacets surfaceIndex moduleName
+                      VisibleStaticObjects = Map.empty
+                      VisibleModules = mergeVisibleModules surfaceIndex moduleName
+                      VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleName
+                      VisibleBindings = mergeVisibleBindings surfaceIndex moduleName
+                      VisibleConstructors = mergeVisibleConstructors surfaceIndex moduleName
+                      VisibleProjections = mergeVisibleProjections surfaceIndex moduleName
+                      VisibleTraits = mergeVisibleTraits surfaceIndex moduleName
+                      VisibleInstances = visibleInstances surfaceIndex moduleName
+                      ElaborationAvailableBindings =
+                        mergeVisibleBindings surfaceIndex moduleName
+                        |> Map.keys
+                        |> Set.ofSeq
+                        |> Set.intersect (IntrinsicCatalog.elaborationAvailableIntrinsicTermNames ())
+                      ConstrainedMembers = Map.empty }
 
-                            for argument in arguments do
-                                yield! referencedTypeNames argument
-                        | TypeVariable _ ->
-                            ()
-                        | TypeArrow(_, parameterType, resultType) ->
-                            yield! referencedTypeNames parameterType
-                            yield! referencedTypeNames resultType
-                        | TypeEquality(left, right) ->
-                            yield! referencedTypeNames left
-                            yield! referencedTypeNames right
-                        | TypeCapture(inner, _) ->
-                            yield! referencedTypeNames inner
-                        | TypeEffectRow(entries, tail) ->
-                            for entry in entries do
-                                yield! referencedTypeNames entry.Label
-                                yield! referencedTypeNames entry.Effect
+                let environment =
+                    { baseEnvironment with
+                        VisibleStaticObjects = buildStaticObjectAliasesForModule baseEnvironment frontendModule.Declarations }
 
-                            match tail with
-                            | Some tailType -> yield! referencedTypeNames tailType
-                            | None -> ()
-                        | TypeRecord fields ->
-                            for field in fields do
-                                yield! referencedTypeNames field.Type
-                        | TypeUnion members ->
-                            for memberType in members do
-                                yield! referencedTypeNames memberType
-                    }
-
-                let localAliases =
+                let hasNonQualifiedImports =
                     frontendModule.Declarations
-                    |> List.choose (function
-                        | TypeAliasNode declaration -> tryParseTypeAliasInfo moduleName declaration
-                        | _ -> None)
-                    |> Map.ofList
-
-                let aliasDependencies =
-                    localAliases
-                    |> Map.map (fun _ aliasInfo ->
-                        referencedTypeNames aliasInfo.Body
-                        |> Seq.filter (fun referencedName ->
-                            Map.containsKey referencedName localAliases
-                            && not (List.contains referencedName aliasInfo.Parameters))
-                        |> Set.ofSeq)
-
-                let rec reaches start current visited =
-                    aliasDependencies
-                    |> Map.tryFind current
-                    |> Option.defaultValue Set.empty
-                    |> Seq.exists (fun dependency ->
-                        String.Equals(dependency, start, StringComparison.Ordinal)
-                        || (not (Set.contains dependency visited)
-                            && reaches start dependency (Set.add dependency visited)))
-
-                aliasDependencies
-                |> Map.keys
-                |> Seq.filter (fun aliasName -> reaches aliasName aliasName (Set.singleton aliasName))
-                |> Seq.distinct
-                |> Seq.map (fun aliasName ->
-                    makeDiagnostic DiagnosticCode.RecursiveTypeAlias $"Type alias '{aliasName}' recursively depends on itself.")
-                |> Seq.toList
-
-            let malformedConstructorDiagnostics =
-                let declarationKeywordNames =
-                    Set.ofList [ "data"; "expect"; "export"; "import"; "instance"; "let"; "module"; "opaque"; "private"; "projection"; "public"; "trait"; "type" ]
-
-                let exposesRuntimeTypeField (constructor: DataConstructor) =
-                    let exposedFieldTypes =
-                        match constructor.Parameters with
-                        | Some parameters ->
-                            parameters
-                            |> List.choose (fun parameter ->
-                                if parameter.ParameterIsImplicit || parameter.ParameterQuantity = Some QuantityZero then
-                                    None
-                                else
-                                    TypeSignatures.parseType parameter.ParameterTypeTokens)
-                        | None ->
-                            TypeSignatures.constructorParameterTokenGroups constructor
-                            |> List.choose (fun parameterTokens ->
-                                match parameterTokens with
-                                | { Kind = AtSign } :: _ ->
-                                    None
-                                | { Kind = IntegerLiteral; Text = "0" } :: _ ->
-                                    None
-                                | _ ->
-                                    let typeTokens =
-                                        match parameterTokens |> List.tryFindIndex (fun token -> token.Kind = Colon) with
-                                        | Some colonIndex when colonIndex + 1 < parameterTokens.Length ->
-                                            parameterTokens |> List.skip (colonIndex + 1)
-                                        | _ ->
-                                            parameterTokens
-
-                                    TypeSignatures.parseType typeTokens)
-
-                    exposedFieldTypes
                     |> List.exists (function
-                        | TypeUniverse _ -> true
-                        | TypeIntrinsic UniverseClassifier -> true
-                        | TypeName([ "Type" ], _) -> true
-                        | _ -> false)
-
-                let constructorHasMalformedShape (constructor: DataConstructor) =
-                    let significant = significantTokens constructor.Tokens
-
-                    let hasUnbalancedDelimiters tokens =
-                        let mutable parenDepth = 0
-                        let mutable braceDepth = 0
-                        let mutable bracketDepth = 0
-                        let mutable setBraceDepth = 0
-
-                        for token in tokens do
-                            match token.Kind with
-                            | LeftParen -> parenDepth <- parenDepth + 1
-                            | RightParen -> parenDepth <- max 0 (parenDepth - 1)
-                            | LeftBrace -> braceDepth <- braceDepth + 1
-                            | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
-                            | LeftBracket -> bracketDepth <- bracketDepth + 1
-                            | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
-                            | LeftSetBrace -> setBraceDepth <- setBraceDepth + 1
-                            | RightSetBrace -> setBraceDepth <- max 0 (setBraceDepth - 1)
-                            | _ -> ()
-
-                        parenDepth <> 0 || braceDepth <> 0 || bracketDepth <> 0 || setBraceDepth <> 0
-
-                    if hasUnbalancedDelimiters significant then
-                        false
-                    else
-                        let stripConstructorName tokens =
-                            let isSymbolToken token =
-                                match token.Kind with
-                                | Operator
-                                | Colon
-                                | Equals -> true
-                                | _ -> false
-
-                            match tokens with
-                            | { Kind = LeftParen } :: rest ->
-                                let rec loop remaining =
-                                    match remaining with
-                                    | { Kind = RightParen } :: tail ->
-                                        tail
-                                    | token :: tail when isSymbolToken token ->
-                                        loop tail
-                                    | _ ->
-                                        tokens
-
-                                loop rest
-                            | _nameToken :: rest ->
-                                rest
-                            | [] ->
-                                []
-
-                        let remainingTokens =
-                            match significant with
-                            | { Kind = Operator; Text = "|" } :: rest -> stripConstructorName rest
-                            | _ -> stripConstructorName significant
-
-                        match constructor.Parameters, remainingTokens with
-                        | Some _, _ ->
-                            false
-                        | None, [] ->
-                            false
-                        | None, { Kind = Colon } :: typeTokens ->
-                            TypeSignatures.parseScheme typeTokens |> Option.isNone
-                        | None, _ ->
-                            List.isEmpty (TypeSignatures.constructorFieldTypes constructor)
-
-                frontendModule.Declarations
-                |> List.collect (function
-                    | DataDeclarationNode declaration ->
-                        declaration.Constructors
-                        |> List.choose (fun constructor ->
-                            if Set.contains constructor.Name declarationKeywordNames then
-                                Some(makeDiagnostic DiagnosticCode.MalformedConstructorDeclaration $"Constructor declaration in data type '{declaration.Name}' starts with declaration keyword '{constructor.Name}'.")
-                            elif exposesRuntimeTypeField constructor then
-                                Some(makeDiagnostic DiagnosticCode.MalformedConstructorDeclaration $"Constructor '{constructor.Name}' exposes runtime field metadata of type 'Type'.")
-                            elif constructorHasMalformedShape constructor then
-                                Some(makeDiagnostic DiagnosticCode.MalformedConstructorDeclaration $"Constructor declaration '{constructor.Name}' in data type '{declaration.Name}' is malformed.")
-                            else
-                                None)
-                    | _ ->
-                        [])
-
-            let patternDuplicateDiagnostics pattern =
-                let duplicateNames current =
-                    collectPatternNames current
-                    |> List.countBy id
-                    |> List.choose (fun (name, count) ->
-                        if count > 1 then
-                            Some(makeDiagnostic DiagnosticCode.DuplicatePatternBinder $"Pattern binder '{name}' is bound more than once in the same pattern.")
-                        else
-                            None)
-
-                let rec loop current =
-                    match current with
-                    | AsPattern(_, inner) ->
-                        duplicateNames current @ loop inner
-                    | TypedPattern(inner, _) ->
-                        duplicateNames current @ loop inner
-                    | OrPattern alternatives ->
-                        alternatives |> List.collect loop
-                    | ConstructorPattern(_, arguments) ->
-                        duplicateNames current @ (arguments |> List.collect loop)
-                    | NamedConstructorPattern(_, fields) ->
-                        duplicateNames current @ (fields |> List.collect (fun field -> loop field.Pattern))
-                    | TuplePattern elements ->
-                        duplicateNames current @ (elements |> List.collect loop)
-                    | VariantPattern _ ->
-                        duplicateNames current
-                    | AnonymousRecordPattern(fields, _) ->
-                        duplicateNames current @ (fields |> List.collect (fun field -> loop field.Pattern))
-                    | WildcardPattern
-                    | NamePattern _
-                    | LiteralPattern _ ->
-                        []
-
-                loop pattern |> List.distinctBy (fun diagnostic -> diagnostic.Message)
-
-            let unsignedRecursiveBindingDiagnostics =
-                let signatureNames =
-                    frontendModule.Declarations
-                    |> List.choose (function
-                        | SignatureDeclaration declaration -> Some declaration.Name
-                        | _ -> None)
-                    |> Set.ofList
-
-                let patternNames pattern =
-                    collectPatternNames pattern |> Set.ofList
-
-                let parameterNames (parameters: Parameter list) =
-                    parameters |> List.map (fun parameter -> parameter.Name) |> Set.ofList
-
-                let rec expressionReferences target shadowed expression =
-                    let references = expressionReferences target shadowed
-
-                    match expression with
-                    | Name [ name ] ->
-                        String.Equals(name, target, StringComparison.Ordinal)
-                        && not (Set.contains name shadowed)
-                    | SyntaxQuote inner
-                    | SyntaxSplice inner
-                    | TopLevelSyntaxSplice inner
-                    | CodeQuote inner
-                    | CodeSplice inner ->
-                        references inner
-                    | Handle(_, label, body, returnClause, operationClauses) ->
-                        references label
-                        || references body
-                        || references returnClause.Body
-                        || (operationClauses |> List.exists (fun clause -> references clause.Body))
-                    | Apply(callee, arguments) ->
-                        references callee || (arguments |> List.exists references)
-                    | LocalLet(binding, value, body) ->
-                        references value
-                        || expressionReferences target (Set.union shadowed (patternNames binding.Pattern)) body
-                    | LocalSignature(declaration, body) ->
-                        if String.Equals(declaration.Name, target, StringComparison.Ordinal) then
-                            false
-                        else
-                            expressionReferences target (Set.add declaration.Name shadowed) body
-                    | LocalTypeAlias(_, body) ->
-                        references body
-                    | LocalScopedEffect(_, body) ->
-                        references body
-                    | Lambda(parameters, body) ->
-                        expressionReferences target (Set.union shadowed (parameterNames parameters)) body
-                    | IfThenElse(condition, whenTrue, whenFalse) ->
-                        references condition || references whenTrue || references whenFalse
-                    | Match(scrutinee, cases) ->
-                        references scrutinee
-                        || (cases
-                            |> List.exists (fun caseClause ->
-                                let caseShadowed = Set.union shadowed (patternNames caseClause.Pattern)
-                                (caseClause.Guard |> Option.exists (expressionReferences target caseShadowed))
-                                || expressionReferences target caseShadowed caseClause.Body))
-                    | RecordLiteral fields ->
-                        fields |> List.exists (fun field -> references field.Value)
-                    | Seal(value, _) ->
-                        references value
-                    | RecordUpdate(receiver, fields) ->
-                        references receiver || (fields |> List.exists (fun field -> references field.Value))
-                    | MemberAccess(receiver, _, arguments) ->
-                        references receiver || (arguments |> List.exists references)
-                    | SafeNavigation(receiver, navigation) ->
-                        references receiver || (navigation.Arguments |> List.exists references)
-                    | TagTest(receiver, _) ->
-                        references receiver
-                    | Do statements ->
-                        doStatementsReference target shadowed statements
-                    | MonadicSplice inner
-                    | ExplicitImplicitArgument inner
-                    | InoutArgument inner
-                    | Unary(_, inner) ->
-                        references inner
-                    | NamedApplicationBlock fields ->
-                        fields |> List.exists (fun field -> references field.Value)
-                    | Binary(left, _, right)
-                    | Elvis(left, right) ->
-                        references left || references right
-                    | Comprehension comprehension ->
-                        references comprehension.Lowered
-                    | PrefixedString(_, parts) ->
-                        parts
-                        |> List.exists (function
-                            | StringText _ -> false
-                            | StringInterpolation(inner, _) -> references inner)
-                    | Literal _
-                    | NumericLiteral _
-                    | KindQualifiedName _
-                    | Name _ ->
-                        false
-
-                and doStatementsReference target shadowed statements =
-                    match statements with
-                    | [] ->
-                        false
-                    | statement :: rest ->
-                        match statement with
-                        | DoLet(binding, expression)
-                        | DoBind(binding, expression)
-                        | DoUsing(binding, expression) ->
-                            expressionReferences target shadowed expression
-                            || doStatementsReference target (Set.union shadowed (patternNames binding.Pattern)) rest
-                        | DoLetQuestion(binding, expression, failure) ->
-                            let failureReferences =
-                                failure
-                                |> Option.exists (fun block ->
-                                    doStatementsReference target (Set.union shadowed (patternNames block.ResiduePattern.Pattern)) block.Body)
-
-                            expressionReferences target shadowed expression
-                            || failureReferences
-                            || doStatementsReference target (Set.union shadowed (patternNames binding.Pattern)) rest
-                        | DoVar(name, expression) ->
-                            expressionReferences target shadowed expression
-                            || doStatementsReference target (Set.add name shadowed) rest
-                        | DoAssign(_, expression)
-                        | DoDefer expression
-                        | DoExpression expression
-                        | DoReturn expression ->
-                            expressionReferences target shadowed expression
-                            || doStatementsReference target shadowed rest
-                        | DoIf(condition, whenTrue, whenFalse) ->
-                            expressionReferences target shadowed condition
-                            || doStatementsReference target shadowed whenTrue
-                            || doStatementsReference target shadowed whenFalse
-                            || doStatementsReference target shadowed rest
-                        | DoWhile(condition, body) ->
-                            expressionReferences target shadowed condition
-                            || doStatementsReference target shadowed body
-                            || doStatementsReference target shadowed rest
-
-                frontendModule.Declarations
-                |> List.choose (function
-                    | LetDeclaration definition
-                        when definition.Name.IsSome
-                             && definition.Body.IsSome
-                             && not (Set.contains definition.Name.Value signatureNames) ->
-                        let name = definition.Name.Value
-                        let shadowed = parameterNames definition.Parameters
-
-                        if expressionReferences name shadowed definition.Body.Value then
-                            Some(makeDiagnostic DiagnosticCode.RecursionRequiresSignature $"Top-level binding '{name}' is recursive but has no preceding signature declaration.")
-                        else
-                            None
-                    | _ ->
-                        None)
-
-            let trivialRecursiveCycleDiagnostics =
-                frontendModule.Declarations
-                |> List.choose (function
-                    | LetDeclaration definition
-                        when definition.Name.IsSome
-                             && definition.Body.IsSome
-                             && List.isEmpty definition.Parameters ->
-                        let name = definition.Name.Value
-
-                        match definition.Body.Value with
-                        | Name [ referencedName ] when String.Equals(referencedName, name, StringComparison.Ordinal) ->
-                            Some(
-                                makeDiagnostic
-                                    DiagnosticCode.RecursionRequiresSignature
-                                    $"Recursive cycle for binding '{name}' is not total and must be rejected."
-                            )
+                        | ImportDeclaration (_, specs) ->
+                            specs
+                            |> List.exists (fun spec ->
+                                match spec.Selection with
+                                | QualifiedOnly -> false
+                                | _ -> true)
                         | _ ->
-                            None
-                    | _ ->
-                        None)
+                            false)
 
-            let expressionPatternDiagnostics expression =
-                let rec validateExpression current =
-                    match current with
-                    | SyntaxQuote inner
-                    | SyntaxSplice inner
-                    | TopLevelSyntaxSplice inner
-                    | CodeQuote inner
-                    | CodeSplice inner ->
-                        validateExpression inner
-                    | LocalLet(binding, value, body) ->
-                        patternDuplicateDiagnostics binding.Pattern @ validateExpression value @ validateExpression body
-                    | LocalSignature(_, body) ->
-                        validateExpression body
-                    | LocalTypeAlias(_, body) ->
-                        validateExpression body
-                    | LocalScopedEffect(_, body) ->
-                        validateExpression body
-                    | Handle(_, label, body, returnClause, operationClauses) ->
-                        validateExpression label
-                        @ validateExpression body
-                        @ validateExpression returnClause.Body
-                        @ (operationClauses |> List.collect (fun clause -> validateExpression clause.Body))
-                    | Lambda(_, body) ->
-                        validateExpression body
-                    | IfThenElse(condition, whenTrue, whenFalse) ->
-                        validateExpression condition @ validateExpression whenTrue @ validateExpression whenFalse
-                    | Match(scrutinee, cases) ->
-                        validateExpression scrutinee
-                        @ (cases
-                           |> List.collect (fun caseClause ->
-                               patternDuplicateDiagnostics caseClause.Pattern
-                               @ (caseClause.Guard |> Option.map validateExpression |> Option.defaultValue [])
-                               @ validateExpression caseClause.Body))
-                    | RecordLiteral fields ->
-                        fields |> List.collect (fun field -> validateExpression field.Value)
-                    | Seal(value, _) ->
-                        validateExpression value
-                    | RecordUpdate(receiver, fields) ->
-                        validateExpression receiver @ (fields |> List.collect (fun field -> validateExpression field.Value))
-                    | MemberAccess(receiver, _, arguments) ->
-                        validateExpression receiver @ (arguments |> List.collect validateExpression)
-                    | SafeNavigation(receiver, navigation) ->
-                        validateExpression receiver @ (navigation.Arguments |> List.collect validateExpression)
-                    | TagTest(receiver, _) ->
-                        validateExpression receiver
-                    | Comprehension comprehension ->
-                        validateExpression comprehension.Lowered
-                    | Do statements ->
-                        validateDo statements
-                    | MonadicSplice inner
-                    | ExplicitImplicitArgument inner
-                    | InoutArgument inner
-                    | Unary(_, inner) ->
-                        validateExpression inner
-                    | NamedApplicationBlock fields ->
-                        fields |> List.collect (fun field -> validateExpression field.Value)
-                    | Binary(left, _, right)
-                    | Elvis(left, right) ->
-                        validateExpression left @ validateExpression right
-                    | Apply(callee, arguments) ->
-                        validateExpression callee @ (arguments |> List.collect validateExpression)
-                    | PrefixedString(_, parts) ->
-                        parts
-                        |> List.collect (function
-                            | StringText _ -> []
-                            | StringInterpolation(inner, _) -> validateExpression inner)
-                    | Literal _
-                    | NumericLiteral _
-                    | KindQualifiedName _
-                    | Name _ ->
-                        []
+                let allowUnresolvedCallDiagnostics =
+                    not hasNonQualifiedImports
+                    && not (frontendModule.Diagnostics |> List.exists (fun diagnostic -> diagnostic.Severity = Error))
 
-                and validateDo statements =
-                    statements
-                    |> List.collect (function
-                        | DoLet(binding, expression)
-                        | DoBind(binding, expression)
-                        | DoUsing(binding, expression) ->
-                            patternDuplicateDiagnostics binding.Pattern @ validateExpression expression
-                        | DoLetQuestion(binding, expression, failure) ->
-                            patternDuplicateDiagnostics binding.Pattern
-                            @ validateExpression expression
-                            @ (failure
-                               |> Option.map (fun block ->
-                                   patternDuplicateDiagnostics block.ResiduePattern.Pattern @ validateDo block.Body)
-                               |> Option.defaultValue [])
-                        | DoVar(_, expression)
-                        | DoAssign(_, expression)
-                        | DoDefer expression
-                        | DoExpression expression
-                        | DoReturn expression ->
-                            validateExpression expression
-                        | DoIf(condition, whenTrue, whenFalse) ->
-                            validateExpression condition @ validateDo whenTrue @ validateDo whenFalse
-                        | DoWhile(condition, body) ->
-                            validateExpression condition @ validateDo body)
-
-                validateExpression expression
-
-            let expressionNameResolutionDiagnostics (definition: LetDefinition) expression =
-                []
-
-            let constructorDefaultDiagnostics =
-                let topLevelNames =
-                    frontendModule.Declarations
-                    |> List.collect (function
-                        | SignatureDeclaration declaration -> [ declaration.Name ]
-                        | LetDeclaration declaration -> declaration.Name |> Option.toList
-                        | ProjectionDeclarationNode declaration -> [ declaration.Name ]
-                        | DataDeclarationNode declaration ->
-                            declaration.Name :: (declaration.Constructors |> List.map (fun constructor -> constructor.Name))
-                        | TypeAliasNode declaration -> [ declaration.Name ]
-                        | TraitDeclarationNode declaration -> [ declaration.Name ]
-                        | ExpectDeclarationNode (ExpectTermDeclaration declaration) -> [ declaration.Name ]
-                        | ExpectDeclarationNode (ExpectTypeDeclaration declaration) -> [ declaration.Name ]
-                        | ExpectDeclarationNode (ExpectTraitDeclaration declaration) -> [ declaration.Name ]
-                        | _ -> [])
-                    |> Set.ofList
-
-                let baseVisibleNames =
+                let knownSurfaceTermNames =
                     let preludeContract = IntrinsicCatalog.bundledPreludeExpectContract ()
+                    let standardRuntimeNames =
+                        Set.ofList
+                            [ "bindModule"; "bindModuleOwned"; "bridgePackageValue"; "bridgePackageOrigin"; "bridgeFailureToCastBlame"
+                              "checkedCast"; "checkedCastWith"; "sameDynRep"; "toDyn"; "toDynWith"
+                              "Conservative"; "Exact"; "IntoKappa"; "LaterUse"; "Lossy"; "OutOfKappa" ]
+
+                    let compilerKnownSurfaceTerms =
+                        Set.ofList
+                            [ "thunk"
+                              "lazy"
+                              "force"
+                              "captureBorrow"
+                              "withBorrowView"
+                              "fork"
+                              "defEqSyntax"
+                              "headSymbolSyntax"
+                              "sameSymbol" ]
+
+                    let visibleTraitMemberNames =
+                        environment.VisibleTraits
+                        |> Map.values
+                        |> Seq.collect (fun traitInfo -> traitInfo.Members.Keys)
+                        |> Set.ofSeq
 
                     [ topLevelNames
                       preludeContract.TermNames
                       preludeContract.TypeNames
                       preludeContract.TraitNames
                       Set.ofList Stdlib.FixedPreludeConstructors
+                      IntrinsicCatalog.namedIntrinsicTermNames ()
+                      standardRuntimeNames
+                      compilerKnownSurfaceTerms
                       environment.VisibleBindings |> Map.keys |> Set.ofSeq
                       environment.VisibleConstructors |> Map.keys |> Set.ofSeq
                       environment.VisibleModules
                       environment.VisibleStaticObjects |> Map.keys |> Set.ofSeq
                       environment.VisibleTypeFacets |> Map.keys |> Set.ofSeq
-                      environment.VisibleTraits |> Map.keys |> Set.ofSeq ]
+                      environment.VisibleTraits |> Map.keys |> Set.ofSeq
+                      visibleTraitMemberNames
+                      environment.ConstrainedMembers |> Map.keys |> Set.ofSeq ]
                     |> Set.unionMany
                     |> Set.remove "<anonymous>"
 
-                let diagnosticsForDefault parameters index parameterName parameterTypeTokens defaultValue =
-                    let earlierParameters = parameters |> List.take index
-                    let forbiddenNames =
-                        parameters
-                        |> List.skip index
-                        |> List.choose (fun candidate -> candidate.ParameterName)
-                        |> Set.ofList
+                let validateProjectionDeclaration (declaration: ProjectionDeclaration) =
+                    let placeBinders =
+                        declaration.Binders
+                        |> List.choose (function
+                            | ProjectionPlaceBinder binder -> Some binder
+                            | ProjectionValueBinder _ -> None)
 
-                    let localTypes =
-                        earlierParameters
-                        |> List.choose (fun earlier ->
-                            match earlier.ParameterName, TypeSignatures.parseType earlier.ParameterTypeTokens with
-                            | Some name, Some parameterType -> Some(name, parameterType)
+                    let placeBinderNames = placeBinders |> List.map (fun binder -> binder.Name) |> Set.ofList
+
+                    let missingPlaceDiagnostics =
+                        if List.isEmpty placeBinders then
+                            [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "A projection definition must declare at least one place binder." ]
+                        else
+                            []
+
+                    let rec selectorYieldDiagnostics body =
+                        match body with
+                        | ProjectionYield(Name(root :: _)) when Set.contains root placeBinderNames ->
+                            []
+                        | ProjectionYield(Apply(Name [ projectionName ], _)) ->
+                            match environment.VisibleProjections |> Map.tryFind projectionName with
+                            | Some nestedProjection ->
+                                match nestedProjection.Body with
+                                | Some(ProjectionAccessors _) ->
+                                    [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "A selector projection yield must denote a stable place, not an accessor bundle." ]
+                                | _ ->
+                                    []
+                            | None ->
+                                [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "A selector projection yield must denote a stable place." ]
+                        | ProjectionYield _ ->
+                            [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "A selector projection yield must denote a stable place rooted in a place binder." ]
+                        | ProjectionIfThenElse(_, whenTrue, whenFalse) ->
+                            selectorYieldDiagnostics whenTrue @ selectorYieldDiagnostics whenFalse
+                        | ProjectionMatch(_, cases) ->
+                            cases |> List.collect (fun caseClause -> selectorYieldDiagnostics caseClause.Body)
+                        | ProjectionAccessors _ ->
+                            []
+
+                    let expandedDiagnostics =
+                        if List.isEmpty placeBinders then
+                            []
+                        else
+                            match declaration.Body with
+                            | Some(ProjectionAccessors clauses) ->
+                                let placeCountDiagnostics =
+                                    if List.length placeBinders = 1 then
+                                        []
+                                    else
+                                        [ makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported "An expanded accessor projection must declare exactly one place binder." ]
+
+                                let duplicateDiagnostics =
+                                    clauses
+                                    |> List.map (function
+                                        | ProjectionGet _ -> "get"
+                                        | ProjectionInout _ -> "inout"
+                                        | ProjectionSet _ -> "set"
+                                        | ProjectionSink _ -> "sink")
+                                    |> List.countBy id
+                                    |> List.choose (fun (kind, count) ->
+                                        if count > 1 then
+                                            Some(makeDiagnostic DiagnosticCode.ProjectionDefinitionUnsupported $"Projection accessor clause '{kind}' is declared more than once.")
+                                        else
+                                            None)
+
+                                placeCountDiagnostics @ duplicateDiagnostics
+                            | Some body ->
+                                selectorYieldDiagnostics body
+                            | None ->
+                                []
+
+                    missingPlaceDiagnostics @ expandedDiagnostics
+
+                let duplicateDeclarationDiagnostics =
+                    let duplicateNames messagePrefix names =
+                        names
+                        |> List.countBy id
+                        |> List.choose (fun (name, count) ->
+                            if count > 1 then
+                                Some(makeDiagnostic DiagnosticCode.DuplicateDeclaration $"{messagePrefix} '{name}' is declared more than once in module '{moduleName}'.")
+                            else
+                                None)
+
+                    let termDefinitions =
+                        let expectedTerms =
+                            frontendModule.Declarations
+                            |> List.choose (function
+                                | ExpectDeclarationNode (ExpectTermDeclaration declaration) -> Some declaration.Name
+                                | _ -> None)
+                            |> Set.ofList
+
+                        frontendModule.Declarations
+                        |> List.choose (function
+                            | LetDeclaration definition ->
+                                definition.Name
+                                |> Option.filter (fun name -> not (Set.contains name expectedTerms))
+                            | _ -> None)
+
+                    let typeDeclarations =
+                        frontendModule.Declarations
+                        |> List.choose (function
+                            | DataDeclarationNode declaration -> Some declaration.Name
+                            | TypeAliasNode declaration -> Some declaration.Name
+                            | _ -> None)
+
+                    let constructorDeclarations =
+                        frontendModule.Declarations
+                        |> List.collect (function
+                            | DataDeclarationNode declaration ->
+                                declaration.Constructors
+                                |> List.map (fun constructor -> constructor.Name)
+                                |> List.filter (fun name -> not (String.Equals(name, "<anonymous>", StringComparison.Ordinal)))
+                            | _ -> [])
+
+                    duplicateNames "Term declaration" termDefinitions
+                    @ duplicateNames "Type declaration" typeDeclarations
+                    @ duplicateNames "Constructor declaration" constructorDeclarations
+
+                let totalityAssertionDiagnostics =
+                    let allowAssertTerminates = moduleHasAttribute frontendModule "allow_assert_terminates"
+                    let allowAssertReducible = moduleHasAttribute frontendModule "allow_assert_reducible"
+
+                    frontendModule.Declarations
+                    |> List.choose (function
+                        | LetDeclaration definition ->
+                            match definition.TotalityAssertion with
+                            | Some AssertTerminatesAssertion when not allowAssertTerminates ->
+                                let bindingName = definition.Name |> Option.defaultValue "<anonymous>"
+                                Some(makeDiagnostic DiagnosticCode.FrontendValidation $"Declaration '{bindingName}' uses assertTerminates/assertTotal without enabling module attribute 'allow_assert_terminates'.")
+                            | Some AssertReducibleAssertion when not allowAssertReducible ->
+                                let bindingName = definition.Name |> Option.defaultValue "<anonymous>"
+                                Some(makeDiagnostic DiagnosticCode.FrontendValidation $"Declaration '{bindingName}' uses assertReducible without enabling module attribute 'allow_assert_reducible'.")
+                            | _ ->
+                                None
+                        | _ ->
+                            None)
+
+                let typeAliasCycleDiagnostics =
+                    let rec referencedTypeNames typeExpr =
+                        seq {
+                            match typeExpr with
+                            | TypeLevelLiteral _ ->
+                                ()
+                            | TypeUniverse None ->
+                                ()
+                            | TypeUniverse(Some universeExpr) ->
+                                yield! referencedTypeNames universeExpr
+                            | TypeIntrinsic _ ->
+                                ()
+                            | TypeApply(callee, arguments) ->
+                                yield! referencedTypeNames callee
+
+                                for argument in arguments do
+                                    yield! referencedTypeNames argument
+                            | TypeLambda(_, parameterSort, body) ->
+                                yield! referencedTypeNames parameterSort
+                                yield! referencedTypeNames body
+                            | TypeDelay inner
+                            | TypeMemo inner
+                            | TypeForce inner ->
+                                yield! referencedTypeNames inner
+                            | TypeProject(target, _) ->
+                                yield! referencedTypeNames target
+                            | TypeName(name, arguments) ->
+                                match name with
+                                | [ localName ] -> yield localName
+                                | _ -> ()
+
+                                for argument in arguments do
+                                    yield! referencedTypeNames argument
+                            | TypeVariable _ ->
+                                ()
+                            | TypeArrow(_, parameterType, resultType) ->
+                                yield! referencedTypeNames parameterType
+                                yield! referencedTypeNames resultType
+                            | TypeEquality(left, right) ->
+                                yield! referencedTypeNames left
+                                yield! referencedTypeNames right
+                            | TypeCapture(inner, _) ->
+                                yield! referencedTypeNames inner
+                            | TypeEffectRow(entries, tail) ->
+                                for entry in entries do
+                                    yield! referencedTypeNames entry.Label
+                                    yield! referencedTypeNames entry.Effect
+
+                                match tail with
+                                | Some tailType -> yield! referencedTypeNames tailType
+                                | None -> ()
+                            | TypeRecord fields ->
+                                for field in fields do
+                                    yield! referencedTypeNames field.Type
+                            | TypeUnion members ->
+                                for memberType in members do
+                                    yield! referencedTypeNames memberType
+                        }
+
+                    let localAliases =
+                        frontendModule.Declarations
+                        |> List.choose (function
+                            | TypeAliasNode declaration -> tryParseTypeAliasInfo moduleName declaration
                             | _ -> None)
                         |> Map.ofList
 
-                    let visibleNames =
-                        earlierParameters
-                        |> List.choose (fun earlier -> earlier.ParameterName)
-                        |> Set.ofList
-                        |> Set.union baseVisibleNames
+                    let aliasDependencies =
+                        localAliases
+                        |> Map.map (fun _ aliasInfo ->
+                            referencedTypeNames aliasInfo.Body
+                            |> Seq.filter (fun referencedName ->
+                                Map.containsKey referencedName localAliases
+                                && not (List.contains referencedName aliasInfo.Parameters))
+                            |> Set.ofSeq)
 
-                    let nameDiagnostics =
-                        ResourceCheckingSurface.expressionNames defaultValue
-                        |> Seq.distinct
-                        |> Seq.choose (fun referencedName ->
-                            if Set.contains referencedName forbiddenNames then
-                                Some(
-                                    makeDiagnostic
-                                        DiagnosticCode.NameUnresolved
-                                        $"Default expression for constructor parameter '{parameterName}' cannot reference '{referencedName}' before it is bound."
-                                )
-                            elif not (Set.contains referencedName visibleNames) then
-                                Some(makeDiagnostic DiagnosticCode.NameUnresolved $"Name '{referencedName}' is not in scope.")
-                            else
-                                None)
-                        |> Seq.toList
+                    let rec reaches start current visited =
+                        aliasDependencies
+                        |> Map.tryFind current
+                        |> Option.defaultValue Set.empty
+                        |> Seq.exists (fun dependency ->
+                            String.Equals(dependency, start, StringComparison.Ordinal)
+                            || (not (Set.contains dependency visited)
+                                && reaches start dependency (Set.add dependency visited)))
 
-                    let typeDiagnostics =
-                        match TypeSignatures.parseType parameterTypeTokens, inferValidationExpressionType environment (ref 0) localTypes defaultValue with
-                        | Some expectedType, Some actualType
-                            when not (
-                                TypeSignatures.definitionallyEqual
-                                    (normalizeTypeAliases environment.VisibleTypeAliases expectedType)
-                                    (normalizeTypeAliases environment.VisibleTypeAliases actualType)
-                            ) ->
-                            [ makeDiagnostic
-                                DiagnosticCode.TypeEqualityMismatch
-                                $"Default expression for constructor parameter '{parameterName}' has type '{TypeSignatures.toText actualType}', but '{TypeSignatures.toText expectedType}' was expected." ]
-                        | Some _, None when List.isEmpty nameDiagnostics ->
-                            [ makeDiagnostic
-                                DiagnosticCode.TypeEqualityMismatch
-                                $"Default expression for constructor parameter '{parameterName}' could not be checked against its declared type." ]
-                        | _ ->
-                            []
+                    aliasDependencies
+                    |> Map.keys
+                    |> Seq.filter (fun aliasName -> reaches aliasName aliasName (Set.singleton aliasName))
+                    |> Seq.distinct
+                    |> Seq.map (fun aliasName ->
+                        makeDiagnostic DiagnosticCode.RecursiveTypeAlias $"Type alias '{aliasName}' recursively depends on itself.")
+                    |> Seq.toList
 
-                    nameDiagnostics @ typeDiagnostics
+                let malformedConstructorDiagnostics =
+                    let declarationKeywordNames =
+                        Set.ofList [ "data"; "expect"; "export"; "import"; "instance"; "let"; "module"; "opaque"; "private"; "projection"; "public"; "trait"; "type" ]
 
-                let diagnosticsForConstructor (constructor: DataConstructor) =
-                    match constructor.Parameters with
-                    | Some parameters ->
-                        parameters
-                        |> List.mapi (fun index parameter -> index, parameter)
-                        |> List.collect (fun (index, parameter) ->
-                            match parameter.ParameterName, parameter.DefaultValue with
-                            | Some parameterName, Some defaultValue ->
-                                diagnosticsForDefault parameters index parameterName parameter.ParameterTypeTokens defaultValue
-                            | _ ->
-                                [])
-                    | None ->
-                        []
-
-                frontendModule.Declarations
-                |> List.collect (function
-                    | DataDeclarationNode declaration ->
-                        declaration.Constructors |> List.collect diagnosticsForConstructor
-                    | _ ->
-                        [])
-
-            let instanceMemberSignatureDiagnostics =
-                let traitInfoByName =
-                    environment.VisibleTraits
-
-                frontendModule.Declarations
-                |> List.collect (function
-                    | InstanceDeclarationNode declaration ->
-                        tryParseInstanceHeader declaration
-                        |> Option.toList
-                        |> List.collect (fun (traitName, _, headTypes) ->
-                            traitInfoByName
-                            |> Map.tryFind traitName
-                            |> Option.toList
-                            |> List.collect (fun traitInfo ->
-                                let traitSubstitution =
-                                    if List.length traitInfo.TypeParameters = List.length headTypes then
-                                        List.zip traitInfo.TypeParameters headTypes |> Map.ofList
-                                    else
-                                        Map.empty
-
-                                declaration.Members
-                                |> List.collect (fun memberDeclaration ->
-                                    match memberDeclaration.Name with
-                                    | None ->
-                                        []
-                                    | Some memberName ->
-                                        match traitInfo.Members |> Map.tryFind memberName with
-                                        | None ->
-                                            []
-                                        | Some memberInfo ->
-                                            match memberDeclaration.ReturnTypeTokens |> Option.bind TypeSignatures.parseType with
-                                            | None ->
-                                                []
-                                            | Some declaredReturnType ->
-                                                let expectedReturnType =
-                                                    memberInfo.Scheme
-                                                    |> TypeSignatures.applySchemeSubstitution traitSubstitution
-                                                    |> TypeSignatures.schemeParts
-                                                    |> snd
-
-                                                if
-                                                    TypeSignatures.definitionallyEqual
-                                                        (normalizeTypeAliases environment.VisibleTypeAliases declaredReturnType)
-                                                        (normalizeTypeAliases environment.VisibleTypeAliases expectedReturnType)
-                                                then
-                                                    []
-                                                else
-                                                    [
-                                                        makeDiagnostic
-                                                            DiagnosticCode.TypeEqualityMismatch
-                                                            $"Instance member '{memberName}' for trait '{traitName}' must return '{TypeSignatures.toText expectedReturnType}', but declares '{TypeSignatures.toText declaredReturnType}'."
-                                                    ])))
-                    | _ ->
-                        [])
-
-            let instanceSupertraitDiagnostics =
-                let traitInfoByName =
-                    environment.VisibleTraits
-
-                let constraintMatches (expected: TraitConstraint) (actual: TraitConstraint) =
-                    String.Equals(expected.TraitName, actual.TraitName, StringComparison.Ordinal)
-                    && List.length expected.Arguments = List.length actual.Arguments
-                    && List.forall2
-                        (fun left right ->
-                            TypeSignatures.definitionallyEqual
-                                (normalizeTypeAliases environment.VisibleTypeAliases left)
-                                (normalizeTypeAliases environment.VisibleTypeAliases right))
-                        expected.Arguments
-                        actual.Arguments
-
-                let premisesSatisfy (premises: TraitConstraint list) (requiredConstraint: TraitConstraint) =
-                    premises
-                    |> List.exists (fun (premise: TraitConstraint) ->
-                        reachableTraitConstraints environment premise
-                        |> List.exists (constraintMatches requiredConstraint))
-
-                frontendModule.Declarations
-                |> List.collect (function
-                    | InstanceDeclarationNode declaration ->
-                        tryParseInstanceHeader declaration
-                        |> Option.toList
-                        |> List.collect (fun (traitName, constraints, headTypes) ->
-                            traitInfoByName
-                            |> Map.tryFind traitName
-                            |> Option.toList
-                            |> List.collect (fun traitInfo ->
-                                tryInstantiateTraitSupertraits traitInfo headTypes
-                                |> Option.defaultValue []
-                                |> List.choose (fun requiredConstraint ->
-                                    let satisfied =
-                                        premisesSatisfy constraints requiredConstraint
-                                        || (resolveConstraintInstance environment requiredConstraint |> Option.isSome)
-
-                                    if satisfied then
+                    let exposesRuntimeTypeField (constructor: DataConstructor) =
+                        let exposedFieldTypes =
+                            match constructor.Parameters with
+                            | Some parameters ->
+                                parameters
+                                |> List.choose (fun parameter ->
+                                    if parameter.ParameterIsImplicit || parameter.ParameterQuantity = Some QuantityZero then
                                         None
                                     else
-                                        Some(
-                                            makeDiagnostic
-                                                DiagnosticCode.TraitSupertraitUnsatisfied
-                                                $"Instance for trait '{traitName}' requires declared supertrait '{renderTraitConstraint environment requiredConstraint}', but that evidence is not satisfied by the instance premises or visible instances."
-                                        ))))
-                    | _ ->
-                        [])
+                                        TypeSignatures.parseType parameter.ParameterTypeTokens)
+                            | None ->
+                                TypeSignatures.constructorParameterTokenGroups constructor
+                                |> List.choose (fun parameterTokens ->
+                                    match parameterTokens with
+                                    | { Kind = AtSign } :: _ ->
+                                        None
+                                    | { Kind = IntegerLiteral; Text = "0" } :: _ ->
+                                        None
+                                    | _ ->
+                                        let typeTokens =
+                                            match parameterTokens |> List.tryFindIndex (fun token -> token.Kind = Colon) with
+                                            | Some colonIndex when colonIndex + 1 < parameterTokens.Length ->
+                                                parameterTokens |> List.skip (colonIndex + 1)
+                                            | _ ->
+                                                parameterTokens
 
-            let structuralDiagnostics =
-                duplicateDeclarationDiagnostics
-                @ totalityAssertionDiagnostics
-                @ typeAliasCycleDiagnostics
-                @ malformedConstructorDiagnostics
-                @ unsignedRecursiveBindingDiagnostics
-                @ trivialRecursiveCycleDiagnostics
-                @ constructorDefaultDiagnostics
-                @ instanceSupertraitDiagnostics
-                @ instanceMemberSignatureDiagnostics
+                                        TypeSignatures.parseType typeTokens)
 
-            let multishotBackendCapabilityDiagnostics =
-                if backendSupportsMultishotEffects backendProfile then
-                    []
-                else
-                    let normalizedBackendProfile = Stdlib.normalizeBackendProfile backendProfile
-                    let privateByDefault = isPrivateByDefault frontendModule
+                        exposedFieldTypes
+                        |> List.exists (function
+                            | TypeUniverse _ -> true
+                            | TypeIntrinsic UniverseClassifier -> true
+                            | TypeName([ "Type" ], _) -> true
+                            | _ -> false)
 
-                    let multishotInvocationMessage context effectName operationName =
-                        $"Backend profile '{normalizedBackendProfile}' does not provide capability 'rt-multishot-effects' required by multi-shot operation '{effectName}.{operationName}' {context}."
+                    let constructorHasMalformedShape (constructor: DataConstructor) =
+                        let significant = significantTokens constructor.Tokens
 
-                    let rec rewriteEffectLabelAliasUse aliasName effectName current =
-                        let rewrite = rewriteEffectLabelAliasUse aliasName effectName
+                        let hasUnbalancedDelimiters tokens =
+                            let mutable parenDepth = 0
+                            let mutable braceDepth = 0
+                            let mutable bracketDepth = 0
+                            let mutable setBraceDepth = 0
 
-                        match current with
-                        | Name [ name ] when String.Equals(name, aliasName, StringComparison.Ordinal) ->
-                            KindQualifiedName(EffectLabelKind, [ effectName ])
-                        | Name(root :: path) when String.Equals(root, aliasName, StringComparison.Ordinal) ->
-                            Name(effectName :: path)
-                        | Name _ ->
-                            current
-                        | SyntaxQuote inner ->
-                            SyntaxQuote(rewrite inner)
-                        | SyntaxSplice inner ->
-                            SyntaxSplice(rewrite inner)
-                        | TopLevelSyntaxSplice inner ->
-                            TopLevelSyntaxSplice(rewrite inner)
-                        | CodeQuote inner ->
-                            CodeQuote(rewrite inner)
-                        | CodeSplice inner ->
-                            CodeSplice(rewrite inner)
-                        | Handle(isDeep, label, body, returnClause, operationClauses) ->
-                            let rewriteClause (clause: SurfaceEffectHandlerClause) =
-                                { clause with Body = rewrite clause.Body }
+                            for token in tokens do
+                                match token.Kind with
+                                | LeftParen -> parenDepth <- parenDepth + 1
+                                | RightParen -> parenDepth <- max 0 (parenDepth - 1)
+                                | LeftBrace -> braceDepth <- braceDepth + 1
+                                | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
+                                | LeftBracket -> bracketDepth <- bracketDepth + 1
+                                | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
+                                | LeftSetBrace -> setBraceDepth <- setBraceDepth + 1
+                                | RightSetBrace -> setBraceDepth <- max 0 (setBraceDepth - 1)
+                                | _ -> ()
 
-                            Handle(isDeep, rewrite label, rewrite body, rewriteClause returnClause, operationClauses |> List.map rewriteClause)
-                        | LocalLet(binding, value, body) ->
-                            let shadowsAlias =
-                                collectPatternNames binding.Pattern
-                                |> List.exists (fun name -> String.Equals(name, aliasName, StringComparison.Ordinal))
+                            parenDepth <> 0 || braceDepth <> 0 || bracketDepth <> 0 || setBraceDepth <> 0
 
-                            LocalLet(binding, rewrite value, if shadowsAlias then body else rewrite body)
-                        | LocalSignature(declaration, body) ->
-                            if String.Equals(declaration.Name, aliasName, StringComparison.Ordinal) then current else LocalSignature(declaration, rewrite body)
-                        | LocalTypeAlias(declaration, body) ->
-                            LocalTypeAlias(declaration, rewrite body)
-                        | LocalScopedEffect(declaration, body) ->
-                            if String.Equals(declaration.Name, aliasName, StringComparison.Ordinal) then current else LocalScopedEffect(declaration, rewrite body)
-                        | Lambda(parameters, body) ->
-                            if parameters |> List.exists (fun parameter -> String.Equals(parameter.Name, aliasName, StringComparison.Ordinal)) then current else Lambda(parameters, rewrite body)
-                        | IfThenElse(condition, whenTrue, whenFalse) ->
-                            IfThenElse(rewrite condition, rewrite whenTrue, rewrite whenFalse)
-                        | Match(scrutinee, cases) ->
-                            Match(
-                                rewrite scrutinee,
-                                cases
-                                |> List.map (fun caseClause ->
-                                    let shadowsAlias =
-                                        collectPatternNames caseClause.Pattern
-                                        |> List.exists (fun name -> String.Equals(name, aliasName, StringComparison.Ordinal))
+                        if hasUnbalancedDelimiters significant then
+                            false
+                        else
+                            let stripConstructorName tokens =
+                                let isSymbolToken token =
+                                    match token.Kind with
+                                    | Operator
+                                    | Colon
+                                    | Equals -> true
+                                    | _ -> false
 
-                                    { caseClause with
-                                        Guard = caseClause.Guard |> Option.map rewrite
-                                        Body = if shadowsAlias then caseClause.Body else rewrite caseClause.Body })
-                            )
-                        | RecordLiteral fields ->
-                            RecordLiteral(fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
-                        | Seal(value, ascriptionTokens) ->
-                            Seal(rewrite value, ascriptionTokens)
-                        | RecordUpdate(receiver, fields) ->
-                            RecordUpdate(rewrite receiver, fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
-                        | MemberAccess(receiver, segments, arguments) ->
-                            MemberAccess(rewrite receiver, segments, arguments |> List.map rewrite)
-                        | SafeNavigation(receiver, navigation) ->
-                            SafeNavigation(rewrite receiver, { navigation with Arguments = navigation.Arguments |> List.map rewrite })
-                        | TagTest(receiver, constructorName) ->
-                            TagTest(rewrite receiver, constructorName)
-                        | Do statements ->
-                            Do(statements)
-                        | MonadicSplice inner ->
-                            MonadicSplice(rewrite inner)
-                        | ExplicitImplicitArgument inner ->
-                            ExplicitImplicitArgument(rewrite inner)
-                        | NamedApplicationBlock fields ->
-                            NamedApplicationBlock(fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
-                        | InoutArgument inner ->
-                            InoutArgument(rewrite inner)
-                        | Unary(operatorName, inner) ->
-                            Unary(operatorName, rewrite inner)
-                        | Apply(callee, arguments) ->
-                            Apply(rewrite callee, arguments |> List.map rewrite)
-                        | Binary(left, operatorName, right) ->
-                            Binary(rewrite left, operatorName, rewrite right)
-                        | Elvis(left, right) ->
-                            Elvis(rewrite left, rewrite right)
-                        | Comprehension comprehension ->
-                            Comprehension { comprehension with Lowered = rewrite comprehension.Lowered }
-                        | PrefixedString(prefix, parts) ->
-                            PrefixedString(
-                                prefix,
-                                parts
-                                |> List.map (function
-                                    | StringText text -> StringText text
-                                    | StringInterpolation(inner, format) -> StringInterpolation(rewrite inner, format))
-                            )
-                        | Literal _
-                        | NumericLiteral _
-                        | KindQualifiedName _ ->
-                            current
+                                match tokens with
+                                | { Kind = LeftParen } :: rest ->
+                                    let rec loop remaining =
+                                        match remaining with
+                                        | { Kind = RightParen } :: tail ->
+                                            tail
+                                        | token :: tail when isSymbolToken token ->
+                                            loop tail
+                                        | _ ->
+                                            tokens
 
-                    let tryMatchMultishotInvocation expression =
-                        match expression with
-                        | Apply(Name [ effectName; operationName ], _) ->
-                            tryFindScopedEffectOperation effectName operationName
-                            |> Option.bind (fun (_, operation) ->
-                                if quantityPermitsMultipleResumptions operation.ResumptionQuantity then
-                                    Some(effectName, operationName)
-                                else
-                                    None)
-                        | Apply(MemberAccess(Name [ effectName ], [ operationName ], []), _) ->
-                            tryFindScopedEffectOperation effectName operationName
-                            |> Option.bind (fun (_, operation) ->
-                                if quantityPermitsMultipleResumptions operation.ResumptionQuantity then
-                                    Some(effectName, operationName)
-                                else
-                                    None)
-                        | Apply(MemberAccess(KindQualifiedName(EffectLabelKind, [ effectName ]), [ operationName ], []), _) ->
-                            tryFindScopedEffectOperation effectName operationName
-                            |> Option.bind (fun (_, operation) ->
-                                if quantityPermitsMultipleResumptions operation.ResumptionQuantity then
-                                    Some(effectName, operationName)
+                                    loop rest
+                                | _nameToken :: rest ->
+                                    rest
+                                | [] ->
+                                    []
+
+                            let remainingTokens =
+                                match significant with
+                                | { Kind = Operator; Text = "|" } :: rest -> stripConstructorName rest
+                                | _ -> stripConstructorName significant
+
+                            match constructor.Parameters, remainingTokens with
+                            | Some _, _ ->
+                                false
+                            | None, [] ->
+                                false
+                            | None, { Kind = Colon } :: typeTokens ->
+                                TypeSignatures.parseScheme typeTokens |> Option.isNone
+                            | None, _ ->
+                                List.isEmpty (TypeSignatures.constructorFieldTypes constructor)
+
+                    frontendModule.Declarations
+                    |> List.collect (function
+                        | DataDeclarationNode declaration ->
+                            declaration.Constructors
+                            |> List.choose (fun constructor ->
+                                if Set.contains constructor.Name declarationKeywordNames then
+                                    Some(makeDiagnostic DiagnosticCode.MalformedConstructorDeclaration $"Constructor declaration in data type '{declaration.Name}' starts with declaration keyword '{constructor.Name}'.")
+                                elif exposesRuntimeTypeField constructor then
+                                    Some(makeDiagnostic DiagnosticCode.MalformedConstructorDeclaration $"Constructor '{constructor.Name}' exposes runtime field metadata of type 'Type'.")
+                                elif constructorHasMalformedShape constructor then
+                                    Some(makeDiagnostic DiagnosticCode.MalformedConstructorDeclaration $"Constructor declaration '{constructor.Name}' in data type '{declaration.Name}' is malformed.")
                                 else
                                     None)
                         | _ ->
-                            None
+                            [])
 
-                    let rec collectMultishotInvocations expression =
-                        let nested =
-                            match expression with
-                            | SyntaxQuote _
-                            | SyntaxSplice _
-                            | TopLevelSyntaxSplice _
-                            | CodeQuote _
-                            | CodeSplice _ ->
-                                []
-                            | LocalLet(binding, value, body) ->
-                                let bodyForCollection =
-                                    match binding.Pattern, value with
-                                    | NamePattern aliasName, Name [ effectName ] when tryFindScopedEffectDeclaration effectName |> Option.isSome ->
-                                        rewriteEffectLabelAliasUse aliasName effectName body
-                                    | NamePattern aliasName, KindQualifiedName(EffectLabelKind, [ effectName ])
-                                        when tryFindScopedEffectDeclaration effectName |> Option.isSome ->
-                                        rewriteEffectLabelAliasUse aliasName effectName body
-                                    | _ ->
-                                        body
-
-                                collectMultishotInvocations value @ collectMultishotInvocations bodyForCollection
-                            | LocalSignature(_, body)
-                            | LocalTypeAlias(_, body) ->
-                                collectMultishotInvocations body
-                            | LocalScopedEffect(declaration, body) ->
-                                withScopedEffectDeclaration declaration (fun () -> collectMultishotInvocations body)
-                            | Lambda(_, body) ->
-                                collectMultishotInvocations body
-                            | Handle(_, label, body, returnClause, operationClauses) ->
-                                collectMultishotInvocations label
-                                @ collectMultishotInvocations body
-                                @ collectMultishotInvocations returnClause.Body
-                                @ (operationClauses |> List.collect (fun clause -> collectMultishotInvocations clause.Body))
-                            | Match(scrutinee, cases) ->
-                                collectMultishotInvocations scrutinee
-                                @ (cases
-                                   |> List.collect (fun caseClause ->
-                                       (caseClause.Guard
-                                        |> Option.map collectMultishotInvocations
-                                        |> Option.defaultValue [])
-                                       @ collectMultishotInvocations caseClause.Body))
-                            | IfThenElse(condition, whenTrue, whenFalse) ->
-                                collectMultishotInvocations condition
-                                @ collectMultishotInvocations whenTrue
-                                @ collectMultishotInvocations whenFalse
-                            | RecordLiteral fields ->
-                                fields |> List.collect (fun field -> collectMultishotInvocations field.Value)
-                            | Seal(value, _) ->
-                                collectMultishotInvocations value
-                            | RecordUpdate(receiver, fields) ->
-                                collectMultishotInvocations receiver
-                                @ (fields |> List.collect (fun field -> collectMultishotInvocations field.Value))
-                            | MemberAccess(receiver, _, arguments) ->
-                                collectMultishotInvocations receiver
-                                @ (arguments |> List.collect collectMultishotInvocations)
-                            | SafeNavigation(receiver, navigation) ->
-                                collectMultishotInvocations receiver
-                                @ (navigation.Arguments |> List.collect collectMultishotInvocations)
-                            | TagTest(receiver, _) ->
-                                collectMultishotInvocations receiver
-                            | Do statements ->
-                                let rec collectDo statements =
-                                    match statements with
-                                    | [] ->
-                                        []
-                                    | statement :: rest ->
-                                        let restInvocations = collectDo rest
-
-                                        match statement with
-                                        | DoLet(_, value)
-                                        | DoBind(_, value)
-                                        | DoUsing(_, value)
-                                        | DoVar(_, value)
-                                        | DoAssign(_, value)
-                                        | DoDefer value
-                                        | DoExpression value
-                                        | DoReturn value ->
-                                            collectMultishotInvocations value @ restInvocations
-                                        | DoLetQuestion(_, value, failure) ->
-                                            let failureInvocations =
-                                                failure
-                                                |> Option.map (fun block -> collectDo block.Body)
-                                                |> Option.defaultValue []
-
-                                            collectMultishotInvocations value @ failureInvocations @ restInvocations
-                                        | DoIf(condition, whenTrue, whenFalse) ->
-                                            collectMultishotInvocations condition
-                                            @ collectDo whenTrue
-                                            @ collectDo whenFalse
-                                            @ restInvocations
-                                        | DoWhile(condition, body) ->
-                                            collectMultishotInvocations condition @ collectDo body @ restInvocations
-
-                                collectDo statements
-                            | MonadicSplice inner
-                            | ExplicitImplicitArgument inner
-                            | InoutArgument inner
-                            | Unary(_, inner) ->
-                                collectMultishotInvocations inner
-                            | NamedApplicationBlock fields ->
-                                fields |> List.collect (fun field -> collectMultishotInvocations field.Value)
-                            | Apply(callee, arguments) ->
-                                collectMultishotInvocations callee
-                                @ (arguments |> List.collect collectMultishotInvocations)
-                            | Binary(left, _, right)
-                            | Elvis(left, right) ->
-                                collectMultishotInvocations left @ collectMultishotInvocations right
-                            | Comprehension comprehension ->
-                                collectMultishotInvocations comprehension.Lowered
-                            | PrefixedString(_, parts) ->
-                                parts
-                                |> List.collect (function
-                                    | StringText _ -> []
-                                    | StringInterpolation(inner, _) -> collectMultishotInvocations inner)
-                            | Literal _
-                            | NumericLiteral _
-                            | KindQualifiedName _
-                            | Name _ ->
-                                []
-
-                        match tryMatchMultishotInvocation expression with
-                        | Some invocation -> invocation :: nested
-                        | None -> nested
-
-                    let uniqueMultishotInvocations expression =
-                        collectMultishotInvocations expression
-                        |> List.distinct
-
-                    let exportedDeclarationDiagnostics =
-                        frontendModule.Declarations
-                        |> List.choose (function
-                            | LetDeclaration definition when definition.Name.IsSome && definition.Body.IsSome ->
-                                let bindingName = definition.Name.Value
-
-                                if isExportedVisibility privateByDefault definition.Visibility then
-                                    uniqueMultishotInvocations definition.Body.Value
-                                    |> List.tryHead
-                                    |> Option.map (fun (effectName, operationName) ->
-                                        makeDiagnostic
-                                            DiagnosticCode.MultishotEffectUnsupportedBackend
-                                            (multishotInvocationMessage
-                                                $"from exported declaration '{bindingName}'"
-                                                effectName
-                                                operationName))
-                                else
-                                    None
-                            | _ ->
+                let patternDuplicateDiagnostics pattern =
+                    let duplicateNames current =
+                        collectPatternNames current
+                        |> List.countBy id
+                        |> List.choose (fun (name, count) ->
+                            if count > 1 then
+                                Some(makeDiagnostic DiagnosticCode.DuplicatePatternBinder $"Pattern binder '{name}' is bound more than once in the same pattern.")
+                            else
                                 None)
 
-                    exportedDeclarationDiagnostics
+                    let rec loop current =
+                        match current with
+                        | AsPattern(_, inner) ->
+                            duplicateNames current @ loop inner
+                        | TypedPattern(inner, _) ->
+                            duplicateNames current @ loop inner
+                        | OrPattern alternatives ->
+                            alternatives |> List.collect loop
+                        | ConstructorPattern(_, arguments) ->
+                            duplicateNames current @ (arguments |> List.collect loop)
+                        | NamedConstructorPattern(_, fields) ->
+                            duplicateNames current @ (fields |> List.collect (fun field -> loop field.Pattern))
+                        | TuplePattern elements ->
+                            duplicateNames current @ (elements |> List.collect loop)
+                        | VariantPattern _ ->
+                            duplicateNames current
+                        | AnonymousRecordPattern(fields, _) ->
+                            duplicateNames current @ (fields |> List.collect (fun field -> loop field.Pattern))
+                        | WildcardPattern
+                        | NamePattern _
+                        | LiteralPattern _ ->
+                            []
 
-            if not (List.isEmpty typeAliasCycleDiagnostics) then
-                structuralDiagnostics @ multishotBackendCapabilityDiagnostics
-            else
-                structuralDiagnostics
-                @ multishotBackendCapabilityDiagnostics
-                @ (frontendModule.Declarations
-                |> List.collect (function
-                    | TypeAliasNode declaration ->
-                        declaration.BodyTokens
-                        |> Option.bind tryParseRecordSurfaceInfo
-                        |> Option.map (fun recordInfo ->
-                            let duplicateDiagnostics =
-                                recordInfo.Fields
-                                |> List.countBy (fun field -> field.Name)
-                                |> List.choose (fun (name, count) ->
-                                    if count > 1 then
-                                        Some(makeDiagnostic DiagnosticCode.RecordDuplicateField $"Record field '{name}' is declared more than once.")
-                                    else
-                                        None)
+                    loop pattern |> List.distinctBy (fun diagnostic -> diagnostic.Message)
 
-                            let cycleDiagnostics =
-                                let parsedFields =
-                                    recordInfo.Fields
-                                    |> List.map (fun field ->
-                                        parseType field.TypeTokens
-                                        |> Option.map (fun parsedType ->
-                                            { Name = field.Name
-                                              Quantity = QuantityOmega
-                                              Type = parsedType }))
+                let unsignedRecursiveBindingDiagnostics =
+                    let signatureNames =
+                        frontendModule.Declarations
+                        |> List.choose (function
+                            | SignatureDeclaration declaration -> Some declaration.Name
+                            | _ -> None)
+                        |> Set.ofList
 
-                                if parsedFields |> List.forall Option.isSome then
-                                    let typeExpr = TypeRecord(parsedFields |> List.choose id)
+                    let patternNames pattern =
+                        collectPatternNames pattern |> Set.ofList
 
-                                    if hasCyclicRecordDependencies typeExpr then
-                                        [ makeDiagnostic DiagnosticCode.RecordDependencyCycle "Record type field dependencies must be acyclic." ]
-                                    else
-                                        []
-                                else
-                                    []
+                    let parameterNames (parameters: Parameter list) =
+                        parameters |> List.map (fun parameter -> parameter.Name) |> Set.ofList
 
-                            duplicateDiagnostics @ cycleDiagnostics)
-                        |> Option.defaultValue []
-                    | LetDeclaration definition ->
-                        let scheme =
-                            definition.Name
-                            |> Option.bind (fun name -> Map.tryFind name environment.VisibleBindings)
-                            |> Option.map (fun bindingInfo -> bindingInfo.Scheme)
+                    let rec expressionReferences target shadowed expression =
+                        let references = expressionReferences target shadowed
 
-                        let bodyEnvironment =
-                            match scheme with
-                            | Some scheme when not (List.isEmpty scheme.Constraints) ->
-                                { environment with
-                                    ConstrainedMembers = buildConstrainedMembers environment scheme.Constraints }
+                        match expression with
+                        | Name [ name ] ->
+                            String.Equals(name, target, StringComparison.Ordinal)
+                            && not (Set.contains name shadowed)
+                        | SyntaxQuote inner
+                        | SyntaxSplice inner
+                        | TopLevelSyntaxSplice inner
+                        | CodeQuote inner
+                        | CodeSplice inner ->
+                            references inner
+                        | Handle(_, label, body, returnClause, operationClauses) ->
+                            references label
+                            || references body
+                            || references returnClause.Body
+                            || (operationClauses |> List.exists (fun clause -> references clause.Body))
+                        | Apply(callee, arguments) ->
+                            references callee || (arguments |> List.exists references)
+                        | LocalLet(binding, value, body) ->
+                            references value
+                            || expressionReferences target (Set.union shadowed (patternNames binding.Pattern)) body
+                        | LocalSignature(declaration, body) ->
+                            if String.Equals(declaration.Name, target, StringComparison.Ordinal) then
+                                false
+                            else
+                                expressionReferences target (Set.add declaration.Name shadowed) body
+                        | LocalTypeAlias(_, body) ->
+                            references body
+                        | LocalScopedEffect(_, body) ->
+                            references body
+                        | Lambda(parameters, body) ->
+                            expressionReferences target (Set.union shadowed (parameterNames parameters)) body
+                        | IfThenElse(condition, whenTrue, whenFalse) ->
+                            references condition || references whenTrue || references whenFalse
+                        | Match(scrutinee, cases) ->
+                            references scrutinee
+                            || (cases
+                                |> List.exists (fun caseClause ->
+                                    let caseShadowed = Set.union shadowed (patternNames caseClause.Pattern)
+                                    (caseClause.Guard |> Option.exists (expressionReferences target caseShadowed))
+                                    || expressionReferences target caseShadowed caseClause.Body))
+                        | RecordLiteral fields ->
+                            fields |> List.exists (fun field -> references field.Value)
+                        | Seal(value, _) ->
+                            references value
+                        | RecordUpdate(receiver, fields) ->
+                            references receiver || (fields |> List.exists (fun field -> references field.Value))
+                        | MemberAccess(receiver, _, arguments) ->
+                            references receiver || (arguments |> List.exists references)
+                        | SafeNavigation(receiver, navigation) ->
+                            references receiver || (navigation.Arguments |> List.exists references)
+                        | TagTest(receiver, _) ->
+                            references receiver
+                        | Do statements ->
+                            doStatementsReference target shadowed statements
+                        | MonadicSplice inner
+                        | ExplicitImplicitArgument inner
+                        | InoutArgument inner
+                        | Unary(_, inner) ->
+                            references inner
+                        | NamedApplicationBlock fields ->
+                            fields |> List.exists (fun field -> references field.Value)
+                        | Binary(left, _, right)
+                        | Elvis(left, right) ->
+                            references left || references right
+                        | Comprehension comprehension ->
+                            references comprehension.Lowered
+                        | PrefixedString(_, parts) ->
+                            parts
+                            |> List.exists (function
+                                | StringText _ -> false
+                                | StringInterpolation(inner, _) -> references inner)
+                        | Literal _
+                        | NumericLiteral _
+                        | KindQualifiedName _
+                        | Name _ ->
+                            false
+
+                    and doStatementsReference target shadowed statements =
+                        match statements with
+                        | [] ->
+                            false
+                        | statement :: rest ->
+                            match statement with
+                            | DoLet(binding, expression)
+                            | DoBind(binding, expression)
+                            | DoUsing(binding, expression) ->
+                                expressionReferences target shadowed expression
+                                || doStatementsReference target (Set.union shadowed (patternNames binding.Pattern)) rest
+                            | DoLetQuestion(binding, expression, failure) ->
+                                let failureReferences =
+                                    failure
+                                    |> Option.exists (fun block ->
+                                        doStatementsReference target (Set.union shadowed (patternNames block.ResiduePattern.Pattern)) block.Body)
+
+                                expressionReferences target shadowed expression
+                                || failureReferences
+                                || doStatementsReference target (Set.union shadowed (patternNames binding.Pattern)) rest
+                            | DoVar(name, expression) ->
+                                expressionReferences target shadowed expression
+                                || doStatementsReference target (Set.add name shadowed) rest
+                            | DoAssign(_, expression)
+                            | DoDefer expression
+                            | DoExpression expression
+                            | DoReturn expression ->
+                                expressionReferences target shadowed expression
+                                || doStatementsReference target shadowed rest
+                            | DoIf(condition, whenTrue, whenFalse) ->
+                                expressionReferences target shadowed condition
+                                || doStatementsReference target shadowed whenTrue
+                                || doStatementsReference target shadowed whenFalse
+                                || doStatementsReference target shadowed rest
+                            | DoWhile(condition, body) ->
+                                expressionReferences target shadowed condition
+                                || doStatementsReference target shadowed body
+                                || doStatementsReference target shadowed rest
+
+                    frontendModule.Declarations
+                    |> List.choose (function
+                        | LetDeclaration definition
+                            when definition.Name.IsSome
+                                 && definition.Body.IsSome
+                                 && not (Set.contains definition.Name.Value signatureNames) ->
+                            let name = definition.Name.Value
+                            let shadowed = parameterNames definition.Parameters
+
+                            if expressionReferences name shadowed definition.Body.Value then
+                                Some(makeDiagnostic DiagnosticCode.RecursionRequiresSignature $"Top-level binding '{name}' is recursive but has no preceding signature declaration.")
+                            else
+                                None
+                        | _ ->
+                            None)
+
+                let trivialRecursiveCycleDiagnostics =
+                    frontendModule.Declarations
+                    |> List.choose (function
+                        | LetDeclaration definition
+                            when definition.Name.IsSome
+                                 && definition.Body.IsSome
+                                 && List.isEmpty definition.Parameters ->
+                            let name = definition.Name.Value
+
+                            match definition.Body.Value with
+                            | Name [ referencedName ] when String.Equals(referencedName, name, StringComparison.Ordinal) ->
+                                Some(
+                                    makeDiagnostic
+                                        DiagnosticCode.RecursionRequiresSignature
+                                        $"Recursive cycle for binding '{name}' is not total and must be rejected."
+                                )
                             | _ ->
-                                environment
+                                None
+                        | _ ->
+                            None)
 
-                        let moduleTopLevelDefinitionsByName =
-                            frontendModule.Declarations
-                            |> List.choose (function
-                                | LetDeclaration candidate ->
-                                    match candidate.Name, candidate.Body with
-                                    | Some name, Some _ -> Some(name, candidate)
-                                    | _ -> None
-                                | _ ->
-                                    None)
+                let expressionPatternDiagnostics expression =
+                    let rec validateExpression current =
+                        match current with
+                        | SyntaxQuote inner
+                        | SyntaxSplice inner
+                        | TopLevelSyntaxSplice inner
+                        | CodeQuote inner
+                        | CodeSplice inner ->
+                            validateExpression inner
+                        | LocalLet(binding, value, body) ->
+                            patternDuplicateDiagnostics binding.Pattern @ validateExpression value @ validateExpression body
+                        | LocalSignature(_, body) ->
+                            validateExpression body
+                        | LocalTypeAlias(_, body) ->
+                            validateExpression body
+                        | LocalScopedEffect(_, body) ->
+                            validateExpression body
+                        | Handle(_, label, body, returnClause, operationClauses) ->
+                            validateExpression label
+                            @ validateExpression body
+                            @ validateExpression returnClause.Body
+                            @ (operationClauses |> List.collect (fun clause -> validateExpression clause.Body))
+                        | Lambda(_, body) ->
+                            validateExpression body
+                        | IfThenElse(condition, whenTrue, whenFalse) ->
+                            validateExpression condition @ validateExpression whenTrue @ validateExpression whenFalse
+                        | Match(scrutinee, cases) ->
+                            validateExpression scrutinee
+                            @ (cases
+                               |> List.collect (fun caseClause ->
+                                   patternDuplicateDiagnostics caseClause.Pattern
+                                   @ (caseClause.Guard |> Option.map validateExpression |> Option.defaultValue [])
+                                   @ validateExpression caseClause.Body))
+                        | RecordLiteral fields ->
+                            fields |> List.collect (fun field -> validateExpression field.Value)
+                        | Seal(value, _) ->
+                            validateExpression value
+                        | RecordUpdate(receiver, fields) ->
+                            validateExpression receiver @ (fields |> List.collect (fun field -> validateExpression field.Value))
+                        | MemberAccess(receiver, _, arguments) ->
+                            validateExpression receiver @ (arguments |> List.collect validateExpression)
+                        | SafeNavigation(receiver, navigation) ->
+                            validateExpression receiver @ (navigation.Arguments |> List.collect validateExpression)
+                        | TagTest(receiver, _) ->
+                            validateExpression receiver
+                        | Comprehension comprehension ->
+                            validateExpression comprehension.Lowered
+                        | Do statements ->
+                            validateDo statements
+                        | MonadicSplice inner
+                        | ExplicitImplicitArgument inner
+                        | InoutArgument inner
+                        | Unary(_, inner) ->
+                            validateExpression inner
+                        | NamedApplicationBlock fields ->
+                            fields |> List.collect (fun field -> validateExpression field.Value)
+                        | Binary(left, _, right)
+                        | Elvis(left, right) ->
+                            validateExpression left @ validateExpression right
+                        | Apply(callee, arguments) ->
+                            validateExpression callee @ (arguments |> List.collect validateExpression)
+                        | PrefixedString(_, parts) ->
+                            parts
+                            |> List.collect (function
+                                | StringText _ -> []
+                                | StringInterpolation(inner, _) -> validateExpression inner)
+                        | Literal _
+                        | NumericLiteral _
+                        | KindQualifiedName _
+                        | Name _ ->
+                            []
+
+                    and validateDo statements =
+                        statements
+                        |> List.collect (function
+                            | DoLet(binding, expression)
+                            | DoBind(binding, expression)
+                            | DoUsing(binding, expression) ->
+                                patternDuplicateDiagnostics binding.Pattern @ validateExpression expression
+                            | DoLetQuestion(binding, expression, failure) ->
+                                patternDuplicateDiagnostics binding.Pattern
+                                @ validateExpression expression
+                                @ (failure
+                                   |> Option.map (fun block ->
+                                       patternDuplicateDiagnostics block.ResiduePattern.Pattern @ validateDo block.Body)
+                                   |> Option.defaultValue [])
+                            | DoVar(_, expression)
+                            | DoAssign(_, expression)
+                            | DoDefer expression
+                            | DoExpression expression
+                            | DoReturn expression ->
+                                validateExpression expression
+                            | DoIf(condition, whenTrue, whenFalse) ->
+                                validateExpression condition @ validateDo whenTrue @ validateDo whenFalse
+                            | DoWhile(condition, body) ->
+                                validateExpression condition @ validateDo body)
+
+                    validateExpression expression
+
+                let expressionNameResolutionDiagnostics (definition: LetDefinition) expression =
+                    []
+
+                let constructorDefaultDiagnostics =
+                    let topLevelNames =
+                        frontendModule.Declarations
+                        |> List.collect (function
+                            | SignatureDeclaration declaration -> [ declaration.Name ]
+                            | LetDeclaration declaration -> declaration.Name |> Option.toList
+                            | ProjectionDeclarationNode declaration -> [ declaration.Name ]
+                            | DataDeclarationNode declaration ->
+                                declaration.Name :: (declaration.Constructors |> List.map (fun constructor -> constructor.Name))
+                            | TypeAliasNode declaration -> [ declaration.Name ]
+                            | TraitDeclarationNode declaration -> [ declaration.Name ]
+                            | ExpectDeclarationNode (ExpectTermDeclaration declaration) -> [ declaration.Name ]
+                            | ExpectDeclarationNode (ExpectTypeDeclaration declaration) -> [ declaration.Name ]
+                            | ExpectDeclarationNode (ExpectTraitDeclaration declaration) -> [ declaration.Name ]
+                            | _ -> [])
+                        |> Set.ofList
+
+                    let baseVisibleNames =
+                        let preludeContract = IntrinsicCatalog.bundledPreludeExpectContract ()
+
+                        [ topLevelNames
+                          preludeContract.TermNames
+                          preludeContract.TypeNames
+                          preludeContract.TraitNames
+                          Set.ofList Stdlib.FixedPreludeConstructors
+                          environment.VisibleBindings |> Map.keys |> Set.ofSeq
+                          environment.VisibleConstructors |> Map.keys |> Set.ofSeq
+                          environment.VisibleModules
+                          environment.VisibleStaticObjects |> Map.keys |> Set.ofSeq
+                          environment.VisibleTypeFacets |> Map.keys |> Set.ofSeq
+                          environment.VisibleTraits |> Map.keys |> Set.ofSeq ]
+                        |> Set.unionMany
+                        |> Set.remove "<anonymous>"
+
+                    let diagnosticsForDefault parameters index parameterName parameterTypeTokens defaultValue =
+                        let earlierParameters = parameters |> List.take index
+                        let forbiddenNames =
+                            parameters
+                            |> List.skip index
+                            |> List.choose (fun candidate -> candidate.ParameterName)
+                            |> Set.ofList
+
+                        let localTypes =
+                            earlierParameters
+                            |> List.choose (fun earlier ->
+                                match earlier.ParameterName, TypeSignatures.parseType earlier.ParameterTypeTokens with
+                                | Some name, Some parameterType -> Some(name, parameterType)
+                                | _ -> None)
                             |> Map.ofList
 
-                        validateBuiltInExpressionsForBinding
-                            bodyEnvironment
-                            knownSurfaceTermNames
-                            allowUnresolvedCallDiagnostics
-                            moduleTopLevelDefinitionsByName
-                            definition
-                            scheme
-                        @ (definition.Body
-                           |> Option.map (fun body ->
-                               expressionPatternDiagnostics body
-                               @ expressionNameResolutionDiagnostics definition body)
-                           |> Option.defaultValue [])
-                    | ProjectionDeclarationNode declaration ->
-                        validateProjectionDeclaration declaration
-                    | _ ->
-                        [])))
+                        let visibleNames =
+                            earlierParameters
+                            |> List.choose (fun earlier -> earlier.ParameterName)
+                            |> Set.ofList
+                            |> Set.union baseVisibleNames
+
+                        let nameDiagnostics =
+                            ResourceCheckingSurface.expressionNames defaultValue
+                            |> Seq.distinct
+                            |> Seq.choose (fun referencedName ->
+                                if Set.contains referencedName forbiddenNames then
+                                    Some(
+                                        makeDiagnostic
+                                            DiagnosticCode.NameUnresolved
+                                            $"Default expression for constructor parameter '{parameterName}' cannot reference '{referencedName}' before it is bound."
+                                    )
+                                elif not (Set.contains referencedName visibleNames) then
+                                    Some(makeDiagnostic DiagnosticCode.NameUnresolved $"Name '{referencedName}' is not in scope.")
+                                else
+                                    None)
+                            |> Seq.toList
+
+                        let typeDiagnostics =
+                            match TypeSignatures.parseType parameterTypeTokens, inferValidationExpressionType environment (ref 0) localTypes defaultValue with
+                            | Some expectedType, Some actualType
+                                when not (
+                                    TypeSignatures.definitionallyEqual
+                                        (normalizeTypeAliases environment.VisibleTypeAliases expectedType)
+                                        (normalizeTypeAliases environment.VisibleTypeAliases actualType)
+                                ) ->
+                                [ makeDiagnostic
+                                    DiagnosticCode.TypeEqualityMismatch
+                                    $"Default expression for constructor parameter '{parameterName}' has type '{TypeSignatures.toText actualType}', but '{TypeSignatures.toText expectedType}' was expected." ]
+                            | Some _, None when List.isEmpty nameDiagnostics ->
+                                [ makeDiagnostic
+                                    DiagnosticCode.TypeEqualityMismatch
+                                    $"Default expression for constructor parameter '{parameterName}' could not be checked against its declared type." ]
+                            | _ ->
+                                []
+
+                        nameDiagnostics @ typeDiagnostics
+
+                    let diagnosticsForConstructor (constructor: DataConstructor) =
+                        match constructor.Parameters with
+                        | Some parameters ->
+                            parameters
+                            |> List.mapi (fun index parameter -> index, parameter)
+                            |> List.collect (fun (index, parameter) ->
+                                match parameter.ParameterName, parameter.DefaultValue with
+                                | Some parameterName, Some defaultValue ->
+                                    diagnosticsForDefault parameters index parameterName parameter.ParameterTypeTokens defaultValue
+                                | _ ->
+                                    [])
+                        | None ->
+                            []
+
+                    frontendModule.Declarations
+                    |> List.collect (function
+                        | DataDeclarationNode declaration ->
+                            declaration.Constructors |> List.collect diagnosticsForConstructor
+                        | _ ->
+                            [])
+
+                let instanceMemberSignatureDiagnostics =
+                    let traitInfoByName =
+                        environment.VisibleTraits
+
+                    frontendModule.Declarations
+                    |> List.collect (function
+                        | InstanceDeclarationNode declaration ->
+                            tryParseInstanceHeader declaration
+                            |> Option.toList
+                            |> List.collect (fun (traitName, _, headTypes) ->
+                                traitInfoByName
+                                |> Map.tryFind traitName
+                                |> Option.toList
+                                |> List.collect (fun traitInfo ->
+                                    let traitSubstitution =
+                                        if List.length traitInfo.TypeParameters = List.length headTypes then
+                                            List.zip traitInfo.TypeParameters headTypes |> Map.ofList
+                                        else
+                                            Map.empty
+
+                                    declaration.Members
+                                    |> List.collect (fun memberDeclaration ->
+                                        match memberDeclaration.Name with
+                                        | None ->
+                                            []
+                                        | Some memberName ->
+                                            match traitInfo.Members |> Map.tryFind memberName with
+                                            | None ->
+                                                []
+                                            | Some memberInfo ->
+                                                match memberDeclaration.ReturnTypeTokens |> Option.bind TypeSignatures.parseType with
+                                                | None ->
+                                                    []
+                                                | Some declaredReturnType ->
+                                                    let expectedReturnType =
+                                                        memberInfo.Scheme
+                                                        |> TypeSignatures.applySchemeSubstitution traitSubstitution
+                                                        |> TypeSignatures.schemeParts
+                                                        |> snd
+
+                                                    if
+                                                        TypeSignatures.definitionallyEqual
+                                                            (normalizeTypeAliases environment.VisibleTypeAliases declaredReturnType)
+                                                            (normalizeTypeAliases environment.VisibleTypeAliases expectedReturnType)
+                                                    then
+                                                        []
+                                                    else
+                                                        [
+                                                            makeDiagnostic
+                                                                DiagnosticCode.TypeEqualityMismatch
+                                                                $"Instance member '{memberName}' for trait '{traitName}' must return '{TypeSignatures.toText expectedReturnType}', but declares '{TypeSignatures.toText declaredReturnType}'."
+                                                        ])))
+                        | _ ->
+                            [])
+
+                let instanceSupertraitDiagnostics =
+                    let traitInfoByName =
+                        environment.VisibleTraits
+
+                    let constraintMatches (expected: TraitConstraint) (actual: TraitConstraint) =
+                        String.Equals(expected.TraitName, actual.TraitName, StringComparison.Ordinal)
+                        && List.length expected.Arguments = List.length actual.Arguments
+                        && List.forall2
+                            (fun left right ->
+                                TypeSignatures.definitionallyEqual
+                                    (normalizeTypeAliases environment.VisibleTypeAliases left)
+                                    (normalizeTypeAliases environment.VisibleTypeAliases right))
+                            expected.Arguments
+                            actual.Arguments
+
+                    let premisesSatisfy (premises: TraitConstraint list) (requiredConstraint: TraitConstraint) =
+                        premises
+                        |> List.exists (fun (premise: TraitConstraint) ->
+                            reachableTraitConstraints environment premise
+                            |> List.exists (constraintMatches requiredConstraint))
+
+                    frontendModule.Declarations
+                    |> List.collect (function
+                        | InstanceDeclarationNode declaration ->
+                            tryParseInstanceHeader declaration
+                            |> Option.toList
+                            |> List.collect (fun (traitName, constraints, headTypes) ->
+                                traitInfoByName
+                                |> Map.tryFind traitName
+                                |> Option.toList
+                                |> List.collect (fun traitInfo ->
+                                    tryInstantiateTraitSupertraits traitInfo headTypes
+                                    |> Option.defaultValue []
+                                    |> List.choose (fun requiredConstraint ->
+                                        let satisfied =
+                                            premisesSatisfy constraints requiredConstraint
+                                            || (resolveConstraintInstance environment requiredConstraint |> Option.isSome)
+
+                                        if satisfied then
+                                            None
+                                        else
+                                            Some(
+                                                makeDiagnostic
+                                                    DiagnosticCode.TraitSupertraitUnsatisfied
+                                                    $"Instance for trait '{traitName}' requires declared supertrait '{renderTraitConstraint environment requiredConstraint}', but that evidence is not satisfied by the instance premises or visible instances."
+                                            ))))
+                        | _ ->
+                            [])
+
+                let structuralDiagnostics =
+                    duplicateDeclarationDiagnostics
+                    @ totalityAssertionDiagnostics
+                    @ typeAliasCycleDiagnostics
+                    @ malformedConstructorDiagnostics
+                    @ unsignedRecursiveBindingDiagnostics
+                    @ trivialRecursiveCycleDiagnostics
+                    @ constructorDefaultDiagnostics
+                    @ instanceSupertraitDiagnostics
+                    @ instanceMemberSignatureDiagnostics
+
+                let multishotBackendCapabilityDiagnostics =
+                    if backendSupportsMultishotEffects backendProfile then
+                        []
+                    else
+                        let normalizedBackendProfile = Stdlib.normalizeBackendProfile backendProfile
+                        let privateByDefault = isPrivateByDefault frontendModule
+
+                        let multishotInvocationMessage context effectName operationName =
+                            $"Backend profile '{normalizedBackendProfile}' does not provide capability 'rt-multishot-effects' required by multi-shot operation '{effectName}.{operationName}' {context}."
+
+                        let rec rewriteEffectLabelAliasUse aliasName effectName current =
+                            let rewrite = rewriteEffectLabelAliasUse aliasName effectName
+
+                            match current with
+                            | Name [ name ] when String.Equals(name, aliasName, StringComparison.Ordinal) ->
+                                KindQualifiedName(EffectLabelKind, [ effectName ])
+                            | Name(root :: path) when String.Equals(root, aliasName, StringComparison.Ordinal) ->
+                                Name(effectName :: path)
+                            | Name _ ->
+                                current
+                            | SyntaxQuote inner ->
+                                SyntaxQuote(rewrite inner)
+                            | SyntaxSplice inner ->
+                                SyntaxSplice(rewrite inner)
+                            | TopLevelSyntaxSplice inner ->
+                                TopLevelSyntaxSplice(rewrite inner)
+                            | CodeQuote inner ->
+                                CodeQuote(rewrite inner)
+                            | CodeSplice inner ->
+                                CodeSplice(rewrite inner)
+                            | Handle(isDeep, label, body, returnClause, operationClauses) ->
+                                let rewriteClause (clause: SurfaceEffectHandlerClause) =
+                                    { clause with Body = rewrite clause.Body }
+
+                                Handle(isDeep, rewrite label, rewrite body, rewriteClause returnClause, operationClauses |> List.map rewriteClause)
+                            | LocalLet(binding, value, body) ->
+                                let shadowsAlias =
+                                    collectPatternNames binding.Pattern
+                                    |> List.exists (fun name -> String.Equals(name, aliasName, StringComparison.Ordinal))
+
+                                LocalLet(binding, rewrite value, if shadowsAlias then body else rewrite body)
+                            | LocalSignature(declaration, body) ->
+                                if String.Equals(declaration.Name, aliasName, StringComparison.Ordinal) then current else LocalSignature(declaration, rewrite body)
+                            | LocalTypeAlias(declaration, body) ->
+                                LocalTypeAlias(declaration, rewrite body)
+                            | LocalScopedEffect(declaration, body) ->
+                                if String.Equals(declaration.Name, aliasName, StringComparison.Ordinal) then current else LocalScopedEffect(declaration, rewrite body)
+                            | Lambda(parameters, body) ->
+                                if parameters |> List.exists (fun parameter -> String.Equals(parameter.Name, aliasName, StringComparison.Ordinal)) then current else Lambda(parameters, rewrite body)
+                            | IfThenElse(condition, whenTrue, whenFalse) ->
+                                IfThenElse(rewrite condition, rewrite whenTrue, rewrite whenFalse)
+                            | Match(scrutinee, cases) ->
+                                Match(
+                                    rewrite scrutinee,
+                                    cases
+                                    |> List.map (fun caseClause ->
+                                        let shadowsAlias =
+                                            collectPatternNames caseClause.Pattern
+                                            |> List.exists (fun name -> String.Equals(name, aliasName, StringComparison.Ordinal))
+
+                                        { caseClause with
+                                            Guard = caseClause.Guard |> Option.map rewrite
+                                            Body = if shadowsAlias then caseClause.Body else rewrite caseClause.Body })
+                                )
+                            | RecordLiteral fields ->
+                                RecordLiteral(fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+                            | Seal(value, ascriptionTokens) ->
+                                Seal(rewrite value, ascriptionTokens)
+                            | RecordUpdate(receiver, fields) ->
+                                RecordUpdate(rewrite receiver, fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+                            | MemberAccess(receiver, segments, arguments) ->
+                                MemberAccess(rewrite receiver, segments, arguments |> List.map rewrite)
+                            | SafeNavigation(receiver, navigation) ->
+                                SafeNavigation(rewrite receiver, { navigation with Arguments = navigation.Arguments |> List.map rewrite })
+                            | TagTest(receiver, constructorName) ->
+                                TagTest(rewrite receiver, constructorName)
+                            | Do statements ->
+                                Do(statements)
+                            | MonadicSplice inner ->
+                                MonadicSplice(rewrite inner)
+                            | ExplicitImplicitArgument inner ->
+                                ExplicitImplicitArgument(rewrite inner)
+                            | NamedApplicationBlock fields ->
+                                NamedApplicationBlock(fields |> List.map (fun field -> { field with Value = rewrite field.Value }))
+                            | InoutArgument inner ->
+                                InoutArgument(rewrite inner)
+                            | Unary(operatorName, inner) ->
+                                Unary(operatorName, rewrite inner)
+                            | Apply(callee, arguments) ->
+                                Apply(rewrite callee, arguments |> List.map rewrite)
+                            | Binary(left, operatorName, right) ->
+                                Binary(rewrite left, operatorName, rewrite right)
+                            | Elvis(left, right) ->
+                                Elvis(rewrite left, rewrite right)
+                            | Comprehension comprehension ->
+                                Comprehension { comprehension with Lowered = rewrite comprehension.Lowered }
+                            | PrefixedString(prefix, parts) ->
+                                PrefixedString(
+                                    prefix,
+                                    parts
+                                    |> List.map (function
+                                        | StringText text -> StringText text
+                                        | StringInterpolation(inner, format) -> StringInterpolation(rewrite inner, format))
+                                )
+                            | Literal _
+                            | NumericLiteral _
+                            | KindQualifiedName _ ->
+                                current
+
+                        let tryMatchMultishotInvocation expression =
+                            match expression with
+                            | Apply(Name [ effectName; operationName ], _) ->
+                                tryFindScopedEffectOperation effectName operationName
+                                |> Option.bind (fun (_, operation) ->
+                                    if quantityPermitsMultipleResumptions operation.ResumptionQuantity then
+                                        Some(effectName, operationName)
+                                    else
+                                        None)
+                            | Apply(MemberAccess(Name [ effectName ], [ operationName ], []), _) ->
+                                tryFindScopedEffectOperation effectName operationName
+                                |> Option.bind (fun (_, operation) ->
+                                    if quantityPermitsMultipleResumptions operation.ResumptionQuantity then
+                                        Some(effectName, operationName)
+                                    else
+                                        None)
+                            | Apply(MemberAccess(KindQualifiedName(EffectLabelKind, [ effectName ]), [ operationName ], []), _) ->
+                                tryFindScopedEffectOperation effectName operationName
+                                |> Option.bind (fun (_, operation) ->
+                                    if quantityPermitsMultipleResumptions operation.ResumptionQuantity then
+                                        Some(effectName, operationName)
+                                    else
+                                        None)
+                            | _ ->
+                                None
+
+                        let rec collectMultishotInvocations expression =
+                            let nested =
+                                match expression with
+                                | SyntaxQuote _
+                                | SyntaxSplice _
+                                | TopLevelSyntaxSplice _
+                                | CodeQuote _
+                                | CodeSplice _ ->
+                                    []
+                                | LocalLet(binding, value, body) ->
+                                    let bodyForCollection =
+                                        match binding.Pattern, value with
+                                        | NamePattern aliasName, Name [ effectName ] when tryFindScopedEffectDeclaration effectName |> Option.isSome ->
+                                            rewriteEffectLabelAliasUse aliasName effectName body
+                                        | NamePattern aliasName, KindQualifiedName(EffectLabelKind, [ effectName ])
+                                            when tryFindScopedEffectDeclaration effectName |> Option.isSome ->
+                                            rewriteEffectLabelAliasUse aliasName effectName body
+                                        | _ ->
+                                            body
+
+                                    collectMultishotInvocations value @ collectMultishotInvocations bodyForCollection
+                                | LocalSignature(_, body)
+                                | LocalTypeAlias(_, body) ->
+                                    collectMultishotInvocations body
+                                | LocalScopedEffect(declaration, body) ->
+                                    withScopedEffectDeclaration declaration (fun () -> collectMultishotInvocations body)
+                                | Lambda(_, body) ->
+                                    collectMultishotInvocations body
+                                | Handle(_, label, body, returnClause, operationClauses) ->
+                                    collectMultishotInvocations label
+                                    @ collectMultishotInvocations body
+                                    @ collectMultishotInvocations returnClause.Body
+                                    @ (operationClauses |> List.collect (fun clause -> collectMultishotInvocations clause.Body))
+                                | Match(scrutinee, cases) ->
+                                    collectMultishotInvocations scrutinee
+                                    @ (cases
+                                       |> List.collect (fun caseClause ->
+                                           (caseClause.Guard
+                                            |> Option.map collectMultishotInvocations
+                                            |> Option.defaultValue [])
+                                           @ collectMultishotInvocations caseClause.Body))
+                                | IfThenElse(condition, whenTrue, whenFalse) ->
+                                    collectMultishotInvocations condition
+                                    @ collectMultishotInvocations whenTrue
+                                    @ collectMultishotInvocations whenFalse
+                                | RecordLiteral fields ->
+                                    fields |> List.collect (fun field -> collectMultishotInvocations field.Value)
+                                | Seal(value, _) ->
+                                    collectMultishotInvocations value
+                                | RecordUpdate(receiver, fields) ->
+                                    collectMultishotInvocations receiver
+                                    @ (fields |> List.collect (fun field -> collectMultishotInvocations field.Value))
+                                | MemberAccess(receiver, _, arguments) ->
+                                    collectMultishotInvocations receiver
+                                    @ (arguments |> List.collect collectMultishotInvocations)
+                                | SafeNavigation(receiver, navigation) ->
+                                    collectMultishotInvocations receiver
+                                    @ (navigation.Arguments |> List.collect collectMultishotInvocations)
+                                | TagTest(receiver, _) ->
+                                    collectMultishotInvocations receiver
+                                | Do statements ->
+                                    let rec collectDo statements =
+                                        match statements with
+                                        | [] ->
+                                            []
+                                        | statement :: rest ->
+                                            let restInvocations = collectDo rest
+
+                                            match statement with
+                                            | DoLet(_, value)
+                                            | DoBind(_, value)
+                                            | DoUsing(_, value)
+                                            | DoVar(_, value)
+                                            | DoAssign(_, value)
+                                            | DoDefer value
+                                            | DoExpression value
+                                            | DoReturn value ->
+                                                collectMultishotInvocations value @ restInvocations
+                                            | DoLetQuestion(_, value, failure) ->
+                                                let failureInvocations =
+                                                    failure
+                                                    |> Option.map (fun block -> collectDo block.Body)
+                                                    |> Option.defaultValue []
+
+                                                collectMultishotInvocations value @ failureInvocations @ restInvocations
+                                            | DoIf(condition, whenTrue, whenFalse) ->
+                                                collectMultishotInvocations condition
+                                                @ collectDo whenTrue
+                                                @ collectDo whenFalse
+                                                @ restInvocations
+                                            | DoWhile(condition, body) ->
+                                                collectMultishotInvocations condition @ collectDo body @ restInvocations
+
+                                    collectDo statements
+                                | MonadicSplice inner
+                                | ExplicitImplicitArgument inner
+                                | InoutArgument inner
+                                | Unary(_, inner) ->
+                                    collectMultishotInvocations inner
+                                | NamedApplicationBlock fields ->
+                                    fields |> List.collect (fun field -> collectMultishotInvocations field.Value)
+                                | Apply(callee, arguments) ->
+                                    collectMultishotInvocations callee
+                                    @ (arguments |> List.collect collectMultishotInvocations)
+                                | Binary(left, _, right)
+                                | Elvis(left, right) ->
+                                    collectMultishotInvocations left @ collectMultishotInvocations right
+                                | Comprehension comprehension ->
+                                    collectMultishotInvocations comprehension.Lowered
+                                | PrefixedString(_, parts) ->
+                                    parts
+                                    |> List.collect (function
+                                        | StringText _ -> []
+                                        | StringInterpolation(inner, _) -> collectMultishotInvocations inner)
+                                | Literal _
+                                | NumericLiteral _
+                                | KindQualifiedName _
+                                | Name _ ->
+                                    []
+
+                            match tryMatchMultishotInvocation expression with
+                            | Some invocation -> invocation :: nested
+                            | None -> nested
+
+                        let uniqueMultishotInvocations expression =
+                            collectMultishotInvocations expression
+                            |> List.distinct
+
+                        let exportedDeclarationDiagnostics =
+                            frontendModule.Declarations
+                            |> List.choose (function
+                                | LetDeclaration definition when definition.Name.IsSome && definition.Body.IsSome ->
+                                    let bindingName = definition.Name.Value
+
+                                    if isExportedVisibility privateByDefault definition.Visibility then
+                                        uniqueMultishotInvocations definition.Body.Value
+                                        |> List.tryHead
+                                        |> Option.map (fun (effectName, operationName) ->
+                                            makeDiagnostic
+                                                DiagnosticCode.MultishotEffectUnsupportedBackend
+                                                (multishotInvocationMessage
+                                                    $"from exported declaration '{bindingName}'"
+                                                    effectName
+                                                    operationName))
+                                    else
+                                        None
+                                | _ ->
+                                    None)
+
+                        exportedDeclarationDiagnostics
+
+                if not (List.isEmpty typeAliasCycleDiagnostics) then
+                    structuralDiagnostics @ multishotBackendCapabilityDiagnostics
+                else
+                    structuralDiagnostics
+                    @ multishotBackendCapabilityDiagnostics
+                    @ (frontendModule.Declarations
+                    |> List.collect (function
+                        | TypeAliasNode declaration ->
+                            declaration.BodyTokens
+                            |> Option.bind tryParseRecordSurfaceInfo
+                            |> Option.map (fun recordInfo ->
+                                let duplicateDiagnostics =
+                                    recordInfo.Fields
+                                    |> List.countBy (fun field -> field.Name)
+                                    |> List.choose (fun (name, count) ->
+                                        if count > 1 then
+                                            Some(makeDiagnostic DiagnosticCode.RecordDuplicateField $"Record field '{name}' is declared more than once.")
+                                        else
+                                            None)
+
+                                let cycleDiagnostics =
+                                    let parsedFields =
+                                        recordInfo.Fields
+                                        |> List.map (fun field ->
+                                            parseType field.TypeTokens
+                                            |> Option.map (fun parsedType ->
+                                                { Name = field.Name
+                                                  Quantity = QuantityOmega
+                                                  Type = parsedType }))
+
+                                    if parsedFields |> List.forall Option.isSome then
+                                        let typeExpr = TypeRecord(parsedFields |> List.choose id)
+
+                                        if hasCyclicRecordDependencies typeExpr then
+                                            [ makeDiagnostic DiagnosticCode.RecordDependencyCycle "Record type field dependencies must be acyclic." ]
+                                        else
+                                            []
+                                    else
+                                        []
+
+                                duplicateDiagnostics @ cycleDiagnostics)
+                            |> Option.defaultValue []
+                        | LetDeclaration definition ->
+                            let scheme =
+                                definition.Name
+                                |> Option.bind (fun name -> Map.tryFind name environment.VisibleBindings)
+                                |> Option.map (fun bindingInfo -> bindingInfo.Scheme)
+
+                            let bodyEnvironment =
+                                match scheme with
+                                | Some scheme when not (List.isEmpty scheme.Constraints) ->
+                                    { environment with
+                                        ConstrainedMembers = buildConstrainedMembers environment scheme.Constraints }
+                                | _ ->
+                                    environment
+
+                            let moduleTopLevelDefinitionsByName =
+                                frontendModule.Declarations
+                                |> List.choose (function
+                                    | LetDeclaration candidate ->
+                                        match candidate.Name, candidate.Body with
+                                        | Some name, Some _ -> Some(name, candidate)
+                                        | _ -> None
+                                    | _ ->
+                                        None)
+                                |> Map.ofList
+
+                            validateBuiltInExpressionsForBinding
+                                bodyEnvironment
+                                knownSurfaceTermNames
+                                allowUnresolvedCallDiagnostics
+                                moduleTopLevelDefinitionsByName
+                                definition
+                                scheme
+                            @ (definition.Body
+                                |> Option.map (fun body ->
+                                    expressionPatternDiagnostics body
+                                    @ expressionNameResolutionDiagnostics definition body)
+                                |> Option.defaultValue [])
+                        | ProjectionDeclarationNode declaration ->
+                            validateProjectionDeclaration declaration
+                        | _ ->
+                            []))))
 
     let private makeSyntheticBindingDeclaration
         (name: string)
@@ -16880,103 +16907,110 @@ module SurfaceElaboration =
         frontendModules
         |> List.map (fun frontendModule ->
             let moduleName = moduleNameText frontendModule.ModuleIdentity
-            let moduleInfo = surfaceIndex[moduleName]
-            let recordLayouts = ref Map.empty
-
-            let baseEnvironment =
-                { CurrentModuleName = moduleName
-                  VisibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleName
-                  VisibleTypeFacets = mergeVisibleTypeFacets surfaceIndex moduleName
-                  VisibleStaticObjects = Map.empty
-                  VisibleModules = mergeVisibleModules surfaceIndex moduleName
-                  VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleName
-                  VisibleBindings = mergeVisibleBindings surfaceIndex moduleName
-                  VisibleConstructors = mergeVisibleConstructors surfaceIndex moduleName
-                  VisibleProjections = mergeVisibleProjections surfaceIndex moduleName
-                  VisibleTraits = mergeVisibleTraits surfaceIndex moduleName
-                  VisibleInstances = visibleInstances surfaceIndex moduleName
-                  ElaborationAvailableBindings =
-                    mergeVisibleBindings surfaceIndex moduleName
-                    |> Map.keys
-                    |> Set.ofSeq
-                    |> Set.intersect (IntrinsicCatalog.elaborationAvailableIntrinsicTermNames ())
-                  ConstrainedMembers = Map.empty }
-
-            let environment =
-                { baseEnvironment with
-                    VisibleStaticObjects = buildStaticObjectAliasesForModule baseEnvironment frontendModule.Declarations }
-
-            let declarations =
+            let topLevelEffects =
                 frontendModule.Declarations
-                |> List.collect (fun declaration ->
-                    let provenance = declarationOrigin frontendModule.FilePath moduleName declaration
+                |> List.choose (function
+                    | EffectDeclarationNode declaration -> Some declaration
+                    | _ -> None)
 
-                    let originalDeclaration =
-                        match declaration with
-                        | LetDeclaration definition when definition.Name.IsSome ->
-                            let scheme =
-                                environment.VisibleBindings
-                                |> Map.tryFind definition.Name.Value
-                                |> Option.map (fun bindingInfo -> bindingInfo.Scheme)
+            withScopedEffectDeclarations topLevelEffects (fun () ->
+                let moduleInfo = surfaceIndex[moduleName]
+                let recordLayouts = ref Map.empty
 
-                            [ lowerUserBinding environment recordLayouts frontendModule.FilePath moduleName definition scheme ]
-                        | _ ->
-                            [ { Source = declaration
-                                Binding = None
-                                Provenance = provenance } ]
+                let baseEnvironment =
+                    { CurrentModuleName = moduleName
+                      VisibleTypeAliases = mergeVisibleTypeAliases surfaceIndex moduleName
+                      VisibleTypeFacets = mergeVisibleTypeFacets surfaceIndex moduleName
+                      VisibleStaticObjects = Map.empty
+                      VisibleModules = mergeVisibleModules surfaceIndex moduleName
+                      VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleName
+                      VisibleBindings = mergeVisibleBindings surfaceIndex moduleName
+                      VisibleConstructors = mergeVisibleConstructors surfaceIndex moduleName
+                      VisibleProjections = mergeVisibleProjections surfaceIndex moduleName
+                      VisibleTraits = mergeVisibleTraits surfaceIndex moduleName
+                      VisibleInstances = visibleInstances surfaceIndex moduleName
+                      ElaborationAvailableBindings =
+                        mergeVisibleBindings surfaceIndex moduleName
+                        |> Map.keys
+                        |> Set.ofSeq
+                        |> Set.intersect (IntrinsicCatalog.elaborationAvailableIntrinsicTermNames ())
+                      ConstrainedMembers = Map.empty }
 
-                    match declaration with
-                    | TraitDeclarationNode declaration ->
-                        let traitInfo = moduleInfo.Traits[declaration.Name]
-                        originalDeclaration @ synthesizeTraitDispatchBindings frontendModule.FilePath moduleName traitInfo
-                    | InstanceDeclarationNode declaration ->
-                        let instanceKey = TraitRuntime.instanceKeyFromTokens declaration.HeaderTokens
-                        let instanceInfo =
-                            moduleInfo.Instances
-                            |> List.find (fun info ->
-                                String.Equals(info.TraitName, declaration.TraitName, StringComparison.Ordinal)
-                                && String.Equals(info.InstanceKey, instanceKey, StringComparison.Ordinal))
+                let environment =
+                    { baseEnvironment with
+                        VisibleStaticObjects = buildStaticObjectAliasesForModule baseEnvironment frontendModule.Declarations }
 
-                        originalDeclaration
-                        @ synthesizeInstanceBindings surfaceIndex recordLayouts frontendModule.FilePath moduleName instanceInfo
-                    | _ ->
-                        originalDeclaration)
-
-            let intrinsicTerms =
-                match frontendModule.ModuleIdentity with
-                | Some moduleNameSegments ->
+                let declarations =
                     frontendModule.Declarations
-                    |> List.choose (function
-                        | ExpectDeclarationNode declaration
-                            when Stdlib.intrinsicallySatisfiesExpectForCompilation
-                                    backendProfile
-                                    allowUnsafeConsume
-                                    moduleNameSegments
-                                    declaration ->
-                            match declaration with
-                            | ExpectTermDeclaration termDeclaration -> Some termDeclaration.Name
-                            | _ -> None
-                        | _ ->
-                            None)
-                | None ->
-                    []
+                    |> List.collect (fun declaration ->
+                        let provenance = declarationOrigin frontendModule.FilePath moduleName declaration
 
-            { Name = moduleName
-              SourceFile = frontendModule.FilePath
-              ModuleAttributes = frontendModule.ModuleAttributes
-              Imports = frontendModule.Imports
-              IntrinsicTerms = intrinsicTerms |> List.distinct |> List.sort
-              SyntheticDataTypes =
-                recordLayouts.Value
-                |> Map.toList
-                |> List.map snd
-                |> List.sortBy (fun layout -> layout.TypeName)
-                |> List.map (fun layout ->
-                    { Name = layout.TypeName
-                      TypeParameters = layout.TypeParameters
-                      ConstructorName = layout.ConstructorName
-                      FieldNames = layout.Fields |> List.map (fun field -> field.Name)
-                      FieldTypeTexts = layout.Fields |> List.map (fun field -> TypeSignatures.toText field.Type)
-                      Provenance = layout.Provenance })
-              Ownership = frontendModule.Ownership
-              Declarations = declarations })
+                        let originalDeclaration =
+                            match declaration with
+                            | LetDeclaration definition when definition.Name.IsSome ->
+                                let scheme =
+                                    environment.VisibleBindings
+                                    |> Map.tryFind definition.Name.Value
+                                    |> Option.map (fun bindingInfo -> bindingInfo.Scheme)
+
+                                [ lowerUserBinding environment recordLayouts frontendModule.FilePath moduleName definition scheme ]
+                            | _ ->
+                                [ { Source = declaration
+                                    Binding = None
+                                    Provenance = provenance } ]
+
+                        match declaration with
+                        | TraitDeclarationNode declaration ->
+                            let traitInfo = moduleInfo.Traits[declaration.Name]
+                            originalDeclaration @ synthesizeTraitDispatchBindings frontendModule.FilePath moduleName traitInfo
+                        | InstanceDeclarationNode declaration ->
+                            let instanceKey = TraitRuntime.instanceKeyFromTokens declaration.HeaderTokens
+                            let instanceInfo =
+                                moduleInfo.Instances
+                                |> List.find (fun info ->
+                                    String.Equals(info.TraitName, declaration.TraitName, StringComparison.Ordinal)
+                                    && String.Equals(info.InstanceKey, instanceKey, StringComparison.Ordinal))
+
+                            originalDeclaration
+                            @ synthesizeInstanceBindings surfaceIndex recordLayouts frontendModule.FilePath moduleName instanceInfo
+                        | _ ->
+                            originalDeclaration)
+
+                let intrinsicTerms =
+                    match frontendModule.ModuleIdentity with
+                    | Some moduleNameSegments ->
+                        frontendModule.Declarations
+                        |> List.choose (function
+                            | ExpectDeclarationNode declaration
+                                when Stdlib.intrinsicallySatisfiesExpectForCompilation
+                                        backendProfile
+                                        allowUnsafeConsume
+                                        moduleNameSegments
+                                        declaration ->
+                                match declaration with
+                                | ExpectTermDeclaration termDeclaration -> Some termDeclaration.Name
+                                | _ -> None
+                            | _ ->
+                                None)
+                    | None ->
+                        []
+
+                { Name = moduleName
+                  SourceFile = frontendModule.FilePath
+                  ModuleAttributes = frontendModule.ModuleAttributes
+                  Imports = frontendModule.Imports
+                  IntrinsicTerms = intrinsicTerms |> List.distinct |> List.sort
+                  SyntheticDataTypes =
+                    recordLayouts.Value
+                    |> Map.toList
+                    |> List.map snd
+                    |> List.sortBy (fun layout -> layout.TypeName)
+                    |> List.map (fun layout ->
+                        { Name = layout.TypeName
+                          TypeParameters = layout.TypeParameters
+                          ConstructorName = layout.ConstructorName
+                          FieldNames = layout.Fields |> List.map (fun field -> field.Name)
+                          FieldTypeTexts = layout.Fields |> List.map (fun field -> TypeSignatures.toText field.Type)
+                          Provenance = layout.Provenance })
+                  Ownership = frontendModule.Ownership
+                  Declarations = declarations }))

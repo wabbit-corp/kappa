@@ -990,3 +990,43 @@ let ``shallow handlers type resumptions against the remainder row`` () =
             [ "main.kp", mainSource ]
 
     Assert.False(workspace.HasErrors, sprintf "Expected shallow handler remainder-row typing to succeed, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+[<Fact>]
+let ``top level effect declarations introduce in-scope effect labels`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "effect Ask ="
+            "    1 ask : Unit -> Bool"
+            ""
+            "ok : Int"
+            "let ok : Int ="
+            "    block"
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let b <- Ask.ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        let handled : Eff <[ ]> Int ="
+            "            deep handle Ask comp with"
+            "                case return x -> pure x"
+            "                case ask () k -> k True"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-m4-top-level-effect-label-root"
+            "main.ok"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected top-level effect labels to be in scope, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("1", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected top-level effect label evaluation to succeed, got %s" issue.Message
