@@ -29,7 +29,8 @@ type KCoreStaticObject =
 
 type KCoreEffectOperation =
     { Name: string
-      ResumptionQuantity: Quantity option }
+      ResumptionQuantity: Quantity option
+      ParameterArity: int }
 
 type KCoreEffectHandlerArgument =
     | KCoreEffectUnitArgument

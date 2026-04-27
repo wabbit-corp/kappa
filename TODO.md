@@ -379,11 +379,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - This is also needed for correct handler argument binding, resumption result typing, rebound operation values, and better diagnostics.
   - Sources: `reviews/effects1.md`.
 
-- `[Medium] Represent rebound operation values explicitly instead of as guessed native functions.`
-  - Rebound operations such as `let ask = Ask.ask` risk losing their `Eff` wrapper or having incorrect runtime arity, especially for multi-argument operations.
-  - Add an explicit runtime value case for operation values and use declared operation telescopes during application.
-  - Sources: `reviews/effects1.md`.
-
 ## 7A. Query and Comprehension Semantics
 
 - `[Critical] Stop lowering comprehensions in the parser and build a real query/comprehension plan after semantic resolution.`

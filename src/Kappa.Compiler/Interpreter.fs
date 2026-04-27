@@ -31,6 +31,7 @@ type RuntimeValue =
     | HashCodeValue of int64
     | UnitValue
     | EffectLabelValue of RuntimeEffectLabel
+    | EffectOperationValue of RuntimeEffectOperationValue
     | ConstructorFunctionValue of RuntimeConstructor * RuntimeValue list
     | ConstructedValue of RuntimeConstructed
     | NativeFunctionValue of RuntimeNativeFunction
@@ -41,7 +42,15 @@ type RuntimeValue =
     | DictionaryValue of RuntimeDictionary
 and RuntimeEffectLabel =
     { Name: string
-      Operations: Map<string, Quantity option> }
+      Operations: Map<string, RuntimeEffectOperationMetadata> }
+and RuntimeEffectOperationMetadata =
+    { Name: string
+      ResumptionQuantity: Quantity option
+      ParameterArity: int }
+and RuntimeEffectOperationValue =
+    { Label: RuntimeEffectLabel
+      Operation: RuntimeEffectOperationMetadata
+      AppliedArguments: RuntimeValue list }
 and RuntimeActionResult =
     | RuntimeActionReturn of RuntimeValue
     | RuntimeActionRequest of RuntimeEffectRequest
@@ -122,6 +131,8 @@ module RuntimeValue =
         | HashCodeValue value -> $"HashCode({value})"
         | UnitValue -> "()"
         | EffectLabelValue label -> $"<effect-label {label.Name}>"
+        | EffectOperationValue operation ->
+            $"<effect-op {operation.Label.Name}.{operation.Operation.Name}/{operation.Operation.ParameterArity} [{operation.AppliedArguments.Length}]>"
         | ConstructorFunctionValue(constructor, arguments) ->
             $"<constructor {constructor.Name}/{constructor.Arity} [{arguments.Length}]>"
         | ConstructedValue constructed ->
@@ -532,6 +543,7 @@ module Interpreter =
             | HashCodeValue value -> ok (string value)
             | UnitValue -> ok "()"
             | EffectLabelValue _
+            | EffectOperationValue _
             | ConstructedValue _
             | ConstructorFunctionValue _
             | IOActionValue _
@@ -552,28 +564,25 @@ module Interpreter =
                         { Name = labelName
                           Operations =
                             operations
-                            |> List.map (fun operation -> operation.Name, operation.ResumptionQuantity)
+                            |> List.map (fun operation ->
+                                operation.Name,
+                                { Name = operation.Name
+                                  ResumptionQuantity = operation.ResumptionQuantity
+                                  ParameterArity = operation.ParameterArity })
                             |> Map.ofList })
             | KRuntimeEffectOperation(labelExpression, operationName) ->
                 evaluateExpression scope labelExpression
                 |> Result.bind (function
                     | EffectLabelValue label ->
-                        let invoke arguments =
+                        match label.Operations |> Map.tryFind operationName with
+                        | Some operation ->
                             ok
-                                (IOActionValue(fun () ->
-                                    ok
-                                        (RuntimeActionRequest
-                                            { Label = label
-                                              OperationName = operationName
-                                              Arguments = arguments
-                                              ContinueWith = runtimeActionReturn })))
-
-                        ok
-                            (NativeFunctionValue
-                                { Name = $"{label.Name}.{operationName}"
-                                  Arity = 1
-                                  AppliedArguments = []
-                                  Invoke = invoke })
+                                (EffectOperationValue
+                                    { Label = label
+                                      Operation = operation
+                                      AppliedArguments = [] })
+                        | None ->
+                            error $"Effect label '{label.Name}' does not declare operation '{operationName}'."
                     | other ->
                         error $"Expected an effect label for '{operationName}', but got {RuntimeValue.format other}.")
             | KRuntimeHandle(isDeep, labelExpression, bodyExpression, returnClause, operationClauses) ->
@@ -667,21 +676,6 @@ module Interpreter =
                             error $"Expected a Boolean in the while condition, but got {RuntimeValue.format value}.")
 
                 loop ()
-            | KRuntimeApply (KRuntimeEffectOperation(labelExpression, operationName), arguments) ->
-                evaluateExpression scope labelExpression
-                |> Result.bind (function
-                    | EffectLabelValue label ->
-                        evaluateArguments scope arguments
-                        |> Result.map (fun values ->
-                            IOActionValue(fun () ->
-                                ok
-                                    (RuntimeActionRequest
-                                        { Label = label
-                                          OperationName = operationName
-                                          Arguments = values
-                                          ContinueWith = runtimeActionReturn })))
-                    | other ->
-                        error $"Expected an effect label for '{operationName}', but got {RuntimeValue.format other}.")
             | KRuntimeApply (callee, arguments) ->
                 evaluateExpression scope callee
                 |> Result.bind (fun functionValue ->
@@ -885,6 +879,7 @@ module Interpreter =
                     let resumptionQuantity =
                         request.Label.Operations
                         |> Map.tryFind request.OperationName
+                        |> Option.map (fun operation -> operation.ResumptionQuantity)
                         |> Option.defaultValue (Some QuantityOne)
 
                     let resumptionValue =
@@ -1030,6 +1025,8 @@ module Interpreter =
             match functionValue with
             | FunctionValue closure ->
                 applyClosure closure arguments
+            | EffectOperationValue operation ->
+                applyEffectOperationValue operation arguments
             | ConstructorFunctionValue(constructor, existingArguments) ->
                 applyConstructor constructor existingArguments arguments
             | NativeFunctionValue nativeFunction ->
@@ -1038,6 +1035,54 @@ module Interpreter =
                 applyBuiltinFunction builtin arguments
             | value ->
                 error $"Cannot apply {RuntimeValue.format value} as a function."
+
+        and applyEffectOperationValue
+            (operationValue: RuntimeEffectOperationValue)
+            (arguments: RuntimeValue list)
+            : Result<RuntimeValue, EvaluationError> =
+            let invokeOperation collectedArguments =
+                ok
+                    (IOActionValue(fun () ->
+                        ok
+                            (RuntimeActionRequest
+                                { Label = operationValue.Label
+                                  OperationName = operationValue.Operation.Name
+                                  Arguments = collectedArguments
+                                  ContinueWith = runtimeActionReturn })))
+
+            let rec invoke collected remainingArguments =
+                match remainingArguments with
+                | [] ->
+                    if List.length collected = operationValue.Operation.ParameterArity then
+                        invokeOperation collected
+                    else
+                        ok
+                            (EffectOperationValue
+                                { operationValue with
+                                    AppliedArguments = collected })
+                | argument :: rest ->
+                    let nextArguments = collected @ [ argument ]
+                    let parameterArity = operationValue.Operation.ParameterArity
+
+                    if List.length nextArguments > parameterArity then
+                        let invokedArguments = nextArguments |> List.take parameterArity
+
+                        invokeOperation invokedArguments
+                        |> Result.bind (fun value ->
+                            let remaining = (nextArguments |> List.skip parameterArity) @ rest
+
+                            apply value remaining)
+                    elif List.length nextArguments = parameterArity then
+                        invokeOperation nextArguments
+                        |> Result.bind (fun value ->
+                            if List.isEmpty rest then
+                                ok value
+                            else
+                                apply value rest)
+                    else
+                        invoke nextArguments rest
+
+            invoke operationValue.AppliedArguments arguments
 
         and applyConstructor (constructor: RuntimeConstructor) (existingArguments: RuntimeValue list) (arguments: RuntimeValue list) =
             let rec invoke collected remainingArguments =

@@ -437,7 +437,8 @@ module internal KRuntimeLowering =
                 operations
                 |> List.map (fun operation ->
                     { KRuntimeEffectOperation.Name = operation.Name
-                      ResumptionQuantity = operation.ResumptionQuantity })
+                      ResumptionQuantity = operation.ResumptionQuantity
+                      ParameterArity = operation.ParameterArity })
             )
         | KCoreEffectOperation(label, operationName) ->
             KRuntimeEffectOperation(lowerKRuntimeExpression runtimeParameterMasks label, operationName)

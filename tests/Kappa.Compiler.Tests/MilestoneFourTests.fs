@@ -1986,3 +1986,131 @@ let ``deep handlers reject local normalized tail aliases whose handled label nam
 
     Assert.True(workspace.HasErrors, "Expected deep handlers to reject local normalized tail aliases with mismatched handled interfaces.")
     Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.HandlerEffectRowMismatch)
+
+[<Fact>]
+let ``rebound local effect operation values remain effectful in do bind`` () =
+    let mainSource =
+        [
+            "module main"
+            ""
+            "result : Int"
+            "let result : Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            ask : Unit -> Bool"
+            ""
+            "        let ask = Ask.ask"
+            ""
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let b <- ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        let handled : Eff <[ ]> Int ="
+            "            deep handle Ask comp with"
+            "                case return x -> pure x"
+            "                case ask () k -> k True"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-m4-rebound-operation-local-alias-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected rebound local operation values to typecheck and run, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("1", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected rebound local operation values to evaluate successfully, got %s" issue.Message
+
+[<Fact>]
+let ``rebound multi argument effect operation values preserve declared arity`` () =
+    let mainSource =
+        [
+            "module main"
+            ""
+            "result : Int"
+            "let result : Int ="
+            "    block"
+            "        scoped effect Pairing ="
+            "            pair : Int -> Bool -> Int"
+            ""
+            "        let pair = Pairing.pair"
+            ""
+            "        let comp : Eff <[Pairing : Pairing]> Int ="
+            "            do"
+            "                let pairWith41 = pair 41"
+            "                let n <- pairWith41 True"
+            "                n"
+            ""
+            "        let handled : Eff <[ ]> Int ="
+            "            deep handle Pairing comp with"
+            "                case return x -> pure x"
+            "                case pair x y k ->"
+            "                    if y then k (x + 1) else k x"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-m4-rebound-operation-arity-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected rebound multi-argument operation values to typecheck and run, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("42", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected rebound multi-argument operation values to evaluate successfully, got %s" issue.Message
+
+[<Fact>]
+let ``record carried effect operation values preserve effectful application semantics`` () =
+    let mainSource =
+        [
+            "module main"
+            ""
+            "result : Int"
+            "let result : Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            ask : Unit -> Bool"
+            ""
+            "        let ops = (ask = Ask.ask)"
+            ""
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let b <- ops.ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        let handled : Eff <[ ]> Int ="
+            "            deep handle Ask comp with"
+            "                case return x -> pure x"
+            "                case ask () k -> k True"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-m4-rebound-operation-record-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected record-carried effect operation values to typecheck and run, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("1", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected record-carried effect operation values to evaluate successfully, got %s" issue.Message
