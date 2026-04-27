@@ -74,9 +74,12 @@ KAPPA_WORDS = {
     "ctor", "public", "private", "data", "let", "infix", "left", "right", "prefix", "postfix",
     "match", "case", "if", "then", "elif", "else", "is", "do", "pure", "handle", "return", "effect",
     "handler", "resume", "for", "in", "while", "loop", "break", "continue", "var", "this", "opaque",
+    "expect", "defer", "instance", "projection", "using", "yield", "impossible", "place", "thunk",
+    "lazy", "inout", "by", "forall", "derive", "distinct", "try", "finally", "skip", "take", "top",
+    "join", "group", "order", "asc", "desc", "seal", "block",
     "refl", "summon", "True", "False", "Bool", "Int", "Integer", "Float", "Double", "String", "Char",
-    "Unit", "Type", "Nat", "IO", "EffRow", "Universe", "Syntax", "Dict", "Maybe", "Some", "None",
-    "List", "Nil", "Cons", "Eq", "Show", "main", "result",
+    "Unit", "Type", "Nat", "IO", "UIO", "EffRow", "Universe", "Syntax", "Dict", "Maybe", "Some", "None",
+    "List", "Nil", "Cons", "Eq", "Show", "Option", "Byte", "Bytes", "main", "result",
 }
 IDENTITY_KEYWORD_CODES = {word: word for word in KAPPA_WORDS}
 BORING_KEYWORDS = {
@@ -101,6 +104,14 @@ MAIN_SYMBOL_PATTERN = re.compile(r"\bmain\.([A-Za-z_][A-Za-z0-9_]*)(\[\d+\])?")
 MODULE_HEADER_PATTERN = re.compile(r"^(?:@PrivateByDefault\s+)?module\s+\S+\s*$")
 ORACLE_ENTRY_CUTOFF_PATTERN = re.compile(r"(?m)^(?:main\s*:|let\s+main\b|result\s*:|let\s+result\b)")
 RUNTIME_ASSERT_PATTERN = re.compile(r"(?m)^--!\s*assert(?:Execute|RunStdout|RunStderr)\b")
+X_ASSERT_PATTERN = re.compile(r"(?m)^--!\s*x-assertEval\b")
+HOST_IMPORT_PATTERN = re.compile(r"(?m)^\s*import\s+host\.")
+UIO_MAIN_PATTERN = re.compile(r"(?m)^\s*main\s*:\s*UIO\b")
+LINE_COMMENT_PATTERN = re.compile(r"(?m)^\s*--.*$")
+TOP_LEVEL_DECLARATION_LINE_PATTERN = re.compile(
+    r"^(?:@PrivateByDefault\s+)?(?:module\b|import\b|export\b|data\b|type\b|trait\b|infix\b|prefix\b|postfix\b|let\b|[A-Za-z_`][^\n]*:)"
+)
+TOP_LEVEL_SIGNATURE_LINE_PATTERN = re.compile(r"^[A-Za-z_`][^\n]*:\s*.+$")
 RUNTIME_ENTRY_PATTERNS = {
     "result-int": re.compile(r"(?m)^\s*let\s+result\b"),
     "main-io-int": re.compile(r"(?m)^\s*main\s*:\s*IO\s+Int\b[\s\S]*?^\s*let\s+main\b"),
@@ -125,7 +136,16 @@ EXECUTION_ORACLE_TEMPLATES = {
         "fallback_body": "pure ()",
     },
 }
-DEFAULT_EXECUTION_ORACLE_TEMPLATES = ("result-int", "result-int", "main-io-int", "main-io-int", "main-io-unit")
+DEFAULT_EXECUTION_ORACLE_TEMPLATES = (
+    "result-int",
+    "result-int",
+    "result-int",
+    "result-int",
+    "result-int",
+    "result-int",
+    "result-int",
+    "main-io-int",
+)
 EXECUTION_ORACLE_BACKENDS = ("interpreter", "dotnet-il", "zig")
 
 
@@ -174,6 +194,7 @@ class CharRnn(nn.Module if nn is not None else object):
     def __init__(self, config: ModelConfig) -> None:
         require_torch()
         super().__init__()
+        self.config = config
         self.embedding = nn.Embedding(config.vocab_size, config.embedding_size)
         recurrent_kwargs = {
             "input_size": config.embedding_size,
@@ -364,6 +385,10 @@ def build_cli_command(cli_path: Path, temp_root: Path, source_path: Path, *, sta
     return command
 
 
+def stage_requires_repo_zig(stage: str) -> bool:
+    return stage.startswith("run:zig:") or stage.endswith("@zig")
+
+
 def run_cli_source(
     cli_path: Path,
     repo_root: Path,
@@ -381,6 +406,8 @@ def run_cli_source(
         env = os.environ.copy()
         if environment:
             env.update(environment)
+        if stage_requires_repo_zig(stage) and not env.get("KAPPA_ZIG_EXE", "").strip():
+            env["KAPPA_ZIG_EXE"] = resolve_repo_zig_executable(repo_root)
 
         try:
             result = subprocess.run(
@@ -742,6 +769,197 @@ def is_runtime_inline_seed(source_path: str, text: str) -> bool:
     return any(hint in name for hint in RUNTIME_INLINE_FILE_HINTS)
 
 
+def has_oracle_runtime_assert(text: str) -> bool:
+    return bool(RUNTIME_ASSERT_PATTERN.search(text))
+
+
+def strip_harness_lines(text: str) -> str:
+    cleaned_lines = [line for line in text.replace("\r\n", "\n").splitlines() if not LINE_COMMENT_PATTERN.match(line)]
+    return "\n".join(cleaned_lines).strip()
+
+
+def normalize_module_header(text: str) -> str | None:
+    lines = text.replace("\r\n", "\n").splitlines()
+    for index, line in enumerate(lines):
+        if MODULE_HEADER_PATTERN.match(line.strip()):
+            lines[index] = "module main"
+            return "\n".join(lines).strip()
+        if line.strip():
+            break
+    return None
+
+
+def top_level_lines(block: str) -> list[str]:
+    return [line for line in block.splitlines() if line.strip() and not line.startswith((" ", "\t"))]
+
+
+def block_has_balanced_delimiters(block: str) -> bool:
+    parens = 0
+    brackets = 0
+    in_string = False
+    escaped = False
+    string_delimiter = ""
+
+    for char in block:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\" and string_delimiter == '"':
+                escaped = True
+            elif char == string_delimiter:
+                in_string = False
+            continue
+
+        if char in {'"', "'"}:
+            in_string = True
+            string_delimiter = char
+            continue
+
+        if char == "(":
+            parens += 1
+        elif char == ")":
+            parens -= 1
+        elif char == "[":
+            brackets += 1
+        elif char == "]":
+            brackets -= 1
+
+        if parens < 0 or brackets < 0:
+            return False
+
+    return not in_string and parens == 0 and brackets == 0
+
+
+def looks_complete_tail(text: str) -> bool:
+    candidate = text.rstrip()
+    if not candidate:
+        return False
+    return re.search(r"(?:=\s*|->\s*|:\s*|,\s*|\[\s*|\(\s*|then\s*|else\s*|do\s*|match(?:\s+\S+)?\s*)$", candidate) is None
+
+
+def is_plausible_top_level_block(block: str) -> bool:
+    lines = [line for line in block.splitlines() if line.strip()]
+    if not lines:
+        return False
+    if not lines[0].startswith((" ", "\t")) and not TOP_LEVEL_DECLARATION_LINE_PATTERN.match(lines[0]):
+        return False
+
+    top_lines = top_level_lines(block)
+    if not top_lines:
+        return False
+    if ORACLE_ENTRY_CUTOFF_PATTERN.match(top_lines[0]):
+        return False
+    if not TOP_LEVEL_DECLARATION_LINE_PATTERN.match(top_lines[0]):
+        return False
+
+    if TOP_LEVEL_SIGNATURE_LINE_PATTERN.match(top_lines[0]):
+        if len(top_lines) < 2 or not top_lines[1].startswith("let "):
+            return False
+        if len(top_lines) > 2:
+            return False
+    elif top_lines[0].startswith("let "):
+        if len(top_lines) > 1:
+            return False
+    else:
+        if len(top_lines) > 1:
+            return False
+
+    return block_has_balanced_delimiters(block) and looks_complete_tail(block)
+
+
+def rewrite_oracle_training_blocks(text: str) -> str:
+    kept_blocks: list[str] = []
+    for block in split_blocks(text):
+        stripped = block.strip()
+        if not stripped:
+            continue
+        if UIO_MAIN_PATTERN.search(stripped):
+            continue
+        kept_blocks.append(stripped)
+    return join_blocks(kept_blocks)
+
+
+TRIVIAL_RESULT_LITERAL_PATTERN = re.compile(r"(?m)^let\s+result\s*=\s*(?:-?\d+|True|False|\(\)|\"[^\n\"]*\"|'[^'\n]*')\s*$")
+RESULT_DO_PATTERN = re.compile(r"(?m)^let\s+result\s*=\s*do\b")
+
+
+def count_non_entry_top_level_blocks(text: str) -> int:
+    count = 0
+    for line in top_level_lines(text):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith(("module ", "import ", "export ")):
+            continue
+        if ORACLE_ENTRY_CUTOFF_PATTERN.match(stripped):
+            continue
+        count += 1
+    return count
+
+
+def main_io_body_is_trivial_wrapper(text: str) -> bool:
+    marker = "let main = do"
+    start = text.find(marker)
+    if start < 0:
+        return False
+    body = text[start + len(marker) :].splitlines()
+    meaningful = [line.strip() for line in body if line.strip()]
+    if not meaningful:
+        return True
+    non_let_lines = [line for line in meaningful if not line.startswith("let ")]
+    if not non_let_lines:
+        return True
+    if len(non_let_lines) > 2:
+        return False
+    allowed = [
+        re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\s*<-\s*pure\b"),
+        re.compile(r"^pure\b"),
+        re.compile(r"^return\b"),
+    ]
+    return all(any(pattern.match(line) for pattern in allowed) for line in non_let_lines)
+
+
+def is_trivial_oracle_training_program(text: str, entry_kind: str) -> bool:
+    helper_blocks = count_non_entry_top_level_blocks(text)
+    if entry_kind == "main-io-unit":
+        return True
+    if entry_kind == "result-int":
+        if RESULT_DO_PATTERN.search(text):
+            return True
+        if helper_blocks == 0 and TRIVIAL_RESULT_LITERAL_PATTERN.search(text):
+            return True
+    if entry_kind == "main-io-int" and helper_blocks == 0 and main_io_body_is_trivial_wrapper(text):
+        return True
+    return False
+
+
+def prepare_oracle_training_text(text: str) -> str | None:
+    normalized = text.replace("\r\n", "\n").strip()
+    if not normalized:
+        return None
+    if X_ASSERT_PATTERN.search(normalized):
+        return None
+    if HOST_IMPORT_PATTERN.search(normalized):
+        return None
+
+    stripped = strip_harness_lines(normalized)
+    if not stripped:
+        return None
+    rewritten = normalize_module_header(stripped)
+    if rewritten is None:
+        return None
+    rewritten = rewrite_oracle_training_blocks(rewritten)
+    if not rewritten:
+        return None
+
+    entry_kind = runnable_entry_kind(rewritten)
+    if entry_kind not in {"result-int", "main-io-int", "main-io-unit"}:
+        return None
+    if is_trivial_oracle_training_program(rewritten, entry_kind):
+        return None
+    return rewritten.strip()
+
+
 def extract_inline_kappa_samples_from_fs(path: Path) -> list[InlineSample]:
     text = path.read_text(encoding="utf-8", errors="replace")
     samples: list[InlineSample] = []
@@ -796,6 +1014,53 @@ def load_weighted_sample_records(path: Path) -> list[dict]:
             if line.strip():
                 records.append(json.loads(line))
     return records
+
+
+def split_weighted_records_for_validation(
+    records: list[dict],
+    *,
+    validation_fraction: float,
+    seed: int,
+) -> tuple[list[dict], list[dict]]:
+    if validation_fraction <= 0.0 or len(records) < 4:
+        return records, []
+
+    groups: dict[str, list[dict]] = defaultdict(list)
+    for record in records:
+        family_hash = str(
+            record.get("family_hash")
+            or record.get("collapse_hash")
+            or family_source_hash(str(record["text"]))
+        )
+        groups[family_hash].append(record)
+
+    group_keys = sorted(groups)
+    if len(group_keys) < 2:
+        return records, []
+
+    target_groups = int(round(len(group_keys) * validation_fraction))
+    target_groups = max(1, min(len(group_keys) - 1, target_groups))
+
+    rng = random.Random(seed)
+    rng.shuffle(group_keys)
+    validation_keys = set(group_keys[:target_groups])
+
+    train_records: list[dict] = []
+    validation_records: list[dict] = []
+    for record in records:
+        family_hash = str(
+            record.get("family_hash")
+            or record.get("collapse_hash")
+            or family_source_hash(str(record["text"]))
+        )
+        if family_hash in validation_keys:
+            validation_records.append(record)
+        else:
+            train_records.append(record)
+
+    if not train_records or not validation_records:
+        return records, []
+    return train_records, validation_records
 
 
 def is_identifier_start(char: str) -> bool:
@@ -1115,6 +1380,134 @@ def alpha_source_hash(source: str) -> str:
     return hashlib.sha1(alpha_normalize_source(source).encode("utf-8")).hexdigest()
 
 
+def collapse_normalize_source(source: str) -> str:
+    normalized = alpha_normalize_source(source)
+    normalized = re.sub(r"\b\d+(?:\.\d+)?\b", "N", normalized)
+    normalized = re.sub(r"\b(?:True|False)\b", "B", normalized)
+    normalized = normalized.replace("()", "U")
+    return normalized
+
+
+def collapse_source_hash(source: str) -> str:
+    return hashlib.sha1(collapse_normalize_source(source).encode("utf-8")).hexdigest()
+
+
+FAMILY_TOKEN_PATTERN = re.compile(r"`[^`\n]*`|[A-Za-z_][A-Za-z0-9_]*|-?\d+(?:\.\d+)?|==|!=|<=|>=|->|<-|[^\s]")
+SHORT_RESULT_BODY_TOKEN_LIMIT = 6
+SHORT_MAIN_BODY_TOKEN_LIMIT = 8
+SHORT_WRAPPER_HELPER_LIMIT = 2
+
+
+def entry_blocks_by_kind(text: str, entry_kind: str) -> list[str]:
+    blocks = [block.strip() for block in split_blocks(text) if block.strip()]
+    result: list[str] = []
+    for block in blocks:
+        top_lines = top_level_lines(block)
+        if not top_lines:
+            continue
+        first = top_lines[0].strip()
+        if entry_kind == "result-int" and first.startswith(("result :", "let result")):
+            result.append(block)
+        elif entry_kind == "main-io-int" and first.startswith(("main :", "let main")):
+            result.append(block)
+        elif entry_kind == "main-io-unit" and first.startswith(("main :", "let main")):
+            result.append(block)
+    return result
+
+
+def non_entry_blocks(text: str) -> list[str]:
+    blocks = [block.strip() for block in split_blocks(text) if block.strip()]
+    result: list[str] = []
+    for block in blocks:
+        top_lines = top_level_lines(block)
+        if not top_lines:
+            continue
+        first = top_lines[0].strip()
+        if first.startswith(("module ", "import ", "export ")):
+            continue
+        if ORACLE_ENTRY_CUTOFF_PATTERN.match(first):
+            continue
+        result.append(block)
+    return result
+
+
+def extract_entry_binding_body(block: str, binding_name: str) -> str:
+    lines = block.splitlines()
+    marker = f"let {binding_name}"
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped.startswith(marker):
+            continue
+        if "=" not in stripped:
+            return ""
+        head, _, tail = stripped.partition("=")
+        del head
+        body_lines = [tail.strip()]
+        for line in lines[index + 1 :]:
+            if line.startswith((" ", "\t")):
+                body_lines.append(line.strip())
+            else:
+                break
+        return "\n".join(part for part in body_lines if part)
+    return ""
+
+
+def family_token_count(text: str) -> int:
+    return len(FAMILY_TOKEN_PATTERN.findall(text))
+
+
+def classify_family_helper_block(block: str) -> str:
+    top_lines = top_level_lines(block)
+    if not top_lines:
+        return "empty"
+    first = top_lines[0].strip()
+    if first.startswith("type "):
+        return "type"
+    if first.startswith("data "):
+        return "data"
+    if first.startswith("trait "):
+        return "trait"
+    if first.startswith("handler "):
+        return "handler"
+    if first.startswith("let "):
+        return "let-simple" if family_token_count(block) <= 12 else "let-complex"
+    if TOP_LEVEL_SIGNATURE_LINE_PATTERN.match(first):
+        if len(top_lines) > 1 and top_lines[1].strip().startswith("let "):
+            return "siglet-simple" if family_token_count(block) <= 20 else "siglet-complex"
+        return "sig"
+    return "other"
+
+
+def family_normalize_source(source: str) -> str:
+    normalized = collapse_normalize_source(source)
+    entry_kind = runnable_entry_kind(normalized)
+    if entry_kind is None:
+        return normalized
+
+    helpers = non_entry_blocks(normalized)
+    helper_kinds = tuple(classify_family_helper_block(block) for block in helpers)
+    helper_signature = ",".join(helper_kinds) if helper_kinds else "none"
+
+    if entry_kind == "result-int":
+        result_blocks = entry_blocks_by_kind(normalized, "result-int")
+        result_body = extract_entry_binding_body(result_blocks[-1], "result") if result_blocks else ""
+        if family_token_count(result_body) <= SHORT_RESULT_BODY_TOKEN_LIMIT and len(helpers) <= SHORT_WRAPPER_HELPER_LIMIT:
+            return f"oracle-family:result-short helpers={len(helpers)} helper-kinds={helper_signature}"
+    elif entry_kind == "main-io-int":
+        main_blocks = entry_blocks_by_kind(normalized, "main-io-int")
+        main_body = extract_entry_binding_body(main_blocks[-1], "main") if main_blocks else ""
+        if family_token_count(main_body) <= SHORT_MAIN_BODY_TOKEN_LIMIT and len(helpers) <= SHORT_WRAPPER_HELPER_LIMIT:
+            return f"oracle-family:main-io-short helpers={len(helpers)} helper-kinds={helper_signature}"
+    elif entry_kind == "main-io-unit":
+        return "oracle-family:main-io-unit"
+
+    return normalized
+
+
+def family_source_hash(source: str) -> str:
+    return hashlib.sha1(family_normalize_source(source).encode("utf-8")).hexdigest()
+
+
 def canonicalize_terminal_signature(signature: str) -> str:
     signature = TEMP_PATH_PATTERN.sub("<temp>/main.kp", signature)
     return MAIN_SYMBOL_PATTERN.sub(lambda match: f"main.<sym>{match.group(2) or ''}", signature)
@@ -1135,7 +1528,47 @@ def sanitize_execution_oracle_preamble(sampled_text: str) -> str:
     cutoff = ORACLE_ENTRY_CUTOFF_PATTERN.search(text)
     if cutoff is not None:
         text = text[: cutoff.start()].rstrip()
-    return text.strip()
+    blocks: list[str] = []
+    for block in split_blocks(text):
+        candidate = block.strip()
+        if not candidate:
+            continue
+        if not is_plausible_top_level_block(candidate):
+            break
+        blocks.append(candidate)
+    return join_blocks(blocks)
+
+
+def sanitize_execution_oracle_body(sampled_body: str) -> str:
+    lines = sampled_body.replace("\r\n", "\n").strip().splitlines()
+    if not lines:
+        return ""
+
+    kept: list[str] = []
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if index > 0 and not line.startswith((" ", "\t")) and TOP_LEVEL_DECLARATION_LINE_PATTERN.match(stripped):
+            break
+        if index > 0 and ORACLE_ENTRY_CUTOFF_PATTERN.match(stripped):
+            break
+        kept.append(line)
+
+    while kept:
+        candidate = "\n".join(kept).strip()
+        if candidate and block_has_balanced_delimiters(candidate) and looks_complete_tail(candidate):
+            return candidate
+        kept.pop()
+
+    return ""
+
+
+def result_body_looks_monadic(body: str) -> bool:
+    stripped = body.strip()
+    if not stripped:
+        return False
+    if stripped.startswith("do"):
+        return True
+    return "<-" in stripped or re.search(r"(?m)^\s*(pure|return)\b", stripped) is not None
 
 
 def build_execution_oracle_prefix(template_name: str, sampled_preamble: str) -> str:
@@ -1152,7 +1585,9 @@ def build_execution_oracle_prefix(template_name: str, sampled_preamble: str) -> 
 def build_execution_oracle_source(template_name: str, sampled_preamble: str, sampled_body: str) -> str:
     template = EXECUTION_ORACLE_TEMPLATES[template_name]
     prefix = build_execution_oracle_prefix(template_name, sampled_preamble)
-    body = sampled_body.replace("\r\n", "\n").strip()
+    body = sanitize_execution_oracle_body(sampled_body)
+    if template_name == "result-int" and result_body_looks_monadic(body):
+        body = ""
     if not body:
         body = str(template["fallback_body"])
     return prefix + body + "\n"
@@ -1181,6 +1616,82 @@ def weighted_repeat_count(weight: float) -> int:
     return 1 + int(round(normalized * 7.0))
 
 
+def reservoir_sample_slot(seen_count: int, keep_limit: int, rng: random.Random) -> int | None:
+    if keep_limit <= 0 or seen_count <= 0:
+        return None
+    if seen_count <= keep_limit:
+        return seen_count - 1
+    choice = rng.randrange(seen_count)
+    if choice >= keep_limit:
+        return None
+    return choice
+
+
+def oracle_literal_bias_penalty(text: str) -> float:
+    cleaned = prepare_oracle_training_text(text) or text.strip()
+    if not cleaned or "42" not in cleaned:
+        return 1.0
+
+    stripped_lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
+    if not stripped_lines:
+        return 1.0
+
+    trivial_anchor = any(
+        marker in cleaned
+        for marker in (
+            "let result = 42",
+            "pure 42",
+            "return 42",
+            "\\() -> 42",
+        )
+    )
+    if not trivial_anchor:
+        return 1.0
+
+    nonboring_keywords = {keyword for keyword in extract_kappa_keywords(cleaned) if keyword not in BORING_KEYWORDS}
+    trivial_keywords = {"IO", "do", "pure", "return"}
+
+    if nonboring_keywords and not nonboring_keywords.issubset(trivial_keywords):
+        return 1.0
+
+    if "main : IO Unit" in cleaned:
+        return 0.25
+    if "pure 42" in cleaned or "return 42" in cleaned:
+        return 0.35
+    return 0.5
+
+
+def oracle_result_length_penalty(text: str) -> float:
+    cleaned = prepare_oracle_training_text(text) or text.strip()
+    if not cleaned or runnable_entry_kind(cleaned) != "result-int":
+        return 1.0
+
+    result_blocks = entry_blocks_by_kind(cleaned, "result-int")
+    if not result_blocks:
+        return 1.0
+    result_body = extract_entry_binding_body(result_blocks[-1], "result")
+    token_count = family_token_count(result_body)
+    if token_count <= 1:
+        return 0.1
+    if token_count <= 3:
+        return 0.2
+    if token_count <= SHORT_RESULT_BODY_TOKEN_LIMIT:
+        return 0.5
+    return 1.0
+
+
+def oracle_entry_bias_penalty(text: str) -> float:
+    cleaned = prepare_oracle_training_text(text) or text.strip()
+    if not cleaned:
+        return 1.0
+    entry_kind = runnable_entry_kind(cleaned)
+    if entry_kind == "main-io-unit":
+        return 0.2
+    if entry_kind == "main-io-int":
+        return 0.3
+    return 1.0
+
+
 def normalize_trace_hash_value(trace_hash_value: str, trace_step_count: int) -> str:
     if not trace_hash_value or trace_step_count <= 0 or trace_hash_value == hashlib.sha1(b"").hexdigest():
         return "<no-trace>"
@@ -1200,6 +1711,10 @@ def compute_normalized_sample_weights(
 
     syntax_hash_by_sample = {sample["sample_sha1"]: alpha_source_hash(str(sample["text"])) for sample in eligible_samples}
     syntax_group_sizes = Counter(syntax_hash_by_sample.values())
+    collapse_hash_by_sample = {sample["sample_sha1"]: collapse_source_hash(str(sample["text"])) for sample in eligible_samples}
+    collapse_group_sizes = Counter(collapse_hash_by_sample.values())
+    family_hash_by_sample = {sample["sample_sha1"]: family_source_hash(str(sample["text"])) for sample in eligible_samples}
+    family_group_sizes = Counter(family_hash_by_sample.values())
 
     keywords_by_sample: dict[str, set[str]] = {}
     keyword_document_frequency: Counter[str] = Counter()
@@ -1237,7 +1752,9 @@ def compute_normalized_sample_weights(
         trace_hashes = traces_for_sample[sample_sha1_value]
         trace_group_size = min(trace_group_sizes[trace_hash] for trace_hash in trace_hashes)
         syntax_group_size = syntax_group_sizes[syntax_hash_by_sample[sample_sha1_value]]
-        novelty = 1.0 / max(1, trace_group_size, syntax_group_size)
+        collapse_group_size = collapse_group_sizes[collapse_hash_by_sample[sample_sha1_value]]
+        family_group_size = family_group_sizes[family_hash_by_sample[sample_sha1_value]]
+        novelty = 1.0 / max(1, trace_group_size, syntax_group_size, collapse_group_size, family_group_size)
 
         keyword_score = 0.0
         for keyword in sorted(keywords_by_sample[sample_sha1_value]):
@@ -1248,8 +1765,11 @@ def compute_normalized_sample_weights(
 
         raw_score = novelty * keyword_score
         runtime_multiplier = 1.0
+        literal_bias_penalty = 1.0
+        entry_bias_penalty = 1.0
+        result_length_penalty = 1.0
         if profile == "oracle":
-            if sample.get("runtime_seed", False):
+            if sample.get("runtime_assert_seed", False):
                 runtime_multiplier *= 4.0
             if sample.get("runtime_consensus_ok", False):
                 runtime_multiplier *= 8.0
@@ -1257,17 +1777,27 @@ def compute_normalized_sample_weights(
                 runtime_multiplier *= 3.0
             if sample.get("runnable_entry", False):
                 runtime_multiplier *= 2.0
-            raw_score *= runtime_multiplier
+            entry_bias_penalty = oracle_entry_bias_penalty(str(sample["text"]))
+            literal_bias_penalty = oracle_literal_bias_penalty(str(sample["text"]))
+            result_length_penalty = oracle_result_length_penalty(str(sample["text"]))
+            raw_score *= runtime_multiplier * entry_bias_penalty * literal_bias_penalty * result_length_penalty
         max_raw_score = max(max_raw_score, raw_score)
         raw_scores[sample_sha1_value] = {
             "raw_weight": raw_score,
             "trace_group_size": trace_group_size,
             "syntax_group_size": syntax_group_size,
+            "collapse_group_size": collapse_group_size,
+            "family_group_size": family_group_size,
             "keyword_score": keyword_score,
             "keywords": sorted(keywords_by_sample[sample_sha1_value]),
             "normalized_trace_hashes": trace_hashes,
             "syntax_hash": syntax_hash_by_sample[sample_sha1_value],
+            "collapse_hash": collapse_hash_by_sample[sample_sha1_value],
+            "family_hash": family_hash_by_sample[sample_sha1_value],
             "runtime_multiplier": runtime_multiplier,
+            "entry_bias_penalty": entry_bias_penalty,
+            "literal_bias_penalty": literal_bias_penalty,
+            "result_length_penalty": result_length_penalty,
         }
 
     scale = max_raw_score or 1.0
@@ -1296,12 +1826,22 @@ def decode_keywords(text: str, code_to_keyword: dict[str, str]) -> str:
     return KEYWORD_CODE_PATTERN.sub(lambda match: code_to_keyword.get(match.group(0), match.group(0)), text)
 
 
+def build_vocabulary(corpus: str, *, extra_chars: Iterable[str] = ()) -> tuple[dict[str, int], list[str]]:
+    vocab = sorted(set(corpus).union(extra_chars))
+    char_to_id = {char: index for index, char in enumerate(vocab)}
+    return char_to_id, vocab
+
+
 def encode_corpus(corpus: str) -> tuple[dict[str, int], list[str], torch.Tensor]:
     require_torch()
-    vocab = sorted(set(corpus))
-    char_to_id = {char: index for index, char in enumerate(vocab)}
-    ids = torch.tensor([char_to_id[char] for char in corpus], dtype=torch.long)
+    char_to_id, vocab = build_vocabulary(corpus)
+    ids = encode_text(corpus, char_to_id)
     return char_to_id, vocab, ids
+
+
+def encode_text(text: str, char_to_id: dict[str, int]) -> torch.Tensor:
+    require_torch()
+    return torch.tensor([char_to_id[char] for char in text], dtype=torch.long)
 
 
 def random_batch(data: torch.Tensor, batch_size: int, sequence_length: int, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
@@ -1317,6 +1857,44 @@ def random_batch(data: torch.Tensor, batch_size: int, sequence_length: int, devi
 
 def decode(ids: Iterable[int], vocab: list[str]) -> str:
     return "".join(vocab[index] for index in ids)
+
+
+def evaluate_corpus_loss(
+    model: CharRnn,
+    data: torch.Tensor,
+    *,
+    vocab_size: int,
+    sequence_length: int,
+    device: torch.device,
+    max_chunks: int = 8,
+) -> float | None:
+    require_torch()
+    max_start = data.numel() - sequence_length - 1
+    if max_start <= 0:
+        return None
+
+    chunk_count = min(max_chunks, max_start)
+    if chunk_count <= 0:
+        return None
+
+    if chunk_count == 1:
+        starts = [0]
+    else:
+        starts = sorted({int(round(index * max_start / (chunk_count - 1))) for index in range(chunk_count)})
+
+    losses: list[float] = []
+    model.eval()
+    with torch.no_grad():
+        for start in starts:
+            inputs = data[start : start + sequence_length].unsqueeze(0).to(device)
+            targets = data[start + 1 : start + sequence_length + 1].unsqueeze(0).to(device)
+            logits = model(inputs)
+            loss = F.cross_entropy(logits.reshape(-1, vocab_size), targets.reshape(-1))
+            losses.append(float(loss.item()))
+
+    if not losses:
+        return None
+    return sum(losses) / len(losses)
 
 
 def pick_device(requested: str) -> torch.device:
@@ -1660,6 +2238,37 @@ def add_pending_failures(connection: sqlite3.Connection, repo_root: Path, pendin
     return added
 
 
+def sample_training_flags(
+    *,
+    raw_text: str,
+    provenance: list[dict],
+    test_result_count: int,
+    runtime_consensus_ok: bool,
+    runtime_interpreter_codegen_ok: bool,
+) -> dict[str, bool]:
+    prepared_oracle_text = prepare_oracle_training_text(raw_text)
+    has_static_training = any(entry["used_for_training"] for entry in provenance)
+    has_pending_failure = any(entry["kind"] == "pending-failure" for entry in provenance)
+    runtime_seed = any(entry["kind"] == "runtime-seed" for entry in provenance)
+    runtime_assert_seed = has_oracle_runtime_assert(raw_text)
+    runnable_entry = runnable_entry_kind(prepared_oracle_text or "") is not None
+    default_retrain_eligible = has_static_training or has_pending_failure or test_result_count > 0
+    oracle_retrain_eligible = bool(prepared_oracle_text) and (
+        runtime_assert_seed or runtime_consensus_ok or runtime_interpreter_codegen_ok
+    )
+    return {
+        "has_static_training": has_static_training,
+        "has_pending_failure": has_pending_failure,
+        "runtime_seed": runtime_seed,
+        "runtime_assert_seed": runtime_assert_seed,
+        "runnable_entry": runnable_entry,
+        "runtime_consensus_ok": runtime_consensus_ok,
+        "runtime_interpreter_codegen_ok": runtime_interpreter_codegen_ok,
+        "default_retrain_eligible": default_retrain_eligible,
+        "oracle_retrain_eligible": oracle_retrain_eligible,
+    }
+
+
 def export_jsonl(connection: sqlite3.Connection, jsonl_path: Path) -> dict:
     sample_rows = connection.execute("SELECT sample_sha1, text FROM samples ORDER BY sample_sha1").fetchall()
     provenance_rows = connection.execute(
@@ -1715,17 +2324,57 @@ def export_jsonl(connection: sqlite3.Connection, jsonl_path: Path) -> dict:
         )
 
     jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+    static_training_count = 0
+    default_retrain_eligible_count = 0
+    oracle_retrain_eligible_count = 0
     with jsonl_path.open("w", encoding="utf-8") as handle:
         for sha1, text in sample_rows:
             provenance = provenance_by_sample[sha1]
             results = results_by_sample[sha1]
             training_groups = sorted({entry["source_group"] for entry in provenance if entry["used_for_training"]})
+            backend_ok_flags = {"consensus_ok": False, "interpreter_codegen_ok": False}
+            for result in results:
+                metadata = result.get("metadata", {})
+                backend_results = metadata.get("backend_results")
+                if not isinstance(backend_results, dict):
+                    continue
+                backend_kinds = {
+                    str(backend): str(details.get("kind", ""))
+                    for backend, details in backend_results.items()
+                    if isinstance(details, dict)
+                }
+                if backend_kinds.get("interpreter") == "ok" and all(
+                    backend_kinds.get(backend) == "ok" for backend in ("dotnet-il", "zig")
+                ):
+                    backend_ok_flags["consensus_ok"] = True
+                if backend_kinds.get("interpreter") == "ok" and any(
+                    backend_kinds.get(backend) == "ok" for backend in ("dotnet-il", "zig")
+                ):
+                    backend_ok_flags["interpreter_codegen_ok"] = True
+            eligibility = sample_training_flags(
+                raw_text=text,
+                provenance=provenance,
+                test_result_count=len(results),
+                runtime_consensus_ok=backend_ok_flags["consensus_ok"],
+                runtime_interpreter_codegen_ok=backend_ok_flags["interpreter_codegen_ok"],
+            )
+            if eligibility["has_static_training"]:
+                static_training_count += 1
+            if eligibility["default_retrain_eligible"]:
+                default_retrain_eligible_count += 1
+            if eligibility["oracle_retrain_eligible"]:
+                oracle_retrain_eligible_count += 1
             handle.write(
                 json.dumps(
                     {
                         "sample_sha1": sha1,
                         "text": text,
                         "training_groups": training_groups,
+                        "eligibility": {
+                            "static_training": bool(eligibility["has_static_training"]),
+                            "default_retrain_eligible": bool(eligibility["default_retrain_eligible"]),
+                            "oracle_retrain_eligible": bool(eligibility["oracle_retrain_eligible"]),
+                        },
                         "provenance": provenance,
                         "test_results": results,
                         "trace_results": traces_by_sample[sha1],
@@ -1737,9 +2386,10 @@ def export_jsonl(connection: sqlite3.Connection, jsonl_path: Path) -> dict:
 
     return {
         "sample_count": len(sample_rows),
-        "training_sample_count": sum(
-            1 for sha1, _text in sample_rows if any(entry["used_for_training"] for entry in provenance_by_sample[sha1])
-        ),
+        "training_sample_count": static_training_count,
+        "static_training_sample_count": static_training_count,
+        "default_retrain_eligible_sample_count": default_retrain_eligible_count,
+        "oracle_retrain_eligible_sample_count": oracle_retrain_eligible_count,
         "tested_sample_count": sum(1 for sha1, _text in sample_rows if results_by_sample[sha1]),
     }
 
@@ -1830,30 +2480,33 @@ def export_weighted_training_samples(
     sample_inputs: list[dict] = []
     for row in sample_rows:
         sample_sha1_value = row["sample_sha1"]
+        raw_text = str(row["text"])
         provenance = provenance_by_sample[sample_sha1_value]
-        has_static_training = any(entry["used_for_training"] for entry in provenance)
-        has_pending_failure = any(entry["kind"] == "pending-failure" for entry in provenance)
-        has_test_results = test_result_counts[sample_sha1_value] > 0
-        runtime_seed = any(entry["kind"] == "runtime-seed" for entry in provenance)
-        runnable_entry = runnable_entry_kind(str(row["text"])) is not None
+        prepared_oracle_text = prepare_oracle_training_text(raw_text) if profile == "oracle" else raw_text
         runtime_consensus_ok = runtime_results_by_sample[sample_sha1_value]["consensus_ok"]
         runtime_interpreter_codegen_ok = runtime_results_by_sample[sample_sha1_value]["interpreter_codegen_ok"]
-        if profile == "oracle":
-            eligible = runtime_seed or runtime_consensus_ok or runtime_interpreter_codegen_ok
-        else:
-            eligible = has_static_training or has_pending_failure or has_test_results
+        flags = sample_training_flags(
+            raw_text=raw_text,
+            provenance=provenance,
+            test_result_count=test_result_counts[sample_sha1_value],
+            runtime_consensus_ok=runtime_consensus_ok,
+            runtime_interpreter_codegen_ok=runtime_interpreter_codegen_ok,
+        )
+        eligible = flags["oracle_retrain_eligible"] if profile == "oracle" else flags["default_retrain_eligible"]
         sample_inputs.append(
             {
                 "sample_sha1": sample_sha1_value,
-                "text": row["text"],
+                "text": prepared_oracle_text if profile == "oracle" and prepared_oracle_text else raw_text,
+                "source_text": raw_text,
                 "eligible": eligible,
-                "has_static_training": has_static_training,
-                "has_pending_failure": has_pending_failure,
+                "has_static_training": flags["has_static_training"],
+                "has_pending_failure": flags["has_pending_failure"],
                 "test_result_count": test_result_counts[sample_sha1_value],
-                "runtime_seed": runtime_seed,
-                "runnable_entry": runnable_entry,
-                "runtime_consensus_ok": runtime_consensus_ok,
-                "runtime_interpreter_codegen_ok": runtime_interpreter_codegen_ok,
+                "runtime_seed": flags["runtime_seed"],
+                "runtime_assert_seed": flags["runtime_assert_seed"],
+                "runnable_entry": flags["runnable_entry"],
+                "runtime_consensus_ok": flags["runtime_consensus_ok"],
+                "runtime_interpreter_codegen_ok": flags["runtime_interpreter_codegen_ok"],
             }
         )
 
@@ -1864,15 +2517,44 @@ def export_weighted_training_samples(
         profile=profile,
     )
 
+    selected_by_group: dict[tuple[str, tuple[str, ...]], tuple[tuple, dict, dict]] = {}
+    for sample in sample_inputs:
+        sample_sha1_value = str(sample["sample_sha1"])
+        if sample_sha1_value not in weights_by_sample:
+            continue
+        weight_record = weights_by_sample[sample_sha1_value]
+        group_key = (
+            str(weight_record["family_hash"]),
+            tuple(str(value) for value in weight_record["normalized_trace_hashes"]),
+        )
+        priority = (
+            1 if sample["runtime_consensus_ok"] else 0,
+            1 if sample["runtime_interpreter_codegen_ok"] else 0,
+            1 if sample["has_pending_failure"] else 0,
+            int(sample["test_result_count"]),
+            1 if sample.get("runtime_assert_seed", False) else 0,
+            1 if sample["has_static_training"] else 0,
+            float(weight_record["raw_weight"]),
+            len(str(sample["text"])),
+            str(sample["sample_sha1"]),
+        )
+        current = selected_by_group.get(group_key)
+        if current is None or priority > current[0]:
+            selected_by_group[group_key] = (priority, sample, weight_record)
+    selected_samples = [
+        (sample, weight_record)
+        for _, sample, weight_record in sorted(
+            selected_by_group.values(),
+            key=lambda item: str(item[1]["sample_sha1"]),
+        )
+    ]
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     exported = 0
     top_weights: list[tuple[float, str]] = []
     with out_path.open("w", encoding="utf-8") as handle:
-        for sample in sample_inputs:
+        for sample, weight_record in selected_samples:
             sample_sha1_value = str(sample["sample_sha1"])
-            if sample_sha1_value not in weights_by_sample:
-                continue
-            weight_record = weights_by_sample[sample_sha1_value]
             weight = float(weight_record["weight"])
 
             handle.write(
@@ -1884,16 +2566,24 @@ def export_weighted_training_samples(
                         "has_static_training": bool(sample["has_static_training"]),
                         "has_pending_failure": bool(sample["has_pending_failure"]),
                         "runtime_seed": bool(sample["runtime_seed"]),
+                        "runtime_assert_seed": bool(sample.get("runtime_assert_seed", False)),
                         "runnable_entry": bool(sample["runnable_entry"]),
                         "runtime_consensus_ok": bool(sample["runtime_consensus_ok"]),
                         "runtime_interpreter_codegen_ok": bool(sample["runtime_interpreter_codegen_ok"]),
                         "trace_group_size": int(weight_record["trace_group_size"]),
                         "syntax_group_size": int(weight_record["syntax_group_size"]),
+                        "collapse_group_size": int(weight_record["collapse_group_size"]),
+                        "family_group_size": int(weight_record["family_group_size"]),
                         "normalized_trace_hashes": list(weight_record["normalized_trace_hashes"]),
                         "syntax_hash": str(weight_record["syntax_hash"]),
+                        "collapse_hash": str(weight_record["collapse_hash"]),
+                        "family_hash": str(weight_record["family_hash"]),
                         "keywords": list(weight_record["keywords"]),
                         "keyword_score": round(float(weight_record["keyword_score"]), 6),
                         "runtime_multiplier": round(float(weight_record["runtime_multiplier"]), 6),
+                        "entry_bias_penalty": round(float(weight_record.get("entry_bias_penalty", 1.0)), 6),
+                        "literal_bias_penalty": round(float(weight_record.get("literal_bias_penalty", 1.0)), 6),
+                        "result_length_penalty": round(float(weight_record.get("result_length_penalty", 1.0)), 6),
                         "raw_weight": round(float(weight_record["raw_weight"]), 8),
                         "test_result_count": int(sample["test_result_count"]),
                     },
@@ -1911,8 +2601,218 @@ def export_weighted_training_samples(
         "preferred_commit": preferred_commit,
         "profile": profile,
         "exported": exported,
+        "eligible": len(weights_by_sample),
+        "deduplicated": len(weights_by_sample) - exported,
         "top_weighted_samples": [{"sample_sha1": sha1, "weight": round(weight, 4)} for weight, sha1 in top_weights[:10]],
     }
+
+
+def seed_oracle_runtime_results(
+    repo_root: Path,
+    *,
+    db_path: Path,
+    cli_path: Path,
+    out_dir: Path,
+    timeout_seconds: float,
+    compiler_commit: str | None = None,
+    limit: int | None = None,
+) -> dict:
+    compiler_commit = compiler_commit or current_git_commit(repo_root)
+    connection = sqlite3.connect(db_path)
+    connection.row_factory = sqlite3.Row
+    try:
+        ensure_schema(connection)
+        sample_rows = list(connection.execute("SELECT sample_sha1, text FROM samples ORDER BY sample_sha1"))
+        runtime_seed_rows = list(
+            connection.execute("SELECT DISTINCT sample_sha1 FROM provenance WHERE provenance_kind = 'runtime-seed' ORDER BY sample_sha1")
+        )
+        result_rows = list(connection.execute("SELECT sample_sha1, compiler_commit, meta_json FROM test_results ORDER BY sample_sha1, compiler_commit"))
+    finally:
+        connection.close()
+
+    runtime_seed_samples = {str(row["sample_sha1"]) for row in runtime_seed_rows}
+    seeded_commits: dict[str, set[str]] = defaultdict(set)
+    for row in result_rows:
+        try:
+            meta = json.loads(row["meta_json"])
+        except Exception:
+            meta = {}
+        if isinstance(meta.get("backend_results"), dict):
+            seeded_commits[str(row["sample_sha1"])].add(str(row["compiler_commit"]))
+
+    candidates: list[tuple[str, str]] = []
+    skipped_existing = 0
+    skipped_nonassert = 0
+    skipped_unusable = 0
+    for row in sample_rows:
+        sample_sha1_value = str(row["sample_sha1"])
+        if sample_sha1_value not in runtime_seed_samples:
+            continue
+        raw_text = str(row["text"])
+        if not has_oracle_runtime_assert(raw_text):
+            skipped_nonassert += 1
+            continue
+        prepared_text = prepare_oracle_training_text(raw_text)
+        if not prepared_text:
+            skipped_unusable += 1
+            continue
+        if compiler_commit in seeded_commits.get(sample_sha1_value, set()):
+            skipped_existing += 1
+            continue
+        candidates.append((sample_sha1_value, prepared_text))
+
+    if limit is not None:
+        candidates = candidates[:limit]
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for bucket in BUCKETS:
+        (out_dir / bucket).mkdir(parents=True, exist_ok=True)
+    (out_dir / "run.json").write_text(
+        json.dumps(
+            {
+                "mode": "oracle-seed-retest",
+                "compiler_commit": compiler_commit,
+                "cli": str(cli_path),
+                "timeout_seconds": timeout_seconds,
+                "candidate_count": len(candidates),
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    stats = {"ok": 0, "diagnostic": 0, "crash": 0, "timeout": 0, "failure": 0, "oracle": 0}
+    connection = sqlite3.connect(db_path)
+    try:
+        ensure_schema(connection)
+        for index, (sample_sha1_value, prepared_text) in enumerate(candidates, start=1):
+            entry_kind = runnable_entry_kind(prepared_text)
+            if entry_kind is None:
+                skipped_unusable += 1
+                continue
+            template = EXECUTION_ORACLE_TEMPLATES[entry_kind]
+            digest = sample_sha1(prepared_text)
+            started_at = time.time()
+            compile_run = run_cli_source(
+                cli_path,
+                repo_root,
+                prepared_text,
+                stage="compile",
+                timeout_seconds=timeout_seconds,
+            )
+
+            primary_run = compile_run
+            signature = terminal_signature_from_run(compile_run)
+            kind = compile_run.kind
+            backend_results: dict[str, CaseRunResult] | None = None
+            observations = None
+            if compile_run.kind == "ok":
+                backend_results = {
+                    "interpreter": run_cli_source(
+                        cli_path,
+                        repo_root,
+                        prepared_text,
+                        stage=f"run:interpreter:{template['entry_point']}",
+                        timeout_seconds=timeout_seconds,
+                    )
+                }
+                if backend_results["interpreter"].kind == "ok":
+                    for backend in ("dotnet-il", "zig"):
+                        environment = {"KAPPA_ZIG_EXE": resolve_repo_zig_executable(repo_root)} if backend == "zig" else None
+                        backend_results[backend] = run_cli_source(
+                            cli_path,
+                            repo_root,
+                            prepared_text,
+                            stage=f"run:{backend}:{template['entry_point']}",
+                            timeout_seconds=timeout_seconds,
+                            environment=environment,
+                        )
+                    oracle_summary = summarize_execution_oracle_results(backend_results)
+                    kind = str(oracle_summary["kind"])
+                    signature = str(oracle_summary["signature"])
+                    observations = oracle_summary["observations"]
+                    primary_backend = observations[0]["backend"]
+                    if kind in {"crash", "timeout", "failure"}:
+                        for backend in EXECUTION_ORACLE_BACKENDS:
+                            run = backend_results.get(backend)
+                            if run is not None and run.kind == kind:
+                                primary_backend = backend
+                                break
+                    primary_run = backend_results[primary_backend]
+                else:
+                    kind = backend_results["interpreter"].kind
+                    signature = terminal_signature_from_run(backend_results["interpreter"])
+                    primary_run = backend_results["interpreter"]
+
+            stats[kind] += 1
+            case_dir = out_dir / bucket_for_kind(kind) / f"{kind}-{digest}"
+            case_dir.mkdir(parents=True, exist_ok=True)
+            (case_dir / "main.kp").write_text(prepared_text.rstrip() + "\n", encoding="utf-8")
+            (case_dir / "stdout.txt").write_text(primary_run.stdout, encoding="utf-8")
+            (case_dir / "stderr.txt").write_text(primary_run.stderr, encoding="utf-8")
+            (case_dir / "expected.txt").write_text(signature + "\n", encoding="utf-8")
+
+            metadata = {
+                "mode": "oracle-seed-retest",
+                "kind": kind,
+                "sha1": sample_sha1_value,
+                "prepared_sha1": digest,
+                "elapsed_ms": int((time.time() - started_at) * 1000.0),
+                "index": index,
+                "compiler_commit": compiler_commit,
+                "cli": str(cli_path),
+                "stage": primary_run.stage,
+                "entry_point": template["entry_point"],
+                "compile_result": {
+                    "kind": compile_run.kind,
+                    "returncode": compile_run.returncode,
+                    "timed_out": compile_run.timed_out,
+                    "terminal_signature": terminal_signature_from_run(compile_run),
+                },
+                "prepared_training_text": prepared_text,
+            }
+            if backend_results is not None:
+                metadata["backend_results"] = {
+                    backend: {
+                        "kind": run.kind,
+                        "returncode": run.returncode,
+                        "timed_out": run.timed_out,
+                        "stage": run.stage,
+                        "terminal_signature": terminal_signature_from_run(run),
+                    }
+                    for backend, run in backend_results.items()
+                }
+            if observations is not None:
+                metadata["observations"] = observations
+
+            (case_dir / "meta.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+            add_test_result(
+                connection,
+                sample_sha1_value=sample_sha1_value,
+                compiler_commit=compiler_commit,
+                result_kind=kind,
+                returncode=primary_run.returncode,
+                timed_out=primary_run.timed_out,
+                terminal_signature=signature,
+                artifact_path=repo_relative(repo_root, case_dir),
+                run_path=repo_relative(repo_root, out_dir),
+                metadata=metadata,
+            )
+        connection.commit()
+    finally:
+        connection.close()
+
+    summary = {
+        "compiler_commit": compiler_commit,
+        "out_dir": str(out_dir),
+        "candidate_count": len(candidates),
+        "retested": sum(stats.values()),
+        "skipped_existing": skipped_existing,
+        "skipped_nonassert": skipped_nonassert,
+        "skipped_unusable": skipped_unusable,
+    }
+    summary.update(stats)
+    return summary
 
 
 def reset_fuzz_state(repo_root: Path, *, corpus_db: Path, model_dir: Path, pending_dir: Path) -> dict:
@@ -1951,6 +2851,7 @@ def train_model(
     *,
     out_dir: Path,
     weighted_samples_path: Path | None = None,
+    init_checkpoint_path: Path | None = None,
     roots: list[str] | None = None,
     raw_source: bool = False,
     include_suite: bool = False,
@@ -1969,6 +2870,9 @@ def train_model(
     sample_length: int = 900,
     temperature: float = 0.85,
     prime: str = "module main\n",
+    validation_fraction: float = 0.0,
+    early_stopping_patience: int = 0,
+    early_stopping_min_steps: int = 0,
 ) -> dict:
     random.seed(seed)
     require_torch()
@@ -1983,22 +2887,39 @@ def train_model(
 
     if weighted_samples_path is not None:
         records = load_weighted_sample_records(weighted_samples_path)
+        train_records, validation_records = split_weighted_records_for_validation(
+            records,
+            validation_fraction=validation_fraction,
+            seed=seed,
+        )
         raw_sources = [str(record["text"]) for record in records]
         keyword_codes = {} if raw_source else build_keyword_codes(raw_sources)
-        corpus, weighted_summary = load_weighted_corpus(records, keyword_codes, raw_source)
-        source_count = len(records)
+        corpus, weighted_summary = load_weighted_corpus(train_records, keyword_codes, raw_source)
+        validation_corpus = ""
+        validation_summary = None
+        if validation_records:
+            validation_corpus, validation_summary = load_weighted_corpus(validation_records, keyword_codes, raw_source)
+        source_count = len(train_records)
+        validation_source_count = len(validation_records)
     else:
         files = source_files(absolute_roots, include_suite=include_suite)
         raw_sources = [path.read_text(encoding="utf-8") for path in files]
         keyword_codes = {} if raw_source else build_keyword_codes(raw_sources)
         corpus = load_corpus(files) if raw_source else load_normalized_corpus(files, keyword_codes)
         source_count = len(files)
+        validation_corpus = ""
+        validation_summary = None
+        validation_source_count = 0
 
     corpus_hash = hashlib.sha256(corpus.encode("utf-8")).hexdigest()
     (out_dir / "corpus.txt").write_text(corpus, encoding="utf-8")
     (out_dir / "keyword_codes.json").write_text(json.dumps(keyword_codes, indent=2, sort_keys=True), encoding="utf-8")
 
-    char_to_id, vocab, data = encode_corpus(corpus)
+    full_corpus_for_vocab = corpus if not validation_corpus else corpus + CHUNK_SEPARATOR + validation_corpus
+    extra_vocab_chars = checkpoint_vocab(init_checkpoint_path)
+    char_to_id, vocab = build_vocabulary(full_corpus_for_vocab, extra_chars=extra_vocab_chars)
+    data = encode_text(corpus, char_to_id)
+    validation_data = encode_text(validation_corpus, char_to_id) if validation_corpus else None
     config = ModelConfig(
         vocab_size=len(vocab),
         embedding_size=embedding_size,
@@ -2009,11 +2930,24 @@ def train_model(
     )
 
     model_instance = CharRnn(config).to(device)
+    warm_start = warm_start_model_from_checkpoint(
+        model_instance,
+        init_checkpoint_path=init_checkpoint_path,
+        target_vocab=vocab,
+        target_char_to_id=char_to_id,
+    )
     optimizer = torch.optim.AdamW(model_instance.parameters(), lr=learning_rate)
     losses: list[float] = []
     report_every = max(1, steps // 12)
+    best_val_loss = math.inf
+    best_val_step: int | None = None
+    best_model_state = None
+    early_stop_counter = 0
+    steps_completed = 0
 
     print(f"files={source_count} chars={len(corpus)} vocab={len(vocab)} sha256={corpus_hash[:12]} device={device}")
+    if warm_start is not None:
+        print(f"warm_start={json.dumps(warm_start, sort_keys=True)}")
     for step in range(1, steps + 1):
         model_instance.train()
         inputs, targets = random_batch(data, batch_size, sequence_length, device)
@@ -2026,8 +2960,36 @@ def train_model(
 
         loss_value = float(loss.item())
         losses.append(loss_value)
+        steps_completed = step
         if step == 1 or step % report_every == 0 or step == steps:
-            print(f"step={step:5d} loss={loss_value:.4f} ppl={math.exp(min(loss_value, 20.0)):.2f}")
+            report = f"step={step:5d} loss={loss_value:.4f} ppl={math.exp(min(loss_value, 20.0)):.2f}"
+            if validation_data is not None:
+                val_loss = evaluate_corpus_loss(
+                    model_instance,
+                    validation_data,
+                    vocab_size=len(vocab),
+                    sequence_length=sequence_length,
+                    device=device,
+                )
+                if val_loss is not None:
+                    report += f" val_loss={val_loss:.4f} val_ppl={math.exp(min(val_loss, 20.0)):.2f}"
+                    if val_loss + 1e-6 < best_val_loss:
+                        best_val_loss = val_loss
+                        best_val_step = step
+                        best_model_state = {
+                            name: tensor.detach().cpu().clone()
+                            for name, tensor in model_instance.state_dict().items()
+                        }
+                        early_stop_counter = 0
+                    elif early_stopping_patience > 0 and step >= early_stopping_min_steps:
+                        early_stop_counter += 1
+                        if early_stop_counter >= early_stopping_patience:
+                            print(report + " early_stop=true")
+                            break
+            print(report)
+
+    if best_model_state is not None:
+        model_instance.load_state_dict(best_model_state)
 
     metadata = {
         "config": asdict(config),
@@ -2038,10 +3000,12 @@ def train_model(
             else None
         ),
         "file_count": source_count,
+        "validation_file_count": validation_source_count,
         "corpus_chars": len(corpus),
         "corpus_sha256": corpus_hash,
         "seed": seed,
         "steps": steps,
+        "steps_completed": steps_completed,
         "batch_size": batch_size,
         "sequence_length": sequence_length,
         "learning_rate": learning_rate,
@@ -2050,6 +3014,18 @@ def train_model(
         "normalized": not raw_source,
         "keyword_count": len(keyword_codes),
         "weighted_summary": weighted_summary,
+        "validation_summary": validation_summary,
+        "validation_fraction": validation_fraction,
+        "best_val_loss": None if best_val_step is None else best_val_loss,
+        "best_val_step": best_val_step,
+        "early_stopping_patience": early_stopping_patience,
+        "early_stopping_min_steps": early_stopping_min_steps,
+        "init_checkpoint": (
+            str(init_checkpoint_path.relative_to(repo_root) if init_checkpoint_path and init_checkpoint_path.is_relative_to(repo_root) else init_checkpoint_path)
+            if init_checkpoint_path is not None
+            else None
+        ),
+        "warm_start": warm_start,
     }
 
     checkpoint_path = out_dir / "kappa-char-lstm.pt"
@@ -2087,19 +3063,103 @@ def load_checkpoint(path: Path) -> tuple[CharRnn, dict]:
     return model, checkpoint
 
 
-def remap_identifiers(text: str, rng: random.Random, max_ids: int) -> str:
+def checkpoint_vocab(path: Path | None) -> list[str]:
+    if path is None or not path.exists():
+        return []
+    try:
+        _model, checkpoint = load_checkpoint(path)
+    except Exception:
+        return []
+    return list(checkpoint.get("vocab", []))
+
+
+def warm_start_model_from_checkpoint(
+    model_instance: CharRnn,
+    *,
+    init_checkpoint_path: Path | None,
+    target_vocab: list[str],
+    target_char_to_id: dict[str, int],
+) -> dict | None:
+    if init_checkpoint_path is None:
+        return None
+    if not init_checkpoint_path.exists():
+        return {"path": str(init_checkpoint_path), "loaded": False, "reason": "missing checkpoint"}
+
+    _source_model, checkpoint = load_checkpoint(init_checkpoint_path)
+    source_config_data = dict(checkpoint["metadata"]["config"])
+    if "model" not in source_config_data:
+        source_config_data["model"] = "lstm"
+    source_config = ModelConfig(**source_config_data)
+
+    target_state = model_instance.state_dict()
+    source_state = checkpoint["model_state"]
+    target_config = getattr(model_instance, "config", None)
+    if target_config is None:
+        target_config = ModelConfig(
+            vocab_size=target_state["embedding.weight"].shape[0],
+            embedding_size=target_state["embedding.weight"].shape[1],
+            hidden_size=target_state["rnn.weight_hh_l0"].shape[1],
+            layers=sum(1 for key in target_state if key.startswith("rnn.weight_ih_l")),
+            dropout=0.0,
+            model="lstm" if "rnn.weight_hh_l0" in target_state and source_config.model == "lstm" else source_config.model,
+        )
+
+    if (
+        source_config.embedding_size != target_config.embedding_size
+        or source_config.hidden_size != target_config.hidden_size
+        or source_config.layers != target_config.layers
+        or source_config.model != target_config.model
+    ):
+        return {
+            "path": str(init_checkpoint_path),
+            "loaded": False,
+            "reason": "incompatible architecture",
+            "source_config": asdict(source_config),
+            "target_config": asdict(target_config),
+        }
+
+    loaded_recurrent = 0
+    for name, tensor in source_state.items():
+        if name.startswith("rnn.") and name in target_state and tuple(target_state[name].shape) == tuple(tensor.shape):
+            target_state[name] = tensor.detach().clone()
+            loaded_recurrent += 1
+
+    source_char_to_id = dict(checkpoint["char_to_id"])
+    shared_chars = 0
+    for char, target_index in target_char_to_id.items():
+        source_index = source_char_to_id.get(char)
+        if source_index is None:
+            continue
+        target_state["embedding.weight"][target_index] = source_state["embedding.weight"][source_index].detach().clone()
+        target_state["projection.weight"][target_index] = source_state["projection.weight"][source_index].detach().clone()
+        target_state["projection.bias"][target_index] = source_state["projection.bias"][source_index].detach().clone()
+        shared_chars += 1
+
+    model_instance.load_state_dict(target_state)
+    return {
+        "path": str(init_checkpoint_path),
+        "loaded": True,
+        "shared_chars": shared_chars,
+        "target_vocab_size": len(target_vocab),
+        "source_vocab_size": len(checkpoint["vocab"]),
+        "loaded_recurrent_tensors": loaded_recurrent,
+        "source_config": asdict(source_config),
+    }
+
+
+def remap_identifiers(text: str, rng: random.Random, max_ids: int, *, allow_capitalization: bool = True) -> str:
     ids = sorted(set(re.findall(r"\bi\d+\b", text)))
     if not ids:
         return text
     k = min(len(ids), max_ids)
     combinations = []
     next_id = 0
-    capitals = [rng.randint(0, 1) == 1]
+    capitals = [allow_capitalization and rng.randint(0, 1) == 1]
     for _ in ids:
         combinations.append(next_id)
         if rng.randint(0, 1) == 1 and next_id + 1 < k:
             next_id += 1
-            capitals.append(rng.randint(0, 1) == 1)
+            capitals.append(allow_capitalization and rng.randint(0, 1) == 1)
     mapping = {
         identifier: f"{'I' if capitals[min(combinations[index], len(capitals) - 1)] else 'i'}{combinations[index]}"
         for index, identifier in enumerate(ids)
@@ -2315,8 +3375,8 @@ def fuzz_execution_oracle(
     zig_environment = {"KAPPA_ZIG_EXE": resolve_repo_zig_executable(repo_root)} if "zig" in backends else {}
 
     stats = {"ok": 0, "diagnostic": 0, "crash": 0, "timeout": 0, "failure": 0, "oracle": 0}
-    saved_diagnostics = 0
-    saved_successes = 0
+    audit_seen = {"diagnostic": 0, "ok": 0}
+    audit_saved: dict[str, list[Path]] = {"diagnostic": [], "ok": []}
     preamble_length = max(128, int(sample_length * 0.6))
     body_length = max(64, sample_length - preamble_length)
 
@@ -2367,7 +3427,7 @@ def fuzz_execution_oracle(
         )
 
         decoded = build_execution_oracle_source(template_name, preamble_sample["decoded_full"], body_sample["decoded_tail"])
-        decoded = remap_identifiers(decoded, rng, max_ids).strip()
+        decoded = remap_identifiers(decoded, rng, max_ids, allow_capitalization=False).strip()
         digest = hashlib.sha1(decoded.encode("utf-8")).hexdigest()
         started_at = time.time()
 
@@ -2386,10 +3446,20 @@ def fuzz_execution_oracle(
             if kind in {"crash", "timeout", "failure", "oracle"}:
                 should_save = True
                 target_dir = out_dir / bucket_for_kind(kind)
-            elif kind == "diagnostic" and saved_diagnostics < keep_diagnostics:
-                should_save = True
-                saved_diagnostics += 1
-                target_dir = out_dir / "diagnostics"
+            elif kind == "diagnostic":
+                audit_seen["diagnostic"] += 1
+                slot = reservoir_sample_slot(audit_seen["diagnostic"], keep_diagnostics, rng)
+                if slot is not None:
+                    target_dir = out_dir / "diagnostics"
+                    case_dir = target_dir / f"{kind}-{digest}"
+                    if slot < len(audit_saved["diagnostic"]):
+                        old_case_dir = audit_saved["diagnostic"][slot]
+                        if old_case_dir.exists():
+                            shutil.rmtree(old_case_dir)
+                        audit_saved["diagnostic"][slot] = case_dir
+                    else:
+                        audit_saved["diagnostic"].append(case_dir)
+                    should_save = True
 
             if should_save:
                 case_dir = target_dir / f"{kind}-{digest}"
@@ -2435,7 +3505,7 @@ def fuzz_execution_oracle(
                 print(
                     f"sample={index} kind={kind} ok={stats['ok']} diag={stats['diagnostic']} "
                     f"crash={stats['crash']} timeout={stats['timeout']} failure={stats['failure']} oracle={stats['oracle']}"
-                )
+                , flush=True)
             continue
 
         interpreter_stage = f"run:interpreter:{template['entry_point']}"
@@ -2454,10 +3524,20 @@ def fuzz_execution_oracle(
             if kind in {"crash", "timeout", "failure", "oracle"}:
                 should_save = True
                 target_dir = out_dir / bucket_for_kind(kind)
-            elif kind == "diagnostic" and saved_diagnostics < keep_diagnostics:
-                should_save = True
-                saved_diagnostics += 1
-                target_dir = out_dir / "diagnostics"
+            elif kind == "diagnostic":
+                audit_seen["diagnostic"] += 1
+                slot = reservoir_sample_slot(audit_seen["diagnostic"], keep_diagnostics, rng)
+                if slot is not None:
+                    target_dir = out_dir / "diagnostics"
+                    case_dir = target_dir / f"{kind}-{digest}"
+                    if slot < len(audit_saved["diagnostic"]):
+                        old_case_dir = audit_saved["diagnostic"][slot]
+                        if old_case_dir.exists():
+                            shutil.rmtree(old_case_dir)
+                        audit_saved["diagnostic"][slot] = case_dir
+                    else:
+                        audit_saved["diagnostic"].append(case_dir)
+                    should_save = True
 
             if should_save:
                 case_dir = target_dir / f"{kind}-{digest}"
@@ -2514,7 +3594,7 @@ def fuzz_execution_oracle(
                 print(
                     f"sample={index} kind={kind} ok={stats['ok']} diag={stats['diagnostic']} "
                     f"crash={stats['crash']} timeout={stats['timeout']} failure={stats['failure']} oracle={stats['oracle']}"
-                )
+                , flush=True)
             continue
 
         backend_results: dict[str, CaseRunResult] = {}
@@ -2542,14 +3622,34 @@ def fuzz_execution_oracle(
         if kind in {"crash", "timeout", "failure", "oracle"}:
             should_save = True
             target_dir = out_dir / bucket_for_kind(kind)
-        elif kind == "diagnostic" and saved_diagnostics < keep_diagnostics:
-            should_save = True
-            saved_diagnostics += 1
-            target_dir = out_dir / "diagnostics"
-        elif kind == "ok" and saved_successes < keep_successes:
-            should_save = True
-            saved_successes += 1
-            target_dir = out_dir / "successes"
+        elif kind == "diagnostic":
+            audit_seen["diagnostic"] += 1
+            slot = reservoir_sample_slot(audit_seen["diagnostic"], keep_diagnostics, rng)
+            if slot is not None:
+                target_dir = out_dir / "diagnostics"
+                case_dir = target_dir / f"{kind}-{digest}"
+                if slot < len(audit_saved["diagnostic"]):
+                    old_case_dir = audit_saved["diagnostic"][slot]
+                    if old_case_dir.exists():
+                        shutil.rmtree(old_case_dir)
+                    audit_saved["diagnostic"][slot] = case_dir
+                else:
+                    audit_saved["diagnostic"].append(case_dir)
+                should_save = True
+        elif kind == "ok":
+            audit_seen["ok"] += 1
+            slot = reservoir_sample_slot(audit_seen["ok"], keep_successes, rng)
+            if slot is not None:
+                target_dir = out_dir / "successes"
+                case_dir = target_dir / f"{kind}-{digest}"
+                if slot < len(audit_saved["ok"]):
+                    old_case_dir = audit_saved["ok"][slot]
+                    if old_case_dir.exists():
+                        shutil.rmtree(old_case_dir)
+                    audit_saved["ok"][slot] = case_dir
+                else:
+                    audit_saved["ok"].append(case_dir)
+                should_save = True
 
         if should_save:
             case_dir = target_dir / f"{kind}-{digest}"
@@ -2620,7 +3720,7 @@ def fuzz_execution_oracle(
             print(
                 f"sample={index} kind={kind} ok={stats['ok']} diag={stats['diagnostic']} "
                 f"crash={stats['crash']} timeout={stats['timeout']} failure={stats['failure']} oracle={stats['oracle']}"
-            )
+            , flush=True)
 
     return stats
 

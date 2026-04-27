@@ -20,6 +20,7 @@ from kappa_fuzz_lib import (
     repo_root_from_script,
     resolve_path,
     retest_cases,
+    seed_oracle_runtime_results,
     train_model,
     update_corpus_store,
 )
@@ -27,6 +28,14 @@ from kappa_fuzz_lib import (
 VERIFY_STAGES = ["verify:KBackendIR@dotnet-il", "verify:KBackendIR@zig"]
 DEFAULT_MODEL_DIR = "artifacts/fuzzball-kappa-weighted-current"
 ORACLE_MODEL_DIR = "artifacts/fuzzball-kappa-oracle-current"
+DEFAULT_TRAIN_STEPS = 500
+DEFAULT_ORACLE_TRAIN_STEPS = 150
+DEFAULT_ORACLE_TEMPERATURE = 1.0
+DEFAULT_ORACLE_VALIDATION_FRACTION = 0.15
+DEFAULT_ORACLE_EARLY_STOPPING_PATIENCE = 4
+DEFAULT_ORACLE_EARLY_STOPPING_MIN_STEPS = 24
+DEFAULT_ORACLE_KEEP_DIAGNOSTICS = 20
+DEFAULT_ORACLE_KEEP_SUCCESSES = 10
 
 
 def add_common_paths(parser: argparse.ArgumentParser) -> None:
@@ -82,7 +91,7 @@ def main() -> None:
 
     train_parser = subparsers.add_parser("train", help="Train or retrain the latest model.")
     add_common_paths(train_parser)
-    train_parser.add_argument("--steps", type=int, default=500)
+    train_parser.add_argument("--steps", type=int, default=None)
     train_parser.add_argument("--weighted-samples", default=None)
     train_parser.add_argument("--profile", choices=["default", "oracle"], default="default")
 
@@ -98,7 +107,7 @@ def main() -> None:
     oracle_parser = subparsers.add_parser("oracle", help="Generate runnable programs and compare interpreter, dotnet-il, and zig results.")
     add_common_paths(oracle_parser)
     oracle_parser.add_argument("--count", type=int, default=500)
-    oracle_parser.add_argument("--temperature", type=float, default=0.55)
+    oracle_parser.add_argument("--temperature", type=float, default=DEFAULT_ORACLE_TEMPERATURE)
     oracle_parser.add_argument("--timeout-seconds", type=float, default=5.0)
     oracle_parser.add_argument("--sample-length", type=int, default=700)
     oracle_parser.add_argument("--checkpoint", default=None)
@@ -193,18 +202,28 @@ def main() -> None:
     if args.command == "weights":
         corpus_db = resolve_path(repo_root, args.corpus_db)
         out_path = resolve_path(repo_root, args.out) if args.out else default_weighted_samples_path(repo_root, corpus_db, args.profile)
-        print(
-            json.dumps(
-                export_weighted_training_samples(
-                    repo_root,
-                    db_path=corpus_db,
-                    out_path=out_path,
-                    preferred_commit=args.preferred_commit,
-                    profile=args.profile,
-                ),
-                indent=2,
+        runtime_retest = None
+        if args.profile == "oracle":
+            commit = args.preferred_commit or current_git_commit(repo_root)
+            runtime_retest = seed_oracle_runtime_results(
+                repo_root,
+                db_path=corpus_db,
+                cli_path=resolve_path(repo_root, args.cli),
+                out_dir=corpus_db.parent / f"oracle-seed-retests-{commit[:8]}",
+                timeout_seconds=5.0,
+                compiler_commit=commit,
             )
+        weighting = export_weighted_training_samples(
+            repo_root,
+            db_path=corpus_db,
+            out_path=out_path,
+            preferred_commit=args.preferred_commit,
+            profile=args.profile,
         )
+        payload = {"weights": weighting}
+        if runtime_retest is not None:
+            payload["runtime_retest"] = runtime_retest
+        print(json.dumps(payload if runtime_retest is not None else weighting, indent=2))
         return
 
     if args.command == "reset":
@@ -225,7 +244,57 @@ def main() -> None:
         corpus_db = resolve_path(repo_root, args.corpus_db)
         weighted = resolve_path(repo_root, args.weighted_samples) if args.weighted_samples else default_weighted_samples_path(repo_root, corpus_db, args.profile)
         model_dir = resolve_model_dir_for_profile(repo_root, args.model_dir, args.profile)
-        print(json.dumps(train_model(repo_root, out_dir=model_dir, weighted_samples_path=weighted, steps=args.steps), indent=2))
+        runtime_retest = None
+        weighting = None
+        init_checkpoint = None
+        learning_rate = 0.01
+        validation_fraction = 0.0
+        early_stopping_patience = 0
+        early_stopping_min_steps = 0
+        effective_steps = args.steps if args.steps is not None else DEFAULT_TRAIN_STEPS
+        if args.profile == "oracle":
+            commit = current_git_commit(repo_root)
+            runtime_retest = seed_oracle_runtime_results(
+                repo_root,
+                db_path=corpus_db,
+                cli_path=resolve_path(repo_root, args.cli),
+                out_dir=corpus_db.parent / f"oracle-seed-retests-{commit[:8]}",
+                timeout_seconds=5.0,
+                compiler_commit=commit,
+            )
+            candidate = resolve_path(repo_root, DEFAULT_MODEL_DIR) / "kappa-char-lstm.pt"
+            if candidate.exists():
+                init_checkpoint = candidate
+                learning_rate = 0.0005
+            effective_steps = args.steps if args.steps is not None else DEFAULT_ORACLE_TRAIN_STEPS
+            validation_fraction = DEFAULT_ORACLE_VALIDATION_FRACTION
+            early_stopping_patience = DEFAULT_ORACLE_EARLY_STOPPING_PATIENCE
+            early_stopping_min_steps = DEFAULT_ORACLE_EARLY_STOPPING_MIN_STEPS
+        if args.weighted_samples is None:
+            weighting = export_weighted_training_samples(
+                repo_root,
+                db_path=corpus_db,
+                out_path=weighted,
+                preferred_commit=None,
+                profile=args.profile,
+            )
+        training = train_model(
+            repo_root,
+            out_dir=model_dir,
+            weighted_samples_path=weighted,
+            init_checkpoint_path=init_checkpoint,
+            steps=effective_steps,
+            learning_rate=learning_rate,
+            validation_fraction=validation_fraction,
+            early_stopping_patience=early_stopping_patience,
+            early_stopping_min_steps=early_stopping_min_steps,
+        )
+        payload = {"train": training}
+        if runtime_retest is not None:
+            payload["runtime_retest"] = runtime_retest
+        if weighting is not None:
+            payload["weights"] = weighting
+        print(json.dumps(payload if (runtime_retest is not None or weighting is not None) else training, indent=2))
         return
 
     if args.command == "fuzz":
@@ -278,8 +347,8 @@ def main() -> None:
             seed=214421,
             timeout_seconds=args.timeout_seconds,
             max_ids=8,
-            keep_diagnostics=10,
-            keep_successes=5,
+            keep_diagnostics=DEFAULT_ORACLE_KEEP_DIAGNOSTICS,
+            keep_successes=DEFAULT_ORACLE_KEEP_SUCCESSES,
         )
         corpus = update_corpus_store(
             repo_root,
