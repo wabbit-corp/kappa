@@ -236,12 +236,12 @@ let ``parser captures effect declarations and handler expressions`` () =
             "    1 put : s -> Unit"
             "let handled ="
             "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            "        let comp : Eff <[Ask : Ask]> Int ="
+            "        scoped effect Ask (a : Type) ="
+            "            ask : Unit -> a"
+            "        let comp : Eff <[Ask : Ask Bool]> Bool ="
             "            do"
             "                let b <- Ask.ask ()"
-            "                if b then 1 else 0"
+            "                b"
             "        handle Ask comp with"
             "            case return x -> pure x"
             "            case ask _ k -> k True"
@@ -283,6 +283,7 @@ let ``parser captures effect declarations and handler expressions`` () =
         Assert.Equal<string list>([ "get"; "put" ], effectDeclaration.Operations |> List.map (fun operation -> operation.Name))
         Assert.Equal(Some QuantityOne, effectDeclaration.Operations[0].ResumptionQuantity)
         Assert.Equal("Ask", localEffect.Name)
+        Assert.Equal<string list>([ "("; "a"; ":"; "Type"; ")" ], localEffect.HeaderTokens |> List.map (fun token -> token.Text))
         Assert.Equal<string list>([ "ask" ], localEffect.Operations |> List.map (fun operation -> operation.Name))
         Assert.Equal("return", returnClause.OperationName)
         Assert.Equal(None, returnClause.ResumptionName)

@@ -220,6 +220,46 @@ let ``interpreter executes a one shot deep handler over a scoped effect`` () =
         failwithf "Expected deep handler evaluation to succeed, got %s" issue.Message
 
 [<Fact>]
+let ``interpreter executes a one shot deep handler over a parameterized scoped effect`` () =
+    let mainSource =
+        [
+            "module main"
+            ""
+            "result : Int"
+            "let result : Int ="
+            "    block"
+            "        scoped effect State (s : Type) ="
+            "            get : Unit -> s"
+            ""
+            "        let comp : Eff <[State : State Int]> Int ="
+            "            do"
+            "                let n <- State.get ()"
+            "                n"
+            ""
+            "        let handled : Eff <[ ]> Int ="
+            "            deep handle State comp with"
+            "                case return x -> pure x"
+            "                case get () k -> k 0"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-m4-parameterized-local-effect-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("0", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected parameterized local effect evaluation to succeed, got %s" issue.Message
+
+[<Fact>]
 let ``deep handlers elaborate to a recursive shallow driver before KCore and KRuntimeIR`` () =
     let mainSource =
         [

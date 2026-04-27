@@ -7,9 +7,14 @@ This file consolidates the current review backlog from:
 - `reviews/effects1.md`
 - `reviews/frontend1.md`
 - `reviews/general1.md`
+- `reviews/macros1.md`
+- `reviews/observability1.md`
 - `reviews/principles1.md`
+- `reviews/queries1.md`
 - `reviews/qtt1.md`
 - `reviews/tests1.md`
+- `reviews/traits1.md`
+- `reviews/unicode1.md`
 - `reviews/zig1.md`
 
 Duplicates are merged. The organization below is by compiler stage rather than by review file. The intent is to preserve the review content and proposed fixes with minimal editorial changes.
@@ -156,6 +161,132 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Audit surface syntax, elaboration, and lowering for record projections, projector descriptors, accessor bundles, and any associated missing capability checks or diagnostics.
   - Sources: `reviews/general1.md`.
 
+## 5A. Macros, Staging, and Elaboration-Time Evaluation
+
+- `[Critical] Implement a real elaboration-time evaluator for `Elab` instead of only syntax/type-shape scaffolding.`
+  - The current compiler recognizes `Elab`, `Syntax`, top-level splices, and some elaboration-available names, but there is no real meta-phase evaluator in the compilation pipeline.
+  - `PipelineTraceEvent.EvaluateElaboration` and `MacroExpansionUnit` currently function more like metadata shells than evidence of actual elaboration-time execution.
+  - Top-level splices should run `Elab (Syntax t)` at the splice site, produce syntax, and then elaborate the produced syntax under the ordinary checker stack.
+  - Until that exists, `$(...)` should not pretend to implement macro expansion.
+  - Sources: `reviews/macros1.md`.
+
+- `[Critical] Implement `$(...)` as actual splice expansion followed by ordinary elaboration, not as a ceremonial wrapper that survives into lowering.`
+  - The current implementation type-shapes `TopLevelSyntaxSplice`, lowers it structurally to `KCoreTopLevelSyntaxSplice`, and then largely ignores the macro-expansion semantics during runtime lowering.
+  - The required semantics are:
+  - execute `Elab`;
+  - obtain `Syntax t`;
+  - elaborate the generated syntax at the splice site;
+  - re-run ordinary obligations such as implicit insertion, borrow/region checks, quantity checks, opacity, and visibility.
+  - Sources: `reviews/macros1.md`.
+
+- `[High] Replace the current name-based `Syntax` escape checks with a real hygienic `Syntax` value model.`
+  - The spec requires syntax values to carry scope metadata for local variables, globals, implicit evidence, quantity capabilities, borrow regions, captures, local nominals, and source/synthetic origins.
+  - The current implementation has a useful name-based escape diagnostic, but it is a much weaker approximation than spec-level hygiene.
+  - Add a `SyntaxValue`/equivalent representation with hygienic binder identities, scope metadata, and origin chains, and make generated binders alpha-safe.
+  - Sources: `reviews/macros1.md`.
+
+- `[High] Stop ordinary substitutions and rewrites from crossing quote boundaries blindly.`
+  - Existing substitution paths recurse through syntax/code quote nodes in a way that is a hygiene red flag.
+  - Substitution inside `SyntaxQuote` / `CodeQuote` must be phase-aware and hygiene-aware.
+  - Sources: `reviews/macros1.md`.
+
+- `[High] Provide the required surface `Syntax` inspection and origin APIs.`
+  - The spec requires a stable `Syntax` inspection API or equivalent public inspection surface.
+  - The prelude currently exposes only a few related declarations such as `syntaxOrigin`, `renderSyntax`, and `normalizeSyntax`, and it is missing `withSyntaxOrigin`.
+  - Add the required public inspection/origin surface rather than only parser support for quote syntax.
+  - Sources: `reviews/macros1.md`.
+
+- `[High] Implement semantic reflection APIs or stop claiming support for them.`
+  - The spec requires types and operations such as `CoreCtx`, `Core`, `CoreEq`, `Symbol`, `asCore`, `reifyCore`, `inferType`, `whnf`, `normalize`, `tryProveDefEq`, `proveDefEq`, `defEq`, `headSymbol`, and `sameSymbol`.
+  - These do not appear in the prelude/runtime surface in a conforming form today.
+  - Sources: `reviews/macros1.md`.
+
+- `[High] Implement the actual `Elab` monad/tooling surface instead of a small whitelist with a trench coat.`
+  - The spec requires `currentGoal`, structured elaboration diagnostics, `emitElabDiagnostic`, `failElabDiagnostic`, `asCoreGoal`, `withExpectedGoal`, `ensureDefEqGoal`, and a coherent `Functor`/`Applicative`/`Monad` story for `Elab`.
+  - The current implementation has declarations such as `failElab`, `warnElab`, and ad hoc recognition of `pure`, but not the required semantics.
+  - Sources: `reviews/macros1.md`.
+
+- `[Critical] Separate staging from macros properly; `Code` must not erase to the inner expression.`
+  - Current runtime lowering erases the distinction between syntax/code quote/splice nodes by lowering many of them to the inner expression directly.
+  - That is categorically wrong for `Code`, `ClosedCode`, `closeCode`, `genlet`, `runCode`, and the staging safety model.
+  - Implement a distinct staged-code representation, closedness checking, scope safety, let-insertion/sharing for `genlet`, and runtime semantics for `runCode`.
+  - `Code` must not be classified as just another compile-time-erased carrier.
+  - Sources: `reviews/macros1.md`.
+
+- `[Medium] Make macro-expansion incremental metadata real once macros actually exist.`
+  - `MacroExpansionUnit` currently has no meaningful fingerprints or evaluator output dependencies.
+  - Once elaboration-time expansion is real, its units/fingerprints must depend on macro definitions, imported interfaces, transcript/config inputs, compiler version, and expansion environment.
+  - Sources: `reviews/macros1.md`, `reviews/observability1.md`.
+
+## 5B. Traits, Instances, Coherence, and Deriving
+
+- `[Critical] Represent constrained instance evidence explicitly instead of lowering only closed global instance keys.`
+  - The current resolver uses instance premises to decide candidate viability, but selected dictionaries do not carry solved premise dictionaries into generated dictionaries or member bodies.
+  - Constrained instances therefore behave more like Prolog clauses during lookup and like monomorphic global dictionaries at runtime, which is unsound for real typeclass semantics.
+  - Add an internal `Evidence` model or equivalent dictionary-constructor representation so constrained instances, premise evidence, and member bodies have somewhere sane to live.
+  - Sources: `reviews/traits1.md`.
+
+- `[High] Rework supertraits as actual dictionary projection/evidence projection, not just member-name reachability.`
+  - The current implementation makes reachable supertrait members callable by reusing the same dictionary parameter name, rather than projecting a supertrait dictionary or embedded evidence.
+  - That can produce runtime-invalid calls such as passing an `Ord` dictionary directly where an `Eq` dictionary is required.
+  - Sources: `reviews/traits1.md`.
+
+- `[High] Strengthen instance declaration validation before lowering/runtime metadata generation.`
+  - Current validation is too permissive and appears to miss or under-check:
+  - unknown traits in instance heads;
+  - wrong trait arity;
+  - missing required members;
+  - extra members;
+  - duplicate members;
+  - full member type compatibility, including parameter/quantity/implicitness compatibility;
+  - default member validity under instance context.
+  - Add a hard validation pass that resolves the trait, instantiates its member schemes, validates members/defaults, and fails early.
+  - Sources: `reviews/traits1.md`.
+
+- `[High] Enforce instance-search termination at declaration time instead of relying only on a runtime recursion guard.`
+  - The current resolver has a runtime recursion guard, but that is not the spec’s declaration-time termination discipline.
+  - Add Paterson-style structural checks over every premise/head pair in each instance declaration.
+  - Sources: `reviews/traits1.md`.
+
+- `[High] Implement the spec’s coherence model rather than rejecting all multiple surviving candidates uniformly.`
+  - Current resolution is “zero candidates unresolved, one resolved, many ambiguous”.
+  - The spec requires a richer coherence story around equivalent surviving candidates and canonical representative selection.
+  - Add a richer resolution result/evidence model, then implement canonicalization/hash-based coherence rather than blanket ambiguity rejection.
+  - Sources: `reviews/traits1.md`.
+
+- `[Medium-High] Stop rediscovering imported trait arity from local syntax during runtime lowering.`
+  - Runtime lowering currently guesses trait arity from declarations in the current module and defaults imported traits to arity `1`.
+  - That corrupts runtime metadata for imported multi-parameter traits.
+  - Carry trait head information/arity from elaboration into runtime metadata instead of reparsing it locally.
+  - Sources: `reviews/traits1.md`.
+
+- `[Medium] Fix constraint parsing/model gaps in instance and trait contexts.`
+  - Parenthesized multi-constraint contexts in instance headers are currently suspect because constraint splitting/parsing is duplicated and inconsistent.
+  - Silent `List.choose` constraint dropping is also a bad failure mode.
+  - Unify constraint-context parsing and make failures diagnostic rather than disappearing parse fragments.
+  - Sources: `reviews/traits1.md`.
+
+- `[Medium] Distinguish rigid goal variables from candidate-instantiable variables during instance matching.`
+  - Current unification appears too symmetric for instance matching and likely allows goal/source rigid variables to be solved as if they were ordinary inference metavariables.
+  - Add a dedicated instance-head matcher where only variables bound by the instance declaration are assignable.
+  - Sources: `reviews/traits1.md`.
+
+- `[Medium] Either support constrained trait members end-to-end or reject them explicitly.`
+  - Overloaded trait member call preparation currently appears to accept only the owning trait constraint and drop/fail members with additional constraints.
+  - If constrained trait members are allowed, all required dictionaries need to be passed and resolved. If not, reject them during trait validation with a direct diagnostic.
+  - Sources: `reviews/traits1.md`.
+
+- `[Medium] Add AST/model support for local instances and local deriving if they remain part of the language.`
+  - The current local-expression model has local lets, signatures, type aliases, and scoped effects, but no local instance or local derive forms.
+  - Either add these as real local declaration forms or narrow the language claim.
+  - Sources: `reviews/traits1.md`.
+
+- `[Medium] Rebuild deriving as synthetic instance generation over the same instance pipeline, not as a future parallel mechanism.`
+  - The language reserves `derive`, but the AST/parser/elaboration/runtime path do not implement it.
+  - Trait review reinforces that deriving should lower to synthetic `InstanceInfo` / equivalent generated instance declarations and then go through the same coherence, validation, and runtime-lowering path as handwritten instances.
+  - Do not add a separate backend-only deriving mechanism.
+  - Sources: `reviews/traits1.md`, `reviews/frontend1.md`.
+
 ## 6. Resource Checking and QTT
 
 - `[Critical] Separate demand tracking from linear discharge tracking.`
@@ -244,8 +375,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Handlers should remove row entries by label identity, not by matching names.
   - Sources: `reviews/effects1.md`.
 
-- `[Medium] Parse and elaborate parameterized local scoped effects the same way as top-level effects.`
-  - Local scoped effects appear to ignore header parameters even though the AST has header-token fields.
   - Do not maintain divergent parsers for nearly the same declaration form.
   - Sources: `reviews/effects1.md`.
 
@@ -271,6 +400,75 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - This is a guardrail against compiler bugs, not a replacement for static checking.
   - Sources: `reviews/effects1.md`.
 
+## 7A. Query and Comprehension Semantics
+
+- `[Critical] Stop lowering comprehensions in the parser and build a real query/comprehension plan after semantic resolution.`
+  - The parser currently lowers comprehensions far too early and `SurfaceComprehension` carries lowered expressions.
+  - That prevents correct implementation of carrier selection, source conversion, orderedness, resource semantics, custom sinks, and delayed query behavior.
+  - Introduce a real normalized `ComprehensionPlan` after semantic resolution and lower only after mode/cardinality/orderedness/source-demand/carrier facts are known.
+  - Sources: `reviews/queries1.md`.
+
+- `[Critical] Implement `IntoQuery` and `BorrowIntoQuery` for real instead of exposing empty traits plus list-shaped lowering.`
+  - The spec’s query/comprehension model depends on source conversion traits.
+  - The current prelude traits are empty, and lowering largely pattern-matches list-like syntax directly.
+  - Built-ins such as list, array, set, option, query, and once-query should flow through ordinary instance hooks or compiler-known equivalents with the same semantics.
+  - Sources: `reviews/queries1.md`.
+
+- `[Critical] Make `Query`, `OnceQuery`, and `QueryCore` first-class runtime/IR carriers rather than type-shaped decorations over ordinary collections.`
+  - Current checking can make a comprehension look query-shaped, but the lowered code often becomes an ordinary list/set/map expression.
+  - This is a semantic mismatch, not a harmless implementation detail.
+  - Add real runtime/IR representations and collector/lowering behavior for first-class query carriers.
+  - Sources: `reviews/queries1.md`.
+
+- `[High] Implement custom comprehension sinks via `FromComprehensionRaw` / `FromComprehensionPlan`, or reject them honestly.`
+  - The spec requires raw-hook and plan-hook custom sinks, with raw preferred over plan.
+  - The current implementation has some trait-shaped checks but no actual hook invocation machinery.
+  - Sources: `reviews/queries1.md`.
+
+- `[High] Implement refutable and borrowed query clauses semantically, not just syntactically.`
+  - `for?` is parsed but lowering/resource checking ignore its filter semantics.
+  - `let?` appears unsupported or semantically ignored.
+  - Borrowed generators are parsed but `BorrowIntoQuery`, borrowed item mode, and region/resource semantics are not implemented.
+  - Sources: `reviews/queries1.md`.
+
+- `[High] Implement `group by` as actual grouping/folding rather than row-wrapping.`
+  - The current implementation maps rows into key/aggregate-shaped records but does not partition rows, combine groups, or fold aggregates monoidally.
+  - This is semantically wrong for nontrivial groups.
+  - Sources: `reviews/queries1.md`.
+
+- `[High] Implement map-comprehension conflict policy and validate map yields strictly.`
+  - `on conflict` is parsed but ignored during final collection construction.
+  - Map comprehensions currently accept invalid plain `yield` forms that should require `key : value`.
+  - Ordinary map literals also appear broken nearby in the same parser area, which should be audited/fixed alongside comprehension handling.
+  - Sources: `reviews/queries1.md`.
+
+- `[Medium-High] Tighten orderedness semantics for `skip` / `take`.`
+  - The current implementation rejects these clauses only when orderedness is explicitly known to be unordered, but allows unknown orderedness.
+  - The spec requires proof of orderedness, not just absence of proof of unorderedness.
+  - Source orderedness inference itself is also too weak and largely syntactic today.
+  - Sources: `reviews/queries1.md`.
+
+- `[Medium-High] Finish `order by` semantics.`
+  - Single-key insertion-sort lowering exists, but multi-key ordering with per-key directions is missing.
+  - Implement `order by asc expr`, `order by desc expr`, and tuple/multi-key ordering as specified.
+  - Sources: `reviews/queries1.md`.
+
+- `[Medium] Audit `distinct`, joins, and left joins against the spec’s actual delayed-query and row semantics.`
+  - `distinct` is only partial and relies on coarse equality/resource assumptions.
+  - Inner joins are only approximately lowered and inherit the broken refutable-clause story.
+  - `left join ... into name` currently fakes a `QueryCore` type but materializes an eager list, breaking delayed-query semantics and capture rules.
+  - Sources: `reviews/queries1.md`.
+
+- `[Medium] Validate clause ordering and duplicate final-clause errors instead of silently discarding malformed comprehension structure.`
+  - Earlier `yield` / `on conflict` clauses can currently be discarded by later parser stages instead of producing direct diagnostics.
+  - Invalid comprehensions should be rejected, not quietly normalized into something else.
+  - Sources: `reviews/queries1.md`.
+
+- `[Medium] Build real comprehension/query observability and reflection structures if the spec-level hook story is intended.`
+  - The spec requires normalized plan/raw reflection structures such as `RawComprehension`, `ComprehensionPlan`, and `lowerComprehension`.
+  - The current AST has `SurfaceComprehension`, but not the spec-level exposed plan representation that custom carriers/hooks need.
+  - Sources: `reviews/queries1.md`.
+
 ## 8. Runtime Lowering, Interpreter, and Runtime Surface
 
 - `[High] Align the prelude/runtime contract with what the implementation actually provides.`
@@ -289,6 +487,81 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - The current implementation appears to limit runtime numeric behavior to `int64` and `double` in places where the surface language suggests broader numeric semantics.
   - This should remain abstract until representation selection is complete and explicit.
   - Sources: `reviews/general1.md`, `reviews/principles1.md`.
+
+## 8A. Unicode, Bytes, and Hash Semantics
+
+- `[High] Fix byte literal decoding to preserve spec semantics and escape provenance.`
+  - Byte literals are currently decoded through the ordinary string unescaper, then accepted whenever the resulting scalar value is `<= 0xFF`.
+  - That incorrectly accepts forms like `b'ÿ'` / `b'\u{00FF}'` even though the spec only permits Unicode escapes when the resulting scalar’s UTF-8 encoding is exactly one byte.
+  - Implement a byte-literal-specific decoder so `\xNN` is a raw byte and Unicode escapes are accepted only when their UTF-8 encoding length is exactly one byte.
+  - Sources: `reviews/unicode1.md`.
+
+- `[High] Fix `decodeUtf8` to return the right constructor and the right error type.`
+  - The current error path appears to construct `Error` instead of the prelude’s `Err`, and it returns a `StringValue` where the declared result type says `UnicodeDecodeError`.
+  - That is a concrete runtime/type-shape bug, not just a missing feature.
+  - Sources: `reviews/unicode1.md`.
+
+- `[High] Implement or retract missing `std.unicode` surface terms.`
+  - `StandardModules.fs` advertises terms such as `scalars`, `graphemes`, `words`, and `sentences`, but the interpreter does not create them.
+  - Either implement these terms in the interpreter/runtime surface or stop exporting them until they work.
+  - Sources: `reviews/unicode1.md`.
+
+- `[High] Make `String` ordering Unicode-scalar-order, not UTF-16 ordinal.`
+  - The interpreter currently uses `String.CompareOrdinal` for `String`, `Character`, and `Grapheme`.
+  - That diverges from Unicode scalar order for supplementary characters.
+  - Replace this with scalar-sequence comparison over `Rune` values.
+  - Sources: `reviews/unicode1.md`.
+
+- `[Medium-High] Emit the declared Unicode warning diagnostics or remove the illusion that they exist.`
+  - The diagnostic codes for bidi control, confusable identifiers, and non-normalized source text exist, but the review found no emitters.
+  - Implement them or clearly narrow the current behavior.
+  - Sources: `reviews/unicode1.md`.
+
+- `[Medium] Decide what user-facing location metrics mean for Unicode text and make the implementation/tooling consistent.`
+  - Source positions and columns are currently based on UTF-16 code units.
+  - That is not automatically wrong, but it must be documented and consistent with the intended user-facing model; otherwise non-BMP characters get surprising columns.
+  - Sources: `reviews/unicode1.md`.
+
+- `[Medium] Pin Unicode behavior honestly.`
+  - The interpreter returns a hardcoded Unicode version string while segmentation/normalization behavior is delegated to the underlying .NET runtime/globalization backend.
+  - Either pin the actual Unicode data and behavior, or make the version/behavior explicitly implementation-defined.
+  - `words` / `sentences` also need real UAX #29 behavior if they are going to exist.
+  - Sources: `reviews/unicode1.md`.
+
+- `[High] Decide whether `Hashable` is a real trait or compiler-magic, and make the entire stack consistent with that answer.`
+  - `std.hash.Hashable` is currently declared without the spec-required member and superclass structure, while the compiler synthesizes special-case support in selected places.
+  - Pick one model:
+  - a real trait with `hashInto` and coherent dictionary semantics; or
+  - explicit compiler-magic with the spec/stdlib updated to match.
+  - The current middle state gives you the failure modes of both.
+  - Sources: `reviews/unicode1.md`, `reviews/principles1.md`.
+
+- `[Critical] Fix the streaming hash API so it returns `HashState`, not `Option HashState`, and redesign the state transition properly.`
+  - The current grouped hash intrinsics appear to wrap `hashIntoState` results through `optionValue`, which means the advertised `HashState`-returning functions can actually produce `Some ...` / `None`.
+  - The state transition also appears to reinitialize through `seed ^ offset` on every update rather than continuing a real streaming update.
+  - Split initialization from update, use fixed-width/fixed-endian encodings, and make unsupported values a proper error rather than `None` inside a mismatched declared type.
+  - Sources: `reviews/unicode1.md`.
+
+- `[High] Do not advertise `Hashable` fallback support for values the runtime cannot actually hash.`
+  - The typechecker currently accepts a built-in `Hashable` fallback for types like `Option`, `List`, `Array`, `Result`, and others, but the interpreter’s actual hash implementation handles only a much narrower primitive subset.
+  - Either implement structural hashing for those types or shrink the fallback surface to what the runtime truly supports.
+  - Sources: `reviews/unicode1.md`.
+
+- `[Medium-High] Add structural framing/domain separation and fixed byte order to hashing.`
+  - Current hashing lacks type tags/field separators/length framing for structural values, uses platform-endian `BitConverter.GetBytes`, and likely lets float hashing disagree with float equality.
+  - Add domain separation, field/constructor framing, fixed byte order, and an explicit decision about whether float equality is raw-bit or canonicalized for hashing purposes.
+  - Sources: `reviews/unicode1.md`, `reviews/backend1.md`.
+
+- `[High] Add real backend representations/capability gates for `Bytes`, `Byte`, `UnicodeScalar`, `Grapheme`, and hash values.`
+  - Today these semantics are largely interpreter-local.
+  - Hosted/IL/Zig backends do not preserve them coherently, and Zig/C string representation is especially incompatible with valid strings containing U+0000.
+  - Every backend needs length-carrying string/bytes semantics or a clearer capability gate that rejects unsupported programs early.
+  - Sources: `reviews/unicode1.md`, `reviews/backend1.md`, `reviews/zig1.md`.
+
+- `[Medium] Make backend lowering/runtime support for standard-module intrinsic terms real instead of structurally awkward.`
+  - `StandardModules.toRuntimeModule` creates intrinsic-term-only runtime modules, but backend lowering/runtime support does not resolve them cleanly the way the interpreter does.
+  - This especially affects `std.unicode`, `std.bytes`, and `std.hash`.
+  - Sources: `reviews/unicode1.md`.
 
 ## 9. Backend-Agnostic Lowering, KBackendIR, and Verification
 
@@ -473,6 +746,73 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - If the configured value has no directory separator, treat it as a command name and let process launch resolve it through `PATH`, or search `PATH` explicitly.
   - Sources: `reviews/zig1.md`.
 
+## 11A. Observability, Incrementality, and Checkpoint Metadata
+
+- `[Critical] Make `SourceFingerprint` content-sound.`
+  - The current source fingerprint identity is derived from path, length, line count, and module name, but not the actual source content digest.
+  - Two different files with the same path/length/line count/module can therefore collide.
+  - Include a deterministic content hash plus normalized file identity and parser-affecting metadata.
+  - Sources: `reviews/observability1.md`.
+
+- `[High] Scope query/fingerprint/incremental-unit IDs by analysis session, build configuration, backend profile, and compiler version.`
+  - The records carry session/build/profile data, but the IDs themselves are too small and can collide across configurations or backend profiles.
+  - Either include session/build/profile/compiler-version information in IDs, or make the current IDs clearly local/display-only and add a real globally stable key.
+  - Sources: `reviews/observability1.md`.
+
+- `[Critical] Add imported-interface dependency edges to the incremental/query graph.`
+  - The current metadata largely models per-file linear chains and omits dependencies from importing modules to imported module interfaces/fingerprints.
+  - That makes downstream invalidation unsound when exported signatures change.
+  - Build a real resolved import graph and make import-surface/header/body/KCore/backend units depend on imported interfaces and the effective import environment as required.
+  - Sources: `reviews/observability1.md`.
+
+- `[High] Model generated standard modules, host-binding modules, runtime intrinsic sets, and backend runtime support as explicit incremental dependencies.`
+  - `KRuntimeIR` includes generated host-binding and standard modules, but backend fingerprints/units/target dependencies currently filter through user-module source files and can omit these generated contributors.
+  - Add explicit units/fingerprints for standard runtime modules, host-binding modules, runtime intrinsic sets, and backend runtime support, then thread them into KBackendIR and target-lowering dependencies.
+  - Sources: `reviews/observability1.md`.
+
+- `[High] Replace the current synthetic pipeline trace with actual execution tracing, or rename it honestly.`
+  - The current pipeline trace is reconstructed after compilation from the final document list and target list, and it does not reflect real execution ordering, skipped work, lazy queries, failures, or reuse.
+  - `Reuse` exists as a trace event but is not actually emitted.
+  - Collect trace events at the point work really executes, including reuse/invalidate/skip/cache-probe events, or rename the current output to make clear that it is a planned/synthesized trace.
+  - Sources: `reviews/observability1.md`.
+
+- `[Medium-High] Normalize target-checkpoint verification semantics across backends.`
+  - Zig target emission rejects erroneous workspaces, while the CLR target-manifest path verifies `KBackendIR` but does not consistently gate on the broader workspace diagnostic state.
+  - Split “checkpoint representation is well-formed” from “artifact emission is permitted” if necessary, but do so consistently across backends.
+  - Sources: `reviews/observability1.md`, `reviews/backend1.md`.
+
+- `[High] Attach structured locations/related origins to checkpoint verification diagnostics.`
+  - Current checkpoint-verification diagnostics are created with no locations and no related locations.
+  - The observability contract requires at least one related node/source origin when provenance exists.
+  - Thread provenance/origin data into verification failures and expose them structurally.
+  - Sources: `reviews/observability1.md`.
+
+- `[Medium] Make stage-dump diagnostics checkpoint-local for every checkpoint, not only frontend snapshots.`
+  - Frontend phase dumps use snapshot diagnostics, but `surface-source`, `KCore`, `KRuntimeIR`, and `KBackendIR` dumps currently attach global workspace diagnostics.
+  - Dump consumers should see diagnostics meaningful at that checkpoint rather than complaints discovered only later.
+  - Sources: `reviews/observability1.md`.
+
+- `[Medium] Reconcile `KRuntimeIR` checkpoint contract metadata with actual profile influence.`
+  - The checkpoint contract currently marks `KRuntimeIR` as not profile-specific, but KRuntimeIR construction includes profile-dependent host binding modules.
+  - Either mark it profile-specific or split profile-neutral runtime IR from profile-specific runtime augmentation.
+  - Sources: `reviews/observability1.md`.
+
+- `[Medium] Replace index-based declaration keys with more stable declaration identities.`
+  - Declaration input keys currently include declaration index, so inserting one declaration at the top of a file shifts the keys of all following declarations and harms reuse.
+  - Prefer stable identities based on resolved symbol identity, source span, declaration kind, and spelling, with a tie-breaker only for true ambiguity.
+  - Sources: `reviews/observability1.md`.
+
+- `[Medium] Decide whether `queryPlan` and related metadata are observability sketches or real invalidation models, and rename/strengthen accordingly.`
+  - The current query plan is useful as a descriptive sketch, but it does not capture real semantic dependencies such as imports, trait solving, macro expansion, host bindings, or backend runtime dependencies.
+  - If it is public observability only, name it that way. If it is intended for incremental reuse, strengthen it materially.
+  - Sources: `reviews/observability1.md`.
+
+- `[Low-Medium] Expand CLI/tooling exposure for the observability APIs, or explicitly keep them library-only.`
+  - The public API exposes checkpoint contracts, available checkpoints, all-checkpoint verification, runtime obligations, query plans, fingerprints, incremental units, and pipeline traces.
+  - The CLI exposes only a smaller subset.
+  - This is not a spec failure by itself, but the practical tooling story is weaker unless the public/CLI split is deliberate.
+  - Sources: `reviews/observability1.md`.
+
 ## 12. Tests, Harness, and Conformance Backlog
 
 - `[High] Split the suite conceptually into spec conformance, compiler regression, backend regression, and integration tests.`
@@ -506,6 +846,7 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - totality / `decreases`.
   - Ordinary lexical/name ambiguity:
   - ambiguous imported names should be compile-time diagnostics, not runtime/interpreter failures.
+  - Unicode warning emission for bidi controls / confusables / non-normalized source text once implemented.
   - Sources: `reviews/frontend1.md`, `reviews/general1.md`.
 
 - `[High] Move ambiguous ordinary-name/import ambiguity detection fully into compilation and test it as such.`
@@ -542,12 +883,34 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Raw-bit float equality and NaN behavior.
   - `String` vs `Bytes` distinction.
   - `UnicodeScalar` round-trip and invalid scalar rejection.
+  - `Bytes` semantics and invalid UTF-8 decoding.
   - `&&` / `||` with side-effecting RHS.
   - Nested `using` cleanup under abrupt exit.
   - Closure capture on the CLR path.
   - Prefixed strings through backend profiles.
   - Unsupported runtime terms such as `fork`, `sleepFor`, `atomically`, `newTVar`, and effect handlers should fail with capability diagnostics rather than later emitter crashes.
   - Sources: `reviews/backend1.md`.
+
+- `[High] Add Unicode / bytes / hash regression tests around the newly reviewed failure modes.`
+  - Valid and invalid byte/scalar/grapheme literals.
+  - `decodeUtf8` success and invalid-byte failure behavior.
+  - Scalar-order string comparison with supplementary characters.
+  - `words` / `sentences` behavior once implemented or a profile-capability rejection if not.
+  - `HashState`-returning APIs must return `HashState`, not `Some HashState`.
+  - Structural hash framing tests such as `("a","bc")` vs `("ab","c")` once structural hashing exists.
+  - Strings containing U+0000 should behave consistently between interpreter and compiled backends.
+  - Sources: `reviews/unicode1.md`.
+
+- `[High] Add trait/instance/deriving tests for the missing semantic cases, not just simple closed dispatch.`
+  - Constrained instances carrying premise evidence.
+  - Supertrait member projection through real evidence/dictionaries.
+  - Imported multi-parameter trait instance metadata.
+  - Parenthesized multi-constraint instance headers.
+  - Rigid-goal-vs-instance-head matching behavior.
+  - Constrained trait members with additional constraints.
+  - Local instances/local deriving, if those remain in scope.
+  - Real `derive` behavior once implemented, through the same validation/coherence/runtime path as handwritten instances.
+  - Sources: `reviews/traits1.md`.
 
 - `[High] Add targeted .NET backend tests for the IL/runner-specific issues.`
   - String pattern matching with dynamically constructed strings.

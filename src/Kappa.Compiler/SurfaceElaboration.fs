@@ -960,15 +960,28 @@ module SurfaceElaboration =
         | _ ->
             None
 
-    let private scopedEffectRowType (effectName: string) =
-        let effectNameSegments =
-            effectName.Split('.', StringSplitOptions.RemoveEmptyEntries)
-            |> Array.toList
+    let private scopedEffectNameSegments (declaration: EffectDeclaration) =
+        declaration.Name.Split('.', StringSplitOptions.RemoveEmptyEntries)
+        |> Array.toList
 
+    let private scopedEffectTypeParameters (declaration: EffectDeclaration) =
+        TypeSignatures.collectLeadingTypeParameters declaration.HeaderTokens
+
+    let private scopedEffectLabelType (declaration: EffectDeclaration) =
+        TypeName(scopedEffectNameSegments declaration, [])
+
+    let private scopedEffectInterfaceType (declaration: EffectDeclaration) =
+        TypeName(
+            scopedEffectNameSegments declaration,
+            scopedEffectTypeParameters declaration
+            |> List.map TypeVariable
+        )
+
+    let private scopedEffectRowType (declaration: EffectDeclaration) =
         TypeEffectRow(
             [
-                { Label = TypeName(effectNameSegments, [])
-                  Effect = TypeName(effectNameSegments, []) }
+                { Label = scopedEffectLabelType declaration
+                  Effect = scopedEffectInterfaceType declaration }
             ],
             None
         )
@@ -3500,17 +3513,19 @@ module SurfaceElaboration =
 
     let private trySplitHandledEffectRow
         (aliases: Map<string, TypeAliasInfo>)
-        (effectName: string)
+        (declaration: EffectDeclaration)
         effectRow
         =
         let normalize = normalizeTypeAliases aliases
+        let expectedLabel = scopedEffectLabelType declaration |> normalize
+        let expectedInterface = scopedEffectInterfaceType declaration |> normalize
 
-        let isResolvedEffectName expected typeExpr =
-            match normalize typeExpr with
-            | TypeName(nameSegments, []) ->
-                String.Equals(SyntaxFacts.moduleNameToText nameSegments, expected, StringComparison.Ordinal)
-            | _ ->
-                false
+        let matchesLabel typeExpr =
+            TypeSignatures.definitionallyEqual (normalize typeExpr) expectedLabel
+
+        let matchesInterface typeExpr =
+            TypeSignatures.tryUnify (normalize typeExpr) expectedInterface
+            |> Option.isSome
 
         let rec split current =
             match normalize current with
@@ -3518,8 +3533,8 @@ module SurfaceElaboration =
                 let handledEntryIndex =
                     entries
                     |> List.tryFindIndex (fun entry ->
-                        isResolvedEffectName effectName entry.Label
-                        && isResolvedEffectName effectName entry.Effect)
+                        matchesLabel entry.Label
+                        && matchesInterface entry.Effect)
 
                 match handledEntryIndex with
                 | Some entryIndex ->
@@ -3541,8 +3556,8 @@ module SurfaceElaboration =
                     let mismatchedHandledLabel =
                         entries
                         |> List.exists (fun entry ->
-                            isResolvedEffectName effectName entry.Label
-                            && not (isResolvedEffectName effectName entry.Effect))
+                            matchesLabel entry.Label
+                            && not (matchesInterface entry.Effect))
 
                     if mismatchedHandledLabel then
                         SplitMismatch
@@ -6189,14 +6204,14 @@ module SurfaceElaboration =
         | Apply(Name [ effectName; operationName ], arguments) ->
             match
                 tryFindScopedEffectOperation effectName operationName
-                |> Option.bind (fun (_, operation) ->
+                |> Option.bind (fun (declaration, operation) ->
                     operation.SignatureTokens
                     |> TypeSignatures.parseType
                     |> Option.map (qualifyVisibleTypeNames environment)
-                    |> Option.map TypeSignatures.functionParts)
+                    |> Option.map (fun signature -> declaration, TypeSignatures.functionParts signature))
             with
-            | Some(parameterTypes, resultType) when List.length parameterTypes = List.length arguments ->
-                Some(effType (scopedEffectRowType effectName) resultType)
+            | Some(declaration, (parameterTypes, resultType)) when List.length parameterTypes = List.length arguments ->
+                Some(effType (scopedEffectRowType declaration) resultType)
             | _ ->
                 match tryInferQueryCarrierType environment freshCounter localTypes (inferValidationExpressionType environment freshCounter) expression with
                 | Some queryCarrierType ->
@@ -12180,20 +12195,24 @@ module SurfaceElaboration =
                     | Some effectName, Some handledType ->
                         match tryUnwrapEffType handledType with
                         | Some(effectRow, _) ->
-                            match trySplitHandledEffectRow environment.VisibleTypeAliases effectName effectRow with
-                            | SplitMismatch ->
-                                [
-                                    makeDiagnostic
-                                        DiagnosticCode.HandlerEffectRowMismatch
-                                        $"Handler for '{effectName}' expects the handled computation to carry label '{effectName}' in its effect row, but found '{TypeSignatures.toText effectRow}'."
-                                ]
-                            | SplitNeedsTailRefinement ->
-                                [
-                                    makeDiagnostic
-                                        DiagnosticCode.HandlerEffectRowMismatch
-                                        $"Handler for '{effectName}' cannot split label '{effectName}' out of open effect row '{TypeSignatures.toText effectRow}' without explicit row refinement. Mention '{effectName}' explicitly in the handled computation type."
-                                ]
-                            | SplitResolved _ ->
+                            match tryFindScopedEffectDeclaration effectName with
+                            | Some declaration ->
+                                match trySplitHandledEffectRow environment.VisibleTypeAliases declaration effectRow with
+                                | SplitMismatch ->
+                                    [
+                                        makeDiagnostic
+                                            DiagnosticCode.HandlerEffectRowMismatch
+                                            $"Handler for '{effectName}' expects the handled computation to carry label '{effectName}' in its effect row, but found '{TypeSignatures.toText effectRow}'."
+                                    ]
+                                | SplitNeedsTailRefinement ->
+                                    [
+                                        makeDiagnostic
+                                            DiagnosticCode.HandlerEffectRowMismatch
+                                            $"Handler for '{effectName}' cannot split label '{effectName}' out of open effect row '{TypeSignatures.toText effectRow}' without explicit row refinement. Mention '{effectName}' explicitly in the handled computation type."
+                                    ]
+                                | SplitResolved _ ->
+                                    []
+                            | None ->
                                 []
                         | None ->
                             [
@@ -16805,15 +16824,15 @@ module SurfaceElaboration =
                     tryResolveHandledEffectName environment receiver
                     |> Option.bind (fun effectName ->
                         tryFindScopedEffectOperation effectName memberName
-                        |> Option.bind (fun (_, operation) ->
+                        |> Option.bind (fun (declaration, operation) ->
                             operation.SignatureTokens
                             |> TypeSignatures.parseType
                             |> Option.map (qualifyVisibleTypeNames environment)
                             |> Option.map TypeSignatures.functionParts
-                            |> Option.map (fun (parameterTypes, resultType) -> effectName, parameterTypes, resultType)))
+                            |> Option.map (fun (parameterTypes, resultType) -> declaration, parameterTypes, resultType)))
                 with
-                | Some(effectName, parameterTypes, resultType) when List.length parameterTypes = List.length arguments ->
-                    Some(effType (scopedEffectRowType effectName) resultType)
+                | Some(declaration, parameterTypes, resultType) when List.length parameterTypes = List.length arguments ->
+                    Some(effType (scopedEffectRowType declaration) resultType)
                 | _ ->
                     match tryInferQueryCarrierType environment freshCounter localTypes inferExpressionType expression with
                     | Some queryCarrierType ->
@@ -16823,19 +16842,14 @@ module SurfaceElaboration =
             | Apply(Name nameSegments, arguments) ->
                 match
                     tryResolveEffectOperationNamePath environment nameSegments
-                    |> Option.bind (fun (effectName, _, operation) ->
+                    |> Option.bind (fun (_, declaration, operation) ->
                         operation.SignatureTokens
                         |> TypeSignatures.parseType
                         |> Option.map (qualifyVisibleTypeNames environment)
-                        |> Option.map TypeSignatures.functionParts)
+                        |> Option.map (fun signature -> declaration, TypeSignatures.functionParts signature))
                 with
-                | Some(parameterTypes, resultType) when List.length parameterTypes = List.length arguments ->
-                    let effectName =
-                        match tryResolveEffectOperationNamePath environment nameSegments with
-                        | Some(effectName, _, _) -> effectName
-                        | None -> ""
-
-                    Some(effType (scopedEffectRowType effectName) resultType)
+                | Some(declaration, (parameterTypes, resultType)) when List.length parameterTypes = List.length arguments ->
+                    Some(effType (scopedEffectRowType declaration) resultType)
                 | _ ->
                     match tryInferQueryCarrierType environment freshCounter localTypes inferExpressionType expression with
                     | Some queryCarrierType ->

@@ -478,19 +478,32 @@ module private SurfaceEffectParsing =
                  && isContextualKeyword "effect" effectToken
                  && Token.isName nameToken ->
             let name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
-            let bodyTokens =
-                match rest with
-                | equalsToken :: bodyTokens when equalsToken.Kind = Equals -> bodyTokens
-                | _ -> []
+            let rec splitHeader depth collected remaining =
+                match remaining with
+                | [] ->
+                    List.rev collected, []
+                | token :: tail when token.Kind = LeftParen ->
+                    splitHeader (depth + 1) (token :: collected) tail
+                | token :: tail when token.Kind = RightParen ->
+                    splitHeader (max 0 (depth - 1)) (token :: collected) tail
+                | token :: tail when token.Kind = Equals && depth = 0 ->
+                    List.rev collected, tail
+                | token :: tail ->
+                    splitHeader depth (token :: collected) tail
+
+            let headerTokens, bodyTokens = splitHeader 0 [] rest
 
             let operations =
-                splitNestedIndentedLines bodyTokens
-                |> List.choose parseOperationLine
+                if List.isEmpty bodyTokens && not (rest |> List.exists (fun token -> token.Kind = Equals)) then
+                    []
+                else
+                    splitNestedIndentedLines bodyTokens
+                    |> List.choose parseOperationLine
 
             Some
                 { Visibility = None
                   Name = name
-                  HeaderTokens = []
+                  HeaderTokens = headerTokens
                   Operations = operations }
         | _ ->
             None
