@@ -2125,6 +2125,25 @@ let ``source compilation rejects non bindable do bind sources`` () =
     Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TypeEqualityMismatch)
 
 [<Fact>]
+let ``source compilation rejects invalid indented do bind continuations before runtime`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-compile-invalid-indented-do-bind-continuation-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let result = do"
+                    "    i0 <- pure 40"
+                    "      pure 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected an invalid indented continuation after a do-bind source to be rejected in the frontend.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.ParseError)
+
+[<Fact>]
 let ``source compilation rejects sibling callable values in arithmetic before runtime`` () =
     let workspace =
         compileInMemoryWorkspace
@@ -2161,6 +2180,62 @@ let ``source compilation rejects recursive function typed values whose bodies ar
             ]
 
     Assert.True(workspace.HasErrors, "Expected a recursive function-typed value whose body reduces to Int to be rejected in the frontend.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TypeEqualityMismatch)
+
+[<Fact>]
+let ``source compilation rejects unannotated sibling functions called with unit when body requires numeric binder`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-compile-unannotated-sibling-function-unit-argument-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let i0 i0 ="
+                    "    i0 + 1"
+                    "let result = i0 ()"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected applying Unit to an unannotated named function whose body requires a numeric binder to be rejected in the frontend.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TypeEqualityMismatch)
+
+[<Fact>]
+let ``source compilation rejects unannotated sibling functions called with non numeric options when body requires numeric binder`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-compile-unannotated-sibling-function-option-argument-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let i0 i0 ="
+                    "    i0 + 1"
+                    "let result = i0 None"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected applying Option.None to an unannotated named function whose body requires a numeric binder to be rejected in the frontend.")
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TypeEqualityMismatch)
+
+[<Fact>]
+let ``source compilation rejects unannotated sibling functions whose sole binder is used numerically before unit application`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-compile-unannotated-sibling-function-numeric-binder-unit-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let i0 i1 = i1 * 2"
+                    "let result = i0 ()"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected applying Unit to an unannotated named function whose binder is consumed by numeric multiplication to be rejected in the frontend.")
     Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.TypeEqualityMismatch)
 
 [<Fact>]

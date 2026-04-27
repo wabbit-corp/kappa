@@ -1,0 +1,2 @@
+--! mode check
+--! assertDiagnosticCodes E_TYPE_EQUALITY_MISMATCH

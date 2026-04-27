@@ -4063,6 +4063,85 @@ type private ExpressionParser
         Match(scrutinee, List.ofSeq cases)
 
     member private this.ParseDoLine(lineTokens: Token list) =
+        let containsInvalidIndentedExpressionContinuation (tokens: Token list) =
+            let tokenArray = tokens |> List.toArray
+            let mutable parenDepth = 0
+            let mutable bracketDepth = 0
+            let mutable braceDepth = 0
+            let mutable setBraceDepth = 0
+            let currentLine = ResizeArray<Token>()
+            let mutable invalid = false
+            let mutable index = 0
+
+            let lineAllowsIndentedContinuation () =
+                let significantCurrentLine =
+                    currentLine
+                    |> Seq.filter (fun token ->
+                        match token.Kind with
+                        | Newline
+                        | Indent
+                        | Dedent -> false
+                        | _ -> true)
+                    |> Seq.toList
+
+                let firstToken = significantCurrentLine |> List.tryHead
+                let lastToken = significantCurrentLine |> List.tryLast
+
+                match firstToken, lastToken with
+                | Some first, _
+                    when Token.isKeyword Keyword.Match first
+                         || Token.isKeyword Keyword.Do first ->
+                    true
+                | _, Some last
+                    when last.Kind = Arrow
+                         || last.Kind = Equals
+                         || last.Kind = Operator
+                         || Token.isKeyword Keyword.Then last
+                         || Token.isKeyword Keyword.Else last
+                         || Token.isKeyword Keyword.Do last ->
+                    true
+                | _ ->
+                    false
+
+            while index < tokenArray.Length && not invalid do
+                let token = tokenArray[index]
+
+                match token.Kind with
+                | LeftParen -> parenDepth <- parenDepth + 1
+                | RightParen -> parenDepth <- max 0 (parenDepth - 1)
+                | LeftBracket -> bracketDepth <- bracketDepth + 1
+                | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
+                | LeftBrace -> braceDepth <- braceDepth + 1
+                | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
+                | LeftSetBrace -> setBraceDepth <- setBraceDepth + 1
+                | RightSetBrace -> setBraceDepth <- max 0 (setBraceDepth - 1)
+                | Newline
+                    when parenDepth = 0
+                         && bracketDepth = 0
+                         && braceDepth = 0
+                         && setBraceDepth = 0
+                         && index + 1 < tokenArray.Length
+                         && tokenArray[index + 1].Kind = Indent ->
+                    if lineAllowsIndentedContinuation () then
+                        currentLine.Add(token)
+                    else
+                        invalid <- true
+                | Newline
+                    when parenDepth = 0
+                         && bracketDepth = 0
+                         && braceDepth = 0
+                         && setBraceDepth = 0 ->
+                    currentLine.Clear()
+                | _ ->
+                    ()
+
+                if not invalid then
+                    currentLine.Add(token)
+
+                index <- index + 1
+
+            invalid
+
         let tryFindTopLevelSplit (tokens: Token list) predicate =
             let tokenArray = List.toArray tokens
             let mutable depth = 0
@@ -4317,6 +4396,13 @@ type private ExpressionParser
                         { current with
                             TypeTokens = bindingTypeTokens |> Option.orElse current.TypeTokens }
 
+                if containsInvalidIndentedExpressionContinuation expressionTokens then
+                    diagnostics.AddError(
+                        DiagnosticCode.ParseError,
+                        "Unexpected indented expression continuation in the do binding.",
+                        source.GetLocation(letToken.Span)
+                    )
+
                 if tokenArray[splitIndex].Kind = Operator && tokenArray[splitIndex].Text = "<-" then
                     DoBind(binding, this.ParseStandaloneExpression(expressionTokens))
                 else
@@ -4363,6 +4449,13 @@ type private ExpressionParser
                   IsImplicit = false
                   TypeTokens = None
                   BinderSpans = Map.ofList [ name, [ nameToken.Span ] ] }
+
+            if containsInvalidIndentedExpressionContinuation rest then
+                diagnostics.AddError(
+                    DiagnosticCode.ParseError,
+                    "Unexpected indented expression continuation in the do binding.",
+                    source.GetLocation(nameToken.Span)
+                )
 
             DoBind(binding, this.ParseStandaloneExpression(rest))
         | _ ->

@@ -6763,6 +6763,7 @@ module SurfaceElaboration =
         (environment: BindingLoweringEnvironment)
         (knownSurfaceTermNames: Set<string>)
         (allowUnresolvedCallDiagnostics: bool)
+        (explicitSignatureNames: Set<string>)
         (topLevelDefinitionsByName: Map<string, LetDefinition>)
         (definition: LetDefinition)
         (scheme: TypeScheme option)
@@ -6822,12 +6823,272 @@ module SurfaceElaboration =
                         |> Option.map (fun fieldType -> field.Name, fieldType)))
                 |> Option.defaultValue [])
 
+        let inferredParameterLocalTypes =
+            let parameterNames =
+                effectiveParameters
+                |> List.map (fun parameter -> parameter.Name)
+                |> Set.ofList
+
+            let annotatedParameterLocals =
+                effectiveParameters
+                |> List.choose (fun parameter ->
+                    tryParseParameterType parameter
+                    |> Option.map (fun parameterType -> parameter.Name, parameterType))
+                |> Map.ofList
+
+            let normalize typeExpr =
+                normalizeTypeAliases environment.VisibleTypeAliases typeExpr
+
+            let isSupportedArithmeticType normalizedTypeExpr =
+                match normalizedTypeExpr with
+                | TypeName(([ "Int" ] | [ "std"; "prelude"; "Int" ]), [])
+                | TypeName(([ "Float" ] | [ "std"; "prelude"; "Float" ]), [])
+                | TypeName(([ "Double" ] | [ "std"; "prelude"; "Double" ]), []) ->
+                    true
+                | _ ->
+                    false
+
+            let tryInferNumericOperandType expression =
+                match expression with
+                | NumericLiteral literal ->
+                    Some(inferSurfaceNumericLiteralType literal)
+                | Unary("-", NumericLiteral literal) ->
+                    Some(inferSurfaceNumericLiteralType literal)
+                | _ ->
+                    inferValidationExpressionType environment freshCounter annotatedParameterLocals expression
+                    |> Option.map normalize
+                    |> Option.filter isSupportedArithmeticType
+
+            let addExpectation parameterName inferredType expectations =
+                match Map.tryFind parameterName expectations with
+                | Some existingType
+                    when TypeSignatures.definitionallyEqual
+                             (normalize existingType)
+                             (normalize inferredType) ->
+                    expectations
+                | Some _ ->
+                    expectations
+                | None ->
+                    Map.add parameterName inferredType expectations
+
+            let rec walk expectations expression =
+                let addFromOperand parameterExpression counterpart currentExpectations =
+                    match parameterExpression with
+                    | Name [ parameterName ] when Set.contains parameterName parameterNames ->
+                        match tryInferNumericOperandType counterpart with
+                        | Some inferredType ->
+                            addExpectation parameterName inferredType currentExpectations
+                        | None ->
+                            currentExpectations
+                    | _ ->
+                        currentExpectations
+
+                let descend currentExpression currentExpectations =
+                    walk currentExpectations currentExpression
+
+                match expression with
+                | Binary(left, ("+" | "-" | "*" | "/"), right) ->
+                    expectations
+                    |> addFromOperand left right
+                    |> addFromOperand right left
+                    |> descend left
+                    |> descend right
+                | Binary(left, _, right)
+                | Elvis(left, right) ->
+                    expectations |> descend left |> descend right
+                | Apply(callee, arguments) ->
+                    (descend callee expectations, arguments)
+                    ||> List.fold (fun state argument -> descend argument state)
+                | LocalLet(_, value, nestedBody) ->
+                    expectations |> descend value |> descend nestedBody
+                | LocalSignature(_, nestedBody)
+                | LocalTypeAlias(_, nestedBody)
+                | LocalScopedEffect(_, nestedBody)
+                | Lambda(_, nestedBody)
+                | SyntaxQuote nestedBody
+                | SyntaxSplice nestedBody
+                | TopLevelSyntaxSplice nestedBody
+                | CodeQuote nestedBody
+                | CodeSplice nestedBody
+                | MonadicSplice nestedBody
+                | ExplicitImplicitArgument nestedBody
+                | InoutArgument nestedBody
+                | Unary(_, nestedBody)
+                | Seal(nestedBody, _)
+                | TagTest(nestedBody, _) ->
+                    descend nestedBody expectations
+                | Handle(_, label, nestedBody, returnClause, operationClauses) ->
+                    expectations
+                    |> descend label
+                    |> descend nestedBody
+                    |> descend returnClause.Body
+                    |> fun state ->
+                        operationClauses
+                        |> List.fold (fun clauseState clause -> descend clause.Body clauseState) state
+                | IfThenElse(condition, whenTrue, whenFalse) ->
+                    expectations
+                    |> descend condition
+                    |> descend whenTrue
+                    |> descend whenFalse
+                | Match(scrutinee, cases) ->
+                    expectations
+                    |> descend scrutinee
+                    |> fun state ->
+                        cases
+                        |> List.fold
+                            (fun caseState caseClause ->
+                                caseState
+                                |> fun innerState ->
+                                    match caseClause.Guard with
+                                    | Some guard -> descend guard innerState
+                                    | None -> innerState
+                                |> descend caseClause.Body)
+                            state
+                | RecordLiteral fields ->
+                    fields |> List.fold (fun state field -> descend field.Value state) expectations
+                | RecordUpdate(receiver, fields) ->
+                    expectations
+                    |> descend receiver
+                    |> fun state -> fields |> List.fold (fun innerState field -> descend field.Value innerState) state
+                | MemberAccess(receiver, _, arguments) ->
+                    expectations
+                    |> descend receiver
+                    |> fun state -> arguments |> List.fold (fun innerState argument -> descend argument innerState) state
+                | SafeNavigation(receiver, navigation) ->
+                    expectations
+                    |> descend receiver
+                    |> fun state -> navigation.Arguments |> List.fold (fun innerState argument -> descend argument innerState) state
+                | Do statements ->
+                    statements
+                    |> List.fold
+                        (fun state statement ->
+                            match statement with
+                            | DoLet(_, value)
+                            | DoBind(_, value)
+                            | DoUsing(_, value)
+                            | DoVar(_, value)
+                            | DoAssign(_, value)
+                            | DoDefer value
+                            | DoExpression value
+                            | DoReturn value ->
+                                descend value state
+                            | DoLetQuestion(_, value, failure) ->
+                                let nextState = descend value state
+
+                                match failure with
+                                | Some block ->
+                                    block.Body
+                                    |> List.fold
+                                        (fun innerState nestedStatement ->
+                                            match nestedStatement with
+                                            | DoLet(_, nestedValue)
+                                            | DoBind(_, nestedValue)
+                                            | DoUsing(_, nestedValue)
+                                            | DoVar(_, nestedValue)
+                                            | DoAssign(_, nestedValue)
+                                            | DoDefer nestedValue
+                                            | DoExpression nestedValue
+                                            | DoReturn nestedValue ->
+                                                descend nestedValue innerState
+                                            | DoIf(condition, whenTrue, whenFalse) ->
+                                                let afterCondition = descend condition innerState
+
+                                                let descendDoBody bodyStatements bodyState =
+                                                    bodyStatements
+                                                    |> List.fold
+                                                        (fun bodyInnerState bodyStatement ->
+                                                            match bodyStatement with
+                                                            | DoLet(_, bodyValue)
+                                                            | DoBind(_, bodyValue)
+                                                            | DoUsing(_, bodyValue)
+                                                            | DoVar(_, bodyValue)
+                                                            | DoAssign(_, bodyValue)
+                                                            | DoDefer bodyValue
+                                                            | DoExpression bodyValue
+                                                            | DoReturn bodyValue ->
+                                                                descend bodyValue bodyInnerState
+                                                            | _ ->
+                                                                bodyInnerState)
+                                                        bodyState
+
+                                                afterCondition |> descendDoBody whenTrue |> descendDoBody whenFalse
+                                            | _ ->
+                                                innerState)
+                                        nextState
+                                | None ->
+                                    nextState
+                            | DoIf(condition, whenTrue, whenFalse) ->
+                                let nextState = descend condition state
+
+                                let descendDoBody bodyStatements bodyState =
+                                    bodyStatements
+                                    |> List.fold
+                                        (fun innerState nestedStatement ->
+                                            match nestedStatement with
+                                            | DoLet(_, nestedValue)
+                                            | DoBind(_, nestedValue)
+                                            | DoUsing(_, nestedValue)
+                                            | DoVar(_, nestedValue)
+                                            | DoAssign(_, nestedValue)
+                                            | DoDefer nestedValue
+                                            | DoExpression nestedValue
+                                            | DoReturn nestedValue ->
+                                                descend nestedValue innerState
+                                            | _ ->
+                                                innerState)
+                                        bodyState
+
+                                nextState |> descendDoBody whenTrue |> descendDoBody whenFalse
+                            | DoWhile(condition, doBody) ->
+                                let nextState = descend condition state
+
+                                doBody
+                                |> List.fold
+                                    (fun innerState nestedStatement ->
+                                        match nestedStatement with
+                                        | DoLet(_, nestedValue)
+                                        | DoBind(_, nestedValue)
+                                        | DoUsing(_, nestedValue)
+                                        | DoVar(_, nestedValue)
+                                        | DoAssign(_, nestedValue)
+                                        | DoDefer nestedValue
+                                        | DoExpression nestedValue
+                                        | DoReturn nestedValue ->
+                                            descend nestedValue innerState
+                                        | _ ->
+                                            innerState)
+                                    nextState)
+                        expectations
+                | Comprehension comprehension ->
+                    descend comprehension.Lowered expectations
+                | PrefixedString(_, parts) ->
+                    parts
+                    |> List.fold
+                        (fun state part ->
+                            match part with
+                            | StringText _ -> state
+                            | StringInterpolation(inner, _) -> descend inner state)
+                        expectations
+                | NamedApplicationBlock fields ->
+                    fields |> List.fold (fun state field -> descend field.Value state) expectations
+                | Literal _
+                | NumericLiteral _
+                | KindQualifiedName _
+                | Name _ ->
+                    expectations
+
+            effectiveBody
+            |> Option.map (walk Map.empty)
+            |> Option.defaultValue Map.empty
+            |> Map.toList
+
         let localTypes =
-            (tupleParameterLocalTypes @ recordParameterLocalTypes)
+            (inferredParameterLocalTypes @ tupleParameterLocalTypes @ recordParameterLocalTypes)
             |> List.fold (fun state (name, fieldType) -> Map.add name fieldType state) (buildLocalTypes scheme effectiveParameters)
 
         let parameterNames =
             [ effectiveParameters |> List.map (fun parameter -> parameter.Name)
+              inferredParameterLocalTypes |> List.map fst
               tupleParameterLocalTypes |> List.map fst
               recordParameterLocalTypes |> List.map fst ]
             |> List.concat
@@ -7030,12 +7291,205 @@ module SurfaceElaboration =
             | DoReturn expression :: _ ->
                 tryInferExpressionTypeWithSiblingFallback visitedTopLevelNames localTypes expression
 
+        and tryInferSiblingParameterTypesFromNumericUse
+            (visitedTopLevelNames: Set<string>)
+            (parameters: Parameter list)
+            (body: SurfaceExpression)
+            =
+            let parameterNames =
+                parameters
+                |> List.map (fun parameter -> parameter.Name)
+                |> Set.ofList
+
+            let annotatedLocals =
+                parameters
+                |> List.choose (fun parameter ->
+                    tryParseParameterType parameter
+                    |> Option.map (fun parameterType -> parameter.Name, parameterType))
+                |> Map.ofList
+
+            let normalize typeExpr =
+                normalizeTypeAliases environment.VisibleTypeAliases typeExpr
+
+            let isSupportedArithmeticType normalizedTypeExpr =
+                match normalizedTypeExpr with
+                | TypeName(([ "Int" ] | [ "std"; "prelude"; "Int" ]), [])
+                | TypeName(([ "Float" ] | [ "std"; "prelude"; "Float" ]), [])
+                | TypeName(([ "Double" ] | [ "std"; "prelude"; "Double" ]), []) ->
+                    true
+                | _ ->
+                    false
+
+            let tryInferNumericOperandType expression =
+                match expression with
+                | NumericLiteral literal ->
+                    Some(inferSurfaceNumericLiteralType literal)
+                | Unary("-", NumericLiteral literal) ->
+                    Some(inferSurfaceNumericLiteralType literal)
+                | _ ->
+                    tryInferExpressionTypeWithSiblingFallback visitedTopLevelNames annotatedLocals expression
+                    |> Option.map normalize
+                    |> Option.filter isSupportedArithmeticType
+
+            let addExpectation parameterName inferredType expectations =
+                match Map.tryFind parameterName expectations with
+                | Some existingType
+                    when TypeSignatures.definitionallyEqual
+                             (normalize existingType)
+                             (normalize inferredType) ->
+                    expectations
+                | Some _ ->
+                    expectations
+                | None ->
+                    Map.add parameterName inferredType expectations
+
+            let rec walk expectations expression =
+                let addFromOperand parameterExpression counterpart currentExpectations =
+                    match parameterExpression with
+                    | Name [ parameterName ] when Set.contains parameterName parameterNames ->
+                        match tryInferNumericOperandType counterpart with
+                        | Some inferredType ->
+                            addExpectation parameterName inferredType currentExpectations
+                        | None ->
+                            currentExpectations
+                    | _ ->
+                        currentExpectations
+
+                let descend currentExpression currentExpectations =
+                    walk currentExpectations currentExpression
+
+                match expression with
+                | Binary(left, ("+" | "-" | "*" | "/"), right) ->
+                    expectations
+                    |> addFromOperand left right
+                    |> addFromOperand right left
+                    |> descend left
+                    |> descend right
+                | Binary(left, _, right) ->
+                    expectations |> descend left |> descend right
+                | Apply(callee, arguments) ->
+                    (descend callee expectations, arguments)
+                    ||> List.fold (fun state argument -> descend argument state)
+                | LocalLet(_, value, nestedBody) ->
+                    expectations |> descend value |> descend nestedBody
+                | LocalSignature(_, nestedBody)
+                | LocalTypeAlias(_, nestedBody)
+                | LocalScopedEffect(_, nestedBody)
+                | Lambda(_, nestedBody)
+                | SyntaxQuote nestedBody
+                | SyntaxSplice nestedBody
+                | TopLevelSyntaxSplice nestedBody
+                | CodeQuote nestedBody
+                | CodeSplice nestedBody
+                | MonadicSplice nestedBody
+                | ExplicitImplicitArgument nestedBody
+                | InoutArgument nestedBody
+                | Unary(_, nestedBody)
+                | Seal(nestedBody, _)
+                | TagTest(nestedBody, _) ->
+                    descend nestedBody expectations
+                | Handle(_, label, nestedBody, returnClause, operationClauses) ->
+                    expectations
+                    |> descend label
+                    |> descend nestedBody
+                    |> descend returnClause.Body
+                    |> fun state ->
+                        operationClauses
+                        |> List.fold (fun clauseState clause -> descend clause.Body clauseState) state
+                | IfThenElse(condition, whenTrue, whenFalse) ->
+                    expectations
+                    |> descend condition
+                    |> descend whenTrue
+                    |> descend whenFalse
+                | Match(scrutinee, cases) ->
+                    expectations
+                    |> descend scrutinee
+                    |> fun state ->
+                        cases
+                        |> List.fold
+                            (fun caseState caseClause ->
+                                caseState
+                                |> fun innerState ->
+                                    match caseClause.Guard with
+                                    | Some guard -> descend guard innerState
+                                    | None -> innerState
+                                |> descend caseClause.Body)
+                            state
+                | RecordLiteral fields ->
+                    fields |> List.fold (fun state field -> descend field.Value state) expectations
+                | RecordUpdate(receiver, fields) ->
+                    expectations
+                    |> descend receiver
+                    |> fun state -> fields |> List.fold (fun innerState field -> descend field.Value innerState) state
+                | MemberAccess(receiver, _, arguments) ->
+                    expectations
+                    |> descend receiver
+                    |> fun state -> arguments |> List.fold (fun innerState argument -> descend argument innerState) state
+                | SafeNavigation(receiver, navigation) ->
+                    expectations
+                    |> descend receiver
+                    |> fun state -> navigation.Arguments |> List.fold (fun innerState argument -> descend argument innerState) state
+                | Do statements ->
+                    statements
+                    |> List.fold
+                        (fun state statement ->
+                            match statement with
+                            | DoLet(_, value)
+                            | DoBind(_, value)
+                            | DoUsing(_, value)
+                            | DoVar(_, value)
+                            | DoAssign(_, value)
+                            | DoDefer value
+                            | DoExpression value
+                            | DoReturn value ->
+                                descend value state
+                            | DoLetQuestion(_, value, failure) ->
+                                let nextState = descend value state
+
+                                match failure with
+                                | Some block ->
+                                    block.Body |> List.fold (fun innerState nested -> walk innerState (Do [ nested ])) nextState
+                                | None ->
+                                    nextState
+                            | DoIf(condition, whenTrue, whenFalse) ->
+                                let nextState = descend condition state
+                                let descendDoBody bodyStatements bodyState =
+                                    bodyStatements |> List.fold (fun innerState nested -> walk innerState (Do [ nested ])) bodyState
+
+                                nextState
+                                |> descendDoBody whenTrue
+                                |> descendDoBody whenFalse
+                            | DoWhile(condition, doBody) ->
+                                let nextState = descend condition state
+                                doBody |> List.fold (fun innerState nested -> walk innerState (Do [ nested ])) nextState)
+                        expectations
+                | Elvis(left, right) ->
+                    expectations |> descend left |> descend right
+                | Comprehension comprehension ->
+                    descend comprehension.Lowered expectations
+                | PrefixedString(_, parts) ->
+                    parts
+                    |> List.fold
+                        (fun state part ->
+                            match part with
+                            | StringText _ -> state
+                            | StringInterpolation(inner, _) -> descend inner state)
+                        expectations
+                | NamedApplicationBlock fields ->
+                    fields |> List.fold (fun state field -> descend field.Value state) expectations
+                | Literal _
+                | NumericLiteral _
+                | KindQualifiedName _
+                | Name _ ->
+                    expectations
+
+            walk Map.empty body
+
         and tryInferSiblingBindingType (visitedTopLevelNames: Set<string>) name =
             if Set.contains name visitedTopLevelNames then
                 None
             else
-                tryInstantiateVisibleBindingType name
-                |> Option.orElseWith (fun () ->
+                let inferFromSiblingDefinition () =
                     topLevelDefinitionsByName
                     |> Map.tryFind name
                     |> Option.bind (fun siblingDefinition ->
@@ -7047,7 +7501,14 @@ module SurfaceElaboration =
                             | [] ->
                                 tryInferExpressionTypeWithSiblingFallback nextVisited Map.empty siblingBody
                             | parameters ->
-                                let parameterTypes = parameters |> List.map tryParseParameterType
+                                let bodyInferredParameterTypes =
+                                    tryInferSiblingParameterTypesFromNumericUse nextVisited parameters siblingBody
+
+                                let parameterTypes =
+                                    parameters
+                                    |> List.map (fun parameter ->
+                                        tryParseParameterType parameter
+                                        |> Option.orElseWith (fun () -> Map.tryFind parameter.Name bodyInferredParameterTypes))
 
                                 if parameterTypes |> List.exists Option.isNone then
                                     None
@@ -7065,7 +7526,14 @@ module SurfaceElaboration =
                                         |> List.fold
                                             (fun current (parameter, parameterType) ->
                                                 TypeArrow(parameter.Quantity |> Option.defaultValue QuantityOmega, parameterType, current))
-                                            resultType))))
+                                            resultType)))
+
+                if Set.contains name explicitSignatureNames then
+                    tryInstantiateVisibleBindingType name
+                    |> Option.orElseWith inferFromSiblingDefinition
+                else
+                    inferFromSiblingDefinition ()
+                    |> Option.orElseWith (fun () -> tryInstantiateVisibleBindingType name)
 
         let typeIsMetaPhaseTransferType typeExpr =
             let normalized = normalizeTypeAliases environment.VisibleTypeAliases typeExpr
@@ -8719,6 +9187,54 @@ module SurfaceElaboration =
             && typeIsStableForValidationInference locals expectedType
             && typeIsStableForValidationInference locals actualType
 
+        let rec tryValidationTypeShape typeExpr =
+            match normalizeTypeAliases environment.VisibleTypeAliases typeExpr with
+            | TypeName(nameSegments, _) ->
+                Some("name:" + (String.concat "." nameSegments))
+            | TypeApply(callee, _) ->
+                tryValidationTypeShape callee
+            | TypeCapture(inner, _) ->
+                tryValidationTypeShape inner
+            | TypeDelay inner
+            | TypeMemo inner
+            | TypeForce inner ->
+                tryValidationTypeShape inner
+            | TypeArrow _ ->
+                Some("arrow")
+            | TypeIntrinsic intrinsic ->
+                Some("intrinsic:" + string intrinsic)
+            | TypeRecord _ ->
+                Some("record")
+            | TypeUnion _ ->
+                Some("union")
+            | TypeEffectRow _ ->
+                Some("effect-row")
+            | TypeUniverse _ ->
+                Some("universe")
+            | TypeLevelLiteral _ ->
+                Some("type-literal")
+            | TypeVariable _
+            | TypeLambda _
+            | TypeProject _
+            | TypeEquality _ ->
+                None
+
+        let canCompareDistinctValidationShapes expectedType actualType =
+            let normalizedExpected = normalizeTypeAliases environment.VisibleTypeAliases expectedType
+            let normalizedActual = normalizeTypeAliases environment.VisibleTypeAliases actualType
+
+            if isCompileTimeArgumentType environment.VisibleTypeAliases normalizedExpected
+               || isCompileTimeArgumentType environment.VisibleTypeAliases normalizedActual
+               || (tryTraitConstraintFromType environment normalizedExpected |> Option.isSome)
+               || (tryTraitConstraintFromType environment normalizedActual |> Option.isSome) then
+                false
+            else
+                match tryValidationTypeShape normalizedExpected, tryValidationTypeShape normalizedActual with
+                | Some expectedShape, Some actualShape when not (String.Equals(expectedShape, actualShape, StringComparison.Ordinal)) ->
+                    true
+                | _ ->
+                    false
+
         let rec typeIsCallableLikeForValidation typeExpr =
             match normalizeTypeAliases environment.VisibleTypeAliases typeExpr with
             | TypeCapture(innerType, _) ->
@@ -9754,6 +10270,7 @@ module SurfaceElaboration =
                                                           nextArgument
                                                           parameterType
                                                           argumentType
+                                                      || canCompareDistinctValidationShapes parameterType argumentType
                                                       || needsDependentTransportComparison locals parameterType argumentType)
                                                      && not (expectedTypeAccepts locals refinements parameterType argumentType) ->
                                                 diagnostics.Add(
@@ -9821,6 +10338,7 @@ module SurfaceElaboration =
                                       argument
                                       parameterType
                                       argumentType
+                                  || canCompareDistinctValidationShapes parameterType argumentType
                                   || needsDependentTransportComparison locals parameterType argumentType)
                                  && not (expectedTypeAccepts locals refinements parameterType argumentType) ->
                             Some(
@@ -9839,9 +10357,33 @@ module SurfaceElaboration =
         let siblingFallbackDiagnostics expression =
             let normalize = normalizeTypeAliases environment.VisibleTypeAliases
 
-            let isMissingSiblingTopLevelName name =
-                (topLevelDefinitionsByName |> Map.containsKey name)
-                && (tryResolveVisibleCallable name |> Option.isNone)
+            let isSiblingDefinitionFallbackCandidate name =
+                topLevelDefinitionsByName
+                |> Map.tryFind name
+                |> Option.exists (fun definition ->
+                    not definition.IsPattern
+                    && not (Set.contains name explicitSignatureNames))
+
+            let tryInferSiblingParameterTypeList calleeName =
+                topLevelDefinitionsByName
+                |> Map.tryFind calleeName
+                |> Option.bind (fun siblingDefinition ->
+                    siblingDefinition.Body
+                    |> Option.bind (fun siblingBody ->
+                        let nextVisited = Set.singleton calleeName
+                        let bodyInferredParameterTypes =
+                            tryInferSiblingParameterTypesFromNumericUse nextVisited siblingDefinition.Parameters siblingBody
+
+                        let parameterTypes =
+                            siblingDefinition.Parameters
+                            |> List.map (fun parameter ->
+                                tryParseParameterType parameter
+                                |> Option.orElseWith (fun () -> Map.tryFind parameter.Name bodyInferredParameterTypes))
+
+                        if parameterTypes |> List.exists Option.isNone then
+                            None
+                        else
+                            Some(parameterTypes |> List.choose id)))
 
             let inferDirect currentLocals currentExpression =
                 inferValidationExpressionType environment (ref freshCounter.Value) currentLocals currentExpression
@@ -9852,20 +10394,34 @@ module SurfaceElaboration =
             let applyFallbackDiagnostics currentLocals lexicalNames calleeName arguments =
                 if Map.containsKey calleeName currentLocals
                    || Set.contains calleeName lexicalNames
-                   || not (isMissingSiblingTopLevelName calleeName) then
+                   || not (isSiblingDefinitionFallbackCandidate calleeName) then
                     []
                 else
-                    match tryInferSiblingBindingType Set.empty calleeName with
-                    | Some calleeType when not (isCallableValidationType environment.VisibleTypeAliases calleeType) ->
-                        [
-                            makeDiagnostic
-                                DiagnosticCode.ApplicationNonCallable
-                                $"Expression of type '{TypeSignatures.toText (normalize calleeType)}' is not callable."
-                        ]
-                    | Some calleeType ->
-                        localApplicationExpectedArgumentDiagnostics currentLocals Map.empty calleeType arguments
-                    | None ->
-                        []
+                    let parameterDiagnostics =
+                        tryInferSiblingParameterTypeList calleeName
+                        |> Option.map (fun parameterTypes ->
+                            parameterTypes
+                            |> List.rev
+                            |> List.fold (fun current parameterType ->
+                                TypeArrow(QuantityOmega, parameterType, current)) unitType
+                            |> fun calleeType ->
+                                localApplicationExpectedArgumentDiagnostics currentLocals Map.empty calleeType arguments)
+                        |> Option.defaultValue []
+
+                    if not (List.isEmpty parameterDiagnostics) then
+                        parameterDiagnostics
+                    else
+                        match tryInferSiblingBindingType Set.empty calleeName with
+                        | Some calleeType when not (isCallableValidationType environment.VisibleTypeAliases calleeType) ->
+                            [
+                                makeDiagnostic
+                                    DiagnosticCode.ApplicationNonCallable
+                                    $"Expression of type '{TypeSignatures.toText (normalize calleeType)}' is not callable."
+                            ]
+                        | Some calleeType ->
+                            localApplicationExpectedArgumentDiagnostics currentLocals Map.empty calleeType arguments
+                        | None ->
+                            []
 
             let literalApplicationDiagnostics currentLocals callee =
                 match inferWithSiblingFallback currentLocals callee with
@@ -9888,10 +10444,10 @@ module SurfaceElaboration =
 
                 let hasSiblingPlusConcreteNumericPair =
                     (match left, directRight with
-                     | Name [ name ], Some rightType when isMissingSiblingTopLevelName name && isDirectNumeric rightType -> true
+                     | Name [ name ], Some rightType when isSiblingDefinitionFallbackCandidate name && isDirectNumeric rightType -> true
                      | _ -> false)
                     || (match right, directLeft with
-                        | Name [ name ], Some leftType when isMissingSiblingTopLevelName name && isDirectNumeric leftType -> true
+                        | Name [ name ], Some leftType when isSiblingDefinitionFallbackCandidate name && isDirectNumeric leftType -> true
                         | _ -> false)
 
                 if
@@ -9908,6 +10464,10 @@ module SurfaceElaboration =
                     | Some leftType, Some rightType
                         when TypeSignatures.definitionallyEqual (normalize leftType) floatType
                              && TypeSignatures.definitionallyEqual (normalize rightType) floatType ->
+                        []
+                    | Some leftType, Some rightType
+                        when typeIsCallableLikeForValidation leftType
+                             || typeIsCallableLikeForValidation rightType ->
                         []
                     | Some leftType, Some rightType ->
                         [
@@ -10084,7 +10644,7 @@ module SurfaceElaboration =
                         let directSourceType = inferDirect currentLocals value
                         let shouldFallback =
                             match value with
-                            | Name [ name ] when isMissingSiblingTopLevelName name -> true
+                            | Name [ name ] when isSiblingDefinitionFallbackCandidate name -> true
                             | _ -> false
 
                         let fallbackSourceType =
@@ -12499,8 +13059,27 @@ module SurfaceElaboration =
                                     | Some bindingInfo ->
                                         let probeCounter = ref freshCounter.Value
                                         let structuralDiagnostics = applicationStructuralDiagnostics bindingInfo
+                                        let siblingFallbackCalleeType =
+                                            if List.isEmpty bindingInfo.TypeTokens then
+                                                tryInferSiblingBindingType Set.empty calleeName
+                                            else
+                                                None
+
+                                        let siblingFallbackArgumentDiagnostics =
+                                            siblingFallbackCalleeType
+                                            |> Option.map (fun calleeType ->
+                                                localApplicationExpectedArgumentDiagnostics
+                                                    locals
+                                                    refinements
+                                                    calleeType
+                                                    arguments)
+                                            |> Option.defaultValue []
+
                                         let expectedArgumentDiagnostics =
-                                            applicationExpectedArgumentDiagnostics locals refinements bindingInfo arguments
+                                            if not (List.isEmpty siblingFallbackArgumentDiagnostics) then
+                                                siblingFallbackArgumentDiagnostics
+                                            else
+                                                applicationExpectedArgumentDiagnostics locals refinements bindingInfo arguments
                                         let traitConstraintDiagnostics = implicitTraitConstraintDiagnostics bindingInfo
                                         let zeroExplicitParameterCallDiagnostics () =
                                             let instantiated =
@@ -12795,6 +13374,9 @@ module SurfaceElaboration =
                         | _ ->
                             []
 
+                    let leftOperandDiagnostics = operandDiagnostics "left-hand side" left
+                    let rightOperandDiagnostics = operandDiagnostics "right-hand side" right
+
                     let numericTypeDiagnostics =
                         let isSupportedArithmeticType normalizedTypeExpr =
                             match normalizedTypeExpr with
@@ -12831,9 +13413,12 @@ module SurfaceElaboration =
                             []
 
                     diagnostics
-                    @ operandDiagnostics "left-hand side" left
-                    @ operandDiagnostics "right-hand side" right
-                    @ numericTypeDiagnostics
+                    @ leftOperandDiagnostics
+                    @ rightOperandDiagnostics
+                    @ (if List.isEmpty leftOperandDiagnostics && List.isEmpty rightOperandDiagnostics then
+                           numericTypeDiagnostics
+                       else
+                           [])
                 | _ ->
                     diagnostics
                     @ (validateExpressionWithFlow
@@ -15050,10 +15635,18 @@ module SurfaceElaboration =
                                         None)
                                 |> Map.ofList
 
+                            let explicitSignatureNames =
+                                frontendModule.Declarations
+                                |> List.choose (function
+                                    | SignatureDeclaration declaration -> Some declaration.Name
+                                    | _ -> None)
+                                |> Set.ofList
+
                             validateBuiltInExpressionsForBinding
                                 bodyEnvironment
                                 knownSurfaceTermNames
                                 allowUnresolvedCallDiagnostics
+                                explicitSignatureNames
                                 moduleTopLevelDefinitionsByName
                                 definition
                                 scheme
