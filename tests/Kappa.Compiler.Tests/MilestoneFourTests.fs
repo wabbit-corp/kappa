@@ -458,6 +458,52 @@ let ``handler operation clauses require an explicit resumption binder`` () =
     Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.ParseError)
 
 [<Fact>]
+let ``top level effect declarations reject borrowed resumption quantities`` () =
+    let mainSource =
+        [
+            "module main"
+            ""
+            "effect Ask ="
+            "    & ask : Unit -> Bool"
+            ""
+            "result : Int"
+            "let result = 0"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-borrowed-top-level-resumption-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected borrowed effect resumption quantities to be rejected.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.EffectResumptionQuantityBorrowed)
+
+[<Fact>]
+let ``local scoped effects reject borrowed resumption quantities`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "result : Int"
+            "let result : Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            &[r] ask : Unit -> Bool"
+            ""
+            "        0"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-borrowed-local-resumption-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected local scoped effects with borrowed resumption quantities to be rejected.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.EffectResumptionQuantityBorrowed)
+
+[<Fact>]
 let ``shallow handler clauses must agree on a single target carrier`` () =
     let mainSource =
         [

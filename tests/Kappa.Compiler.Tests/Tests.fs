@@ -294,6 +294,34 @@ let ``parser captures effect declarations and handler expressions`` () =
         failwithf "Unexpected declarations for effect/handler test: %A" other
 
 [<Fact>]
+let ``parser captures borrowed effect resumption quantities without reclassifying them`` () =
+    let sourceText =
+        [
+            "module demo.effects"
+            "effect Ask ="
+            "    & ask : Unit -> Bool"
+            "    &[r] reply : Bool -> Unit"
+        ]
+        |> String.concat "\n"
+
+    let _, lexed, parsed =
+        lexAndParse
+            "demo/effects.kp"
+            sourceText
+
+    Assert.Empty(lexed.Diagnostics)
+    Assert.Empty(parsed.Diagnostics)
+
+    match parsed.Syntax.Declarations with
+    | [ EffectDeclarationNode effectDeclaration ] ->
+        Assert.Equal("Ask", effectDeclaration.Name)
+        Assert.Equal<string list>([ "ask"; "reply" ], effectDeclaration.Operations |> List.map (fun operation -> operation.Name))
+        Assert.Equal(Some(QuantityBorrow None), effectDeclaration.Operations[0].ResumptionQuantity)
+        Assert.Equal(Some(QuantityBorrow(Some "r")), effectDeclaration.Operations[1].ResumptionQuantity)
+    | other ->
+        failwithf "Unexpected declarations for borrowed resumption quantity test: %A" other
+
+[<Fact>]
 let ``parser captures constructor-bundle import items and kind-qualified wildcard exclusions`` () =
     let sourceText =
         [

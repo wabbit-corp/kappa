@@ -37,6 +37,7 @@ type DiagnosticCode =
     | HandlerClauseDuplicate
     | HandlerClauseArityMismatch
     | HandlerClauseUnexpected
+    | EffectResumptionQuantityBorrowed
     | NameUnresolved
     | RecursiveTypeAlias
     | MalformedConstructorDeclaration
@@ -122,6 +123,7 @@ module DiagnosticCode =
         | HandlerClauseDuplicate -> "E_HANDLER_CLAUSE_DUPLICATE"
         | HandlerClauseArityMismatch -> "E_HANDLER_CLAUSE_ARITY_MISMATCH"
         | HandlerClauseUnexpected -> "E_HANDLER_CLAUSE_UNEXPECTED"
+        | EffectResumptionQuantityBorrowed -> "E_EFFECT_RESUMPTION_QUANTITY_BORROWED"
         | NameUnresolved -> "E_NAME_UNRESOLVED"
         | RecursiveTypeAlias -> "E_RECURSIVE_TYPE_ALIAS"
         | MalformedConstructorDeclaration -> "E_MALFORMED_CONSTRUCTOR_DECLARATION"
@@ -206,6 +208,7 @@ module DiagnosticCode =
         | "E_HANDLER_CLAUSE_DUPLICATE" -> Some HandlerClauseDuplicate
         | "E_HANDLER_CLAUSE_ARITY_MISMATCH" -> Some HandlerClauseArityMismatch
         | "E_HANDLER_CLAUSE_UNEXPECTED" -> Some HandlerClauseUnexpected
+        | "E_EFFECT_RESUMPTION_QUANTITY_BORROWED" -> Some EffectResumptionQuantityBorrowed
         | "E_NAME_UNRESOLVED" -> Some NameUnresolved
         | "E_RECURSIVE_TYPE_ALIAS" -> Some RecursiveTypeAlias
         | "E_MALFORMED_CONSTRUCTOR_DECLARATION" -> Some MalformedConstructorDeclaration
@@ -286,6 +289,8 @@ module DiagnosticCode =
             Some "A handler operation clause must bind exactly the parameters declared by the handled effect operation."
         | HandlerClauseUnexpected ->
             Some "A handler clause names an operation that is not declared by the handled effect interface."
+        | EffectResumptionQuantityBorrowed ->
+            Some "Resumption quantities describe the handler-bound resumption value itself. Borrowed resumption values and borrowed resumption payloads are not part of the language."
         | UnicodeInvalidScalarLiteral ->
             Some "A Unicode scalar literal must decode to exactly one valid Unicode scalar value and must not contain surrogate or out-of-range code points."
         | UnicodeInvalidGraphemeLiteral ->

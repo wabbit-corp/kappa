@@ -2229,6 +2229,19 @@ module SurfaceElaboration =
         | QuantityAtMostOne ->
             false
 
+    let private borrowedEffectResumptionQuantityDiagnostics makeDiagnostic (declaration: EffectDeclaration) =
+        declaration.Operations
+        |> List.choose (fun operation ->
+            match operation.ResumptionQuantity with
+            | Some(QuantityBorrow _ as quantity) ->
+                Some(
+                    makeDiagnostic
+                        DiagnosticCode.EffectResumptionQuantityBorrowed
+                        $"Effect operation '{declaration.Name}.{operation.Name}' declares borrowed resumption quantity '{Quantity.toSurfaceText quantity}'. Resumption quantities quantify the handler-bound resumption value itself, and borrowed resumptions are not part of the language."
+                )
+            | _ ->
+                None)
+
     let private itemImportsTermName (item: ImportItem) =
         item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Term
 
@@ -12625,7 +12638,8 @@ module SurfaceElaboration =
                     constructorFacts
                     (rewriteLocalTypeAliasesInSurfaceExpression environment.CurrentModuleName environment.VisibleTypeAliases expression)
             | LocalScopedEffect(declaration, body) ->
-                withScopedEffectDeclaration declaration (fun () ->
+                borrowedEffectResumptionQuantityDiagnostics makeDiagnostic declaration
+                @ withScopedEffectDeclaration declaration (fun () ->
                     validateExpressionWithFlow
                         locals
                         refinements
@@ -15707,6 +15721,14 @@ module SurfaceElaboration =
                         | _ ->
                             [])
 
+                let effectDeclarationDiagnostics =
+                    frontendModule.Declarations
+                    |> List.collect (function
+                        | EffectDeclarationNode declaration ->
+                            borrowedEffectResumptionQuantityDiagnostics makeDiagnostic declaration
+                        | _ ->
+                            [])
+
                 let structuralDiagnostics =
                     duplicateDeclarationDiagnostics
                     @ totalityAssertionDiagnostics
@@ -15715,6 +15737,7 @@ module SurfaceElaboration =
                     @ unsignedRecursiveBindingDiagnostics
                     @ trivialRecursiveCycleDiagnostics
                     @ constructorDefaultDiagnostics
+                    @ effectDeclarationDiagnostics
                     @ instanceSupertraitDiagnostics
                     @ instanceMemberSignatureDiagnostics
 
