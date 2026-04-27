@@ -1004,6 +1004,25 @@ module SurfaceElaboration =
             | StaticEffectLabelObject, [ effectName ] -> Some effectName
             | _ -> None)
 
+    let private tryResolveEffectOperationNamePath
+        (environment: BindingLoweringEnvironment)
+        (nameSegments: string list)
+        =
+        match List.rev nameSegments with
+        | operationName :: reversedPrefix when not (List.isEmpty reversedPrefix) ->
+            let prefix = List.rev reversedPrefix
+
+            tryResolveScopedStaticObject environment (Name prefix)
+            |> Option.bind (fun staticObject ->
+                match staticObject.ObjectKind, staticObject.NameSegments with
+                | StaticEffectLabelObject, [ effectName ] ->
+                    tryFindScopedEffectOperation effectName operationName
+                    |> Option.map (fun (declaration, operation) -> effectName, declaration, operation)
+                | _ ->
+                    None)
+        | _ ->
+            None
+
     let private kindSelectorText selector =
         match selector with
         | TypeKind -> "type"
@@ -1658,6 +1677,70 @@ module SurfaceElaboration =
             expression
         else
             rewrite aliases expression
+
+    let private collectScopedPatternStaticAliases
+        (environment: BindingLoweringEnvironment)
+        pattern
+        value
+        =
+        let rec collectExpression prefix expression aliases =
+            match tryResolveScopedStaticObject environment expression with
+            | Some staticObject ->
+                Map.add prefix staticObject aliases
+            | None ->
+                match expression with
+                | RecordLiteral fields ->
+                    fields
+                    |> List.fold (fun current field -> collectExpression (prefix @ [ field.Name ]) field.Value current) aliases
+                | Seal(inner, _) ->
+                    collectExpression prefix inner aliases
+                | _ ->
+                    aliases
+
+        let rec collectPattern pattern value aliases =
+            match pattern with
+            | NamePattern name ->
+                collectExpression [ name ] value aliases
+            | AsPattern(name, inner) ->
+                collectPattern inner value (collectExpression [ name ] value aliases)
+            | TypedPattern(inner, _) ->
+                collectPattern inner value aliases
+            | AnonymousRecordPattern(fields, rest) ->
+                fields
+                |> List.fold (fun current field ->
+                    let fieldExpression =
+                        match value with
+                        | Name segments -> Name(segments @ [ field.Name ])
+                        | _ -> MemberAccess(value, [ field.Name ], [])
+
+                    collectPattern field.Pattern fieldExpression current) aliases
+                |> fun current ->
+                    match rest with
+                    | Some(BindRecordPatternRest name) ->
+                        collectExpression [ name ] value current
+                    | _ ->
+                        current
+            | ConstructorPattern(_, arguments) ->
+                arguments |> List.fold (fun current argument -> collectPattern argument value current) aliases
+            | NamedConstructorPattern(_, fields) ->
+                fields |> List.fold (fun current field -> collectPattern field.Pattern value current) aliases
+            | TuplePattern elements ->
+                elements |> List.fold (fun current element -> collectPattern element value current) aliases
+            | VariantPattern(BoundVariantPattern(name, _))
+            | VariantPattern(RestVariantPattern name) ->
+                collectExpression [ name ] value aliases
+            | VariantPattern(WildcardVariantPattern _) ->
+                aliases
+            | OrPattern alternatives ->
+                alternatives
+                |> List.tryHead
+                |> Option.map (fun first -> collectPattern first value aliases)
+                |> Option.defaultValue aliases
+            | WildcardPattern
+            | LiteralPattern _ ->
+                aliases
+
+        collectPattern pattern value Map.empty
 
     let private unitType =
         TypeName([ "Unit" ], [])
@@ -5328,10 +5411,17 @@ module SurfaceElaboration =
                     tryFindScopedEffectOperation root operationName
                     |> Option.bind (fun (_, operation) ->
                         operation.SignatureTokens
-                        |> TypeSignatures.parseType
-                        |> Option.map (qualifyVisibleTypeNames environment))
+                            |> TypeSignatures.parseType
+                            |> Option.map (qualifyVisibleTypeNames environment))
                 | _ ->
                     None
+
+            let resolvedEffectOperationType =
+                tryResolveEffectOperationNamePath environment (root :: path)
+                |> Option.bind (fun (_, _, operation) ->
+                    operation.SignatureTokens
+                    |> TypeSignatures.parseType
+                    |> Option.map (qualifyVisibleTypeNames environment))
 
             let ordinaryResolution =
                 localTypes
@@ -5356,6 +5446,7 @@ module SurfaceElaboration =
             match path with
             | [ memberName ] ->
                 scopedEffectOperationType
+                |> Option.orElse resolvedEffectOperationType
                 |> Option.orElseWith (fun () ->
                     tryInferStaticConstructorCall
                         environment
@@ -5366,7 +5457,8 @@ module SurfaceElaboration =
                         [])
                 |> Option.orElse ordinaryResolution
             | _ ->
-                ordinaryResolution
+                resolvedEffectOperationType
+                |> Option.orElse ordinaryResolution
         | Name [] ->
             None
         | Apply(Name [ effectName; operationName ], arguments) ->
@@ -5488,13 +5580,27 @@ module SurfaceElaboration =
                         receiverType
                         arguments)
             | [ memberName ] ->
-                tryInferStaticConstructorCall
-                    environment
-                    freshCounter
-                    (inferValidationExpressionType environment freshCounter localTypes)
-                    receiver
-                    memberName
-                    arguments
+                (tryResolveHandledEffectName environment receiver
+                 |> Option.bind (fun effectName ->
+                     tryFindScopedEffectOperation effectName memberName
+                     |> Option.bind (fun (_, operation) ->
+                         operation.SignatureTokens
+                         |> TypeSignatures.parseType
+                         |> Option.map (qualifyVisibleTypeNames environment)))
+                 |> Option.bind (fun operationType ->
+                     tryInferVisibleAppliedType
+                         environment.VisibleTypeAliases
+                         (inferValidationExpressionType environment freshCounter localTypes)
+                         operationType
+                         arguments))
+                |> Option.orElseWith (fun () ->
+                    tryInferStaticConstructorCall
+                        environment
+                        freshCounter
+                        (inferValidationExpressionType environment freshCounter localTypes)
+                        receiver
+                        memberName
+                        arguments)
                 |> Option.orElseWith (fun () ->
                     environment.VisibleBindings
                     |> Map.tryFind memberName
@@ -13575,6 +13681,13 @@ module SurfaceElaboration =
                     | _ ->
                         None
 
+                let resolvedEffectOperationType =
+                    tryResolveEffectOperationNamePath environment (root :: path)
+                    |> Option.bind (fun (_, _, operation) ->
+                        operation.SignatureTokens
+                        |> TypeSignatures.parseType
+                        |> Option.map (qualifyVisibleTypeNames environment))
+
                 let ordinaryResolution =
                     localTypes
                     |> Map.tryFind root
@@ -13621,6 +13734,7 @@ module SurfaceElaboration =
                 match path with
                 | [ memberName ] ->
                     scopedEffectOperationType
+                    |> Option.orElse resolvedEffectOperationType
                     |> Option.orElseWith (fun () -> tryReceiverProjection environment localTypes root memberName |> Option.map (fun projectionInfo -> projectionInfo.ReturnType))
                     |> Option.orElseWith (fun () ->
                         tryInferStaticConstructorCall
@@ -13632,7 +13746,8 @@ module SurfaceElaboration =
                             [])
                     |> Option.orElse ordinaryResolution
                 | _ ->
-                    ordinaryResolution
+                    resolvedEffectOperationType
+                    |> Option.orElse ordinaryResolution
             | Name [] ->
                 None
             | Apply(Name [ effectName; operationName ], arguments) ->
@@ -13677,6 +13792,9 @@ module SurfaceElaboration =
                         rewriteStaticObjectAliasUse aliasName staticObject body
                     | _ ->
                         body
+
+                let localStaticAliases = collectScopedPatternStaticAliases environment binding.Pattern value
+                let bodyForInference = rewriteStaticObjectPathAliasUses localStaticAliases bodyForInference
 
                 inferExpressionType nextLocals bodyForInference
             | LocalScopedEffect(declaration, body) ->
@@ -13745,13 +13863,27 @@ module SurfaceElaboration =
                     |> Option.bind (fun receiverType ->
                         tryInferVisibleAppliedType environment.VisibleTypeAliases (inferExpressionType localTypes) receiverType arguments)
                 | [ memberName ] ->
-                    tryInferStaticConstructorCall
-                        environment
-                        freshCounter
-                        (inferExpressionType localTypes)
-                        receiver
-                        memberName
-                        arguments
+                    (tryResolveHandledEffectName environment receiver
+                     |> Option.bind (fun effectName ->
+                         tryFindScopedEffectOperation effectName memberName
+                         |> Option.bind (fun (_, operation) ->
+                             operation.SignatureTokens
+                             |> TypeSignatures.parseType
+                             |> Option.map (qualifyVisibleTypeNames environment)))
+                     |> Option.bind (fun operationType ->
+                         tryInferVisibleAppliedType
+                             environment.VisibleTypeAliases
+                             (inferExpressionType localTypes)
+                             operationType
+                             arguments))
+                    |> Option.orElseWith (fun () ->
+                        tryInferStaticConstructorCall
+                            environment
+                            freshCounter
+                            (inferExpressionType localTypes)
+                            receiver
+                            memberName
+                            arguments)
                     |> Option.orElseWith (fun () ->
                         environment.VisibleBindings
                         |> Map.tryFind memberName
@@ -15814,15 +15946,40 @@ module SurfaceElaboration =
             | Name [ bindingName ] ->
                 KCoreName [ bindingName ]
             | Name (receiverName :: path) when not (List.isEmpty path) ->
-                match path with
-                | [ operationName ] ->
-                    match tryFindScopedEffectOperation receiverName operationName with
-                    | Some(declaration, _) ->
-                        KCoreEffectOperation(
-                            KCoreEffectLabel(receiverName, scopedEffectOperationMetadata declaration),
-                            operationName
-                        )
-                    | None ->
+                match tryResolveEffectOperationNamePath environment (receiverName :: path) with
+                | Some(effectName, declaration, operation) ->
+                    KCoreEffectOperation(
+                        KCoreEffectLabel(effectName, scopedEffectOperationMetadata declaration),
+                        operation.Name
+                    )
+                | None ->
+                    match path with
+                    | [ operationName ] ->
+                        match tryFindScopedEffectOperation receiverName operationName with
+                        | Some(declaration, _) ->
+                            KCoreEffectOperation(
+                                KCoreEffectLabel(receiverName, scopedEffectOperationMetadata declaration),
+                                operationName
+                            )
+                        | None ->
+                            let loweredReceiver = lowerExpression localTypes (Name [ receiverName ])
+
+                            let recordProjection =
+                                inferExpressionType localTypes (Name [ receiverName ])
+                                |> Option.bind (fun receiverType ->
+                                    tryLowerRecordProjectionPath localTypes loweredReceiver receiverType path)
+
+                            match tryResolveStaticConstructor environment (Name [ receiverName ]) operationName with
+                            | Some _ ->
+                                KCoreName [ operationName ]
+                            | None ->
+                                match tryReceiverProjection environment localTypes receiverName operationName with
+                                | Some _ ->
+                                    KCoreAppSpine(KCoreName [ operationName ], [ explicitKCoreArgument loweredReceiver ])
+                                | None ->
+                                    recordProjection
+                                    |> Option.defaultValue (KCoreName [ receiverName; operationName ])
+                    | _ ->
                         let loweredReceiver = lowerExpression localTypes (Name [ receiverName ])
 
                         let recordProjection =
@@ -15830,26 +15987,8 @@ module SurfaceElaboration =
                             |> Option.bind (fun receiverType ->
                                 tryLowerRecordProjectionPath localTypes loweredReceiver receiverType path)
 
-                        match tryResolveStaticConstructor environment (Name [ receiverName ]) operationName with
-                        | Some _ ->
-                            KCoreName [ operationName ]
-                        | None ->
-                            match tryReceiverProjection environment localTypes receiverName operationName with
-                            | Some _ ->
-                                KCoreAppSpine(KCoreName [ operationName ], [ explicitKCoreArgument loweredReceiver ])
-                            | None ->
-                                recordProjection
-                                |> Option.defaultValue (KCoreName [ receiverName; operationName ])
-                | _ ->
-                    let loweredReceiver = lowerExpression localTypes (Name [ receiverName ])
-
-                    let recordProjection =
-                        inferExpressionType localTypes (Name [ receiverName ])
-                        |> Option.bind (fun receiverType ->
-                            tryLowerRecordProjectionPath localTypes loweredReceiver receiverType path)
-
-                    recordProjection
-                    |> Option.defaultValue (KCoreName(receiverName :: path))
+                        recordProjection
+                        |> Option.defaultValue (KCoreName(receiverName :: path))
             | Name segments ->
                 KCoreName segments
             | LocalSignature(_, body) ->
@@ -15891,6 +16030,9 @@ module SurfaceElaboration =
                             body
                     | _ ->
                         body
+
+                let localStaticAliases = collectScopedPatternStaticAliases environment binding.Pattern value
+                let bodyForLowering = rewriteStaticObjectPathAliasUses localStaticAliases bodyForLowering
 
                 let valueType = bindingExpectedType |> Option.orElseWith (fun () -> inferExpressionType localTypes value)
 
@@ -16058,46 +16200,64 @@ module SurfaceElaboration =
                 | [] ->
                     KCoreAppSpine(lowerExpression localTypes receiver, lowerArguments arguments)
                 | [ memberName ] ->
-                    match tryResolveStaticConstructor environment receiver memberName with
-                    | Some _ ->
-                        KCoreAppSpine(KCoreName [ memberName ], lowerArguments arguments)
-                    | None ->
-                        match environment.VisibleBindings |> Map.tryFind memberName with
-                        | Some bindingInfo ->
-                            match tryBuildReceiverMethodArguments bindingInfo receiver arguments with
-                            | Some receiverArguments ->
-                                match
-                                    tryPrepareVisibleBindingCall
-                                        environment
-                                        freshCounter
-                                        bindingInfo
-                                        (inferExpressionType localTypes)
-                                        (tryResolveUniqueLocalImplicitByType environment localTypes)
-                                        receiverArguments
-                                with
-                                | Some preparedCall ->
-                                    KCoreAppSpine(KCoreName [ memberName ], lowerPreparedBindingCallArguments bindingInfo preparedCall)
-                                | None ->
-                                    KCoreAppSpine(KCoreName [ memberName ], lowerArguments receiverArguments)
-                            | None ->
-                                if List.isEmpty arguments then
-                                    KCoreName [ memberName ]
-                                else
-                                    KCoreAppSpine(KCoreName [ memberName ], lowerArguments arguments)
-                        | None ->
-                            let loweredReceiver = lowerExpression localTypes receiver
+                    match
+                        tryResolveHandledEffectName environment receiver
+                        |> Option.bind (fun effectName ->
+                            tryFindScopedEffectOperation effectName memberName
+                            |> Option.map (fun (declaration, operation) -> effectName, declaration, operation))
+                    with
+                    | Some(effectName, declaration, operation) ->
+                        let loweredOperation =
+                            KCoreEffectOperation(
+                                KCoreEffectLabel(effectName, scopedEffectOperationMetadata declaration),
+                                operation.Name
+                            )
 
-                            match inferExpressionType localTypes receiver with
-                            | Some receiverType ->
-                                tryLowerRecordProjectionPath localTypes loweredReceiver receiverType [ memberName ]
-                                |> Option.map (fun projected ->
+                        if List.isEmpty arguments then
+                            loweredOperation
+                        else
+                            KCoreAppSpine(loweredOperation, lowerArguments arguments)
+                    | None ->
+                        match tryResolveStaticConstructor environment receiver memberName with
+                        | Some _ ->
+                            KCoreAppSpine(KCoreName [ memberName ], lowerArguments arguments)
+                        | None ->
+                            match environment.VisibleBindings |> Map.tryFind memberName with
+                            | Some bindingInfo ->
+                                match tryBuildReceiverMethodArguments bindingInfo receiver arguments with
+                                | Some receiverArguments ->
+                                    match
+                                        tryPrepareVisibleBindingCall
+                                            environment
+                                            freshCounter
+                                            bindingInfo
+                                            (inferExpressionType localTypes)
+                                            (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                            receiverArguments
+                                    with
+                                    | Some preparedCall ->
+                                        KCoreAppSpine(KCoreName [ memberName ], lowerPreparedBindingCallArguments bindingInfo preparedCall)
+                                    | None ->
+                                        KCoreAppSpine(KCoreName [ memberName ], lowerArguments receiverArguments)
+                                | None ->
                                     if List.isEmpty arguments then
-                                        projected
+                                        KCoreName [ memberName ]
                                     else
-                                        KCoreAppSpine(projected, lowerArguments arguments))
-                                |> Option.defaultValue (KCoreName [ memberName ])
+                                        KCoreAppSpine(KCoreName [ memberName ], lowerArguments arguments)
                             | None ->
-                                KCoreName [ memberName ]
+                                let loweredReceiver = lowerExpression localTypes receiver
+
+                                match inferExpressionType localTypes receiver with
+                                | Some receiverType ->
+                                    tryLowerRecordProjectionPath localTypes loweredReceiver receiverType [ memberName ]
+                                    |> Option.map (fun projected ->
+                                        if List.isEmpty arguments then
+                                            projected
+                                        else
+                                            KCoreAppSpine(projected, lowerArguments arguments))
+                                    |> Option.defaultValue (KCoreName [ memberName ])
+                                | None ->
+                                    KCoreName [ memberName ]
                 | memberName :: rest ->
                     lowerExpression localTypes (MemberAccess(MemberAccess(receiver, [ memberName ], []), rest, arguments))
             | SafeNavigation(receiver, navigation) ->
@@ -16172,12 +16332,12 @@ module SurfaceElaboration =
                 let carrier = tryMatchQueryCarrierShape application |> Option.get
                 lowerExpressionWithExpectedType localTypes expectedType carrier.Comprehension.Lowered
             | Apply(Name [ receiverName; memberName ], arguments) ->
-                match tryFindScopedEffectOperation receiverName memberName with
-                | Some(declaration, _) ->
+                match tryResolveEffectOperationNamePath environment [ receiverName; memberName ] with
+                | Some(effectName, declaration, operation) ->
                     KCoreAppSpine(
                         KCoreEffectOperation(
-                            KCoreEffectLabel(receiverName, scopedEffectOperationMetadata declaration),
-                            memberName
+                            KCoreEffectLabel(effectName, scopedEffectOperationMetadata declaration),
+                            operation.Name
                         ),
                         lowerArguments arguments
                     )
@@ -16217,95 +16377,105 @@ module SurfaceElaboration =
                             | None ->
                                 KCoreAppSpine(lowerExpression localTypes (Name [ receiverName; memberName ]), lowerArguments arguments)
             | Apply(Name nameSegments, arguments) ->
-                match tryResolveTraitMemberProjection environment localTypes nameSegments with
-                | Some(traitInfo, memberName, _, receiverName) ->
-                    KCoreTraitCall(
-                        traitInfo.Name,
-                        memberName,
-                        lowerExpressionWithExpectedType localTypes None (Name [ receiverName ]),
-                        lowerArgumentExpressions arguments
+                match tryResolveEffectOperationNamePath environment nameSegments with
+                | Some(effectName, declaration, operation) ->
+                    KCoreAppSpine(
+                        KCoreEffectOperation(
+                            KCoreEffectLabel(effectName, scopedEffectOperationMetadata declaration),
+                            operation.Name
+                        ),
+                        lowerArguments arguments
                     )
                 | None ->
-                    match nameSegments with
-                    | [ calleeName ]
-                        when not (Map.containsKey calleeName localTypes)
-                             && not (Map.containsKey calleeName environment.VisibleBindings)
-                             && environment.ConstrainedMembers.ContainsKey calleeName ->
-                        let traitName, dictionaryParameterName = environment.ConstrainedMembers[calleeName]
-
+                    match tryResolveTraitMemberProjection environment localTypes nameSegments with
+                    | Some(traitInfo, memberName, _, receiverName) ->
                         KCoreTraitCall(
-                            traitName,
-                            calleeName,
-                            KCoreName [ dictionaryParameterName ],
+                            traitInfo.Name,
+                            memberName,
+                            lowerExpressionWithExpectedType localTypes None (Name [ receiverName ]),
                             lowerArgumentExpressions arguments
                         )
-                    | [ calleeName ] when environment.VisibleBindings.ContainsKey calleeName ->
-                        let bindingInfo = environment.VisibleBindings[calleeName]
-                        match
-                            tryPrepareVisibleBindingCall
-                                environment
-                                freshCounter
-                                bindingInfo
-                                (inferExpressionType localTypes)
-                                (tryResolveUniqueLocalImplicitByType environment localTypes)
-                                arguments
-                        with
-                        | Some preparedCall ->
-                            let dictionaryArguments =
-                                preparedCall.InstantiatedScheme.Constraints
-                                |> List.choose (fun constraintInfo ->
-                                    resolveConstraintInstance environment constraintInfo
-                                    |> Option.map (fun instanceInfo ->
-                                        explicitKCoreArgument (
-                                            KCoreDictionaryValue(instanceInfo.ModuleName, instanceInfo.TraitName, instanceInfo.InstanceKey)
-                                        )))
+                    | None ->
+                        match nameSegments with
+                        | [ calleeName ]
+                            when not (Map.containsKey calleeName localTypes)
+                                 && not (Map.containsKey calleeName environment.VisibleBindings)
+                                 && environment.ConstrainedMembers.ContainsKey calleeName ->
+                            let traitName, dictionaryParameterName = environment.ConstrainedMembers[calleeName]
 
-                            KCoreAppSpine(
-                                KCoreName [ calleeName ],
-                                dictionaryArguments @ lowerPreparedBindingCallArguments bindingInfo preparedCall
-                            )
-                        | None ->
-                            KCoreAppSpine(KCoreName [ calleeName ], lowerArguments arguments)
-                    | [ calleeName ] when environment.VisibleConstructors.ContainsKey calleeName ->
-                        let constructorInfo = environment.VisibleConstructors[calleeName]
-                        match
-                            tryPrepareVisibleBindingCall
-                                environment
-                                freshCounter
-                                constructorInfo
-                                (inferExpressionType localTypes)
-                                (tryResolveUniqueLocalImplicitByType environment localTypes)
-                                arguments
-                        with
-                        | Some preparedCall ->
-                            KCoreAppSpine(
-                                KCoreName [ calleeName ],
-                                lowerPreparedBindingCallArguments constructorInfo preparedCall
-                            )
-                        | None ->
-                            KCoreAppSpine(KCoreName [ calleeName ], lowerArguments arguments)
-                    | [ calleeName ] ->
-                        match
-                            tryPrepareVisibleTraitMemberCall
-                                environment
-                                freshCounter
-                                calleeName
-                                (inferExpressionType localTypes)
-                                arguments
-                        with
-                        | Some(traitInfo, _, preparedCall, instanceInfo) ->
                             KCoreTraitCall(
-                                traitInfo.Name,
+                                traitName,
                                 calleeName,
-                                KCoreDictionaryValue(instanceInfo.ModuleName, instanceInfo.TraitName, instanceInfo.InstanceKey),
-                                lowerPreparedArgumentExpressions preparedCall.Arguments
+                                KCoreName [ dictionaryParameterName ],
+                                lowerArgumentExpressions arguments
                             )
-                        | None ->
-                            KCoreAppSpine(KCoreName [ calleeName ], lowerArguments arguments)
-                    | _ ->
-                        KCoreAppSpine(lowerExpression localTypes (Name nameSegments), lowerArguments arguments)
+                        | [ calleeName ] when environment.VisibleBindings.ContainsKey calleeName ->
+                            let bindingInfo = environment.VisibleBindings[calleeName]
+                            match
+                                tryPrepareVisibleBindingCall
+                                    environment
+                                    freshCounter
+                                    bindingInfo
+                                    (inferExpressionType localTypes)
+                                    (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                    arguments
+                            with
+                            | Some preparedCall ->
+                                let dictionaryArguments =
+                                    preparedCall.InstantiatedScheme.Constraints
+                                    |> List.choose (fun constraintInfo ->
+                                        resolveConstraintInstance environment constraintInfo
+                                        |> Option.map (fun instanceInfo ->
+                                            explicitKCoreArgument (
+                                                KCoreDictionaryValue(instanceInfo.ModuleName, instanceInfo.TraitName, instanceInfo.InstanceKey)
+                                            )))
+
+                                KCoreAppSpine(
+                                    KCoreName [ calleeName ],
+                                    dictionaryArguments @ lowerPreparedBindingCallArguments bindingInfo preparedCall
+                                )
+                            | None ->
+                                KCoreAppSpine(KCoreName [ calleeName ], lowerArguments arguments)
+                        | [ calleeName ] when environment.VisibleConstructors.ContainsKey calleeName ->
+                            let constructorInfo = environment.VisibleConstructors[calleeName]
+                            match
+                                tryPrepareVisibleBindingCall
+                                    environment
+                                    freshCounter
+                                    constructorInfo
+                                    (inferExpressionType localTypes)
+                                    (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                    arguments
+                            with
+                            | Some preparedCall ->
+                                KCoreAppSpine(
+                                    KCoreName [ calleeName ],
+                                    lowerPreparedBindingCallArguments constructorInfo preparedCall
+                                )
+                            | None ->
+                                KCoreAppSpine(KCoreName [ calleeName ], lowerArguments arguments)
+                        | [ calleeName ] ->
+                            match
+                                tryPrepareVisibleTraitMemberCall
+                                    environment
+                                    freshCounter
+                                    calleeName
+                                    (inferExpressionType localTypes)
+                                    arguments
+                            with
+                            | Some(traitInfo, _, preparedCall, instanceInfo) ->
+                                KCoreTraitCall(
+                                    traitInfo.Name,
+                                    calleeName,
+                                    KCoreDictionaryValue(instanceInfo.ModuleName, instanceInfo.TraitName, instanceInfo.InstanceKey),
+                                    lowerPreparedArgumentExpressions preparedCall.Arguments
+                                )
+                            | None ->
+                                KCoreAppSpine(KCoreName [ calleeName ], lowerArguments arguments)
+                        | _ ->
+                            KCoreAppSpine(lowerExpression localTypes (Name nameSegments), lowerArguments arguments)
             | Apply(callee, arguments) ->
-                        KCoreAppSpine(lowerExpressionWithExpectedType localTypes None callee, lowerArguments arguments)
+                KCoreAppSpine(lowerExpressionWithExpectedType localTypes None callee, lowerArguments arguments)
             | Unary(operatorName, operand) ->
                 let operandExpectedType =
                     if operatorName = "-" || operatorName = "negate" then expectedType else None

@@ -654,6 +654,132 @@ let ``deep handlers accept a lexically rebound effect label`` () =
         failwithf "Expected rebound-label deep handler evaluation to succeed, got %s" issue.Message
 
 [<Fact>]
+let ``effect operation selection accepts a lexically rebound effect label`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "ok : Int"
+            "let ok : Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            ask : Unit -> Bool"
+            ""
+            "        let l = Ask"
+            ""
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let b <- l.ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        let handled : Eff <[ ]> Int ="
+            "            deep handle Ask comp with"
+            "                case return x -> pure x"
+            "                case ask () k -> k True"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-m4-op-label-alias-root"
+            "main.ok"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected aliased effect operation selection to typecheck, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("1", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected aliased effect operation selection to succeed, got %s" issue.Message
+
+[<Fact>]
+let ``deep handlers accept an effect label carried in a record field`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "ok : Int"
+            "let ok : Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            ask : Unit -> Bool"
+            ""
+            "        let pkg = (label = Ask)"
+            ""
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let b <- Ask.ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        let handled : Eff <[ ]> Int ="
+            "            deep handle pkg.label comp with"
+            "                case return x -> pure x"
+            "                case ask () k -> k True"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-m4-handler-record-label-root"
+            "main.ok"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected record-carried effect label handling to typecheck, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("1", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected record-carried effect label handling to succeed, got %s" issue.Message
+
+[<Fact>]
+let ``effect operation selection accepts an effect label carried in a record field`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "ok : Int"
+            "let ok : Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            ask : Unit -> Bool"
+            ""
+            "        let pkg = (label = Ask)"
+            ""
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let b <- pkg.label.ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        let handled : Eff <[ ]> Int ="
+            "            deep handle Ask comp with"
+            "                case return x -> pure x"
+            "                case ask () k -> k True"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-m4-op-record-label-root"
+            "main.ok"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected record-carried effect operation selection to typecheck, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("1", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected record-carried effect operation selection to succeed, got %s" issue.Message
+
+[<Fact>]
 let ``multishot scoped effect invocation rejects captured linear suffix at the operation site`` () =
     let fixturePath =
         Path.Combine(
