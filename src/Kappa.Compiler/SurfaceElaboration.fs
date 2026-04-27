@@ -960,11 +960,15 @@ module SurfaceElaboration =
         | _ ->
             None
 
-    let private scopedEffectRowType effectName =
+    let private scopedEffectRowType (effectName: string) =
+        let effectNameSegments =
+            effectName.Split('.', StringSplitOptions.RemoveEmptyEntries)
+            |> Array.toList
+
         TypeEffectRow(
             [
-                { Label = TypeName([ effectName ], [])
-                  Effect = TypeName([ effectName ], []) }
+                { Label = TypeName(effectNameSegments, [])
+                  Effect = TypeName(effectNameSegments, []) }
             ],
             None
         )
@@ -2665,6 +2669,39 @@ module SurfaceElaboration =
           ExportedConstructorsByType = exportedConstructorsByType
           ExportedTypes = exportedTypes
           ExportedTraits = exportedTraits }
+
+    let private buildEffectDeclarationIndex (frontendModules: KFrontIRModule list) =
+        frontendModules
+        |> List.groupBy (fun frontendModule -> moduleNameText frontendModule.ModuleIdentity)
+        |> List.map (fun (moduleName, fragments) ->
+            moduleName,
+            (fragments
+             |> List.collect (fun fragment ->
+                 fragment.Declarations
+                 |> List.choose (function
+                     | EffectDeclarationNode declaration -> Some declaration
+                     | _ -> None))))
+        |> Map.ofList
+
+    let private qualifiedImportedEffectDeclarations
+        (effectDeclarationsByModule: Map<string, EffectDeclaration list>)
+        (imports: ImportSpec list)
+        =
+        imports
+        |> List.collect (fun spec ->
+            match spec.Source, spec.Selection with
+            | Dotted moduleSegments, QualifiedOnly ->
+                let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
+                let qualifiedPrefix = spec.Alias |> Option.defaultValue importedModuleName
+
+                effectDeclarationsByModule
+                |> Map.tryFind importedModuleName
+                |> Option.defaultValue []
+                |> List.map (fun declaration ->
+                    { declaration with
+                        Name = qualifiedPrefix + "." + declaration.Name })
+            | _ ->
+                [])
 
     let private buildHostModuleSurfaceInfo (description: HostBindings.HostModuleDescription) =
         let bindingSchemes =
@@ -9810,10 +9847,10 @@ module SurfaceElaboration =
 
                 let handledEffectRowDiagnostics =
                     let tryClosedRowMatch effectName effectRow =
-                        let rec isSimpleName expected typeExpr =
+                        let rec isResolvedEffectName expected typeExpr =
                             match normalizeTypeAliases environment.VisibleTypeAliases typeExpr with
-                            | TypeName([ name ], []) ->
-                                String.Equals(name, expected, StringComparison.Ordinal)
+                            | TypeName(nameSegments, []) ->
+                                String.Equals(SyntaxFacts.moduleNameToText nameSegments, expected, StringComparison.Ordinal)
                             | _ ->
                                 false
 
@@ -9822,14 +9859,14 @@ module SurfaceElaboration =
                             let containsExactEntry =
                                 entries
                                 |> List.exists (fun entry ->
-                                    isSimpleName effectName entry.Label
-                                    && isSimpleName effectName entry.Effect)
+                                    isResolvedEffectName effectName entry.Label
+                                    && isResolvedEffectName effectName entry.Effect)
 
                             let containsMismatchedHandledLabel =
                                 entries
                                 |> List.exists (fun entry ->
-                                    isSimpleName effectName entry.Label
-                                    && not (isSimpleName effectName entry.Effect))
+                                    isResolvedEffectName effectName entry.Label
+                                    && not (isResolvedEffectName effectName entry.Effect))
 
                             if containsExactEntry then
                                 Some true
@@ -11890,6 +11927,7 @@ module SurfaceElaboration =
         (hostModules: Map<string, HostBindings.HostModuleDescription>)
         =
         let surfaceIndex = buildSurfaceIndex frontendModules hostModules
+        let effectDeclarationsByModule = buildEffectDeclarationIndex frontendModules
 
         frontendModules
         |> List.collect (fun frontendModule ->
@@ -11913,10 +11951,13 @@ module SurfaceElaboration =
                 |> Set.ofList
 
             let topLevelEffects =
-                frontendModule.Declarations
-                |> List.choose (function
-                    | EffectDeclarationNode declaration -> Some declaration
-                    | _ -> None)
+                let localEffects =
+                    frontendModule.Declarations
+                    |> List.choose (function
+                        | EffectDeclarationNode declaration -> Some declaration
+                        | _ -> None)
+
+                localEffects @ qualifiedImportedEffectDeclarations effectDeclarationsByModule frontendModule.Imports
 
             withScopedEffectDeclarations topLevelEffects (fun () ->
                 let makeDiagnostic code message =
@@ -11948,8 +11989,17 @@ module SurfaceElaboration =
                       ConstrainedMembers = Map.empty }
 
                 let environment =
+                    let staticObjectAliases =
+                        let localAliases =
+                            buildStaticObjectAliasesForModule baseEnvironment frontendModule.Declarations
+
+                        topLevelEffects
+                        |> List.filter (fun declaration -> declaration.Name.Contains("."))
+                        |> List.fold (fun current declaration ->
+                            Map.add declaration.Name (scopedEffectLabelStaticObject declaration.Name) current) localAliases
+
                     { baseEnvironment with
-                        VisibleStaticObjects = buildStaticObjectAliasesForModule baseEnvironment frontendModule.Declarations }
+                        VisibleStaticObjects = staticObjectAliases }
 
                 let hasNonQualifiedImports =
                     frontendModule.Declarations
@@ -13697,6 +13747,15 @@ module SurfaceElaboration =
             | Name [ effectName ] when tryFindScopedEffectDeclaration effectName |> Option.isSome ->
                 Some(TypeIntrinsic EffLabelClassifier)
             | Name(root :: path) ->
+                let resolvedStaticObjectType =
+                    tryResolveScopedStaticObject environment expression
+                    |> Option.bind (fun staticObject ->
+                        match staticObject.ObjectKind with
+                        | StaticEffectLabelObject ->
+                            staticObject.Scheme |> Option.map (fun scheme -> scheme.Body)
+                        | _ ->
+                            None)
+
                 let scopedEffectOperationType =
                     match path with
                     | [ operationName ] ->
@@ -13761,6 +13820,7 @@ module SurfaceElaboration =
                 match path with
                 | [ memberName ] ->
                     scopedEffectOperationType
+                    |> Option.orElse resolvedStaticObjectType
                     |> Option.orElse resolvedEffectOperationType
                     |> Option.orElseWith (fun () -> tryReceiverProjection environment localTypes root memberName |> Option.map (fun projectionInfo -> projectionInfo.ReturnType))
                     |> Option.orElseWith (fun () ->
@@ -13773,20 +13833,46 @@ module SurfaceElaboration =
                             [])
                     |> Option.orElse ordinaryResolution
                 | _ ->
-                    resolvedEffectOperationType
+                    resolvedStaticObjectType
+                    |> Option.orElse resolvedEffectOperationType
                     |> Option.orElse ordinaryResolution
             | Name [] ->
                 None
-            | Apply(Name [ effectName; operationName ], arguments) ->
+            | Apply(MemberAccess(receiver, [ memberName ], []), arguments) ->
                 match
-                    tryFindScopedEffectOperation effectName operationName
-                    |> Option.bind (fun (_, operation) ->
+                    tryResolveHandledEffectName environment receiver
+                    |> Option.bind (fun effectName ->
+                        tryFindScopedEffectOperation effectName memberName
+                        |> Option.bind (fun (_, operation) ->
+                            operation.SignatureTokens
+                            |> TypeSignatures.parseType
+                            |> Option.map (qualifyVisibleTypeNames environment)
+                            |> Option.map TypeSignatures.functionParts
+                            |> Option.map (fun (parameterTypes, resultType) -> effectName, parameterTypes, resultType)))
+                with
+                | Some(effectName, parameterTypes, resultType) when List.length parameterTypes = List.length arguments ->
+                    Some(effType (scopedEffectRowType effectName) resultType)
+                | _ ->
+                    match tryInferQueryCarrierType environment freshCounter localTypes inferExpressionType expression with
+                    | Some queryCarrierType ->
+                        Some queryCarrierType
+                    | None ->
+                        inferApplicationType localTypes expression
+            | Apply(Name nameSegments, arguments) ->
+                match
+                    tryResolveEffectOperationNamePath environment nameSegments
+                    |> Option.bind (fun (effectName, _, operation) ->
                         operation.SignatureTokens
                         |> TypeSignatures.parseType
                         |> Option.map (qualifyVisibleTypeNames environment)
                         |> Option.map TypeSignatures.functionParts)
                 with
                 | Some(parameterTypes, resultType) when List.length parameterTypes = List.length arguments ->
+                    let effectName =
+                        match tryResolveEffectOperationNamePath environment nameSegments with
+                        | Some(effectName, _, _) -> effectName
+                        | None -> ""
+
                     Some(effType (scopedEffectRowType effectName) resultType)
                 | _ ->
                     match tryInferQueryCarrierType environment freshCounter localTypes inferExpressionType expression with
@@ -15973,22 +16059,45 @@ module SurfaceElaboration =
             | Name [ bindingName ] ->
                 KCoreName [ bindingName ]
             | Name (receiverName :: path) when not (List.isEmpty path) ->
-                match tryResolveEffectOperationNamePath environment (receiverName :: path) with
-                | Some(effectName, declaration, operation) ->
-                    KCoreEffectOperation(
-                        KCoreEffectLabel(effectName, scopedEffectOperationMetadata declaration),
-                        operation.Name
-                    )
+                match tryResolveScopedStaticObject environment expression with
+                | Some staticObject when staticObject.ObjectKind = StaticEffectLabelObject ->
+                    lowerStaticObject staticObject
+                | Some _
                 | None ->
-                    match path with
-                    | [ operationName ] ->
-                        match tryFindScopedEffectOperation receiverName operationName with
-                        | Some(declaration, _) ->
-                            KCoreEffectOperation(
-                                KCoreEffectLabel(receiverName, scopedEffectOperationMetadata declaration),
-                                operationName
-                            )
-                        | None ->
+                    match tryResolveEffectOperationNamePath environment (receiverName :: path) with
+                    | Some(effectName, declaration, operation) ->
+                        KCoreEffectOperation(
+                            KCoreEffectLabel(effectName, scopedEffectOperationMetadata declaration),
+                            operation.Name
+                        )
+                    | None ->
+                        match path with
+                        | [ operationName ] ->
+                            match tryFindScopedEffectOperation receiverName operationName with
+                            | Some(declaration, _) ->
+                                KCoreEffectOperation(
+                                    KCoreEffectLabel(receiverName, scopedEffectOperationMetadata declaration),
+                                    operationName
+                                )
+                            | None ->
+                                let loweredReceiver = lowerExpression localTypes (Name [ receiverName ])
+
+                                let recordProjection =
+                                    inferExpressionType localTypes (Name [ receiverName ])
+                                    |> Option.bind (fun receiverType ->
+                                        tryLowerRecordProjectionPath localTypes loweredReceiver receiverType path)
+
+                                match tryResolveStaticConstructor environment (Name [ receiverName ]) operationName with
+                                | Some _ ->
+                                    KCoreName [ operationName ]
+                                | None ->
+                                    match tryReceiverProjection environment localTypes receiverName operationName with
+                                    | Some _ ->
+                                        KCoreAppSpine(KCoreName [ operationName ], [ explicitKCoreArgument loweredReceiver ])
+                                    | None ->
+                                        recordProjection
+                                        |> Option.defaultValue (KCoreName [ receiverName; operationName ])
+                        | _ ->
                             let loweredReceiver = lowerExpression localTypes (Name [ receiverName ])
 
                             let recordProjection =
@@ -15996,26 +16105,8 @@ module SurfaceElaboration =
                                 |> Option.bind (fun receiverType ->
                                     tryLowerRecordProjectionPath localTypes loweredReceiver receiverType path)
 
-                            match tryResolveStaticConstructor environment (Name [ receiverName ]) operationName with
-                            | Some _ ->
-                                KCoreName [ operationName ]
-                            | None ->
-                                match tryReceiverProjection environment localTypes receiverName operationName with
-                                | Some _ ->
-                                    KCoreAppSpine(KCoreName [ operationName ], [ explicitKCoreArgument loweredReceiver ])
-                                | None ->
-                                    recordProjection
-                                    |> Option.defaultValue (KCoreName [ receiverName; operationName ])
-                    | _ ->
-                        let loweredReceiver = lowerExpression localTypes (Name [ receiverName ])
-
-                        let recordProjection =
-                            inferExpressionType localTypes (Name [ receiverName ])
-                            |> Option.bind (fun receiverType ->
-                                tryLowerRecordProjectionPath localTypes loweredReceiver receiverType path)
-
-                        recordProjection
-                        |> Option.defaultValue (KCoreName(receiverName :: path))
+                            recordProjection
+                            |> Option.defaultValue (KCoreName(receiverName :: path))
             | Name segments ->
                 KCoreName segments
             | LocalSignature(_, body) ->
@@ -16903,15 +16994,19 @@ module SurfaceElaboration =
         (hostModules: Map<string, HostBindings.HostModuleDescription>)
         =
         let surfaceIndex = buildSurfaceIndex frontendModules hostModules
+        let effectDeclarationsByModule = buildEffectDeclarationIndex frontendModules
 
         frontendModules
         |> List.map (fun frontendModule ->
             let moduleName = moduleNameText frontendModule.ModuleIdentity
             let topLevelEffects =
-                frontendModule.Declarations
-                |> List.choose (function
-                    | EffectDeclarationNode declaration -> Some declaration
-                    | _ -> None)
+                let localEffects =
+                    frontendModule.Declarations
+                    |> List.choose (function
+                        | EffectDeclarationNode declaration -> Some declaration
+                        | _ -> None)
+
+                localEffects @ qualifiedImportedEffectDeclarations effectDeclarationsByModule frontendModule.Imports
 
             withScopedEffectDeclarations topLevelEffects (fun () ->
                 let moduleInfo = surfaceIndex[moduleName]
@@ -16937,8 +17032,17 @@ module SurfaceElaboration =
                       ConstrainedMembers = Map.empty }
 
                 let environment =
+                    let staticObjectAliases =
+                        let localAliases =
+                            buildStaticObjectAliasesForModule baseEnvironment frontendModule.Declarations
+
+                        topLevelEffects
+                        |> List.filter (fun declaration -> declaration.Name.Contains("."))
+                        |> List.fold (fun current declaration ->
+                            Map.add declaration.Name (scopedEffectLabelStaticObject declaration.Name) current) localAliases
+
                     { baseEnvironment with
-                        VisibleStaticObjects = buildStaticObjectAliasesForModule baseEnvironment frontendModule.Declarations }
+                        VisibleStaticObjects = staticObjectAliases }
 
                 let declarations =
                     frontendModule.Declarations

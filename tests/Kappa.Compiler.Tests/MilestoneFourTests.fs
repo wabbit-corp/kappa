@@ -1030,3 +1030,51 @@ let ``top level effect declarations introduce in-scope effect labels`` () =
         Assert.Equal("1", RuntimeValue.format value)
     | Result.Error issue ->
         failwithf "Expected top-level effect label evaluation to succeed, got %s" issue.Message
+
+[<Fact>]
+let ``qualified imported effect labels remain usable across modules`` () =
+    let libSource =
+        [
+            "module lib"
+            ""
+            "effect Ask ="
+            "    1 ask : Unit -> Bool"
+        ]
+        |> String.concat "\n"
+
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            "import lib"
+            ""
+            "ok : Int"
+            "let ok : Int ="
+            "    block"
+            "        let comp : Eff <[lib.Ask : lib.Ask]> Int ="
+            "            do"
+            "                let b <- lib.Ask.ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        let handled : Eff <[ ]> Int ="
+            "            deep handle lib.Ask comp with"
+            "                case return x -> pure x"
+            "                case ask () k -> k True"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-m4-imported-effect-label-root"
+            "main.ok"
+            [ "lib.kp", libSource
+              "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected qualified imported effect labels to resolve, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("1", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected imported effect label evaluation to succeed, got %s" issue.Message
