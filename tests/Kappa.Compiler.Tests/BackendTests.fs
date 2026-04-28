@@ -50,6 +50,32 @@ let ``dotnet backend emits a managed project that runs`` () =
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
+let ``dotnet backend rejects native aot deployment explicitly`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-dotnet-native-aot-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let result = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "dotnet-native-aot-backend"
+
+    match Backend.emitDotNetArtifact workspace "main.result" outputDirectory DotNetDeployment.NativeAot with
+    | Result.Ok artifact ->
+        failwithf "Expected dotnet NativeAOT emission to be rejected, but emitted '%s'." artifact.ProjectFilePath
+    | Result.Error message ->
+        Assert.Contains(
+            "--native-aot is not supported for backend dotnet.",
+            message,
+            StringComparison.Ordinal
+        )
+
+[<Fact>]
 let ``dotnet backend artifact emission does not depend on frontend documents`` () =
     let workspace =
         compileInMemoryWorkspace
@@ -321,6 +347,38 @@ let ``cli can run the managed dotnet backend`` () =
     Assert.Equal(0, runResult.ExitCode)
     Assert.Contains("42", runResult.StandardOutput)
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
+let ``cli rejects native aot for the managed dotnet backend before emission`` () =
+    let workspaceRoot = createScratchDirectory "cli-dotnet-native-aot-workspace"
+
+    writeWorkspaceFiles
+        workspaceRoot
+        [
+            "main.kp",
+            [
+                "module main"
+                "let result = 42"
+            ]
+            |> String.concat "\n"
+        ]
+
+    let emitDirectory = createScratchDirectory "cli-dotnet-native-aot-emit"
+
+    let runResult =
+        runBuiltCli
+            workspaceRoot
+            $"--source-root \"{workspaceRoot}\" --backend dotnet --emit-dir \"{emitDirectory}\" --native-aot --run main.result"
+
+    Assert.Equal(1, runResult.ExitCode)
+    Assert.Contains(
+        "--native-aot is not supported for backend dotnet.",
+        runResult.StandardError,
+        StringComparison.Ordinal
+    )
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardOutput), runResult.StandardOutput)
+    Assert.False(File.Exists(Path.Combine(emitDirectory, "Kappa.Generated.Runner.csproj")))
+    Assert.False(File.Exists(Path.Combine(emitDirectory, "Program.cs")))
 
 [<Fact>]
 let ``cli can run the dotnet backend for zero argument bindings with call heavy bodies`` () =

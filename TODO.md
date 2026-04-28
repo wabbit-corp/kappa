@@ -557,12 +557,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Persist host-callable identity into IR and either reference or copy required assemblies into generated output.
   - Sources: `reviews/dotnet1.md`.
 
-- `[High] Either disable `--native-aot` for the managed `dotnet` backend or implement a real NativeAOT-compatible runner.`
-  - The CLI advertises a native-AOT path, but the backend rejects it.
-  - The current reflective `Assembly.LoadFrom` / `GetMethod` / `Invoke` runner shape is also a bad fit for NativeAOT.
-  - Either fail early at CLI validation or generate a runner that statically references the emitted assembly and calls the entrypoint directly.
-  - Sources: `reviews/dotnet1.md`.
-
 - `[Medium-High] Pick one canonical CLR-facing representation for `Char`, `UnicodeScalar`, `Grapheme`, and `Byte`.`
   - The current pipeline inconsistently treats them as `System.Char`, `System.String`, or integer-like values depending on where the value entered the pipeline.
   - Decide the representation model explicitly and make literals, type parsing, host interop, backend lowering, and emission agree.

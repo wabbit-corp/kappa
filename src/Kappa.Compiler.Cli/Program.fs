@@ -277,44 +277,22 @@ let private runDotNetBackend
     (emitDirectory: string option)
     (nativeAot: bool)
     =
-    let outputDirectory =
-        emitDirectory
-        |> Option.defaultWith (fun () ->
-            Path.Combine(Path.GetTempPath(), "kappa-cli", Guid.NewGuid().ToString("N")))
-
-    let deployment =
-        if nativeAot then DotNetDeployment.NativeAot else DotNetDeployment.Managed
-
-    match emitArtifact workspace entryPoint outputDirectory deployment with
-    | Result.Error message ->
-        Console.Error.WriteLine(message)
+    if nativeAot then
+        Console.Error.WriteLine(DotNetDeployment.unsupportedForDotNetMessage)
         1
-    | Result.Ok artifact ->
-        if nativeAot then
-            let rid = currentRid ()
-            let publishResult =
-                runProcess artifact.ProjectDirectory "dotnet" $"publish \"{artifact.ProjectFilePath}\" -c Release -r {rid}"
+    else
+        let outputDirectory =
+            emitDirectory
+            |> Option.defaultWith (fun () ->
+                Path.Combine(Path.GetTempPath(), "kappa-cli", Guid.NewGuid().ToString("N")))
 
-            if publishResult.ExitCode <> 0 then
-                printProcessFailure "Native AOT publish failed." publishResult
-                1
-            else
-                let publishDirectory =
-                    Path.Combine(artifact.ProjectDirectory, "bin", "Release", "net10.0", rid, "publish")
+        let deployment = DotNetDeployment.Managed
 
-                let executable =
-                    executablePath publishDirectory (Path.GetFileNameWithoutExtension(artifact.ProjectFilePath))
-
-                let runResult = runProcess publishDirectory executable ""
-
-                if not (String.IsNullOrWhiteSpace(runResult.StandardOutput)) then
-                    Console.Out.Write(runResult.StandardOutput)
-
-                if not (String.IsNullOrWhiteSpace(runResult.StandardError)) then
-                    Console.Error.Write(runResult.StandardError)
-
-                runResult.ExitCode
-        else
+        match emitArtifact workspace entryPoint outputDirectory deployment with
+        | Result.Error message ->
+            Console.Error.WriteLine(message)
+            1
+        | Result.Ok artifact ->
             let buildResult =
                 runProcess artifact.ProjectDirectory "dotnet" $"build \"{artifact.ProjectFilePath}\" -c Release"
 

@@ -5,6 +5,11 @@ type DotNetDeployment =
     | Managed
     | NativeAot
 
+[<RequireQualifiedAccess>]
+module DotNetDeployment =
+    let unsupportedForDotNetMessage =
+        "--native-aot is not supported for backend dotnet. Omit --native-aot for the managed dotnet backend."
+
 type DotNetArtifact =
     { ProjectDirectory: string
       ProjectFilePath: string

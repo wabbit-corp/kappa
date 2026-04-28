@@ -177,9 +177,7 @@ internal static class Program
         =
         result {
             if deployment <> DotNetDeployment.Managed then
-                return!
-                    Result.Error
-                        "The CLR-backed dotnet profile currently supports managed builds only."
+                return! Result.Error DotNetDeployment.unsupportedForDotNetMessage
 
             let! moduleName, bindingName = resolveClrEntryPoint workspace entryPoint
             let usesEffectRuntime = ClrAssemblyIR.modulesUseEffectRuntime workspace.ClrAssemblyIR
