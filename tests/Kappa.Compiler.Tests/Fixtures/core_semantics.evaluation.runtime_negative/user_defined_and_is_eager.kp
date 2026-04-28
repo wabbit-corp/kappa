@@ -1,12 +1,13 @@
 module user_defined_and_is_eager
 
+import std.testing.*
+
 infix left 40 (&&)
 let (&&) x y = x
 
 result : Bool
-let result = False && (match Nil
-                       case _ :: _ -> True)
+let result = False && failNow "user-defined && rhs evaluated"
 
 --! assertNoErrors
 --! assertType result Bool
---! x-assertEvalErrorContains result Non-exhaustive match
+--! x-assertEvalErrorContains result user-defined && rhs evaluated

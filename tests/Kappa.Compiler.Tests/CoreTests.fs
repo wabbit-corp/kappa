@@ -676,9 +676,9 @@ let ``interpreter short circuits boolean operators`` () =
     let mainSource =
         [
             "module main"
+            "import std.testing.*"
             "let result ="
-            "    if False && (match Nil"
-            "                   case _ :: _ -> True)"
+            "    if False && failNow \"short-circuit rhs evaluated\""
             "    then 0"
             "    else 42"
         ]

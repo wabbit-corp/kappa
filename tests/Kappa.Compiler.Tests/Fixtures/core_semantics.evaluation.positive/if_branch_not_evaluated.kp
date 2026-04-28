@@ -1,11 +1,12 @@
 module if_branch_not_evaluated
 
+import std.testing.*
+
 result : Int
 let result =
     if True
     then 42
-    else match Nil
-         case _ :: _ -> 0
+    else failNow "if else branch evaluated"
 
 --! assertNoErrors
 --! assertType result Int

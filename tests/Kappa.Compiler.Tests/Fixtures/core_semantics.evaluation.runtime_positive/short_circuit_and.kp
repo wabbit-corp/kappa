@@ -1,9 +1,10 @@
 module short_circuit_and
 
+import std.testing.*
+
 result : Int
 let result =
-    if False && (match Nil
-                 case _ :: _ -> True)
+    if False && failNow "short-circuit && rhs evaluated"
     then 0
     else 42
 

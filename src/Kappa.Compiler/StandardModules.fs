@@ -2,7 +2,7 @@ namespace Kappa.Compiler
 
 open System
 
-// Describes compiler-synthesized standard modules such as std.unicode and std.hash.
+// Describes compiler-synthesized standard modules such as std.unicode, std.hash, and std.testing.
 module internal StandardModules =
     type StandardTermDescription =
         { Name: string
@@ -83,8 +83,14 @@ module internal StandardModules =
               { Name = "hashWith"; TypeText = "(@_ : Hashable a) -> HashSeed -> (& value : a) -> HashCode" } ]
           Traits = [ { Name = "Hashable"; TypeParameterCount = 1; Members = [] } ] }
 
+    let private testingModule =
+        { ModuleName = "std.testing"
+          Types = []
+          Terms = [ { Name = "failNow"; TypeText = "String -> a" } ]
+          Traits = [] }
+
     let all =
-        [ unicodeModule; bytesModule; hashModule ]
+        [ unicodeModule; bytesModule; hashModule; testingModule ]
 
     let byName =
         all |> List.map (fun description -> description.ModuleName, description) |> Map.ofList

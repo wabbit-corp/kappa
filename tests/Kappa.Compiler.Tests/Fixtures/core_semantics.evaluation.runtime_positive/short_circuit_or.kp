@@ -1,8 +1,9 @@
 module short_circuit_or
 
+import std.testing.*
+
 result : Bool
-let result = True || (match Nil
-                      case _ :: _ -> True)
+let result = True || failNow "short-circuit || rhs evaluated"
 
 --! assertNoErrors
 --! assertType result Bool
