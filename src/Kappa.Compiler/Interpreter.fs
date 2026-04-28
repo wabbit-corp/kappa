@@ -15,6 +15,9 @@ module RuntimeOutput =
         { Write = Console.Write
           WriteLine = Console.WriteLine }
 
+type RuntimeUnicodeDecodeError =
+    { Message: string }
+
 type RuntimeValue =
     | IntegerValue of int64
     | FloatValue of double
@@ -24,6 +27,7 @@ type RuntimeValue =
     | GraphemeValue of string
     | ByteValue of byte
     | BytesValue of byte array
+    | UnicodeDecodeErrorValue of RuntimeUnicodeDecodeError
     | UnicodeVersionValue of string
     | NormalizationFormValue of UnicodeText.NormalizationFormName
     | HashSeedValue of int64
@@ -104,6 +108,12 @@ and RuntimeModule =
       Imports: ImportSpec list
       Values: Dictionary<string, Lazy<Result<RuntimeValue, EvaluationError>>> }
 
+type RuntimeSession =
+    private
+        { Context: RuntimeContext
+          ApplyRuntimeValue: RuntimeValue -> RuntimeValue list -> Result<RuntimeValue, EvaluationError>
+          ExecuteRuntimeValue: RuntimeValue -> Result<RuntimeValue, EvaluationError> }
+
 module RuntimeValue =
     let rec format value =
         match value with
@@ -122,6 +132,7 @@ module RuntimeValue =
                 |> String.concat " "
 
             $"#bytes[{body}]"
+        | UnicodeDecodeErrorValue _ -> "<unicode-decode-error>"
         | UnicodeVersionValue value -> value
         | NormalizationFormValue value ->
             match value with
@@ -156,8 +167,8 @@ module RuntimeValue =
 
 // Executes KRuntimeIR directly for evaluation, tests, and bootstrap behavior.
 module Interpreter =
-    let private error message =
-        Result.Error { Message = message }
+    let private error (message: string) : Result<'a, EvaluationError> =
+        Result.Error({ Message = message }: EvaluationError)
 
     let private ok value =
         Result.Ok value
@@ -201,7 +212,7 @@ module Interpreter =
         | LiteralValue.Byte value -> ByteValue value
         | LiteralValue.Unit -> UnitValue
 
-    let private buildContextWithOutputFromModules (output: RuntimeOutput) (runtimeModules: KRuntimeModule list) =
+    let private buildSessionWithOutputFromModules (output: RuntimeOutput) (runtimeModules: KRuntimeModule list) =
         let moduleRuntimes =
             runtimeModules
             |> List.groupBy (fun backendModule -> backendModule.Name)
@@ -280,7 +291,10 @@ module Interpreter =
             | None -> constructPreludeValue "None" []
 
         let resultOk value = constructPreludeValue "Ok" [ value ]
-        let resultError value = constructPreludeValue "Error" [ value ]
+        let resultError value = constructPreludeValue "Err" [ value ]
+
+        let unicodeDecodeError message =
+            UnicodeDecodeErrorValue({ Message = message }: RuntimeUnicodeDecodeError)
 
         let orderingValue comparison =
             if comparison < 0 then
@@ -443,6 +457,8 @@ module Interpreter =
                 left = right
             | BytesValue left, BytesValue right ->
                 compareByteArrays left right = 0
+            | UnicodeDecodeErrorValue left, UnicodeDecodeErrorValue right ->
+                left.Message = right.Message
             | UnicodeVersionValue left, UnicodeVersionValue right ->
                 left = right
             | NormalizationFormValue left, NormalizationFormValue right ->
@@ -542,6 +558,8 @@ module Interpreter =
             | ByteValue value -> ok (string value)
             | BytesValue value ->
                 ok (RuntimeValue.format (BytesValue value))
+            | UnicodeDecodeErrorValue _ ->
+                ok (RuntimeValue.format value)
             | UnicodeVersionValue value -> ok value
             | NormalizationFormValue value -> ok (RuntimeValue.format (NormalizationFormValue value))
             | HashSeedValue value -> ok (string value)
@@ -806,9 +824,8 @@ module Interpreter =
                                     match value with
                                     | UnitValue -> Result.Ok locals
                                     | _ ->
-                                        Result.Error
-                                            { Message =
-                                                $"Handler clause '{clause.OperationName}' expected a Unit argument, but received {RuntimeValue.format value}." }))
+                                        error
+                                            $"Handler clause '{clause.OperationName}' expected a Unit argument, but received {RuntimeValue.format value}." ))
                         (Result.Ok scope.Locals)
 
                 boundLocals
@@ -1182,6 +1199,18 @@ module Interpreter =
             | other ->
                 runtimeActionReturn other
 
+        and executeRuntimeValue value =
+            match value with
+            | IOActionValue action ->
+                action ()
+                |> Result.bind (function
+                    | RuntimeActionReturn nextValue ->
+                        executeRuntimeValue nextValue
+                    | RuntimeActionRequest request ->
+                        error $"Unhandled effect operation '{request.Label.Name}.{request.Operation.Name}'.")
+            | other ->
+                ok other
+
         and bindActionResult continuation step =
             match step with
             | RuntimeActionReturn value ->
@@ -1471,7 +1500,7 @@ module Interpreter =
                     | Result.Ok text ->
                         resultOk (StringValue text) |> Result.map Some
                     | Result.Error message ->
-                        resultError (StringValue message) |> Result.map Some
+                        resultError (unicodeDecodeError message) |> Result.map Some
             | "decodeUtf8", arguments when List.length arguments < 1 ->
                 ok None
             | "decodeUtf8", [ value ] ->
@@ -2054,10 +2083,18 @@ module Interpreter =
                          | Some value -> ok value
                          | None -> error $"Intrinsic term '{intrinsicName}' is not implemented for module '{moduleName}'.")
 
-        context
+        { Context = context
+          ApplyRuntimeValue = apply
+          ExecuteRuntimeValue = executeRuntimeValue }
+
+    let private buildContextWithOutputFromModules (output: RuntimeOutput) (runtimeModules: KRuntimeModule list) =
+        (buildSessionWithOutputFromModules output runtimeModules).Context
 
     let private buildContextWithOutput (output: RuntimeOutput) (workspace: WorkspaceCompilation) =
         buildContextWithOutputFromModules output workspace.KRuntimeIR
+
+    let private buildSessionWithOutput (output: RuntimeOutput) (workspace: WorkspaceCompilation) =
+        buildSessionWithOutputFromModules output workspace.KRuntimeIR
 
     let private buildContext workspace =
         buildContextWithOutput RuntimeOutput.console workspace
@@ -2114,6 +2151,24 @@ module Interpreter =
         else
             let context = buildContextWithOutput output workspace
             evaluateBindingWithContext context entryPoint
+
+    let createRuntimeSessionWithOutput (workspace: WorkspaceCompilation) (output: RuntimeOutput) =
+        if workspace.HasErrors then
+            error "Cannot evaluate a workspace that already contains diagnostics."
+        else
+            ok (buildSessionWithOutput output workspace)
+
+    let createRuntimeSession (workspace: WorkspaceCompilation) =
+        createRuntimeSessionWithOutput workspace RuntimeOutput.console
+
+    let evaluateBindingInSession (session: RuntimeSession) (entryPoint: string) =
+        evaluateBindingWithContext session.Context entryPoint
+
+    let applyRuntimeValueInSession (session: RuntimeSession) (functionValue: RuntimeValue) (arguments: RuntimeValue list) =
+        session.ApplyRuntimeValue functionValue arguments
+
+    let executeRuntimeValueInSession (session: RuntimeSession) (value: RuntimeValue) =
+        session.ExecuteRuntimeValue value
 
     let evaluateBinding (workspace: WorkspaceCompilation) (entryPoint: string) =
         evaluateBindingWithOutput workspace RuntimeOutput.console entryPoint

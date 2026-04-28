@@ -113,6 +113,83 @@ let ``interpreter evaluates imported functions and closures`` () =
         failwithf "Expected successful evaluation, got %s" issue.Message
 
 [<Fact>]
+let ``decodeUtf8 round trips valid utf8 bytes`` () =
+    let mainSource =
+        [
+            "module main"
+            "import std.unicode.*"
+            "let result = decodeUtf8 (utf8Bytes \"x\")"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-unicode-decodeutf8-roundtrip-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    let isSingleStringField fields =
+        match fields with
+        | [ StringValue "x" ] -> true
+        | _ -> false
+
+    match result with
+    | Result.Ok(ConstructedValue constructed)
+        when constructed.Constructor.QualifiedName = "std.prelude.Ok"
+             && constructed.Constructor.Name = "Ok"
+             && isSingleStringField constructed.Fields -> ()
+    | Result.Ok value ->
+        failwithf "Expected decodeUtf8 to return Ok \"x\", got %A" value
+    | Result.Error issue ->
+        failwithf "Expected valid UTF-8 to decode successfully, got %s" issue.Message
+
+[<Fact>]
+let ``decodeUtf8 returns Err UnicodeDecodeError on invalid bytes`` () =
+    let mainSource =
+        [
+            "module main"
+            "import std.unicode.*"
+            "let decoder = decodeUtf8"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-unicode-decodeutf8-invalid-root"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    let session =
+        match Interpreter.createRuntimeSession workspace with
+        | Result.Ok session -> session
+        | Result.Error issue ->
+            failwithf "Expected runtime session materialization to succeed, got %s" issue.Message
+
+    let decoder =
+        match Interpreter.evaluateBindingInSession session "main.decoder" with
+        | Result.Ok value -> value
+        | Result.Error issue ->
+            failwithf "Expected decoder binding to evaluate successfully, got %s" issue.Message
+
+    let isUnicodeDecodeErrorField fields =
+        match fields with
+        | [ UnicodeDecodeErrorValue _ ] -> true
+        | _ -> false
+
+    match Interpreter.applyRuntimeValueInSession session decoder [ BytesValue [| 0xFFuy |] ] with
+    | Result.Ok(ConstructedValue constructed)
+        when constructed.Constructor.QualifiedName = "std.prelude.Err"
+             && constructed.Constructor.Name = "Err"
+             && isUnicodeDecodeErrorField constructed.Fields -> ()
+    | Result.Ok value ->
+        failwithf "Expected invalid UTF-8 to return Err UnicodeDecodeError, got %A" value
+    | Result.Error issue ->
+        failwithf "Expected invalid UTF-8 to return a Result value, got %s" issue.Message
+
+[<Fact>]
 let ``interpreter supports type scoped constructor patterns`` () =
     let mainSource =
         [

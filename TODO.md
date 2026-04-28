@@ -425,11 +425,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Implement a byte-literal-specific decoder so `\xNN` is a raw byte and Unicode escapes are accepted only when their UTF-8 encoding length is exactly one byte.
   - Sources: `reviews/unicode1.md`.
 
-- `[High] Fix `decodeUtf8` to return the right constructor and the right error type.`
-  - The current error path appears to construct `Error` instead of the prelude’s `Err`, and it returns a `StringValue` where the declared result type says `UnicodeDecodeError`.
-  - That is a concrete runtime/type-shape bug, not just a missing feature.
-  - Sources: `reviews/unicode1.md`.
-
 - `[High] Implement or retract missing `std.unicode` surface terms.`
   - `StandardModules.fs` advertises terms such as `scalars`, `graphemes`, `words`, and `sentences`, but the interpreter does not create them.
   - Either implement these terms in the interpreter/runtime surface or stop exporting them until they work.
