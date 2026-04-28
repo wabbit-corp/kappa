@@ -152,3 +152,32 @@ let ``cli can run the zig backend for the milestone one io entry point`` () =
     Assert.Equal(0, runResult.ExitCode)
     Assert.Equal("72", runResult.StandardOutput.Trim())
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
+let ``cli can run the zig backend with print string intrinsics`` () =
+    let workspaceRoot = createScratchDirectory "cli-zig-print-string-workspace"
+
+    writeWorkspaceFiles
+        workspaceRoot
+        [
+            "main.kp",
+            [
+                "module main"
+                "let main : IO Unit = do"
+                "    printString \"A\""
+                "    printlnString \"B\""
+            ]
+            |> String.concat "\n"
+        ]
+
+    let emitDirectory = createScratchDirectory "cli-zig-print-string-emit"
+
+    let runResult =
+        runBuiltCliWithEnvironment
+            workspaceRoot
+            $"--source-root \"{workspaceRoot}\" --backend zig --emit-dir \"{emitDirectory}\" --run main.main"
+            [ "KAPPA_ZIG_EXE", ensureRepoZigExecutablePath () ]
+
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("AB", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)

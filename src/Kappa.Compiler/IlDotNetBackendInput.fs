@@ -654,7 +654,7 @@ module internal IlDotNetBackendInput =
 
     let internal intrinsicParameterTypes name argumentTypes =
         match name, argumentTypes with
-        | ("print" | "println" | "printString"), [ IlPrimitive IlString ] ->
+        | ("print" | "println" | "printlnString" | "printString"), [ IlPrimitive IlString ] ->
             Some([ IlPrimitive IlString ], unitIlType)
         | "printInt", [ IlPrimitive IlInt64 ] ->
             Some([ IlPrimitive IlInt64 ], unitIlType)

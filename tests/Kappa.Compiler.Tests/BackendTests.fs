@@ -427,6 +427,34 @@ let ``cli can run the managed dotnet backend`` () =
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
+let ``cli can run the managed dotnet backend with print string intrinsics`` () =
+    let workspaceRoot = createScratchDirectory "cli-dotnet-print-string-workspace"
+
+    writeWorkspaceFiles
+        workspaceRoot
+        [
+            "main.kp",
+            [
+                "module main"
+                "let main : IO Unit = do"
+                "    printString \"A\""
+                "    printlnString \"B\""
+            ]
+            |> String.concat "\n"
+        ]
+
+    let emitDirectory = createScratchDirectory "cli-dotnet-print-string-emit"
+
+    let runResult =
+        runBuiltCli
+            workspaceRoot
+            $"--source-root \"{workspaceRoot}\" --backend dotnet --emit-dir \"{emitDirectory}\" --run main.main"
+
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("AB", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
 let ``cli rejects native aot for the managed dotnet backend before emission`` () =
     let workspaceRoot = createScratchDirectory "cli-dotnet-native-aot-workspace"
 

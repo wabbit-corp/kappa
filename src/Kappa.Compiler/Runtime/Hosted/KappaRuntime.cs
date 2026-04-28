@@ -1124,6 +1124,7 @@ internal static class KappaRunner
                     _ => throw new RuntimeError("Intrinsic '>>' received too many arguments.")
                 };
             case "print":
+            case "printString":
                 return builtin.Arguments.Count switch
                 {
                     0 => null,
@@ -1132,10 +1133,11 @@ internal static class KappaRunner
                         Console.Write(stringValue.Value);
                         return UnitValue.Instance;
                     }),
-                    1 => throw new RuntimeError($"Intrinsic 'print' expects a String, but got {Format(builtin.Arguments[0])}."),
-                    _ => throw new RuntimeError("Intrinsic 'print' received too many arguments.")
+                    1 => throw new RuntimeError($"Intrinsic '{builtin.Name}' expects a String, but got {Format(builtin.Arguments[0])}."),
+                    _ => throw new RuntimeError($"Intrinsic '{builtin.Name}' received too many arguments.")
                 };
             case "println":
+            case "printlnString":
                 return builtin.Arguments.Count switch
                 {
                     0 => null,
@@ -1144,8 +1146,8 @@ internal static class KappaRunner
                         Console.WriteLine(stringValue.Value);
                         return UnitValue.Instance;
                     }),
-                    1 => throw new RuntimeError($"Intrinsic 'println' expects a String, but got {Format(builtin.Arguments[0])}."),
-                    _ => throw new RuntimeError("Intrinsic 'println' received too many arguments.")
+                    1 => throw new RuntimeError($"Intrinsic '{builtin.Name}' expects a String, but got {Format(builtin.Arguments[0])}."),
+                    _ => throw new RuntimeError($"Intrinsic '{builtin.Name}' received too many arguments.")
                 };
             case "printInt":
                 return builtin.Arguments.Count switch
@@ -1583,7 +1585,9 @@ internal static class KappaRunner
             "or" => new BuiltinValue("or"),
             "negate" => new BuiltinValue("negate"),
             "println" => new BuiltinValue("println"),
+            "printlnString" => new BuiltinValue("printlnString"),
             "print" => new BuiltinValue("print"),
+            "printString" => new BuiltinValue("printString"),
             "printInt" => new BuiltinValue("printInt"),
             "unsafeConsume" => new BuiltinValue("unsafeConsume"),
             _ => throw new RuntimeError($"Intrinsic term '{name}' is not implemented for module '{moduleName}'.")

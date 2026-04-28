@@ -1259,6 +1259,17 @@ module internal ZigCcBackendEmit =
                           ValueExpression = resultValue }
                 | _ ->
                     return! Result.Error "zig intrinsic 'printString' expected exactly 1 argument."
+            | "printlnString" ->
+                match argumentValues with
+                | [ value ] ->
+                    let statements, resultValue =
+                        wrapCallResult context "println_string" $"kappa_builtin_print({value}, 1)"
+
+                    return
+                        { Statements = argumentStatements @ statements
+                          ValueExpression = resultValue }
+                | _ ->
+                    return! Result.Error "zig intrinsic 'printlnString' expected exactly 1 argument."
             | "print" ->
                 match argumentValues with
                 | [ value ] ->

@@ -556,9 +556,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Decide the representation model explicitly and make literals, type parsing, host interop, backend lowering, and emission agree.
   - Sources: `reviews/dotnet1.md`, `reviews/backend1.md`.
 
-- `[Medium] Implement or align missing printing intrinsics across prelude, runtime, and IL backend.`
-  - `printlnString` is declared in the prelude and intrinsic catalog but appears missing or inconsistent in some runtime/backend layers.
-  - Normalize `print`, `println`, `printString`, `printlnString`, and `printInt` across all layers and decide whether some are aliases.
   - Sources: `reviews/dotnet1.md`.
 
 - `[Medium-High] Fix generic ADT construction inside generic methods.`

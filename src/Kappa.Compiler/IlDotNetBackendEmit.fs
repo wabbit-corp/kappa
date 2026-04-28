@@ -899,7 +899,7 @@ module internal IlDotNetBackendEmit =
                     | ("print" | "printString"), _ ->
                         il.Emit(OpCodes.Call, typeof<Console>.GetMethod("Write", [| typeof<string> |]))
                         do! emitUnitValue il
-                    | "println", _ ->
+                    | ("println" | "printlnString"), _ ->
                         il.Emit(OpCodes.Call, typeof<Console>.GetMethod("WriteLine", [| typeof<string> |]))
                         do! emitUnitValue il
                     | "printInt", _ ->

@@ -3543,6 +3543,7 @@ let ``bundled bootstrap prelude exposes the current bootstrap surface and IO sha
               "b"
               "type"
               "println"
+              "printlnString"
               "print"
               "printInt"
               "printString"
@@ -3673,6 +3674,7 @@ let ``bundled bootstrap prelude exposes the current bootstrap surface and IO sha
     Assert.Equal("UIO a -> ( a -> UIO b ) -> UIO b", expectTermTypes[">>="])
     Assert.Equal("UIO a -> UIO b -> UIO b", expectTermTypes[">>"])
     Assert.Equal("String -> UIO Unit", expectTermTypes["println"])
+    Assert.Equal("String -> UIO Unit", expectTermTypes["printlnString"])
     Assert.Equal("String -> UIO Unit", expectTermTypes["print"])
     Assert.Equal("Int -> UIO Unit", expectTermTypes["printInt"])
     Assert.Equal("String -> UIO Unit", expectTermTypes["printString"])

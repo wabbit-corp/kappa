@@ -129,6 +129,7 @@ module internal KBackendLowering =
         | KRuntimeApply(KRuntimeName [ ">>" ], _)
         | KRuntimeApply(KRuntimeName [ "print" ], _)
         | KRuntimeApply(KRuntimeName [ "println" ], _)
+        | KRuntimeApply(KRuntimeName [ "printlnString" ], _)
         | KRuntimeApply(KRuntimeName [ "printInt" ], _)
         | KRuntimeApply(KRuntimeName [ "printString" ], _)
         | KRuntimeApply(KRuntimeName [ "openFile" ], _)
@@ -787,7 +788,7 @@ module internal KBackendLowering =
 
             let executedIntrinsicRepresentation runtimeName argumentRepresentations =
                 match runtimeName, argumentRepresentations with
-                | ("print" | "println" | "printInt" | "printString" | "writeRef"), _ ->
+                | ("print" | "println" | "printlnString" | "printInt" | "printString" | "writeRef"), _ ->
                     Some BackendRepUnit
                 | "primitiveIntToString", _ ->
                     Some BackendRepString
