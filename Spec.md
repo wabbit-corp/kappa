@@ -4148,6 +4148,425 @@ Rules for `bytesCompact`:
 * An implementation MAY return `bs` unchanged when it can prove no unrelated storage is retained or when compaction is
   not meaningful for that backend.
 
+<!-- modules.deriving_shape -->
+### 2.7H Standard derivation-shape reflection support module `std.deriving.shape`
+
+Implementations MUST provide a standard module `std.deriving.shape`.
+It is not implicitly imported.
+
+This module provides the Phase 0 portable support layer for user-written derivation macros.
+It exposes source-origin-preserving, opacity-respecting, typed summaries of algebraic data types and closed record types.
+It also exposes checked builders for ordinary `match` and construction syntax over those summaries.
+
+This module does not introduce declaration-level macro effects.
+It does not provide a user-written deriver registration system.
+It does not provide an API for publishing coherent instances.
+A macro using this module may generate expressions, terms, types, and method bodies through ordinary `Syntax` splicing, but it cannot create, register, export, or re-export declarations or trait instances.
+
+Phase 0 intent:
+
+* ordinary users may continue to use implementation-defined built-in `derive` declarations when an implementation provides them;
+* library authors may write portable body macros such as `deriveShowBody`, `deriveJsonEncodeBody`, or field-wise boolean equality generators;
+* users still write the surrounding `instance` declaration by hand when relying on portable Phase 0 facilities; and
+* later phases may build declaration-level derivation on top of this shape layer without changing its observable contract.
+
+Types exported by `std.deriving.shape`:
+
+```kappa
+data ShapeAdtKind : Type =
+    ProductAdt
+    SumAdt
+    EnumAdt
+
+data ShapeVisibility : Type =
+    ShapeRepresentationVisible
+    ShapeRepresentationOpaque
+
+data ShapeErrorKind : Type =
+    ShapeNotData
+    ShapeNotClosedRecord
+    ShapeOpaqueRepresentation
+    ShapeUnsupportedType
+    ShapeBadConstructorArguments
+    ShapeBadRecordArguments
+    ShapeMissingRuntimeFieldInstance
+
+data ShapeError : Type =
+    ShapeError
+        (kind : ShapeErrorKind)
+        (origin : SyntaxOrigin)
+        (message : String)
+
+data ShapeParameter : Type =
+    ShapeParameter
+        (sourceName : Option String)
+        (renderName : String)
+        (origin : SyntaxOrigin)
+        (@0 parameterType : Type)
+        (parameterTypeSyntax : Syntax Type)
+        (quantity : Quantity)
+        (implicit : Bool)
+        (compileTimeOnly : Bool)
+
+data ShapeField : Type =
+    ShapeField
+        (sourceName : Option String)
+        (renderName : String)
+        (origin : SyntaxOrigin)
+        (typeOrigin : SyntaxOrigin)
+        (@0 fieldType : Type)
+        (fieldTypeSyntax : Syntax Type)
+        (quantity : Quantity)
+        (implicit : Bool)
+        (compileTimeOnly : Bool)
+        (runtimeRelevant : Bool)
+
+data ShapeConstructor : Type =
+    ShapeConstructor
+        (symbol : Symbol)
+        (sourceName : String)
+        (renderName : String)
+        (origin : SyntaxOrigin)
+        (tag : Nat)
+        (fields : List ShapeField)
+
+data AdtShape (a : Type) : Type =
+    AdtShape
+        (symbol : Symbol)
+        (sourceName : String)
+        (renderName : String)
+        (origin : SyntaxOrigin)
+        (visibility : ShapeVisibility)
+        (kind : ShapeAdtKind)
+        (parameters : List ShapeParameter)
+        (constructors : List ShapeConstructor)
+
+data RecordShape (a : Type) : Type =
+    RecordShape
+        (origin : SyntaxOrigin)
+        (fields : List ShapeField)
+
+data BoundField : Type =
+    BoundField
+        (field : ShapeField)
+        (@0 fieldType : Type)
+        (term : Syntax fieldType)
+
+data BoundFieldPair : Type =
+    BoundFieldPair
+        (field : ShapeField)
+        (@0 fieldType : Type)
+        (left : Syntax fieldType)
+        (right : Syntax fieldType)
+
+data FieldArgument : Type =
+    SuppliedFieldArgument
+        (field : ShapeField)
+        (@0 fieldType : Type)
+        (value : Syntax fieldType)
+
+    OmittedImplicitFieldArgument
+        (field : ShapeField)
+
+data FieldConstraint (tc : Type -> Constraint) : Type =
+    FieldConstraint
+        (field : ShapeField)
+        (@0 fieldType : Type)
+        (origin : SyntaxOrigin)
+```
+
+Terms exported by `std.deriving.shape`:
+
+```kappa
+tryInspectAdt :
+    forall (@0 a : Type).
+    Syntax Type -> Elab (Result ShapeError (AdtShape a))
+
+inspectAdt :
+    forall (@0 a : Type).
+    Syntax Type -> Elab (AdtShape a)
+
+tryInspectRecord :
+    forall (@0 a : Type).
+    Syntax Type -> Elab (Result ShapeError (RecordShape a))
+
+inspectRecord :
+    forall (@0 a : Type).
+    Syntax Type -> Elab (RecordShape a)
+
+runtimeConstructorFields :
+    ShapeConstructor -> List ShapeField
+
+runtimeRecordFields :
+    forall (@0 a : Type).
+    RecordShape a -> List ShapeField
+
+requiredRuntimeFieldConstraints :
+    forall (tc : Type -> Constraint) (@0 a : Type).
+    AdtShape a -> Elab (List (FieldConstraint tc))
+
+requireRuntimeFieldInstances :
+    forall (tc : Type -> Constraint) (@0 a : Type).
+    AdtShape a -> Elab Unit
+
+requireRecordFieldInstances :
+    forall (tc : Type -> Constraint) (@0 a : Type).
+    RecordShape a -> Elab Unit
+
+fieldArgument :
+    forall (@0 t : Type).
+    ShapeField -> Syntax t -> FieldArgument
+
+omitImplicitFieldArgument :
+    ShapeField -> FieldArgument
+
+matchAdt :
+    forall (@0 a : Type) (@0 r : Type).
+    AdtShape a ->
+    Syntax a ->
+    (ShapeConstructor -> List BoundField -> Elab (Syntax r)) ->
+    Elab (Syntax r)
+
+matchAdt2 :
+    forall (@0 a : Type) (@0 r : Type).
+    AdtShape a ->
+    Syntax a ->
+    Syntax a ->
+    (ShapeConstructor -> List BoundFieldPair -> Elab (Syntax r)) ->
+    (ShapeConstructor -> ShapeConstructor -> Elab (Syntax r)) ->
+    Elab (Syntax r)
+
+constructAdt :
+    forall (@0 a : Type).
+    AdtShape a ->
+    ShapeConstructor ->
+    List FieldArgument ->
+    Elab (Syntax a)
+
+matchRecord :
+    forall (@0 a : Type) (@0 r : Type).
+    RecordShape a ->
+    Syntax a ->
+    (List BoundField -> Elab (Syntax r)) ->
+    Elab (Syntax r)
+
+constructRecord :
+    forall (@0 a : Type).
+    RecordShape a ->
+    List FieldArgument ->
+    Elab (Syntax a)
+
+stringSyntax :
+    String -> Elab (Syntax String)
+
+natSyntax :
+    Nat -> Elab (Syntax Nat)
+
+boolSyntax :
+    Bool -> Elab (Syntax Bool)
+
+unitSyntax :
+    Elab (Syntax Unit)
+```
+
+<!-- modules.deriving_shape.inspection -->
+#### Shape inspection
+
+`inspectAdt @a target` elaborates `target` as a type expression at the current elaboration site.
+It succeeds iff the elaborated type is definitionally equal to `a` and its visible head, after following transparent type aliases permitted by the current visibility and opacity environment, is a data type whose representation is visible at that site.
+
+If inspection fails, `inspectAdt` fails the current `Elab` action with a structured diagnostic in family `kappa.deriving.shape`.
+`tryInspectAdt` returns the corresponding `ShapeError` instead.
+
+`inspectRecord @a target` similarly elaborates `target` as a type expression and succeeds iff the elaborated type is definitionally equal to `a` and normalizes to a closed record type whose explicit field telescope is visible at that site.
+Open record types are rejected by Phase 0 record inspection.
+Use of open records in derivation-shape reflection is reserved for a later phase.
+
+A representation is visible iff ordinary source code at the same elaboration site could pattern match on the constructors or project the corresponding fields without using an unavailable `unhide` or `clarify` import.
+
+Consequences:
+
+* inspecting an `opaque data` representation is permitted in its defining module;
+* inspecting that same representation outside the defining module fails unless the current compilation has an explicit permitted `clarify` effect for it;
+* using an exported derived instance for an opaque type outside its defining module does not make its representation inspectable;
+* shape inspection respects all ordinary visibility, opacity, `unhide`, `clarify`, import-environment, and module-interface identity rules.
+
+The `kind` of an `AdtShape` is determined as follows:
+
+* `ProductAdt` means the data type has exactly one constructor;
+* `EnumAdt` means every constructor has no runtime-relevant fields;
+* `SumAdt` means the data type has more than one constructor and at least one constructor has a runtime-relevant field.
+
+If both `ProductAdt` and `EnumAdt` would appear to apply to a one-constructor nullary data type, `ProductAdt` takes priority.
+
+<!-- modules.deriving_shape.ordering_names -->
+#### Shape ordering and names
+
+The `constructors` list of an `AdtShape` is in the canonical constructor order of the data declaration.
+For ordinary data declarations, this is source declaration order after module-fragment ordering has been resolved.
+For implementation-provided primitive data declarations, constructor order is the canonical order recorded in the module interface.
+
+Each constructor's `tag` is the zero-based index of that constructor in the `constructors` list.
+The tag is stable for a fixed module interface identity, but it is a derivation-shape tag, not necessarily the runtime representation tag used by a backend.
+Portable source code MUST NOT rely on `tag` except for generated structural code such as derived `Show`, `JsonCodec`, `Hashable`, or branch-order-stable encoders.
+
+Constructor fields are listed in constructor-parameter order after all constructor syntax sugar has been desugared.
+For record-style constructor syntax, the field order is the written field order inside the record-style constructor binder.
+For GADT-style constructors, explicit named binders in the constructor signature become fields in telescope order.
+
+A `ShapeField.sourceName` is `None` only for a constructor parameter or reflected field that has no stable source-level name.
+In that case `renderName` is an implementation-chosen stable rendering such as `_1`, `_2`, and so on.
+Implementations MUST make `renderName` deterministic for a fixed module interface identity.
+
+Record fields in `RecordShape.fields` are listed in the canonical dependency-respecting record order of §§5.5.1.1 and 14.6, not necessarily source spelling order.
+
+<!-- modules.deriving_shape.runtime_relevant_fields -->
+#### Runtime-relevant fields
+
+`field.runtimeRelevant` is `True` iff the field is not erased before runtime under the ordinary erasure rules of §§5.1.4 and 14.4.
+
+In particular, `runtimeRelevant` is `False` for:
+
+* fields whose type is compile-time-only in the sense of §5.1.4.1;
+* implicit constraint-evidence fields that elaborate to concrete constraint descriptors;
+* erased proof fields whose quantity and type make them runtime-erased; and
+* any other field whose value would not be present in the runtime representation after mandatory erasure.
+
+`runtimeConstructorFields ctor` returns exactly the subsequence of `ctor.fields` whose `runtimeRelevant` flag is `True`.
+`runtimeRecordFields shape` does the analogous operation for records.
+
+A Phase 0 derivation macro that derives an ordinary runtime operation SHOULD ignore non-runtime-relevant fields unless the derived operation explicitly documents a compile-time-only interpretation.
+For example, generated `Show`, JSON encoding, runtime hashing, and ordinary boolean equality bodies inspect only runtime-relevant fields by default.
+
+<!-- modules.deriving_shape.required_field_constraints -->
+#### Required field constraints
+
+`requiredRuntimeFieldConstraints tc shape` returns one `FieldConstraint tc` for every runtime-relevant constructor field in `shape`.
+For each returned field with type `F`, the required constraint is `tc F`.
+
+`requireRuntimeFieldInstances tc shape` checks, at the current elaboration site, that ordinary implicit resolution can synthesize coherent evidence for every constraint returned by `requiredRuntimeFieldConstraints tc shape`.
+If any field constraint is missing, the action fails with diagnostic family `kappa.deriving.shape` and code `KAPPA_DERIVING_SHAPE_MISSING_RUNTIME_FIELD_INSTANCE`.
+The diagnostic MUST identify:
+
+* the target data type;
+* the constructor containing the field;
+* the field name or stable rendered field name;
+* the field type;
+* the required constraint; and
+* the macro invocation or splice that requested the check.
+
+`requireRecordFieldInstances tc shape` performs the analogous check for runtime-relevant closed-record fields.
+
+These operations probe the ordinary implicit-resolution procedure.
+They do not create evidence, do not bind evidence into the local implicit context, and do not publish coherent instances.
+Generated code that calls overloaded members such as `show field`, `encode field`, or `field1 == field2` is still elaborated normally at the splice site and may therefore produce additional ordinary implicit-resolution diagnostics.
+
+<!-- modules.deriving_shape.generated_matching -->
+#### Generated matching
+
+`matchAdt shape scrutinee onSame` constructs hygienic syntax for an exhaustive `match` over `scrutinee`.
+It creates exactly one branch per constructor in `shape.constructors`, in shape order.
+For each branch, the callback receives:
+
+* the current constructor summary; and
+* a list of `BoundField` values corresponding to the constructor's fields in field order.
+
+The `term` of each `BoundField` is syntax for the hygienically bound object-language field variable in that branch.
+The field variable's object-language type is definitionally equal to the reflected field type.
+
+The callback is run during elaboration.
+The syntax it returns becomes the branch body for that constructor.
+The final generated `match` syntax is elaborated at the original splice site under the same rules as any other generated syntax.
+
+`matchAdt2 shape left right onSame onDifferent` constructs hygienic syntax for a nested or tupled match comparing two values of the same data type.
+For every pair of constructors:
+
+* when the constructors are the same shape constructor, `onSame` receives that constructor and a list of `BoundFieldPair` values, each carrying the left and right field syntax for the corresponding field;
+* when the constructors differ, `onDifferent` receives the left and right constructor summaries.
+
+`matchAdt2` does not prove constructor injectivity, constructor disjointness, or equality soundness.
+It only constructs checked syntax for branch analysis.
+Proof-producing derivation remains governed by §12.5 and by future structural-certificate APIs.
+
+`matchRecord shape scrutinee onFields` constructs hygienic syntax that projects or destructures all fields of a closed record and passes those bound fields to the callback.
+The generated syntax must be observationally equivalent to a single evaluation of `scrutinee` followed by field access in canonical record order.
+
+Implementations MUST preserve source and synthetic origin information through all generated matching operations.
+Diagnostics arising from a callback-produced body SHOULD point first to the macro invocation or to the corresponding field or constructor origin when that is more specific and faithful.
+
+<!-- modules.deriving_shape.generated_construction -->
+#### Generated construction
+
+`constructAdt shape ctor args` constructs syntax for applying constructor `ctor` of `shape` to the supplied field arguments.
+
+Arguments are matched against constructor fields by `ShapeField` identity, not by string spelling.
+The argument list is accepted iff, after grouping by field identity:
+
+* every non-implicit constructor field has exactly one `SuppliedFieldArgument`;
+* every explicitly supplied argument has a type definitionally equal to the corresponding reflected field type;
+* an implicit field may either be supplied explicitly or represented by `OmittedImplicitFieldArgument`;
+* no field receives more than one argument; and
+* no argument refers to a field that is absent from the selected constructor.
+
+For an omitted implicit field, the generated syntax omits the corresponding constructor argument and lets ordinary implicit insertion solve it at the construction site.
+If the field is not implicit, `omitImplicitFieldArgument` is ill-formed for that field.
+
+If argument checking fails, `constructAdt` fails with code `KAPPA_DERIVING_SHAPE_BAD_CONSTRUCTOR_ARGUMENTS`.
+The diagnostic MUST identify the selected constructor, the malformed field argument, and the macro invocation.
+
+`constructRecord shape args` performs the analogous operation for closed records.
+It constructs a closed record literal in canonical dependency-respecting order.
+It permits omission only for implicit record fields that ordinary record construction could omit.
+If argument checking fails, it fails with code `KAPPA_DERIVING_SHAPE_BAD_RECORD_ARGUMENTS`.
+
+`fieldArgument field value` packages a supplied argument.
+The packed value type must be definitionally equal to `field.fieldType` after elaboration.
+
+<!-- modules.deriving_shape.literal_syntax_helpers -->
+#### Literal syntax construction helpers
+
+`stringSyntax`, `natSyntax`, `boolSyntax`, and `unitSyntax` construct hygienic literal syntax with the obvious object-language types.
+They exist so derivation macros need not depend on implementation-private syntax constructors merely to generate constructor names, discriminator tags, field names, numeric tags, or unit bodies.
+
+These helpers are not a general compile-time-to-runtime persistence mechanism.
+They construct ordinary source literals and are subject to the same splice re-elaboration rules as any other `Syntax` value.
+
+<!-- modules.deriving_shape.scope_opacity_determinism -->
+#### Scope, opacity, and determinism
+
+All operations in `std.deriving.shape` are elaboration-time reflection queries.
+They MUST be deterministic for a fixed set of explicit inputs, splice-site semantic environment, effective import environment, visibility/opacity state, imported-interface identities, provider identities, and macro input transcript.
+
+They MUST NOT observe:
+
+* hash-table iteration order;
+* physical interface load order;
+* unrelated import source order;
+* parallel worker scheduling;
+* reload history when semantic identities and fingerprints are unchanged; or
+* private representation data that ordinary code at the same site could not name, pattern match, or clarify.
+
+A shape value may mention local scoped declarations, local nominal-scope tokens, local hygienic binders, or anonymous rigid regions only to the extent permitted by the ordinary `Syntax`, `Core`, and compile-time value escape rules of §5.8.4 and §6.3.1.1.
+Packaging, storing, or returning a shape value does not launder those scope restrictions.
+
+<!-- modules.deriving_shape.phase0_exclusions -->
+#### Phase 0 exclusions
+
+The following are explicitly not part of Phase 0:
+
+* declaration-level macro splices;
+* user-written `derive` declaration handlers;
+* APIs for emitting declarations or publishing coherent instances;
+* compiler-certified constructor disjointness proofs;
+* compiler-certified constructor injectivity proofs;
+* no-confusion principles;
+* type-constructor injectivity summaries;
+* variance, role, polarity, or transportability summaries;
+* inhabitance, contractibility, propositionality, or finite-cardinality summaries; and
+* derive-via or structural-isomorphism transport APIs.
+
+Later phases may add those facilities without changing the Phase 0 contract of `std.deriving.shape`.
+
 ---
 
 <!-- modules.names -->
