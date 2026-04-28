@@ -566,13 +566,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
 
 ## 11. Target Backends: Zig
 
-- `[High] Make Zig arithmetic and comparisons representation-aware instead of always routing through integer helpers.`
-  - `KBackendLowering.fs` can infer `BackendRepFloat64` correctly for float arithmetic, but `ZigCcBackendEmit.fs` currently maps arithmetic operators such as `+`, `-`, `*`, `/`, comparisons, and `negate` to integer-only runtime helpers.
-  - This means float arithmetic likely emits C successfully and then fails at runtime with “expected Int value”.
-  - Fix `emitIntrinsicCall` to receive and use the calling convention / operand representation data so it can choose `kappa_float_*` helpers where appropriate.
-  - Add float arithmetic and float comparison tests on the Zig path.
-  - Sources: `reviews/zig1.md`.
-
 - `[High] Implement raw-bit float equality for Zig runtime behavior.`
   - Default `Eq Float` / `Eq Double` semantics require raw-bit equality, not IEEE numeric equality.
   - Current C runtime behavior treats `+0.0` and `-0.0` as equal and all NaNs as unequal.

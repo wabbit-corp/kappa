@@ -44,6 +44,31 @@ let ``zig backend emits C source for recursive list matches`` () =
     Assert.DoesNotContain("__KAPPA_", source)
 
 [<Fact>]
+let ``zig backend emits float helpers for float arithmetic`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-zig-float-source-root"
+            "zig"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let result = 1.5 + 2.25"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "zig-float-source"
+
+    let artifact =
+        match Backend.emitZigArtifact workspace "main.result" outputDirectory with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    let source = File.ReadAllText(artifact.SourceFilePath)
+    Assert.Contains("kappa_float_add", source)
+
+[<Fact>]
 let ``cli can run the zig backend for recursive list matches`` () =
     let workspaceRoot = createScratchDirectory "cli-zig-workspace"
 
@@ -180,6 +205,60 @@ let ``cli can run the zig backend with print string intrinsics`` () =
 
     Assert.Equal(0, runResult.ExitCode)
     Assert.Equal("AB", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
+let ``cli can run the zig backend with float arithmetic`` () =
+    let workspaceRoot = createScratchDirectory "cli-zig-float-arithmetic-workspace"
+
+    writeWorkspaceFiles
+        workspaceRoot
+        [
+            "main.kp",
+            [
+                "module main"
+                "let result = 1.5 + 2.25"
+            ]
+            |> String.concat "\n"
+        ]
+
+    let emitDirectory = createScratchDirectory "cli-zig-float-arithmetic-emit"
+
+    let runResult =
+        runBuiltCliWithEnvironment
+            workspaceRoot
+            $"--source-root \"{workspaceRoot}\" --backend zig --emit-dir \"{emitDirectory}\" --run main.result"
+            [ "KAPPA_ZIG_EXE", ensureRepoZigExecutablePath () ]
+
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("3.75", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
+let ``cli can run the zig backend with float comparisons`` () =
+    let workspaceRoot = createScratchDirectory "cli-zig-float-comparison-workspace"
+
+    writeWorkspaceFiles
+        workspaceRoot
+        [
+            "main.kp",
+            [
+                "module main"
+                "let result = 1.5 < 2.25"
+            ]
+            |> String.concat "\n"
+        ]
+
+    let emitDirectory = createScratchDirectory "cli-zig-float-comparison-emit"
+
+    let runResult =
+        runBuiltCliWithEnvironment
+            workspaceRoot
+            $"--source-root \"{workspaceRoot}\" --backend zig --emit-dir \"{emitDirectory}\" --run main.result"
+            [ "KAPPA_ZIG_EXE", ensureRepoZigExecutablePath () ]
+
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("True", runResult.StandardOutput.Trim())
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]

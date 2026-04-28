@@ -173,8 +173,8 @@ module internal ZigCcBackendEmit =
             emitSequenceExpression context scope first second
         | BackendWhile(condition, body) ->
             emitWhileExpression context scope condition body
-        | BackendCall(callee, arguments, _, _) ->
-            emitCallExpression context scope callee arguments
+        | BackendCall(callee, arguments, convention, _) ->
+            emitCallExpression context scope callee arguments convention
         | BackendDictionaryValue(moduleName, traitName, instanceKey, _) ->
             emitDictionaryValueExpression context moduleName traitName instanceKey
         | BackendTraitCall(traitName, memberName, dictionary, arguments, _) ->
@@ -1100,7 +1100,13 @@ module internal ZigCcBackendEmit =
                   ValueExpression = resultValue }
         }
 
-    and internal emitIntrinsicCall (context: GenerationContext) (scope: EmitScope) bindingName arguments =
+    and internal emitIntrinsicCall
+        (context: GenerationContext)
+        (scope: EmitScope)
+        bindingName
+        arguments
+        (convention: KBackendCallingConvention)
+        =
         result {
             let! emittedArguments = emitExpressions context scope arguments
 
@@ -1109,6 +1115,24 @@ module internal ZigCcBackendEmit =
 
             let argumentValues =
                 emittedArguments |> List.map (fun emitted -> emitted.ValueExpression)
+
+            let chooseBinaryNumericHelper intHelper floatHelper =
+                if
+                    convention.ResultRepresentation = Some BackendRepFloat64
+                    || (convention.ParameterRepresentations |> List.exists ((=) BackendRepFloat64))
+                then
+                    floatHelper
+                else
+                    intHelper
+
+            let chooseUnaryNumericHelper intHelper floatHelper =
+                if
+                    convention.ResultRepresentation = Some BackendRepFloat64
+                    || (convention.ParameterRepresentations |> List.exists ((=) BackendRepFloat64))
+                then
+                    floatHelper
+                else
+                    intHelper
 
             let binaryIntCall prefix helper =
                 match argumentValues with
@@ -1159,17 +1183,35 @@ module internal ZigCcBackendEmit =
                     Result.Error $"zig intrinsic '{bindingName}' expected exactly 1 argument."
 
             match bindingName with
-            | "+" -> return! binaryIntCall "add" "kappa_int_add"
-            | "-" -> return! binaryIntCall "sub" "kappa_int_subtract"
-            | "*" -> return! binaryIntCall "mul" "kappa_int_multiply"
-            | "/" -> return! binaryIntCall "div" "kappa_int_divide"
+            | "+" ->
+                let helper = chooseBinaryNumericHelper "kappa_int_add" "kappa_float_add"
+                return! binaryIntCall "add" helper
+            | "-" ->
+                let helper = chooseBinaryNumericHelper "kappa_int_subtract" "kappa_float_subtract"
+                return! binaryIntCall "sub" helper
+            | "*" ->
+                let helper = chooseBinaryNumericHelper "kappa_int_multiply" "kappa_float_multiply"
+                return! binaryIntCall "mul" helper
+            | "/" ->
+                let helper = chooseBinaryNumericHelper "kappa_int_divide" "kappa_float_divide"
+                return! binaryIntCall "div" helper
             | "==" -> return! binaryBoolCall "eq" "kappa_value_equal"
             | "!=" -> return! binaryBoolCall "neq" "kappa_value_not_equal"
-            | "<" -> return! binaryBoolCall "lt" "kappa_int_less"
-            | "<=" -> return! binaryBoolCall "lte" "kappa_int_less_equal"
-            | ">" -> return! binaryBoolCall "gt" "kappa_int_greater"
-            | ">=" -> return! binaryBoolCall "gte" "kappa_int_greater_equal"
-            | "negate" -> return! unaryIntCall "neg" "kappa_int_negate"
+            | "<" ->
+                let helper = chooseBinaryNumericHelper "kappa_int_less" "kappa_float_less"
+                return! binaryBoolCall "lt" helper
+            | "<=" ->
+                let helper = chooseBinaryNumericHelper "kappa_int_less_equal" "kappa_float_less_equal"
+                return! binaryBoolCall "lte" helper
+            | ">" ->
+                let helper = chooseBinaryNumericHelper "kappa_int_greater" "kappa_float_greater"
+                return! binaryBoolCall "gt" helper
+            | ">=" ->
+                let helper = chooseBinaryNumericHelper "kappa_int_greater_equal" "kappa_float_greater_equal"
+                return! binaryBoolCall "gte" helper
+            | "negate" ->
+                let helper = chooseUnaryNumericHelper "kappa_int_negate" "kappa_float_negate"
+                return! unaryIntCall "neg" helper
             | "not" -> return! unaryBoolCall "not" "kappa_bool_not"
             | "and" -> return! binaryBoolCall "and" "kappa_bool_and"
             | "or" -> return! binaryBoolCall "or" "kappa_bool_or"
@@ -1386,7 +1428,13 @@ module internal ZigCcBackendEmit =
                 return! Result.Error $"zig does not yet support intrinsic '{other}'."
         }
 
-    and internal emitCallExpression (context: GenerationContext) (scope: EmitScope) callee arguments =
+    and internal emitCallExpression
+        (context: GenerationContext)
+        (scope: EmitScope)
+        callee
+        arguments
+        (convention: KBackendCallingConvention)
+        =
         match callee with
         | BackendName(BackendGlobalBindingName(moduleName, bindingName, _)) ->
             result {
@@ -1415,7 +1463,7 @@ module internal ZigCcBackendEmit =
                       ValueExpression = resultValue }
             }
         | BackendName(BackendIntrinsicName(_, bindingName, _)) ->
-            emitIntrinsicCall context scope bindingName arguments
+            emitIntrinsicCall context scope bindingName arguments convention
         | BackendName(BackendConstructorName(moduleName, typeName, _, tag, arity, _)) ->
             if arity <> arguments.Length then
                 Result.Error

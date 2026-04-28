@@ -1002,14 +1002,29 @@ static KValue* kappa_int_add(KValue* left, KValue* right)
     return kappa_box_int(kappa_expect_int(left) + kappa_expect_int(right));
 }
 
+static KValue* kappa_float_add(KValue* left, KValue* right)
+{
+    return kappa_box_float(kappa_expect_float(left) + kappa_expect_float(right));
+}
+
 static KValue* kappa_int_subtract(KValue* left, KValue* right)
 {
     return kappa_box_int(kappa_expect_int(left) - kappa_expect_int(right));
 }
 
+static KValue* kappa_float_subtract(KValue* left, KValue* right)
+{
+    return kappa_box_float(kappa_expect_float(left) - kappa_expect_float(right));
+}
+
 static KValue* kappa_int_multiply(KValue* left, KValue* right)
 {
     return kappa_box_int(kappa_expect_int(left) * kappa_expect_int(right));
+}
+
+static KValue* kappa_float_multiply(KValue* left, KValue* right)
+{
+    return kappa_box_float(kappa_expect_float(left) * kappa_expect_float(right));
 }
 
 static KValue* kappa_int_divide(KValue* left, KValue* right)
@@ -1023,9 +1038,19 @@ static KValue* kappa_int_divide(KValue* left, KValue* right)
     return kappa_box_int(kappa_expect_int(left) / divisor);
 }
 
+static KValue* kappa_float_divide(KValue* left, KValue* right)
+{
+    return kappa_box_float(kappa_expect_float(left) / kappa_expect_float(right));
+}
+
 static KValue* kappa_int_negate(KValue* value)
 {
     return kappa_box_int(-kappa_expect_int(value));
+}
+
+static KValue* kappa_float_negate(KValue* value)
+{
+    return kappa_box_float(-kappa_expect_float(value));
 }
 
 static KValue* kappa_int_less(KValue* left, KValue* right)
@@ -1033,9 +1058,19 @@ static KValue* kappa_int_less(KValue* left, KValue* right)
     return kappa_box_bool(kappa_expect_int(left) < kappa_expect_int(right));
 }
 
+static KValue* kappa_float_less(KValue* left, KValue* right)
+{
+    return kappa_box_bool(kappa_expect_float(left) < kappa_expect_float(right));
+}
+
 static KValue* kappa_int_less_equal(KValue* left, KValue* right)
 {
     return kappa_box_bool(kappa_expect_int(left) <= kappa_expect_int(right));
+}
+
+static KValue* kappa_float_less_equal(KValue* left, KValue* right)
+{
+    return kappa_box_bool(kappa_expect_float(left) <= kappa_expect_float(right));
 }
 
 static KValue* kappa_int_greater(KValue* left, KValue* right)
@@ -1043,9 +1078,19 @@ static KValue* kappa_int_greater(KValue* left, KValue* right)
     return kappa_box_bool(kappa_expect_int(left) > kappa_expect_int(right));
 }
 
+static KValue* kappa_float_greater(KValue* left, KValue* right)
+{
+    return kappa_box_bool(kappa_expect_float(left) > kappa_expect_float(right));
+}
+
 static KValue* kappa_int_greater_equal(KValue* left, KValue* right)
 {
     return kappa_box_bool(kappa_expect_int(left) >= kappa_expect_int(right));
+}
+
+static KValue* kappa_float_greater_equal(KValue* left, KValue* right)
+{
+    return kappa_box_bool(kappa_expect_float(left) >= kappa_expect_float(right));
 }
 
 static KValue* kappa_bool_not(KValue* value)
