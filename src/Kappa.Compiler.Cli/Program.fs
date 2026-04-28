@@ -323,8 +323,13 @@ let private resolveZigExecutable () =
         Result.Ok "zig"
     else
         let resolvedPath = configuredPath.Trim()
+        let hasDirectoryComponent =
+            resolvedPath.IndexOf(Path.DirectorySeparatorChar) >= 0
+            || resolvedPath.IndexOf(Path.AltDirectorySeparatorChar) >= 0
 
-        if File.Exists(resolvedPath) then
+        if not hasDirectoryComponent then
+            Result.Ok resolvedPath
+        elif File.Exists(resolvedPath) then
             Result.Ok resolvedPath
         else
             Result.Error $"Configured Zig executable '{resolvedPath}' does not exist. Set KAPPA_ZIG_EXE to a valid zig executable path."

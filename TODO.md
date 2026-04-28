@@ -623,11 +623,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - This is only acceptable if the Zig profile excludes all surface features that can lower to those nodes. Otherwise, rejection should happen earlier and more clearly than “unsupported backend expression” during C emission.
   - Sources: `reviews/zig1.md`.
 
-- `[Low] Make `KAPPA_ZIG_EXE=zig` resolve through `PATH` the same way the unset case does.`
-  - CLI resolution currently accepts `zig` from `PATH` only when `KAPPA_ZIG_EXE` is unset; if the environment variable is set to the bare command name `zig`, the code checks `File.Exists("zig")` instead.
-  - If the configured value has no directory separator, treat it as a command name and let process launch resolve it through `PATH`, or search `PATH` explicitly.
-  - Sources: `reviews/zig1.md`.
-
 ## 11A. Observability, Incrementality, and Checkpoint Metadata
 
 - `[Critical] Make `SourceFingerprint` content-sound.`

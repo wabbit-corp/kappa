@@ -101,6 +101,44 @@ let ``cli can run the zig backend for recursive list matches`` () =
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
+let ``cli can run the zig backend when KAPPA_ZIG_EXE is a PATH command name`` () =
+    let workspaceRoot = createScratchDirectory "cli-zig-path-command-workspace"
+
+    writeWorkspaceFiles
+        workspaceRoot
+        [
+            "main.kp",
+            [
+                "module main"
+                "let result = 42"
+            ]
+            |> String.concat "\n"
+        ]
+
+    let emitDirectory = createScratchDirectory "cli-zig-path-command-emit"
+    let zigExecutablePath = ensureRepoZigExecutablePath ()
+    let zigDirectory = Path.GetDirectoryName(zigExecutablePath)
+    let zigCommandName = Path.GetFileName(zigExecutablePath)
+    let existingPath = Environment.GetEnvironmentVariable("PATH") |> Option.ofObj |> Option.defaultValue ""
+
+    let effectivePath =
+        if String.IsNullOrWhiteSpace(existingPath) then
+            zigDirectory
+        else
+            zigDirectory + string Path.PathSeparator + existingPath
+
+    let runResult =
+        runBuiltCliWithEnvironment
+            workspaceRoot
+            $"--source-root \"{workspaceRoot}\" --backend zig --emit-dir \"{emitDirectory}\" --run main.result"
+            [ "KAPPA_ZIG_EXE", zigCommandName
+              "PATH", effectivePath ]
+
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("42", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
 let ``zig backend runs constructor or patterns`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend
