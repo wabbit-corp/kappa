@@ -1108,6 +1108,15 @@ static KValue* kappa_bool_or(KValue* left, KValue* right)
     return kappa_box_bool(kappa_expect_bool(left) || kappa_expect_bool(right));
 }
 
+static int kappa_float_bits_equal(double left, double right)
+{
+    uint64_t left_bits = 0;
+    uint64_t right_bits = 0;
+    memcpy(&left_bits, &left, sizeof(uint64_t));
+    memcpy(&right_bits, &right, sizeof(uint64_t));
+    return left_bits == right_bits;
+}
+
 static KValue* kappa_value_equal(KValue* left, KValue* right)
 {
     if (left == right)
@@ -1125,7 +1134,7 @@ static KValue* kappa_value_equal(KValue* left, KValue* right)
         case K_TAG_INT:
             return kappa_box_bool(left->as.int_value == right->as.int_value);
         case K_TAG_FLOAT:
-            return kappa_box_bool(left->as.float_value == right->as.float_value);
+            return kappa_box_bool(kappa_float_bits_equal(left->as.float_value, right->as.float_value));
         case K_TAG_BOOL:
             return kappa_box_bool(left->as.bool_value == right->as.bool_value);
         case K_TAG_STRING:

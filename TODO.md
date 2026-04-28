@@ -566,11 +566,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
 
 ## 11. Target Backends: Zig
 
-- `[High] Implement raw-bit float equality for Zig runtime behavior.`
-  - Default `Eq Float` / `Eq Double` semantics require raw-bit equality, not IEEE numeric equality.
-  - Current C runtime behavior treats `+0.0` and `-0.0` as equal and all NaNs as unequal.
-  - Sources: `reviews/backend1.md`, `reviews/general1.md`, `reviews/zig1.md`.
-
 - `[High] Stop exposing the full prelude intrinsic surface under Zig unless the Zig emitter/runtime actually implement it.`
   - `Stdlib.fs` currently gives `zig` the full prelude intrinsic set, but the Zig emitter only implements a small subset.
   - Missing or mismatched examples called out in the Zig review include `printlnString`, `runPure`, `compare`, `floatEq`, several Unicode/hash intrinsics, and code-generation intrinsics such as `closeCode`, `genlet`, and `runCode`.

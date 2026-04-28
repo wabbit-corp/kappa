@@ -262,6 +262,33 @@ let ``cli can run the zig backend with float comparisons`` () =
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
+let ``cli can run the zig backend with raw bit float equality`` () =
+    let workspaceRoot = createScratchDirectory "cli-zig-float-raw-equality-workspace"
+
+    writeWorkspaceFiles
+        workspaceRoot
+        [
+            "main.kp",
+            [
+                "module main"
+                "let result = 0.0 == negate 0.0"
+            ]
+            |> String.concat "\n"
+        ]
+
+    let emitDirectory = createScratchDirectory "cli-zig-float-raw-equality-emit"
+
+    let runResult =
+        runBuiltCliWithEnvironment
+            workspaceRoot
+            $"--source-root \"{workspaceRoot}\" --backend zig --emit-dir \"{emitDirectory}\" --run main.result"
+            [ "KAPPA_ZIG_EXE", ensureRepoZigExecutablePath () ]
+
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("False", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
 let ``cli can run the zig backend with short circuit and semantics`` () =
     let workspaceRoot = createScratchDirectory "cli-zig-short-circuit-and-workspace"
 
