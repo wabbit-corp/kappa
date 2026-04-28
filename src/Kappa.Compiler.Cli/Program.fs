@@ -690,8 +690,8 @@ let main argv =
                     | None ->
                         0
                     | Some entryPoint ->
-                        match Stdlib.normalizeBackendProfile options.BackendProfile with
-                        | "interpreter" ->
+                        match BackendProfile.normalizeConfigured options.BackendProfile with
+                        | BackendProfile.Interpreter ->
                             match Interpreter.executeBinding workspace entryPoint with
                             | Result.Ok value ->
                                 if Interpreter.shouldPrintResult value then
@@ -701,10 +701,10 @@ let main argv =
                             | Result.Error issue ->
                                 Console.Error.WriteLine($"runtime error: {issue.Message}")
                                 1
-                        | "dotnet" ->
+                        | BackendProfile.DotNet ->
                             runDotNetBackend Backend.emitDotNetArtifact workspace entryPoint options.EmitDirectory options.NativeAot
-                        | "zig" ->
+                        | BackendProfile.Zig ->
                             runZigBackend workspace entryPoint options.EmitDirectory options.NativeAot
-                        | other ->
+                        | BackendProfile.Unknown other ->
                             Console.Error.WriteLine($"Unsupported runtime backend '{other}'. Expected interpreter, dotnet, or zig.")
                             1

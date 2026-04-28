@@ -93,12 +93,14 @@ module Compilation =
             None
 
     let private validateBackendRuntimeSupport backendProfile (documents: ParsedDocument list) (kRuntimeIR: KRuntimeModule list) =
-        let normalizedBackendProfile = Stdlib.normalizeBackendProfile backendProfile
+        let normalizedBackendProfile = BackendProfile.toPortableName backendProfile
 
         if
-            String.Equals(normalizedBackendProfile, "interpreter", StringComparison.Ordinal)
-            || String.Equals(normalizedBackendProfile, "dotnet", StringComparison.Ordinal)
-            || String.Equals(normalizedBackendProfile, "zig", StringComparison.Ordinal)
+            match backendProfile with
+            | BackendProfile.Interpreter
+            | BackendProfile.DotNet
+            | BackendProfile.Zig -> true
+            | BackendProfile.Unknown _ -> false
         then
             []
         else
@@ -130,10 +132,11 @@ module Compilation =
                           RelatedLocations = [] })))
 
     let private defaultDeploymentModeForBackendProfile backendProfile =
-        match Stdlib.normalizeBackendProfile backendProfile with
-        | "dotnet" -> "managed"
-        | "zig" -> "executable"
-        | _ -> "default"
+        match backendProfile with
+        | BackendProfile.DotNet -> "managed"
+        | BackendProfile.Zig -> "executable"
+        | BackendProfile.Interpreter
+        | BackendProfile.Unknown _ -> "default"
 
     let private normalizeDeploymentMode backendProfile deploymentMode =
         if
@@ -172,10 +175,11 @@ module Compilation =
         |> String.concat ";"
 
     let parse (options: CompilationOptions) inputs =
-        let normalizedBackendProfile = Stdlib.normalizeBackendProfile options.BackendProfile
-        let deploymentMode = normalizeDeploymentMode normalizedBackendProfile options.DeploymentMode
+        let backendProfile = BackendProfile.normalizeConfigured options.BackendProfile
+        let normalizedBackendProfile = BackendProfile.toPortableName backendProfile
+        let deploymentMode = normalizeDeploymentMode backendProfile options.DeploymentMode
         let backendIntrinsicSet =
-            Stdlib.intrinsicSetForCompilation normalizedBackendProfile options.AllowUnsafeConsume
+            Stdlib.intrinsicSetForCompilationProfile backendProfile options.AllowUnsafeConsume
         let backendIntrinsicIdentity = backendIntrinsicSet.Identity
 
         let elaborationAvailableIntrinsicTerms =
@@ -208,10 +212,10 @@ module Compilation =
         let documents =
             initialDocuments
             |> reparseDocumentsWithImportedFixities options
-            |> resolveImportExportSemantics normalizedBackendProfile
+            |> resolveImportExportSemantics backendProfile
 
         let hostBindingModules =
-            HostBindings.collectImportedModules normalizedBackendProfile documents
+            HostBindings.collectImportedModules backendProfile documents
 
         let frontendModulesForValidation =
             documents
@@ -220,18 +224,18 @@ module Compilation =
         let frontendDiagnostics =
             (documents |> List.collect (fun document -> document.Diagnostics))
             @ detectImportCycles documents
-            @ validateImportSelections options.PackageMode normalizedBackendProfile documents
+            @ validateImportSelections options.PackageMode backendProfile documents
             @ CompilationFrontend.validateReflEqualityDeclarations documents
             @ CompilationFrontend.validateTopLevelSignatureDeclarations documents
-            @ SurfaceElaboration.validateSurfaceModules normalizedBackendProfile frontendModulesForValidation hostBindingModules
-            @ validateExpectDeclarations normalizedBackendProfile options.AllowUnsafeConsume documents
+            @ SurfaceElaboration.validateSurfaceModules backendProfile frontendModulesForValidation hostBindingModules
+            @ validateExpectDeclarations backendProfile options.AllowUnsafeConsume documents
 
         let resourceCheckResult: ResourceChecking.CheckResult =
             if frontendDiagnostics |> List.exists (fun diagnostic -> diagnostic.Severity = Error) then
                 { Diagnostics = []
                   OwnershipFactsByFile = Map.empty }
             else
-                ResourceChecking.checkDocumentsWithFactsForBackend normalizedBackendProfile documents
+                ResourceChecking.checkDocumentsWithFactsForBackend backendProfile documents
 
         let sourceDiagnostics =
             frontendDiagnostics @ resourceCheckResult.Diagnostics
@@ -243,7 +247,7 @@ module Compilation =
             frontendSnapshots[CORE_LOWERING].Modules
 
         let kCore =
-            SurfaceElaboration.lowerKCoreModules normalizedBackendProfile options.AllowUnsafeConsume kFrontIR hostBindingModules
+            SurfaceElaboration.lowerKCoreModules backendProfile options.AllowUnsafeConsume kFrontIR hostBindingModules
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
         let kRuntimeIR =
@@ -256,10 +260,10 @@ module Compilation =
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
         let runtimeCapabilityDiagnostics =
-            validateBackendRuntimeSupport normalizedBackendProfile documents kRuntimeIR
+            validateBackendRuntimeSupport backendProfile documents kRuntimeIR
 
         let kBackendIR, backendLoweringDiagnostics =
-            KBackendLowering.lowerKBackendModules normalizedBackendProfile options.AllowUnsafeConsume kRuntimeIR
+            KBackendLowering.lowerKBackendModules backendProfile options.AllowUnsafeConsume kRuntimeIR
 
         let kBackendIR =
             kBackendIR
@@ -270,7 +274,7 @@ module Compilation =
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
         let requiresBackendImplementation =
-            Stdlib.targetCheckpointNamesFor normalizedBackendProfile
+            Stdlib.targetCheckpointNamesForBackend backendProfile
             |> List.isEmpty
             |> not
 
@@ -289,6 +293,7 @@ module Compilation =
         let workspaceWithoutTrace =
             { SourceRoot = options.SourceRoot
               PackageMode = options.PackageMode
+              Backend = backendProfile
               BackendProfile = normalizedBackendProfile
               DeploymentMode = deploymentMode
               AllowUnsafeConsume = options.AllowUnsafeConsume

@@ -30,13 +30,13 @@ module ResourceChecking =
           Body: TypeSignatures.TypeExpr }
 
     let private scopedEffects = AsyncLocal<Map<string, EffectDeclaration> option>()
-    let private backendProfile = AsyncLocal<string option>()
+    let private backendProfile = AsyncLocal<BackendProfile option>()
 
     let private currentScopedEffects () =
         scopedEffects.Value |> Option.defaultValue Map.empty
 
     let private currentBackendProfile () =
-        backendProfile.Value |> Option.defaultValue "interpreter"
+        backendProfile.Value |> Option.defaultValue BackendProfile.defaultValue
 
     let private tryFindScopedEffectDeclaration name =
         currentScopedEffects () |> Map.tryFind name
@@ -66,7 +66,7 @@ module ResourceChecking =
 
     let private withBackendProfile configuredBackendProfile work =
         let saved = currentBackendProfile ()
-        backendProfile.Value <- Some(Stdlib.normalizeBackendProfile configuredBackendProfile)
+        backendProfile.Value <- Some configuredBackendProfile
 
         try
             work ()
@@ -74,11 +74,11 @@ module ResourceChecking =
             backendProfile.Value <- Some saved
 
     let private backendSupportsMultishotEffects configuredBackendProfile =
-        match Stdlib.normalizeBackendProfile configuredBackendProfile with
-        | "interpreter"
-        | "dotnet"
-        | "zig" -> true
-        | _ -> false
+        match configuredBackendProfile with
+        | BackendProfile.Interpreter
+        | BackendProfile.DotNet
+        | BackendProfile.Zig -> true
+        | BackendProfile.Unknown _ -> false
 
     let private isMultiShotResumptionQuantity quantity =
         match quantity |> Option.defaultValue QuantityOne with
@@ -6049,7 +6049,7 @@ module ResourceChecking =
                 | Some(effectName, operation) when not (backendSupportsMultishotEffects (currentBackendProfile ())) ->
                     addDiagnostic
                         DiagnosticCode.MultishotEffectUnsupportedBackend
-                        $"Backend profile '{currentBackendProfile ()}' does not provide capability 'rt-multishot-effects' required by multi-shot operation '{effectName}.{operation.Name}' at this invocation site."
+                        $"Backend profile '{BackendProfile.toPortableName (currentBackendProfile ())}' does not provide capability 'rt-multishot-effects' required by multi-shot operation '{effectName}.{operation.Name}' at this invocation site."
                         (argumentLocation document expression)
                         []
                         document
@@ -7499,7 +7499,7 @@ module ResourceChecking =
 
         diagnostics, factsForDocument document states
 
-    let checkDocumentsWithFactsForBackend (configuredBackendProfile: string) (documents: ParsedDocument list) =
+    let checkDocumentsWithFactsForBackend configuredBackendProfile (documents: ParsedDocument list) =
         withBackendProfile configuredBackendProfile (fun () ->
             let signatures = collectSignatures documents
             let aliasMap = collectRecordTypeAliases documents
@@ -7532,7 +7532,7 @@ module ResourceChecking =
                 |> Map.ofList })
 
     let checkDocumentsWithFacts (documents: ParsedDocument list) =
-        checkDocumentsWithFactsForBackend "interpreter" documents
+        checkDocumentsWithFactsForBackend BackendProfile.Interpreter documents
 
     let checkDocumentsForBackend configuredBackendProfile documents =
         (checkDocumentsWithFactsForBackend configuredBackendProfile documents).Diagnostics

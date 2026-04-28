@@ -703,13 +703,13 @@ module internal CompilationFrontend =
             | ExpectDeclarationNode declaration -> Some declaration
             | _ -> None)
 
-    let private collectIntrinsicTerms (backendProfile: string) allowUnsafeConsume (document: ParsedDocument) =
+    let private collectIntrinsicTerms backendProfile allowUnsafeConsume (document: ParsedDocument) =
         match document.ModuleName with
         | Some moduleName ->
             document.Syntax.Declarations
             |> List.choose (function
                 | ExpectDeclarationNode (ExpectTermDeclaration declaration)
-                    when Stdlib.intrinsicallySatisfiesExpectForCompilation
+                    when Stdlib.intrinsicallySatisfiesExpectForCompilationProfile
                             backendProfile
                             allowUnsafeConsume
                             moduleName
@@ -1466,7 +1466,7 @@ module internal CompilationFrontend =
                             | HostBindings.UnsupportedBackend rootText ->
                                 diagnostics.AddError(
                                     DiagnosticCode.HostModuleUnsupportedBackend,
-                                    $"Backend profile '{Stdlib.normalizeBackendProfile backendProfile}' does not provide host binding root '{rootText}'.",
+                                    $"Backend profile '{BackendProfile.toPortableName backendProfile}' does not provide host binding root '{rootText}'.",
                                     specLocation,
                                     stage = "KFrontIR",
                                     phase = KFrontIRPhase.phaseName CHECKERS
@@ -1702,7 +1702,8 @@ module internal CompilationFrontend =
 
     let reparseDocumentsWithImportedFixities (options: CompilationOptions) (documents: ParsedDocument list) =
         let baseFixities = Parser.bootstrapFixities ()
-        let exportInventories = buildModuleExportInventory (Stdlib.normalizeBackendProfile options.BackendProfile) documents
+        let exportInventories =
+            buildModuleExportInventory (BackendProfile.normalizeConfigured options.BackendProfile) documents
         let moduleFixityInventory = buildModuleFixityInventory documents
 
         documents
@@ -2018,7 +2019,7 @@ module internal CompilationFrontend =
 
         diagnostics.Items
 
-    let validateExpectDeclarations (backendProfile: string) allowUnsafeConsume (documents: ParsedDocument list) =
+    let validateExpectDeclarations backendProfile allowUnsafeConsume (documents: ParsedDocument list) =
         let diagnostics = DiagnosticBag()
 
         let documentsByModule =
@@ -2040,7 +2041,7 @@ module internal CompilationFrontend =
                     let satisfactionCount =
                         countOrdinarySatisfactions moduleDocuments declaration
                         + if
-                              Stdlib.intrinsicallySatisfiesExpectForCompilation
+                              Stdlib.intrinsicallySatisfiesExpectForCompilationProfile
                                   backendProfile
                                   allowUnsafeConsume
                                   moduleName

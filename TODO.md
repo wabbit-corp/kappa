@@ -35,11 +35,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - All standard modules should be described by one shared descriptor format containing at least module name, types, constructors, terms, traits, instances, runtime availability, and backend support status.
   - Sources: `reviews/principles1.md`, `reviews/general1.md`.
 
-- `[High] Replace stringly backend/profile handling with a typed internal model.`
-  - Backend profile strings such as `interpreter`, `dotnet`, `zig`, and `zigcc` are scattered across `Stdlib.fs`, `Compilation.fs`, `CompilationCheckpoints.fs`, `HostBindings.fs`, and `Program.fs`.
-  - Add a discriminated union such as `BackendProfile = Interpreter | DotNet | Zig`, parse once at the boundary, and use the typed form internally.
-  - Sources: `reviews/principles1.md`.
-
 - `[High] Stop repeating semantic facts as hardcoded names or rendered type text.`
   - Compile-time-only type erasure in `KRuntimeLowering.fs` uses repeated hardcoded type-name lists such as `Type`, `Universe`, `Constraint`, `Quantity`, `Region`, `Syntax`, and `Code`.
   - Query semantics classify important types by final-name-segment matching such as `Query`, `Option`, `List`, and `Array`.

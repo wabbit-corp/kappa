@@ -2765,12 +2765,12 @@ module SurfaceElaboration =
         | Some Visibility.Private -> false
         | None -> not isPrivateByDefault
 
-    let private backendSupportsMultishotEffects (backendProfile: string) =
-        match Stdlib.normalizeBackendProfile backendProfile with
-        | "interpreter"
-        | "dotnet"
-        | "zig" -> true
-        | _ -> false
+    let private backendSupportsMultishotEffects backendProfile =
+        match backendProfile with
+        | BackendProfile.Interpreter
+        | BackendProfile.DotNet
+        | BackendProfile.Zig -> true
+        | BackendProfile.Unknown _ -> false
 
     let private quantityPermitsMultipleResumptions quantity =
         match quantity |> Option.defaultValue QuantityOne with
@@ -16138,7 +16138,7 @@ module SurfaceElaboration =
             | None -> []
 
     let validateSurfaceModules
-        (backendProfile: string)
+        backendProfile
         (frontendModules: KFrontIRModule list)
         (hostModules: Map<string, HostBindings.HostModuleDescription>)
         =
@@ -17790,7 +17790,7 @@ module SurfaceElaboration =
                     if backendSupportsMultishotEffects backendProfile then
                         []
                     else
-                        let normalizedBackendProfile = Stdlib.normalizeBackendProfile backendProfile
+                        let normalizedBackendProfile = BackendProfile.toPortableName backendProfile
                         let privateByDefault = isPrivateByDefault frontendModule
 
                         let multishotInvocationMessage context effectName operationName =
@@ -22628,7 +22628,7 @@ module SurfaceElaboration =
         memberBindings @ [ dictionaryBinding ]
 
     let lowerKCoreModules
-        (backendProfile: string)
+        backendProfile
         allowUnsafeConsume
         (frontendModules: KFrontIRModule list)
         (hostModules: Map<string, HostBindings.HostModuleDescription>)
@@ -22756,7 +22756,7 @@ module SurfaceElaboration =
                         frontendModule.Declarations
                         |> List.choose (function
                             | ExpectDeclarationNode declaration
-                                when Stdlib.intrinsicallySatisfiesExpectForCompilation
+                                when Stdlib.intrinsicallySatisfiesExpectForCompilationProfile
                                         backendProfile
                                         allowUnsafeConsume
                                         moduleNameSegments

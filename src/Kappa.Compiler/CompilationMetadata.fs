@@ -17,7 +17,7 @@ module internal CompilationMetadata =
         |> fun hex -> hex.ToLowerInvariant()
 
     let private targetCheckpointNames (workspace: WorkspaceCompilation) =
-        Stdlib.targetCheckpointNamesFor workspace.BackendProfile
+        Stdlib.targetCheckpointNamesForBackend workspace.Backend
 
     let private targetInputCheckpoint (_workspace: WorkspaceCompilation) _checkpoint = "KBackendIR"
 

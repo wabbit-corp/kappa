@@ -269,10 +269,10 @@ module internal KBackendLowering =
           Location = None
           RelatedLocations = [] }
 
-    let lowerKBackendModules (backendProfile: string) allowUnsafeConsume (kRuntimeIR: KRuntimeModule list) =
+    let lowerKBackendModules backendProfile allowUnsafeConsume (kRuntimeIR: KRuntimeModule list) =
         let context = buildBackendLoweringContext kRuntimeIR
         let availableRuntimeIntrinsics =
-            Stdlib.runtimeIntrinsicTermNamesForCompilation backendProfile allowUnsafeConsume Stdlib.PreludeModuleName
+            Stdlib.runtimeIntrinsicTermNamesForCompilationProfile backendProfile allowUnsafeConsume Stdlib.PreludeModuleName
 
         let resolveQualifiedRuntimeModule (currentModule: KRuntimeModule) qualifierSegments =
             let qualifierText = SyntaxFacts.moduleNameToText qualifierSegments

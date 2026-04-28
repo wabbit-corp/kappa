@@ -74,8 +74,8 @@ module HostBindings =
         tryReservedRoot segments |> Option.isSome
 
     let private backendProvidesRoot backendProfile hostRoot =
-        match Stdlib.normalizeBackendProfile backendProfile, hostRoot with
-        | "dotnet", HostDotNet -> true
+        match backendProfile, hostRoot with
+        | BackendProfile.DotNet, HostDotNet -> true
         | _ -> false
 
     let private dotNetTypeName segments =

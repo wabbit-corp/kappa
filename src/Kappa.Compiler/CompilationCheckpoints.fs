@@ -5,7 +5,7 @@ open System
 // Describes published checkpoint contracts and target checkpoint manifests.
 module internal CompilationCheckpoints =
     let targetCheckpointNames (workspace: WorkspaceCompilation) =
-        Stdlib.targetCheckpointNamesFor workspace.BackendProfile
+        Stdlib.targetCheckpointNamesForBackend workspace.Backend
 
     let targetInputCheckpoint (_workspace: WorkspaceCompilation) _checkpoint = "KBackendIR"
 
@@ -121,11 +121,11 @@ module internal CompilationCheckpoints =
               SourceText = "" }
 
     let tryEmitTargetTranslationUnit (workspace: WorkspaceCompilation) checkpoint =
-        match Stdlib.normalizeBackendProfile workspace.BackendProfile, checkpoint with
-        | "zig", checkpointName when checkpointName = Stdlib.ZigTargetCheckpointName ->
+        match workspace.Backend, checkpoint with
+        | BackendProfile.Zig, checkpointName when checkpointName = Stdlib.ZigTargetCheckpointName ->
             ensureTargetLoweringPreconditions workspace checkpoint
             |> Result.bind (fun () -> ZigCcBackend.emitTranslationUnit workspace)
-        | "dotnet", checkpointName when checkpointName = Stdlib.ClrTargetCheckpointName ->
+        | BackendProfile.DotNet, checkpointName when checkpointName = Stdlib.ClrTargetCheckpointName ->
             ensureTargetLoweringPreconditions workspace checkpoint
             |> Result.bind (fun () -> emitClrTargetManifest workspace)
         | _ ->

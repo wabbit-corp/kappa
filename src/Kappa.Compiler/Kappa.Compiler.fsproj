@@ -14,6 +14,7 @@
     <Compile Include="Text.fs" />
     <Compile Include="UnicodeText.fs" />
     <Compile Include="Diagnostics.fs" />
+    <Compile Include="BackendTypes.fs" />
     <Compile Include="Syntax.fs" />
     <Compile Include="CoreParsing.fs" />
     <Compile Include="CompilationPipeline.fs" />
@@ -44,7 +45,6 @@
     <Compile Include="KRuntimeLowering.fs" />
     <Compile Include="KBackendLowering.fs" />
     <Compile Include="ClrAssemblyLowering.fs" />
-    <Compile Include="BackendTypes.fs" />
     <Compile Include="CheckpointVerification.fs" />
     <Compile Include="HostSupport.fs" />
     <Compile Include="BundledBackendSources.fs" />

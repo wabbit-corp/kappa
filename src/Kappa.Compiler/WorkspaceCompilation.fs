@@ -8,6 +8,7 @@ type FrontendSnapshot =
 type WorkspaceCompilation =
     { SourceRoot: string
       PackageMode: bool
+      Backend: BackendProfile
       BackendProfile: string
       DeploymentMode: string
       AllowUnsafeConsume: bool

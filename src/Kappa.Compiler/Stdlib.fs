@@ -112,36 +112,47 @@ module Stdlib =
           ElaborationAvailableTermNames = Set.empty }
 
     let normalizeBackendProfile (backendProfile: string) =
-        if String.IsNullOrWhiteSpace(backendProfile) then
-            "interpreter"
-        else
-            match backendProfile.Trim().ToLowerInvariant() with
-            | "zigcc" -> "zig"
-            | "dotnet-il" -> "dotnet"
-            | normalized -> normalized
+        backendProfile
+        |> BackendProfile.normalizeConfigured
+        |> BackendProfile.toPortableName
 
-    let intrinsicSetForBackendProfile backendProfile =
-        match normalizeBackendProfile backendProfile with
-        | "interpreter"
-        | "dotnet"
-        | "zig" ->
+    let intrinsicSetForBackend backendProfile =
+        match backendProfile with
+        | BackendProfile.Interpreter
+        | BackendProfile.DotNet
+        | BackendProfile.Zig ->
             preludeIntrinsicSet
-        | _ ->
+        | BackendProfile.Unknown _ ->
             emptyIntrinsicSet
 
-    let intrinsicSetForCompilation backendProfile allowUnsafeConsume =
-        let intrinsicSet = intrinsicSetForBackendProfile backendProfile
+    let intrinsicSetForBackendProfile backendProfile =
+        backendProfile
+        |> BackendProfile.normalizeConfigured
+        |> intrinsicSetForBackend
+
+    let intrinsicSetForCompilationProfile backendProfile allowUnsafeConsume =
+        let intrinsicSet = intrinsicSetForBackend backendProfile
 
         if allowUnsafeConsume && intrinsicSet.Identity <> emptyIntrinsicSet.Identity then
             withUnsafeConsume intrinsicSet
         else
             intrinsicSet
 
-    let intrinsicTermNamesFor backendProfile moduleName =
+    let intrinsicSetForCompilation backendProfile allowUnsafeConsume =
+        backendProfile
+        |> BackendProfile.normalizeConfigured
+        |> fun profile -> intrinsicSetForCompilationProfile profile allowUnsafeConsume
+
+    let intrinsicTermNamesForBackend backendProfile moduleName =
         if moduleName = PreludeModuleName then
-            (intrinsicSetForBackendProfile backendProfile).PreludeTermNames
+            (intrinsicSetForBackend backendProfile).PreludeTermNames
         else
             Set.empty
+
+    let intrinsicTermNamesFor backendProfile moduleName =
+        backendProfile
+        |> BackendProfile.normalizeConfigured
+        |> fun profile -> intrinsicTermNamesForBackend profile moduleName
 
     let intrinsicTermNamesForCompilation backendProfile allowUnsafeConsume moduleName =
         if moduleName = PreludeModuleName then
@@ -149,11 +160,27 @@ module Stdlib =
         else
             Set.empty
 
-    let runtimeIntrinsicTermNamesFor backendProfile moduleName =
+    let runtimeIntrinsicTermNamesForBackend backendProfile moduleName =
         let moduleNameText = SyntaxFacts.moduleNameToText moduleName
 
         if moduleName = PreludeModuleName then
-            (intrinsicSetForBackendProfile backendProfile).RuntimeTermNames
+            (intrinsicSetForBackend backendProfile).RuntimeTermNames
+        else
+            StandardModules.byName
+            |> Map.tryFind moduleNameText
+            |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList)
+            |> Option.defaultValue Set.empty
+
+    let runtimeIntrinsicTermNamesFor backendProfile moduleName =
+        backendProfile
+        |> BackendProfile.normalizeConfigured
+        |> fun profile -> runtimeIntrinsicTermNamesForBackend profile moduleName
+
+    let runtimeIntrinsicTermNamesForCompilationProfile backendProfile allowUnsafeConsume moduleName =
+        let moduleNameText = SyntaxFacts.moduleNameToText moduleName
+
+        if moduleName = PreludeModuleName then
+            (intrinsicSetForCompilationProfile backendProfile allowUnsafeConsume).RuntimeTermNames
         else
             StandardModules.byName
             |> Map.tryFind moduleNameText
@@ -161,30 +188,30 @@ module Stdlib =
             |> Option.defaultValue Set.empty
 
     let runtimeIntrinsicTermNamesForCompilation backendProfile allowUnsafeConsume moduleName =
-        let moduleNameText = SyntaxFacts.moduleNameToText moduleName
+        backendProfile
+        |> BackendProfile.normalizeConfigured
+        |> fun profile -> runtimeIntrinsicTermNamesForCompilationProfile profile allowUnsafeConsume moduleName
 
-        if moduleName = PreludeModuleName then
-            (intrinsicSetForCompilation backendProfile allowUnsafeConsume).RuntimeTermNames
-        else
-            StandardModules.byName
-            |> Map.tryFind moduleNameText
-            |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList)
-            |> Option.defaultValue Set.empty
+    let targetCheckpointNamesForBackend backendProfile =
+        match backendProfile with
+        | BackendProfile.Zig ->
+            [ ZigTargetCheckpointName ]
+        | BackendProfile.DotNet ->
+            [ ClrTargetCheckpointName ]
+        | BackendProfile.Interpreter
+        | BackendProfile.Unknown _ ->
+            []
 
     let targetCheckpointNamesFor backendProfile =
-        match normalizeBackendProfile backendProfile with
-        | "zig" ->
-            [ ZigTargetCheckpointName ]
-        | "dotnet" ->
-            [ ClrTargetCheckpointName ]
-        | _ ->
-            []
+        backendProfile
+        |> BackendProfile.normalizeConfigured
+        |> targetCheckpointNamesForBackend
 
     let private isPreludeExpectation moduleName =
         moduleName = PreludeModuleName
 
-    let intrinsicTermNamesAvailableInModule backendProfile moduleName =
-        let intrinsicSet = intrinsicSetForBackendProfile backendProfile
+    let intrinsicTermNamesAvailableInModuleForBackend backendProfile moduleName =
+        let intrinsicSet = intrinsicSetForBackend backendProfile
 
         if isPreludeExpectation moduleName then
             intrinsicSet.PreludeTermNames
@@ -197,8 +224,16 @@ module Stdlib =
                 |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList)
                 |> Option.defaultValue intrinsicSet.ModuleLocalTermNames
 
+    let intrinsicTermNamesAvailableInModule backendProfile moduleName =
+        backendProfile
+        |> BackendProfile.normalizeConfigured
+        |> fun profile -> intrinsicTermNamesAvailableInModuleForBackend profile moduleName
+
     let intrinsicTermNamesAvailableInModuleText backendProfile moduleName =
-        let intrinsicSet = intrinsicSetForBackendProfile backendProfile
+        let intrinsicSet =
+            backendProfile
+            |> BackendProfile.normalizeConfigured
+            |> intrinsicSetForBackend
 
         if moduleName = PreludeModuleText then
             intrinsicSet.PreludeTermNames
@@ -208,8 +243,8 @@ module Stdlib =
             |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList)
             |> Option.defaultValue intrinsicSet.ModuleLocalTermNames
 
-    let intrinsicTermNamesAvailableInModuleForCompilation backendProfile allowUnsafeConsume moduleName =
-        let intrinsicSet = intrinsicSetForCompilation backendProfile allowUnsafeConsume
+    let intrinsicTermNamesAvailableInModuleForCompilationProfile backendProfile allowUnsafeConsume moduleName =
+        let intrinsicSet = intrinsicSetForCompilationProfile backendProfile allowUnsafeConsume
 
         if moduleName = PreludeModuleName then
             intrinsicSet.PreludeTermNames
@@ -222,8 +257,16 @@ module Stdlib =
                 |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList)
                 |> Option.defaultValue intrinsicSet.ModuleLocalTermNames
 
+    let intrinsicTermNamesAvailableInModuleForCompilation backendProfile allowUnsafeConsume moduleName =
+        backendProfile
+        |> BackendProfile.normalizeConfigured
+        |> fun profile -> intrinsicTermNamesAvailableInModuleForCompilationProfile profile allowUnsafeConsume moduleName
+
     let intrinsicTermNamesAvailableInModuleTextForCompilation backendProfile allowUnsafeConsume moduleName =
-        let intrinsicSet = intrinsicSetForCompilation backendProfile allowUnsafeConsume
+        let intrinsicSet =
+            backendProfile
+            |> BackendProfile.normalizeConfigured
+            |> fun profile -> intrinsicSetForCompilationProfile profile allowUnsafeConsume
 
         if moduleName = PreludeModuleText then
             intrinsicSet.PreludeTermNames
@@ -233,8 +276,19 @@ module Stdlib =
             |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList)
             |> Option.defaultValue intrinsicSet.ModuleLocalTermNames
 
-    let intrinsicallySatisfiesExpect backendProfile moduleName declaration =
-        let intrinsicSet = intrinsicSetForBackendProfile backendProfile
+    let intrinsicTermNamesAvailableInModuleTextForCompilationProfile backendProfile allowUnsafeConsume moduleName =
+        let intrinsicSet = intrinsicSetForCompilationProfile backendProfile allowUnsafeConsume
+
+        if moduleName = PreludeModuleText then
+            intrinsicSet.PreludeTermNames
+        else
+            StandardModules.byName
+            |> Map.tryFind moduleName
+            |> Option.map (fun description -> description.Terms |> List.map (fun term -> term.Name) |> Set.ofList)
+            |> Option.defaultValue intrinsicSet.ModuleLocalTermNames
+
+    let intrinsicallySatisfiesExpectForBackend backendProfile moduleName declaration =
+        let intrinsicSet = intrinsicSetForBackend backendProfile
 
         match declaration with
         | ExpectTypeDeclaration declaration ->
@@ -242,17 +296,27 @@ module Stdlib =
         | ExpectTraitDeclaration declaration ->
             isPreludeExpectation moduleName && intrinsicSet.TraitNames.Contains(declaration.Name)
         | ExpectTermDeclaration declaration ->
-            intrinsicTermNamesAvailableInModule backendProfile moduleName
+            intrinsicTermNamesAvailableInModuleForBackend backendProfile moduleName
+            |> Set.contains declaration.Name
+
+    let intrinsicallySatisfiesExpect backendProfile moduleName declaration =
+        backendProfile
+        |> BackendProfile.normalizeConfigured
+        |> fun profile -> intrinsicallySatisfiesExpectForBackend profile moduleName declaration
+
+    let intrinsicallySatisfiesExpectForCompilationProfile backendProfile allowUnsafeConsume moduleName declaration =
+        let intrinsicSet = intrinsicSetForCompilationProfile backendProfile allowUnsafeConsume
+
+        match declaration with
+        | ExpectTypeDeclaration declaration ->
+            isPreludeExpectation moduleName && intrinsicSet.TypeNames.Contains(declaration.Name)
+        | ExpectTraitDeclaration declaration ->
+            isPreludeExpectation moduleName && intrinsicSet.TraitNames.Contains(declaration.Name)
+        | ExpectTermDeclaration declaration ->
+            intrinsicTermNamesAvailableInModuleForCompilationProfile backendProfile allowUnsafeConsume moduleName
             |> Set.contains declaration.Name
 
     let intrinsicallySatisfiesExpectForCompilation backendProfile allowUnsafeConsume moduleName declaration =
-        let intrinsicSet = intrinsicSetForCompilation backendProfile allowUnsafeConsume
-
-        match declaration with
-        | ExpectTypeDeclaration declaration ->
-            isPreludeExpectation moduleName && intrinsicSet.TypeNames.Contains(declaration.Name)
-        | ExpectTraitDeclaration declaration ->
-            isPreludeExpectation moduleName && intrinsicSet.TraitNames.Contains(declaration.Name)
-        | ExpectTermDeclaration declaration ->
-            intrinsicTermNamesAvailableInModuleForCompilation backendProfile allowUnsafeConsume moduleName
-            |> Set.contains declaration.Name
+        backendProfile
+        |> BackendProfile.normalizeConfigured
+        |> fun profile -> intrinsicallySatisfiesExpectForCompilationProfile profile allowUnsafeConsume moduleName declaration

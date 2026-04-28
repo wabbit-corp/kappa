@@ -3269,6 +3269,21 @@ let ``top level syntax splices still charge quoted linear uses at the splice sit
     Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttLinearOveruse)
 
 [<Fact>]
+let ``backend profile parser accepts portable names and legacy aliases`` () =
+    Assert.Equal(BackendProfile.Interpreter, BackendProfile.normalizeConfigured "")
+    Assert.Equal(BackendProfile.Interpreter, BackendProfile.normalizeConfigured " interpreter ")
+    Assert.Equal(BackendProfile.DotNet, BackendProfile.normalizeConfigured "dotnet")
+    Assert.Equal(BackendProfile.DotNet, BackendProfile.normalizeConfigured "dotnet-il")
+    Assert.Equal(BackendProfile.Zig, BackendProfile.normalizeConfigured "zig")
+    Assert.Equal(BackendProfile.Zig, BackendProfile.normalizeConfigured "zigcc")
+    Assert.Equal(BackendProfile.Unknown "custom-backend", BackendProfile.normalizeConfigured "custom-backend")
+
+    Assert.Equal("interpreter", BackendProfile.Interpreter |> BackendProfile.toPortableName)
+    Assert.Equal("dotnet", BackendProfile.DotNet |> BackendProfile.toPortableName)
+    Assert.Equal("zig", BackendProfile.Zig |> BackendProfile.toPortableName)
+    Assert.Equal("custom-backend", BackendProfile.Unknown "custom-backend" |> BackendProfile.toPortableName)
+
+[<Fact>]
 let ``backend profile aliases normalize to the effective backend identity`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend
@@ -3283,6 +3298,7 @@ let ``backend profile aliases normalize to the effective backend identity`` () =
                 |> String.concat "\n"
             ]
 
+    Assert.Equal(BackendProfile.Zig, workspace.Backend)
     Assert.Equal("zig", workspace.BackendProfile)
     Assert.Equal("bootstrap-prelude-v2", workspace.BackendIntrinsicIdentity)
 

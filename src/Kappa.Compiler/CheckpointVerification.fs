@@ -239,7 +239,10 @@ module CheckpointVerification =
             None
 
     let private availableIntrinsicTerms backendProfile allowUnsafeConsume moduleName =
-        Stdlib.intrinsicTermNamesAvailableInModuleTextForCompilation backendProfile allowUnsafeConsume moduleName
+        Stdlib.intrinsicTermNamesAvailableInModuleTextForCompilationProfile
+            backendProfile
+            allowUnsafeConsume
+            moduleName
 
     let private verifyRuntimePattern documents checkpoint bindingLabel bindingOrigin (pattern: KRuntimePattern) =
         let rec verify locals runtimePattern =
@@ -542,7 +545,7 @@ module CheckpointVerification =
                             "also declared here"
                             locations
 
-                let supportedIntrinsics = availableIntrinsicTerms workspace.BackendProfile workspace.AllowUnsafeConsume moduleDump.Name
+                let supportedIntrinsics = availableIntrinsicTerms workspace.Backend workspace.AllowUnsafeConsume moduleDump.Name
 
                 for intrinsicName in moduleDump.IntrinsicTerms do
                     if not (supportedIntrinsics.Contains intrinsicName) then
@@ -551,7 +554,7 @@ module CheckpointVerification =
                                 workspace.Documents
                                 moduleDump.Name
                                 moduleDump.SourceFile
-                                $"Checkpoint 'KRuntimeIR' requires intrinsic term '{intrinsicName}' in module '{moduleDump.Name}' to be provided by backend profile '{workspace.BackendProfile}'."
+                                $"Checkpoint 'KRuntimeIR' requires intrinsic term '{intrinsicName}' in module '{moduleDump.Name}' to be provided by backend profile '{BackendProfile.toPortableName workspace.Backend}'."
 
                 for binding in moduleDump.Bindings do
                     if binding.Intrinsic then
@@ -574,7 +577,7 @@ module CheckpointVerification =
                                 makeOriginDiagnostic
                                     workspace.Documents
                                     binding.Provenance
-                                    $"Checkpoint 'KRuntimeIR' requires intrinsic term '{binding.Name}' in module '{moduleDump.Name}' to be provided by backend profile '{workspace.BackendProfile}'."
+                                    $"Checkpoint 'KRuntimeIR' requires intrinsic term '{binding.Name}' in module '{moduleDump.Name}' to be provided by backend profile '{BackendProfile.toPortableName workspace.Backend}'."
                     else
                         match binding.Body with
                         | None ->
@@ -711,8 +714,8 @@ module CheckpointVerification =
             |> Map.ofList
 
         let globallyAvailableIntrinsicTerms =
-            Stdlib.runtimeIntrinsicTermNamesForCompilation
-                workspace.BackendProfile
+            Stdlib.runtimeIntrinsicTermNamesForCompilationProfile
+                workspace.Backend
                 workspace.AllowUnsafeConsume
                 Stdlib.PreludeModuleName
 
@@ -1034,7 +1037,7 @@ module CheckpointVerification =
                             moduleDump.SourceFile
                             $"Checkpoint 'KBackendIR' requires unique environment-layout identities within module '{moduleDump.Name}', but '{layoutName}' was duplicated."
 
-                let supportedIntrinsics = availableIntrinsicTerms workspace.BackendProfile workspace.AllowUnsafeConsume moduleDump.Name
+                let supportedIntrinsics = availableIntrinsicTerms workspace.Backend workspace.AllowUnsafeConsume moduleDump.Name
 
                 for intrinsicName in moduleDump.IntrinsicTerms do
                     if not (supportedIntrinsics.Contains intrinsicName) then
@@ -1043,7 +1046,7 @@ module CheckpointVerification =
                                 workspace.Documents
                                 moduleDump.Name
                                 moduleDump.SourceFile
-                                $"Checkpoint 'KBackendIR' requires intrinsic term '{intrinsicName}' in module '{moduleDump.Name}' to be provided by backend profile '{workspace.BackendProfile}'."
+                                $"Checkpoint 'KBackendIR' requires intrinsic term '{intrinsicName}' in module '{moduleDump.Name}' to be provided by backend profile '{BackendProfile.toPortableName workspace.Backend}'."
 
                 for entryPointName in moduleDump.EntryPoints do
                     match moduleDump.Functions |> List.tryFind (fun binding -> String.Equals(binding.Name, entryPointName, StringComparison.Ordinal)) with
@@ -1125,7 +1128,7 @@ module CheckpointVerification =
                                 makeOriginDiagnostic
                                     workspace.Documents
                                     binding.Provenance
-                                    $"Checkpoint 'KBackendIR' requires intrinsic term '{binding.Name}' in module '{moduleDump.Name}' to be provided by backend profile '{workspace.BackendProfile}'."
+                                    $"Checkpoint 'KBackendIR' requires intrinsic term '{binding.Name}' in module '{moduleDump.Name}' to be provided by backend profile '{BackendProfile.toPortableName workspace.Backend}'."
                     else
                         match binding.Body with
                         | None ->
