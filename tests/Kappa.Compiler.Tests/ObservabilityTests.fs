@@ -286,7 +286,7 @@ let ``analysis session records effective build inputs for query identity`` () =
     Assert.Contains("deploymentMode=managed", session.Identity)
 
 [<Fact>]
-let ``query plan records stable query kinds checkpoints and dependencies`` () =
+let ``query sketch records stable query kinds checkpoints and observability-only dependency semantics`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend
             "memory-query-plan-root"
@@ -300,7 +300,7 @@ let ``query plan records stable query kinds checkpoints and dependencies`` () =
                 |> String.concat "\n"
             ]
 
-    let queries = Compilation.queryPlan workspace
+    let queries = Compilation.querySketch workspace
 
     let queryByCheckpoint checkpoint =
         queries
@@ -308,6 +308,7 @@ let ``query plan records stable query kinds checkpoints and dependencies`` () =
 
     let rawQuery = queryByCheckpoint "KFrontIR.RAW"
     Assert.Equal(BuildKFrontIRQuery, rawQuery.QueryKind)
+    Assert.Equal(ObservabilitySketchDependencyModel, rawQuery.DependencyModel)
     Assert.Equal(Some RAW, rawQuery.RequiredPhase)
     Assert.Equal(workspace.AnalysisSessionIdentity, rawQuery.AnalysisSessionIdentity)
     Assert.Equal(workspace.BuildConfigurationIdentity, rawQuery.BuildConfigurationIdentity)
@@ -337,6 +338,7 @@ let ``query plan records stable query kinds checkpoints and dependencies`` () =
             Assert.False(String.IsNullOrWhiteSpace(query.Id))
             Assert.False(String.IsNullOrWhiteSpace(query.InputKey))
             Assert.False(String.IsNullOrWhiteSpace(query.OutputCheckpoint))
+            Assert.Equal(ObservabilitySketchDependencyModel, query.DependencyModel)
             Assert.Equal("zig", query.BackendProfile)
             Assert.Equal("bootstrap-prelude-v2", query.BackendIntrinsicSet)
     )
@@ -510,7 +512,7 @@ let ``query fingerprint and unit ids are scoped by backend profile and analysis 
             source
 
     let sourceQuery workspace =
-        Compilation.queryPlan workspace
+        Compilation.querySketch workspace
         |> List.find (fun query ->
             query.QueryKind = ParseSourceFileQuery
             && query.InputKey.EndsWith("main.kp", StringComparison.OrdinalIgnoreCase))

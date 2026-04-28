@@ -7,7 +7,7 @@ open System.Text
 open CompilationCommon
 open CompilationFrontend
 
-// Computes analysis-session, fingerprint, incremental-unit, and runtime-obligation metadata.
+// Computes analysis-session, query-sketch, fingerprint, incremental-unit, and runtime-obligation metadata.
 module internal CompilationMetadata =
     let private sha256Hex (text: string) =
         text
@@ -77,6 +77,7 @@ module internal CompilationMetadata =
           QueryKind = queryKind
           InputKey = inputKey
           OutputCheckpoint = outputCheckpoint
+          DependencyModel = ObservabilitySketchDependencyModel
           RequiredPhase = requiredPhase
           AnalysisSessionIdentity = workspace.AnalysisSessionIdentity
           BuildConfigurationIdentity = workspace.BuildConfigurationIdentity
@@ -84,7 +85,7 @@ module internal CompilationMetadata =
           BackendIntrinsicSet = workspace.BackendIntrinsicIdentity
           DependencyIds = dependencyIds }
 
-    let queryPlan (workspace: WorkspaceCompilation) =
+    let querySketch (workspace: WorkspaceCompilation) =
         let documents =
             workspace.KFrontIR
             |> List.sortBy (fun document -> document.FilePath)

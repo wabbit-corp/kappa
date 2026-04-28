@@ -373,7 +373,7 @@ module Compilation =
 
     let analysisSession = CompilationMetadata.analysisSession
 
-    let queryPlan = CompilationMetadata.queryPlan
+    let querySketch = CompilationMetadata.querySketch
 
     let compilerFingerprints = CompilationMetadata.compilerFingerprints
 

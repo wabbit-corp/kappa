@@ -637,13 +637,8 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Collect trace events at the point work really executes, including reuse/invalidate/skip/cache-probe events, or rename the current output to make clear that it is a planned/synthesized trace.
   - Sources: `reviews/observability1.md`.
 
-- `[Medium] Decide whether `queryPlan` and related metadata are observability sketches or real invalidation models, and rename/strengthen accordingly.`
-  - The current query plan is useful as a descriptive sketch, but it does not capture real semantic dependencies such as imports, trait solving, macro expansion, host bindings, or backend runtime dependencies.
-  - If it is public observability only, name it that way. If it is intended for incremental reuse, strengthen it materially.
-  - Sources: `reviews/observability1.md`.
-
 - `[Low-Medium] Expand CLI/tooling exposure for the observability APIs, or explicitly keep them library-only.`
-  - The public API exposes checkpoint contracts, available checkpoints, all-checkpoint verification, runtime obligations, query plans, fingerprints, incremental units, and pipeline traces.
+  - The public API exposes checkpoint contracts, available checkpoints, all-checkpoint verification, runtime obligations, query sketches, fingerprints, incremental units, and pipeline traces.
   - The CLI exposes only a smaller subset.
   - This is not a spec failure by itself, but the practical tooling story is weaker unless the public/CLI split is deliberate.
   - Sources: `reviews/observability1.md`.

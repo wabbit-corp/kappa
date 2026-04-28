@@ -182,11 +182,20 @@ module QueryKind =
         | LowerKBackendIRQuery -> "lowerKBackendIR"
         | LowerTargetQuery -> "lowerTarget"
 
+type QueryDependencyModel =
+    | ObservabilitySketchDependencyModel
+
+module QueryDependencyModel =
+    let toPortableName dependencyModel =
+        match dependencyModel with
+        | ObservabilitySketchDependencyModel -> "observability-sketch"
+
 type QueryRecord =
     { Id: string
       QueryKind: QueryKind
       InputKey: string
       OutputCheckpoint: string
+      DependencyModel: QueryDependencyModel
       RequiredPhase: KFrontIRPhase option
       AnalysisSessionIdentity: string
       BuildConfigurationIdentity: string
