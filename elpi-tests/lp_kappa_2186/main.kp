@@ -1,0 +1,17 @@
+module main
+
+generated_2186 : Int
+let generated_2186 =
+    block
+        ranked : Int
+        let ranked = ((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0)
+
+        (ranked + 0)
+
+result : Int
+let result = generated_2186
+
+--! assertNoErrors
+--! assertType generated_2186 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

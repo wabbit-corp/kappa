@@ -1,0 +1,17 @@
+module main
+
+generated_2645 : Int
+let generated_2645 =
+    block
+        let pair = (x = (((((((((left = 0, right = ((0 + (0 + 0)) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0), y = (((((((((left = 0, right = ((0 + (0 + 0)) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 1))
+        let (x = captured, y = other) = pair
+
+        (captured + other)
+
+result : Int
+let result = generated_2645
+
+--! assertNoErrors
+--! assertType generated_2645 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

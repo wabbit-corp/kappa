@@ -1,0 +1,17 @@
+module main
+
+generated_567 : Int
+let generated_567 =
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
+
+        rankedHelper ((((((((0 + (((0 + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+
+result : Int
+let result = generated_567
+
+--! assertNoErrors
+--! assertType generated_567 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

@@ -1,0 +1,15 @@
+module main
+
+generated_4820 : Int
+let generated_4820 =
+    match (((((((0 + (((if True then ((if True then 0 else 0) + 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) == ((((((0 + (((if True then ((if True then 0 else 0) + 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0))
+      case True -> ((((((0 + (((if True then ((if True then 0 else 0) + 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+      case False -> 0
+
+result : Int
+let result = generated_4820
+
+--! assertNoErrors
+--! assertType generated_4820 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

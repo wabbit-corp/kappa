@@ -1,0 +1,15 @@
+module main
+
+generated_830 : IO Int
+let generated_830 =
+    do
+        value <- pure ((((((((0 + (((Some (0 + 0)) ?: 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        pure (value + 2)
+
+result : IO Int
+let result = generated_830
+
+--! assertNoErrors
+--! assertType generated_830 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let

@@ -346,7 +346,7 @@ let main argv =
 
                 if samples.Length <> args.Count then
                     eprintfn
-                        "ELPI emitted %d samples; expected %d. Increase --depth or lower --count."
+                        "ELPI emitted %d samples; expected %d. Lower --count or expand the ELPI candidate set."
                         samples.Length
                         args.Count
                     1

@@ -1,0 +1,22 @@
+module main
+
+generated_1486 : Int
+let generated_1486 =
+    block
+        trait RankedScore a =
+            rank : a -> Int
+
+        instance RankedScore Int =
+            let rank x = x
+
+        let dict = summon (RankedScore Int)
+
+        dict.rank ((((((((if False then 0 else ((left = 0, right = (0 + 0))).right) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+
+result : Int
+let result = generated_1486
+
+--! assertNoErrors
+--! assertType generated_1486 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

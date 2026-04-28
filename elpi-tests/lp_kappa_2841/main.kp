@@ -1,0 +1,15 @@
+module main
+
+generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
+let generatedResize image width height = image + width * 10 + height
+
+generated_2841 : Int
+let generated_2841 = generatedResize { image = (((((((((left = 0, right = (((left = 0, right = (0 + 0))).right + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0), height = 3, width = 2 }
+
+result : Int
+let result = generated_2841
+
+--! assertNoErrors
+--! assertType generated_2841 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,0 +1,12 @@
+module main
+
+generated_1121 : Set Int
+let generated_1121 = {| yield ((((((((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+
+result : Set Int
+let result = generated_1121
+
+--! assertNoErrors
+--! assertType generated_1121 Set Int
+--! assertType result Set Int
+--! assertDeclKinds signature, let, signature, let

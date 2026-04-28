@@ -1,0 +1,15 @@
+module main
+
+generated_2205 : IO Int
+let generated_2205 =
+    do
+        let staged = (((((((((if False then 0 else ((Some (0 + 0)) ?: 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        pure (staged + 1)
+
+result : IO Int
+let result = generated_2205
+
+--! assertNoErrors
+--! assertType generated_2205 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let

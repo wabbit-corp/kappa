@@ -1,0 +1,19 @@
+module main
+
+data GeneratedChoice : Type =
+    GeneratedLeft (value : Int)
+    GeneratedRight
+
+generated_391 : Int
+let generated_391 =
+    match (GeneratedLeft (((((((((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
+      case GeneratedLeft payload -> (payload + 0)
+      case GeneratedRight -> (((((((((((if False then 0 else 0) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+
+result : Int
+let result = generated_391
+
+--! assertNoErrors
+--! assertType generated_391 Int
+--! assertType result Int
+--! assertDeclKinds data, signature, let, signature, let

@@ -1,0 +1,12 @@
+module main
+
+generated_2044 : Int
+let generated_2044 = ((((((((if False then 0 else ((if True then 0 else 0) + 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0)
+
+result : Int
+let result = generated_2044
+
+--! assertNoErrors
+--! assertType generated_2044 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

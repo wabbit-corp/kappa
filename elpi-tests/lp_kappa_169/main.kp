@@ -1,0 +1,12 @@
+module main
+
+generated_169 : Set Int
+let generated_169 = {| yield (((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+
+result : Set Int
+let result = generated_169
+
+--! assertNoErrors
+--! assertType generated_169 Set Int
+--! assertType result Set Int
+--! assertDeclKinds signature, let, signature, let

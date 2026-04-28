@@ -1,0 +1,18 @@
+module main
+
+generated_4558 : Int
+let generated_4558 =
+    block
+        type RankedAlias = Int
+
+        let aliased : RankedAlias = ((((((0 + ((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0)) + 0) + 0) + 0) + 0) + 0)
+
+        (aliased + 1)
+
+result : Int
+let result = generated_4558
+
+--! assertNoErrors
+--! assertType generated_4558 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

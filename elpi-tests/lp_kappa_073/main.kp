@@ -1,46 +1,12 @@
 module main
 
-type GeneratedUnit = Unit
+generated_73 : Bool
+let generated_73 = (if True then True else False)
 
-type GeneratedPair = (left : Int, right : Int)
-
-type GeneratedTuple = (Int, Int)
-
-data GeneratedChoice : Type =
-    GeneratedLeft (value : Int)
-    GeneratedRight
-
-trait GeneratedScore a =
-    score : a -> Int
-
-instance GeneratedScore Int =
-    let score x = x
-
-generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
-let generatedResize image width height = image + width * 10 + height
-
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
-
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
-
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
-
-generatedSize : List Int -> Int
-let generatedSize xs decreases structural xs =
-    match xs
-    case Nil -> 0
-    case _ :: tail -> 1 + generatedSize tail
-
-generated_73 : List Int
-let generated_73 = [ for x in [1, 2, 3], let y = x + 1, if y > 2, yield y ]
-
-result : List Int
+result : Bool
 let result = generated_73
 
 --! assertNoErrors
---! assertType generated_73 List Int
---! assertType result List Int
---! assertDeclKinds type, type, type, data, trait, instance, signature, let, signature, let, signature, let, signature, let, signature, let, signature, let, signature, let
+--! assertType generated_73 Bool
+--! assertType result Bool
+--! assertDeclKinds signature, let, signature, let

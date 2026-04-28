@@ -1,0 +1,17 @@
+module main
+
+generated_4885 : Int
+let generated_4885 =
+    block
+        rankedHelper : (Int -> Int)
+        let rankedHelper x = x + 1
+
+        rankedHelper ((((((0 + (((if True then ((left = (0 + 0), right = 0)).left else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0)
+
+result : Int
+let result = generated_4885
+
+--! assertNoErrors
+--! assertType generated_4885 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

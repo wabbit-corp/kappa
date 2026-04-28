@@ -1,0 +1,14 @@
+module main
+
+type GeneratedTuple = (Int, Int)
+
+generated_483 : GeneratedTuple
+let generated_483 = (if True then (if True then (if True then (if True then (if (True && True) then (if False then (3, (3 + 3)) else (0, (0 + 0))) else (4, (4 + 4))) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0))) else (0, (0 + 0)))
+
+result : GeneratedTuple
+let result = generated_483
+
+--! assertNoErrors
+--! assertType generated_483 GeneratedTuple
+--! assertType result GeneratedTuple
+--! assertDeclKinds type, signature, let, signature, let

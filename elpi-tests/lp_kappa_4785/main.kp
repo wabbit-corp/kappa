@@ -1,0 +1,12 @@
+module main
+
+generated_4785 : String
+let generated_4785 = (if (if (if (if (if True then ((True || False) && True) else False) then False else True) then True else False) then True else False) then #"raw lambda-prolog"# else "fallback")
+
+result : String
+let result = generated_4785
+
+--! assertNoErrors
+--! assertType generated_4785 String
+--! assertType result String
+--! assertDeclKinds signature, let, signature, let

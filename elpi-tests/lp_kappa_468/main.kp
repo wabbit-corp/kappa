@@ -1,0 +1,15 @@
+module main
+
+generated_468 : Int
+let generated_468 =
+    match ((((((((((((left = 0, right = (0 + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == (((((((((((left = 0, right = (0 + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
+      case True -> (((((((((((left = 0, right = (0 + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+      case False -> 0
+
+result : Int
+let result = generated_468
+
+--! assertNoErrors
+--! assertType generated_468 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

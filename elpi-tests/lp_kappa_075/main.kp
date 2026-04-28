@@ -1,46 +1,14 @@
 module main
 
-type GeneratedUnit = Unit
-
-type GeneratedPair = (left : Int, right : Int)
-
 type GeneratedTuple = (Int, Int)
 
-data GeneratedChoice : Type =
-    GeneratedLeft (value : Int)
-    GeneratedRight
+generated_75 : GeneratedTuple
+let generated_75 = (if True then (0, (0 + 0)) else (0, (0 + 0)))
 
-trait GeneratedScore a =
-    score : a -> Int
-
-instance GeneratedScore Int =
-    let score x = x
-
-generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int
-let generatedResize image width height = image + width * 10 + height
-
-generatedMakeConst : forall (a : Type). a -> Unit -> a
-let generatedMakeConst value = \() -> value
-
-generatedNeed : (@x : Int) -> Int
-let generatedNeed (@x : Int) = x
-
-generatedEcho : forall (a : Type). (this x : a) -> a
-let generatedEcho @a (this x : a) = x
-
-generatedSize : List Int -> Int
-let generatedSize xs decreases structural xs =
-    match xs
-    case Nil -> 0
-    case _ :: tail -> 1 + generatedSize tail
-
-generated_75 : Int
-let generated_75 = generatedSize (1 :: 2 :: 3 :: Nil)
-
-result : Int
+result : GeneratedTuple
 let result = generated_75
 
 --! assertNoErrors
---! assertType generated_75 Int
---! assertType result Int
---! assertDeclKinds type, type, type, data, trait, instance, signature, let, signature, let, signature, let, signature, let, signature, let, signature, let, signature, let
+--! assertType generated_75 GeneratedTuple
+--! assertType result GeneratedTuple
+--! assertDeclKinds type, signature, let, signature, let

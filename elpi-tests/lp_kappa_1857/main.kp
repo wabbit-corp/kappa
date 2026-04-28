@@ -1,0 +1,12 @@
+module main
+
+generated_1857 : Set Int
+let generated_1857 = {| for x in [1, 2, 3], let y = x + 1, yield ((((((((if True then ((Some (x + 0)) ?: 0) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) |}
+
+result : Set Int
+let result = generated_1857
+
+--! assertNoErrors
+--! assertType generated_1857 Set Int
+--! assertType result Set Int
+--! assertDeclKinds signature, let, signature, let

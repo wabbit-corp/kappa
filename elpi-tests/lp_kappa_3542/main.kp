@@ -1,0 +1,12 @@
+module main
+
+generated_3542 : Unit
+let generated_3542 = (if True then (if True then (if False then () else (if True then (if (0 == 1) then () else ()) else ())) else ()) else ())
+
+result : Unit
+let result = generated_3542
+
+--! assertNoErrors
+--! assertType generated_3542 Unit
+--! assertType result Unit
+--! assertDeclKinds signature, let, signature, let

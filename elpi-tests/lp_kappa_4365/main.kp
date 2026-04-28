@@ -1,0 +1,12 @@
+module main
+
+generated_4365 : List Int
+let generated_4365 = [ for x in [1, 2, 3], let y = x + 1, if y > 0, yield (((((0 + ((if False then 0 else (0 + (x + 0))) + 0)) + 0) + 0) + 0) + 0) ]
+
+result : List Int
+let result = generated_4365
+
+--! assertNoErrors
+--! assertType generated_4365 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

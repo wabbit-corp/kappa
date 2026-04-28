@@ -1,0 +1,12 @@
+module main
+
+generated_1606 : Option Int
+let generated_1606 = (if True then (if True then (if True then (Some ((if False then None else (Some (0 + 0))) ?: 0)) else None) else None) else None)
+
+result : Option Int
+let result = generated_1606
+
+--! assertNoErrors
+--! assertType generated_1606 Option Int
+--! assertType result Option Int
+--! assertDeclKinds signature, let, signature, let

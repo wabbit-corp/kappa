@@ -1,0 +1,12 @@
+module main
+
+generated_4969 : Bool
+let generated_4969 = (if (if (if (if False then True else (True || False)) then False else True) then True else False) then True else False)
+
+result : Bool
+let result = generated_4969
+
+--! assertNoErrors
+--! assertType generated_4969 Bool
+--! assertType result Bool
+--! assertDeclKinds signature, let, signature, let

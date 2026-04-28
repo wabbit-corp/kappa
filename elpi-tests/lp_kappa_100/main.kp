@@ -1,0 +1,12 @@
+module main
+
+generated_100 : List Int
+let generated_100 = [ yield (((0 + 0) + 0) + 0) ]
+
+result : List Int
+let result = generated_100
+
+--! assertNoErrors
+--! assertType generated_100 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

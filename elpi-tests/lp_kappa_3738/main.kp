@@ -1,0 +1,12 @@
+module main
+
+generated_3738 : List Int
+let generated_3738 = [ yield ((((((0 + ((0 + ((if True then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0) ]
+
+result : List Int
+let result = generated_3738
+
+--! assertNoErrors
+--! assertType generated_3738 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

@@ -1,0 +1,12 @@
+module main
+
+generated_1432 : Int
+let generated_1432 = (((((((if False then 0 else ((left = (0 + 0), right = 0)).left) + 0) + 0) + 0) + 0) + 0) + 0)
+
+result : Int
+let result = generated_1432
+
+--! assertNoErrors
+--! assertType generated_1432 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

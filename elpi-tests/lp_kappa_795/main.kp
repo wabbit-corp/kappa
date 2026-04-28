@@ -1,0 +1,12 @@
+module main
+
+generated_795 : List Int
+let generated_795 = [ for x in [1, 2, 3], if x > 0, yield (((((((0 + (((left = 0, right = (x + 0))).right + 0)) + 0) + 0) + 0) + 0) + 0) + 0) ]
+
+result : List Int
+let result = generated_795
+
+--! assertNoErrors
+--! assertType generated_795 List Int
+--! assertType result List Int
+--! assertDeclKinds signature, let, signature, let

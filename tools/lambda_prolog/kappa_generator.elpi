@@ -68,6 +68,7 @@ type e-int int -> expr.
 type e-true expr.
 type e-false expr.
 type e-string string -> expr.
+type e-raw-string expr.
 type e-var string -> expr.
 type e-lam string -> ty -> expr -> expr.
 type e-app expr -> expr -> expr.
@@ -85,50 +86,114 @@ type e-choice-left expr -> expr.
 type e-choice-right expr.
 type e-match-choice expr -> string -> expr -> expr -> expr.
 type e-block string -> ty -> expr -> expr -> expr.
-type e-block-tuple-sum expr.
+type e-block-tuple-sum int -> int -> expr.
 type e-let-in string -> ty -> expr -> expr -> expr.
 type e-list2 expr -> expr -> expr.
-type e-list-range expr.
-type e-list-filter expr.
-type e-set-int expr.
-type e-map-string-int expr.
+type e-list-range int -> expr.
+type e-list-filter int -> expr.
+type e-set-int int -> expr.
+type e-map-string-int int -> expr.
 type e-option-some expr -> expr.
 type e-option-none expr.
 type e-elvis expr -> expr -> expr.
-type e-do-pure-int expr.
+type e-do-pure-int int -> expr.
+type e-do-pure-expr expr -> expr.
 type e-score-int expr -> expr.
-type e-named-resize expr.
-type e-make-const-int expr.
-type e-make-const-string expr.
-type e-unit-lambda-app expr.
-type e-implicit-local expr.
-type e-bool-match expr.
-type e-int-literal-match expr.
-type e-record-pattern expr.
-type e-row-extension expr.
-type e-receiver-method-int expr.
-type e-list-size expr.
+type e-named-resize int -> int -> int -> expr.
+type e-named-resize-expr expr -> int -> int -> expr.
+type e-make-const-int int -> expr.
+type e-make-const-string string -> expr.
+type e-make-const-expr expr -> expr.
+type e-unit-lambda-app int -> expr.
+type e-implicit-local int -> expr.
+type e-implicit-value expr -> expr.
+type e-bool-match int -> expr.
+type e-bool-match-expr expr -> expr.
+type e-int-literal-match int -> expr.
+type e-record-pattern int -> int -> expr.
+type e-record-pattern-expr expr -> expr -> expr.
+type e-row-extension int -> int -> expr.
+type e-row-extension-expr expr -> expr -> expr.
+type e-receiver-method-int int -> expr.
+type e-receiver-method-expr expr -> expr.
+type e-receiver-section-expr expr -> expr.
+type e-list-size int -> int -> int -> expr.
+type e-list-query int -> string -> expr -> expr.
+type e-set-query int -> string -> expr -> expr.
+type e-map-query int -> string -> expr -> expr.
+type e-list-yield expr -> expr.
+type e-set-yield expr -> expr.
+type e-map-yield expr -> expr.
+type e-do-local-let expr -> expr.
+type e-do-implicit expr -> expr.
+type e-local-function expr -> expr.
+type e-local-trait-score expr -> expr.
+type e-local-type-alias expr -> expr.
+type e-local-data-match expr -> expr.
 
 kind binding type.
 type bind string -> ty -> binding.
 
+kind dep type.
+type dep-pair dep.
+type dep-tuple dep.
+type dep-choice dep.
+type dep-score dep.
+type dep-resize dep.
+type dep-make-const dep.
+type dep-need dep.
+type dep-echo dep.
+type dep-size dep.
+
 kind generated type.
-type generated ty -> expr -> generated.
+type generated list dep -> ty -> expr -> generated.
 
 pred lookup i:list binding, i:string, o:ty.
+pred has-dep i:list dep, i:dep.
 pred small-ty o:ty.
 pred fresh-name i:int, o:string.
 pred typeof i:list binding, i:expr, o:ty.
 pred synth i:int, i:list binding, i:ty, o:expr.
 pred synth-first i:int, i:ty, o:expr.
 pred candidate i:int, o:generated.
+pred candidate-limit i:int, o:int.
 pred candidate-at i:int, i:int, o:generated.
 pred indexed-candidate i:int, i:int, i:int, o:generated.
+pred ranked-family-count o:int.
+pred ranked-capacity i:int, o:int.
+pred ranked-candidate i:int, i:int, o:generated.
+pred ranked-family i:int, i:int, i:int, o:generated.
+pred ranked-int i:int, i:int, o:expr.
+pred ranked-int-var i:int, i:int, i:string, o:expr.
+pred wrap-int i:int, i:expr, o:expr.
+pred ranked-bool i:int, i:int, o:expr.
+pred wrap-bool i:int, i:expr, o:expr.
+pred ranked-unit i:int, i:int, o:expr.
+pred wrap-unit i:int, i:expr, o:expr.
+pred ranked-tuple i:int, i:int, o:expr.
+pred wrap-tuple i:int, i:expr, o:expr.
+pred ranked-option-int i:int, i:int, o:expr.
+pred wrap-option-int i:int, i:expr, o:expr.
+pred ranked-int-fun i:int, i:int, o:expr.
+pred wrap-int-fun i:int, i:expr, o:expr.
 pred emit-indent i:out_stream, i:int.
 pred emit-ty i:out_stream, i:ty.
 pred emit-expr i:out_stream, i:expr.
 pred emit-expr-at i:out_stream, i:int, i:expr.
+pred emit-needs-parens i:expr.
 pred emit-top-expr i:out_stream, i:expr.
+pred emit-preamble i:list dep.
+pred emit-pair-decl i:list dep.
+pred emit-tuple-decl i:list dep.
+pred emit-choice-decl i:list dep.
+pred emit-score-decls i:list dep.
+pred emit-resize-decls i:list dep.
+pred emit-make-const-decls i:list dep.
+pred emit-need-decls i:list dep.
+pred emit-echo-decls i:list dep.
+pred emit-size-decls i:list dep.
+pred emit-kind-if-dep i:list dep, i:dep, i:string.
+pred emit-decl-kind-prefix i:list dep.
 pred emit-kappa-program i:int, i:generated.
 pred emit-samples i:list string.
 pred emit-samples-count-depth i:int, i:int.
@@ -137,6 +202,9 @@ pred emit-samples-from i:int, i:int, i:int.
 
 lookup [bind Name Ty | _] Name Ty.
 lookup [_ | Rest] Name Ty :- lookup Rest Name Ty.
+
+has-dep [Dep | _] Dep.
+has-dep [_ | Rest] Dep :- has-dep Rest Dep.
 
 small-ty ty-unit.
 small-ty ty-int.
@@ -170,6 +238,7 @@ typeof _ (e-int _) ty-int.
 typeof _ e-true ty-bool.
 typeof _ e-false ty-bool.
 typeof _ (e-string _) ty-string.
+typeof _ e-raw-string ty-string.
 typeof Ctx (e-var Name) Ty :-
   lookup Ctx Name Ty.
 typeof Ctx (e-lam Name A Body) (ty-fun A B) :-
@@ -216,37 +285,81 @@ typeof Ctx (e-match-choice Scrutinee PayloadName LeftBody RightBody) Ty :-
 typeof Ctx (e-block Name A Value Body) Ty :-
   typeof Ctx Value A,
   typeof [bind Name A | Ctx] Body Ty.
-typeof _ e-block-tuple-sum ty-int.
+typeof _ (e-block-tuple-sum _ _) ty-int.
 typeof Ctx (e-let-in Name A Value Body) Ty :-
   typeof Ctx Value A,
   typeof [bind Name A | Ctx] Body Ty.
 typeof Ctx (e-list2 Left Right) ty-list-int :-
   typeof Ctx Left ty-int,
   typeof Ctx Right ty-int.
-typeof _ e-list-range ty-list-int.
-typeof _ e-list-filter ty-list-int.
-typeof _ e-set-int ty-set-int.
-typeof _ e-map-string-int ty-map-string-int.
+typeof _ (e-list-range _) ty-list-int.
+typeof _ (e-list-filter _) ty-list-int.
+typeof _ (e-set-int _) ty-set-int.
+typeof _ (e-map-string-int _) ty-map-string-int.
 typeof Ctx (e-option-some Value) ty-option-int :-
   typeof Ctx Value ty-int.
 typeof _ e-option-none ty-option-int.
 typeof Ctx (e-elvis Value Fallback) ty-int :-
   typeof Ctx Value ty-option-int,
   typeof Ctx Fallback ty-int.
-typeof _ e-do-pure-int ty-io-int.
+typeof _ (e-do-pure-int _) ty-io-int.
+typeof Ctx (e-do-pure-expr Value) ty-io-int :-
+  typeof Ctx Value ty-int.
 typeof Ctx (e-score-int Value) ty-int :-
   typeof Ctx Value ty-int.
-typeof _ e-named-resize ty-int.
-typeof _ e-make-const-int ty-int.
-typeof _ e-make-const-string ty-string.
-typeof _ e-unit-lambda-app ty-int.
-typeof _ e-implicit-local ty-int.
-typeof _ e-bool-match ty-int.
-typeof _ e-int-literal-match ty-int.
-typeof _ e-record-pattern ty-int.
-typeof _ e-row-extension ty-int.
-typeof _ e-receiver-method-int ty-int.
-typeof _ e-list-size ty-int.
+typeof _ (e-named-resize _ _ _) ty-int.
+typeof Ctx (e-named-resize-expr Value _ _) ty-int :-
+  typeof Ctx Value ty-int.
+typeof _ (e-make-const-int _) ty-int.
+typeof _ (e-make-const-string _) ty-string.
+typeof Ctx (e-make-const-expr Value) ty-int :-
+  typeof Ctx Value ty-int.
+typeof _ (e-unit-lambda-app _) ty-int.
+typeof _ (e-implicit-local _) ty-int.
+typeof Ctx (e-implicit-value Value) ty-int :-
+  typeof Ctx Value ty-int.
+typeof _ (e-bool-match _) ty-int.
+typeof Ctx (e-bool-match-expr Value) ty-int :-
+  typeof Ctx Value ty-int.
+typeof _ (e-int-literal-match _) ty-int.
+typeof _ (e-record-pattern _ _) ty-int.
+typeof Ctx (e-record-pattern-expr Left Right) ty-int :-
+  typeof Ctx Left ty-int,
+  typeof Ctx Right ty-int.
+typeof _ (e-row-extension _ _) ty-int.
+typeof Ctx (e-row-extension-expr Base Extended) ty-int :-
+  typeof Ctx Base ty-int,
+  typeof Ctx Extended ty-int.
+typeof _ (e-receiver-method-int _) ty-int.
+typeof Ctx (e-receiver-method-expr Value) ty-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-receiver-section-expr Value) ty-int :-
+  typeof Ctx Value ty-int.
+typeof _ (e-list-size _ _ _) ty-int.
+typeof Ctx (e-list-query _ Binder Body) ty-list-int :-
+  typeof [bind Binder ty-int | Ctx] Body ty-int.
+typeof Ctx (e-set-query _ Binder Body) ty-set-int :-
+  typeof [bind Binder ty-int | Ctx] Body ty-int.
+typeof Ctx (e-map-query _ Binder Body) ty-map-string-int :-
+  typeof [bind Binder ty-int | Ctx] Body ty-int.
+typeof Ctx (e-list-yield Value) ty-list-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-set-yield Value) ty-set-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-map-yield Value) ty-map-string-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-do-local-let Value) ty-io-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-do-implicit Value) ty-io-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-local-function Value) ty-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-local-trait-score Value) ty-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-local-type-alias Value) ty-int :-
+  typeof Ctx Value ty-int.
+typeof Ctx (e-local-data-match Value) ty-int :-
+  typeof Ctx Value ty-int.
 
 synth _ _ ty-unit e-unit.
 synth _ _ ty-int (e-int 0).
@@ -297,91 +410,373 @@ synth-first Depth Ty Expr :-
   typeof [] Expr Ty,
   !.
 
+ranked-family-count 34.
+
+ranked-capacity 0 1.
+ranked-capacity Depth Capacity :-
+  Depth > 0,
+  Depth1 is Depth - 1,
+  ranked-capacity Depth1 Previous,
+  Capacity is 1 + 9 * Previous.
+
+candidate-limit Depth Limit :-
+  ranked-family-count FamilyCount,
+  ranked-capacity Depth Capacity,
+  Limit is 38 + FamilyCount * Capacity.
+
 candidate Depth Generated :-
   std.mem [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37] Bucket,
   indexed-candidate Bucket Bucket Depth Generated.
 
 candidate-at Index Depth Generated :-
-  Bucket is Index mod 38,
-  indexed-candidate Bucket Index Depth Generated,
+  Index < 38,
+  indexed-candidate Index Index Depth Generated,
+  !.
+candidate-at Index Depth Generated :-
+  Index >= 38,
+  SynthIndex is Index - 38,
+  ranked-candidate Depth SynthIndex Generated,
   !.
 
-indexed-candidate 0 Index _ (generated ty-int (e-add (e-int 40) (e-int Index))) :-
+ranked-candidate Depth Index Generated :-
+  ranked-family-count FamilyCount,
+  Family is Index mod FamilyCount,
+  Rank is Index div FamilyCount,
+  ranked-family Family Depth Rank Generated.
+
+ranked-family 0 Depth Rank (generated [] ty-int Expr) :-
+  ranked-int Depth Rank Expr,
+  typeof [] Expr ty-int.
+ranked-family 1 Depth Rank (generated [] ty-bool Expr) :-
+  ranked-bool Depth Rank Expr,
+  typeof [] Expr ty-bool.
+ranked-family 2 Depth Rank (generated [] ty-unit Expr) :-
+  ranked-unit Depth Rank Expr,
+  typeof [] Expr ty-unit.
+ranked-family 3 Depth Rank (generated [dep-tuple] ty-tuple2 Expr) :-
+  ranked-tuple Depth Rank Expr,
+  typeof [] Expr ty-tuple2.
+ranked-family 4 Depth Rank (generated [] ty-option-int Expr) :-
+  ranked-option-int Depth Rank Expr,
+  typeof [] Expr ty-option-int.
+ranked-family 5 Depth Rank (generated [] (ty-fun ty-int ty-int) Expr) :-
+  ranked-int-fun Depth Rank Expr,
+  typeof [] Expr (ty-fun ty-int ty-int).
+ranked-family 6 Depth Rank (generated [] ty-int (e-block "ranked" ty-int Value (e-add (e-var "ranked") (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-block "ranked" ty-int Value (e-add (e-var "ranked") (e-int 0))) ty-int.
+ranked-family 7 Depth Rank (generated [] ty-int (e-let-in "ranked" ty-int Value (e-add (e-var "ranked") (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-let-in "ranked" ty-int Value (e-add (e-var "ranked") (e-int 0))) ty-int.
+ranked-family 8 Depth Rank (generated [dep-need] ty-int (e-implicit-value Value)) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-implicit-value Value) ty-int.
+ranked-family 9 Depth Rank (generated [] ty-list-int (e-list-query Variant "x" Body)) :-
+  Variant is Rank mod 4,
+  ranked-int-var Depth Rank "x" Body,
+  typeof [] (e-list-query Variant "x" Body) ty-list-int.
+ranked-family 10 Depth Rank (generated [] ty-io-int (e-do-pure-expr (e-add Value (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-do-pure-expr (e-add Value (e-int 0))) ty-io-int.
+ranked-family 11 Depth Rank (generated [dep-score] ty-int (e-score-int (e-add Value (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-score-int (e-add Value (e-int 0))) ty-int.
+ranked-family 12 Depth Rank (generated [dep-echo] ty-int (e-receiver-method-expr (e-add Value (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-receiver-method-expr (e-add Value (e-int 0))) ty-int.
+ranked-family 13 Depth Rank (generated [dep-choice] ty-int (e-match-choice (e-choice-left (e-add Value (e-int 0))) "payload" (e-add (e-var "payload") (e-int 0)) (e-add Value (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-match-choice (e-choice-left (e-add Value (e-int 0))) "payload" (e-add (e-var "payload") (e-int 0)) (e-add Value (e-int 0))) ty-int.
+ranked-family 14 Depth Rank (generated [dep-pair] ty-pair (e-record-update-right (e-record Value (e-int 0)) (e-add Value (e-int 1)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-record-update-right (e-record Value (e-int 0)) (e-add Value (e-int 1))) ty-pair.
+ranked-family 15 Depth Rank (generated [dep-resize] ty-int (e-named-resize-expr (e-add Value (e-int 0)) 2 3)) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-named-resize-expr (e-add Value (e-int 0)) 2 3) ty-int.
+ranked-family 16 Depth Rank (generated [dep-make-const] ty-int (e-make-const-expr (e-add Value (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-make-const-expr (e-add Value (e-int 0))) ty-int.
+ranked-family 17 Depth Rank (generated [] ty-set-int (e-set-query Variant "x" Body)) :-
+  Variant is Rank mod 4,
+  ranked-int-var Depth Rank "x" Body,
+  typeof [] (e-set-query Variant "x" Body) ty-set-int.
+ranked-family 18 Depth Rank (generated [] ty-map-string-int (e-map-query Variant "x" Body)) :-
+  Variant is Rank mod 4,
+  ranked-int-var Depth Rank "x" Body,
+  typeof [] (e-map-query Variant "x" Body) ty-map-string-int.
+ranked-family 19 Depth Rank (generated [] ty-int (e-local-function (e-add Value (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-local-function (e-add Value (e-int 0))) ty-int.
+ranked-family 20 Depth Rank (generated [] ty-int (e-local-trait-score (e-add Value (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-local-trait-score (e-add Value (e-int 0))) ty-int.
+ranked-family 21 Depth Rank (generated [] ty-string (e-if Condition e-raw-string (e-string "fallback"))) :-
+  ranked-bool Depth Rank Condition,
+  typeof [] (e-if Condition e-raw-string (e-string "fallback")) ty-string.
+ranked-family 22 Depth Rank (generated [] ty-int (e-bool-match-expr (e-add Value (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-bool-match-expr (e-add Value (e-int 0))) ty-int.
+ranked-family 23 Depth Rank (generated [] ty-int (e-record-pattern-expr (e-add Value (e-int 0)) (e-add Value (e-int 1)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-record-pattern-expr (e-add Value (e-int 0)) (e-add Value (e-int 1))) ty-int.
+ranked-family 24 Depth Rank (generated [] ty-int (e-row-extension-expr (e-add Value (e-int 0)) (e-add Value (e-int 1)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-row-extension-expr (e-add Value (e-int 0)) (e-add Value (e-int 1))) ty-int.
+ranked-family 25 Depth Rank (generated [] ty-io-int (e-do-local-let (e-add Value (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-do-local-let (e-add Value (e-int 0))) ty-io-int.
+ranked-family 26 Depth Rank (generated [dep-need] ty-io-int (e-do-implicit (e-add Value (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-do-implicit (e-add Value (e-int 0))) ty-io-int.
+ranked-family 27 Depth Rank (generated [dep-echo] ty-int (e-receiver-section-expr (e-add Value (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-receiver-section-expr (e-add Value (e-int 0))) ty-int.
+ranked-family 28 Depth Rank (generated [] ty-list-int (e-list-yield (e-add Value (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-list-yield (e-add Value (e-int 0))) ty-list-int.
+ranked-family 29 Depth Rank (generated [] ty-set-int (e-set-yield (e-add Value (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-set-yield (e-add Value (e-int 0))) ty-set-int.
+ranked-family 30 Depth Rank (generated [] ty-map-string-int (e-map-yield (e-add Value (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-map-yield (e-add Value (e-int 0))) ty-map-string-int.
+ranked-family 31 Depth Rank (generated [dep-choice] ty-int (e-match-choice e-choice-right "payload" (e-add (e-var "payload") (e-int 0)) (e-add Value (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-match-choice e-choice-right "payload" (e-add (e-var "payload") (e-int 0)) (e-add Value (e-int 0))) ty-int.
+ranked-family 32 Depth Rank (generated [] ty-int (e-local-type-alias (e-add Value (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-local-type-alias (e-add Value (e-int 0))) ty-int.
+ranked-family 33 Depth Rank (generated [] ty-int (e-local-data-match (e-add Value (e-int 0)))) :-
+  ranked-int Depth Rank Value,
+  typeof [] (e-local-data-match (e-add Value (e-int 0))) ty-int.
+
+ranked-int _ 0 (e-int 0).
+ranked-int Depth Rank Expr :-
+  Depth > 0,
+  Rank > 0,
+  Depth1 is Depth - 1,
+  ranked-capacity Depth1 Capacity,
+  Adjusted is Rank - 1,
+  Step is Adjusted div Capacity,
+  Step < 9,
+  Rest is Adjusted mod Capacity,
+  ranked-int Depth1 Rest Sub,
+  wrap-int Step Sub Expr.
+
+ranked-int-var _ 0 Name (e-var Name).
+ranked-int-var Depth Rank Name Expr :-
+  Depth > 0,
+  Rank > 0,
+  Depth1 is Depth - 1,
+  ranked-capacity Depth1 Capacity,
+  Adjusted is Rank - 1,
+  Step is Adjusted div Capacity,
+  Step < 9,
+  Rest is Adjusted mod Capacity,
+  ranked-int-var Depth1 Rest Name Sub,
+  wrap-int Step Sub Expr.
+
+wrap-int 0 Sub (e-add (e-add Sub (e-int 0)) (e-int 0)).
+wrap-int 1 Sub (e-add (e-int 0) (e-add Sub (e-int 0))).
+wrap-int 2 Sub (e-if e-true Sub (e-int 0)).
+wrap-int 3 Sub (e-if e-false (e-int 0) Sub).
+wrap-int 4 Sub (e-add (e-if e-true Sub (e-int 0)) (e-int 0)).
+wrap-int 5 Sub (e-add (e-if e-false (e-int 0) Sub) (e-add (e-int 0) (e-int 0))).
+wrap-int 6 Sub (e-proj-left (e-record (e-add Sub (e-int 0)) (e-int 0))).
+wrap-int 7 Sub (e-proj-right (e-record (e-int 0) (e-add Sub (e-int 0)))).
+wrap-int 8 Sub (e-elvis (e-option-some (e-add Sub (e-int 0))) (e-int 0)).
+
+ranked-bool _ 0 e-true.
+ranked-bool Depth Rank Expr :-
+  Depth > 0,
+  Rank > 0,
+  Depth1 is Depth - 1,
+  ranked-capacity Depth1 Capacity,
+  Adjusted is Rank - 1,
+  Step is Adjusted div Capacity,
+  Step < 9,
+  Rest is Adjusted mod Capacity,
+  ranked-bool Depth1 Rest Sub,
+  wrap-bool Step Sub Expr.
+
+wrap-bool 0 Sub (e-if Sub e-true e-false).
+wrap-bool 1 Sub (e-if Sub e-false e-true).
+wrap-bool 2 Sub (e-and Sub e-false).
+wrap-bool 3 Sub (e-or Sub e-false).
+wrap-bool 4 Sub (e-if e-true (e-and Sub e-true) e-false).
+wrap-bool 5 Sub (e-if e-false e-true (e-or Sub e-false)).
+wrap-bool 6 Sub (e-eq-int (e-if Sub (e-int 1) (e-int 0)) (e-int 1)).
+wrap-bool 7 Sub (e-eq-int (e-if Sub (e-add (e-int 0) (e-int 1)) (e-int 1)) (e-int 1)).
+wrap-bool 8 Sub (e-and (e-if Sub e-true e-false) e-true).
+
+ranked-unit _ 0 e-unit.
+ranked-unit Depth Rank Expr :-
+  Depth > 0,
+  Rank > 0,
+  Depth1 is Depth - 1,
+  ranked-capacity Depth1 Capacity,
+  Adjusted is Rank - 1,
+  Step is Adjusted div Capacity,
+  Step < 9,
+  Rest is Adjusted mod Capacity,
+  ranked-unit Depth1 Rest Sub,
+  wrap-unit Step Sub Expr.
+
+wrap-unit 0 Sub (e-if e-true Sub e-unit).
+wrap-unit 1 Sub (e-if e-false e-unit Sub).
+wrap-unit 2 Sub (e-app (e-lam "u" ty-unit (e-var "u")) Sub).
+wrap-unit 3 Sub (e-app (e-lam "u" ty-unit e-unit) Sub).
+wrap-unit 4 Sub (e-if (e-and e-true e-true) Sub e-unit).
+wrap-unit 5 Sub (e-if (e-or e-false e-true) Sub e-unit).
+wrap-unit 6 Sub (e-app (e-lam "u" ty-unit (e-if e-false e-unit (e-var "u"))) Sub).
+wrap-unit 7 Sub (e-if (e-eq-int (e-int 0) (e-int 1)) e-unit Sub).
+wrap-unit 8 Sub (e-app (e-lam "u" ty-unit (e-if e-true (e-var "u") e-unit)) Sub).
+
+ranked-tuple _ 0 (e-tuple2 (e-int 0) (e-add (e-int 0) (e-int 0))).
+ranked-tuple Depth Rank Expr :-
+  Depth > 0,
+  Rank > 0,
+  Depth1 is Depth - 1,
+  ranked-capacity Depth1 Capacity,
+  Adjusted is Rank - 1,
+  Step is Adjusted div Capacity,
+  Step < 9,
+  Rest is Adjusted mod Capacity,
+  ranked-tuple Depth1 Rest Sub,
+  wrap-tuple Step Sub Expr.
+
+wrap-tuple 0 Sub (e-if e-true Sub (e-tuple2 (e-int 0) (e-add (e-int 0) (e-int 0)))).
+wrap-tuple 1 Sub (e-if e-false (e-tuple2 (e-int 0) (e-add (e-int 0) (e-int 0))) Sub).
+wrap-tuple 2 Sub (e-if (e-eq-int (e-int 0) (e-int 0)) Sub (e-tuple2 (e-add (e-int 1) (e-int 1)) (e-int 1))).
+wrap-tuple 3 Sub (e-if (e-eq-int (e-int 0) (e-int 1)) (e-tuple2 (e-int 1) (e-add (e-int 1) (e-add (e-int 1) (e-int 1)))) Sub).
+wrap-tuple 4 Sub (e-if e-true (e-if e-true Sub (e-tuple2 (e-int 0) (e-add (e-int 0) (e-int 0)))) (e-tuple2 (e-add (e-int 1) (e-int 1)) (e-int 1))).
+wrap-tuple 5 Sub (e-if (e-and e-true e-true) Sub (e-tuple2 (e-add (e-int 1) (e-int 1)) (e-int 1))).
+wrap-tuple 6 Sub (e-if (e-or e-false e-true) (e-tuple2 (e-int 1) (e-add (e-int 1) (e-add (e-int 1) (e-int 1)))) Sub).
+wrap-tuple 7 Sub (e-if (e-or e-false e-true) Sub (e-tuple2 (e-add (e-int 2) (e-int 2)) (e-int 2))).
+wrap-tuple 8 Sub (e-if (e-and e-true e-true) (e-if e-false (e-tuple2 (e-int 3) (e-add (e-int 3) (e-int 3))) Sub) (e-tuple2 (e-int 4) (e-add (e-int 4) (e-int 4)))).
+
+ranked-option-int _ 0 (e-option-some (e-add (e-int 0) (e-int 0))).
+ranked-option-int Depth Rank Expr :-
+  Depth > 0,
+  Rank > 0,
+  Depth1 is Depth - 1,
+  ranked-capacity Depth1 Capacity,
+  Adjusted is Rank - 1,
+  Step is Adjusted div Capacity,
+  Step < 9,
+  Rest is Adjusted mod Capacity,
+  ranked-option-int Depth1 Rest Sub,
+  wrap-option-int Step Sub Expr.
+
+wrap-option-int 0 Sub (e-if e-true Sub e-option-none).
+wrap-option-int 1 Sub (e-if e-false e-option-none Sub).
+wrap-option-int 2 Sub (e-if (e-eq-int (e-elvis Sub (e-int 0)) (e-int 0)) Sub e-option-none).
+wrap-option-int 3 Sub (e-if (e-eq-int (e-elvis Sub (e-int 0)) (e-int 1)) e-option-none Sub).
+wrap-option-int 4 Sub (e-option-some (e-elvis Sub (e-int 0))).
+wrap-option-int 5 Sub (e-if (e-eq-int (e-elvis Sub (e-int 0)) (e-int 0)) (e-option-some (e-elvis Sub (e-int 0))) e-option-none).
+wrap-option-int 6 Sub (e-if (e-eq-int (e-elvis Sub (e-int 0)) (e-int 1)) (e-option-some (e-add (e-elvis Sub (e-int 0)) (e-int 0))) Sub).
+wrap-option-int 7 Sub (e-if (e-or e-false e-true) Sub (e-option-some (e-add (e-int 1) (e-int 1)))).
+wrap-option-int 8 Sub (e-if (e-and e-true e-true) (e-if e-false e-option-none Sub) (e-option-some (e-int 2))).
+
+ranked-int-fun _ 0 (e-lam "x" ty-int (e-var "x")).
+ranked-int-fun Depth Rank Expr :-
+  Depth > 0,
+  Rank > 0,
+  Depth1 is Depth - 1,
+  ranked-capacity Depth1 Capacity,
+  Adjusted is Rank - 1,
+  Step is Adjusted div Capacity,
+  Step < 9,
+  Rest is Adjusted mod Capacity,
+  ranked-int-fun Depth1 Rest Sub,
+  wrap-int-fun Step Sub Expr.
+
+wrap-int-fun 0 Sub (e-lam "x" ty-int (e-app Sub (e-var "x"))).
+wrap-int-fun 1 Sub (e-lam "x" ty-int (e-add (e-app Sub (e-var "x")) (e-int 0))).
+wrap-int-fun 2 Sub (e-lam "x" ty-int (e-add (e-int 0) (e-app Sub (e-var "x")))).
+wrap-int-fun 3 Sub (e-if e-true Sub (e-lam "x" ty-int (e-var "x"))).
+wrap-int-fun 4 Sub (e-if e-false (e-lam "x" ty-int (e-var "x")) Sub).
+wrap-int-fun 5 Sub (e-if (e-eq-int (e-int 0) (e-int 0)) Sub (e-lam "x" ty-int (e-add (e-var "x") (e-int 0)))).
+wrap-int-fun 6 Sub (e-if (e-eq-int (e-int 0) (e-int 1)) (e-lam "x" ty-int (e-add (e-int 0) (e-var "x"))) Sub).
+wrap-int-fun 7 Sub (e-lam "x" ty-int (e-if (e-eq-int (e-var "x") (e-int 0)) (e-app Sub (e-var "x")) (e-var "x"))).
+wrap-int-fun 8 Sub (e-lam "x" ty-int (e-if (e-eq-int (e-var "x") (e-int 0)) (e-var "x") (e-app Sub (e-var "x")))).
+
+indexed-candidate 0 Index _ (generated [] ty-int (e-add (e-int 40) (e-int Index))) :-
   typeof [] (e-add (e-int 40) (e-int Index)) ty-int.
-indexed-candidate 1 _ _ (generated ty-bool (e-if (e-eq-int (e-int 1) (e-int 1)) e-true e-false)) :-
+indexed-candidate 1 _ _ (generated [] ty-bool (e-if (e-eq-int (e-int 1) (e-int 1)) e-true e-false)) :-
   typeof [] (e-if (e-eq-int (e-int 1) (e-int 1)) e-true e-false) ty-bool.
-indexed-candidate 2 _ _ (generated ty-string (e-string "lambda-prolog")) :-
+indexed-candidate 2 _ _ (generated [] ty-string (e-string "lambda-prolog")) :-
   typeof [] (e-string "lambda-prolog") ty-string.
-indexed-candidate 3 _ _ (generated ty-int (e-proj-left (e-record (e-int 42) (e-int 0)))) :-
+indexed-candidate 3 _ _ (generated [] ty-int (e-proj-left (e-record (e-int 42) (e-int 0)))) :-
   typeof [] (e-proj-left (e-record (e-int 42) (e-int 0))) ty-int.
-indexed-candidate 4 _ _ (generated ty-pair (e-record-update-right (e-record (e-int 20) (e-int 0)) (e-int 22))) :-
+indexed-candidate 4 _ _ (generated [dep-pair] ty-pair (e-record-update-right (e-record (e-int 20) (e-int 0)) (e-int 22))) :-
   typeof [] (e-record-update-right (e-record (e-int 20) (e-int 0)) (e-int 22)) ty-pair.
-indexed-candidate 5 _ _ (generated ty-int (e-match-choice (e-choice-left (e-int 41)) "payload" (e-add (e-var "payload") (e-int 1)) (e-int 0))) :-
+indexed-candidate 5 _ _ (generated [dep-choice] ty-int (e-match-choice (e-choice-left (e-int 41)) "payload" (e-add (e-var "payload") (e-int 1)) (e-int 0))) :-
   typeof [] (e-match-choice (e-choice-left (e-int 41)) "payload" (e-add (e-var "payload") (e-int 1)) (e-int 0)) ty-int.
-indexed-candidate 6 _ _ (generated (ty-fun ty-pair ty-int) (e-lam "rec" ty-pair (e-add (e-proj-left (e-var "rec")) (e-proj-right (e-var "rec"))))) :-
+indexed-candidate 6 _ _ (generated [dep-pair] (ty-fun ty-pair ty-int) (e-lam "rec" ty-pair (e-add (e-proj-left (e-var "rec")) (e-proj-right (e-var "rec"))))) :-
   typeof [] (e-lam "rec" ty-pair (e-add (e-proj-left (e-var "rec")) (e-proj-right (e-var "rec")))) (ty-fun ty-pair ty-int).
-indexed-candidate 7 _ _ (generated ty-int (e-app (e-lam "rec" ty-pair (e-add (e-proj-left (e-var "rec")) (e-proj-right (e-var "rec")))) (e-record (e-int 20) (e-int 22)))) :-
+indexed-candidate 7 _ _ (generated [dep-pair] ty-int (e-app (e-lam "rec" ty-pair (e-add (e-proj-left (e-var "rec")) (e-proj-right (e-var "rec")))) (e-record (e-int 20) (e-int 22)))) :-
   typeof [] (e-app (e-lam "rec" ty-pair (e-add (e-proj-left (e-var "rec")) (e-proj-right (e-var "rec")))) (e-record (e-int 20) (e-int 22))) ty-int.
-indexed-candidate 8 _ _ (generated ty-int (e-block "local" ty-int (e-add (e-int 40) (e-int 2)) (e-var "local"))) :-
+indexed-candidate 8 _ _ (generated [] ty-int (e-block "local" ty-int (e-add (e-int 40) (e-int 2)) (e-var "local"))) :-
   typeof [] (e-block "local" ty-int (e-add (e-int 40) (e-int 2)) (e-var "local")) ty-int.
-indexed-candidate 9 _ _ (generated ty-int (e-match-choice e-choice-right "payload" (e-add (e-var "payload") (e-int 1)) (e-int 0))) :-
+indexed-candidate 9 _ _ (generated [dep-choice] ty-int (e-match-choice e-choice-right "payload" (e-add (e-var "payload") (e-int 1)) (e-int 0))) :-
   typeof [] (e-match-choice e-choice-right "payload" (e-add (e-var "payload") (e-int 1)) (e-int 0)) ty-int.
-indexed-candidate 10 _ _ (generated ty-pair (e-if e-true (e-record (e-int 1) (e-int 2)) (e-record (e-int 3) (e-int 4)))) :-
+indexed-candidate 10 _ _ (generated [dep-pair] ty-pair (e-if e-true (e-record (e-int 1) (e-int 2)) (e-record (e-int 3) (e-int 4)))) :-
   typeof [] (e-if e-true (e-record (e-int 1) (e-int 2)) (e-record (e-int 3) (e-int 4))) ty-pair.
-indexed-candidate 11 _ _ (generated (ty-fun ty-choice ty-int) (e-lam "choice" ty-choice (e-match-choice (e-var "choice") "payload" (e-var "payload") (e-int 0)))) :-
+indexed-candidate 11 _ _ (generated [dep-choice] (ty-fun ty-choice ty-int) (e-lam "choice" ty-choice (e-match-choice (e-var "choice") "payload" (e-var "payload") (e-int 0)))) :-
   typeof [] (e-lam "choice" ty-choice (e-match-choice (e-var "choice") "payload" (e-var "payload") (e-int 0))) (ty-fun ty-choice ty-int).
-indexed-candidate 12 _ Depth (generated ty-unit Expr) :-
-  synth-first Depth ty-unit Expr.
-indexed-candidate 13 _ Depth (generated (ty-fun ty-unit ty-unit) Expr) :-
-  synth-first Depth (ty-fun ty-unit ty-unit) Expr.
-indexed-candidate 14 _ _ (generated ty-tuple2 (e-tuple2 (e-int 20) (e-int 22))) :-
+indexed-candidate 12 _ _ (generated [] ty-unit (e-block "ignored" ty-int (e-int 0) e-unit)) :-
+  typeof [] (e-block "ignored" ty-int (e-int 0) e-unit) ty-unit.
+indexed-candidate 13 _ _ (generated [] (ty-fun ty-unit ty-unit) (e-lam "unitArg" ty-unit (e-block "ignored" ty-int (e-int 0) e-unit))) :-
+  typeof [] (e-lam "unitArg" ty-unit (e-block "ignored" ty-int (e-int 0) e-unit)) (ty-fun ty-unit ty-unit).
+indexed-candidate 14 _ _ (generated [dep-tuple] ty-tuple2 (e-tuple2 (e-int 20) (e-int 22))) :-
   typeof [] (e-tuple2 (e-int 20) (e-int 22)) ty-tuple2.
-indexed-candidate 15 _ _ (generated ty-int e-block-tuple-sum) :-
-  typeof [] e-block-tuple-sum ty-int.
-indexed-candidate 16 _ _ (generated ty-int (e-let-in "bound" ty-int (e-add (e-int 20) (e-int 22)) (e-add (e-var "bound") (e-int 1)))) :-
+indexed-candidate 15 _ _ (generated [dep-tuple] ty-int (e-block-tuple-sum 20 22)) :-
+  typeof [] (e-block-tuple-sum 20 22) ty-int.
+indexed-candidate 16 _ _ (generated [] ty-int (e-let-in "bound" ty-int (e-add (e-int 20) (e-int 22)) (e-add (e-var "bound") (e-int 1)))) :-
   typeof [] (e-let-in "bound" ty-int (e-add (e-int 20) (e-int 22)) (e-add (e-var "bound") (e-int 1))) ty-int.
-indexed-candidate 17 _ _ (generated ty-list-int (e-list2 (e-int 1) (e-int 2))) :-
+indexed-candidate 17 _ _ (generated [] ty-list-int (e-list2 (e-int 1) (e-int 2))) :-
   typeof [] (e-list2 (e-int 1) (e-int 2)) ty-list-int.
-indexed-candidate 18 _ _ (generated ty-list-int e-list-range) :-
-  typeof [] e-list-range ty-list-int.
-indexed-candidate 19 _ _ (generated ty-io-int e-do-pure-int) :-
-  typeof [] e-do-pure-int ty-io-int.
-indexed-candidate 20 _ _ (generated ty-int (e-score-int (e-int 42))) :-
+indexed-candidate 18 _ _ (generated [] ty-list-int (e-list-range 1)) :-
+  typeof [] (e-list-range 1) ty-list-int.
+indexed-candidate 19 _ _ (generated [] ty-io-int (e-do-pure-int 40)) :-
+  typeof [] (e-do-pure-int 40) ty-io-int.
+indexed-candidate 20 _ _ (generated [dep-score] ty-int (e-score-int (e-int 42))) :-
   typeof [] (e-score-int (e-int 42)) ty-int.
-indexed-candidate 21 _ _ (generated ty-bool (e-or (e-and e-true e-false) e-true)) :-
+indexed-candidate 21 _ _ (generated [] ty-bool (e-or (e-and e-true e-false) e-true)) :-
   typeof [] (e-or (e-and e-true e-false) e-true) ty-bool.
-indexed-candidate 22 _ _ (generated ty-option-int (e-option-some (e-int 41))) :-
+indexed-candidate 22 _ _ (generated [] ty-option-int (e-option-some (e-int 41))) :-
   typeof [] (e-option-some (e-int 41)) ty-option-int.
-indexed-candidate 23 _ _ (generated ty-int (e-elvis (e-option-some (e-int 41)) (e-int 0))) :-
+indexed-candidate 23 _ _ (generated [] ty-int (e-elvis (e-option-some (e-int 41)) (e-int 0))) :-
   typeof [] (e-elvis (e-option-some (e-int 41)) (e-int 0)) ty-int.
-indexed-candidate 24 _ _ (generated ty-set-int e-set-int) :-
-  typeof [] e-set-int ty-set-int.
-indexed-candidate 25 _ _ (generated ty-map-string-int e-map-string-int) :-
-  typeof [] e-map-string-int ty-map-string-int.
-indexed-candidate 26 _ _ (generated ty-int e-named-resize) :-
-  typeof [] e-named-resize ty-int.
-indexed-candidate 27 _ _ (generated ty-int e-make-const-int) :-
-  typeof [] e-make-const-int ty-int.
-indexed-candidate 28 _ _ (generated ty-string e-make-const-string) :-
-  typeof [] e-make-const-string ty-string.
-indexed-candidate 29 _ _ (generated ty-int e-unit-lambda-app) :-
-  typeof [] e-unit-lambda-app ty-int.
-indexed-candidate 30 _ _ (generated ty-int e-implicit-local) :-
-  typeof [] e-implicit-local ty-int.
-indexed-candidate 31 _ _ (generated ty-int e-bool-match) :-
-  typeof [] e-bool-match ty-int.
-indexed-candidate 32 _ _ (generated ty-int e-int-literal-match) :-
-  typeof [] e-int-literal-match ty-int.
-indexed-candidate 33 _ _ (generated ty-int e-record-pattern) :-
-  typeof [] e-record-pattern ty-int.
-indexed-candidate 34 _ _ (generated ty-int e-row-extension) :-
-  typeof [] e-row-extension ty-int.
-indexed-candidate 35 _ _ (generated ty-list-int e-list-filter) :-
-  typeof [] e-list-filter ty-list-int.
-indexed-candidate 36 _ _ (generated ty-int e-receiver-method-int) :-
-  typeof [] e-receiver-method-int ty-int.
-indexed-candidate 37 _ _ (generated ty-int e-list-size) :-
-  typeof [] e-list-size ty-int.
+indexed-candidate 24 _ _ (generated [] ty-set-int (e-set-int 1)) :-
+  typeof [] (e-set-int 1) ty-set-int.
+indexed-candidate 25 _ _ (generated [] ty-map-string-int (e-map-string-int 1)) :-
+  typeof [] (e-map-string-int 1) ty-map-string-int.
+indexed-candidate 26 _ _ (generated [dep-resize] ty-int (e-named-resize 1 2 3)) :-
+  typeof [] (e-named-resize 1 2 3) ty-int.
+indexed-candidate 27 _ _ (generated [dep-make-const] ty-int (e-make-const-int 41)) :-
+  typeof [] (e-make-const-int 41) ty-int.
+indexed-candidate 28 _ _ (generated [dep-make-const] ty-string (e-make-const-string "nested")) :-
+  typeof [] (e-make-const-string "nested") ty-string.
+indexed-candidate 29 _ _ (generated [] ty-int (e-unit-lambda-app 42)) :-
+  typeof [] (e-unit-lambda-app 42) ty-int.
+indexed-candidate 30 _ _ (generated [dep-need] ty-int (e-implicit-local 7)) :-
+  typeof [] (e-implicit-local 7) ty-int.
+indexed-candidate 31 _ _ (generated [] ty-int (e-bool-match 42)) :-
+  typeof [] (e-bool-match 42) ty-int.
+indexed-candidate 32 _ _ (generated [] ty-int (e-int-literal-match 256)) :-
+  typeof [] (e-int-literal-match 256) ty-int.
+indexed-candidate 33 _ _ (generated [] ty-int (e-record-pattern 20 22)) :-
+  typeof [] (e-record-pattern 20 22) ty-int.
+indexed-candidate 34 _ _ (generated [] ty-int (e-row-extension 1 41)) :-
+  typeof [] (e-row-extension 1 41) ty-int.
+indexed-candidate 35 _ _ (generated [] ty-list-int (e-list-filter 1)) :-
+  typeof [] (e-list-filter 1) ty-list-int.
+indexed-candidate 36 _ _ (generated [dep-echo] ty-int (e-receiver-method-int 42)) :-
+  typeof [] (e-receiver-method-int 42) ty-int.
+indexed-candidate 37 _ _ (generated [dep-size] ty-int (e-list-size 1 2 3)) :-
+  typeof [] (e-list-size 1 2 3) ty-int.
 
 emit-indent _ 0.
 emit-indent Stream Count :-
@@ -391,7 +786,7 @@ emit-indent Stream Count :-
   emit-indent Stream Next.
 
 emit-ty Stream ty-unit :-
-  output Stream "GeneratedUnit".
+  output Stream "Unit".
 emit-ty Stream ty-int :-
   output Stream "Int".
 emit-ty Stream ty-bool :-
@@ -422,7 +817,36 @@ emit-ty Stream (ty-fun A B) :-
   output Stream ")".
 
 emit-expr Stream Expr :-
+  emit-needs-parens Expr,
+  !,
+  output Stream "(",
+  emit-expr-at Stream 0 Expr,
+  output Stream ")".
+emit-expr Stream Expr :-
   emit-expr-at Stream 0 Expr.
+
+emit-needs-parens (e-if _ _ _).
+emit-needs-parens (e-match-choice _ _ _ _).
+emit-needs-parens (e-block _ _ _ _).
+emit-needs-parens (e-let-in _ _ _ _).
+emit-needs-parens (e-do-pure-int _).
+emit-needs-parens (e-do-pure-expr _).
+emit-needs-parens (e-score-int _).
+emit-needs-parens (e-implicit-local _).
+emit-needs-parens (e-implicit-value _).
+emit-needs-parens (e-bool-match _).
+emit-needs-parens (e-bool-match-expr _).
+emit-needs-parens (e-int-literal-match _).
+emit-needs-parens (e-record-pattern _ _).
+emit-needs-parens (e-record-pattern-expr _ _).
+emit-needs-parens (e-row-extension _ _).
+emit-needs-parens (e-row-extension-expr _ _).
+emit-needs-parens (e-do-local-let _).
+emit-needs-parens (e-do-implicit _).
+emit-needs-parens (e-local-function _).
+emit-needs-parens (e-local-trait-score _).
+emit-needs-parens (e-local-type-alias _).
+emit-needs-parens (e-local-data-match _).
 
 emit-expr-at Stream _ e-unit :-
   output Stream "()".
@@ -436,6 +860,8 @@ emit-expr-at Stream _ (e-string Value) :-
   output Stream "\"",
   output Stream Value,
   output Stream "\"".
+emit-expr-at Stream _ e-raw-string :-
+  output Stream "#\"raw lambda-prolog\"#".
 emit-expr-at Stream _ (e-var Name) :-
   output Stream Name.
 emit-expr-at Stream Indent (e-lam Name A (e-match-choice Scrutinee PayloadName LeftBody RightBody)) :-
@@ -488,9 +914,9 @@ emit-expr-at Stream Indent (e-if Condition Then Else) :-
   output Stream "if ",
   emit-expr Stream Condition,
   output Stream " then ",
-  emit-expr-at Stream Indent Then,
+  emit-expr Stream Then,
   output Stream " else ",
-  emit-expr-at Stream Indent Else.
+  emit-expr Stream Else.
 emit-expr-at Stream _ (e-record Left Right) :-
   output Stream "(left = ",
   emit-expr Stream Left,
@@ -553,11 +979,15 @@ emit-expr-at Stream Indent (e-block Name A Value Body) :-
   output Stream "\n\n",
   emit-indent Stream ItemIndent,
   emit-expr-at Stream ItemIndent Body.
-emit-expr-at Stream Indent e-block-tuple-sum :-
+emit-expr-at Stream Indent (e-block-tuple-sum Left Right) :-
   output Stream "block\n",
   ItemIndent is Indent + 4,
   emit-indent Stream ItemIndent,
-  output Stream "let pair : GeneratedTuple = (20, 22)\n",
+  output Stream "let pair : GeneratedTuple = (",
+  printterm Stream Left,
+  output Stream ", ",
+  printterm Stream Right,
+  output Stream ")\n",
   emit-indent Stream ItemIndent,
   output Stream "let (left, right) = pair\n\n",
   emit-indent Stream ItemIndent,
@@ -580,14 +1010,42 @@ emit-expr-at Stream _ (e-list2 Left Right) :-
   output Stream ", ",
   emit-expr Stream Right,
   output Stream "]".
-emit-expr-at Stream _ e-list-range :-
-  output Stream "[ for i in 1 .. 3, yield (i + 1) ]".
-emit-expr-at Stream _ e-list-filter :-
-  output Stream "[ for x in [1, 2, 3], let y = x + 1, if y > 2, yield y ]".
-emit-expr-at Stream _ e-set-int :-
-  output Stream "{|1, 2, 3|}".
-emit-expr-at Stream _ e-map-string-int :-
-  output Stream "{ \"ada\": 1, \"grace\": 2 }".
+emit-expr-at Stream _ (e-list-range Start) :-
+  Stop is Start + 2,
+  output Stream "[ for i in ",
+  printterm Stream Start,
+  output Stream " .. ",
+  printterm Stream Stop,
+  output Stream ", yield (i + 1) ]".
+emit-expr-at Stream _ (e-list-filter Start) :-
+  Second is Start + 1,
+  Third is Start + 2,
+  output Stream "[ for x in [",
+  printterm Stream Start,
+  output Stream ", ",
+  printterm Stream Second,
+  output Stream ", ",
+  printterm Stream Third,
+  output Stream "], let y = x + 1, if y > ",
+  printterm Stream Second,
+  output Stream ", yield y ]".
+emit-expr-at Stream _ (e-set-int Start) :-
+  Second is Start + 1,
+  Third is Start + 2,
+  output Stream "{|",
+  printterm Stream Start,
+  output Stream ", ",
+  printterm Stream Second,
+  output Stream ", ",
+  printterm Stream Third,
+  output Stream "|}".
+emit-expr-at Stream _ (e-map-string-int Value) :-
+  Next is Value + 1,
+  output Stream "{ \"ada\": ",
+  printterm Stream Value,
+  output Stream ", \"grace\": ",
+  printterm Stream Next,
+  output Stream " }".
 emit-expr-at Stream _ (e-option-some Value) :-
   output Stream "(Some ",
   emit-expr Stream Value,
@@ -600,13 +1058,42 @@ emit-expr-at Stream _ (e-elvis Value Fallback) :-
   output Stream " ?: ",
   emit-expr Stream Fallback,
   output Stream ")".
-emit-expr-at Stream Indent e-do-pure-int :-
+emit-expr-at Stream Indent (e-do-pure-int Value) :-
   output Stream "do\n",
   ItemIndent is Indent + 4,
   emit-indent Stream ItemIndent,
-  output Stream "value <- pure 40\n",
+  output Stream "value <- pure ",
+  printterm Stream Value,
+  output Stream "\n",
   emit-indent Stream ItemIndent,
   output Stream "pure (value + 2)".
+emit-expr-at Stream Indent (e-do-pure-expr Value) :-
+  output Stream "do\n",
+  ItemIndent is Indent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "value <- pure ",
+  emit-expr Stream Value,
+  output Stream "\n",
+  emit-indent Stream ItemIndent,
+  output Stream "pure (value + 2)".
+emit-expr-at Stream Indent (e-do-local-let Value) :-
+  output Stream "do\n",
+  ItemIndent is Indent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "let staged = ",
+  emit-expr Stream Value,
+  output Stream "\n",
+  emit-indent Stream ItemIndent,
+  output Stream "pure (staged + 1)".
+emit-expr-at Stream Indent (e-do-implicit Value) :-
+  output Stream "do\n",
+  ItemIndent is Indent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "let (@x : Int) = ",
+  emit-expr Stream Value,
+  output Stream "\n",
+  emit-indent Stream ItemIndent,
+  output Stream "pure generatedNeed".
 emit-expr-at Stream Indent (e-score-int Value) :-
   output Stream "let\n",
   ItemIndent is Indent + 4,
@@ -616,29 +1103,79 @@ emit-expr-at Stream Indent (e-score-int Value) :-
   emit-indent Stream ItemIndent,
   output Stream "dict.score ",
   emit-expr Stream Value.
-emit-expr-at Stream _ e-named-resize :-
-  output Stream "generatedResize { height = 3, image = 1, width = 2 }".
-emit-expr-at Stream _ e-make-const-int :-
-  output Stream "((generatedMakeConst 41) ())".
-emit-expr-at Stream _ e-make-const-string :-
-  output Stream "((generatedMakeConst \"nested\") ())".
-emit-expr-at Stream _ e-unit-lambda-app :-
-  output Stream "((\\() -> 42) ())".
-emit-expr-at Stream Indent e-implicit-local :-
+emit-expr-at Stream _ (e-named-resize Image Width Height) :-
+  output Stream "generatedResize { height = ",
+  printterm Stream Height,
+  output Stream ", image = ",
+  printterm Stream Image,
+  output Stream ", width = ",
+  printterm Stream Width,
+  output Stream " }".
+emit-expr-at Stream _ (e-named-resize-expr Image Width Height) :-
+  output Stream "generatedResize { image = ",
+  emit-expr Stream Image,
+  output Stream ", height = ",
+  printterm Stream Height,
+  output Stream ", width = ",
+  printterm Stream Width,
+  output Stream " }".
+emit-expr-at Stream _ (e-make-const-int Value) :-
+  output Stream "((generatedMakeConst ",
+  printterm Stream Value,
+  output Stream ") ())".
+emit-expr-at Stream _ (e-make-const-string Value) :-
+  output Stream "((generatedMakeConst \"",
+  output Stream Value,
+  output Stream "\") ())".
+emit-expr-at Stream _ (e-make-const-expr Value) :-
+  output Stream "((generatedMakeConst ",
+  emit-expr Stream Value,
+  output Stream ") ())".
+emit-expr-at Stream _ (e-unit-lambda-app Value) :-
+  output Stream "((\\() -> ",
+  printterm Stream Value,
+  output Stream ") ())".
+emit-expr-at Stream Indent (e-implicit-local Value) :-
   output Stream "block\n",
   ItemIndent is Indent + 4,
   emit-indent Stream ItemIndent,
-  output Stream "let (@x : Int) = 7\n\n",
+  output Stream "let (@x : Int) = ",
+  printterm Stream Value,
+  output Stream "\n\n",
   emit-indent Stream ItemIndent,
   output Stream "generatedNeed".
-emit-expr-at Stream Indent e-bool-match :-
+emit-expr-at Stream Indent (e-implicit-value Value) :-
+  output Stream "block\n",
+  ItemIndent is Indent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "let (@x : Int) = ",
+  emit-expr Stream Value,
+  output Stream "\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "if True then generatedNeed else 0".
+emit-expr-at Stream Indent (e-bool-match Value) :-
   output Stream "match True\n",
   CaseIndent is Indent + 2,
   emit-indent Stream CaseIndent,
-  output Stream "case True -> 42\n",
+  output Stream "case True -> ",
+  printterm Stream Value,
+  output Stream "\n",
   emit-indent Stream CaseIndent,
   output Stream "case False -> 0".
-emit-expr-at Stream Indent e-int-literal-match :-
+emit-expr-at Stream Indent (e-bool-match-expr Value) :-
+  output Stream "match (",
+  emit-expr Stream Value,
+  output Stream " == ",
+  emit-expr Stream Value,
+  output Stream ")\n",
+  CaseIndent is Indent + 2,
+  emit-indent Stream CaseIndent,
+  output Stream "case True -> ",
+  emit-expr Stream Value,
+  output Stream "\n",
+  emit-indent Stream CaseIndent,
+  output Stream "case False -> 0".
+emit-expr-at Stream Indent (e-int-literal-match _) :-
   output Stream "match 0x100\n",
   CaseIndent is Indent + 2,
   emit-indent Stream CaseIndent,
@@ -647,28 +1184,233 @@ emit-expr-at Stream Indent e-int-literal-match :-
   output Stream "case 0o100 -> 43\n",
   emit-indent Stream CaseIndent,
   output Stream "case _ -> 0".
-emit-expr-at Stream Indent e-record-pattern :-
+emit-expr-at Stream Indent (e-record-pattern Left Right) :-
   output Stream "block\n",
   ItemIndent is Indent + 4,
   emit-indent Stream ItemIndent,
-  output Stream "let pair = (x = 20, y = 22)\n",
+  output Stream "let pair = (x = ",
+  printterm Stream Left,
+  output Stream ", y = ",
+  printterm Stream Right,
+  output Stream ")\n",
   emit-indent Stream ItemIndent,
   output Stream "let (x = captured, y = _) = pair\n\n",
   emit-indent Stream ItemIndent,
   output Stream "captured".
-emit-expr-at Stream Indent e-row-extension :-
+emit-expr-at Stream Indent (e-record-pattern-expr Left Right) :-
   output Stream "block\n",
   ItemIndent is Indent + 4,
   emit-indent Stream ItemIndent,
-  output Stream "let base : (x : Int) = (x = 1)\n",
+  output Stream "let pair = (x = ",
+  emit-expr Stream Left,
+  output Stream ", y = ",
+  emit-expr Stream Right,
+  output Stream ")\n",
   emit-indent Stream ItemIndent,
-  output Stream "let extended = base.{ y := 41 }\n\n",
+  output Stream "let (x = captured, y = other) = pair\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "(captured + other)".
+emit-expr-at Stream Indent (e-row-extension Base Extended) :-
+  output Stream "block\n",
+  ItemIndent is Indent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "let base : (x : Int) = (x = ",
+  printterm Stream Base,
+  output Stream ")\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let extended = base.{ y := ",
+  printterm Stream Extended,
+  output Stream " }\n\n",
   emit-indent Stream ItemIndent,
   output Stream "(extended.x + extended.y)".
-emit-expr-at Stream _ e-receiver-method-int :-
-  output Stream "42.generatedEcho".
-emit-expr-at Stream _ e-list-size :-
-  output Stream "generatedSize (1 :: 2 :: 3 :: Nil)".
+emit-expr-at Stream Indent (e-row-extension-expr Base Extended) :-
+  output Stream "block\n",
+  ItemIndent is Indent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "let base : (x : Int) = (x = ",
+  emit-expr Stream Base,
+  output Stream ")\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let extended = base.{ y := ",
+  emit-expr Stream Extended,
+  output Stream " }\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "(extended.x + extended.y)".
+emit-expr-at Stream _ (e-receiver-method-int Value) :-
+  printterm Stream Value,
+  output Stream ".generatedEcho".
+emit-expr-at Stream _ (e-receiver-method-expr Value) :-
+  emit-expr Stream Value,
+  output Stream ".generatedEcho".
+emit-expr-at Stream _ (e-receiver-section-expr Value) :-
+  output Stream "((.generatedEcho) ",
+  emit-expr Stream Value,
+  output Stream ")".
+emit-expr-at Stream _ (e-list-size First Second Third) :-
+  output Stream "generatedSize (",
+  printterm Stream First,
+  output Stream " :: ",
+  printterm Stream Second,
+  output Stream " :: ",
+  printterm Stream Third,
+  output Stream " :: Nil)".
+emit-expr-at Stream _ (e-list-query 0 Binder Body) :-
+  output Stream "[ for ",
+  output Stream Binder,
+  output Stream " in [1, 2, 3], yield ",
+  emit-expr Stream Body,
+  output Stream " ]".
+emit-expr-at Stream _ (e-list-query 1 Binder Body) :-
+  output Stream "[ for ",
+  output Stream Binder,
+  output Stream " in [1, 2, 3], let y = ",
+  output Stream Binder,
+  output Stream " + 1, yield ",
+  emit-expr Stream Body,
+  output Stream " ]".
+emit-expr-at Stream _ (e-list-query 2 Binder Body) :-
+  output Stream "[ for ",
+  output Stream Binder,
+  output Stream " in [1, 2, 3], if ",
+  output Stream Binder,
+  output Stream " > 0, yield ",
+  emit-expr Stream Body,
+  output Stream " ]".
+emit-expr-at Stream _ (e-list-query _ Binder Body) :-
+  output Stream "[ for ",
+  output Stream Binder,
+  output Stream " in [1, 2, 3], let y = ",
+  output Stream Binder,
+  output Stream " + 1, if y > 0, yield ",
+  emit-expr Stream Body,
+  output Stream " ]".
+emit-expr-at Stream _ (e-set-query 0 Binder Body) :-
+  output Stream "{| for ",
+  output Stream Binder,
+  output Stream " in [1, 2, 3], yield ",
+  emit-expr Stream Body,
+  output Stream " |}".
+emit-expr-at Stream _ (e-set-query 1 Binder Body) :-
+  output Stream "{| for ",
+  output Stream Binder,
+  output Stream " in [1, 2, 3], let y = ",
+  output Stream Binder,
+  output Stream " + 1, yield ",
+  emit-expr Stream Body,
+  output Stream " |}".
+emit-expr-at Stream _ (e-set-query 2 Binder Body) :-
+  output Stream "{| for ",
+  output Stream Binder,
+  output Stream " in [1, 2, 3], if ",
+  output Stream Binder,
+  output Stream " > 0, yield ",
+  emit-expr Stream Body,
+  output Stream " |}".
+emit-expr-at Stream _ (e-set-query _ Binder Body) :-
+  output Stream "{| for ",
+  output Stream Binder,
+  output Stream " in [1, 2, 3], let y = ",
+  output Stream Binder,
+  output Stream " + 1, if y > 0, yield ",
+  emit-expr Stream Body,
+  output Stream " |}".
+emit-expr-at Stream _ (e-map-query 0 Binder Body) :-
+  output Stream "{ for ",
+  output Stream Binder,
+  output Stream " in [1, 2, 3], yield \"k\" : ",
+  emit-expr Stream Body,
+  output Stream " }".
+emit-expr-at Stream _ (e-map-query 1 Binder Body) :-
+  output Stream "{ for ",
+  output Stream Binder,
+  output Stream " in [1, 2, 3], let y = ",
+  output Stream Binder,
+  output Stream " + 1, yield \"k\" : ",
+  emit-expr Stream Body,
+  output Stream " }".
+emit-expr-at Stream _ (e-map-query 2 Binder Body) :-
+  output Stream "{ for ",
+  output Stream Binder,
+  output Stream " in [1, 2, 3], if ",
+  output Stream Binder,
+  output Stream " > 0, yield \"k\" : ",
+  emit-expr Stream Body,
+  output Stream " }".
+emit-expr-at Stream _ (e-map-query _ Binder Body) :-
+  output Stream "{ for ",
+  output Stream Binder,
+  output Stream " in [1, 2, 3], let y = ",
+  output Stream Binder,
+  output Stream " + 1, if y > 0, yield (if y > 1 then \"hi\" else \"lo\") : ",
+  emit-expr Stream Body,
+  output Stream " }".
+emit-expr-at Stream _ (e-list-yield Value) :-
+  output Stream "[ yield ",
+  emit-expr Stream Value,
+  output Stream " ]".
+emit-expr-at Stream _ (e-set-yield Value) :-
+  output Stream "{| yield ",
+  emit-expr Stream Value,
+  output Stream " |}".
+emit-expr-at Stream _ (e-map-yield Value) :-
+  output Stream "{ yield \"only\" : ",
+  emit-expr Stream Value,
+  output Stream " }".
+emit-expr-at Stream Indent (e-local-function Value) :-
+  output Stream "block\n",
+  ItemIndent is Indent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "rankedHelper : (Int -> Int)\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let rankedHelper x = x + 1\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "rankedHelper ",
+  emit-expr Stream Value.
+emit-expr-at Stream Indent (e-local-trait-score Value) :-
+  output Stream "block\n",
+  ItemIndent is Indent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "trait RankedScore a =\n",
+  MethodIndent is ItemIndent + 4,
+  emit-indent Stream MethodIndent,
+  output Stream "rank : a -> Int\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "instance RankedScore Int =\n",
+  emit-indent Stream MethodIndent,
+  output Stream "let rank x = x\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let dict = summon (RankedScore Int)\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "dict.rank ",
+  emit-expr Stream Value.
+emit-expr-at Stream Indent (e-local-type-alias Value) :-
+  output Stream "block\n",
+  ItemIndent is Indent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "type RankedAlias = Int\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let aliased : RankedAlias = ",
+  emit-expr Stream Value,
+  output Stream "\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "(aliased + 1)".
+emit-expr-at Stream Indent (e-local-data-match Value) :-
+  output Stream "block\n",
+  ItemIndent is Indent + 4,
+  emit-indent Stream ItemIndent,
+  output Stream "data RankedBox : Type =\n",
+  CtorIndent is ItemIndent + 4,
+  emit-indent Stream CtorIndent,
+  output Stream "RankedBox (value : Int)\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "let boxed = RankedBox ",
+  emit-expr Stream Value,
+  output Stream "\n\n",
+  emit-indent Stream ItemIndent,
+  output Stream "match boxed\n",
+  CaseIndent is ItemIndent + 2,
+  emit-indent Stream CaseIndent,
+  output Stream "case RankedBox value -> (value + 1)".
 
 emit-top-expr Stream (e-match-choice Scrutinee PayloadName LeftBody RightBody) :-
   output Stream "\n    ",
@@ -678,75 +1420,193 @@ emit-top-expr Stream (e-block Name A Value Body) :-
   output Stream "\n    ",
   emit-expr-at Stream 4 (e-block Name A Value Body),
   !.
-emit-top-expr Stream e-block-tuple-sum :-
+emit-top-expr Stream (e-block-tuple-sum Left Right) :-
   output Stream "\n    ",
-  emit-expr-at Stream 4 e-block-tuple-sum,
+  emit-expr-at Stream 4 (e-block-tuple-sum Left Right),
   !.
 emit-top-expr Stream (e-let-in Name A Value Body) :-
   output Stream "\n    ",
   emit-expr-at Stream 4 (e-let-in Name A Value Body),
   !.
-emit-top-expr Stream e-do-pure-int :-
+emit-top-expr Stream (e-do-pure-int Value) :-
   output Stream "\n    ",
-  emit-expr-at Stream 4 e-do-pure-int,
+  emit-expr-at Stream 4 (e-do-pure-int Value),
+  !.
+emit-top-expr Stream (e-do-pure-expr Value) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-do-pure-expr Value),
+  !.
+emit-top-expr Stream (e-do-local-let Value) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-do-local-let Value),
+  !.
+emit-top-expr Stream (e-do-implicit Value) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-do-implicit Value),
   !.
 emit-top-expr Stream (e-score-int Value) :-
   output Stream "\n    ",
   emit-expr-at Stream 4 (e-score-int Value),
   !.
-emit-top-expr Stream e-implicit-local :-
+emit-top-expr Stream (e-implicit-local Value) :-
   output Stream "\n    ",
-  emit-expr-at Stream 4 e-implicit-local,
+  emit-expr-at Stream 4 (e-implicit-local Value),
   !.
-emit-top-expr Stream e-bool-match :-
+emit-top-expr Stream (e-implicit-value Value) :-
   output Stream "\n    ",
-  emit-expr-at Stream 4 e-bool-match,
+  emit-expr-at Stream 4 (e-implicit-value Value),
   !.
-emit-top-expr Stream e-int-literal-match :-
+emit-top-expr Stream (e-bool-match Value) :-
   output Stream "\n    ",
-  emit-expr-at Stream 4 e-int-literal-match,
+  emit-expr-at Stream 4 (e-bool-match Value),
   !.
-emit-top-expr Stream e-record-pattern :-
+emit-top-expr Stream (e-bool-match-expr Value) :-
   output Stream "\n    ",
-  emit-expr-at Stream 4 e-record-pattern,
+  emit-expr-at Stream 4 (e-bool-match-expr Value),
   !.
-emit-top-expr Stream e-row-extension :-
+emit-top-expr Stream (e-int-literal-match Value) :-
   output Stream "\n    ",
-  emit-expr-at Stream 4 e-row-extension,
+  emit-expr-at Stream 4 (e-int-literal-match Value),
+  !.
+emit-top-expr Stream (e-record-pattern Left Right) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-record-pattern Left Right),
+  !.
+emit-top-expr Stream (e-record-pattern-expr Left Right) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-record-pattern-expr Left Right),
+  !.
+emit-top-expr Stream (e-row-extension Base Extended) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-row-extension Base Extended),
+  !.
+emit-top-expr Stream (e-row-extension-expr Base Extended) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-row-extension-expr Base Extended),
+  !.
+emit-top-expr Stream (e-local-function Value) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-local-function Value),
+  !.
+emit-top-expr Stream (e-local-trait-score Value) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-local-trait-score Value),
+  !.
+emit-top-expr Stream (e-local-type-alias Value) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-local-type-alias Value),
+  !.
+emit-top-expr Stream (e-local-data-match Value) :-
+  output Stream "\n    ",
+  emit-expr-at Stream 4 (e-local-data-match Value),
   !.
 emit-top-expr Stream Expr :-
   output Stream " ",
   emit-expr Stream Expr,
   !.
 
-emit-kappa-program Index (generated Ty Expr) :-
-  output std_out "%%KAPPA-SAMPLE ",
-  printterm std_out Index,
-  output std_out "\n",
-  output std_out "module main\n\n",
-  output std_out "type GeneratedUnit = Unit\n\n",
-  output std_out "type GeneratedPair = (left : Int, right : Int)\n\n",
-  output std_out "type GeneratedTuple = (Int, Int)\n\n",
+emit-preamble Deps :-
+  emit-pair-decl Deps,
+  emit-tuple-decl Deps,
+  emit-choice-decl Deps,
+  emit-score-decls Deps,
+  emit-resize-decls Deps,
+  emit-make-const-decls Deps,
+  emit-need-decls Deps,
+  emit-echo-decls Deps,
+  emit-size-decls Deps.
+
+emit-pair-decl Deps :-
+  has-dep Deps dep-pair,
+  !,
+  output std_out "type GeneratedPair = (left : Int, right : Int)\n\n".
+emit-pair-decl _.
+
+emit-tuple-decl Deps :-
+  has-dep Deps dep-tuple,
+  !,
+  output std_out "type GeneratedTuple = (Int, Int)\n\n".
+emit-tuple-decl _.
+
+emit-choice-decl Deps :-
+  has-dep Deps dep-choice,
+  !,
   output std_out "data GeneratedChoice : Type =\n",
   output std_out "    GeneratedLeft (value : Int)\n",
-  output std_out "    GeneratedRight\n\n",
+  output std_out "    GeneratedRight\n\n".
+emit-choice-decl _.
+
+emit-score-decls Deps :-
+  has-dep Deps dep-score,
+  !,
   output std_out "trait GeneratedScore a =\n",
   output std_out "    score : a -> Int\n\n",
   output std_out "instance GeneratedScore Int =\n",
-  output std_out "    let score x = x\n\n",
+  output std_out "    let score x = x\n\n".
+emit-score-decls _.
+
+emit-resize-decls Deps :-
+  has-dep Deps dep-resize,
+  !,
   output std_out "generatedResize : (image : Int) -> (width : Int) -> (height : Int) -> Int\n",
-  output std_out "let generatedResize image width height = image + width * 10 + height\n\n",
+  output std_out "let generatedResize image width height = image + width * 10 + height\n\n".
+emit-resize-decls _.
+
+emit-make-const-decls Deps :-
+  has-dep Deps dep-make-const,
+  !,
   output std_out "generatedMakeConst : forall (a : Type). a -> Unit -> a\n",
-  output std_out "let generatedMakeConst value = \\() -> value\n\n",
+  output std_out "let generatedMakeConst value = \\() -> value\n\n".
+emit-make-const-decls _.
+
+emit-need-decls Deps :-
+  has-dep Deps dep-need,
+  !,
   output std_out "generatedNeed : (@x : Int) -> Int\n",
-  output std_out "let generatedNeed (@x : Int) = x\n\n",
+  output std_out "let generatedNeed (@x : Int) = x\n\n".
+emit-need-decls _.
+
+emit-echo-decls Deps :-
+  has-dep Deps dep-echo,
+  !,
   output std_out "generatedEcho : forall (a : Type). (this x : a) -> a\n",
-  output std_out "let generatedEcho @a (this x : a) = x\n\n",
+  output std_out "let generatedEcho @a (this x : a) = x\n\n".
+emit-echo-decls _.
+
+emit-size-decls Deps :-
+  has-dep Deps dep-size,
+  !,
   output std_out "generatedSize : List Int -> Int\n",
   output std_out "let generatedSize xs decreases structural xs =\n",
   output std_out "    match xs\n",
   output std_out "    case Nil -> 0\n",
-  output std_out "    case _ :: tail -> 1 + generatedSize tail\n\n",
+  output std_out "    case _ :: tail -> 1 + generatedSize tail\n\n".
+emit-size-decls _.
+
+emit-kind-if-dep Deps Dep Kinds :-
+  has-dep Deps Dep,
+  !,
+  output std_out Kinds,
+  output std_out ", ".
+emit-kind-if-dep _ _ _.
+
+emit-decl-kind-prefix Deps :-
+  emit-kind-if-dep Deps dep-pair "type",
+  emit-kind-if-dep Deps dep-tuple "type",
+  emit-kind-if-dep Deps dep-choice "data",
+  emit-kind-if-dep Deps dep-score "trait, instance",
+  emit-kind-if-dep Deps dep-resize "signature, let",
+  emit-kind-if-dep Deps dep-make-const "signature, let",
+  emit-kind-if-dep Deps dep-need "signature, let",
+  emit-kind-if-dep Deps dep-echo "signature, let",
+  emit-kind-if-dep Deps dep-size "signature, let".
+
+emit-kappa-program Index (generated Deps Ty Expr) :-
+  output std_out "%%KAPPA-SAMPLE ",
+  printterm std_out Index,
+  output std_out "\n",
+  output std_out "module main\n\n",
+  emit-preamble Deps,
   output std_out "generated_",
   printterm std_out Index,
   output std_out " : ",
@@ -772,7 +1632,9 @@ emit-kappa-program Index (generated Ty Expr) :-
   output std_out "--! assertType result ",
   emit-ty std_out Ty,
   output std_out "\n",
-  output std_out "--! assertDeclKinds type, type, type, data, trait, instance, signature, let, signature, let, signature, let, signature, let, signature, let, signature, let, signature, let\n",
+  output std_out "--! assertDeclKinds ",
+  emit-decl-kind-prefix Deps,
+  output std_out "signature, let, signature, let\n",
   output std_out "%%END-KAPPA-SAMPLE\n".
 
 emit-samples [CountText, DepthText] :-
@@ -794,6 +1656,9 @@ emit-samples-count-depth-start Count Depth Start :-
 
 emit-samples-from Index Count _ :-
   Index >= Count.
+emit-samples-from Index _ Depth :-
+  candidate-limit Depth Limit,
+  Index >= Limit.
 emit-samples-from Index Count Depth :-
   Index < Count,
   candidate-at Index Depth Generated,

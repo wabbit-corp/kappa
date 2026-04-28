@@ -1,0 +1,22 @@
+module main
+
+trait GeneratedScore a =
+    score : a -> Int
+
+instance GeneratedScore Int =
+    let score x = x
+
+generated_2803 : Int
+let generated_2803 =
+    let
+        dict = summon (GeneratedScore Int)
+in
+        dict.score (((((((((left = 0, right = (((left = (0 + 0), right = 0)).left + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+
+result : Int
+let result = generated_2803
+
+--! assertNoErrors
+--! assertType generated_2803 Int
+--! assertType result Int
+--! assertDeclKinds trait, instance, signature, let, signature, let

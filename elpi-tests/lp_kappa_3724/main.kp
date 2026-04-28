@@ -1,0 +1,14 @@
+module main
+
+type GeneratedPair = (left : Int, right : Int)
+
+generated_3724 : GeneratedPair
+let generated_3724 = ((left = (((((0 + ((0 + ((if True then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0), right = 0)).{ right = ((((((0 + ((0 + ((if True then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 1) }
+
+result : GeneratedPair
+let result = generated_3724
+
+--! assertNoErrors
+--! assertType generated_3724 GeneratedPair
+--! assertType result GeneratedPair
+--! assertDeclKinds type, signature, let, signature, let

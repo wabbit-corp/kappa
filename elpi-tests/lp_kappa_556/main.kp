@@ -1,0 +1,19 @@
+module main
+
+generatedNeed : (@x : Int) -> Int
+let generatedNeed (@x : Int) = x
+
+generated_556 : Int
+let generated_556 =
+    block
+        let (@x : Int) = (((((((0 + (((0 + 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0) + 0)
+
+        if True then generatedNeed else 0
+
+result : Int
+let result = generated_556
+
+--! assertNoErrors
+--! assertType generated_556 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

@@ -1,0 +1,15 @@
+module main
+
+generatedEcho : forall (a : Type). (this x : a) -> a
+let generatedEcho @a (this x : a) = x
+
+generated_4946 : Int
+let generated_4946 = ((((((0 + (((if True then ((Some (0 + 0)) ?: 0) else 0) + 0) + 0)) + 0) + 0) + 0) + 0) + 0).generatedEcho
+
+result : Int
+let result = generated_4946
+
+--! assertNoErrors
+--! assertType generated_4946 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

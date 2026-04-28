@@ -1,0 +1,20 @@
+module main
+
+generated_3947 : Int
+let generated_3947 =
+    block
+        data RankedBox : Type =
+            RankedBox (value : Int)
+
+        let boxed = RankedBox ((((((0 + ((0 + (((Some (0 + 0)) ?: 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0)
+
+        match boxed
+          case RankedBox value -> (value + 1)
+
+result : Int
+let result = generated_3947
+
+--! assertNoErrors
+--! assertType generated_3947 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

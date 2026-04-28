@@ -1,0 +1,12 @@
+module main
+
+generated_3166 : Int
+let generated_3166 = ((((((((Some (((left = 0, right = (0 + 0))).right + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0)
+
+result : Int
+let result = generated_3166
+
+--! assertNoErrors
+--! assertType generated_3166 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

@@ -1,0 +1,15 @@
+module main
+
+generated_264 : Int
+let generated_264 =
+    match (((((((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == ((((((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
+      case True -> ((((((((((0 + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+      case False -> 0
+
+result : Int
+let result = generated_264
+
+--! assertNoErrors
+--! assertType generated_264 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

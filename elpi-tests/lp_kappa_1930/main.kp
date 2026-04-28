@@ -1,0 +1,15 @@
+module main
+
+generated_1930 : Int
+let generated_1930 =
+    match ((((((((((if False then 0 else ((0 + 0) + 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0) == (((((((((if False then 0 else ((0 + 0) + 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
+      case True -> (((((((((if False then 0 else ((0 + 0) + 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+      case False -> 0
+
+result : Int
+let result = generated_1930
+
+--! assertNoErrors
+--! assertType generated_1930 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

@@ -1,0 +1,12 @@
+module main
+
+generated_804 : Map String Int
+let generated_804 = { for x in [1, 2, 3], if x > 0, yield "k" : (((((((0 + (((left = 0, right = (x + 0))).right + 0)) + 0) + 0) + 0) + 0) + 0) + 0) }
+
+result : Map String Int
+let result = generated_804
+
+--! assertNoErrors
+--! assertType generated_804 Map String Int
+--! assertType result Map String Int
+--! assertDeclKinds signature, let, signature, let

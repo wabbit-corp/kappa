@@ -1,0 +1,12 @@
+module main
+
+generated_226 : Map String Int
+let generated_226 = { for x in [1, 2, 3], let y = x + 1, yield "k" : ((((((((((x + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+
+result : Map String Int
+let result = generated_226
+
+--! assertNoErrors
+--! assertType generated_226 Map String Int
+--! assertType result Map String Int
+--! assertDeclKinds signature, let, signature, let

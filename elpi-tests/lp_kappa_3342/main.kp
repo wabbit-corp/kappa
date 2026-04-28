@@ -1,0 +1,17 @@
+module main
+
+generated_3342 : Int
+let generated_3342 =
+    block
+        ranked : Int
+        let ranked = (((((0 + ((((0 + (0 + 0)) + 0) + 0) + 0)) + 0) + 0) + 0) + 0)
+
+        (ranked + 0)
+
+result : Int
+let result = generated_3342
+
+--! assertNoErrors
+--! assertType generated_3342 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

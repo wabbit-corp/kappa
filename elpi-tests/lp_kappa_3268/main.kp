@@ -1,0 +1,12 @@
+module main
+
+generated_3268 : Int
+let generated_3268 = (((((0 + (((0 + 0) + 0) + 0)) + 0) + 0) + 0) + 0)
+
+result : Int
+let result = generated_3268
+
+--! assertNoErrors
+--! assertType generated_3268 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

@@ -1,0 +1,12 @@
+module main
+
+generated_111 : (Int -> Int)
+let generated_111 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> x) x)) x)
+
+result : (Int -> Int)
+let result = generated_111
+
+--! assertNoErrors
+--! assertType generated_111 (Int -> Int)
+--! assertType result (Int -> Int)
+--! assertDeclKinds signature, let, signature, let

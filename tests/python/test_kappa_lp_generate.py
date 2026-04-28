@@ -1,8 +1,15 @@
+import re
 import tempfile
 import unittest
 from pathlib import Path
 
 from scripts import kappa_lp_generate
+
+
+def canonical_sample_shape(source: str) -> str:
+    source = re.sub(r"generated_\d+", "generated_N", source)
+    source = re.sub(r'"(?:[^"\\]|\\.)*"', '"S"', source)
+    return re.sub(r"\b(?:0x[0-9A-Fa-f]+|0o[0-7]+|\d+)\b", "N", source)
 
 
 class LambdaPrologKappaGeneratorTests(unittest.TestCase):
@@ -71,6 +78,80 @@ let result = ()
         self.assertIn("42.generatedEcho", combined_source)
         self.assertIn("generatedSize (1 :: 2 :: 3 :: Nil)", combined_source)
 
+    def test_local_elpi_generated_templates_are_structurally_distinct_when_available(self) -> None:
+        elpi = kappa_lp_generate.resolve_elpi()
+        if elpi is None:
+            self.skipTest("elpi is not installed")
+
+        output = kappa_lp_generate.run_elpi(
+            elpi,
+            kappa_lp_generate.DEFAULT_ELPI_PROGRAM,
+            count=500,
+            depth=5,
+        )
+        samples = kappa_lp_generate.parse_elpi_samples(output)
+        seen: dict[str, int] = {}
+        duplicates: list[tuple[int, int]] = []
+
+        for sample in samples:
+            shape = canonical_sample_shape(sample.source)
+            previous = seen.get(shape)
+            if previous is None:
+                seen[shape] = sample.index
+            else:
+                duplicates.append((previous, sample.index))
+
+        self.assertEqual([], duplicates)
+
+    def test_local_elpi_depth_unlocks_ranked_synthesis_when_available(self) -> None:
+        elpi = kappa_lp_generate.resolve_elpi()
+        if elpi is None:
+            self.skipTest("elpi is not installed")
+
+        output = kappa_lp_generate.run_elpi(
+            elpi,
+            kappa_lp_generate.DEFAULT_ELPI_PROGRAM,
+            count=72,
+            depth=5,
+        )
+        samples = kappa_lp_generate.parse_elpi_samples(output)
+
+        self.assertEqual(72, len(samples))
+        self.assertIn("generated_38 : Int", samples[38].source)
+        self.assertIn("generated_39 : Bool", samples[39].source)
+        self.assertIn("generated_40 : Unit", samples[40].source)
+        self.assertIn("generated_41 : GeneratedTuple", samples[41].source)
+        self.assertIn("generated_42 : Option Int", samples[42].source)
+        self.assertIn("generated_43 : (Int -> Int)", samples[43].source)
+        self.assertIn("block", samples[44].source)
+        self.assertIn("let\n", samples[45].source)
+        self.assertIn("let (@x : Int)", samples[46].source)
+        self.assertIn("[ for x in [1, 2, 3]", samples[47].source)
+        self.assertIn("do\n", samples[48].source)
+        self.assertIn("summon (GeneratedScore Int)", samples[49].source)
+        self.assertIn(".generatedEcho", samples[50].source)
+        self.assertIn("match (GeneratedLeft", samples[51].source)
+        self.assertIn(".{ right = ", samples[52].source)
+        self.assertIn("generatedResize { image = ", samples[53].source)
+        self.assertIn("generatedMakeConst", samples[54].source)
+        self.assertIn("{| for x in [1, 2, 3]", samples[55].source)
+        self.assertIn("{ for x in [1, 2, 3]", samples[56].source)
+        self.assertIn("rankedHelper : (Int -> Int)", samples[57].source)
+        self.assertIn("trait RankedScore a", samples[58].source)
+        self.assertIn('#"raw lambda-prolog"#', samples[59].source)
+        self.assertIn("match ((0 + 0) == (0 + 0))", samples[60].source)
+        self.assertIn("let (x = captured, y = other) = pair", samples[61].source)
+        self.assertIn("base.{ y := ", samples[62].source)
+        self.assertIn("let staged = ", samples[63].source)
+        self.assertIn("let (@x : Int) = ", samples[64].source)
+        self.assertIn("((.generatedEcho) ", samples[65].source)
+        self.assertIn("[ yield ", samples[66].source)
+        self.assertIn("{| yield ", samples[67].source)
+        self.assertIn("{ yield \"only\" : ", samples[68].source)
+        self.assertIn("match GeneratedRight", samples[69].source)
+        self.assertIn("type RankedAlias = Int", samples[70].source)
+        self.assertIn("data RankedBox : Type", samples[71].source)
+
     def test_local_elpi_can_start_from_later_candidate_when_available(self) -> None:
         elpi = kappa_lp_generate.resolve_elpi()
         if elpi is None:
@@ -88,6 +169,25 @@ let result = ()
         self.assertEqual(1, len(samples))
         self.assertEqual(18, samples[0].index)
         self.assertIn("generated_18 : List Int", samples[0].source)
+
+    def test_local_elpi_omits_unused_preamble_declarations_when_available(self) -> None:
+        elpi = kappa_lp_generate.resolve_elpi()
+        if elpi is None:
+            self.skipTest("elpi is not installed")
+
+        output = kappa_lp_generate.run_elpi(
+            elpi,
+            kappa_lp_generate.DEFAULT_ELPI_PROGRAM,
+            count=1,
+            depth=4,
+            start_index=0,
+        )
+        sample = kappa_lp_generate.parse_elpi_samples(output)[0]
+
+        self.assertNotIn("GeneratedPair", sample.source)
+        self.assertNotIn("GeneratedChoice", sample.source)
+        self.assertNotIn("generatedResize", sample.source)
+        self.assertIn("--! assertDeclKinds signature, let, signature, let", sample.source)
 
     def test_generated_samples_compile_when_elpi_is_available(self) -> None:
         elpi = kappa_lp_generate.resolve_elpi()

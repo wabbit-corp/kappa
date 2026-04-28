@@ -1,0 +1,12 @@
+module main
+
+generated_2890 : Map String Int
+let generated_2890 = { yield "only" : (((((((((left = 0, right = (((Some (0 + 0)) ?: 0) + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) }
+
+result : Map String Int
+let result = generated_2890
+
+--! assertNoErrors
+--! assertType generated_2890 Map String Int
+--! assertType result Map String Int
+--! assertDeclKinds signature, let, signature, let

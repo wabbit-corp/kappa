@@ -1,0 +1,16 @@
+module main
+
+generated_1983 : Int
+let generated_1983 =
+    let
+        ranked : Int = ((((((((if False then 0 else (if True then 0 else 0)) + (0 + 0)) + 0) + 0) + 0) + 0) + 0) + 0)
+in
+        (ranked + 0)
+
+result : Int
+let result = generated_1983
+
+--! assertNoErrors
+--! assertType generated_1983 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

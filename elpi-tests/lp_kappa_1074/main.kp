@@ -1,0 +1,15 @@
+module main
+
+generatedMakeConst : forall (a : Type). a -> Unit -> a
+let generatedMakeConst value = \() -> value
+
+generated_1074 : Int
+let generated_1074 = ((generatedMakeConst ((((((((if True then ((if False then 0 else 0) + (0 + 0)) else 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)) ())
+
+result : Int
+let result = generated_1074
+
+--! assertNoErrors
+--! assertType generated_1074 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let, signature, let

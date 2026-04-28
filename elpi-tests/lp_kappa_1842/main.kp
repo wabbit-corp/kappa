@@ -1,0 +1,12 @@
+module main
+
+generated_1842 : Unit
+let generated_1842 = (if True then (if True then (if True then (if (True && True) then ((\(u : Unit) -> if True then u else ()) ()) else ()) else ()) else ()) else ())
+
+result : Unit
+let result = generated_1842
+
+--! assertNoErrors
+--! assertType generated_1842 Unit
+--! assertType result Unit
+--! assertDeclKinds signature, let, signature, let

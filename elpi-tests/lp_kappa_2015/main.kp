@@ -1,0 +1,12 @@
+module main
+
+generated_2015 : (Int -> Int)
+let generated_2015 = \(x : Int) -> ((\(x : Int) -> ((\(x : Int) -> (((if (0 == 0) then (if True then \(x : Int) -> x else \(x : Int) -> x) else \(x : Int) -> (x + 0))) x)) x)) x)
+
+result : (Int -> Int)
+let result = generated_2015
+
+--! assertNoErrors
+--! assertType generated_2015 (Int -> Int)
+--! assertType result (Int -> Int)
+--! assertDeclKinds signature, let, signature, let

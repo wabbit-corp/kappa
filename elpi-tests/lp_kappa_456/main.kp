@@ -1,0 +1,15 @@
+module main
+
+generated_456 : IO Int
+let generated_456 =
+    do
+        value <- pure (((((((((((left = 0, right = (0 + 0))).right + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        pure (value + 2)
+
+result : IO Int
+let result = generated_456
+
+--! assertNoErrors
+--! assertType generated_456 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let

@@ -1,0 +1,15 @@
+module main
+
+generated_3157 : IO Int
+let generated_3157 =
+    do
+        let staged = (((((((((Some (((left = (0 + 0), right = 0)).left + 0)) ?: 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0)
+        pure (staged + 1)
+
+result : IO Int
+let result = generated_3157
+
+--! assertNoErrors
+--! assertType generated_3157 IO Int
+--! assertType result IO Int
+--! assertDeclKinds signature, let, signature, let

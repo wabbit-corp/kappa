@@ -1,0 +1,17 @@
+module main
+
+generated_198 : Int
+let generated_198 =
+    block
+        let base : (x : Int) = (x = (((((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0))
+        let extended = base.{ y := (((((((((0 + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 0) + 1) }
+
+        (extended.x + extended.y)
+
+result : Int
+let result = generated_198
+
+--! assertNoErrors
+--! assertType generated_198 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let

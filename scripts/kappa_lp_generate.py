@@ -222,7 +222,10 @@ def main(argv: list[str] | None = None) -> int:
     samples = parse_elpi_samples(output)
 
     if len(samples) != args.count:
-        raise SystemExit(f"ELPI emitted {len(samples)} samples; expected {args.count}. Increase --depth or lower --count.")
+        raise SystemExit(
+            f"ELPI emitted {len(samples)} samples; expected {args.count}. "
+            "Lower --count or expand the ELPI candidate set."
+        )
 
     if args.out_dir is None:
         sys.stdout.write(output)

@@ -1,0 +1,17 @@
+module main
+
+generated_3734 : Int
+let generated_3734 =
+    block
+        let base : (x : Int) = (x = ((((((0 + ((0 + ((if True then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 0))
+        let extended = base.{ y := ((((((0 + ((0 + ((if True then 0 else 0) + 0)) + 0)) + 0) + 0) + 0) + 0) + 1) }
+
+        (extended.x + extended.y)
+
+result : Int
+let result = generated_3734
+
+--! assertNoErrors
+--! assertType generated_3734 Int
+--! assertType result Int
+--! assertDeclKinds signature, let, signature, let
