@@ -4,6 +4,7 @@ module BackendTests
 open System
 open System.IO
 open System.Reflection
+open System.Text.Json
 open Kappa.Compiler
 open Harness
 open Xunit
@@ -634,6 +635,114 @@ let ``cli verify does not print backend checkpoint fallout when source diagnosti
     Assert.Equal(1, runResult.ExitCode)
     Assert.Contains("Name 'I1' is not in scope.", runResult.StandardOutput)
     Assert.DoesNotContain("requires a backend module", runResult.StandardOutput)
+
+[<Fact>]
+let ``cli can dump observability topics as machine readable json`` () =
+    let workspaceRoot = createScratchDirectory "cli-observability-workspace"
+
+    writeWorkspaceFiles
+        workspaceRoot
+        [
+            "main.kp",
+            [
+                "module main"
+                "let answer = 42"
+            ]
+            |> String.concat "\n"
+        ]
+
+    let dumpTopic topic =
+        let result =
+            runBuiltCli
+                workspaceRoot
+                $"--source-root \"{workspaceRoot}\" --backend dotnet --dump-observability {topic}"
+
+        Assert.Equal(0, result.ExitCode)
+        Assert.True(String.IsNullOrWhiteSpace(result.StandardError), result.StandardError)
+
+        let json = result.StandardOutput.Trim()
+        use document = JsonDocument.Parse(json)
+        document.RootElement.Clone()
+
+    let topicNames =
+        [
+            "analysis-session"
+            "checkpoints"
+            "checkpoint-contracts"
+            "verify-all"
+            "runtime-obligations"
+            "query-sketch"
+            "fingerprints"
+            "incremental-units"
+        ]
+
+    for topic in topicNames do
+        let root = dumpTopic topic
+        Assert.Equal(topic, root.GetProperty("topic").GetString())
+
+    let analysisSession = dumpTopic "analysis-session"
+    let analysisValue = analysisSession.GetProperty("value")
+    Assert.Equal("dotnet", analysisValue.GetProperty("backendProfile").GetString())
+
+    let checkpoints = dumpTopic "checkpoints"
+    let checkpointValues =
+        checkpoints.GetProperty("value").EnumerateArray() |> Seq.map (fun item -> item.GetString()) |> Seq.toList
+
+    Assert.Contains("KBackendIR", checkpointValues)
+    Assert.Contains("dotnet.clr", checkpointValues)
+
+    let verifyAll = dumpTopic "verify-all"
+    let verifyResults = verifyAll.GetProperty("value").EnumerateArray() |> Seq.toList
+    Assert.NotEmpty(verifyResults)
+    Assert.All(verifyResults, fun result -> Assert.True(result.GetProperty("succeeded").GetBoolean()))
+
+    let runtimeObligations = dumpTopic "runtime-obligations"
+    let obligationNames =
+        runtimeObligations.GetProperty("value").EnumerateArray()
+        |> Seq.map (fun item -> item.GetProperty("name").GetString())
+        |> Seq.toList
+
+    Assert.Contains("effect-handlers", obligationNames)
+
+    let querySketch = dumpTopic "query-sketch"
+    let queryValues = querySketch.GetProperty("value").EnumerateArray() |> Seq.toList
+    Assert.NotEmpty(queryValues)
+    Assert.Contains(
+        queryValues,
+        fun item -> item.GetProperty("dependencyModel").GetString() = "observability-sketch"
+    )
+
+    let incrementalUnits = dumpTopic "incremental-units"
+    let unitKinds =
+        incrementalUnits.GetProperty("value").EnumerateArray()
+        |> Seq.map (fun item -> item.GetProperty("unitKind").GetString())
+        |> Seq.toList
+
+    Assert.Contains("target-lowering", unitKinds)
+
+[<Fact>]
+let ``cli dump observability rejects conflicting stdout producing flags`` () =
+    let workspaceRoot = createScratchDirectory "cli-observability-conflict-workspace"
+
+    writeWorkspaceFiles
+        workspaceRoot
+        [
+            "main.kp",
+            [
+                "module main"
+                "let answer = 42"
+            ]
+            |> String.concat "\n"
+        ]
+
+    let result =
+        runBuiltCli
+            workspaceRoot
+            $"--source-root \"{workspaceRoot}\" --dump-observability analysis-session --trace"
+
+    Assert.Equal(1, result.ExitCode)
+    Assert.Contains("--dump-observability cannot be combined with --trace", result.StandardError, StringComparison.Ordinal)
+    Assert.True(String.IsNullOrWhiteSpace(result.StandardOutput), result.StandardOutput)
 
 [<Fact>]
 let ``cli interpreter backend can execute io entry points`` () =

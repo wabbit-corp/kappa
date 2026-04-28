@@ -637,12 +637,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Collect trace events at the point work really executes, including reuse/invalidate/skip/cache-probe events, or rename the current output to make clear that it is a planned/synthesized trace.
   - Sources: `reviews/observability1.md`.
 
-- `[Low-Medium] Expand CLI/tooling exposure for the observability APIs, or explicitly keep them library-only.`
-  - The public API exposes checkpoint contracts, available checkpoints, all-checkpoint verification, runtime obligations, query sketches, fingerprints, incremental units, and pipeline traces.
-  - The CLI exposes only a smaller subset.
-  - This is not a spec failure by itself, but the practical tooling story is weaker unless the public/CLI split is deliberate.
-  - Sources: `reviews/observability1.md`.
-
 ## 12. Tests, Harness, and Conformance Backlog
 
 - `[High] Split the suite conceptually into spec conformance, compiler regression, backend regression, and integration tests.`

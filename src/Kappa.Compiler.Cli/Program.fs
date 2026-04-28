@@ -1,6 +1,58 @@
 open System
 open System.IO
+open System.Text.Json
 open Kappa.Compiler
+
+type ObservabilityTopic =
+    | AnalysisSessionTopic
+    | CheckpointsTopic
+    | CheckpointContractsTopic
+    | VerifyAllCheckpointsTopic
+    | RuntimeObligationsTopic
+    | QuerySketchTopic
+    | CompilerFingerprintsTopic
+    | IncrementalUnitsTopic
+
+module private ObservabilityTopic =
+    let all =
+        [
+            AnalysisSessionTopic
+            CheckpointsTopic
+            CheckpointContractsTopic
+            VerifyAllCheckpointsTopic
+            RuntimeObligationsTopic
+            QuerySketchTopic
+            CompilerFingerprintsTopic
+            IncrementalUnitsTopic
+        ]
+
+    let toPortableName topic =
+        match topic with
+        | AnalysisSessionTopic -> "analysis-session"
+        | CheckpointsTopic -> "checkpoints"
+        | CheckpointContractsTopic -> "checkpoint-contracts"
+        | VerifyAllCheckpointsTopic -> "verify-all"
+        | RuntimeObligationsTopic -> "runtime-obligations"
+        | QuerySketchTopic -> "query-sketch"
+        | CompilerFingerprintsTopic -> "fingerprints"
+        | IncrementalUnitsTopic -> "incremental-units"
+
+    let parse (text: string) =
+        match text.Trim().ToLowerInvariant() with
+        | "analysis-session" -> Some AnalysisSessionTopic
+        | "checkpoints" -> Some CheckpointsTopic
+        | "checkpoint-contracts" -> Some CheckpointContractsTopic
+        | "verify-all" -> Some VerifyAllCheckpointsTopic
+        | "runtime-obligations" -> Some RuntimeObligationsTopic
+        | "query-sketch" -> Some QuerySketchTopic
+        | "fingerprints" -> Some CompilerFingerprintsTopic
+        | "incremental-units" -> Some IncrementalUnitsTopic
+        | _ -> None
+
+    let supportedText () =
+        all
+        |> List.map toPortableName
+        |> String.concat ", "
 
 type CliOptions =
     { SourceRoot: string
@@ -11,6 +63,7 @@ type CliOptions =
       DumpAst: bool
       DumpStage: string option
       DumpFormat: StageDumpFormat
+      DumpObservability: ObservabilityTopic option
       PrintTrace: bool
       VerifyCheckpoint: string option
       RunBinding: string option
@@ -20,10 +73,11 @@ type CliOptions =
 module private Cli =
     let usage () =
         [
-            "kp [--source-root <path>] [--backend <profile>] [--emit-dir <path>] [--native-aot] [--dump-tokens] [--dump-ast] [--dump-stage <checkpoint>] [--dump-format <json|sexpr>] [--trace] [--verify <checkpoint>] [--run <binding>] [inputs...]"
+            "kp [--source-root <path>] [--backend <profile>] [--emit-dir <path>] [--native-aot] [--dump-tokens] [--dump-ast] [--dump-stage <checkpoint>] [--dump-format <json|sexpr>] [--dump-observability <topic>] [--trace] [--verify <checkpoint>] [--run <binding>] [inputs...]"
             ""
             "If no input paths are supplied, the compiler scans the source root for *.kp files."
             "Runtime backends: interpreter | dotnet | zig (alias: zigcc)"
+            $"Observability topics: {ObservabilityTopic.supportedText ()}"
         ]
         |> String.concat Environment.NewLine
 
@@ -37,6 +91,7 @@ module private Cli =
         let mutable dumpAst = false
         let mutable dumpStage = None
         let mutable dumpFormat = StageDumpFormat.Json
+        let mutable dumpObservability = None
         let mutable printTrace = false
         let mutable verifyCheckpoint = None
         let mutable runBinding = None
@@ -78,6 +133,18 @@ module private Cli =
                 else
                     dumpStage <- Some argv[index + 1]
                     index <- index + 2
+            | "--dump-observability" ->
+                if index + 1 >= argv.Length then
+                    error <- Some "Missing topic after --dump-observability."
+                else
+                    match ObservabilityTopic.parse argv[index + 1] with
+                    | Some topic ->
+                        dumpObservability <- Some topic
+                        index <- index + 2
+                    | None ->
+                        error <-
+                            Some
+                                $"Unsupported observability topic '{argv[index + 1]}'. Expected one of: {ObservabilityTopic.supportedText ()}."
             | "--dump-format" ->
                 if index + 1 >= argv.Length then
                     error <- Some "Missing format after --dump-format."
@@ -126,6 +193,7 @@ module private Cli =
                   DumpAst = dumpAst
                   DumpStage = dumpStage
                   DumpFormat = dumpFormat
+                  DumpObservability = dumpObservability
                   PrintTrace = printTrace
                   VerifyCheckpoint = verifyCheckpoint
                   RunBinding = runBinding
@@ -140,12 +208,15 @@ let private severityText severity =
 let private formatLocation (location: SourceLocation) =
     $"{location.FilePath}({location.Start.Line},{location.Start.Column})"
 
-let private printDiagnostic (diagnostic: Diagnostic) =
+let private writeDiagnostic (writer: TextWriter) (diagnostic: Diagnostic) =
     match diagnostic.Location with
     | Some location ->
-        printfn "%s: %s: %s" (formatLocation location) (severityText diagnostic.Severity) diagnostic.Message
+        writer.WriteLine($"{formatLocation location}: {severityText diagnostic.Severity}: {diagnostic.Message}")
     | None ->
-        printfn "%s: %s" (severityText diagnostic.Severity) diagnostic.Message
+        writer.WriteLine($"{severityText diagnostic.Severity}: {diagnostic.Message}")
+
+let private printDiagnostic (diagnostic: Diagnostic) =
+    writeDiagnostic Console.Out diagnostic
 
 let private declarationLabel declaration =
     match declaration with
@@ -254,6 +325,128 @@ let private printVerification checkpoint diagnostics =
         printfn "  ok"
     else
         diagnostics |> List.iter printDiagnostic
+
+let private jsonOptions =
+    JsonSerializerOptions(WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase)
+
+let private serializeJson value =
+    JsonSerializer.Serialize(value, jsonOptions)
+
+let private runtimeObligationOwnerText owner =
+    match owner with
+    | KBackendIRGuaranteed -> "KBackendIRGuaranteed"
+    | BackendSpecificRuntime -> "BackendSpecificRuntime"
+    | DeferredRuntimeObligation -> "DeferredRuntimeObligation"
+
+let private jsonLocation (location: SourceLocation) =
+    {| filePath = location.FilePath
+       startLine = location.Start.Line
+       startColumn = location.Start.Column
+       endLine = location.End.Line
+       endColumn = location.End.Column |}
+
+let private jsonRelatedLocation (related: DiagnosticRelatedLocation) =
+    {| filePath = related.Location.FilePath
+       message = related.Message
+       startLine = related.Location.Start.Line
+       startColumn = related.Location.Start.Column
+       endLine = related.Location.End.Line
+       endColumn = related.Location.End.Column |}
+
+let private jsonDiagnostic (diagnostic: Diagnostic) =
+    {| severity = severityText diagnostic.Severity
+       code = DiagnosticCode.toIdentifier diagnostic.Code
+       stage = diagnostic.Stage |> Option.toObj
+       phase = diagnostic.Phase |> Option.toObj
+       message = diagnostic.Message
+       location = diagnostic.Location |> Option.map jsonLocation |> Option.toObj
+       relatedLocations = diagnostic.RelatedLocations |> List.map jsonRelatedLocation |}
+
+let private renderObservabilityDumpJson workspace topic =
+    let value =
+        match topic with
+        | AnalysisSessionTopic ->
+            let session = Compilation.analysisSession workspace
+
+            box
+                {| identity = session.Identity
+                   sourceRoot = session.SourceRoot
+                   packageMode = session.PackageMode
+                   buildConfigurationIdentity = session.BuildConfigurationIdentity
+                   backendProfile = session.BackendProfile
+                   backendIntrinsicSet = session.BackendIntrinsicSet
+                   deploymentMode = session.DeploymentMode |}
+        | CheckpointsTopic ->
+            box (Compilation.availableCheckpoints workspace)
+        | CheckpointContractsTopic ->
+            box
+                (Compilation.checkpointContracts workspace
+                 |> List.map (fun contract ->
+                     {| name = contract.Name
+                        kind = CheckpointKind.toPortableName contract.CheckpointKind
+                        inputCheckpoint = contract.InputCheckpoint |> Option.toObj
+                        requiredBySpec = contract.RequiredBySpec
+                        profileSpecific = contract.ProfileSpecific |}))
+        | VerifyAllCheckpointsTopic ->
+            box
+                (Compilation.verifyAllCheckpoints workspace
+                 |> List.map (fun result ->
+                     {| checkpoint = result.Checkpoint
+                        succeeded = result.Succeeded
+                        diagnostics = result.Diagnostics |> List.map jsonDiagnostic |}))
+        | RuntimeObligationsTopic ->
+            box
+                (Compilation.portableRuntimeObligations workspace
+                 |> List.map (fun obligation ->
+                     {| name = obligation.Name
+                        owner = runtimeObligationOwnerText obligation.Owner
+                        description = obligation.Description |}))
+        | QuerySketchTopic ->
+            box
+                (Compilation.querySketch workspace
+                 |> List.map (fun query ->
+                     {| id = query.Id
+                        queryKind = QueryKind.toPortableName query.QueryKind
+                        inputKey = query.InputKey
+                        outputCheckpoint = query.OutputCheckpoint
+                        dependencyModel = QueryDependencyModel.toPortableName query.DependencyModel
+                        requiredPhase = query.RequiredPhase |> Option.map KFrontIRPhase.phaseName |> Option.toObj
+                        analysisSessionIdentity = query.AnalysisSessionIdentity
+                        buildConfigurationIdentity = query.BuildConfigurationIdentity
+                        backendProfile = query.BackendProfile
+                        backendIntrinsicSet = query.BackendIntrinsicSet
+                        dependencyIds = query.DependencyIds |}))
+        | CompilerFingerprintsTopic ->
+            box
+                (Compilation.compilerFingerprints workspace
+                 |> List.map (fun fingerprint ->
+                     {| id = fingerprint.Id
+                        fingerprintKind = CompilerFingerprintKind.toPortableName fingerprint.FingerprintKind
+                        inputKey = fingerprint.InputKey
+                        identity = fingerprint.Identity
+                        analysisSessionIdentity = fingerprint.AnalysisSessionIdentity
+                        buildConfigurationIdentity = fingerprint.BuildConfigurationIdentity
+                        backendProfile = fingerprint.BackendProfile
+                        backendIntrinsicSet = fingerprint.BackendIntrinsicSet
+                        dependencyFingerprintIds = fingerprint.DependencyFingerprintIds |}))
+        | IncrementalUnitsTopic ->
+            box
+                (Compilation.incrementalUnits workspace
+                 |> List.map (fun unit ->
+                     {| id = unit.Id
+                        unitKind = IncrementalUnitKind.toPortableName unit.UnitKind
+                        inputKey = unit.InputKey
+                        outputCheckpoint = unit.OutputCheckpoint |> Option.toObj
+                        fingerprintIds = unit.FingerprintIds
+                        dependencyUnitIds = unit.DependencyUnitIds
+                        analysisSessionIdentity = unit.AnalysisSessionIdentity
+                        buildConfigurationIdentity = unit.BuildConfigurationIdentity
+                        backendProfile = unit.BackendProfile
+                        backendIntrinsicSet = unit.BackendIntrinsicSet |}))
+
+    serializeJson
+        {| topic = ObservabilityTopic.toPortableName topic
+           value = value |}
 
 let private runProcess = HostSupport.runProcess
 let private currentRid = HostSupport.currentRid
@@ -390,90 +583,128 @@ let main argv =
         Console.Error.WriteLine(message)
         if message.Contains("kp [--source-root") then 0 else 1
     | Result.Ok options ->
-        let compilationOptions =
-            { CompilationOptions.create options.SourceRoot with
-                BackendProfile = options.BackendProfile }
+        let observabilityConflicts =
+            match options.DumpObservability with
+            | None ->
+                []
+            | Some _ ->
+                [
+                    if options.DumpTokens then "--dump-tokens"
+                    if options.DumpAst then "--dump-ast"
+                    if options.DumpStage.IsSome then "--dump-stage"
+                    if options.PrintTrace then "--trace"
+                    if options.VerifyCheckpoint.IsSome then "--verify"
+                    if options.RunBinding.IsSome then "--run"
+                ]
 
-        let workspace = Compilation.parse compilationOptions options.Inputs
+        if not (List.isEmpty observabilityConflicts) then
+            let conflictText = String.concat ", " observabilityConflicts
+            Console.Error.WriteLine(
+                $"--dump-observability cannot be combined with {conflictText} because it reserves stdout for machine-readable JSON."
+            )
 
-        if List.isEmpty workspace.Documents then
-            Console.Error.WriteLine($"No .kp files were found under {compilationOptions.SourceRoot}.")
+            1
+        elif options.DumpObservability.IsSome && options.DumpFormat <> StageDumpFormat.Json then
+            Console.Error.WriteLine("--dump-observability currently supports only --dump-format json.")
             1
         else
-            let explicitObservabilityRequest =
-                options.DumpStage.IsSome || options.PrintTrace || options.VerifyCheckpoint.IsSome
+            let compilationOptions =
+                { CompilationOptions.create options.SourceRoot with
+                    BackendProfile = options.BackendProfile }
 
-            let shouldPrintSummaries =
-                (options.RunBinding.IsNone && not explicitObservabilityRequest)
-                || options.DumpTokens
-                || options.DumpAst
+            let workspace = Compilation.parse compilationOptions options.Inputs
 
-            if shouldPrintSummaries then
-                for document in workspace.Documents do
-                    printDocumentSummary document
-
-            if options.DumpTokens then
-                workspace.Documents |> List.iter printTokens
-
-            if options.DumpAst then
-                workspace.Documents |> List.iter printAst
-
-            if options.PrintTrace then
-                printPipelineTrace workspace
-
-            let verificationFailed =
-                match options.VerifyCheckpoint with
-                | Some checkpoint ->
-                    if workspace.HasErrors then
-                        false
-                    else
-                        let diagnostics = Compilation.verifyCheckpoint workspace checkpoint
-                        printVerification checkpoint diagnostics
-                        not (List.isEmpty diagnostics)
-                | None ->
-                    false
-
-            let dumpFailed =
-                match options.DumpStage with
-                | Some checkpoint ->
-                    match Compilation.dumpStage workspace checkpoint options.DumpFormat with
-                    | Result.Ok dump ->
-                        printfn ""
-                        printfn "%s" dump
-                        false
-                    | Result.Error message ->
-                        Console.Error.WriteLine(message)
-                        true
-                | None ->
-                    false
-
-            if not (List.isEmpty workspace.Diagnostics) then
-                printfn ""
-                printfn "Diagnostics"
-                workspace.Diagnostics |> List.iter printDiagnostic
-
-            if workspace.HasErrors || verificationFailed || dumpFailed then
+            if List.isEmpty workspace.Documents then
+                Console.Error.WriteLine($"No .kp files were found under {compilationOptions.SourceRoot}.")
                 1
             else
-                match options.RunBinding with
-                | None ->
-                    0
-                | Some entryPoint ->
-                    match Stdlib.normalizeBackendProfile options.BackendProfile with
-                    | "interpreter" ->
-                        match Interpreter.executeBinding workspace entryPoint with
-                        | Result.Ok value ->
-                            if Interpreter.shouldPrintResult value then
-                                printfn "%s" (RuntimeValue.format value)
+                let explicitObservabilityRequest =
+                    options.DumpStage.IsSome || options.PrintTrace || options.VerifyCheckpoint.IsSome || options.DumpObservability.IsSome
 
-                            0
-                        | Result.Error issue ->
-                            Console.Error.WriteLine($"runtime error: {issue.Message}")
+                let shouldPrintSummaries =
+                    (options.RunBinding.IsNone && not explicitObservabilityRequest)
+                    || options.DumpTokens
+                    || options.DumpAst
+
+                if shouldPrintSummaries then
+                    for document in workspace.Documents do
+                        printDocumentSummary document
+
+                if options.DumpTokens then
+                    workspace.Documents |> List.iter printTokens
+
+                if options.DumpAst then
+                    workspace.Documents |> List.iter printAst
+
+                if options.PrintTrace then
+                    printPipelineTrace workspace
+
+                let observabilityDumpFailed =
+                    match options.DumpObservability with
+                    | Some topic ->
+                        let dump = renderObservabilityDumpJson workspace topic
+                        Console.Out.WriteLine(dump)
+                        false
+                    | None ->
+                        false
+
+                let verificationFailed =
+                    match options.VerifyCheckpoint with
+                    | Some checkpoint ->
+                        if workspace.HasErrors then
+                            false
+                        else
+                            let diagnostics = Compilation.verifyCheckpoint workspace checkpoint
+                            printVerification checkpoint diagnostics
+                            not (List.isEmpty diagnostics)
+                    | None ->
+                        false
+
+                let dumpFailed =
+                    match options.DumpStage with
+                    | Some checkpoint ->
+                        match Compilation.dumpStage workspace checkpoint options.DumpFormat with
+                        | Result.Ok dump ->
+                            printfn ""
+                            printfn "%s" dump
+                            false
+                        | Result.Error message ->
+                            Console.Error.WriteLine(message)
+                            true
+                    | None ->
+                        false
+
+                if not (List.isEmpty workspace.Diagnostics) then
+                    if options.DumpObservability.IsSome then
+                        Console.Error.WriteLine("Diagnostics")
+                        workspace.Diagnostics |> List.iter (writeDiagnostic Console.Error)
+                    else
+                        printfn ""
+                        printfn "Diagnostics"
+                        workspace.Diagnostics |> List.iter printDiagnostic
+
+                if workspace.HasErrors || verificationFailed || dumpFailed || observabilityDumpFailed then
+                    1
+                else
+                    match options.RunBinding with
+                    | None ->
+                        0
+                    | Some entryPoint ->
+                        match Stdlib.normalizeBackendProfile options.BackendProfile with
+                        | "interpreter" ->
+                            match Interpreter.executeBinding workspace entryPoint with
+                            | Result.Ok value ->
+                                if Interpreter.shouldPrintResult value then
+                                    printfn "%s" (RuntimeValue.format value)
+
+                                0
+                            | Result.Error issue ->
+                                Console.Error.WriteLine($"runtime error: {issue.Message}")
+                                1
+                        | "dotnet" ->
+                            runDotNetBackend Backend.emitDotNetArtifact workspace entryPoint options.EmitDirectory options.NativeAot
+                        | "zig" ->
+                            runZigBackend workspace entryPoint options.EmitDirectory options.NativeAot
+                        | other ->
+                            Console.Error.WriteLine($"Unsupported runtime backend '{other}'. Expected interpreter, dotnet, or zig.")
                             1
-                    | "dotnet" ->
-                        runDotNetBackend Backend.emitDotNetArtifact workspace entryPoint options.EmitDirectory options.NativeAot
-                    | "zig" ->
-                        runZigBackend workspace entryPoint options.EmitDirectory options.NativeAot
-                    | other ->
-                        Console.Error.WriteLine($"Unsupported runtime backend '{other}'. Expected interpreter, dotnet, or zig.")
-                        1
