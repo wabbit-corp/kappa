@@ -432,12 +432,9 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - `words` / `sentences` also need real UAX #29 behavior if they are going to exist.
   - Sources: `reviews/unicode1.md`.
 
-- `[High] Decide whether `Hashable` is a real trait or compiler-magic, and make the entire stack consistent with that answer.`
+- `[High] Make `Hashable` a real trait.`
   - `std.hash.Hashable` is currently declared without the spec-required member and superclass structure, while the compiler synthesizes special-case support in selected places.
-  - Pick one model:
-  - a real trait with `hashInto` and coherent dictionary semantics; or
-  - explicit compiler-magic with the spec/stdlib updated to match.
-  - The current middle state gives you the failure modes of both.
+  - Make it a real trait with `hashInto` and coherent dictionary semantics
   - Sources: `reviews/unicode1.md`, `reviews/principles1.md`.
 
 - `[Critical] Fix the streaming hash API so it returns `HashState`, not `Option HashState`, and redesign the state transition properly.`
@@ -582,12 +579,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Sources: `reviews/zig1.md`.
 
 ## 11A. Observability, Incrementality, and Checkpoint Metadata
-
-- `[Critical] Add imported-interface dependency edges to the incremental/query graph.`
-  - The current metadata largely models per-file linear chains and omits dependencies from importing modules to imported module interfaces/fingerprints.
-  - That makes downstream invalidation unsound when exported signatures change.
-  - Build a real resolved import graph and make import-surface/header/body/KCore/backend units depend on imported interfaces and the effective import environment as required.
-  - Sources: `reviews/observability1.md`.
 
 - `[High] Model generated standard modules, host-binding modules, runtime intrinsic sets, and backend runtime support as explicit incremental dependencies.`
   - `KRuntimeIR` includes generated host-binding and standard modules, but backend fingerprints/units/target dependencies currently filter through user-module source files and can omit these generated contributors.

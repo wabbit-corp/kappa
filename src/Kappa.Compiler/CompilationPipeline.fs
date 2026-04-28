@@ -164,6 +164,7 @@ type QueryKind =
     | ParseSourceFileQuery
     | BuildKFrontIRQuery
     | AdvanceKFrontIRPhaseQuery
+    | EmitInterfaceQuery
     | ComputeDiagnosticsQuery
     | LowerKCoreQuery
     | LowerKRuntimeIRQuery
@@ -176,6 +177,7 @@ module QueryKind =
         | ParseSourceFileQuery -> "parseSourceFile"
         | BuildKFrontIRQuery -> "buildKFrontIR"
         | AdvanceKFrontIRPhaseQuery -> "advanceKFrontIRPhase"
+        | EmitInterfaceQuery -> "emitInterface"
         | ComputeDiagnosticsQuery -> "computeDiagnostics"
         | LowerKCoreQuery -> "lowerKCore"
         | LowerKRuntimeIRQuery -> "lowerKRuntimeIR"

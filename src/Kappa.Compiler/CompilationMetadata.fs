@@ -85,10 +85,50 @@ module internal CompilationMetadata =
           BackendIntrinsicSet = workspace.BackendIntrinsicIdentity
           DependencyIds = dependencyIds }
 
+    let private importedFrontendFilesByFile (workspace: WorkspaceCompilation) =
+        let moduleFileByIdentity =
+            workspace.KFrontIR
+            |> List.choose (fun frontendModule ->
+                frontendModule.ModuleIdentity
+                |> Option.map (fun moduleIdentity -> SyntaxFacts.moduleNameToText moduleIdentity, frontendModule.FilePath))
+            |> List.groupBy fst
+            |> List.choose (fun (moduleName, entries) ->
+                match entries with
+                | [ _, filePath ] -> Some(moduleName, filePath)
+                | _ -> None)
+            |> Map.ofList
+
+        workspace.KFrontIR
+        |> List.map (fun frontendModule ->
+            let importedFiles =
+                frontendModule.Imports
+                |> List.choose (fun importSpec ->
+                    match importSpec.Source with
+                    | Dotted nameSegments ->
+                        moduleFileByIdentity
+                        |> Map.tryFind (SyntaxFacts.moduleNameToText nameSegments)
+                    | Url _ ->
+                        None)
+                |> List.filter (fun importedFilePath ->
+                    not (String.Equals(importedFilePath, frontendModule.FilePath, StringComparison.Ordinal)))
+                |> List.distinct
+                |> List.sort
+
+            frontendModule.FilePath, importedFiles)
+        |> Map.ofList
+
     let querySketch (workspace: WorkspaceCompilation) =
         let documents =
             workspace.KFrontIR
             |> List.sortBy (fun document -> document.FilePath)
+
+        let importedFilesByFile = importedFrontendFilesByFile workspace
+
+        let importedInterfaceQueryIds inputKey =
+            importedFilesByFile
+            |> Map.tryFind inputKey
+            |> Option.defaultValue []
+            |> List.map (fun importedFile -> queryId workspace EmitInterfaceQuery importedFile "module-interface")
 
         let documentQueries =
             documents
@@ -110,6 +150,13 @@ module internal CompilationMetadata =
                     ((raw, []), KFrontIRPhase.all |> List.tail)
                     ||> List.fold (fun (previous, collected) phase ->
                         let checkpoint = KFrontIRPhase.checkpointName phase
+                        let dependencyIds =
+                            let priorDependencies = [ previous.Id ]
+
+                            if phase = IMPORTS then
+                                priorDependencies @ importedInterfaceQueryIds inputKey
+                            else
+                                priorDependencies
 
                         let current =
                             queryRecord
@@ -118,10 +165,23 @@ module internal CompilationMetadata =
                                 inputKey
                                 checkpoint
                                 (Some phase)
-                                [ previous.Id ]
+                                dependencyIds
 
                         current, collected @ [ current ])
                     |> snd
+
+                let implicitSignatures =
+                    phaseQueries
+                    |> List.find (fun query -> query.OutputCheckpoint = KFrontIRPhase.checkpointName IMPLICIT_SIGNATURES)
+
+                let interfaceQuery =
+                    queryRecord
+                        workspace
+                        EmitInterfaceQuery
+                        inputKey
+                        "module-interface"
+                        (Some IMPLICIT_SIGNATURES)
+                        (implicitSignatures.Id :: importedInterfaceQueryIds inputKey)
 
                 let diagnostics =
                     let checkers =
@@ -141,7 +201,13 @@ module internal CompilationMetadata =
                         phaseQueries
                         |> List.find (fun query -> query.OutputCheckpoint = KFrontIRPhase.checkpointName CORE_LOWERING)
 
-                    queryRecord workspace LowerKCoreQuery inputKey "KCore" (Some CORE_LOWERING) [ coreLowering.Id ]
+                    queryRecord
+                        workspace
+                        LowerKCoreQuery
+                        inputKey
+                        "KCore"
+                        (Some CORE_LOWERING)
+                        ([ coreLowering.Id; interfaceQuery.Id ] @ importedInterfaceQueryIds inputKey)
 
                 let runtime =
                     queryRecord workspace LowerKRuntimeIRQuery inputKey "KRuntimeIR" None [ core.Id ]
@@ -149,7 +215,7 @@ module internal CompilationMetadata =
                 let backend =
                     queryRecord workspace LowerKBackendIRQuery inputKey "KBackendIR" None [ runtime.Id ]
 
-                [ parse; raw ] @ phaseQueries @ [ diagnostics; core; runtime; backend ])
+                [ parse; raw ] @ phaseQueries @ [ interfaceQuery; diagnostics; core; runtime; backend ])
 
         let backendDependencies =
             documentQueries
@@ -425,6 +491,14 @@ module internal CompilationMetadata =
         |> String.concat ";"
 
     let compilerFingerprints (workspace: WorkspaceCompilation) =
+        let importedFilesByFile = importedFrontendFilesByFile workspace
+
+        let importedInterfaceFingerprintIds filePath =
+            importedFilesByFile
+            |> Map.tryFind filePath
+            |> Option.defaultValue []
+            |> List.map (fun importedFilePath -> fingerprintId workspace InterfaceFingerprint importedFilePath)
+
         let sourceFingerprints =
             workspace.Documents
             |> List.sortBy (fun document -> document.Source.FilePath)
@@ -457,6 +531,7 @@ module internal CompilationMetadata =
                 declarationInputKeys frontendModule.FilePath frontendModule.Declarations
                 |> List.map (fun (declaration, inputKey) ->
                     let sourceDependency = sourceFingerprintByFile[frontendModule.FilePath].Id
+                    let importDependencies = importedInterfaceFingerprintIds frontendModule.FilePath
 
                     let header =
                         fingerprintRecord
@@ -464,7 +539,7 @@ module internal CompilationMetadata =
                             HeaderFingerprint
                             inputKey
                             (declarationHeaderIdentity declaration)
-                            [ sourceDependency ]
+                            (sourceDependency :: importDependencies)
 
                     let body =
                         fingerprintRecord
@@ -472,7 +547,7 @@ module internal CompilationMetadata =
                             BodyFingerprint
                             inputKey
                             (declarationBodyIdentity declaration)
-                            [ header.Id ]
+                            (header.Id :: importDependencies)
 
                     [ header; body ])
                 |> List.concat)
@@ -494,6 +569,7 @@ module internal CompilationMetadata =
             |> List.sortBy (fun frontendModule -> frontendModule.FilePath)
             |> List.map (fun frontendModule ->
                 let sourceDependency = sourceFingerprintByFile[frontendModule.FilePath].Id
+                let importDependencies = importedInterfaceFingerprintIds frontendModule.FilePath
 
                 let declarationDependencies =
                     declarationFingerprintIdsByFile
@@ -507,7 +583,7 @@ module internal CompilationMetadata =
                     InterfaceFingerprint
                     frontendModule.FilePath
                     (moduleInterfaceIdentity frontendModule)
-                    (sourceDependency :: declarationDependencies))
+                    (sourceDependency :: declarationDependencies @ importDependencies))
 
         let interfaceFingerprintByFile =
             interfaceFingerprints
@@ -533,6 +609,7 @@ module internal CompilationMetadata =
             |> List.sortBy (fun backendModule -> backendModule.SourceFile)
             |> List.map (fun backendModule ->
                 let interfaceDependency = interfaceFingerprintByFile[backendModule.SourceFile].Id
+                let importDependencies = importedInterfaceFingerprintIds backendModule.SourceFile
 
                 let bodyDependencies =
                     bodyFingerprintIdsByFile
@@ -545,7 +622,7 @@ module internal CompilationMetadata =
                     BackendFingerprint
                     backendModule.SourceFile
                     (backendFingerprintIdentity workspace backendModule)
-                    (interfaceDependency :: bodyDependencies))
+                    (interfaceDependency :: bodyDependencies @ importDependencies))
 
         sourceFingerprints @ declarationFingerprints @ interfaceFingerprints @ backendFingerprints
 
@@ -572,6 +649,7 @@ module internal CompilationMetadata =
           BackendIntrinsicSet = workspace.BackendIntrinsicIdentity }
 
     let incrementalUnits (workspace: WorkspaceCompilation) =
+        let importedFilesByFile = importedFrontendFilesByFile workspace
         let fingerprints = compilerFingerprints workspace
 
         let fingerprintById =
@@ -581,6 +659,18 @@ module internal CompilationMetadata =
 
         let fingerprintIdFor fingerprintKind inputKey =
             fingerprintId workspace fingerprintKind inputKey
+
+        let importedInterfaceFingerprintIds filePath =
+            importedFilesByFile
+            |> Map.tryFind filePath
+            |> Option.defaultValue []
+            |> List.map (fun importedFilePath -> fingerprintIdFor InterfaceFingerprint importedFilePath)
+
+        let importedInterfaceUnitIds filePath =
+            importedFilesByFile
+            |> Map.tryFind filePath
+            |> Option.defaultValue []
+            |> List.map (fun importedFilePath -> unitId workspace ModuleInterfaceUnit importedFilePath)
 
         let sourceUnitByFile =
             workspace.Documents
@@ -610,7 +700,8 @@ module internal CompilationMetadata =
                     frontendModule.FilePath
                     (Some (KFrontIRPhase.checkpointName IMPORTS))
                     [ fingerprintIdFor SourceFingerprint frontendModule.FilePath ]
-                    [ sourceUnitByFile[frontendModule.FilePath].Id ])
+                    ([ sourceUnitByFile[frontendModule.FilePath].Id ] @ importedInterfaceUnitIds frontendModule.FilePath
+                     |> List.distinct))
 
         let importSurfaceUnitByFile =
             importSurfaceUnits
@@ -623,6 +714,7 @@ module internal CompilationMetadata =
             |> List.collect (fun frontendModule ->
                 declarationInputKeys frontendModule.FilePath frontendModule.Declarations
                 |> List.map (fun (_declaration, inputKey) ->
+                    let importFingerprintIds = importedInterfaceFingerprintIds frontendModule.FilePath
 
                     let headerUnit =
                         incrementalUnit
@@ -630,7 +722,7 @@ module internal CompilationMetadata =
                             DeclarationHeaderUnit
                             inputKey
                             (Some (KFrontIRPhase.checkpointName IMPLICIT_SIGNATURES))
-                            [ fingerprintIdFor HeaderFingerprint inputKey ]
+                            ([ fingerprintIdFor HeaderFingerprint inputKey ] @ importFingerprintIds |> List.distinct)
                             [ importSurfaceUnitByFile[frontendModule.FilePath].Id ]
 
                     let macroExpansionUnit =
@@ -648,7 +740,7 @@ module internal CompilationMetadata =
                             DeclarationBodyUnit
                             inputKey
                             (Some (KFrontIRPhase.checkpointName BODY_RESOLVE))
-                            [ fingerprintIdFor BodyFingerprint inputKey ]
+                            ([ fingerprintIdFor BodyFingerprint inputKey ] @ importFingerprintIds |> List.distinct)
                             [ macroExpansionUnit.Id ]
 
                     [ headerUnit; macroExpansionUnit; bodyUnit ])
@@ -668,13 +760,18 @@ module internal CompilationMetadata =
                     unitsByKindAndFile DeclarationHeaderUnit frontendModule.FilePath
                     |> List.map (fun unit -> unit.Id)
 
+                let importFingerprintIds = importedInterfaceFingerprintIds frontendModule.FilePath
+                let importUnitIds = importedInterfaceUnitIds frontendModule.FilePath
+
                 incrementalUnit
                     workspace
                     ModuleInterfaceUnit
                     frontendModule.FilePath
                     (Some "module-interface")
-                    [ fingerprintIdFor InterfaceFingerprint frontendModule.FilePath ]
-                    (importSurfaceUnitByFile[frontendModule.FilePath].Id :: headerDependencies))
+                    ([ fingerprintIdFor InterfaceFingerprint frontendModule.FilePath ] @ importFingerprintIds
+                     |> List.distinct)
+                    ([ importSurfaceUnitByFile[frontendModule.FilePath].Id ] @ headerDependencies @ importUnitIds
+                     |> List.distinct))
 
         let moduleInterfaceUnitByFile =
             moduleInterfaceUnits
@@ -689,12 +786,14 @@ module internal CompilationMetadata =
                     unitsByKindAndFile DeclarationBodyUnit coreModule.SourceFile
                     |> List.map (fun unit -> unit.Id)
 
+                let importFingerprintIds = importedInterfaceFingerprintIds coreModule.SourceFile
+
                 incrementalUnit
                     workspace
                     KCoreModuleUnit
                     coreModule.SourceFile
                     (Some "KCore")
-                    []
+                    importFingerprintIds
                     (moduleInterfaceUnitByFile[coreModule.SourceFile].Id :: bodyDependencies))
 
         let kCoreUnitByFile =
@@ -707,12 +806,15 @@ module internal CompilationMetadata =
             |> List.filter (fun backendModule -> kCoreUnitByFile.ContainsKey(backendModule.SourceFile))
             |> List.sortBy (fun backendModule -> backendModule.SourceFile)
             |> List.map (fun backendModule ->
+                let importFingerprintIds = importedInterfaceFingerprintIds backendModule.SourceFile
+
                 incrementalUnit
                     workspace
                     KBackendIRModuleUnit
                     backendModule.SourceFile
                     (Some "KBackendIR")
-                    [ fingerprintIdFor BackendFingerprint backendModule.SourceFile ]
+                    ([ fingerprintIdFor BackendFingerprint backendModule.SourceFile ] @ importFingerprintIds
+                     |> List.distinct)
                     [ kCoreUnitByFile[backendModule.SourceFile].Id ])
 
         let kBackendUnitIds =

@@ -344,6 +344,117 @@ let ``query sketch records stable query kinds checkpoints and observability-only
     )
 
 [<Fact>]
+let ``query sketch and incremental metadata include imported module interface dependencies`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-import-interface-deps-root"
+            "zig"
+            [
+                "a.kp",
+                [
+                    "module pkg.A"
+                    "value : Int"
+                    "let value = 1"
+                ]
+                |> String.concat "\n"
+                "b.kp",
+                [
+                    "module pkg.B"
+                    "import pkg.A.*"
+                    "result : Int"
+                    "let result = value"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let queryFor (fileName: string) checkpoint =
+        Compilation.querySketch workspace
+        |> List.find (fun query ->
+            query.InputKey.EndsWith(fileName, StringComparison.OrdinalIgnoreCase)
+            && query.OutputCheckpoint = checkpoint)
+
+    let importedInterfaceQuery = queryFor "a.kp" "module-interface"
+    Assert.Equal(EmitInterfaceQuery, importedInterfaceQuery.QueryKind)
+
+    let importerImportsQuery = queryFor "b.kp" "KFrontIR.IMPORTS"
+    Assert.Contains(importedInterfaceQuery.Id, importerImportsQuery.DependencyIds)
+
+    let importerCoreQuery = queryFor "b.kp" "KCore"
+    Assert.Contains(importedInterfaceQuery.Id, importerCoreQuery.DependencyIds)
+
+    let fingerprints = Compilation.compilerFingerprints workspace
+
+    let fingerprintsFor (fileName: string) kind =
+        fingerprints
+        |> List.filter (fun fingerprint ->
+            fingerprint.FingerprintKind = kind
+            && fingerprint.InputKey.IndexOf(fileName, StringComparison.OrdinalIgnoreCase) >= 0)
+
+    let importedInterfaceFingerprint =
+        fingerprintsFor "a.kp" InterfaceFingerprint |> List.exactlyOne
+
+    let importerHeaderFingerprints = fingerprintsFor "b.kp" HeaderFingerprint
+    Assert.NotEmpty(importerHeaderFingerprints)
+
+    Assert.All(
+        importerHeaderFingerprints,
+        fun fingerprint -> Assert.Contains(importedInterfaceFingerprint.Id, fingerprint.DependencyFingerprintIds)
+    )
+
+    let importerBodyFingerprints = fingerprintsFor "b.kp" BodyFingerprint
+    Assert.NotEmpty(importerBodyFingerprints)
+
+    Assert.All(
+        importerBodyFingerprints,
+        fun fingerprint -> Assert.Contains(importedInterfaceFingerprint.Id, fingerprint.DependencyFingerprintIds)
+    )
+
+    let importerInterfaceFingerprint =
+        fingerprintsFor "b.kp" InterfaceFingerprint |> List.exactlyOne
+
+    Assert.Contains(importedInterfaceFingerprint.Id, importerInterfaceFingerprint.DependencyFingerprintIds)
+
+    let importerBackendFingerprint =
+        fingerprintsFor "b.kp" BackendFingerprint |> List.exactlyOne
+
+    Assert.Contains(importedInterfaceFingerprint.Id, importerBackendFingerprint.DependencyFingerprintIds)
+
+    let units = Compilation.incrementalUnits workspace
+
+    let unitsFor (fileName: string) kind =
+        units
+        |> List.filter (fun unit ->
+            unit.UnitKind = kind
+            && unit.InputKey.IndexOf(fileName, StringComparison.OrdinalIgnoreCase) >= 0)
+
+    let importedInterfaceUnit =
+        unitsFor "a.kp" ModuleInterfaceUnit |> List.exactlyOne
+
+    let importerImportSurfaceUnit =
+        unitsFor "b.kp" ModuleImportSurfaceUnit |> List.exactlyOne
+
+    Assert.Contains(importedInterfaceUnit.Id, importerImportSurfaceUnit.DependencyUnitIds)
+
+    let importerHeaderUnits = unitsFor "b.kp" DeclarationHeaderUnit
+    Assert.NotEmpty(importerHeaderUnits)
+    Assert.All(importerHeaderUnits, fun unit -> Assert.Contains(importedInterfaceFingerprint.Id, unit.FingerprintIds))
+
+    let importerBodyUnits = unitsFor "b.kp" DeclarationBodyUnit
+    Assert.NotEmpty(importerBodyUnits)
+    Assert.All(importerBodyUnits, fun unit -> Assert.Contains(importedInterfaceFingerprint.Id, unit.FingerprintIds))
+
+    let importerInterfaceUnit =
+        unitsFor "b.kp" ModuleInterfaceUnit |> List.exactlyOne
+
+    Assert.Contains(importedInterfaceUnit.Id, importerInterfaceUnit.DependencyUnitIds)
+    Assert.Contains(importedInterfaceFingerprint.Id, importerInterfaceUnit.FingerprintIds)
+
+    let importerKCoreUnit =
+        unitsFor "b.kp" KCoreModuleUnit |> List.exactlyOne
+
+    Assert.Contains(importedInterfaceFingerprint.Id, importerKCoreUnit.FingerprintIds)
+
+[<Fact>]
 let ``compiler fingerprints and incremental units expose dependency inputs`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend
