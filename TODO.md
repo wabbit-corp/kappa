@@ -558,10 +558,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
 
   - Sources: `reviews/dotnet1.md`.
 
-- `[Medium-High] Fix generic ADT construction inside generic methods.`
-  - Constructor resolution on the IL path appears to expect result types to be more concrete than they should be, which risks breaking generic code such as `singleton x = Cons x Nil`.
-  - Thread method-level generic parameters through constructor resolution and emitted member resolution.
-  - Sources: `reviews/dotnet1.md`.
 
 - `[Medium] Read stdout/stderr asynchronously when shelling out to `dotnet build/run/publish`.`
   - The current CLI helper shape can deadlock on large output if it reads one stream to completion while the child process blocks on the other.

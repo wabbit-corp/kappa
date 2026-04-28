@@ -510,6 +510,9 @@ module internal IlDotNetBackendInput =
             arguments
             |> List.fold (fun state argumentType -> Set.union state (collectTypeParameters argumentType)) Set.empty
 
+    let internal containsTypeParametersOutside (allowed: Set<string>) ilType =
+        collectTypeParameters ilType |> Set.exists (fun name -> not (allowed.Contains name))
+
     let internal bindingTypeParameters parameterTypes returnType =
         (returnType :: parameterTypes)
         |> List.fold (fun state ilType -> Set.union state (collectTypeParameters ilType)) Set.empty
@@ -783,7 +786,16 @@ module internal IlDotNetBackendInput =
             |> Option.bind (fun moduleInfo -> moduleInfo.Constructors |> Map.tryFind constructorName)
             |> Option.map (fun constructorInfo -> moduleName, constructorInfo)
 
-    let internal inferConstructorTypeFromArguments inferExpressionType currentModule localTypes active expectedType expressionArguments constructorInfo =
+    let internal inferConstructorTypeFromArguments
+        inferExpressionType
+        currentModule
+        localTypes
+        active
+        allowedTypeParameters
+        expectedType
+        expressionArguments
+        constructorInfo
+        =
         let initialSubstitutionResult =
             match expectedType with
             | Some expected ->
@@ -805,19 +817,81 @@ module internal IlDotNetBackendInput =
                         let expectedArgumentType =
                             let specialized = substituteType substitution argumentTemplate
 
-                            if containsTypeParameters specialized then
+                            if containsTypeParametersOutside allowedTypeParameters specialized then
                                 None
                             else
                                 Some specialized
 
-                        inferExpressionType currentModule localTypes active expectedArgumentType argumentExpression
+                        inferExpressionType
+                            currentModule
+                            localTypes
+                            active
+                            allowedTypeParameters
+                            expectedArgumentType
+                            argumentExpression
                         |> Result.bind (fun argumentType -> unifyTypes substitution argumentTemplate argumentType)))
                 initialSubstitutionResult
             |> Result.bind (fun substitution ->
                 let resultType = substituteType substitution (constructorResultType constructorInfo)
 
-                if containsTypeParameters resultType then
+                if containsTypeParametersOutside allowedTypeParameters resultType then
                     Result.Error
                         $"IL backend could not infer concrete type arguments for constructor '{constructorInfo.Name}'."
                 else
                     Result.Ok resultType)
+
+    let internal inferBindingTypeFromArguments
+        inferExpressionType
+        currentModule
+        localTypes
+        active
+        allowedTypeParameters
+        expectedType
+        expressionArguments
+        (bindingInfo: BindingInfo)
+        =
+        let initialSubstitutionResult =
+            match expectedType with
+            | Some expected ->
+                unifyTypes Map.empty bindingInfo.ReturnType expected
+            | None ->
+                Result.Ok Map.empty
+
+        if List.length bindingInfo.ParameterTypes <> List.length expressionArguments then
+            Result.Error
+                $"IL backend expected '{bindingInfo.Binding.Name}' to receive {List.length bindingInfo.ParameterTypes} argument(s), but received {List.length expressionArguments}."
+        else
+            List.zip expressionArguments bindingInfo.ParameterTypes
+            |> List.fold
+                (fun stateResult (argumentExpression, (_, argumentTemplate)) ->
+                    result {
+                        let! substitution = stateResult
+
+                        let expectedArgumentType =
+                            let specialized = substituteType substitution argumentTemplate
+
+                            if containsTypeParametersOutside allowedTypeParameters specialized then
+                                None
+                            else
+                                Some specialized
+
+                        let! argumentType =
+                            inferExpressionType
+                                currentModule
+                                localTypes
+                                active
+                                allowedTypeParameters
+                                expectedArgumentType
+                                argumentExpression
+
+                        return! unifyTypes substitution argumentTemplate argumentType
+                    })
+                initialSubstitutionResult
+            |> Result.bind (fun substitution ->
+                let resultType = substituteType substitution bindingInfo.ReturnType
+
+                if containsTypeParametersOutside allowedTypeParameters resultType then
+                    Result.Error
+                        $"IL backend could not infer concrete type arguments for '{bindingInfo.Binding.Name}'."
+                else
+                    Result.Ok(substitution, resultType))

@@ -455,6 +455,39 @@ let ``cli can run the managed dotnet backend with print string intrinsics`` () =
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
+let ``cli can run the managed dotnet backend for generic constructor methods`` () =
+    let workspaceRoot = createScratchDirectory "cli-dotnet-generic-constructor-workspace"
+
+    writeWorkspaceFiles
+        workspaceRoot
+        [
+            "main.kp",
+            [
+                "module main"
+                "singleton : forall (a : Type). a -> List a"
+                "let singleton x = x :: Nil"
+                "headOrZero : List Int -> Int"
+                "let headOrZero xs ="
+                "    match xs"
+                "    case head :: _ -> head"
+                "    case Nil -> 0"
+                "let result = headOrZero (singleton 42)"
+            ]
+            |> String.concat "\n"
+        ]
+
+    let emitDirectory = createScratchDirectory "cli-dotnet-generic-constructor-emit"
+
+    let runResult =
+        runBuiltCli
+            workspaceRoot
+            $"--source-root \"{workspaceRoot}\" --backend dotnet --emit-dir \"{emitDirectory}\" --run main.result"
+
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("42", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
 let ``cli rejects native aot for the managed dotnet backend before emission`` () =
     let workspaceRoot = createScratchDirectory "cli-dotnet-native-aot-workspace"
 

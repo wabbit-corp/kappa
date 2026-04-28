@@ -71,8 +71,19 @@ module internal IlDotNetBackendTyping =
                                     let declaredReturnType =
                                         declared |> Option.bind (fun info -> info.ReturnType)
 
+                                    let allowedTypeParameters =
+                                        declaredReturnType
+                                        |> Option.map (collectTypeParameters)
+                                        |> Option.defaultValue Set.empty
+
                                     let! bodyType =
-                                        inferExpressionType currentModule Map.empty (Set.add cacheKey active) declaredReturnType body
+                                        inferExpressionType
+                                            currentModule
+                                            Map.empty
+                                            (Set.add cacheKey active)
+                                            allowedTypeParameters
+                                            declaredReturnType
+                                            body
 
                                     match declaredReturnType with
                                     | Some expectedReturnType when expectedReturnType <> bodyType ->
@@ -111,6 +122,9 @@ module internal IlDotNetBackendTyping =
                                     let provisionalReturnType =
                                         declaredReturnType |> Option.defaultValue unitIlType
 
+                                    let allowedTypeParameters =
+                                        bindingTypeParameters parameterTypes provisionalReturnType |> Set.ofList
+
                                     let info =
                                         { Binding = binding
                                           ParameterTypes = List.zip parameterNames parameterTypes
@@ -144,6 +158,7 @@ module internal IlDotNetBackendTyping =
                                                 currentModule
                                                 localTypes
                                                 (Set.add cacheKey active)
+                                                allowedTypeParameters
                                                 declaredReturnType
                                                 body
 
@@ -259,7 +274,7 @@ module internal IlDotNetBackendTyping =
                                                     Map.fold (fun acc key value -> acc |> Map.add key value) bindings childBindings)))
                                         (Result.Ok(Map.empty<string, IlType>)))
 
-                and inferExpressionType currentModule localTypes active expectedType expression =
+                and inferExpressionType currentModule localTypes active allowedTypeParameters expectedType expression =
                     let ensureExpected actualType =
                         match expectedType with
                         | Some expected ->
@@ -291,7 +306,15 @@ module internal IlDotNetBackendTyping =
                             | None ->
                                 match tryResolveConstructor rawModules currentModule segments with
                                 | Some(_, constructorInfo) when List.isEmpty constructorInfo.FieldTypes ->
-                                    inferConstructorTypeFromArguments inferExpressionType currentModule localTypes active expectedType [] constructorInfo
+                                    inferConstructorTypeFromArguments
+                                        inferExpressionType
+                                        currentModule
+                                        localTypes
+                                        active
+                                        allowedTypeParameters
+                                        expectedType
+                                        []
+                                        constructorInfo
                                 | Some(targetModule, constructorInfo) ->
                                     Result.Error
                                         $"IL backend does not support constructor-valued name '{targetModule}.{constructorInfo.Name}' yet."
@@ -311,7 +334,8 @@ module internal IlDotNetBackendTyping =
                                 (fun stateResult argumentExpression ->
                                     result {
                                         let! collected = stateResult
-                                        let! argumentType = inferExpressionType currentModule localTypes active None argumentExpression
+                                        let! argumentType =
+                                            inferExpressionType currentModule localTypes active allowedTypeParameters None argumentExpression
                                         return argumentType :: collected
                                     })
                                 (Result.Ok [])
@@ -340,7 +364,7 @@ module internal IlDotNetBackendTyping =
 
                     let inferTraitCall traitName memberName dictionary arguments =
                         result {
-                            let! _ = inferExpressionType currentModule localTypes active None dictionary
+                            let! _ = inferExpressionType currentModule localTypes active allowedTypeParameters None dictionary
 
                             do!
                                 arguments
@@ -348,7 +372,7 @@ module internal IlDotNetBackendTyping =
                                     (fun stateResult argumentExpression ->
                                         stateResult
                                         |> Result.bind (fun () ->
-                                            inferExpressionType currentModule localTypes active None argumentExpression
+                                            inferExpressionType currentModule localTypes active allowedTypeParameters None argumentExpression
                                             |> Result.map (fun _ -> ())))
                                     (Result.Ok())
 
@@ -436,7 +460,7 @@ module internal IlDotNetBackendTyping =
                     | KRuntimeName segments ->
                         inferNamedValue segments
                     | KRuntimeUnary("-", operand) ->
-                        inferExpressionType currentModule localTypes active None operand
+                        inferExpressionType currentModule localTypes active allowedTypeParameters None operand
                         |> Result.bind (function
                             | IlPrimitive IlInt64 -> ensureExpected (IlPrimitive IlInt64)
                             | IlPrimitive IlFloat64 -> ensureExpected (IlPrimitive IlFloat64)
@@ -447,8 +471,8 @@ module internal IlDotNetBackendTyping =
                         if IntrinsicCatalog.isBuiltinBinaryOperator operatorName then
                             let builtinResult =
                                 result {
-                                    let! leftType = inferExpressionType currentModule localTypes active None left
-                                    let! rightType = inferExpressionType currentModule localTypes active None right
+                                    let! leftType = inferExpressionType currentModule localTypes active allowedTypeParameters None left
+                                    let! rightType = inferExpressionType currentModule localTypes active allowedTypeParameters None right
 
                                     return!
                                         match operatorName, leftType, rightType with
@@ -478,16 +502,22 @@ module internal IlDotNetBackendTyping =
 
                             builtinResult
                         else
-                            inferExpressionType currentModule localTypes active expectedType (KRuntimeApply(KRuntimeName [ operatorName ], [ left; right ]))
+                            inferExpressionType
+                                currentModule
+                                localTypes
+                                active
+                                allowedTypeParameters
+                                expectedType
+                                (KRuntimeApply(KRuntimeName [ operatorName ], [ left; right ]))
                     | KRuntimeIfThenElse(condition, whenTrue, whenFalse) ->
                         result {
-                            let! conditionType = inferExpressionType currentModule localTypes active None condition
+                            let! conditionType = inferExpressionType currentModule localTypes active allowedTypeParameters None condition
 
                             if conditionType <> IlPrimitive IlBool then
                                 return! Result.Error "IL backend requires Bool conditions for if expressions."
 
-                            let! trueType = inferExpressionType currentModule localTypes active expectedType whenTrue
-                            let! falseType = inferExpressionType currentModule localTypes active (Some trueType) whenFalse
+                            let! trueType = inferExpressionType currentModule localTypes active allowedTypeParameters expectedType whenTrue
+                            let! falseType = inferExpressionType currentModule localTypes active allowedTypeParameters (Some trueType) whenFalse
 
                             if trueType <> falseType then
                                 return!
@@ -498,7 +528,7 @@ module internal IlDotNetBackendTyping =
                         }
                     | KRuntimeMatch(scrutinee, cases) ->
                         result {
-                            let! scrutineeType = inferExpressionType currentModule localTypes active None scrutinee
+                            let! scrutineeType = inferExpressionType currentModule localTypes active allowedTypeParameters None scrutinee
 
                             let! caseTypes =
                                 cases
@@ -518,7 +548,8 @@ module internal IlDotNetBackendTyping =
 
                                             match caseClause.Guard with
                                             | Some guard ->
-                                                let! guardType = inferExpressionType currentModule extendedLocals active None guard
+                                                let! guardType =
+                                                    inferExpressionType currentModule extendedLocals active allowedTypeParameters None guard
 
                                                 if guardType <> IlPrimitive IlBool then
                                                     return! Result.Error "IL backend requires Bool guards for match cases."
@@ -526,7 +557,13 @@ module internal IlDotNetBackendTyping =
                                                 ()
 
                                             let! caseType =
-                                                inferExpressionType currentModule extendedLocals active expectedCaseType caseClause.Body
+                                                inferExpressionType
+                                                    currentModule
+                                                    extendedLocals
+                                                    active
+                                                    allowedTypeParameters
+                                                    expectedCaseType
+                                                    caseClause.Body
 
                                             return caseType :: collected
                                         })
@@ -545,56 +582,67 @@ module internal IlDotNetBackendTyping =
                         let nameText = String.concat "." segments
                         match segments, arguments with
                         | [ operatorName ], [ left; right ] when IntrinsicCatalog.isBuiltinBinaryOperator operatorName ->
-                            inferExpressionType currentModule localTypes active expectedType (KRuntimeBinary(left, operatorName, right))
+                            inferExpressionType
+                                currentModule
+                                localTypes
+                                active
+                                allowedTypeParameters
+                                expectedType
+                                (KRuntimeBinary(left, operatorName, right))
                         | _ ->
                             match tryResolveBinding rawModules currentModule segments with
                             | Some(targetModule, bindingInfo) ->
                                 inferBindingInfo targetModule bindingInfo.Name active
                                 |> Result.bind (fun resolvedBinding ->
-                                    if List.length resolvedBinding.ParameterTypes <> List.length arguments then
-                                        Result.Error
-                                            $"IL backend expected '{nameText}' to receive {List.length resolvedBinding.ParameterTypes} argument(s), but received {List.length arguments}."
-                                    else
-                                        List.zip arguments resolvedBinding.ParameterTypes
-                                        |> List.fold
-                                            (fun stateResult (argumentExpression, (_, parameterType)) ->
-                                                stateResult
-                                                |> Result.bind (fun () ->
-                                                    inferExpressionType currentModule localTypes active (Some parameterType) argumentExpression
-                                                    |> Result.map (fun _ -> ())))
-                                            (Result.Ok())
-                                        |> Result.bind (fun () -> ensureExpected resolvedBinding.ReturnType))
+                                    inferBindingTypeFromArguments
+                                        inferExpressionType
+                                        currentModule
+                                        localTypes
+                                        active
+                                        allowedTypeParameters
+                                        expectedType
+                                        arguments
+                                        resolvedBinding
+                                    |> Result.map snd)
                             | None ->
                                 match tryResolveConstructor rawModules currentModule segments with
                                 | Some(_, constructorInfo) ->
-                                    inferConstructorTypeFromArguments inferExpressionType currentModule localTypes active expectedType arguments constructorInfo
+                                    inferConstructorTypeFromArguments
+                                        inferExpressionType
+                                        currentModule
+                                        localTypes
+                                        active
+                                        allowedTypeParameters
+                                        expectedType
+                                        arguments
+                                        constructorInfo
                                 | None ->
                                     inferIntrinsicCall nameText arguments
                     | KRuntimeExecute inner ->
-                        inferExpressionType currentModule localTypes active expectedType inner
+                        inferExpressionType currentModule localTypes active allowedTypeParameters expectedType inner
                     | KRuntimeLet(bindingName, value, body) ->
                         result {
-                            let! valueType = inferExpressionType currentModule localTypes active None value
+                            let! valueType = inferExpressionType currentModule localTypes active allowedTypeParameters None value
                             let extendedLocals = localTypes |> Map.add bindingName valueType
-                            return! inferExpressionType currentModule extendedLocals active expectedType body
+                            return! inferExpressionType currentModule extendedLocals active allowedTypeParameters expectedType body
                         }
                     | KRuntimeDoScope(_, body) ->
-                        inferExpressionType currentModule localTypes active expectedType body
+                        inferExpressionType currentModule localTypes active allowedTypeParameters expectedType body
                     | KRuntimeScheduleExit(_, _, body) ->
-                        inferExpressionType currentModule localTypes active expectedType body
+                        inferExpressionType currentModule localTypes active allowedTypeParameters expectedType body
                     | KRuntimeSequence(first, second) ->
                         result {
-                            do! inferExpressionType currentModule localTypes active None first |> Result.map (fun _ -> ())
-                            return! inferExpressionType currentModule localTypes active expectedType second
+                            do! inferExpressionType currentModule localTypes active allowedTypeParameters None first |> Result.map (fun _ -> ())
+                            return! inferExpressionType currentModule localTypes active allowedTypeParameters expectedType second
                         }
                     | KRuntimeWhile(condition, body) ->
                         result {
-                            let! conditionType = inferExpressionType currentModule localTypes active None condition
+                            let! conditionType = inferExpressionType currentModule localTypes active allowedTypeParameters None condition
 
                             if conditionType <> IlPrimitive IlBool then
                                 return! Result.Error "IL backend requires Bool conditions for while expressions."
 
-                            do! inferExpressionType currentModule localTypes active None body |> Result.map (fun _ -> ())
+                            do! inferExpressionType currentModule localTypes active allowedTypeParameters None body |> Result.map (fun _ -> ())
                             return! ensureExpected unitIlType
                         }
                     | KRuntimeDictionaryValue(moduleName, traitName, instanceKey) ->

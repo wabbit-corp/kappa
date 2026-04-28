@@ -118,7 +118,12 @@ module internal IlDotNetBackendEmit =
 
                     baseType.MakeGenericType(genericArguments)
 
-    let internal resolveConstructorTypeAndMembers (state: EmissionState) (substitution: Map<string, IlType>) (constructorInfo: ConstructorInfo) =
+    let internal resolveConstructorTypeAndMembers
+        (state: EmissionState)
+        (typeParameters: Map<string, Type>)
+        (substitution: Map<string, IlType>)
+        (constructorInfo: ConstructorInfo)
+        =
         let dataTypeEmission = lookupDataTypeEmission state constructorInfo.ModuleName constructorInfo.TypeName
         let emission = dataTypeEmission.Constructors[constructorInfo.Name]
 
@@ -128,7 +133,7 @@ module internal IlDotNetBackendEmit =
         else
             let genericArguments =
                 constructorInfo.TypeParameters
-                |> List.map (fun name -> resolveClrType state Map.empty substitution[name])
+                |> List.map (fun name -> resolveClrType state typeParameters substitution[name])
                 |> List.toArray
 
             let constructedType = emission.TypeBuilder.MakeGenericType(genericArguments)
@@ -236,6 +241,9 @@ module internal IlDotNetBackendEmit =
         =
         let localTypes =
             localValues |> Map.map (fun _ value -> value.Type)
+
+        let activeTypeParameters =
+            typeParameters |> Map.keys |> Set.ofSeq
 
         let rec inferExpressionType currentModule localTypes expectedType expression =
             let modules = state.Environment.Modules
@@ -476,11 +484,12 @@ module internal IlDotNetBackendEmit =
                         match tryResolveConstructor modules currentModule segments with
                         | Some(_, constructorInfo) when List.isEmpty constructorInfo.FieldTypes ->
                             inferConstructorTypeFromArguments
-                                (fun _ locals _ expected innerExpression ->
+                                (fun _ locals _ _ expected innerExpression ->
                                     inferBody locals expected innerExpression)
                                 currentModule
                                 localTypes
-                                Set.empty
+                                activeTypeParameters
+                                activeTypeParameters
                                 expectedType
                                 []
                                 constructorInfo
@@ -597,27 +606,27 @@ module internal IlDotNetBackendEmit =
                     | _ ->
                         match tryResolveBinding modules currentModule segments with
                         | Some(_, bindingInfo) ->
-                            if List.length bindingInfo.ParameterTypes <> List.length arguments then
-                                Result.Error
-                                    $"IL backend expected '{nameText}' to receive {List.length bindingInfo.ParameterTypes} argument(s), but received {List.length arguments}."
-                            else
-                                List.zip arguments bindingInfo.ParameterTypes
-                                |> List.fold
-                                    (fun stateResult (argumentExpression, (_, parameterType)) ->
-                                        stateResult
-                                        |> Result.bind (fun () ->
-                                            infer argumentExpression (Some parameterType) |> Result.map (fun _ -> ())))
-                                    (Result.Ok())
-                                |> Result.bind (fun () -> ensureExpected bindingInfo.ReturnType)
+                            inferBindingTypeFromArguments
+                                (fun currentModule localTypes _ _ expected innerExpression ->
+                                    inferExpressionType currentModule localTypes expected innerExpression)
+                                currentModule
+                                localTypes
+                                activeTypeParameters
+                                activeTypeParameters
+                                expectedType
+                                arguments
+                                bindingInfo
+                            |> Result.map snd
                         | None ->
                             match tryResolveConstructor modules currentModule segments with
                             | Some(_, constructorInfo) ->
                                 inferConstructorTypeFromArguments
-                                    (fun _ locals _ expected innerExpression ->
+                                    (fun _ locals _ _ expected innerExpression ->
                                         inferBody locals expected innerExpression)
                                     currentModule
                                     localTypes
-                                    Set.empty
+                                    activeTypeParameters
+                                    activeTypeParameters
                                     expectedType
                                     arguments
                                     constructorInfo
@@ -696,7 +705,7 @@ module internal IlDotNetBackendEmit =
                                     let expectedArgumentType =
                                         let specialized = substituteType substitution argumentTemplate
 
-                                        if containsTypeParameters specialized then
+                                        if containsTypeParametersOutside activeTypeParameters specialized then
                                             None
                                         else
                                             Some specialized
@@ -714,12 +723,12 @@ module internal IlDotNetBackendEmit =
 
                 let resultType = substituteType substitution (constructorResultType constructorInfo)
 
-                if containsTypeParameters resultType then
+                if containsTypeParametersOutside activeTypeParameters resultType then
                     return!
                         Result.Error
                             $"IL backend could not infer concrete type arguments for constructor '{constructorInfo.Name}'."
 
-                let _, constructor, _ = resolveConstructorTypeAndMembers state substitution constructorInfo
+                let _, constructor, _ = resolveConstructorTypeAndMembers state typeParameters substitution constructorInfo
 
                 do!
                     List.zip arguments argumentTypes
@@ -841,7 +850,7 @@ module internal IlDotNetBackendEmit =
                                         Result.Error
                                             $"IL backend intrinsic 'openFile' expected constructor '{moduleName}.{constructorInfo.Name}' to take Int, but got {formatIlType fieldType}."
 
-                                let _, constructor, _ = resolveConstructorTypeAndMembers state substitution constructorInfo
+                                let _, constructor, _ = resolveConstructorTypeAndMembers state typeParameters substitution constructorInfo
                                 il.Emit(OpCodes.Ldc_I8, 1L)
                                 il.Emit(OpCodes.Newobj, constructor)
                 | _ ->
@@ -1245,7 +1254,7 @@ module internal IlDotNetBackendEmit =
                             Result.Error
                                 $"IL backend expected pattern '{constructorInfo.Name}' to receive {List.length constructorInfo.FieldTypes} argument(s), but received {List.length argumentPatterns}."
                         else
-                            let constructorType, _, fieldInfos = resolveConstructorTypeAndMembers state substitution constructorInfo
+                            let constructorType, _, fieldInfos = resolveConstructorTypeAndMembers state typeParameters substitution constructorInfo
                             let castLocal = il.DeclareLocal(constructorType)
                             emitLoadLocal il valueLocal
                             il.Emit(OpCodes.Isinst, constructorType)
@@ -1427,60 +1436,41 @@ module internal IlDotNetBackendEmit =
             | _ ->
                 match tryResolveBinding state.Environment.Modules currentModule segments with
                 | Some(targetModule, bindingInfo) ->
-                    if List.length bindingInfo.ParameterTypes <> List.length arguments then
-                        Result.Error
-                            $"IL backend expected '{nameText}' to receive {List.length bindingInfo.ParameterTypes} argument(s), but received {List.length arguments}."
-                    else
-                        result {
-                            let initialSubstitution =
-                                match expectedType with
-                                | Some expected -> unifyTypes Map.empty bindingInfo.ReturnType expected
-                                | None -> Result.Ok Map.empty
+                    result {
+                        let! substitution, _ =
+                            inferBindingTypeFromArguments
+                                (fun currentModule localTypes _ _ expected innerExpression ->
+                                    inferExpressionType currentModule localTypes expected innerExpression)
+                                currentModule
+                                localTypes
+                                activeTypeParameters
+                                activeTypeParameters
+                                expectedType
+                                arguments
+                                bindingInfo
 
-                            let! substitution =
-                                List.zip arguments bindingInfo.ParameterTypes
-                                |> List.fold
-                                    (fun stateResult (argumentExpression, (_, parameterType)) ->
-                                        result {
-                                            let! activeSubstitution = stateResult
+                        do!
+                            List.zip arguments bindingInfo.ParameterTypes
+                            |> List.fold
+                                (fun stateResult (argumentExpression, (_, parameterType)) ->
+                                    stateResult
+                                    |> Result.bind (fun () ->
+                                        let specializedParameterType = substituteType substitution parameterType
+                                        emitExpression
+                                            state
+                                            currentModule
+                                            typeParameters
+                                            localValues
+                                            (Some specializedParameterType)
+                                            il
+                                            argumentExpression))
+                                (Result.Ok())
 
-                                            let expectedArgumentType =
-                                                let specialized = substituteType activeSubstitution parameterType
+                        let! targetMethod =
+                            resolveMethodInfoForCall state typeParameters targetModule bindingInfo substitution
 
-                                                if containsTypeParameters specialized then
-                                                    None
-                                                else
-                                                    Some specialized
-
-                                            let! argumentType =
-                                                inferExpressionType currentModule localTypes expectedArgumentType argumentExpression
-
-                                            return! unifyTypes activeSubstitution parameterType argumentType
-                                        })
-                                    initialSubstitution
-
-                            do!
-                                List.zip arguments bindingInfo.ParameterTypes
-                                |> List.fold
-                                    (fun stateResult (argumentExpression, (_, parameterType)) ->
-                                        stateResult
-                                        |> Result.bind (fun () ->
-                                            let specializedParameterType = substituteType substitution parameterType
-                                            emitExpression
-                                                state
-                                                currentModule
-                                                typeParameters
-                                                localValues
-                                                (Some specializedParameterType)
-                                                il
-                                                argumentExpression))
-                                    (Result.Ok())
-
-                            let! targetMethod =
-                                resolveMethodInfoForCall state typeParameters targetModule bindingInfo substitution
-
-                            il.Emit(OpCodes.Call, targetMethod)
-                        }
+                        il.Emit(OpCodes.Call, targetMethod)
+                    }
                 | None ->
                     match tryResolveConstructor state.Environment.Modules currentModule segments with
                     | Some(_, constructorInfo) ->

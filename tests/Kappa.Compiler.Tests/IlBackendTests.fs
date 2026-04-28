@@ -140,6 +140,47 @@ let ``il backend emits parameterized public static methods from explicit signatu
     Assert.Equal(42L, resultMethod.Invoke(null, [||]) |> unbox<int64>)
 
 [<Fact>]
+let ``il backend emits generic methods that construct generic adt values`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-il-generic-constructor-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "singleton : forall (a : Type). a -> List a"
+                    "let singleton x = x :: Nil"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "il-generic-constructor"
+
+    let artifact =
+        match Backend.emitIlAssemblyArtifact workspace outputDirectory with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    use loaded = loadManagedAssembly artifact.AssemblyFilePath
+
+    let moduleType = loaded.Assembly.GetType("Kappa.Generated.main", throwOnError = true, ignoreCase = false)
+    let singletonMethod = moduleType.GetMethod("singleton", BindingFlags.Public ||| BindingFlags.Static)
+
+    Assert.NotNull(singletonMethod)
+    Assert.True(singletonMethod.IsGenericMethodDefinition)
+    Assert.Equal(1, singletonMethod.GetGenericArguments().Length)
+
+    let singletonInt = singletonMethod.MakeGenericMethod([| typeof<int64> |])
+    let singletonString = singletonMethod.MakeGenericMethod([| typeof<string> |])
+    let intValue = singletonInt.Invoke(null, [| box 42L |])
+    let stringValue = singletonString.Invoke(null, [| box "ok" |])
+
+    Assert.NotNull(intValue)
+    Assert.NotNull(stringValue)
+    Assert.Equal(typeof<int64>, intValue.GetType().GetGenericArguments()[0])
+    Assert.Equal(typeof<string>, stringValue.GetType().GetGenericArguments()[0])
+
+[<Fact>]
 let ``il backend emits executable conditional logic as IL`` () =
     let workspace =
         compileInMemoryWorkspace
