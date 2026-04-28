@@ -33,7 +33,7 @@ module internal CompilationCheckpoints =
             checkpointContract "surface-source" SurfaceSourceCheckpoint None true false
             yield! frontendCheckpointContracts
             checkpointContract "KCore" KCoreCheckpoint (Some(KFrontIRPhase.checkpointName CORE_LOWERING)) true false
-            checkpointContract "KRuntimeIR" ImplementationDefinedCheckpoint (Some "KCore") false false
+            checkpointContract "KRuntimeIR" ImplementationDefinedCheckpoint (Some "KCore") false true
             checkpointContract "KBackendIR" KBackendIRCheckpoint (Some "KRuntimeIR") true false
         ]
 

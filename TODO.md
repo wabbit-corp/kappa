@@ -637,11 +637,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Collect trace events at the point work really executes, including reuse/invalidate/skip/cache-probe events, or rename the current output to make clear that it is a planned/synthesized trace.
   - Sources: `reviews/observability1.md`.
 
-- `[Medium] Reconcile `KRuntimeIR` checkpoint contract metadata with actual profile influence.`
-  - The checkpoint contract currently marks `KRuntimeIR` as not profile-specific, but KRuntimeIR construction includes profile-dependent host binding modules.
-  - Either mark it profile-specific or split profile-neutral runtime IR from profile-specific runtime augmentation.
-  - Sources: `reviews/observability1.md`.
-
 - `[Medium] Replace index-based declaration keys with more stable declaration identities.`
   - Declaration input keys currently include declaration index, so inserting one declaration at the top of a file shifts the keys of all following declarations and harms reuse.
   - Prefer stable identities based on resolved symbol identity, source span, declaration kind, and spelling, with a tie-breaker only for true ambiguity.

@@ -606,7 +606,7 @@ let ``checkpoint contract makes implementation defined runtime IR and profile ta
     Assert.Equal(ImplementationDefinedCheckpoint, runtimeContract.CheckpointKind)
     Assert.Equal(Some "KCore", runtimeContract.InputCheckpoint)
     Assert.False(runtimeContract.RequiredBySpec)
-    Assert.False(runtimeContract.ProfileSpecific)
+    Assert.True(runtimeContract.ProfileSpecific)
 
     let backendContract =
         interpreterContracts
@@ -879,6 +879,22 @@ let ``KBackendIR dumps expose graph ids provenance and dump format metadata`` ()
                 ]
                 |> String.concat "\n"
             ]
+
+    let runtimeJson =
+        match Compilation.dumpStage workspace "KRuntimeIR" StageDumpFormat.Json with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    use runtimeDocument = JsonDocument.Parse(runtimeJson)
+
+    let runtimeContract =
+        runtimeDocument.RootElement.GetProperty("checkpointContract")
+
+    Assert.Equal("KRuntimeIR", runtimeContract.GetProperty("name").GetString())
+    Assert.Equal("implementation-defined", runtimeContract.GetProperty("kind").GetString())
+    Assert.Equal("KCore", runtimeContract.GetProperty("inputCheckpoint").GetString())
+    Assert.False(runtimeContract.GetProperty("requiredBySpec").GetBoolean())
+    Assert.True(runtimeContract.GetProperty("profileSpecific").GetBoolean())
 
     let backendJson =
         match Compilation.dumpStage workspace "KBackendIR" StageDumpFormat.Json with
@@ -1706,6 +1722,7 @@ let ``stage dumps expose checkpoint contract metadata`` () =
     Assert.Contains("(kind \"implementation-defined\")", runtimeSexpr)
     Assert.Contains("(input-checkpoint \"KCore\")", runtimeSexpr)
     Assert.Contains("(required-by-spec false)", runtimeSexpr)
+    Assert.Contains("(profile-specific true)", runtimeSexpr)
 
 [<Fact>]
 let ``effectful dotnet target contract still lowers from KBackendIR`` () =
