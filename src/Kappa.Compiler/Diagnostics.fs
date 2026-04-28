@@ -30,6 +30,7 @@ type DiagnosticCode =
     | ModuleHeaderExpectedAfterAttributes
     | ModuleNameUnresolved
     | ModulePathMismatch
+    | ModuleCaseFoldCollision
     | StaticObjectUnresolved
     | ActivePatternInvalid
     | ProjectionDefinitionUnsupported
@@ -123,6 +124,7 @@ module DiagnosticCode =
         | ModuleHeaderExpectedAfterAttributes -> "E_MODULE_HEADER_EXPECTED_AFTER_ATTRIBUTES"
         | ModuleNameUnresolved -> "E_MODULE_NAME_UNRESOLVED"
         | ModulePathMismatch -> "E_MODULE_PATH_MISMATCH"
+        | ModuleCaseFoldCollision -> "E_MODULE_CASE_FOLD_COLLISION"
         | StaticObjectUnresolved -> "E_STATIC_OBJECT_UNRESOLVED"
         | ActivePatternInvalid -> "E_ACTIVE_PATTERN_INVALID"
         | ProjectionDefinitionUnsupported -> "E_PROJECTION_DEFINITION_UNSUPPORTED"
@@ -215,6 +217,7 @@ module DiagnosticCode =
         | "E_MODULE_HEADER_EXPECTED_AFTER_ATTRIBUTES" -> Some ModuleHeaderExpectedAfterAttributes
         | "E_MODULE_NAME_UNRESOLVED" -> Some ModuleNameUnresolved
         | "E_MODULE_PATH_MISMATCH" -> Some ModulePathMismatch
+        | "E_MODULE_CASE_FOLD_COLLISION" -> Some ModuleCaseFoldCollision
         | "E_STATIC_OBJECT_UNRESOLVED" -> Some StaticObjectUnresolved
         | "E_ACTIVE_PATTERN_INVALID" -> Some ActivePatternInvalid
         | "E_PROJECTION_DEFINITION_UNSUPPORTED" -> Some ProjectionDefinitionUnsupported
@@ -320,6 +323,8 @@ module DiagnosticCode =
             Some "A source file may contain at most one module header, and if present it must appear before any non-comment, non-whitespace top-level token other than leading module attributes."
         | ModuleHeaderExpectedAfterAttributes ->
             Some "Top-level @Ident module attributes are only valid as the leading prefix of a module header."
+        | ModuleCaseFoldCollision ->
+            Some "Two or more source files in the same compilation unit produce module names that are equal after lowercase-ASCII case folding but differ in case. The collision must be rejected and all participating files identified."
         | HandlerEffectRowMismatch ->
             Some "A handler can eliminate only an Eff computation whose handled label appears in the handled effect row."
         | HandlerClauseMissing ->

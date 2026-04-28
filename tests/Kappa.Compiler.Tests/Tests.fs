@@ -97,12 +97,89 @@ let ``import diagnostics expose long form explanations`` () =
             DiagnosticCode.ImportAmbiguous
             DiagnosticCode.ImportItemNotFound
             DiagnosticCode.ModuleNameUnresolved
+            DiagnosticCode.ModuleCaseFoldCollision
             DiagnosticCode.NameAmbiguous
         ]
 
     for code in explainedCodes do
         let explanation = DiagnosticCode.tryGetExplanation code
         Assert.True(explanation.IsSome, $"Expected {DiagnosticCode.toIdentifier code} to have a long-form explanation.")
+
+[<Fact>]
+let ``path derived module inference is ascii only validates fragments and requires exact kp suffix`` () =
+    let root = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "kappa-module-path-inference-root"))
+
+    let rooted (relativePath: string) =
+        Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar))
+
+    let fileSystem =
+        HarnessWorkspace.InMemoryFileSystem(
+            [
+                rooted "main.win32.kp", ""
+                rooted "main.bad-frag.kp", ""
+                rooted "Δelta.kp", ""
+                rooted "main.KP", ""
+            ]
+        )
+        :> IFileSystem
+
+    Assert.Equal<string list option>(Some [ "main" ], Compilation.tryInferModuleName fileSystem root (rooted "main.win32.kp"))
+    Assert.Equal<string list option>(None, Compilation.tryInferModuleName fileSystem root (rooted "main.bad-frag.kp"))
+    Assert.Equal<string list option>(None, Compilation.tryInferModuleName fileSystem root (rooted "Δelta.kp"))
+    Assert.Equal<string list option>(None, Compilation.tryInferModuleName fileSystem root (rooted "main.KP"))
+
+[<Fact>]
+let ``source root discovery ignores files without an exact kp suffix`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-exact-kp-source-discovery-root"
+            [
+                "real.kp", ""
+                "ignored.KP", ""
+            ]
+
+    Assert.DoesNotContain(
+        workspace.Documents,
+        fun document -> document.Source.FilePath.EndsWith("ignored.KP", StringComparison.Ordinal)
+    )
+
+    Assert.Contains(workspace.Documents, fun document -> document.ModuleName = Some [ "real" ])
+
+[<Fact>]
+let ``frontend rejects module case fold collisions and identifies all colliding files`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-module-case-fold-collision-root"
+            [
+                "Foo.kp", ""
+                "foo.debug.kp", ""
+            ]
+
+    let collisions =
+        workspace.Diagnostics
+        |> List.filter (fun diagnostic -> diagnostic.Code = DiagnosticCode.ModuleCaseFoldCollision)
+
+    Assert.NotEmpty(collisions)
+
+    let filePaths =
+        collisions
+        |> List.collect (fun diagnostic ->
+            [
+                diagnostic.Location |> Option.map (fun location -> location.FilePath)
+                yield! diagnostic.RelatedLocations |> List.map (fun related -> related.Location.FilePath |> Some)
+            ]
+            |> List.choose id)
+        |> Set.ofList
+
+    Assert.Contains(
+        filePaths,
+        fun path -> path.EndsWith($"{Path.DirectorySeparatorChar}Foo.kp", StringComparison.Ordinal)
+    )
+
+    Assert.Contains(
+        filePaths,
+        fun path -> path.EndsWith($"{Path.DirectorySeparatorChar}foo.debug.kp", StringComparison.Ordinal)
+    )
 
 [<Fact>]
 let ``lexer emits indent and dedent tokens for indented declarations`` () =

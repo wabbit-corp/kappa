@@ -44,14 +44,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
 
 ## 2. Source Loading, Module Mapping, and Lexing
 
-- `[High] Make path-derived module mapping exactly match the spec.`
-  - Path-derived module segments must be ASCII-only and match `[A-Za-z_][A-Za-z0-9_]*`.
-  - The implementation currently uses Unicode-aware identifier predicates, accepts `.kp` case-insensitively, and validates only the derived module segments rather than also validating ignored fragment segments.
-  - Files such as `main.💀.kp` can derive module `main` instead of being rejected for invalid fragments.
-  - Add the required ASCII-lowercase case-fold collision check so `Foo.kp` and `foo.kp` are rejected together with diagnostics identifying all files.
-  - Centralize path-to-module inference in one spec-facing function.
-  - Sources: `reviews/frontend1.md`, `reviews/general1.md`, `reviews/principles1.md`.
-
 - `[Medium-High] Align identifier and keyword handling with the lexical spec.`
   - Standard identifiers are specified as ASCII-only, but the current lexer accepts unquoted Unicode identifiers through `Char.IsLetter` and `Char.IsLetterOrDigit`.
   - Decide whether the spec should permit Unicode standard identifiers or the lexer should reject them except through backtick identifiers.

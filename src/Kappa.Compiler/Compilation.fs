@@ -223,6 +223,7 @@ module Compilation =
 
         let frontendDiagnostics =
             (documents |> List.collect (fun document -> document.Diagnostics))
+            @ validateModuleCaseFoldCollisions options.SourceRoot documents
             @ detectImportCycles documents
             @ validateImportSelections options.PackageMode backendProfile documents
             @ CompilationFrontend.validateReflEqualityDeclarations documents

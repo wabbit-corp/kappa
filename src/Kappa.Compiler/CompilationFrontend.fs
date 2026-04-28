@@ -45,40 +45,117 @@ module internal CompilationFrontend =
           Syntax = parsed.Syntax
           Diagnostics = lexed.Diagnostics @ parsed.Diagnostics }
 
+    let private isAsciiModuleSegmentStart (character: char) =
+        (character >= 'A' && character <= 'Z')
+        || (character >= 'a' && character <= 'z')
+        || character = '_'
+
+    let private isAsciiModuleSegmentPart (character: char) =
+        isAsciiModuleSegmentStart character
+        || (character >= '0' && character <= '9')
+
     let private isValidModuleSegment (segment: string) =
         not (String.IsNullOrWhiteSpace(segment))
-        && SyntaxFacts.isIdentifierStart segment[0]
-        && segment |> Seq.forall SyntaxFacts.isIdentifierPart
+        && isAsciiModuleSegmentStart segment[0]
+        && segment |> Seq.forall isAsciiModuleSegmentPart
+
+    let private tryInferRelativeModuleName (relativePath: string) =
+        let normalizedRelativePath = relativePath.Replace('\\', '/')
+
+        if not (normalizedRelativePath.EndsWith(".kp", StringComparison.Ordinal)) then
+            None
+        else
+            let withoutSuffix = normalizedRelativePath.Substring(0, normalizedRelativePath.Length - 3)
+            let pathSegments = withoutSuffix.Split('/', StringSplitOptions.None) |> Array.toList
+
+            match List.rev pathSegments with
+            | [] ->
+                None
+            | fileStemWithFragments :: reversedDirectorySegments ->
+                let directorySegments = List.rev reversedDirectorySegments
+                let fileSegments = fileStemWithFragments.Split('.', StringSplitOptions.None) |> Array.toList
+
+                match fileSegments with
+                | [] ->
+                    None
+                | baseSegment :: _ when
+                    (directorySegments @ fileSegments)
+                    |> List.forall isValidModuleSegment ->
+                    Some(directorySegments @ [ baseSegment ])
+                | _ ->
+                    None
+
+    let private asciiCaseFoldSegment (segment: string) =
+        segment.ToLowerInvariant()
+
+    let private asciiCaseFoldModuleName (segments: string list) =
+        segments |> List.map asciiCaseFoldSegment
+
+    let private modulePathCollisionSortKey sourceRoot (document: ParsedDocument) =
+        Path.GetRelativePath(sourceRoot, document.Source.FilePath).Replace('\\', '/')
+
+    let validateModuleCaseFoldCollisions sourceRoot (documents: ParsedDocument list) =
+        documents
+        |> List.filter (fun document -> not (document.Source.FilePath.StartsWith("<", StringComparison.Ordinal)))
+        |> List.choose (fun document ->
+            document.ModuleName
+            |> Option.map (fun moduleName ->
+                asciiCaseFoldModuleName moduleName,
+                SyntaxFacts.moduleNameToText moduleName,
+                document))
+        |> List.groupBy (fun (foldedModuleName, _, _) -> foldedModuleName)
+        |> List.collect (fun (_, entries) ->
+            let spellings =
+                entries
+                |> List.map (fun (_, renderedModuleName, _) -> renderedModuleName)
+                |> Set.ofList
+
+            if spellings.Count <= 1 then
+                []
+            else
+                let orderedDocuments =
+                    entries
+                    |> List.map (fun (_, _, document) -> document)
+                    |> List.sortBy (modulePathCollisionSortKey sourceRoot)
+
+                match orderedDocuments with
+                | [] ->
+                    []
+                | primary :: related ->
+                    let collidingPaths =
+                        orderedDocuments
+                        |> List.map (fun document -> document.Source.FilePath)
+                        |> String.concat ", "
+
+                    let location =
+                        primary.Source.GetLocation(TextSpan.FromBounds(0, 0))
+
+                    let relatedLocations =
+                        related
+                        |> List.map (fun document ->
+                            { Message = $"Colliding module source '{document.Source.FilePath}'."
+                              Location = document.Source.GetLocation(TextSpan.FromBounds(0, 0)) })
+
+                    [
+                        { Severity = DiagnosticSeverity.Error
+                          Code = DiagnosticCode.ModuleCaseFoldCollision
+                          Stage = Some "KFrontIR"
+                          Phase = Some(KFrontIRPhase.phaseName CHECKERS)
+                          Message = $"Module names that differ only by case after ASCII case-folding are not permitted in one compilation unit: {collidingPaths}."
+                          Location = Some location
+                          RelatedLocations = relatedLocations }
+                    ])
 
     let tryInferModuleName (fileSystem: IFileSystem) sourceRoot filePath =
         let fullRoot = fileSystem.GetFullPath(sourceRoot)
         let fullPath = fileSystem.GetFullPath(filePath)
 
-        if not (fullPath.EndsWith(".kp", StringComparison.OrdinalIgnoreCase)) then
+        let relativePath = Path.GetRelativePath(fullRoot, fullPath)
+
+        if relativePath.StartsWith("..", StringComparison.Ordinal) then
             None
         else
-            let relativePath = Path.GetRelativePath(fullRoot, fullPath)
-
-            if relativePath.StartsWith("..", StringComparison.Ordinal) then
-                None
-            else
-                let relativeDirectory = Path.GetDirectoryName(relativePath)
-                let fileStem = Path.GetFileNameWithoutExtension(relativePath)
-                let moduleStem =
-                    match fileStem.IndexOf('.') with
-                    | -1 -> fileStem
-                    | index -> fileStem.Substring(0, index)
-
-                let relativeModulePath =
-                    if String.IsNullOrWhiteSpace(relativeDirectory) then
-                        moduleStem
-                    else
-                        Path.Combine(relativeDirectory, moduleStem)
-
-                relativeModulePath.Split([| '\\'; '/' |], StringSplitOptions.RemoveEmptyEntries)
-                |> Array.toList
-                |> fun segments ->
-                    if segments |> List.forall isValidModuleSegment then Some segments else None
+            tryInferRelativeModuleName relativePath
 
     let private readSource (fileSystem: IFileSystem) filePath =
         let fullPath = fileSystem.GetFullPath(filePath)
@@ -131,7 +208,7 @@ module internal CompilationFrontend =
         | None, None ->
             diagnostics.AddError(
                 DiagnosticCode.ModuleNameUnresolved,
-                $"Could not derive a Kappa module name from '{document.Source.FilePath}'. Files must live under the source root and end in .kp.",
+                $"Could not derive a Kappa module name from '{document.Source.FilePath}'. Source files must live under the source root, end in the exact '.kp' suffix, and every directory, basename, and fragment segment must match [A-Za-z_][A-Za-z0-9_]*.",
                 document.Source.GetLocation(TextSpan.FromBounds(0, 0)),
                 stage = "KFrontIR",
                 phase = KFrontIRPhase.phaseName CHECKERS
@@ -210,6 +287,7 @@ module internal CompilationFrontend =
             elif options.FileSystem.DirectoryExists(fullPath) then
                 options.FileSystem.EnumerateFiles(fullPath, "*.kp", SearchOption.AllDirectories)
                 |> Seq.toList
+                |> List.filter (fun filePath -> filePath.EndsWith(".kp", StringComparison.Ordinal))
             else
                 [])
         |> List.distinct
