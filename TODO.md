@@ -573,13 +573,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Add float arithmetic and float comparison tests on the Zig path.
   - Sources: `reviews/zig1.md`.
 
-- `[High] Preserve short-circuit and evaluation-count semantics for `&&` and `||` on the Zig path.`
-  - Current lowering/emission likely evaluates both operands eagerly and then dispatches to helper calls.
-  - This violates the spec’s evaluation-count requirements if the RHS has effects or observable behavior.
-  - There is also a concrete intrinsic-name mismatch: the Zig emitter handles `"and"` / `"or"` while the intrinsic catalog exposes `&&` / `||`.
-  - The right fix is to lower `a && b` to `if a then b else False` and `a || b` to `if a then True else b` in backend lowering rather than trying to preserve them as eager runtime helper calls.
-  - Sources: `reviews/backend1.md`, `reviews/zig1.md`.
-
 - `[High] Implement raw-bit float equality for Zig runtime behavior.`
   - Default `Eq Float` / `Eq Double` semantics require raw-bit equality, not IEEE numeric equality.
   - Current C runtime behavior treats `+0.0` and `-0.0` as equal and all NaNs as unequal.

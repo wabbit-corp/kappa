@@ -3658,6 +3658,43 @@ let ``backend lowering resolves user defined operators through ordinary bindings
         failwithf "Unexpected backend operator lowering: %A" other
 
 [<Fact>]
+let ``backend lowering normalizes builtin short circuit and into a conditional`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-backend-short-circuit-and-root"
+            "zig"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let result = False && ((1 / 0) == 0)"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.Empty(Compilation.verifyCheckpoint workspace "KBackendIR")
+
+    let backendModule =
+        workspace.KBackendIR
+        |> List.find (fun moduleDump -> moduleDump.Name = "main")
+
+    let resultBinding =
+        backendModule.Functions
+        |> List.find (fun binding -> binding.Name = "result")
+
+    match resultBinding.Body with
+    | Some(
+        BackendIfThenElse(
+            BackendName(BackendIntrinsicName(_, "False", _)),
+            BackendCall(_, _, _, _),
+            BackendName(BackendIntrinsicName(_, "False", _)),
+            BackendRepBoolean
+        )
+      ) -> ()
+    | other ->
+        failwithf "Unexpected short-circuit backend lowering: %A" other
+
+[<Fact>]
 let ``backend verification accepts recursive list matches lowered through constructors`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend

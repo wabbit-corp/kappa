@@ -181,3 +181,60 @@ let ``cli can run the zig backend with print string intrinsics`` () =
     Assert.Equal(0, runResult.ExitCode)
     Assert.Equal("AB", runResult.StandardOutput.Trim())
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
+let ``cli can run the zig backend with short circuit and semantics`` () =
+    let workspaceRoot = createScratchDirectory "cli-zig-short-circuit-and-workspace"
+
+    writeWorkspaceFiles
+        workspaceRoot
+        [
+            "main.kp",
+            [
+                "module main"
+                "let result ="
+                "    if False && ((1 / 0) == 0)"
+                "    then 0"
+                "    else 42"
+            ]
+            |> String.concat "\n"
+        ]
+
+    let emitDirectory = createScratchDirectory "cli-zig-short-circuit-and-emit"
+
+    let runResult =
+        runBuiltCliWithEnvironment
+            workspaceRoot
+            $"--source-root \"{workspaceRoot}\" --backend zig --emit-dir \"{emitDirectory}\" --run main.result"
+            [ "KAPPA_ZIG_EXE", ensureRepoZigExecutablePath () ]
+
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("42", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
+let ``cli can run the zig backend with short circuit or semantics`` () =
+    let workspaceRoot = createScratchDirectory "cli-zig-short-circuit-or-workspace"
+
+    writeWorkspaceFiles
+        workspaceRoot
+        [
+            "main.kp",
+            [
+                "module main"
+                "let result = True || ((1 / 0) == 0)"
+            ]
+            |> String.concat "\n"
+        ]
+
+    let emitDirectory = createScratchDirectory "cli-zig-short-circuit-or-emit"
+
+    let runResult =
+        runBuiltCliWithEnvironment
+            workspaceRoot
+            $"--source-root \"{workspaceRoot}\" --backend zig --emit-dir \"{emitDirectory}\" --run main.result"
+            [ "KAPPA_ZIG_EXE", ensureRepoZigExecutablePath () ]
+
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("True", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)

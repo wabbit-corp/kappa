@@ -1298,33 +1298,51 @@ module internal KBackendLowering =
                             [ operandRepresentation ]
                             resultRepresentation)
                 | KRuntimeBinary(left, operatorName, right) ->
-                    lowerExpression scopeLabel locals left
-                    |> Result.bind (fun (loweredLeft, leftRepresentation) ->
-                        lowerExpression scopeLabel locals right
-                        |> Result.bind (fun (loweredRight, rightRepresentation) ->
-                            let resultRepresentation =
-                                match operatorName with
-                                | "&&"
-                                | "||"
-                                | "=="
-                                | "!="
-                                | "<"
-                                | ">"
-                                | "<="
-                                | ">="
-                                | "is" ->
-                                    BackendRepBoolean
-                                | "+" | "-" | "*" | "/" ->
-                                    mergeBackendRepresentations leftRepresentation rightRepresentation
-                                | _ ->
-                                    backendOpaqueRepresentation None
+                    match operatorName with
+                    | "&&" ->
+                        lowerExpression scopeLabel locals left
+                        |> Result.bind (fun (loweredLeft, _) ->
+                            lowerExpression scopeLabel locals right
+                            |> Result.bind (fun (loweredRight, _) ->
+                                lowerExpression scopeLabel locals (KRuntimeName [ "False" ])
+                                |> Result.map (fun (loweredFalse, _) ->
+                                    BackendIfThenElse(loweredLeft, loweredRight, loweredFalse, BackendRepBoolean),
+                                    BackendRepBoolean)))
+                    | "||" ->
+                        lowerExpression scopeLabel locals left
+                        |> Result.bind (fun (loweredLeft, _) ->
+                            lowerExpression scopeLabel locals (KRuntimeName [ "True" ])
+                            |> Result.bind (fun (loweredTrue, _) ->
+                                lowerExpression scopeLabel locals right
+                                |> Result.map (fun (loweredRight, _) ->
+                                    BackendIfThenElse(loweredLeft, loweredTrue, loweredRight, BackendRepBoolean),
+                                    BackendRepBoolean)))
+                    | _ ->
+                        lowerExpression scopeLabel locals left
+                        |> Result.bind (fun (loweredLeft, leftRepresentation) ->
+                            lowerExpression scopeLabel locals right
+                            |> Result.bind (fun (loweredRight, rightRepresentation) ->
+                                let resultRepresentation =
+                                    match operatorName with
+                                    | "=="
+                                    | "!="
+                                    | "<"
+                                    | ">"
+                                    | "<="
+                                    | ">="
+                                    | "is" ->
+                                        BackendRepBoolean
+                                    | "+" | "-" | "*" | "/" ->
+                                        mergeBackendRepresentations leftRepresentation rightRepresentation
+                                    | _ ->
+                                        backendOpaqueRepresentation None
 
-                            lowerNamedRuntimeCall
-                                locals
-                                operatorName
-                                [ loweredLeft; loweredRight ]
-                                [ leftRepresentation; rightRepresentation ]
-                                resultRepresentation))
+                                lowerNamedRuntimeCall
+                                    locals
+                                    operatorName
+                                    [ loweredLeft; loweredRight ]
+                                    [ leftRepresentation; rightRepresentation ]
+                                    resultRepresentation))
                 | KRuntimeDictionaryValue(moduleName, traitName, instanceKey) ->
                     let representation = BackendRepDictionary traitName
                     Result.Ok(BackendDictionaryValue(moduleName, traitName, instanceKey, representation), representation)
