@@ -194,6 +194,7 @@ module internal ClrAssemblyLowering =
                     { Name = parameter.Name
                       TypeText = typeTextFromRepresentation parameter.Representation })
               ReturnTypeText = backendFunction.ReturnRepresentation |> Option.bind typeTextFromRepresentation
+              ExternalBinding = None
               Body = backendFunction.Body |> Option.map lowerExpression
               Intrinsic = backendFunction.Intrinsic
               Provenance = backendFunction.Provenance }

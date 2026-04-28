@@ -1757,10 +1757,16 @@ module internal IlDotNetBackendEmit =
 
             match bindingInfo.Binding.Body with
             | None ->
-                match HostBindings.tryResolveDotNetCallable moduleInfo.Name bindingInfo.Binding.Name with
-                | Some callable ->
-                    do! emitHostDotNetBindingBody callable
-                    il.Emit(OpCodes.Ret)
+                match bindingInfo.Binding.ExternalBinding with
+                | Some externalBinding ->
+                    match HostBindings.tryResolveDotNetCallableFromIdentity externalBinding with
+                    | Some callable ->
+                        do! emitHostDotNetBindingBody callable
+                        il.Emit(OpCodes.Ret)
+                    | None ->
+                        return!
+                            Result.Error
+                                $"IL backend could not resolve durable host binding metadata for '{moduleInfo.Name}.{bindingInfo.Binding.Name}'."
                 | None ->
                     return! Result.Error $"IL backend requires a body for '{moduleInfo.Name}.{bindingInfo.Binding.Name}'."
             | Some body ->

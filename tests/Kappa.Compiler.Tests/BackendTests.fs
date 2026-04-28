@@ -3,6 +3,7 @@ module BackendTests
 
 open System
 open System.IO
+open System.Reflection
 open Kappa.Compiler
 open Harness
 open Xunit
@@ -48,6 +49,83 @@ let ``dotnet backend emits a managed project that runs`` () =
     Assert.Equal(0, runResult.ExitCode)
     Assert.Equal("42", runResult.StandardOutput.Trim())
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
+let ``dotnet backend runner copies host dotnet dependency assemblies`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-dotnet-host-runner-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "import host.dotnet.Kappa.Compiler.TestHost.Sample.(term new, term Echo, term Create)"
+                    "result : String"
+                    "let result ="
+                    "    let fromCtor = new \"wrapped\""
+                    "    let _ = Echo fromCtor ()"
+                    "    let fromStatic = Create \"ok\""
+                    "    Echo fromStatic ()"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected host.dotnet wrappers to compile, got %A" workspace.Diagnostics)
+
+    let outputDirectory = createScratchDirectory "dotnet-host-runner"
+
+    let artifact =
+        match Backend.emitDotNetArtifact workspace "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    let expectedHostAssemblyPath = typeof<Kappa.Compiler.TestHost.Sample>.Assembly.Location
+    let expectedHostAssemblyFileName = Path.GetFileName(expectedHostAssemblyPath)
+    let copiedHostAssemblyPath = Path.Combine(outputDirectory, expectedHostAssemblyFileName)
+
+    Assert.True(File.Exists(copiedHostAssemblyPath), $"Expected copied host dependency assembly at '{copiedHostAssemblyPath}'.")
+
+    let runResult =
+        runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
+
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("\"ok\"", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
+let ``clr assembly ir carries durable host dotnet binding metadata`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-dotnet-host-clr-ir-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "import host.dotnet.Kappa.Compiler.TestHost.Sample.(term Create)"
+                    "let result = Create \"ok\""
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected host.dotnet wrappers to compile, got %A" workspace.Diagnostics)
+
+    let hostModule =
+        workspace.ClrAssemblyIR
+        |> List.find (fun moduleDump -> moduleDump.Name = "host.dotnet.Kappa.Compiler.TestHost.Sample")
+
+    let createBinding =
+        hostModule.Bindings
+        |> List.find (fun binding -> binding.Name = "Create")
+
+    match createBinding.ExternalBinding with
+    | Some(DotNetHostMethod(declaringTypeAssemblyQualifiedName, methodName, _, requiredAssemblyPaths)) ->
+        Assert.Contains("Kappa.Compiler.TestHost.Sample", declaringTypeAssemblyQualifiedName, StringComparison.Ordinal)
+        Assert.Equal("Create", methodName)
+        Assert.Contains(typeof<Kappa.Compiler.TestHost.Sample>.Assembly.Location, requiredAssemblyPaths)
+    | _ ->
+        failwithf "Expected durable host metadata for Create, got %A" createBinding.ExternalBinding
 
 [<Fact>]
 let ``dotnet backend rejects native aot deployment explicitly`` () =

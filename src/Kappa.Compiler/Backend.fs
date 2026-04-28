@@ -2,6 +2,7 @@ namespace Kappa.Compiler
 
 open System
 open System.IO
+open System.Reflection
 open Kappa.Runtime
 
 // Routes public backend requests to the appropriate artifact emitter.
@@ -20,6 +21,62 @@ module Backend =
 
     let private csharpString (value: string) =
         value.Replace("\\", "\\\\").Replace("\"", "\\\"")
+
+    let private runtimeDirectory =
+        System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory()
+        |> Option.ofObj
+        |> Option.defaultValue ""
+        |> Path.GetFullPath
+
+    let private shouldBundleAssemblyPath (assemblyPath: string) =
+        not (String.IsNullOrWhiteSpace(assemblyPath))
+        && File.Exists(assemblyPath)
+        && (String.IsNullOrWhiteSpace(runtimeDirectory)
+            || not (Path.GetFullPath(assemblyPath).StartsWith(runtimeDirectory, StringComparison.OrdinalIgnoreCase)))
+
+    let private tryResolveAssemblyReferencePath (assemblyDirectory: string) (assemblyName: AssemblyName) =
+        AppDomain.CurrentDomain.GetAssemblies()
+        |> Seq.tryPick (fun loadedAssembly ->
+            try
+                if AssemblyName.ReferenceMatchesDefinition(loadedAssembly.GetName(), assemblyName)
+                   && shouldBundleAssemblyPath loadedAssembly.Location then
+                    Some(Path.GetFullPath(loadedAssembly.Location))
+                else
+                    None
+            with _ ->
+                None)
+        |> Option.orElseWith (fun () ->
+            [ ".dll"; ".exe" ]
+            |> List.tryPick (fun extension ->
+                let candidatePath = Path.Combine(assemblyDirectory, assemblyName.Name + extension)
+
+                if shouldBundleAssemblyPath candidatePath then
+                    Some(Path.GetFullPath(candidatePath))
+                else
+                    None))
+
+    let private collectBundledAssemblyClosure rootAssemblyPaths =
+        let rec loop visited pending =
+            match pending with
+            | [] ->
+                visited |> Set.toList
+            | currentPath :: remaining ->
+                let normalizedPath = Path.GetFullPath(currentPath)
+
+                if visited.Contains normalizedPath || not (shouldBundleAssemblyPath normalizedPath) then
+                    loop visited remaining
+                else
+                    let loadedAssembly = Assembly.LoadFrom(normalizedPath)
+                    let assemblyDirectory = Path.GetDirectoryName(normalizedPath)
+
+                    let referencedPaths =
+                        loadedAssembly.GetReferencedAssemblies()
+                        |> Array.toList
+                        |> List.choose (tryResolveAssemblyReferencePath assemblyDirectory)
+
+                    loop (visited.Add normalizedPath) (remaining @ referencedPaths)
+
+        loop Set.empty rootAssemblyPaths
 
     let private resolveClrEntryPoint (workspace: WorkspaceCompilation) (entryPoint: string) =
         let segments =
@@ -201,6 +258,13 @@ internal static class Program
             let generatedAssemblyFileName, generatedAssemblyPath = copySupportFile clrAssembly.AssemblyFilePath
 
             let! supportFiles =
+                let hostSupportFileNames =
+                    workspace.ClrAssemblyIR
+                    |> ClrAssemblyIR.requiredExternalAssemblyPaths
+                    |> collectBundledAssemblyClosure
+                    |> List.map copySupportFile
+                    |> List.map fst
+
                 if usesEffectRuntime then
                     let runtimeAssemblyPath = typeof<KappaRuntime>.Assembly.Location
 
@@ -209,9 +273,9 @@ internal static class Program
                             "The CLR-backed dotnet profile could not locate Kappa.Runtime.dll for effectful lowering."
                     else
                         let runtimeAssemblyFileName, _ = copySupportFile runtimeAssemblyPath
-                        Result.Ok [ generatedAssemblyFileName; runtimeAssemblyFileName ]
+                        Result.Ok([ generatedAssemblyFileName; runtimeAssemblyFileName ] @ hostSupportFileNames)
                 else
-                    Result.Ok [ generatedAssemblyFileName ]
+                    Result.Ok(generatedAssemblyFileName :: hostSupportFileNames)
 
             let projectFilePath = Path.Combine(projectDirectory, "Kappa.Generated.Runner.csproj")
             let programFilePath = Path.Combine(projectDirectory, "Program.cs")

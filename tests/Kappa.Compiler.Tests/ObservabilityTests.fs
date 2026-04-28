@@ -2987,6 +2987,7 @@ let ``backend verification rejects unsupported backend intrinsics`` () =
         { Name = "mysteryIntrinsic"
           Parameters = []
           ReturnTypeText = None
+          ExternalBinding = None
           Body = None
           Intrinsic = true
           Provenance =

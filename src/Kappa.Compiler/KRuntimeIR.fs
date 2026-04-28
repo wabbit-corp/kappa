@@ -1,5 +1,29 @@
 namespace Kappa.Compiler
 
+type ExternalRuntimeBinding =
+    | DotNetHostConstructor of
+        declaringTypeAssemblyQualifiedName: string *
+        parameterTypeAssemblyQualifiedNames: string list *
+        requiredAssemblyPaths: string list
+    | DotNetHostMethod of
+        declaringTypeAssemblyQualifiedName: string *
+        methodName: string *
+        parameterTypeAssemblyQualifiedNames: string list *
+        requiredAssemblyPaths: string list
+    | DotNetHostPropertyGetter of
+        declaringTypeAssemblyQualifiedName: string *
+        getterName: string *
+        requiredAssemblyPaths: string list
+
+[<RequireQualifiedAccess>]
+module ExternalRuntimeBinding =
+    let requiredAssemblyPaths binding =
+        match binding with
+        | DotNetHostConstructor(_, _, paths)
+        | DotNetHostMethod(_, _, _, paths)
+        | DotNetHostPropertyGetter(_, _, paths) ->
+            paths
+
 // The implementation-defined runtime IR that sits between KCore and KBackendIR.
 type KRuntimeEffectOperation =
     { OperationId: string
@@ -97,6 +121,7 @@ type KRuntimeBinding =
     { Name: string
       Parameters: KRuntimeParameter list
       ReturnTypeText: string option
+      ExternalBinding: ExternalRuntimeBinding option
       Body: KRuntimeExpression option
       Intrinsic: bool
       Provenance: KCoreOrigin }

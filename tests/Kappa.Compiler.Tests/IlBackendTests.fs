@@ -2,11 +2,67 @@
 module IlBackendTests
 
 open System
+open System.Collections
 open System.IO
 open System.Reflection
 open Kappa.Compiler
 open Harness
 open Xunit
+
+let private withClearedHostDotNetCallableCache action =
+    let cacheFields =
+        typeof<HostBindings.HostRoot>.Assembly.GetTypes()
+        |> Array.tryPick (fun candidateType ->
+            let fields =
+                candidateType.GetFields(BindingFlags.NonPublic ||| BindingFlags.Static ||| BindingFlags.Public)
+
+            let cacheGateField =
+                fields |> Array.tryFind (fun fieldInfo -> fieldInfo.Name.Contains("cacheGate", StringComparison.Ordinal))
+
+            let callableCacheField =
+                fields |> Array.tryFind (fun fieldInfo -> fieldInfo.Name.Contains("dotNetCallableCache", StringComparison.Ordinal))
+
+            match cacheGateField, callableCacheField with
+            | Some cacheGateField, Some callableCacheField ->
+                Some(cacheGateField, callableCacheField)
+            | _ ->
+                None)
+
+    Assert.True(cacheFields.IsSome, "Expected to find HostBindings cache fields in the compiler assembly.")
+
+    let cacheGateField, callableCacheField = cacheFields.Value
+
+    let cacheGate = cacheGateField.GetValue(null)
+    let callableCache = callableCacheField.GetValue(null)
+
+    let snapshotEntries () =
+        callableCache :?> System.Collections.IEnumerable
+        |> Seq.cast<obj>
+        |> Seq.map (fun entry ->
+            let entryType = entry.GetType()
+            let key = entryType.GetProperty("Key").GetValue(entry)
+            let value = entryType.GetProperty("Value").GetValue(entry)
+            key, value)
+        |> Seq.toList
+
+    let clearCache () =
+        callableCache.GetType().GetMethod("Clear").Invoke(callableCache, [||]) |> ignore
+
+    let addCacheEntry key value =
+        callableCache.GetType().GetMethod("Add").Invoke(callableCache, [| key; value |]) |> ignore
+
+    lock cacheGate (fun () ->
+        let snapshot = snapshotEntries ()
+
+        clearCache ()
+
+        try
+            action ()
+        finally
+            clearCache ()
+
+            for key, value in snapshot do
+                addCacheEntry key value)
 
 [<Fact>]
 let ``il backend emits a loadable assembly with public static module methods`` () =
@@ -335,6 +391,46 @@ let ``il backend emits callable wrappers for host dotnet type modules`` () =
         match Backend.emitIlAssemblyArtifact workspace outputDirectory with
         | Result.Ok artifact -> artifact
         | Result.Error message -> failwith message
+
+    use loaded = loadManagedAssembly artifact.AssemblyFilePath
+
+    let moduleType = loaded.Assembly.GetType("Kappa.Generated.main", throwOnError = true, ignoreCase = false)
+    let resultMethod = moduleType.GetMethod("result", BindingFlags.Public ||| BindingFlags.Static)
+
+    Assert.NotNull(resultMethod)
+    Assert.Equal(typeof<string>, resultMethod.ReturnType)
+    Assert.Equal("ok", resultMethod.Invoke(null, [||]) :?> string)
+
+[<Fact>]
+let ``il backend emits host dotnet wrappers from clr assembly ir without host cache state`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-il-host-dotnet-cache-independent-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "import host.dotnet.Kappa.Compiler.TestHost.Sample.(term new, term Echo, term Create)"
+                    "result : String"
+                    "let result ="
+                    "    let fromCtor = new \"wrapped\""
+                    "    let _ = Echo fromCtor ()"
+                    "    let fromStatic = Create \"ok\""
+                    "    Echo fromStatic ()"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected host.dotnet wrappers to compile, got %A" workspace.Diagnostics)
+
+    let outputDirectory = createScratchDirectory "il-host-dotnet-cache-independent"
+
+    let artifact =
+        withClearedHostDotNetCallableCache (fun () ->
+            match Backend.emitIlAssemblyArtifact { workspace with Documents = []; KCore = []; KRuntimeIR = [] } outputDirectory with
+            | Result.Ok artifact -> artifact
+            | Result.Error message -> failwith message)
 
     use loaded = loadManagedAssembly artifact.AssemblyFilePath
 

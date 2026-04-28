@@ -551,12 +551,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
 
 ## 10. Target Backends: CLR / `dotnet`
 
-- `[High] Make `host.dotnet` bindings self-contained in emitted IR and emitted artifacts.`
-  - Current host binding emission depends on process-local compiler caches rather than durable IR-carried callable identity.
-  - Generated runner projects also do not appear to copy or reference dependent host assemblies.
-  - Persist host-callable identity into IR and either reference or copy required assemblies into generated output.
-  - Sources: `reviews/dotnet1.md`.
-
 - `[Medium-High] Pick one canonical CLR-facing representation for `Char`, `UnicodeScalar`, `Grapheme`, and `Byte`.`
   - The current pipeline inconsistently treats them as `System.Char`, `System.String`, or integer-like values depending on where the value entered the pipeline.
   - Decide the representation model explicitly and make literals, type parsing, host interop, backend lowering, and emission agree.

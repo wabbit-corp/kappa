@@ -27,6 +27,7 @@ type ClrAssemblyBinding =
     { Name: string
       Parameters: ClrAssemblyParameter list
       ReturnTypeText: string option
+      ExternalBinding: ExternalRuntimeBinding option
       Body: KRuntimeExpression option
       Intrinsic: bool
       Provenance: KCoreOrigin }
@@ -79,9 +80,20 @@ module ClrAssemblyIR =
         { Name = binding.Name
           Parameters = binding.Parameters |> List.map ofRuntimeParameter
           ReturnTypeText = binding.ReturnTypeText
+          ExternalBinding = binding.ExternalBinding
           Body = binding.Body
           Intrinsic = binding.Intrinsic
           Provenance = binding.Provenance }
+
+    let requiredExternalAssemblyPaths (modules: ClrAssemblyModule list) =
+        modules
+        |> List.collect (fun moduleDump ->
+            moduleDump.Bindings
+            |> List.collect (fun binding ->
+                binding.ExternalBinding
+                |> Option.map ExternalRuntimeBinding.requiredAssemblyPaths
+                |> Option.defaultValue []))
+        |> List.distinct
 
     let ofRuntimeModule (moduleDump: KRuntimeModule) : ClrAssemblyModule =
         { Name = moduleDump.Name

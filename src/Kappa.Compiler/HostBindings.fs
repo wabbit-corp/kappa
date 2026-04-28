@@ -2,6 +2,7 @@ namespace Kappa.Compiler
 
 open System
 open System.Collections.Generic
+open System.IO
 open System.Reflection
 
 // Synthesizes backend-provided host binding module surfaces from CLR metadata.
@@ -24,7 +25,8 @@ module HostBindings =
         { Name: string
           SourceName: string
           Parameters: HostBindingParameter list
-          ReturnTypeText: string }
+          ReturnTypeText: string
+          ExternalBinding: ExternalRuntimeBinding option }
 
     type HostTypeExport =
         { Name: string
@@ -149,6 +151,71 @@ module HostBindings =
           TypeText = "Unit"
           IsReceiver = false }
 
+    let private assemblyQualifiedTypeName (clrType: Type) =
+        clrType.AssemblyQualifiedName
+        |> Option.ofObj
+        |> Option.defaultValue clrType.FullName
+
+    let private runtimeDirectory =
+        System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory()
+        |> Option.ofObj
+        |> Option.defaultValue ""
+        |> Path.GetFullPath
+
+    let private shouldBundleAssemblyPath (assemblyPath: string) =
+        not (String.IsNullOrWhiteSpace(assemblyPath))
+        && File.Exists(assemblyPath)
+        && (String.IsNullOrWhiteSpace(runtimeDirectory)
+            || not (Path.GetFullPath(assemblyPath).StartsWith(runtimeDirectory, StringComparison.OrdinalIgnoreCase)))
+
+    let private directDependencyAssemblyPaths (callable: DotNetHostCallable) =
+        let assemblies =
+            match callable with
+            | HostConstructor constructorInfo ->
+                seq {
+                    yield constructorInfo.DeclaringType.Assembly
+
+                    for parameterInfo in constructorInfo.GetParameters() do
+                        yield parameterInfo.ParameterType.Assembly
+                }
+            | HostMethod methodInfo
+            | HostPropertyGetter methodInfo ->
+                seq {
+                    yield methodInfo.DeclaringType.Assembly
+                    yield methodInfo.ReturnType.Assembly
+
+                    for parameterInfo in methodInfo.GetParameters() do
+                        yield parameterInfo.ParameterType.Assembly
+                }
+
+        assemblies
+        |> Seq.choose (fun assembly -> assembly.Location |> Option.ofObj)
+        |> Seq.filter shouldBundleAssemblyPath
+        |> Seq.distinct
+        |> Seq.toList
+
+    let private externalBindingIdentity (callable: DotNetHostCallable) =
+        match callable with
+        | HostConstructor constructorInfo ->
+            DotNetHostConstructor(
+                assemblyQualifiedTypeName constructorInfo.DeclaringType,
+                constructorInfo.GetParameters() |> Array.toList |> List.map (fun parameterInfo -> assemblyQualifiedTypeName parameterInfo.ParameterType),
+                directDependencyAssemblyPaths callable
+            )
+        | HostMethod methodInfo ->
+            DotNetHostMethod(
+                assemblyQualifiedTypeName methodInfo.DeclaringType,
+                methodInfo.Name,
+                methodInfo.GetParameters() |> Array.toList |> List.map (fun parameterInfo -> assemblyQualifiedTypeName parameterInfo.ParameterType),
+                directDependencyAssemblyPaths callable
+            )
+        | HostPropertyGetter getterInfo ->
+            DotNetHostPropertyGetter(
+                assemblyQualifiedTypeName getterInfo.DeclaringType,
+                getterInfo.Name,
+                directDependencyAssemblyPaths callable
+            )
+
     let private tryBuildConstructorBinding ownerType (constructorInfo: ConstructorInfo) =
         if constructorInfo.IsPublic
            && not constructorInfo.ContainsGenericParameters
@@ -171,7 +238,8 @@ module HostBindings =
                 { Name = ""
                   SourceName = "new"
                   Parameters = parameters
-                  ReturnTypeText = ownerType.Name.Split('`')[0] },
+                  ReturnTypeText = ownerType.Name.Split('`')[0]
+                  ExternalBinding = Some(externalBindingIdentity (HostConstructor constructorInfo)) },
                 HostConstructor constructorInfo
             )
         else
@@ -212,7 +280,8 @@ module HostBindings =
                 { Name = ""
                   SourceName = methodInfo.Name
                   Parameters = parameterLayouts
-                  ReturnTypeText = tryMapManagedTypeText ownerType methodInfo.ReturnType |> Option.get },
+                  ReturnTypeText = tryMapManagedTypeText ownerType methodInfo.ReturnType |> Option.get
+                  ExternalBinding = Some(externalBindingIdentity (HostMethod methodInfo)) },
                 HostMethod methodInfo
             )
         else
@@ -241,7 +310,8 @@ module HostBindings =
                 { Name = ""
                   SourceName = propertyInfo.Name
                   Parameters = parameters
-                  ReturnTypeText = tryMapManagedTypeText ownerType propertyInfo.PropertyType |> Option.get },
+                  ReturnTypeText = tryMapManagedTypeText ownerType propertyInfo.PropertyType |> Option.get
+                  ExternalBinding = Some(externalBindingIdentity (HostPropertyGetter getter)) },
                 HostPropertyGetter getter
             )
         else
@@ -386,6 +456,74 @@ module HostBindings =
             | _ ->
                 None)
 
+    let private loadAssemblyPath (assemblyPath: string) =
+        let fullPath = Path.GetFullPath(assemblyPath)
+
+        AppDomain.CurrentDomain.GetAssemblies()
+        |> Seq.tryFind (fun assembly ->
+            try
+                String.Equals(assembly.Location, fullPath, StringComparison.OrdinalIgnoreCase)
+            with _ ->
+                false)
+        |> Option.defaultWith (fun () -> Assembly.LoadFrom(fullPath))
+
+    let private ensureRequiredAssembliesLoaded assemblyPaths =
+        assemblyPaths
+        |> List.filter shouldBundleAssemblyPath
+        |> List.iter (fun assemblyPath -> loadAssemblyPath assemblyPath |> ignore)
+
+    let private tryFindClrTypeFromIdentity (declaringTypeAssemblyQualifiedName: string) assemblyPaths =
+        ensureRequiredAssembliesLoaded assemblyPaths
+
+        let fullTypeName =
+            declaringTypeAssemblyQualifiedName.Split(',', 2, StringSplitOptions.TrimEntries).[0]
+
+        Type.GetType(declaringTypeAssemblyQualifiedName, throwOnError = false, ignoreCase = false)
+        |> Option.ofObj
+        |> Option.orElseWith (fun () ->
+            AppDomain.CurrentDomain.GetAssemblies()
+            |> Seq.tryPick (fun assembly ->
+                try
+                    assembly.GetType(fullTypeName, throwOnError = false, ignoreCase = false) |> Option.ofObj
+                with _ ->
+                    None))
+
+    let private tryFindParameterTypes parameterTypeAssemblyQualifiedNames assemblyPaths =
+        let resolved =
+            parameterTypeAssemblyQualifiedNames
+            |> List.map (fun parameterTypeAssemblyQualifiedName ->
+                tryFindClrTypeFromIdentity parameterTypeAssemblyQualifiedName assemblyPaths)
+
+        if resolved |> List.forall Option.isSome then
+            Some(resolved |> List.choose id |> List.toArray)
+        else
+            None
+
+    let tryResolveDotNetCallableFromIdentity externalBinding =
+        match externalBinding with
+        | DotNetHostConstructor(declaringTypeAssemblyQualifiedName, parameterTypeAssemblyQualifiedNames, requiredAssemblyPaths) ->
+            tryFindClrTypeFromIdentity declaringTypeAssemblyQualifiedName requiredAssemblyPaths
+            |> Option.bind (fun declaringType ->
+                tryFindParameterTypes parameterTypeAssemblyQualifiedNames requiredAssemblyPaths
+                |> Option.bind (fun parameterTypes ->
+                    declaringType.GetConstructor(BindingFlags.Public ||| BindingFlags.Instance, null, parameterTypes, null)
+                    |> Option.ofObj
+                    |> Option.map HostConstructor))
+        | DotNetHostMethod(declaringTypeAssemblyQualifiedName, methodName, parameterTypeAssemblyQualifiedNames, requiredAssemblyPaths) ->
+            tryFindClrTypeFromIdentity declaringTypeAssemblyQualifiedName requiredAssemblyPaths
+            |> Option.bind (fun declaringType ->
+                tryFindParameterTypes parameterTypeAssemblyQualifiedNames requiredAssemblyPaths
+                |> Option.bind (fun parameterTypes ->
+                    declaringType.GetMethod(methodName, BindingFlags.Public ||| BindingFlags.Instance ||| BindingFlags.Static, null, parameterTypes, null)
+                    |> Option.ofObj
+                    |> Option.map HostMethod))
+        | DotNetHostPropertyGetter(declaringTypeAssemblyQualifiedName, getterName, requiredAssemblyPaths) ->
+            tryFindClrTypeFromIdentity declaringTypeAssemblyQualifiedName requiredAssemblyPaths
+            |> Option.bind (fun declaringType ->
+                declaringType.GetMethod(getterName, BindingFlags.Public ||| BindingFlags.Instance ||| BindingFlags.Static, null, Type.EmptyTypes, null)
+                |> Option.ofObj
+                |> Option.map HostPropertyGetter)
+
     let toRuntimeModule (description: HostModuleDescription) =
         let dataTypes : KRuntimeDataType list =
             description.Types
@@ -405,6 +543,7 @@ module HostBindings =
                         { Name = parameter.Name
                           TypeText = Some parameter.TypeText })
                   ReturnTypeText = Some binding.ReturnTypeText
+                  ExternalBinding = binding.ExternalBinding
                   Body = None
                   Intrinsic = false
                   Provenance =
