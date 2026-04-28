@@ -2,6 +2,7 @@ namespace Kappa.Compiler
 
 open System
 open System.IO
+open Kappa.Runtime
 
 // Routes public backend requests to the appropriate artifact emitter.
 module Backend =
@@ -20,34 +21,65 @@ module Backend =
     let private csharpString (value: string) =
         value.Replace("\\", "\\\\").Replace("\"", "\\\"")
 
+    let private dotnetUsesRuntimeTargetLowering (workspace: WorkspaceCompilation) =
+        String.Equals(
+            CompilationCheckpoints.targetInputCheckpoint workspace Stdlib.ClrTargetCheckpointName,
+            "KRuntimeIR",
+            StringComparison.Ordinal
+        )
+
     let private resolveClrEntryPoint (workspace: WorkspaceCompilation) (entryPoint: string) =
         let segments =
             entryPoint.Split('.', StringSplitOptions.RemoveEmptyEntries)
             |> Array.toList
 
+        let runtimeTargetLowering = dotnetUsesRuntimeTargetLowering workspace
+
         let tryMatchBinding moduleName bindingName =
-            workspace.KBackendIR
-            |> List.tryFind (fun moduleDump -> String.Equals(moduleDump.Name, moduleName, StringComparison.Ordinal))
-            |> Option.bind (fun moduleDump ->
-                moduleDump.Functions
-                |> List.tryFind (fun binding ->
-                    String.Equals(binding.Name, bindingName, StringComparison.Ordinal)
-                    && not binding.Intrinsic
-                    && List.isEmpty binding.Parameters))
+            if runtimeTargetLowering then
+                workspace.KRuntimeIR
+                |> List.tryFind (fun moduleDump -> String.Equals(moduleDump.Name, moduleName, StringComparison.Ordinal))
+                |> Option.bind (fun moduleDump ->
+                    moduleDump.Bindings
+                    |> List.tryFind (fun binding ->
+                        String.Equals(binding.Name, bindingName, StringComparison.Ordinal)
+                        && not binding.Intrinsic
+                        && List.isEmpty binding.Parameters)
+                    |> Option.map (fun _ -> ()))
+            else
+                workspace.KBackendIR
+                |> List.tryFind (fun moduleDump -> String.Equals(moduleDump.Name, moduleName, StringComparison.Ordinal))
+                |> Option.bind (fun moduleDump ->
+                    moduleDump.Functions
+                    |> List.tryFind (fun binding ->
+                        String.Equals(binding.Name, bindingName, StringComparison.Ordinal)
+                        && not binding.Intrinsic
+                        && List.isEmpty binding.Parameters)
+                    |> Option.map (fun _ -> ()))
 
         match segments with
         | [] ->
             Result.Error "Expected a binding name to run."
         | [ bindingName ] ->
             let matches =
-                workspace.KBackendIR
-                |> List.choose (fun moduleDump ->
-                    moduleDump.Functions
-                    |> List.tryFind (fun binding ->
-                        String.Equals(binding.Name, bindingName, StringComparison.Ordinal)
-                        && not binding.Intrinsic
-                        && List.isEmpty binding.Parameters)
-                    |> Option.map (fun binding -> moduleDump.Name, binding.Name))
+                if runtimeTargetLowering then
+                    workspace.KRuntimeIR
+                    |> List.choose (fun moduleDump ->
+                        moduleDump.Bindings
+                        |> List.tryFind (fun binding ->
+                            String.Equals(binding.Name, bindingName, StringComparison.Ordinal)
+                            && not binding.Intrinsic
+                            && List.isEmpty binding.Parameters)
+                        |> Option.map (fun binding -> moduleDump.Name, binding.Name))
+                else
+                    workspace.KBackendIR
+                    |> List.choose (fun moduleDump ->
+                        moduleDump.Functions
+                        |> List.tryFind (fun binding ->
+                            String.Equals(binding.Name, bindingName, StringComparison.Ordinal)
+                            && not binding.Intrinsic
+                            && List.isEmpty binding.Parameters)
+                        |> Option.map (fun binding -> moduleDump.Name, binding.Name))
 
             match matches with
             | [] ->
@@ -66,7 +98,13 @@ module Backend =
             | None ->
                 Result.Error $"dotnet requires a zero-argument binding named '{bindingName}' in module '{moduleName}'."
 
-    let private buildClrRunnerProjectText assemblyFileName =
+    let private buildClrRunnerProjectText supportFileNames =
+        let itemLines =
+            supportFileNames
+            |> List.distinct
+            |> List.map (fun fileName -> $"    <None Include=\"{fileName}\" CopyToOutputDirectory=\"PreserveNewest\" />")
+            |> String.concat Environment.NewLine
+
         $"""<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -77,7 +115,7 @@ module Backend =
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="{assemblyFileName}" CopyToOutputDirectory="PreserveNewest" />
+{itemLines}
   </ItemGroup>
 </Project>
 """
@@ -149,12 +187,12 @@ internal static class Program
         }}
         catch (TargetInvocationException ex)
         {{
-            Console.Error.WriteLine("runtime error: " + (ex.InnerException?.Message ?? ex.Message));
+            Console.Error.WriteLine("runtime error: " + (ex.InnerException?.ToString() ?? ex.ToString()));
             return 1;
         }}
         catch (Exception ex)
         {{
-            Console.Error.WriteLine("runtime error: " + ex.Message);
+            Console.Error.WriteLine("runtime error: " + ex.ToString());
             return 1;
         }}
     }}
@@ -174,23 +212,45 @@ internal static class Program
                         "The CLR-backed dotnet profile currently supports managed builds only."
 
             let! moduleName, bindingName = resolveClrEntryPoint workspace entryPoint
+            let runtimeTargetLowering = dotnetUsesRuntimeTargetLowering workspace
 
             let! clrAssembly =
-                ClrDotNetBackend.emitAssemblyArtifact workspace outputDirectory
+                if runtimeTargetLowering then
+                    IlDotNetEffectBackend.emitAssemblyArtifact workspace outputDirectory
+                else
+                    ClrDotNetBackend.emitAssemblyArtifact workspace outputDirectory
                 |> Result.mapError (fun message -> $"The CLR-backed dotnet profile could not lower '{entryPoint}': {message}")
 
             let projectDirectory = Path.GetFullPath(outputDirectory)
             Directory.CreateDirectory(projectDirectory) |> ignore
 
-            let generatedAssemblyFileName = Path.GetFileName(clrAssembly.AssemblyFilePath)
-            let generatedAssemblyPath = Path.Combine(projectDirectory, generatedAssemblyFileName)
+            let copySupportFile (sourcePath: string) =
+                let fileName = Path.GetFileName(sourcePath)
+                let destinationPath = Path.Combine(projectDirectory, fileName)
 
-            if not (String.Equals(Path.GetFullPath(clrAssembly.AssemblyFilePath), generatedAssemblyPath, StringComparison.OrdinalIgnoreCase)) then
-                File.Copy(clrAssembly.AssemblyFilePath, generatedAssemblyPath, true)
+                if not (String.Equals(Path.GetFullPath(sourcePath), destinationPath, StringComparison.OrdinalIgnoreCase)) then
+                    File.Copy(sourcePath, destinationPath, true)
+
+                fileName, destinationPath
+
+            let generatedAssemblyFileName, generatedAssemblyPath = copySupportFile clrAssembly.AssemblyFilePath
+
+            let! supportFiles =
+                if runtimeTargetLowering then
+                    let runtimeAssemblyPath = typeof<KappaRuntime>.Assembly.Location
+
+                    if String.IsNullOrWhiteSpace(runtimeAssemblyPath) then
+                        Result.Error
+                            "The CLR-backed dotnet profile could not locate Kappa.Runtime.dll for effectful lowering."
+                    else
+                        let runtimeAssemblyFileName, _ = copySupportFile runtimeAssemblyPath
+                        Result.Ok [ generatedAssemblyFileName; runtimeAssemblyFileName ]
+                else
+                    Result.Ok [ generatedAssemblyFileName ]
 
             let projectFilePath = Path.Combine(projectDirectory, "Kappa.Generated.Runner.csproj")
             let programFilePath = Path.Combine(projectDirectory, "Program.cs")
-            File.WriteAllText(projectFilePath, buildClrRunnerProjectText generatedAssemblyFileName)
+            File.WriteAllText(projectFilePath, buildClrRunnerProjectText supportFiles)
             File.WriteAllText(programFilePath, buildClrRunnerProgramText generatedAssemblyFileName moduleName bindingName)
 
             return

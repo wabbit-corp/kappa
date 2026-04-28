@@ -64,16 +64,11 @@ let ``cli can run the zig backend for recursive list matches`` () =
         ]
 
     let emitDirectory = createScratchDirectory "cli-zig-emit"
-    let cliProjectPath =
-        Path.GetFullPath(
-            Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "src", "Kappa.Compiler.Cli", "Kappa.Compiler.Cli.fsproj")
-        )
 
     let runResult =
-        runProcessWithEnvironment
+        runBuiltCliWithEnvironment
             workspaceRoot
-            "dotnet"
-            $"run --project \"{cliProjectPath}\" -v q -- --source-root \"{workspaceRoot}\" --backend zig --emit-dir \"{emitDirectory}\" --run main.result"
+            $"--source-root \"{workspaceRoot}\" --backend zig --emit-dir \"{emitDirectory}\" --run main.result"
             [ "KAPPA_ZIG_EXE", ensureRepoZigExecutablePath () ]
 
     Assert.Equal(0, runResult.ExitCode)
@@ -104,16 +99,11 @@ let ``cli can run the zig backend for the milestone one io entry point`` () =
         ]
 
     let emitDirectory = createScratchDirectory "cli-zig-m1-emit"
-    let cliProjectPath =
-        Path.GetFullPath(
-            Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "src", "Kappa.Compiler.Cli", "Kappa.Compiler.Cli.fsproj")
-        )
 
     let runResult =
-        runProcessWithEnvironment
+        runBuiltCliWithEnvironment
             workspaceRoot
-            "dotnet"
-            $"run --project \"{cliProjectPath}\" -v q -- --source-root \"{workspaceRoot}\" --backend zig --emit-dir \"{emitDirectory}\" --run main.main"
+            $"--source-root \"{workspaceRoot}\" --backend zig --emit-dir \"{emitDirectory}\" --run main.main"
             [ "KAPPA_ZIG_EXE", ensureRepoZigExecutablePath () ]
 
     Assert.Equal(0, runResult.ExitCode)

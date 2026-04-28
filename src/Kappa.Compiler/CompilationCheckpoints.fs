@@ -7,6 +7,15 @@ module internal CompilationCheckpoints =
     let targetCheckpointNames (workspace: WorkspaceCompilation) =
         Stdlib.targetCheckpointNamesFor workspace.BackendProfile
 
+    let targetInputCheckpoint (workspace: WorkspaceCompilation) checkpoint =
+        match Stdlib.normalizeBackendProfile workspace.BackendProfile, checkpoint with
+        | "dotnet", checkpointName
+            when checkpointName = Stdlib.ClrTargetCheckpointName
+                 && KRuntimeIR.modulesUseEffectRuntime workspace.KRuntimeIR ->
+            "KRuntimeIR"
+        | _ ->
+            "KBackendIR"
+
     let private checkpointContract name kind inputCheckpoint requiredBySpec profileSpecific =
         { Name = name
           CheckpointKind = kind
@@ -38,7 +47,7 @@ module internal CompilationCheckpoints =
     let private targetCheckpointContracts (workspace: WorkspaceCompilation) =
         targetCheckpointNames workspace
         |> List.map (fun checkpoint ->
-            checkpointContract checkpoint TargetLoweringCheckpoint (Some "KBackendIR") true true)
+            checkpointContract checkpoint TargetLoweringCheckpoint (Some(targetInputCheckpoint workspace checkpoint)) true true)
 
     let contractsForWorkspace (workspace: WorkspaceCompilation) =
         baseCheckpointContracts
@@ -70,43 +79,64 @@ module internal CompilationCheckpoints =
         |> String.concat Environment.NewLine
 
     let private emitClrTargetManifest (workspace: WorkspaceCompilation) =
-        let verificationDiagnostics = CheckpointVerification.verifyCheckpoint workspace "KBackendIR"
+        let inputCheckpoint = targetInputCheckpoint workspace Stdlib.ClrTargetCheckpointName
+        let verificationDiagnostics = CheckpointVerification.verifyCheckpoint workspace inputCheckpoint
 
         if not (List.isEmpty verificationDiagnostics) then
             Result.Error
-                $"Cannot emit CLR target manifest from malformed KBackendIR:{Environment.NewLine}{aggregateDiagnostics verificationDiagnostics}"
+                $"Cannot emit CLR target manifest from malformed {inputCheckpoint}:{Environment.NewLine}{aggregateDiagnostics verificationDiagnostics}"
         else
             let clrSymbol moduleName functionName =
                 $"{IlDotNetBackend.emittedModuleTypeName moduleName}.{IlDotNetBackend.emittedMethodName functionName}"
 
-            let functions =
-                workspace.KBackendIR
-                |> List.collect (fun moduleDump ->
-                    moduleDump.Functions
-                    |> List.filter (fun functionDump -> not functionDump.Intrinsic)
-                    |> List.map (fun functionDump -> moduleDump.Name, functionDump))
+            match inputCheckpoint with
+            | "KBackendIR" ->
+                let functions =
+                    workspace.KBackendIR
+                    |> List.collect (fun moduleDump ->
+                        moduleDump.Functions
+                        |> List.filter (fun functionDump -> not functionDump.Intrinsic)
+                        |> List.map (fun functionDump -> moduleDump.Name, functionDump))
 
-            let functionSymbols =
-                functions
-                |> List.map (fun (moduleName, functionDump) -> clrSymbol moduleName functionDump.Name)
-                |> List.sort
+                let functionSymbols =
+                    functions
+                    |> List.map (fun (moduleName, functionDump) -> clrSymbol moduleName functionDump.Name)
+                    |> List.sort
 
-            let entrySymbols =
-                functions
-                |> List.choose (fun (moduleName, functionDump) ->
-                    if functionDump.EntryPoint then
-                        Some(clrSymbol moduleName functionDump.Name)
-                    else
-                        None)
-                |> List.sort
+                let entrySymbols =
+                    functions
+                    |> List.choose (fun (moduleName, functionDump) ->
+                        if functionDump.EntryPoint then
+                            Some(clrSymbol moduleName functionDump.Name)
+                        else
+                            None)
+                    |> List.sort
 
-            Result.Ok
-                { ArtifactKind = "clr-assembly"
-                  TranslationUnitName = "Kappa.Generated.dll"
-                  InputCheckpoint = "KBackendIR"
-                  EntrySymbols = entrySymbols
-                  FunctionSymbols = functionSymbols
-                  SourceText = "" }
+                Result.Ok
+                    { ArtifactKind = "clr-assembly"
+                      TranslationUnitName = "Kappa.Generated.dll"
+                      InputCheckpoint = inputCheckpoint
+                      EntrySymbols = entrySymbols
+                      FunctionSymbols = functionSymbols
+                      SourceText = "" }
+            | "KRuntimeIR" ->
+                let functionSymbols =
+                    workspace.KRuntimeIR
+                    |> List.collect (fun moduleDump ->
+                        moduleDump.Bindings
+                        |> List.filter (fun binding -> not binding.Intrinsic)
+                        |> List.map (fun binding -> clrSymbol moduleDump.Name binding.Name))
+                    |> List.sort
+
+                Result.Ok
+                    { ArtifactKind = "clr-assembly"
+                      TranslationUnitName = "Kappa.Generated.dll"
+                      InputCheckpoint = inputCheckpoint
+                      EntrySymbols = []
+                      FunctionSymbols = functionSymbols
+                      SourceText = "" }
+            | unexpected ->
+                Result.Error $"Unsupported CLR target input checkpoint '{unexpected}'."
 
     let tryEmitTargetTranslationUnit (workspace: WorkspaceCompilation) checkpoint =
         match Stdlib.normalizeBackendProfile workspace.BackendProfile, checkpoint with

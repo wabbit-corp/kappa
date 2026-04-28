@@ -9,6 +9,15 @@ module internal CompilationMetadata =
     let private targetCheckpointNames (workspace: WorkspaceCompilation) =
         Stdlib.targetCheckpointNamesFor workspace.BackendProfile
 
+    let private targetInputCheckpoint (workspace: WorkspaceCompilation) checkpoint =
+        match Stdlib.normalizeBackendProfile workspace.BackendProfile, checkpoint with
+        | "dotnet", checkpointName
+            when checkpointName = Stdlib.ClrTargetCheckpointName
+                 && KRuntimeIR.modulesUseEffectRuntime workspace.KRuntimeIR ->
+            "KRuntimeIR"
+        | _ ->
+            "KBackendIR"
+
     let portableRuntimeObligations (_workspace: WorkspaceCompilation) =
         [
             { Name = "tagged-data-layout"
@@ -28,7 +37,7 @@ module internal CompilationMetadata =
               Description = "KCore, KRuntimeIR, and KBackendIR carry explicit cleanup scopes and scheduled exit actions; target lowering must preserve deferred and release sequencing." }
             { Name = "effect-handlers"
               Owner = DeferredRuntimeObligation
-              Description = "One-shot scoped-effect handlers are carried through KCore and KRuntimeIR, but compiled backends still reject surviving effect runtime constructs explicitly because handler frames, resumptions, and target-runtime lowering remain deferred." }
+              Description = "One-shot scoped-effect handlers are carried through KCore and KRuntimeIR. The public dotnet backend lowers surviving effect runtime directly from KRuntimeIR via Kappa.Runtime, while other compiled backends still reject unsupported effect runtime constructs explicitly." }
         ]
 
     let analysisSession (workspace: WorkspaceCompilation) =
@@ -133,16 +142,26 @@ module internal CompilationMetadata =
             |> List.filter (fun query -> query.QueryKind = LowerKBackendIRQuery)
             |> List.map (fun query -> query.Id)
 
+        let runtimeDependencies =
+            documentQueries
+            |> List.filter (fun query -> query.QueryKind = LowerKRuntimeIRQuery)
+            |> List.map (fun query -> query.Id)
+
         let targetQueries =
             targetCheckpointNames workspace
             |> List.map (fun checkpoint ->
+                let dependencies =
+                    match targetInputCheckpoint workspace checkpoint with
+                    | "KRuntimeIR" -> runtimeDependencies
+                    | _ -> backendDependencies
+
                 queryRecord
                     workspace
                     LowerTargetQuery
                     workspace.SourceRoot
                     checkpoint
                     None
-                    backendDependencies)
+                    dependencies)
 
         documentQueries @ targetQueries
 

@@ -4,6 +4,7 @@ open System
 open System.Diagnostics
 open System.IO
 open System.Runtime.InteropServices
+open System.Text
 
 // Provides host/process/path utilities shared by the CLI, backends, and tests.
 module HostSupport =
@@ -42,6 +43,14 @@ module HostSupport =
         (environmentVariables: (string * string) list)
         (standardInputText: string option)
         =
+        let appendOutput (builder: StringBuilder) (text: string) =
+            if not (String.IsNullOrEmpty(text)) then
+                lock builder (fun () ->
+                    if builder.Length > 0 then
+                        builder.Append('\n') |> ignore
+
+                    builder.Append(text) |> ignore)
+
         let startInfo = ProcessStartInfo()
         startInfo.WorkingDirectory <- workingDirectory
         startInfo.FileName <- fileName
@@ -56,9 +65,24 @@ module HostSupport =
 
         use child = new Process()
         child.StartInfo <- startInfo
+        child.EnableRaisingEvents <- true
+
+        let standardOutput = StringBuilder()
+        let standardError = StringBuilder()
+
+        child.OutputDataReceived.Add(fun args ->
+            if not (isNull args.Data) then
+                appendOutput standardOutput args.Data)
+
+        child.ErrorDataReceived.Add(fun args ->
+            if not (isNull args.Data) then
+                appendOutput standardError args.Data)
 
         if not (child.Start()) then
             invalidOp $"Failed to start process '{fileName}'."
+
+        child.BeginOutputReadLine()
+        child.BeginErrorReadLine()
 
         match standardInputText with
         | Some inputText ->
@@ -67,13 +91,21 @@ module HostSupport =
         | None ->
             ()
 
-        let standardOutput = child.StandardOutput.ReadToEnd()
-        let standardError = child.StandardError.ReadToEnd()
         child.WaitForExit()
 
+        try
+            child.CancelOutputRead()
+        with _ ->
+            ()
+
+        try
+            child.CancelErrorRead()
+        with _ ->
+            ()
+
         { ExitCode = child.ExitCode
-          StandardOutput = standardOutput.Replace("\r\n", "\n")
-          StandardError = standardError.Replace("\r\n", "\n") }
+          StandardOutput = standardOutput.ToString().Replace("\r\n", "\n")
+          StandardError = standardError.ToString().Replace("\r\n", "\n") }
 
     let runProcess (workingDirectory: string) (fileName: string) (arguments: string) =
         runProcessCore workingDirectory fileName arguments [] None

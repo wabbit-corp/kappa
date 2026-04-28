@@ -59,6 +59,22 @@ let runProcessWithEnvironmentAndInput = HostSupport.runProcessWithEnvironmentAnd
 let private repoRoot =
     Path.GetFullPath(Path.Combine(__SOURCE_DIRECTORY__, "..", ".."))
 
+let private builtCliDllPath =
+    Path.Combine(repoRoot, "src", "Kappa.Compiler.Cli", "bin", "Debug", "net10.0", "Kappa.Compiler.Cli.dll")
+    |> Path.GetFullPath
+
+let runBuiltCli (workingDirectory: string) (arguments: string) =
+    if not (File.Exists(builtCliDllPath)) then
+        failwithf "Expected built CLI at '%s'." builtCliDllPath
+
+    runProcess workingDirectory "dotnet" $"\"{builtCliDllPath}\" {arguments}"
+
+let runBuiltCliWithEnvironment (workingDirectory: string) (arguments: string) (environmentVariables: (string * string) list) =
+    if not (File.Exists(builtCliDllPath)) then
+        failwithf "Expected built CLI at '%s'." builtCliDllPath
+
+    runProcessWithEnvironment workingDirectory "dotnet" $"\"{builtCliDllPath}\" {arguments}" environmentVariables
+
 let repoZigBootstrapCommand () =
     if RuntimeInformation.IsOSPlatform(OSPlatform.Windows) then
         let scriptPath = Path.Combine(repoRoot, "scripts", "ensure-zig.ps1")

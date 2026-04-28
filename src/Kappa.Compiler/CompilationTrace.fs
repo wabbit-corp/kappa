@@ -20,6 +20,7 @@ module internal CompilationTrace =
           VerificationSucceeded = verificationSucceeded }
 
     let buildPipelineTrace
+        (workspace: WorkspaceCompilation)
         (documents: KFrontIRModule list)
         (targetCheckpoints: string list)
         (verification: VerificationSummary)
@@ -146,6 +147,8 @@ module internal CompilationTrace =
         let targetSteps =
             targetCheckpoints
             |> List.collect (fun checkpoint ->
+                let inputCheckpoint = CompilationCheckpoints.targetInputCheckpoint workspace checkpoint
+
                 let verified =
                     verification.Targets
                     |> Map.tryFind checkpoint
@@ -155,8 +158,8 @@ module internal CompilationTrace =
                     traceStep
                         PipelineTraceEvent.LowerTarget
                         PipelineTraceSubject.TargetUnit
-                        $"lower KBackendIR to {checkpoint}"
-                        "KBackendIR"
+                        $"lower {inputCheckpoint} to {checkpoint}"
+                        inputCheckpoint
                         checkpoint
                         true
                         false

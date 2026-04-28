@@ -111,3 +111,59 @@ type KRuntimeModule =
       TraitInstances: KRuntimeTraitInstance list
       Constructors: KRuntimeConstructor list
       Bindings: KRuntimeBinding list }
+
+[<RequireQualifiedAccess>]
+module KRuntimeIR =
+    let rec containsEffectRuntimeConstruct expression =
+        match expression with
+        | KRuntimeEffectLabel _
+        | KRuntimeEffectOperation _
+        | KRuntimeHandle _ ->
+            true
+        | KRuntimeClosure(_, body)
+        | KRuntimeExecute body
+        | KRuntimeDoScope(_, body)
+        | KRuntimeUnary(_, body) ->
+            containsEffectRuntimeConstruct body
+        | KRuntimeIfThenElse(condition, whenTrue, whenFalse) ->
+            containsEffectRuntimeConstruct condition
+            || containsEffectRuntimeConstruct whenTrue
+            || containsEffectRuntimeConstruct whenFalse
+        | KRuntimeLet(_, value, body)
+        | KRuntimeSequence(value, body)
+        | KRuntimeWhile(value, body)
+        | KRuntimeBinary(value, _, body) ->
+            containsEffectRuntimeConstruct value || containsEffectRuntimeConstruct body
+        | KRuntimeScheduleExit(_, KRuntimeDeferred deferred, body) ->
+            containsEffectRuntimeConstruct deferred || containsEffectRuntimeConstruct body
+        | KRuntimeScheduleExit(_, KRuntimeRelease(_, release, resource), body) ->
+            containsEffectRuntimeConstruct release
+            || containsEffectRuntimeConstruct resource
+            || containsEffectRuntimeConstruct body
+        | KRuntimeApply(callee, arguments)
+        | KRuntimeTraitCall(_, _, callee, arguments) ->
+            containsEffectRuntimeConstruct callee
+            || (arguments |> List.exists containsEffectRuntimeConstruct)
+        | KRuntimeMatch(scrutinee, cases) ->
+            containsEffectRuntimeConstruct scrutinee
+            || (cases
+                |> List.exists (fun caseClause ->
+                    caseClause.Guard |> Option.exists containsEffectRuntimeConstruct
+                    || containsEffectRuntimeConstruct caseClause.Body))
+        | KRuntimePrefixedString(_, parts) ->
+            parts
+            |> List.exists (function
+                | KRuntimeStringText _ -> false
+                | KRuntimeStringInterpolation(inner, _) -> containsEffectRuntimeConstruct inner)
+        | KRuntimeLiteral _
+        | KRuntimeName _
+        | KRuntimeDictionaryValue _ ->
+            false
+
+    let bindingUsesEffectRuntime (binding: KRuntimeBinding) =
+        binding.Body |> Option.exists containsEffectRuntimeConstruct
+
+    let modulesUseEffectRuntime (modules: KRuntimeModule list) =
+        modules
+        |> List.exists (fun runtimeModule ->
+            runtimeModule.Bindings |> List.exists bindingUsesEffectRuntime)

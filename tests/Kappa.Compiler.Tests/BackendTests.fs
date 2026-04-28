@@ -129,16 +129,10 @@ let ``cli can run the managed dotnet backend`` () =
 
     let emitDirectory = createScratchDirectory "cli-dotnet-emit"
 
-    let cliProjectPath =
-        Path.GetFullPath(
-            Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "src", "Kappa.Compiler.Cli", "Kappa.Compiler.Cli.fsproj")
-        )
-
     let runResult =
-        runProcess
+        runBuiltCli
             workspaceRoot
-            "dotnet"
-            $"run --project \"{cliProjectPath}\" -v q -- --source-root \"{workspaceRoot}\" --backend dotnet --emit-dir \"{emitDirectory}\" --run main.result"
+            $"--source-root \"{workspaceRoot}\" --backend dotnet --emit-dir \"{emitDirectory}\" --run main.result"
 
     Assert.Equal(0, runResult.ExitCode)
     Assert.Contains("42", runResult.StandardOutput)
@@ -164,16 +158,10 @@ let ``cli can run the dotnet backend for zero argument bindings with call heavy 
 
     let emitDirectory = createScratchDirectory "cli-dotnet-emit-calls"
 
-    let cliProjectPath =
-        Path.GetFullPath(
-            Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "src", "Kappa.Compiler.Cli", "Kappa.Compiler.Cli.fsproj")
-        )
-
     let runResult =
-        runProcess
+        runBuiltCli
             workspaceRoot
-            "dotnet"
-            $"run --project \"{cliProjectPath}\" -v q -- --source-root \"{workspaceRoot}\" --backend dotnet --emit-dir \"{emitDirectory}\" --run main.result"
+            $"--source-root \"{workspaceRoot}\" --backend dotnet --emit-dir \"{emitDirectory}\" --run main.result"
 
     Assert.Equal(0, runResult.ExitCode)
     Assert.Equal("82", runResult.StandardOutput.Trim())
@@ -201,16 +189,10 @@ let ``cli can run the dotnet backend for recursive list matches`` () =
 
     let emitDirectory = createScratchDirectory "cli-dotnet-list-emit"
 
-    let cliProjectPath =
-        Path.GetFullPath(
-            Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "src", "Kappa.Compiler.Cli", "Kappa.Compiler.Cli.fsproj")
-        )
-
     let runResult =
-        runProcess
+        runBuiltCli
             workspaceRoot
-            "dotnet"
-            $"run --project \"{cliProjectPath}\" -v q -- --source-root \"{workspaceRoot}\" --backend dotnet --emit-dir \"{emitDirectory}\" --run main.result"
+            $"--source-root \"{workspaceRoot}\" --backend dotnet --emit-dir \"{emitDirectory}\" --run main.result"
 
     Assert.Equal(0, runResult.ExitCode)
     Assert.Equal("72", runResult.StandardOutput.Trim())
@@ -231,16 +213,10 @@ let ``cli verify does not print backend checkpoint fallout when source diagnosti
             |> String.concat "\n"
         ]
 
-    let cliProjectPath =
-        Path.GetFullPath(
-            Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "src", "Kappa.Compiler.Cli", "Kappa.Compiler.Cli.fsproj")
-        )
-
     let runResult =
-        runProcess
+        runBuiltCli
             workspaceRoot
-            "dotnet"
-            $"run --project \"{cliProjectPath}\" -v q -- --source-root \"{workspaceRoot}\" --backend dotnet --verify KBackendIR"
+            $"--source-root \"{workspaceRoot}\" --backend dotnet --verify KBackendIR"
 
     Assert.Equal(1, runResult.ExitCode)
     Assert.Contains("Name 'I1' is not in scope.", runResult.StandardOutput)
@@ -269,16 +245,10 @@ let ``cli interpreter backend can execute io entry points`` () =
             |> String.concat "\n"
         ]
 
-    let cliProjectPath =
-        Path.GetFullPath(
-            Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "src", "Kappa.Compiler.Cli", "Kappa.Compiler.Cli.fsproj")
-        )
-
     let runResult =
-        runProcess
+        runBuiltCli
             workspaceRoot
-            "dotnet"
-            $"run --project \"{cliProjectPath}\" -v q -- --source-root \"{workspaceRoot}\" --run main.main"
+            $"--source-root \"{workspaceRoot}\" --run main.main"
 
     Assert.Equal(0, runResult.ExitCode)
     Assert.Equal("72", runResult.StandardOutput.Trim())

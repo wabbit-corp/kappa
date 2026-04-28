@@ -301,7 +301,7 @@ module DiagnosticCode =
         | QttContinuationCapture ->
             Some "A multi-shot continuation cannot capture live linear or borrowed resources across the operation site."
         | EffectRuntimeUnsupportedBackend ->
-            Some "The selected backend profile does not implement first-class effect runtime constructs such as effect labels, effect operations, or handlers. Such programs are currently interpreter-only and must be rejected before backend lowering."
+            Some "The selected backend profile does not implement first-class effect runtime constructs such as effect labels, effect operations, or handlers. Programs that retain such constructs at target lowering must be rejected on that backend."
         | MultishotEffectUnsupportedBackend ->
             Some "The selected backend profile does not advertise rt-multishot-effects, so reachable multi-shot effect invocations and exported declarations that may invoke them must be rejected."
         | ModuleAttributeUnknown ->

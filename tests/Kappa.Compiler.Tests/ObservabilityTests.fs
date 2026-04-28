@@ -1562,6 +1562,47 @@ let ``stage dumps expose checkpoint contract metadata`` () =
     Assert.Contains("(required-by-spec false)", runtimeSexpr)
 
 [<Fact>]
+let ``effectful dotnet target contract lowers directly from KRuntimeIR`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-effectful-dotnet-contract-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "@PrivateByDefault module main"
+                    ""
+                    "result : Int"
+                    "let result ="
+                    "    block"
+                    "        scoped effect Ask ="
+                    "            ask : Unit -> Bool"
+                    ""
+                    "        let comp : Eff <[Ask : Ask]> Int ="
+                    "            do"
+                    "                let b <- Ask.ask ()"
+                    "                if b then 1 else 0"
+                    ""
+                    "        let handled : Eff <[ ]> Int ="
+                    "            deep handle Ask comp with"
+                    "                case return x -> pure x"
+                    "                case ask () k -> k True"
+                    ""
+                    "        runPure handled"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let targetContract =
+        Compilation.checkpointContracts workspace
+        |> List.find (fun contract -> contract.Name = "dotnet.clr")
+
+    Assert.Equal(TargetLoweringCheckpoint, targetContract.CheckpointKind)
+    Assert.Equal(Some "KRuntimeIR", targetContract.InputCheckpoint)
+    Assert.True(targetContract.RequiredBySpec)
+    Assert.True(targetContract.ProfileSpecific)
+
+[<Fact>]
 let ``zig target checkpoint dumps a manifest for the generated translation unit`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend

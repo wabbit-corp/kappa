@@ -97,6 +97,7 @@ module Compilation =
 
         if
             String.Equals(normalizedBackendProfile, "interpreter", StringComparison.Ordinal)
+            || String.Equals(normalizedBackendProfile, "dotnet", StringComparison.Ordinal)
         then
             []
         else
@@ -123,7 +124,7 @@ module Compilation =
                           Stage = Some "KRuntimeIR"
                           Phase = None
                           Message =
-                            $"Backend profile '{normalizedBackendProfile}' does not implement {describeUse effectUse} in declaration '{describeDeclaration binding}'. Effect runtime constructs are currently interpreter-only on compiled backends and must be eliminated before backend lowering."
+                            $"Backend profile '{normalizedBackendProfile}' does not implement {describeUse effectUse} in declaration '{describeDeclaration binding}'. This backend must reject unsupported effect runtime constructs before target lowering."
                           Location = provenanceLocation documents binding.Provenance
                           RelatedLocations = [] })))
 
@@ -256,6 +257,10 @@ module Compilation =
         let runtimeCapabilityDiagnostics =
             validateBackendRuntimeSupport normalizedBackendProfile documents kRuntimeIR
 
+        let dotnetUsesRuntimeTargetLowering =
+            String.Equals(normalizedBackendProfile, "dotnet", StringComparison.Ordinal)
+            && KRuntimeIR.modulesUseEffectRuntime kRuntimeIR
+
         let kBackendIR, backendLoweringDiagnostics =
             KBackendLowering.lowerKBackendModules normalizedBackendProfile options.AllowUnsafeConsume kRuntimeIR
 
@@ -275,6 +280,7 @@ module Compilation =
         let backendDiagnostics =
             if
                 requiresBackendImplementation
+                && not dotnetUsesRuntimeTargetLowering
                 && not ((sourceDiagnostics @ runtimeCapabilityDiagnostics) |> List.exists (fun diagnostic -> diagnostic.Severity = Error))
             then
                 backendLoweringDiagnostics
@@ -307,6 +313,7 @@ module Compilation =
         let implementationDiagnostics =
             if
                 not requiresBackendImplementation
+                || dotnetUsesRuntimeTargetLowering
                 || workspaceWithoutTrace.Diagnostics |> List.exists (fun diagnostic -> diagnostic.Severity = Error)
             then
                 []
@@ -340,6 +347,7 @@ module Compilation =
         { workspaceWithoutTrace with
             PipelineTrace =
                 CompilationTrace.buildPipelineTrace
+                    workspaceWithoutTrace
                     kFrontIR
                     (CompilationCheckpoints.targetCheckpointNames workspaceWithoutTrace)
                     verification }

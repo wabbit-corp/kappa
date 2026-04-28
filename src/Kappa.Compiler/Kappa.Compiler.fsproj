@@ -7,6 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Kappa.Runtime\Kappa.Runtime.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Include="Text.fs" />
     <Compile Include="UnicodeText.fs" />
     <Compile Include="Diagnostics.fs" />
@@ -47,6 +51,7 @@
     <Compile Include="IlDotNetBackendInput.fs" />
     <Compile Include="IlDotNetBackendTyping.fs" />
     <Compile Include="IlDotNetBackendEmit.fs" />
+    <Compile Include="IlDotNetEffectBackend.fs" />
     <Compile Include="IlDotNetBackend.fs" />
     <Compile Include="ClrDotNetBackend.fs" />
     <Compile Include="ZigCcBackendSupport.fs" />

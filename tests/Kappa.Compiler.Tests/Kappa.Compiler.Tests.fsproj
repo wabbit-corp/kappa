@@ -43,6 +43,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Kappa.Compiler\Kappa.Compiler.fsproj" />
+    <ProjectReference Include="..\..\src\Kappa.Compiler.Cli\Kappa.Compiler.Cli.fsproj" />
   </ItemGroup>
 
 </Project>
