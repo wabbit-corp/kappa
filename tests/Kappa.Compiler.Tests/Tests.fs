@@ -2869,6 +2869,37 @@ let ``type signatures unfold only conversion reducible transparent definitions``
     Assert.False(TypeSignatures.definitionallyEqualIn context (TypeSignatures.TypeName([ "OpaqueAlias" ], [])) intType)
 
 [<Fact>]
+let ``raw type signature normalization does not treat Float as a builtin alias of Double`` () =
+    let floatType = TypeSignatures.TypeName([ "Float" ], [])
+    let doubleType = TypeSignatures.TypeName([ "Double" ], [])
+    let qualifiedFloatType = TypeSignatures.TypeName([ "std"; "prelude"; "Float" ], [])
+    let qualifiedDoubleType = TypeSignatures.TypeName([ "std"; "prelude"; "Double" ], [])
+
+    Assert.False(TypeSignatures.definitionallyEqual floatType doubleType)
+    Assert.False(TypeSignatures.definitionallyEqual qualifiedFloatType qualifiedDoubleType)
+    Assert.Equal("Float", TypeSignatures.toText floatType)
+    Assert.Equal("Float", TypeSignatures.toText qualifiedFloatType)
+
+[<Fact>]
+let ``compilation still resolves Float through the visible prelude alias`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-float-prelude-alias-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "widen : Float -> Double"
+                    "let widen x = x"
+                    "narrow : Double -> Float"
+                    "let narrow x = x"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, $"Expected std.prelude.Float alias elaboration to succeed, got {workspace.Diagnostics}.")
+
+[<Fact>]
 let ``frontend preserves totality assertions on let declarations and gates unsafe escapes`` () =
     let allowedWorkspace =
         compileInMemoryWorkspace

@@ -42,11 +42,9 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - These decisions should be driven by resolved semantic identities and representation metadata, not display text.
   - Sources: `reviews/principles1.md`, `reviews/backend1.md`.
 
-- `[Medium] Remove duplicated language facts where the compiler and prelude each encode the same rule.`
-  - `Float = Double` exists both as a prelude alias and as a compiler builtin normalization fact.
-  - The implicit prelude constructor set in `Stdlib.fs` appears broader than the spec’s implicit unqualified constructor subset.
-  - Pick one source of truth per language fact, or generate one layer from the other.
-  - The current prelude constructor-subset test also encodes the broader implementation list, so this is now a test-spec drift issue as well as an implementation-spec drift issue.
+- `[Medium] Reconcile the implicit prelude constructor subset with the spec.`
+  - `Stdlib.fs` still carries an implementation-defined fixed implicit constructor list that appears broader than the spec’s implicit unqualified constructor subset.
+  - The current prelude constructor-subset test also encodes that broader implementation list, so this remains both an implementation-spec drift issue and a test-spec drift issue.
   - Sources: `reviews/principles1.md`, `reviews/tests1.md`.
 
 ## 2. Source Loading, Module Mapping, and Lexing

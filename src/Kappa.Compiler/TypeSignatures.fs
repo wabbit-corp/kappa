@@ -146,10 +146,7 @@ module TypeSignatures =
               CertificationSource = Some AssertReducibleUnverified }
             context
 
-    let private builtinDefinitionContext =
-        emptyDefinitionContext
-        |> addTransparentDefinition [ "Float" ] [] (TypeName([ "Double" ], []))
-        |> addTransparentDefinition [ "std"; "prelude"; "Float" ] [] (TypeName([ "std"; "prelude"; "Double" ], []))
+    let private builtinDefinitionContext = emptyDefinitionContext
 
     type private Parser(tokens: Token list) =
         let tokenArray =
