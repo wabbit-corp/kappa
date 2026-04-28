@@ -9542,6 +9542,28 @@ Normative meaning:
   implicit-insertion, quantity, borrow, region, visibility, opacity, `unhide`, and `clarify` rules as the underlying
   reflection operations at the call site.
 
+<!-- types.macros.derivation_shape_reflection -->
+#### 5.8.5A Derivation-shape reflection
+
+The standard module `std.deriving.shape` of §2.7H is a high-level semantic-reflection layer built on top of the general reflection facilities of this section.
+
+A conforming implementation MAY implement `std.deriving.shape` directly, in terms of the mandatory `Core` constructor / destructor API, or through an observationally equivalent compiler query.
+In all cases, the public behavior is governed by §2.7H.
+
+Derivation-shape reflection is a semantic query, not a surface-syntax query.
+It observes the elaborated meaning of the target type under the current lexical context, implicit-resolution context, visibility/opacity state, and effective import environment.
+
+Consequences:
+
+* aliases are followed only when ordinary definitional equality at the query site may unfold them;
+* opaque definitions and opaque data remain opaque unless ordinary code at the same site could clarify them;
+* source spelling differences that preserve semantic identity do not affect the returned shape except in source-origin and rendering fields explicitly intended for diagnostics;
+* every returned `Symbol` compares by resolved declaration identity, not spelling; and
+* generated syntax produced by `matchAdt`, `matchAdt2`, `constructAdt`, `matchRecord`, and `constructRecord` is still elaborated normally at the splice site.
+
+The `Syntax` indices carried by returned `BoundField`, `BoundFieldPair`, and generated construction syntax are not certificates that final object-language obligations have already been discharged.
+They receive the ordinary splice-site checks of §5.8.2.
+
 <!-- types.macros.restrictions_macro_effects -->
 #### 5.8.6 Restrictions on macro effects
 
