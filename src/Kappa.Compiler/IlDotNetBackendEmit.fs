@@ -218,6 +218,13 @@ module internal IlDotNetBackendEmit =
     let internal stringEqualityMethod =
         typeof<string>.GetMethod("op_Equality", BindingFlags.Public ||| BindingFlags.Static, null, [| typeof<string>; typeof<string> |], null)
 
+    let internal emitStringEquality (il: ILGenerator) negate =
+        il.Emit(OpCodes.Call, stringEqualityMethod)
+
+        if negate then
+            il.Emit(OpCodes.Ldc_I4_0)
+            il.Emit(OpCodes.Ceq)
+
     let rec internal emitExpression
         (state: EmissionState)
         currentModule
@@ -469,14 +476,16 @@ module internal IlDotNetBackendEmit =
                                         ensureExpected (IlPrimitive IlInt64)
                                     | ("+" | "-" | "*" | "/"), IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
                                         ensureExpected (IlPrimitive IlFloat64)
-                                    | ("==" | "!="), IlPrimitive IlInt64, IlPrimitive IlInt64 ->
-                                        ensureExpected (IlPrimitive IlBool)
-                                    | ("==" | "!="), IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
-                                        ensureExpected (IlPrimitive IlBool)
-                                    | ("==" | "!="), IlPrimitive IlBool, IlPrimitive IlBool ->
-                                        ensureExpected (IlPrimitive IlBool)
-                                    | ("==" | "!="), IlPrimitive IlChar, IlPrimitive IlChar ->
-                                        ensureExpected (IlPrimitive IlBool)
+                                        | ("==" | "!="), IlPrimitive IlInt64, IlPrimitive IlInt64 ->
+                                            ensureExpected (IlPrimitive IlBool)
+                                        | ("==" | "!="), IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
+                                            ensureExpected (IlPrimitive IlBool)
+                                        | ("==" | "!="), IlPrimitive IlBool, IlPrimitive IlBool ->
+                                            ensureExpected (IlPrimitive IlBool)
+                                        | ("==" | "!="), IlPrimitive IlString, IlPrimitive IlString ->
+                                            ensureExpected (IlPrimitive IlBool)
+                                        | ("==" | "!="), IlPrimitive IlChar, IlPrimitive IlChar ->
+                                            ensureExpected (IlPrimitive IlBool)
                                     | ("<" | "<=" | ">" | ">="), IlPrimitive IlInt64, IlPrimitive IlInt64 ->
                                         ensureExpected (IlPrimitive IlBool)
                                     | ("<" | "<=" | ">" | ">="), IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
@@ -722,6 +731,10 @@ module internal IlDotNetBackendEmit =
                     emitComparisonFromCeq il false
                 | "!=", IlPrimitive IlBool, IlPrimitive IlBool ->
                     emitComparisonFromCeq il true
+                | "==", IlPrimitive IlString, IlPrimitive IlString ->
+                    emitStringEquality il false
+                | "!=", IlPrimitive IlString, IlPrimitive IlString ->
+                    emitStringEquality il true
                 | "==", IlPrimitive IlChar, IlPrimitive IlChar ->
                     emitComparisonFromCeq il false
                 | "!=", IlPrimitive IlChar, IlPrimitive IlChar ->
@@ -1026,7 +1039,15 @@ module internal IlDotNetBackendEmit =
                 result {
                     emitLoadLocal il valueLocal
                     do! emitLiteral il literal
-                    emitComparisonFromCeq il false
+
+                    match literal with
+                    | LiteralValue.String _
+                    | LiteralValue.Character _
+                    | LiteralValue.Grapheme _ ->
+                        emitStringEquality il false
+                    | _ ->
+                        emitComparisonFromCeq il false
+
                     il.Emit(OpCodes.Brfalse, (failureLabel: Label))
                     return currentScope
                 }

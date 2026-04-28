@@ -114,6 +114,88 @@ let ``il backend emits executable conditional logic as IL`` () =
     Assert.Equal(1L, resultMethod.Invoke(null, [||]) |> unbox<int64>)
 
 [<Fact>]
+let ``il backend uses ordinal string equality for equality operators`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-il-string-equality-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "same : String -> String -> Bool"
+                    "let same a b = a == b"
+                    "different : String -> String -> Bool"
+                    "let different a b = a != b"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "il-string-equality"
+
+    let artifact =
+        match Backend.emitIlAssemblyArtifact workspace outputDirectory with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    use loaded = loadManagedAssembly artifact.AssemblyFilePath
+
+    let moduleType = loaded.Assembly.GetType("Kappa.Generated.main", throwOnError = true, ignoreCase = false)
+    let sameMethod = moduleType.GetMethod("same", BindingFlags.Public ||| BindingFlags.Static)
+    let differentMethod = moduleType.GetMethod("different", BindingFlags.Public ||| BindingFlags.Static)
+
+    let abc1 = System.String([| 'a'; 'b'; 'c' |])
+    let abc2 = System.String([| 'a'; 'b'; 'c' |])
+    let abd = System.String([| 'a'; 'b'; 'd' |])
+
+    Assert.False(Object.ReferenceEquals(abc1, abc2), "Expected distinct managed string instances for equality testing.")
+    Assert.NotNull(sameMethod)
+    Assert.NotNull(differentMethod)
+    Assert.Equal(typeof<bool>, sameMethod.ReturnType)
+    Assert.Equal(typeof<bool>, differentMethod.ReturnType)
+    Assert.True(sameMethod.Invoke(null, [| box abc1; box abc2 |]) |> unbox<bool>)
+    Assert.False(sameMethod.Invoke(null, [| box abc1; box abd |]) |> unbox<bool>)
+    Assert.False(differentMethod.Invoke(null, [| box abc1; box abc2 |]) |> unbox<bool>)
+    Assert.True(differentMethod.Invoke(null, [| box abc1; box abd |]) |> unbox<bool>)
+
+[<Fact>]
+let ``il backend matches string literal patterns by content`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-il-string-pattern-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "classify : String -> Int"
+                    "let classify s ="
+                    "    match s"
+                    "    case \"abc\" -> 1"
+                    "    case _ -> 0"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "il-string-pattern"
+
+    let artifact =
+        match Backend.emitIlAssemblyArtifact workspace outputDirectory with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    use loaded = loadManagedAssembly artifact.AssemblyFilePath
+
+    let moduleType = loaded.Assembly.GetType("Kappa.Generated.main", throwOnError = true, ignoreCase = false)
+    let classifyMethod = moduleType.GetMethod("classify", BindingFlags.Public ||| BindingFlags.Static)
+
+    let abc = System.String([| 'a'; 'b'; 'c' |])
+    let xyz = System.String([| 'x'; 'y'; 'z' |])
+
+    Assert.NotNull(classifyMethod)
+    Assert.Equal(typeof<int64>, classifyMethod.ReturnType)
+    Assert.Equal(1L, classifyMethod.Invoke(null, [| box abc |]) |> unbox<int64>)
+    Assert.Equal(0L, classifyMethod.Invoke(null, [| box xyz |]) |> unbox<int64>)
+
+[<Fact>]
 let ``il backend executes direct calls to top level zero capture lambda bindings`` () =
     let workspace =
         compileInMemoryWorkspace

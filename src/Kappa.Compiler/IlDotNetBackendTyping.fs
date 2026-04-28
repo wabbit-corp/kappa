@@ -424,6 +424,8 @@ module internal IlDotNetBackendTyping =
                                             ensureExpected (IlPrimitive IlBool)
                                         | ("==" | "!="), IlPrimitive IlBool, IlPrimitive IlBool ->
                                             ensureExpected (IlPrimitive IlBool)
+                                        | ("==" | "!="), IlPrimitive IlString, IlPrimitive IlString ->
+                                            ensureExpected (IlPrimitive IlBool)
                                         | ("==" | "!="), IlPrimitive IlChar, IlPrimitive IlChar ->
                                             ensureExpected (IlPrimitive IlBool)
                                         | ("<" | "<=" | ">" | ">="), IlPrimitive IlInt64, IlPrimitive IlInt64 ->
