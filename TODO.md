@@ -620,12 +620,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
 
 ## 11A. Observability, Incrementality, and Checkpoint Metadata
 
-- `[Critical] Make `SourceFingerprint` content-sound.`
-  - The current source fingerprint identity is derived from path, length, line count, and module name, but not the actual source content digest.
-  - Two different files with the same path/length/line count/module can therefore collide.
-  - Include a deterministic content hash plus normalized file identity and parser-affecting metadata.
-  - Sources: `reviews/observability1.md`.
-
 - `[High] Scope query/fingerprint/incremental-unit IDs by analysis session, build configuration, backend profile, and compiler version.`
   - The records carry session/build/profile data, but the IDs themselves are too small and can collide across configurations or backend profiles.
   - Either include session/build/profile/compiler-version information in IDs, or make the current IDs clearly local/display-only and add a real globally stable key.

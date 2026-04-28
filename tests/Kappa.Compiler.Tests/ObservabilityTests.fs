@@ -426,6 +426,60 @@ let ``compiler fingerprints and incremental units expose dependency inputs`` () 
     )
 
 [<Fact>]
+let ``source fingerprints change when source text changes with identical path length line count and module name`` () =
+    let workspace41 =
+        compileInMemoryWorkspaceWithBackend
+            "memory-source-fingerprint-content-root"
+            "zig"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 41"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let workspace42 =
+        compileInMemoryWorkspaceWithBackend
+            "memory-source-fingerprint-content-root"
+            "zig"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let sourceFingerprint workspace =
+        Compilation.compilerFingerprints workspace
+        |> List.find (fun fingerprint ->
+            fingerprint.FingerprintKind = SourceFingerprint
+            && fingerprint.InputKey.EndsWith("main.kp", StringComparison.OrdinalIgnoreCase))
+
+    let document41 =
+        workspace41.Documents
+        |> List.find (fun document -> document.Source.FilePath.EndsWith("main.kp", StringComparison.OrdinalIgnoreCase))
+
+    let document42 =
+        workspace42.Documents
+        |> List.find (fun document -> document.Source.FilePath.EndsWith("main.kp", StringComparison.OrdinalIgnoreCase))
+
+    Assert.Equal(document41.Source.FilePath, document42.Source.FilePath)
+    Assert.Equal(document41.Source.Length, document42.Source.Length)
+    Assert.Equal(document41.Source.LineCount, document42.Source.LineCount)
+    Assert.Equal(document41.ModuleName, document42.ModuleName)
+
+    let fingerprint41 = sourceFingerprint workspace41
+    let fingerprint42 = sourceFingerprint workspace42
+
+    Assert.Contains("contentSha256=", fingerprint41.Identity, StringComparison.Ordinal)
+    Assert.Contains("contentSha256=", fingerprint42.Identity, StringComparison.Ordinal)
+    Assert.False(String.Equals(fingerprint41.Identity, fingerprint42.Identity, StringComparison.Ordinal))
+
+[<Fact>]
 let ``checkpoint contract makes implementation defined runtime IR and profile targets explicit`` () =
     let source =
         [

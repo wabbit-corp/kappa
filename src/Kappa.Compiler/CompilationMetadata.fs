@@ -1,11 +1,21 @@
 namespace Kappa.Compiler
 
 open System
+open System.IO
+open System.Security.Cryptography
+open System.Text
 open CompilationCommon
 open CompilationFrontend
 
 // Computes analysis-session, fingerprint, incremental-unit, and runtime-obligation metadata.
 module internal CompilationMetadata =
+    let private sha256Hex (text: string) =
+        text
+        |> Encoding.UTF8.GetBytes
+        |> SHA256.HashData
+        |> Convert.ToHexString
+        |> fun hex -> hex.ToLowerInvariant()
+
     let private targetCheckpointNames (workspace: WorkspaceCompilation) =
         Stdlib.targetCheckpointNamesFor workspace.BackendProfile
 
@@ -387,10 +397,13 @@ module internal CompilationMetadata =
             |> List.sortBy (fun document -> document.Source.FilePath)
             |> List.map (fun document ->
                 let inputKey = document.Source.FilePath
+                let normalizedPath = Path.GetFullPath(document.Source.FilePath)
+                let contentHash = sha256Hex document.Source.Content
 
                 let identity =
                     [
-                        $"source:path={document.Source.FilePath}"
+                        $"source:path={normalizedPath}"
+                        $"contentSha256={contentHash}"
                         $"length={document.Source.Length}"
                         $"lines={document.Source.LineCount}"
                         $"module={moduleNameText document.ModuleName}"
