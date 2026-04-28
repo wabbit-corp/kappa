@@ -326,11 +326,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Tie continuation capture analysis to the nearest dynamically relevant handler boundary rather than just the lexical remainder of a `do` block.
   - Sources: `reviews/effects1.md`.
 
-- `[High] Decide and document the backend story for effects.`
-  - The current implementation parses, elaborates, checks, and interprets effect handlers, but backend lowering rejects them.
-  - Either document effect handlers as interpreter-only for now, or implement a compiled backend strategy such as CPS or an explicit `Eff` runtime representation.
-  - Sources: `reviews/effects1.md`, `reviews/backend1.md`, `reviews/general1.md`.
-
 - `[Medium-High] Support non-self effect-row entries correctly.`
   - The implementation often appears to assume rows like `<[State : State]>`, while the spec allows first-class labels whose interface is `State`.
   - Effect-row entries should carry both label identity and interface identity.

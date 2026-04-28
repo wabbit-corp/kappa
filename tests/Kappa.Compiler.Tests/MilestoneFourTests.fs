@@ -1266,6 +1266,93 @@ let ``backends without multishot capability reject exported declarations that ma
     Assert.Contains("zig", exportedDiagnostic.Value.Message)
 
 [<Fact>]
+let ``compiled backends reject effect handlers before backend lowering`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "result : Int"
+            "let result ="
+            "    block"
+            "        scoped effect Ask ="
+            "            ask : Unit -> Bool"
+            ""
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let b <- Ask.ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        let handled : Eff <[ ]> Int ="
+            "            deep handle Ask comp with"
+            "                case return x -> pure x"
+            "                case ask () k -> k True"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-m4-effect-handler-backend-root"
+            "dotnet-il"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected compiled backends to reject effect handlers before backend lowering.")
+
+    let diagnostic =
+        workspace.Diagnostics
+        |> List.tryFind (fun current -> current.Code = DiagnosticCode.EffectRuntimeUnsupportedBackend)
+
+    Assert.True(diagnostic.IsSome, sprintf "Expected an effect-runtime backend capability diagnostic, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+    Assert.Contains("dotnet-il", diagnostic.Value.Message)
+    Assert.Contains("main.result", diagnostic.Value.Message)
+    Assert.DoesNotContain(
+        workspace.Diagnostics,
+        fun current ->
+            current.Code = DiagnosticCode.CheckpointVerification
+            && current.Message.Contains("does not support effect handlers yet", StringComparison.Ordinal)
+    )
+
+[<Fact>]
+let ``compiled backends reject direct effect operations before backend lowering`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "result : Eff <[Ask : Ask]> Bool"
+            "let result ="
+            "    block"
+            "        scoped effect Ask ="
+            "            ask : Unit -> Bool"
+            ""
+            "        let op = Ask.ask"
+            "        op ()"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-m4-effect-operation-backend-root"
+            "zig"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected compiled backends to reject direct effect operations before backend lowering.")
+
+    let diagnostic =
+        workspace.Diagnostics
+        |> List.tryFind (fun current -> current.Code = DiagnosticCode.EffectRuntimeUnsupportedBackend)
+
+    Assert.True(diagnostic.IsSome, sprintf "Expected an effect-runtime backend capability diagnostic, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
+    Assert.Contains("zig", diagnostic.Value.Message)
+    Assert.Contains("Ask.ask", diagnostic.Value.Message)
+    Assert.DoesNotContain(
+        workspace.Diagnostics,
+        fun current ->
+            current.Code = DiagnosticCode.CheckpointVerification
+            && current.Message.Contains("does not support effect handlers yet", StringComparison.Ordinal)
+    )
+
+[<Fact>]
 let ``shallow handler resumptions do not collapse into the handled carrier`` () =
     let mainSource =
         [

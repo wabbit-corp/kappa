@@ -9,6 +9,120 @@ module Compilation =
 
     let tryInferModuleName = CompilationFrontend.tryInferModuleName
 
+    type private EffectRuntimeUse =
+        | EffectLabelUse of string
+        | EffectOperationUse of string
+        | EffectHandlerUse of isDeep: bool
+
+    let private tokenName (token: Token) =
+        match token.Kind with
+        | Identifier
+        | Keyword _ ->
+            Some(SyntaxFacts.trimIdentifierQuotes token.Text)
+        | Operator ->
+            Some token.Text
+        | _ ->
+            None
+
+    let private provenanceLocation (documents: ParsedDocument list) (origin: KCoreOrigin) =
+        documents
+        |> List.tryFind (fun document -> String.Equals(document.Source.FilePath, origin.FilePath, StringComparison.Ordinal))
+        |> Option.map (fun document ->
+            let defaultLocation = document.Source.GetLocation(TextSpan.FromBounds(0, 0))
+
+            origin.DeclarationName
+            |> Option.bind (fun declarationName ->
+                document.Syntax.Tokens
+                |> List.tryPick (fun token ->
+                    tokenName token
+                    |> Option.filter (fun tokenText -> String.Equals(tokenText, declarationName, StringComparison.Ordinal))
+                    |> Option.map (fun _ -> document.Source.GetLocation(token.Span))))
+            |> Option.defaultValue defaultLocation)
+
+    let private describeEffectLabelExpression expression =
+        match expression with
+        | KRuntimeEffectLabel(labelName, _) -> labelName
+        | KRuntimeName segments -> String.concat "." segments
+        | _ -> "<effect>"
+
+    let rec private tryFindEffectRuntimeUse expression =
+        match expression with
+        | KRuntimeEffectLabel(labelName, _) ->
+            Some(EffectLabelUse labelName)
+        | KRuntimeEffectOperation(label, operationName) ->
+            Some(EffectOperationUse $"{describeEffectLabelExpression label}.{operationName}")
+        | KRuntimeHandle(isDeep, _, _, _, _) ->
+            Some(EffectHandlerUse isDeep)
+        | KRuntimeClosure(_, body)
+        | KRuntimeExecute body
+        | KRuntimeDoScope(_, body)
+        | KRuntimeUnary(_, body) ->
+            tryFindEffectRuntimeUse body
+        | KRuntimeIfThenElse(condition, whenTrue, whenFalse) ->
+            [ condition; whenTrue; whenFalse ] |> List.tryPick tryFindEffectRuntimeUse
+        | KRuntimeLet(_, value, body)
+        | KRuntimeSequence(value, body) ->
+            [ value; body ] |> List.tryPick tryFindEffectRuntimeUse
+        | KRuntimeScheduleExit(_, KRuntimeDeferred deferred, body) ->
+            [ deferred; body ] |> List.tryPick tryFindEffectRuntimeUse
+        | KRuntimeScheduleExit(_, KRuntimeRelease(_, release, resource), body) ->
+            [ release; resource; body ] |> List.tryPick tryFindEffectRuntimeUse
+        | KRuntimeWhile(condition, body)
+        | KRuntimeBinary(condition, _, body) ->
+            [ condition; body ] |> List.tryPick tryFindEffectRuntimeUse
+        | KRuntimeApply(callee, arguments) ->
+            callee :: arguments |> List.tryPick tryFindEffectRuntimeUse
+        | KRuntimeTraitCall(_, _, dictionary, arguments) ->
+            dictionary :: arguments |> List.tryPick tryFindEffectRuntimeUse
+        | KRuntimeMatch(scrutinee, cases) ->
+            tryFindEffectRuntimeUse scrutinee
+            |> Option.orElseWith (fun () ->
+                cases
+                |> List.tryPick (fun caseClause ->
+                    caseClause.Guard
+                    |> Option.bind tryFindEffectRuntimeUse
+                    |> Option.orElseWith (fun () -> tryFindEffectRuntimeUse caseClause.Body)))
+        | KRuntimePrefixedString(_, parts) ->
+            parts
+            |> List.tryPick (function
+                | KRuntimeStringText _ -> None
+                | KRuntimeStringInterpolation(inner, _) -> tryFindEffectRuntimeUse inner)
+        | KRuntimeLiteral _
+        | KRuntimeName _
+        | KRuntimeDictionaryValue _ ->
+            None
+
+    let private validateBackendRuntimeSupport backendProfile (documents: ParsedDocument list) (kRuntimeIR: KRuntimeModule list) =
+        if String.Equals(Stdlib.normalizeBackendProfile backendProfile, "interpreter", StringComparison.Ordinal) then
+            []
+        else
+            let describeDeclaration (binding: KRuntimeBinding) =
+                match binding.Provenance.DeclarationName with
+                | Some declarationName -> $"{binding.Provenance.ModuleName}.{declarationName}"
+                | None -> binding.Provenance.ModuleName
+
+            let describeUse = function
+                | EffectLabelUse labelName -> $"effect label '{labelName}'"
+                | EffectOperationUse operationName -> $"effect operation '{operationName}'"
+                | EffectHandlerUse true -> "deep effect handler"
+                | EffectHandlerUse false -> "effect handler"
+
+            kRuntimeIR
+            |> List.collect (fun runtimeModule ->
+                runtimeModule.Bindings
+                |> List.choose (fun binding ->
+                    binding.Body
+                    |> Option.bind tryFindEffectRuntimeUse
+                    |> Option.map (fun effectUse ->
+                        { Severity = DiagnosticSeverity.Error
+                          Code = DiagnosticCode.EffectRuntimeUnsupportedBackend
+                          Stage = Some "KRuntimeIR"
+                          Phase = None
+                          Message =
+                            $"Backend profile '{Stdlib.normalizeBackendProfile backendProfile}' does not implement {describeUse effectUse} in declaration '{describeDeclaration binding}'. Effect runtime constructs are currently interpreter-only on compiled backends."
+                          Location = provenanceLocation documents binding.Provenance
+                          RelatedLocations = [] })))
+
     let private defaultDeploymentModeForBackendProfile backendProfile =
         match Stdlib.normalizeBackendProfile backendProfile with
         | "dotnet"
@@ -136,6 +250,9 @@ module Compilation =
                 @ (StandardModules.all |> List.map StandardModules.toRuntimeModule)
             |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
+        let runtimeCapabilityDiagnostics =
+            validateBackendRuntimeSupport normalizedBackendProfile documents kRuntimeIR
+
         let kBackendIR, backendLoweringDiagnostics =
             KBackendLowering.lowerKBackendModules normalizedBackendProfile options.AllowUnsafeConsume kRuntimeIR
 
@@ -153,13 +270,16 @@ module Compilation =
             |> not
 
         let backendDiagnostics =
-            if requiresBackendImplementation && not (sourceDiagnostics |> List.exists (fun diagnostic -> diagnostic.Severity = Error)) then
+            if
+                requiresBackendImplementation
+                && not ((sourceDiagnostics @ runtimeCapabilityDiagnostics) |> List.exists (fun diagnostic -> diagnostic.Severity = Error))
+            then
                 backendLoweringDiagnostics
             else
                 []
 
         let provisionalDiagnostics =
-            sourceDiagnostics @ backendDiagnostics
+            sourceDiagnostics @ runtimeCapabilityDiagnostics @ backendDiagnostics
 
         let workspaceWithoutTrace =
             { SourceRoot = options.SourceRoot

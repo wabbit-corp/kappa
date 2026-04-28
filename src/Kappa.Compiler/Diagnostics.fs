@@ -23,6 +23,7 @@ type DiagnosticCode =
     | UrlImportUnsupported
     | HostModuleReservedRoot
     | HostModuleUnsupportedBackend
+    | EffectRuntimeUnsupportedBackend
     | MultishotEffectUnsupportedBackend
     | ModuleAttributeUnknown
     | ModuleHeaderMisplaced
@@ -113,6 +114,7 @@ module DiagnosticCode =
         | UrlImportUnsupported -> "E_URL_IMPORT_UNSUPPORTED"
         | HostModuleReservedRoot -> "E_HOST_MODULE_RESERVED_ROOT"
         | HostModuleUnsupportedBackend -> "E_HOST_MODULE_UNSUPPORTED_BACKEND"
+        | EffectRuntimeUnsupportedBackend -> "E_EFFECT_RUNTIME_UNSUPPORTED_BACKEND"
         | MultishotEffectUnsupportedBackend -> "E_MULTISHOT_EFFECT_UNSUPPORTED_BACKEND"
         | ModuleAttributeUnknown -> "E_MODULE_ATTRIBUTE_UNKNOWN"
         | ModuleHeaderMisplaced -> "E_MODULE_HEADER_MISPLACED"
@@ -202,6 +204,7 @@ module DiagnosticCode =
         | "E_URL_IMPORT_UNSUPPORTED" -> Some UrlImportUnsupported
         | "E_HOST_MODULE_RESERVED_ROOT" -> Some HostModuleReservedRoot
         | "E_HOST_MODULE_UNSUPPORTED_BACKEND" -> Some HostModuleUnsupportedBackend
+        | "E_EFFECT_RUNTIME_UNSUPPORTED_BACKEND" -> Some EffectRuntimeUnsupportedBackend
         | "E_MULTISHOT_EFFECT_UNSUPPORTED_BACKEND" -> Some MultishotEffectUnsupportedBackend
         | "E_MODULE_ATTRIBUTE_UNKNOWN" -> Some ModuleAttributeUnknown
         | "E_MODULE_HEADER_MISPLACED" -> Some ModuleHeaderMisplaced
@@ -297,6 +300,8 @@ module DiagnosticCode =
             Some "A numeric literal cannot be represented at the target numeric type required by the surrounding typing context."
         | QttContinuationCapture ->
             Some "A multi-shot continuation cannot capture live linear or borrowed resources across the operation site."
+        | EffectRuntimeUnsupportedBackend ->
+            Some "The selected backend profile does not implement first-class effect runtime constructs such as effect labels, effect operations, or handlers. Such programs are currently interpreter-only and must be rejected before backend lowering."
         | MultishotEffectUnsupportedBackend ->
             Some "The selected backend profile does not advertise rt-multishot-effects, so reachable multi-shot effect invocations and exported declarations that may invoke them must be rejected."
         | ModuleAttributeUnknown ->

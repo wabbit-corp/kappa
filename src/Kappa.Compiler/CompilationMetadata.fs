@@ -28,7 +28,7 @@ module internal CompilationMetadata =
               Description = "KCore, KRuntimeIR, and KBackendIR carry explicit cleanup scopes and scheduled exit actions; target lowering must preserve deferred and release sequencing." }
             { Name = "effect-handlers"
               Owner = DeferredRuntimeObligation
-              Description = "One-shot scoped-effect handlers are now carried through KCore and KRuntimeIR and executed by the interpreter; backend lowering for handler frames, resumptions, and general target-runtime support remains deferred." }
+              Description = "One-shot scoped-effect handlers are carried through KCore and KRuntimeIR and executed by the interpreter; compiled backends currently reject surviving effect runtime constructs explicitly, because handler frames, resumptions, and general target-runtime support remain deferred." }
         ]
 
     let analysisSession (workspace: WorkspaceCompilation) =
