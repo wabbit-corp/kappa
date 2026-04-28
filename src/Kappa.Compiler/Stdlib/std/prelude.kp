@@ -49,8 +49,8 @@ data Res (a : Type) (r : Type) : Type =
     (:&) (value : a) (resource : r)
 
 data Match (a : Type) (r : Type) : Type =
-    Hit r
-    Miss
+    Hit a
+    Miss r
 
 data Dec (p : Type) : Type =
     Yes p

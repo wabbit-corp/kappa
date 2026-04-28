@@ -63,7 +63,8 @@ module SurfaceElaboration =
         { ObjectKind: StaticObjectKind
           NameSegments: string list
           Scheme: TypeScheme option
-          ScopedEffect: EffectSemanticDeclaration option }
+          ScopedEffect: EffectSemanticDeclaration option
+          TypeFacet: TypeFacetInfo option }
 
     type private RecordSurfaceFieldInfo =
         { Name: string
@@ -875,7 +876,8 @@ module SurfaceElaboration =
         { ObjectKind = StaticTypeObject
           NameSegments = [ typeFacetInfo.Name ]
           Scheme = Some typeFacetInfo.Scheme
-          ScopedEffect = None }
+          ScopedEffect = None
+          TypeFacet = Some typeFacetInfo }
 
     let private sanitizeScopedEffectId (id: string) =
         id.Replace(":", "_", StringComparison.Ordinal).Replace("-", "_", StringComparison.Ordinal)
@@ -894,7 +896,8 @@ module SurfaceElaboration =
                 { Forall = []
                   Constraints = []
                   Body = typeObjectType }
-          ScopedEffect = Some declaration }
+          ScopedEffect = Some declaration
+          TypeFacet = None }
 
     let private scopedEffectLabelStaticObject (declaration: EffectSemanticDeclaration) =
         { ObjectKind = StaticEffectLabelObject
@@ -904,13 +907,15 @@ module SurfaceElaboration =
                 { Forall = []
                   Constraints = []
                   Body = effectLabelObjectType }
-          ScopedEffect = Some declaration }
+          ScopedEffect = Some declaration
+          TypeFacet = None }
 
     let private traitStaticObject (traitInfo: TraitInfo) =
         { ObjectKind = StaticTraitObject
           NameSegments = [ traitInfo.Name ]
           Scheme = Some(traitFacetScheme traitInfo)
-          ScopedEffect = None }
+          ScopedEffect = None
+          TypeFacet = None }
 
     let private tryResolveVisibleTypeFacetInfo
         (environment: BindingLoweringEnvironment)
@@ -958,7 +963,8 @@ module SurfaceElaboration =
                     { ObjectKind = StaticModuleObject
                       NameSegments = nameSegments
                       Scheme = None
-                      ScopedEffect = None }
+                      ScopedEffect = None
+                      TypeFacet = None }
             else
                 None
         | Name nameSegments when not (List.isEmpty nameSegments) ->
@@ -6880,9 +6886,22 @@ module SurfaceElaboration =
         =
         tryResolveStaticReceiverObject environment receiverExpression
         |> Option.bind (fun typeObject ->
-            environment.VisibleConstructors
-            |> Map.tryFind memberName
-            |> Option.filter (constructorResultBelongsToType environment typeObject))
+            let visibleResolution () =
+                environment.VisibleConstructors
+                |> Map.tryFind memberName
+                |> Option.filter (constructorResultBelongsToType environment typeObject)
+
+            match typeObject.ObjectKind, typeObject.TypeFacet with
+            | StaticTypeObject, Some typeFacetInfo ->
+                environment.SurfaceIndex
+                |> Map.tryFind typeFacetInfo.ModuleName
+                |> Option.bind (fun moduleSurface ->
+                    moduleSurface.Constructors
+                    |> Map.tryFind memberName
+                    |> Option.filter (constructorResultBelongsToType environment typeObject))
+                |> Option.orElseWith visibleResolution
+            | _ ->
+                visibleResolution ())
 
     let private tryInferStaticConstructorCall
         (environment: BindingLoweringEnvironment)
@@ -20367,6 +20386,18 @@ module SurfaceElaboration =
                     | ExplicitArgument argument -> lowerExpressionWithExpectedType localTypes None argument
                     | ImplicitArgument implicitArgument -> implicitArgument)
 
+            let lowerStaticConstructorCallee receiverExpression memberName =
+                let receiverSegments =
+                    match receiverExpression with
+                    | Name segments
+                    | KindQualifiedName(_, segments) ->
+                        Some segments
+                    | _ ->
+                        tryResolveScopedStaticObject environment receiverExpression
+                        |> Option.map (fun staticObject -> staticObject.NameSegments)
+
+                KCoreName((receiverSegments |> Option.defaultValue []) @ [ memberName ])
+
             let lowerInterpolatedMacroTypeArgument inner =
                 match inferExpressionType localTypes inner |> Option.map (normalizeTypeAliases environment.VisibleTypeAliases) with
                 | Some(TypeName(nameSegments, [])) ->
@@ -21217,7 +21248,7 @@ module SurfaceElaboration =
 
                                 match tryResolveStaticConstructor environment (Name [ receiverName ]) operationName with
                                 | Some _ ->
-                                    KCoreName [ operationName ]
+                                    lowerStaticConstructorCallee (Name [ receiverName ]) operationName
                                 | None ->
                                     match tryReceiverProjection environment localTypes receiverName operationName with
                                     | Some _ ->
@@ -21482,7 +21513,7 @@ module SurfaceElaboration =
                     | None ->
                         match tryResolveStaticConstructor environment receiver memberName with
                         | Some _ ->
-                            KCoreAppSpine(KCoreName [ memberName ], lowerArguments arguments)
+                            KCoreAppSpine(lowerStaticConstructorCallee receiver memberName, lowerArguments arguments)
                         | None ->
                             match environment.VisibleBindings |> Map.tryFind memberName with
                             | Some bindingInfo ->
@@ -21608,7 +21639,7 @@ module SurfaceElaboration =
                 | None ->
                     match tryResolveStaticConstructor environment (Name [ receiverName ]) memberName with
                     | Some _ ->
-                        KCoreAppSpine(KCoreName [ memberName ], lowerArguments arguments)
+                        KCoreAppSpine(lowerStaticConstructorCallee (Name [ receiverName ]) memberName, lowerArguments arguments)
                     | None ->
                         match tryResolveTraitMemberProjection environment localTypes [ receiverName; memberName ] with
                         | Some(traitInfo, resolvedMemberName, _, resolvedReceiverName) ->
@@ -21640,6 +21671,15 @@ module SurfaceElaboration =
                                     KCoreAppSpine(lowerExpression localTypes (Name [ receiverName; memberName ]), lowerArguments arguments)
                             | None ->
                                 KCoreAppSpine(lowerExpression localTypes (Name [ receiverName; memberName ]), lowerArguments arguments)
+            | Apply(MemberAccess(receiver, [ memberName ], []), arguments) ->
+                match tryResolveStaticConstructor environment receiver memberName with
+                | Some _ ->
+                    KCoreAppSpine(lowerStaticConstructorCallee receiver memberName, lowerArguments arguments)
+                | None ->
+                    KCoreAppSpine(
+                        lowerExpressionWithExpectedType localTypes None (MemberAccess(receiver, [ memberName ], [])),
+                        lowerArguments arguments
+                    )
             | Apply(Name nameSegments, arguments) ->
                 match tryResolveEffectOperationNamePath environment nameSegments with
                 | Some(effectName, declaration, operation) ->

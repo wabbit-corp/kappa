@@ -1467,9 +1467,14 @@ type private ExpressionParser
         let listNil = Name [ "Nil" ]
         let boolTrue = Name [ "True" ]
         let boolFalse = Name [ "False" ]
+        let preludeResConstructorName = [ "Res"; ":&" ]
+        let preludeResConstructorExpression = MemberAccess(Name [ "Res" ], [ ":&" ], [])
 
         let cons head tail =
             Apply(Name [ "::" ], [ head; tail ])
+
+        let applyPreludeResConstructor left right =
+            Apply(preludeResConstructorExpression, [ left; right ])
 
         let makeListExpression (items: SurfaceExpression list) =
             List.foldBack cons items listNil
@@ -1480,7 +1485,7 @@ type private ExpressionParser
         let makeMapExpression (entries: (SurfaceExpression * SurfaceExpression) list) =
             let entryExpressions =
                 entries
-                |> List.map (fun (key, value) -> Apply(Name [ ":&" ], [ key; value ]))
+                |> List.map (fun (key, value) -> applyPreludeResConstructor key value)
 
             Apply(Name [ "Map" ], [ makeListExpression entryExpressions ])
 
@@ -1555,9 +1560,6 @@ type private ExpressionParser
               IsInout = false
               IsReceiver = false }
 
-        let preludeResConstructorName =
-            [ ":&" ]
-
         let bindName name value body =
             LocalLet(makeNamePatternBinding name, value, body)
 
@@ -1571,7 +1573,7 @@ type private ExpressionParser
             | [ name ] ->
                 Name [ name ]
             | name :: rest ->
-                Apply(Name preludeResConstructorName, [ Name [ name ]; makeRowExpression rest ])
+                applyPreludeResConstructor (Name [ name ]) (makeRowExpression rest)
 
         let wrapPatternBindings binding value body =
             LocalLet(binding, value, body)
@@ -2400,7 +2402,7 @@ type private ExpressionParser
                 (applyName loopName [ rowsExpression ])
 
         let mapYieldEntries rowNames rowsExpression keyExpression valueExpression =
-            mapYield rowNames rowsExpression (Apply(Name preludeResConstructorName, [ keyExpression; valueExpression ]))
+            mapYield rowNames rowsExpression (applyPreludeResConstructor keyExpression valueExpression)
 
         let transformForClause
             (rowNames: string list)
@@ -2829,7 +2831,7 @@ type private ExpressionParser
                                 (Name [ rowName ])
                                 (bindName
                                     pairName
-                                    (Apply(Name preludeResConstructorName, [ keyExpression; Name [ rowName ] ]))
+                                    (applyPreludeResConstructor keyExpression (Name [ rowName ]))
                                     (applyName
                                         insertName
                                         [ Name [ pairName ]

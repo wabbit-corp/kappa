@@ -113,6 +113,33 @@ let ``interpreter evaluates imported functions and closures`` () =
         failwithf "Expected successful evaluation, got %s" issue.Message
 
 [<Fact>]
+let ``interpreter supports type scoped constructor patterns`` () =
+    let mainSource =
+        [
+            "module main"
+            "result : Int"
+            "let result ="
+            "    match Some 41"
+            "    case Option.Some x -> x + 1"
+            "    case _ -> 0"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-type-scoped-pattern-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("42", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected successful evaluation, got %s" issue.Message
+
+[<Fact>]
 let ``interpreter supports bare wildcard lambda binders`` () =
     let mainSource =
         [

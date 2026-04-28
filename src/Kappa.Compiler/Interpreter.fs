@@ -1714,7 +1714,81 @@ module Interpreter =
                 | Result.Error _ ->
                     let qualifierSegments = segments |> List.take (segments.Length - 1)
                     let bindingName = List.last segments
-                    resolveQualifiedName scope qualifierSegments bindingName
+                    match resolveTypeScopedConstructorCandidates scope qualifierSegments bindingName with
+                    | [ _, constructor ] ->
+                        ok (constructorValue constructor)
+                    | [] ->
+                        resolveQualifiedName scope qualifierSegments bindingName
+                    | _ ->
+                        let qualifiedName = String.concat "." segments
+                        error $"Constructor-like reference '{qualifiedName}' is ambiguous across visible types."
+
+        and selectionImportsTypeName (importedModule: RuntimeModule) (selection: ImportSelection) (typeName: string) =
+            let exportsType =
+                importedModule.Exports.Contains(typeName)
+                || (importedModule.Constructors
+                    |> Map.exists (fun constructorName constructor ->
+                        String.Equals(constructor.TypeName, typeName, StringComparison.Ordinal)
+                        && importedModule.Exports.Contains(constructorName)))
+
+            match selection with
+            | QualifiedOnly ->
+                false
+            | Items items ->
+                exportsType
+                && (items
+                    |> List.exists (fun item ->
+                        String.Equals(item.Name, typeName, StringComparison.Ordinal)
+                        && item.Namespace = Some ImportNamespace.Type))
+            | All ->
+                exportsType
+            | AllExcept excludedItems ->
+                exportsType
+                && not (
+                    excludedItems
+                    |> List.exists (fun item ->
+                        String.Equals(item.Name, typeName, StringComparison.Ordinal)
+                        && (item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Type))
+                )
+
+        and resolveTypeScopedConstructorCandidates
+            (scope: RuntimeScope)
+            (typeQualifierSegments: string list)
+            (constructorName: string)
+            =
+            let currentModule = scope.Context.Modules[scope.CurrentModule]
+            let typeName = SyntaxFacts.moduleNameToText typeQualifierSegments
+
+            let currentModuleCandidate =
+                currentModule.Constructors
+                |> Map.tryFind constructorName
+                |> Option.filter (fun constructor -> String.Equals(constructor.TypeName, typeName, StringComparison.Ordinal))
+                |> Option.map (fun constructor -> currentModule.Name, constructor)
+
+            let importedCandidates =
+                currentModule.Imports
+                |> List.choose (fun spec ->
+                    match spec.Source with
+                    | Url _ ->
+                        None
+                    | Dotted moduleSegments ->
+                        let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
+
+                        match Map.tryFind importedModuleName scope.Context.Modules with
+                        | Some importedModule when selectionImportsTypeName importedModule spec.Selection typeName ->
+                            importedModule.Constructors
+                            |> Map.tryFind constructorName
+                            |> Option.filter (fun constructor ->
+                                String.Equals(constructor.TypeName, typeName, StringComparison.Ordinal)
+                                && importedModule.Exports.Contains(constructorName))
+                            |> Option.map (fun constructor -> importedModuleName, constructor)
+                        | _ ->
+                            None)
+
+            currentModuleCandidate
+            |> Option.toList
+            |> List.append importedCandidates
+            |> List.distinctBy fst
 
         and resolvePatternConstructor (scope: RuntimeScope) (segments: string list) : Result<RuntimeConstructor, EvaluationError> =
             let currentModule = scope.Context.Modules[scope.CurrentModule]
@@ -1755,7 +1829,7 @@ module Interpreter =
                 let constructorName = List.last segments
                 let qualifierText = SyntaxFacts.moduleNameToText qualifierSegments
 
-                let targetModule =
+                let moduleQualifiedTarget =
                     if String.Equals(qualifierText, scope.CurrentModule, StringComparison.Ordinal) then
                         Some currentModule
                     else
@@ -1769,7 +1843,7 @@ module Interpreter =
                             | _ ->
                                 None)
 
-                match targetModule with
+                match moduleQualifiedTarget with
                 | Some runtimeModule when runtimeModule.Name = scope.CurrentModule || runtimeModule.Exports.Contains(constructorName) ->
                     match runtimeModule.Constructors.TryGetValue(constructorName) with
                     | true, constructor ->
@@ -1780,7 +1854,14 @@ module Interpreter =
                 | Some runtimeModule ->
                     error $"'{constructorName}' is not exported from module '{runtimeModule.Name}'."
                 | None ->
-                    error $"Module qualifier '{qualifierText}' is not in scope."
+                    match resolveTypeScopedConstructorCandidates scope qualifierSegments constructorName with
+                    | [ _, constructor ] ->
+                        ok constructor
+                    | [] ->
+                        error $"Module qualifier '{qualifierText}' is not in scope."
+                    | _ ->
+                        let patternName = String.concat "." segments
+                        error $"Pattern constructor '{patternName}' is ambiguous across visible types."
 
         and itemImportsTermName (item: ImportItem) =
             item.Namespace.IsNone || item.Namespace = Some ImportNamespace.Term

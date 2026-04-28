@@ -42,11 +42,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - These decisions should be driven by resolved semantic identities and representation metadata, not display text.
   - Sources: `reviews/principles1.md`, `reviews/backend1.md`.
 
-- `[Medium] Reconcile the implicit prelude constructor subset with the spec.`
-  - `Stdlib.fs` still carries an implementation-defined fixed implicit constructor list that appears broader than the spec’s implicit unqualified constructor subset.
-  - The current prelude constructor-subset test also encodes that broader implementation list, so this remains both an implementation-spec drift issue and a test-spec drift issue.
-  - Sources: `reviews/principles1.md`, `reviews/tests1.md`.
-
 ## 2. Source Loading, Module Mapping, and Lexing
 
 - `[High] Make path-derived module mapping exactly match the spec.`
@@ -746,14 +741,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - trait dispatch failure modes.
   - Also ensure any repo-local Zig bootstrap/test scripts referenced by the harness are actually present and exercised in normal test environments.
   - Sources: `reviews/zig1.md`.
-
-- `[High] Reconcile prelude-oriented tests with the actual spec instead of treating implementation drift as normative.`
-  - The implicit prelude constructor-subset test currently expects constructors beyond the spec’s exact fixed subset.
-  - The “bundled bootstrap prelude exposes the normative minimum surface” test is not actually checking the spec’s full normative minimum, and it also appears to require `Char` even though the spec treats `Char` only as an optional deprecated compatibility alias.
-  - Either:
-  - update the spec to match the intended implementation surface; or
-  - shrink/rename the tests so they honestly describe implementation surface rather than normative minimum conformance.
-  - Sources: `reviews/tests1.md`, `reviews/principles1.md`.
 
 - `[Medium-High] Replace weak negative test assertions with diagnostic-code assertions wherever possible.`
   - Several negative tests assert only `workspace.HasErrors` or message substrings.

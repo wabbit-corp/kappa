@@ -29,18 +29,9 @@ module Stdlib =
           "Err"
           "Nil"
           "::"
-          ":&"
           "LT"
           "EQ"
           "GT"
-          "Reusable"
-          "OneShot"
-          "QZero"
-          "QOne"
-          "QZeroOrOne"
-          "QOneOrMore"
-          "QZeroOrMore"
-          "QueryMode"
           "refl" ]
 
     let PreludeConstructorImportSpec =

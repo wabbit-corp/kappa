@@ -3126,6 +3126,101 @@ let ``KCore lowers calls as application spines with explicit arguments`` () =
         failwithf "Expected KCore app spine for answer, got %A" other
 
 [<Fact>]
+let ``KCore preserves qualified Res constructor applications from map sugar`` () =
+    let rec containsQualifiedResConstructor expression =
+        match expression with
+        | KCoreAppSpine(
+            KCoreName [ "Res"; ":&" ],
+            [ { Expression = KCoreLiteral(LiteralValue.Integer 1L) }
+              { Expression = KCoreLiteral(LiteralValue.Integer 2L) } ]
+          ) -> true
+        | KCoreAppSpine(callee, arguments) ->
+            containsQualifiedResConstructor callee
+            || (arguments |> List.exists (fun argument -> containsQualifiedResConstructor argument.Expression))
+        | KCoreLet(_, value, body)
+        | KCoreSequence(value, body) ->
+            containsQualifiedResConstructor value || containsQualifiedResConstructor body
+        | KCoreDoScope(_, body)
+        | KCoreExecute body
+        | KCoreLambda(_, body)
+        | KCoreUnary(_, body) ->
+            containsQualifiedResConstructor body
+        | KCoreBinary(left, _, right) ->
+            containsQualifiedResConstructor left || containsQualifiedResConstructor right
+        | KCoreIfThenElse(condition, whenTrue, whenFalse) ->
+            containsQualifiedResConstructor condition
+            || containsQualifiedResConstructor whenTrue
+            || containsQualifiedResConstructor whenFalse
+        | KCoreWhile(condition, body) ->
+            containsQualifiedResConstructor condition || containsQualifiedResConstructor body
+        | KCoreMatch(scrutinee, cases) ->
+            containsQualifiedResConstructor scrutinee
+            || (cases
+                |> List.exists (fun caseClause ->
+                    caseClause.Guard |> Option.exists containsQualifiedResConstructor
+                    || containsQualifiedResConstructor caseClause.Body))
+        | KCoreHandle(_, label, body, returnClause, operationClauses) ->
+            containsQualifiedResConstructor label
+            || containsQualifiedResConstructor body
+            || containsQualifiedResConstructor returnClause.Body
+            || (operationClauses |> List.exists (fun clause -> containsQualifiedResConstructor clause.Body))
+        | KCoreTraitCall(_, _, dictionary, arguments) ->
+            containsQualifiedResConstructor dictionary || (arguments |> List.exists containsQualifiedResConstructor)
+        | KCoreScheduleExit(_, KCoreDeferred deferred, body) ->
+            containsQualifiedResConstructor deferred || containsQualifiedResConstructor body
+        | KCoreScheduleExit(_, KCoreRelease(_, release, resource), body) ->
+            containsQualifiedResConstructor release
+            || containsQualifiedResConstructor resource
+            || containsQualifiedResConstructor body
+        | KCorePrefixedString(_, parts) ->
+            parts
+            |> List.exists (function
+                | KCoreStringText _ -> false
+                | KCoreStringInterpolation inner -> containsQualifiedResConstructor inner)
+        | KCoreSyntaxQuote inner
+        | KCoreSyntaxSplice inner
+        | KCoreTopLevelSyntaxSplice inner
+        | KCoreCodeQuote inner
+        | KCoreCodeSplice inner ->
+            containsQualifiedResConstructor inner
+        | KCoreLiteral _
+        | KCoreName _
+        | KCoreStaticObject _
+        | KCoreEffectLabel _
+        | KCoreEffectOperation _
+        | KCoreDictionaryValue _ ->
+            false
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-kcore-qualified-res-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let result = { yield 1 : 2 }"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, $"Expected map sugar compilation to succeed, got {workspace.Diagnostics}.")
+
+    let resultBinding =
+        workspace.KCore
+        |> List.find (fun moduleDump -> moduleDump.Name = "main")
+        |> fun moduleDump ->
+            moduleDump.Declarations
+            |> List.pick (fun declaration ->
+                match declaration.Binding with
+                | Some binding when binding.Name = Some "result" -> Some binding
+                | _ -> None)
+
+    match resultBinding.Body with
+    | Some body when containsQualifiedResConstructor body -> ()
+    | other ->
+        failwithf "Expected KCore map sugar lowering to preserve Res.(:&), got %A" other
+
+[<Fact>]
 let ``prefixed strings elaborate through Elab-backed prelude handlers`` () =
     let workspace =
         compileInMemoryWorkspace
@@ -3873,18 +3968,9 @@ let ``implicit prelude import models the wildcard and constructor subset separat
                     Some ImportNamespace.Constructor, "Err"
                     Some ImportNamespace.Constructor, "Nil"
                     Some ImportNamespace.Constructor, "::"
-                    Some ImportNamespace.Constructor, ":&"
                     Some ImportNamespace.Constructor, "LT"
                     Some ImportNamespace.Constructor, "EQ"
                     Some ImportNamespace.Constructor, "GT"
-                    Some ImportNamespace.Constructor, "Reusable"
-                    Some ImportNamespace.Constructor, "OneShot"
-                    Some ImportNamespace.Constructor, "QZero"
-                    Some ImportNamespace.Constructor, "QOne"
-                    Some ImportNamespace.Constructor, "QZeroOrOne"
-                    Some ImportNamespace.Constructor, "QOneOrMore"
-                    Some ImportNamespace.Constructor, "QZeroOrMore"
-                    Some ImportNamespace.Constructor, "QueryMode"
                     Some ImportNamespace.Constructor, "refl"
                 ]
 
@@ -3893,6 +3979,105 @@ let ``implicit prelude import models the wildcard and constructor subset separat
             failwithf "Unexpected implicit prelude constructor import: %A" other
     | other ->
         failwithf "Expected two implicit prelude import specs, got %A" other
+
+[<Fact>]
+let ``map collection sugar lowers through qualified Res constructor semantics`` () =
+    let rec tryFindQualifiedRes expression =
+        match expression with
+        | Apply(MemberAccess(Name [ "Res" ], [ ":&" ], []), [ keyExpression; valueExpression ]) ->
+            Some(keyExpression, valueExpression)
+        | Apply(callee, arguments) ->
+            tryFindQualifiedRes callee
+            |> Option.orElseWith (fun () -> arguments |> List.tryPick tryFindQualifiedRes)
+        | LocalLet(_, value, body) ->
+            tryFindQualifiedRes value
+            |> Option.orElseWith (fun () -> tryFindQualifiedRes body)
+        | Lambda(_, body)
+        | SyntaxQuote body
+        | SyntaxSplice body
+        | TopLevelSyntaxSplice body
+        | CodeQuote body
+        | CodeSplice body
+        | MonadicSplice body
+        | ExplicitImplicitArgument body
+        | InoutArgument body
+        | Unary(_, body)
+        | Seal(body, _) ->
+            tryFindQualifiedRes body
+        | IfThenElse(condition, thenBranch, elseBranch) ->
+            tryFindQualifiedRes condition
+            |> Option.orElseWith (fun () -> tryFindQualifiedRes thenBranch)
+            |> Option.orElseWith (fun () -> tryFindQualifiedRes elseBranch)
+        | Match(subject, cases) ->
+            tryFindQualifiedRes subject
+            |> Option.orElseWith (fun () -> cases |> List.tryPick (fun case -> tryFindQualifiedRes case.Body))
+        | RecordLiteral fields ->
+            fields |> List.tryPick (fun field -> tryFindQualifiedRes field.Value)
+        | RecordUpdate(receiver, fields) ->
+            tryFindQualifiedRes receiver
+            |> Option.orElseWith (fun () -> fields |> List.tryPick (fun field -> tryFindQualifiedRes field.Value))
+        | MemberAccess(receiver, _, arguments) ->
+            tryFindQualifiedRes receiver
+            |> Option.orElseWith (fun () -> arguments |> List.tryPick tryFindQualifiedRes)
+        | SafeNavigation(receiver, navigation) ->
+            tryFindQualifiedRes receiver
+            |> Option.orElseWith (fun () -> navigation.Arguments |> List.tryPick tryFindQualifiedRes)
+        | Binary(left, _, right)
+        | Elvis(left, right) ->
+            tryFindQualifiedRes left
+            |> Option.orElseWith (fun () -> tryFindQualifiedRes right)
+        | Comprehension comprehension ->
+            tryFindQualifiedRes comprehension.Lowered
+        | _ ->
+            None
+
+    let parsed =
+        parseDocumentWithFixities
+            FixityTable.empty
+            "__map_literal__.kp"
+            ([ "module main"; "let result = { yield 1 : 2 }" ] |> String.concat "\n")
+
+    Assert.Empty(parsed.Diagnostics)
+    Assert.Equal<string list option>(Some [ "main" ], parsed.Syntax.ModuleHeader)
+
+    match parsed.Syntax.Declarations with
+    | [ LetDeclaration resultDeclaration ] ->
+        match resultDeclaration.Body with
+        | Some body ->
+            match tryFindQualifiedRes body with
+            | Some(keyExpression, valueExpression) ->
+                assertSurfaceIntegerLiteral 1 "1" keyExpression
+                assertSurfaceIntegerLiteral 2 "2" valueExpression
+            | None ->
+                failwithf "Expected map collection lowering to use Res.(:&), got %A" body
+        | None ->
+            failwith "Expected let result to have a body."
+    | other ->
+        failwithf "Unexpected declarations: %A" other
+
+[<Fact>]
+let ``bundled prelude Match constructors follow the spec payload residue order`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-prelude-match-shape-root"
+            [
+                "main.kp",
+                [
+                    "@PrivateByDefault module main"
+                    ""
+                    "data Buf : Type ="
+                    "    Buf (n : Int)"
+                    ""
+                    "hit : Match Int Buf"
+                    "let hit = Match.Hit 1"
+                    ""
+                    "miss : Match Int Buf"
+                    "let miss = Match.Miss (Buf 0)"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected Match.Hit / Match.Miss to match the spec shape, got %A" workspace.Diagnostics)
 
 [<Fact>]
 let ``unknown backend profiles leave prelude expects unsatisfied`` () =
