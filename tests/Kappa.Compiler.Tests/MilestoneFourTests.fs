@@ -1198,73 +1198,7 @@ let ``multishot aliased effect labels still trigger capture and backend capabili
     Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
 
 [<Fact>]
-let ``backends without multishot capability reject direct multishot invocations`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "result : Eff <[Choice : Choice]> Bool"
-            "let result ="
-            "    block"
-            "        scoped effect Choice ="
-            "            ω choose : Unit -> Bool"
-            ""
-            "        Choice.choose ()"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspaceWithBackend
-            "memory-m4-multishot-capability-root"
-            "zig"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected backends without rt-multishot-effects to reject direct multishot invocation.")
-
-    let diagnostic =
-        workspace.Diagnostics
-        |> List.tryFind (fun current -> current.Code = DiagnosticCode.MultishotEffectUnsupportedBackend)
-
-    Assert.True(diagnostic.IsSome, "Expected a multishot backend-capability diagnostic.")
-    Assert.Contains("Choice.choose", diagnostic.Value.Message)
-    Assert.Contains("zig", diagnostic.Value.Message)
-
-[<Fact>]
-let ``backends without multishot capability reject exported declarations that may invoke multishot effects`` () =
-    let mainSource =
-        [
-            "module main"
-            ""
-            "result : Eff <[Choice : Choice]> Bool"
-            "let result ="
-            "    block"
-            "        scoped effect Choice ="
-            "            ω choose : Unit -> Bool"
-            ""
-            "        Choice.choose ()"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspaceWithBackend
-            "memory-m4-multishot-export-root"
-            "zig"
-            [ "main.kp", mainSource ]
-
-    Assert.True(workspace.HasErrors, "Expected exported multishot definitions to be rejected without backend capability.")
-
-    let exportedDiagnostic =
-        workspace.Diagnostics
-        |> List.tryFind (fun diagnostic ->
-            diagnostic.Code = DiagnosticCode.MultishotEffectUnsupportedBackend
-            && diagnostic.Message.Contains("exported declaration 'result'", StringComparison.Ordinal))
-
-    Assert.True(exportedDiagnostic.IsSome, "Expected an exported-declaration multishot backend-capability diagnostic.")
-    Assert.Contains("Choice.choose", exportedDiagnostic.Value.Message)
-    Assert.Contains("zig", exportedDiagnostic.Value.Message)
-
-[<Fact>]
-let ``compiled backends reject effect handlers before backend lowering`` () =
+let ``zig backend runs one shot handled programs`` () =
     let mainSource =
         [
             "@PrivateByDefault module main"
@@ -1291,64 +1225,94 @@ let ``compiled backends reject effect handlers before backend lowering`` () =
 
     let workspace =
         compileInMemoryWorkspaceWithBackend
-            "memory-m4-effect-handler-backend-root"
+            "memory-m4-zig-one-shot-effect-root"
             "zig"
             [ "main.kp", mainSource ]
 
-    Assert.True(workspace.HasErrors, "Expected compiled backends to reject effect handlers before backend lowering.")
+    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+    Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.EffectRuntimeUnsupportedBackend)
 
-    let diagnostic =
-        workspace.Diagnostics
-        |> List.tryFind (fun current -> current.Code = DiagnosticCode.EffectRuntimeUnsupportedBackend)
+    let outputDirectory = createScratchDirectory "zig-m4-one-shot-effects"
 
-    Assert.True(diagnostic.IsSome, sprintf "Expected an effect-runtime backend capability diagnostic, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-    Assert.Contains("zig", diagnostic.Value.Message)
-    Assert.Contains("main.result", diagnostic.Value.Message)
-    Assert.DoesNotContain(
-        workspace.Diagnostics,
-        fun current ->
-            current.Code = DiagnosticCode.CheckpointVerification
-            && current.Message.Contains("does not support effect handlers yet", StringComparison.Ordinal)
-    )
+    let artifact =
+        match Backend.emitZigArtifact workspace "main.result" outputDirectory with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    let compileResult =
+        runProcess
+            outputDirectory
+            (ensureRepoZigExecutablePath ())
+            $"cc -std=c11 -O0 -o \"{artifact.ExecutableFilePath}\" \"{artifact.SourceFilePath}\""
+
+    Assert.Equal(0, compileResult.ExitCode)
+    Assert.True(String.IsNullOrWhiteSpace(compileResult.StandardError), compileResult.StandardError)
+
+    let runResult = runProcess outputDirectory artifact.ExecutableFilePath ""
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("1", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
-let ``compiled backends reject direct effect operations before backend lowering`` () =
+let ``zig backend runs multishot handled programs`` () =
     let mainSource =
         [
             "@PrivateByDefault module main"
             ""
-            "result : Eff <[Ask : Ask]> Bool"
+            "result : Int"
             "let result ="
             "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
+            "        scoped effect Choice ="
+            "            ω choose : Unit -> Bool"
             ""
-            "        let op = Ask.ask"
-            "        op ()"
+            "        let comp : Eff <[Choice : Choice]> Int ="
+            "            do"
+            "                let b <- Choice.choose ()"
+            "                if b then 1 else 2"
+            ""
+            "        let handled : Eff <[ ]> Int ="
+            "            deep handle Choice comp with"
+            "                case return x -> pure x"
+            "                case choose () k ->"
+            "                    do"
+            "                        let a <- k True"
+            "                        let b <- k False"
+            "                        pure (a + b)"
+            ""
+            "        runPure handled"
         ]
         |> String.concat "\n"
 
     let workspace =
         compileInMemoryWorkspaceWithBackend
-            "memory-m4-effect-operation-backend-root"
+            "memory-m4-zig-multishot-effect-root"
             "zig"
             [ "main.kp", mainSource ]
 
-    Assert.True(workspace.HasErrors, "Expected compiled backends to reject direct effect operations before backend lowering.")
+    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+    Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.EffectRuntimeUnsupportedBackend)
+    Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.MultishotEffectUnsupportedBackend)
 
-    let diagnostic =
-        workspace.Diagnostics
-        |> List.tryFind (fun current -> current.Code = DiagnosticCode.EffectRuntimeUnsupportedBackend)
+    let outputDirectory = createScratchDirectory "zig-m4-multishot-effects"
 
-    Assert.True(diagnostic.IsSome, sprintf "Expected an effect-runtime backend capability diagnostic, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-    Assert.Contains("zig", diagnostic.Value.Message)
-    Assert.Contains("Ask.ask", diagnostic.Value.Message)
-    Assert.DoesNotContain(
-        workspace.Diagnostics,
-        fun current ->
-            current.Code = DiagnosticCode.CheckpointVerification
-            && current.Message.Contains("does not support effect handlers yet", StringComparison.Ordinal)
-    )
+    let artifact =
+        match Backend.emitZigArtifact workspace "main.result" outputDirectory with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    let compileResult =
+        runProcess
+            outputDirectory
+            (ensureRepoZigExecutablePath ())
+            $"cc -std=c11 -O0 -o \"{artifact.ExecutableFilePath}\" \"{artifact.SourceFilePath}\""
+
+    Assert.Equal(0, compileResult.ExitCode)
+    Assert.True(String.IsNullOrWhiteSpace(compileResult.StandardError), compileResult.StandardError)
+
+    let runResult = runProcess outputDirectory artifact.ExecutableFilePath ""
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("3", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
 let ``dotnet backend runs one shot handled programs`` () =

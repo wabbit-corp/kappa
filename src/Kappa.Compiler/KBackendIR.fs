@@ -13,6 +13,8 @@ type KBackendRepresentationClass =
     | BackendRepTaggedData of moduleName: string * typeName: string
     | BackendRepClosure of environmentLayout: string
     | BackendRepIOAction
+    | BackendRepEffectLabel
+    | BackendRepEffectOperation
     | BackendRepOpaque of string option
 
 type KBackendParameter =
@@ -41,9 +43,31 @@ type KBackendResolvedName =
         arity: int *
         representation: KBackendRepresentationClass
 
+type KBackendEffectOperationInfo =
+    { OperationId: string
+      Name: string
+      ParameterArity: int
+      AllowsMultipleResumptions: bool }
+
+type KBackendEffectHandlerArgument =
+    | BackendEffectUnitArgument
+    | BackendEffectWildcardArgument
+    | BackendEffectNameArgument of string
+
 type KBackendExpression =
     | BackendLiteral of LiteralValue * KBackendRepresentationClass
     | BackendName of KBackendResolvedName
+    | BackendEffectLabel of
+        labelName: string *
+        interfaceId: string *
+        labelId: string *
+        operations: KBackendEffectOperationInfo list *
+        representation: KBackendRepresentationClass
+    | BackendEffectOperation of
+        label: KBackendExpression *
+        operationId: string *
+        operationName: string *
+        representation: KBackendRepresentationClass
     | BackendClosure of
         parameters: KBackendParameter list *
         captures: KBackendCapture list *
@@ -62,6 +86,24 @@ type KBackendExpression =
         resultRepresentation: KBackendRepresentationClass
     | BackendExecute of
         expression: KBackendExpression *
+        resultRepresentation: KBackendRepresentationClass
+    | BackendPure of
+        expression: KBackendExpression *
+        resultRepresentation: KBackendRepresentationClass
+    | BackendBind of
+        action: KBackendExpression *
+        binder: KBackendExpression *
+        resultRepresentation: KBackendRepresentationClass
+    | BackendThen of
+        first: KBackendExpression *
+        second: KBackendExpression *
+        resultRepresentation: KBackendRepresentationClass
+    | BackendHandle of
+        isDeep: bool *
+        label: KBackendExpression *
+        body: KBackendExpression *
+        returnClause: KBackendEffectHandlerClause *
+        operationClauses: KBackendEffectHandlerClause list *
         resultRepresentation: KBackendRepresentationClass
     | BackendLet of
         binding: KBackendParameter *
@@ -102,6 +144,12 @@ type KBackendExpression =
         prefix: string *
         parts: KBackendStringPart list *
         resultRepresentation: KBackendRepresentationClass
+
+and KBackendEffectHandlerClause =
+    { OperationName: string
+      Arguments: KBackendEffectHandlerArgument list
+      ResumptionName: string option
+      Body: KBackendExpression }
 
 and KBackendStringPart =
     | BackendStringText of string

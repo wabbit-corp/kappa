@@ -166,7 +166,7 @@ module CheckpointVerification =
 
         verify Set.empty pattern
 
-    let private runtimeTypeLeaksErasureMetadata (typeText: string) =
+    let private runtimeTypeLeaksErasureMetadata allowEffectRows (typeText: string) =
         let rec loop typeExpr =
             match typeExpr with
             | TypeSignatures.TypeLevelLiteral _ ->
@@ -206,7 +206,7 @@ module CheckpointVerification =
             | TypeSignatures.TypeCapture _ ->
                 true
             | TypeSignatures.TypeEffectRow _ ->
-                true
+                not allowEffectRows
             | TypeSignatures.TypeRecord fields ->
                 fields
                 |> List.exists (fun field -> field.Quantity <> QuantityOmega || loop field.Type)
@@ -331,6 +331,56 @@ module CheckpointVerification =
 
         verify Set.empty expression
 
+    let rec private backendExpressionUsesEffectRuntime expression =
+        match expression with
+        | BackendEffectLabel _
+        | BackendEffectOperation _
+        | BackendPure _
+        | BackendBind _
+        | BackendThen _
+        | BackendHandle _ ->
+            true
+        | BackendLiteral _
+        | BackendName _
+        | BackendDictionaryValue _ ->
+            false
+        | BackendClosure(_, _, _, body, _, _) ->
+            backendExpressionUsesEffectRuntime body
+        | BackendIfThenElse(condition, whenTrue, whenFalse, _) ->
+            backendExpressionUsesEffectRuntime condition
+            || backendExpressionUsesEffectRuntime whenTrue
+            || backendExpressionUsesEffectRuntime whenFalse
+        | BackendMatch(scrutinee, cases, _) ->
+            backendExpressionUsesEffectRuntime scrutinee
+            || (cases
+                |> List.exists (fun caseClause ->
+                    caseClause.Guard |> Option.exists backendExpressionUsesEffectRuntime
+                    || backendExpressionUsesEffectRuntime caseClause.Body))
+        | BackendExecute(inner, _) ->
+            backendExpressionUsesEffectRuntime inner
+        | BackendLet(_, value, body, _) ->
+            backendExpressionUsesEffectRuntime value
+            || backendExpressionUsesEffectRuntime body
+        | BackendSequence(first, second, _) ->
+            backendExpressionUsesEffectRuntime first
+            || backendExpressionUsesEffectRuntime second
+        | BackendWhile(condition, body) ->
+            backendExpressionUsesEffectRuntime condition
+            || backendExpressionUsesEffectRuntime body
+        | BackendCall(callee, arguments, _, _) ->
+            backendExpressionUsesEffectRuntime callee
+            || (arguments |> List.exists backendExpressionUsesEffectRuntime)
+        | BackendTraitCall(_, _, dictionary, arguments, _) ->
+            backendExpressionUsesEffectRuntime dictionary
+            || (arguments |> List.exists backendExpressionUsesEffectRuntime)
+        | BackendConstructData(_, _, _, _, fields, _) ->
+            fields |> List.exists backendExpressionUsesEffectRuntime
+        | BackendPrefixedString(_, parts, _) ->
+            parts
+            |> List.exists (function
+                | BackendStringText _ -> false
+                | BackendStringInterpolation inner -> backendExpressionUsesEffectRuntime inner)
+
     let private verifyKRuntimeIRCheckpoint (workspace: WorkspaceCompilation) =
         let isGeneratedHostBinding provenance =
             String.Equals(provenance.IntroductionKind, "host-binding", StringComparison.Ordinal)
@@ -445,74 +495,6 @@ module CheckpointVerification =
         let isGeneratedHostBinding provenance =
             String.Equals(provenance.IntroductionKind, "host-binding", StringComparison.Ordinal)
 
-        let rec runtimeEffectConstructs expression =
-            let recurse = runtimeEffectConstructs
-
-            match expression with
-            | KRuntimeEffectLabel _ ->
-                Set.singleton "effect-label"
-            | KRuntimeEffectOperation(label, _, _) ->
-                Set.add "effect-operation" (recurse label)
-            | KRuntimeHandle(isDeep, label, body, returnClause, operationClauses) ->
-                let handlerKind = if isDeep then "deep-handler" else "shallow-handler"
-
-                Set.singleton handlerKind
-                |> Set.union (recurse label)
-                |> Set.union (recurse body)
-                |> Set.union (recurse returnClause.Body)
-                |> fun current ->
-                    operationClauses
-                    |> List.fold (fun state clause -> Set.union state (recurse clause.Body)) current
-            | KRuntimeClosure(_, body)
-            | KRuntimeExecute body
-            | KRuntimeDoScope(_, body)
-            | KRuntimeUnary(_, body) ->
-                recurse body
-            | KRuntimeIfThenElse(condition, whenTrue, whenFalse) ->
-                recurse condition
-                |> Set.union (recurse whenTrue)
-                |> Set.union (recurse whenFalse)
-            | KRuntimeLet(_, value, body)
-            | KRuntimeSequence(value, body) ->
-                recurse value |> Set.union (recurse body)
-            | KRuntimeScheduleExit(_, KRuntimeDeferred deferred, body) ->
-                recurse deferred |> Set.union (recurse body)
-            | KRuntimeScheduleExit(_, KRuntimeRelease(_, release, resource), body) ->
-                recurse release
-                |> Set.union (recurse resource)
-                |> Set.union (recurse body)
-            | KRuntimeWhile(condition, body)
-            | KRuntimeBinary(condition, _, body) ->
-                recurse condition |> Set.union (recurse body)
-            | KRuntimeApply(callee, arguments) ->
-                arguments
-                |> List.fold (fun state argument -> Set.union state (recurse argument)) (recurse callee)
-            | KRuntimeTraitCall(_, _, dictionary, arguments) ->
-                arguments
-                |> List.fold (fun state argument -> Set.union state (recurse argument)) (recurse dictionary)
-            | KRuntimeMatch(scrutinee, cases) ->
-                cases
-                |> List.fold
-                    (fun state caseClause ->
-                        state
-                        |> Set.union (caseClause.Guard |> Option.map recurse |> Option.defaultValue Set.empty)
-                        |> Set.union (recurse caseClause.Body))
-                    (recurse scrutinee)
-            | KRuntimePrefixedString(_, parts) ->
-                parts
-                |> List.fold
-                    (fun state part ->
-                        match part with
-                        | KRuntimeStringText _ ->
-                            state
-                        | KRuntimeStringInterpolation(inner, _) ->
-                            Set.union state (recurse inner))
-                    Set.empty
-            | KRuntimeLiteral _
-            | KRuntimeName _
-            | KRuntimeDictionaryValue _ ->
-                Set.empty
-
         let backendModules =
             workspace.KBackendIR
             |> List.sortBy (fun (moduleDump: KBackendModule) -> moduleDump.SourceFile)
@@ -543,25 +525,21 @@ module CheckpointVerification =
             |> List.map (fun layout -> layout.Name)
             |> Set.ofList
 
+        let allowEffectRowMetadata =
+            backendModules
+            |> List.exists (fun moduleDump ->
+                moduleDump.Functions
+                |> List.exists (fun functionDump ->
+                    functionDump.Body
+                    |> Option.exists backendExpressionUsesEffectRuntime))
+
         let erasureDiagnostics =
             [
                 for runtimeModule in workspace.KRuntimeIR do
                     for binding in runtimeModule.Bindings do
-                        match binding.Body with
-                        | Some body ->
-                            let constructs = runtimeEffectConstructs body
-
-                            if not (Set.isEmpty constructs) then
-                                let constructsText = constructs |> Set.toList |> String.concat ", "
-                                yield
-                                    makeDiagnostic
-                                        $"Checkpoint 'KBackendIR' requires effect runtime constructs to be lowered before backend lowering, but binding '{runtimeModule.Name}.{binding.Name}' still contains [{constructsText}] in KRuntimeIR."
-                        | None ->
-                            ()
-
                         for parameter in binding.Parameters do
                             match parameter.TypeText with
-                            | Some typeText when runtimeTypeLeaksErasureMetadata typeText ->
+                            | Some typeText when runtimeTypeLeaksErasureMetadata allowEffectRowMetadata typeText ->
                                 yield
                                     makeDiagnostic
                                         $"Checkpoint 'KBackendIR' requires pre-erasure runtime metadata to be removed before backend lowering, but parameter '{runtimeModule.Name}.{binding.Name}.{parameter.Name}' still exposes '{typeText}'."
@@ -569,7 +547,7 @@ module CheckpointVerification =
                                 ()
 
                         match binding.ReturnTypeText with
-                        | Some typeText when runtimeTypeLeaksErasureMetadata typeText ->
+                        | Some typeText when runtimeTypeLeaksErasureMetadata allowEffectRowMetadata typeText ->
                             yield
                                 makeDiagnostic
                                     $"Checkpoint 'KBackendIR' requires pre-erasure runtime metadata to be removed before backend lowering, but return type of '{runtimeModule.Name}.{binding.Name}' still exposes '{typeText}'."
@@ -579,14 +557,14 @@ module CheckpointVerification =
                     for dataType in runtimeModule.DataTypes do
                         for constructor in dataType.Constructors do
                             for index, fieldTypeText in constructor.FieldTypeTexts |> List.indexed do
-                                if runtimeTypeLeaksErasureMetadata fieldTypeText then
+                                if runtimeTypeLeaksErasureMetadata allowEffectRowMetadata fieldTypeText then
                                     yield
                                         makeDiagnostic
                                             $"Checkpoint 'KBackendIR' requires pre-erasure runtime metadata to be removed before backend lowering, but constructor field '{runtimeModule.Name}.{constructor.Name}[{index}]' still exposes '{fieldTypeText}'."
 
                     for instanceInfo in runtimeModule.TraitInstances do
                         for index, headTypeText in instanceInfo.HeadTypeTexts |> List.indexed do
-                            if runtimeTypeLeaksErasureMetadata headTypeText then
+                            if runtimeTypeLeaksErasureMetadata allowEffectRowMetadata headTypeText then
                                 yield
                                     makeDiagnostic
                                         $"Checkpoint 'KBackendIR' requires pre-erasure runtime metadata to be removed before backend lowering, but instance head '{runtimeModule.Name}.{instanceInfo.TraitName}[{index}]' still exposes '{headTypeText}'."
@@ -639,6 +617,10 @@ module CheckpointVerification =
                     []
                 else
                     [ makeDiagnostic $"Checkpoint 'KBackendIR' requires resolved runtime names, but '{resolvedNameText resolvedName}' in '{bindingLabel}' is not present in the backend module graph." ]
+            | BackendEffectLabel _ ->
+                []
+            | BackendEffectOperation(label, _, _, _) ->
+                verifyBackendExpression currentModule bindingLabel label
             | BackendClosure(parameters, captures, environmentLayout, body, convention, representation) ->
                 let duplicateParameters =
                     parameters
@@ -700,6 +682,19 @@ module CheckpointVerification =
                        patternDiagnostics @ guardDiagnostics @ verifyBackendExpression currentModule bindingLabel caseClause.Body))
             | BackendExecute(expression, _) ->
                 verifyBackendExpression currentModule bindingLabel expression
+            | BackendPure(expression, _) ->
+                verifyBackendExpression currentModule bindingLabel expression
+            | BackendBind(action, binder, _) ->
+                verifyBackendExpression currentModule bindingLabel action
+                @ verifyBackendExpression currentModule bindingLabel binder
+            | BackendThen(first, second, _) ->
+                verifyBackendExpression currentModule bindingLabel first
+                @ verifyBackendExpression currentModule bindingLabel second
+            | BackendHandle(_, label, body, returnClause, operationClauses, _) ->
+                verifyBackendExpression currentModule bindingLabel label
+                @ verifyBackendExpression currentModule bindingLabel body
+                @ verifyBackendExpression currentModule bindingLabel returnClause.Body
+                @ (operationClauses |> List.collect (fun clause -> verifyBackendExpression currentModule bindingLabel clause.Body))
             | BackendLet(_, value, body, _) ->
                 verifyBackendExpression currentModule bindingLabel value
                 @ verifyBackendExpression currentModule bindingLabel body

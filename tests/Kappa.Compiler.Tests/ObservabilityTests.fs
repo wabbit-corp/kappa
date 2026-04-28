@@ -3179,7 +3179,7 @@ let ``KRuntimeIR verification rejects direct deep handler nodes after desugaring
     Assert.Contains("direct deep-handle runtime nodes", diagnosticsText diagnostics)
 
 [<Fact>]
-let ``KBackendIR verification surfaces surviving effect runtime constructs before backend lowering`` () =
+let ``KBackendIR verification accepts lowered effect runtime constructs`` () =
     let workspace =
         compileInMemoryWorkspace
             "memory-verify-kbackendir-effect-runtime-root"
@@ -3207,9 +3207,7 @@ let ``KBackendIR verification surfaces surviving effect runtime constructs befor
 
     let diagnostics = Compilation.verifyCheckpoint workspace "KBackendIR"
 
-    Assert.Contains(diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
-    Assert.Contains("effect runtime constructs", diagnosticsText diagnostics)
-    Assert.Contains("main.handled", diagnosticsText diagnostics)
+    Assert.Empty(diagnostics)
 
 [<Fact>]
 let ``backend verification rejects intrinsic bindings missing intrinsic listings`` () =

@@ -490,6 +490,15 @@ module CompilationDump =
                     addNode "literal" (IrText.backendExpressionText expression) (Some(IrText.backendRepresentationText representation))
                 | BackendName resolvedName ->
                     addNode "name" (IrText.backendExpressionText expression) (backendResolvedNameRepresentation resolvedName)
+                | BackendEffectLabel(_, _, _, _, representation) ->
+                    addNode "effect-label" (IrText.backendExpressionText expression) (Some(IrText.backendRepresentationText representation))
+                | BackendEffectOperation(label, _, _, representation) ->
+                    let nodeId =
+                        addNode "effect-operation" (IrText.backendExpressionText expression) (Some(IrText.backendRepresentationText representation))
+
+                    let labelId = buildExpression label
+                    addEdge nodeId labelId "label"
+                    nodeId
                 | BackendClosure(parameters, captures, environmentLayout, body, convention, representation) ->
                     let summary =
                         let parameterNames = parameters |> List.map (fun parameter -> parameter.Name) |> String.concat ", "
@@ -551,6 +560,77 @@ module CompilationDump =
 
                     let innerId = buildExpression inner
                     addEdge nodeId innerId "expression"
+                    nodeId
+                | BackendPure(inner, resultRepresentation) ->
+                    let nodeId =
+                        addNode
+                            "pure"
+                            (IrText.backendExpressionText expression)
+                            (Some(IrText.backendRepresentationText resultRepresentation))
+
+                    let innerId = buildExpression inner
+                    addEdge nodeId innerId "value"
+                    nodeId
+                | BackendBind(action, binder, resultRepresentation) ->
+                    let nodeId =
+                        addNode
+                            "bind"
+                            (IrText.backendExpressionText expression)
+                            (Some(IrText.backendRepresentationText resultRepresentation))
+
+                    let actionId = buildExpression action
+                    let binderId = buildExpression binder
+                    addEdge nodeId actionId "action"
+                    addEdge nodeId binderId "binder"
+                    nodeId
+                | BackendThen(first, second, resultRepresentation) ->
+                    let nodeId =
+                        addNode
+                            "then"
+                            (IrText.backendExpressionText expression)
+                            (Some(IrText.backendRepresentationText resultRepresentation))
+
+                    let firstId = buildExpression first
+                    let secondId = buildExpression second
+                    addEdge nodeId firstId "first"
+                    addEdge nodeId secondId "second"
+                    nodeId
+                | BackendHandle(_, label, body, returnClause, operationClauses, resultRepresentation) ->
+                    let nodeId =
+                        addNode
+                            "handle"
+                            (IrText.backendExpressionText expression)
+                            (Some(IrText.backendRepresentationText resultRepresentation))
+
+                    let labelId = buildExpression label
+                    let bodyId = buildExpression body
+                    addEdge nodeId labelId "label"
+                    addEdge nodeId bodyId "body"
+
+                    let clauseArgumentText arguments =
+                        arguments
+                        |> List.map (function
+                            | BackendEffectUnitArgument -> "()"
+                            | BackendEffectWildcardArgument -> "_"
+                            | BackendEffectNameArgument name -> name)
+                        |> String.concat " "
+
+                    let addClause role (clause: KBackendEffectHandlerClause) =
+                        let clauseId =
+                            addNode
+                                "handle-clause"
+                                $"{clause.OperationName} ({clauseArgumentText clause.Arguments})"
+                                None
+
+                        let clauseBodyId = buildExpression clause.Body
+                        addEdge nodeId clauseId role
+                        addEdge clauseId clauseBodyId "body"
+
+                    addClause "return" returnClause
+
+                    for index, clause in operationClauses |> List.indexed do
+                        addClause $"op:{index}" clause
+
                     nodeId
                 | BackendLet(binding, value, innerBody, resultRepresentation) ->
                     let summary =

@@ -39,6 +39,16 @@ module internal KBackendLowering =
     let private backendOpaqueRepresentation name =
         BackendRepOpaque name
 
+    let private effectResumptionAllowsMultiple quantity =
+        match quantity |> Option.defaultValue QuantityOne |> ResourceModel.ResourceQuantity.ofSurface with
+        | ResourceModel.ResourceQuantity.Interval(_, Some maximum) ->
+            maximum > 1
+        | ResourceModel.ResourceQuantity.Interval(_, None) ->
+            true
+        | ResourceModel.ResourceQuantity.Borrow _
+        | ResourceModel.ResourceQuantity.Variable _ ->
+            false
+
     let private tryBackendRepresentationFromTypeText (typeText: string option) =
         let tryTypeHead (text: string) =
             text.Replace("(", " ")
@@ -77,9 +87,9 @@ module internal KBackendLowering =
         | KRuntimeName [ "False" ] ->
             BackendRepBoolean
         | KRuntimeEffectLabel _ ->
-            backendOpaqueRepresentation (Some "EffectLabel")
+            BackendRepEffectLabel
         | KRuntimeEffectOperation _ ->
-            backendOpaqueRepresentation (Some "EffectOperation")
+            BackendRepEffectOperation
         | KRuntimeName _ ->
             backendOpaqueRepresentation None
         | KRuntimeClosure _ ->
@@ -97,12 +107,8 @@ module internal KBackendLowering =
                     (fun state caseClause ->
                         mergeBackendRepresentations state (inferKRuntimeExpressionRepresentation caseClause.Body))
                     (inferKRuntimeExpressionRepresentation firstCase.Body)
-        | KRuntimeHandle(_, _, _, returnClause, operationClauses) ->
-            operationClauses
-            |> List.fold
-                (fun state clause ->
-                    mergeBackendRepresentations state (inferKRuntimeExpressionRepresentation clause.Body))
-                (inferKRuntimeExpressionRepresentation returnClause.Body)
+        | KRuntimeHandle _ ->
+            BackendRepIOAction
         | KRuntimeExecute(KRuntimeApply(KRuntimeName [ intrinsicName ], _)) ->
             IntrinsicCatalog.executedIntrinsicResultRepresentation intrinsicName
             |> Option.defaultValue (backendOpaqueRepresentation None)
@@ -133,6 +139,8 @@ module internal KBackendLowering =
         | KRuntimeApply(KRuntimeName [ "readRef" ], _)
         | KRuntimeApply(KRuntimeName [ "writeRef" ], _) ->
             BackendRepIOAction
+        | KRuntimeApply(KRuntimeName [ "runPure" ], _) ->
+            backendOpaqueRepresentation None
         | KRuntimeDictionaryValue(_, traitName, _) ->
             BackendRepDictionary traitName
         | KRuntimeTraitCall _ ->
@@ -817,6 +825,17 @@ module internal KBackendLowering =
                 (fallbackRepresentation: KBackendRepresentationClass)
                 =
                 match loweredExpression with
+                | BackendPure(expression, _) ->
+                    match expression with
+                    | BackendLiteral(_, representation) -> representation
+                    | BackendName(BackendLocalName(_, Some representation))
+                    | BackendName(BackendGlobalBindingName(_, _, Some representation))
+                    | BackendName(BackendIntrinsicName(_, _, Some representation)) -> representation
+                    | _ -> fallbackRepresentation
+                | BackendBind _
+                | BackendThen _
+                | BackendHandle _ ->
+                    fallbackRepresentation
                 | BackendCall(BackendName(BackendIntrinsicName(moduleName, bindingName, _)), _, convention, _) ->
                     match executedIntrinsicRepresentation bindingName convention.ParameterRepresentations with
                     | Some representation -> representation
@@ -827,6 +846,12 @@ module internal KBackendLowering =
                     BackendRepUnit
                 | _ ->
                     fallbackRepresentation
+
+            let lowerHandlerArgument argument =
+                match argument with
+                | KRuntimeEffectUnitArgument -> BackendEffectUnitArgument
+                | KRuntimeEffectWildcardArgument -> BackendEffectWildcardArgument
+                | KRuntimeEffectNameArgument name -> BackendEffectNameArgument name
 
             let rec lowerPattern
                 (locals: Map<string, KBackendRepresentationClass>)
@@ -888,10 +913,73 @@ module internal KBackendLowering =
                 | KRuntimeLiteral literal ->
                     let representation = backendLiteralRepresentation literal
                     Result.Ok(BackendLiteral(literal, representation), representation)
-                | KRuntimeEffectLabel _
-                | KRuntimeEffectOperation _
-                | KRuntimeHandle _ ->
-                    Result.Error "KBackendIR lowering does not support effect handlers yet."
+                | KRuntimeEffectLabel(labelName, interfaceId, labelId, operations) ->
+                    let loweredOperations =
+                        operations
+                        |> List.map (fun operation ->
+                            { OperationId = operation.OperationId
+                              Name = operation.Name
+                              ParameterArity = operation.ParameterArity
+                              AllowsMultipleResumptions = effectResumptionAllowsMultiple operation.ResumptionQuantity })
+
+                    Result.Ok(
+                        BackendEffectLabel(labelName, interfaceId, labelId, loweredOperations, BackendRepEffectLabel),
+                        BackendRepEffectLabel
+                    )
+                | KRuntimeEffectOperation(label, operationId, operationName) ->
+                    lowerExpression scopeLabel locals label
+                    |> Result.map (fun (loweredLabel, _) ->
+                        BackendEffectOperation(loweredLabel, operationId, operationName, BackendRepEffectOperation),
+                        BackendRepEffectOperation)
+                | KRuntimeHandle(isDeep, label, body, returnClause, operationClauses) ->
+                    let lowerClause (clause: KRuntimeEffectHandlerClause) =
+                        let clauseLocals =
+                            clause.Arguments
+                            |> List.fold
+                                (fun state argument ->
+                                    match argument with
+                                    | KRuntimeEffectNameArgument name ->
+                                        Map.add name (backendOpaqueRepresentation None) state
+                                    | KRuntimeEffectUnitArgument
+                                    | KRuntimeEffectWildcardArgument ->
+                                        state)
+                                locals
+                            |> fun state ->
+                                clause.ResumptionName
+                                |> Option.map (fun name -> Map.add name (backendOpaqueRepresentation (Some "Resumption")) state)
+                                |> Option.defaultValue state
+
+                        lowerExpression scopeLabel clauseLocals clause.Body
+                        |> Result.map (fun (loweredClauseBody, _) ->
+                            ({ OperationName = clause.OperationName
+                               Arguments = clause.Arguments |> List.map lowerHandlerArgument
+                               ResumptionName = clause.ResumptionName
+                               Body = loweredClauseBody }: KBackendEffectHandlerClause))
+
+                    lowerExpression scopeLabel locals label
+                    |> Result.bind (fun (loweredLabel, _) ->
+                        lowerExpression scopeLabel locals body
+                        |> Result.bind (fun (loweredBody, _) ->
+                            lowerClause returnClause
+                            |> Result.bind (fun loweredReturnClause ->
+                                operationClauses
+                                |> List.fold
+                                    (fun state clause ->
+                                        state
+                                        |> Result.bind (fun accumulated ->
+                                            lowerClause clause
+                                            |> Result.map (fun loweredClause -> accumulated @ [ loweredClause ])))
+                                    (Result.Ok([]: KBackendEffectHandlerClause list))
+                                |> Result.map (fun loweredOperationClauses ->
+                                    BackendHandle(
+                                        isDeep,
+                                        loweredLabel,
+                                        loweredBody,
+                                        loweredReturnClause,
+                                        loweredOperationClauses,
+                                        BackendRepIOAction
+                                    ),
+                                    BackendRepIOAction))))
                 | KRuntimeName segments ->
                     resolveRuntimeName runtimeModule locals segments
                     |> Result.bind (fun (resolvedName, representation) ->
@@ -1020,6 +1108,21 @@ module internal KBackendLowering =
                             inferExecutedExpressionRepresentation loweredInner innerRepresentation
 
                         BackendExecute(loweredInner, resultRepresentation), resultRepresentation)
+                | KRuntimeLet(bindingName, (KRuntimeClosure _ as value), body) ->
+                    let recursiveLocals =
+                        locals |> Map.add bindingName (backendOpaqueRepresentation (Some "Function"))
+
+                    lowerExpression scopeLabel recursiveLocals value
+                    |> Result.bind (fun (loweredValue, valueRepresentation) ->
+                        let bindingParameter: KBackendParameter =
+                            { Name = bindingName
+                              Representation = valueRepresentation }
+
+                        let bodyLocals = locals |> Map.add bindingName valueRepresentation
+
+                        lowerExpression scopeLabel bodyLocals body
+                        |> Result.map (fun (loweredBody, bodyRepresentation) ->
+                            BackendLet(bindingParameter, loweredValue, loweredBody, bodyRepresentation), bodyRepresentation))
                 | KRuntimeLet(bindingName, value, body) ->
                     lowerExpression scopeLabel locals value
                     |> Result.bind (fun (loweredValue, valueRepresentation) ->
@@ -1085,6 +1188,30 @@ module internal KBackendLowering =
                         let fallbackResultRepresentation = backendOpaqueRepresentation None
 
                         match callee with
+                        | KRuntimeName [ "pure" ] ->
+                            match loweredArguments with
+                            | [ loweredValue ] ->
+                                Result.Ok(BackendPure(loweredValue, BackendRepIOAction), BackendRepIOAction)
+                            | _ ->
+                                Result.Error $"Runtime intrinsic 'pure' expects 1 argument but received {List.length loweredArguments}."
+                        | KRuntimeName [ ">>=" ] ->
+                            match loweredArguments with
+                            | [ loweredAction; loweredBinder ] ->
+                                Result.Ok(BackendBind(loweredAction, loweredBinder, BackendRepIOAction), BackendRepIOAction)
+                            | _ ->
+                                Result.Error $"Runtime intrinsic '>>=' expects 2 arguments but received {List.length loweredArguments}."
+                        | KRuntimeName [ ">>" ] ->
+                            match loweredArguments with
+                            | [ loweredFirst; loweredSecond ] ->
+                                Result.Ok(BackendThen(loweredFirst, loweredSecond, BackendRepIOAction), BackendRepIOAction)
+                            | _ ->
+                                Result.Error $"Runtime intrinsic '>>' expects 2 arguments but received {List.length loweredArguments}."
+                        | KRuntimeName [ "runPure" ] ->
+                            match loweredArguments with
+                            | [ loweredAction ] ->
+                                Result.Ok(BackendExecute(loweredAction, fallbackResultRepresentation), fallbackResultRepresentation)
+                            | _ ->
+                                Result.Error $"Runtime intrinsic 'runPure' expects 1 argument but received {List.length loweredArguments}."
                         | KRuntimeName [ runtimeName ] ->
                             lowerNamedRuntimeCall
                                 locals

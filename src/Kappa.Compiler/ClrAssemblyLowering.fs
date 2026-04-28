@@ -15,6 +15,21 @@ module internal ClrAssemblyLowering =
             KRuntimeLiteral literal
         | BackendName resolvedName ->
             lowerResolvedName resolvedName
+        | BackendEffectLabel(labelName, interfaceId, labelId, operations, _) ->
+            KRuntimeEffectLabel(
+                labelName,
+                interfaceId,
+                labelId,
+                operations
+                |> List.map (fun operation ->
+                    { OperationId = operation.OperationId
+                      Name = operation.Name
+                      ResumptionQuantity =
+                        if operation.AllowsMultipleResumptions then Some QuantityOmega else Some QuantityOne
+                      ParameterArity = operation.ParameterArity })
+            )
+        | BackendEffectOperation(label, operationId, operationName, _) ->
+            KRuntimeEffectOperation(lowerExpression label, operationId, operationName)
         | BackendClosure(parameters, _, _, body, _, _) ->
             KRuntimeClosure(parameters |> List.map (fun parameter -> parameter.Name), lowerExpression body)
         | BackendIfThenElse(condition, whenTrue, whenFalse, _) ->
@@ -30,6 +45,20 @@ module internal ClrAssemblyLowering =
             )
         | BackendExecute(inner, _) ->
             KRuntimeExecute(lowerExpression inner)
+        | BackendPure(inner, _) ->
+            KRuntimeApply(KRuntimeName [ "pure" ], [ lowerExpression inner ])
+        | BackendBind(action, binder, _) ->
+            KRuntimeApply(KRuntimeName [ ">>=" ], [ lowerExpression action; lowerExpression binder ])
+        | BackendThen(first, second, _) ->
+            KRuntimeApply(KRuntimeName [ ">>" ], [ lowerExpression first; lowerExpression second ])
+        | BackendHandle(isDeep, label, body, returnClause, operationClauses, _) ->
+            KRuntimeHandle(
+                isDeep,
+                lowerExpression label,
+                lowerExpression body,
+                lowerHandlerClause returnClause,
+                operationClauses |> List.map lowerHandlerClause
+            )
         | BackendLet(binding, value, BackendSequence(cleanup, BackendName(BackendLocalName(resultName, _)), _), _)
             when binding.Name = "__kappa_scope_result" && resultName = binding.Name ->
             KRuntimeScheduleExit("__kappa_scope", lowerExitAction cleanup, lowerExpression value)
@@ -92,6 +121,17 @@ module internal ClrAssemblyLowering =
         | BackendConstructorPattern(moduleName, _, constructorName, _, fieldPatterns) ->
             KRuntimeConstructorPattern(qualifiedName moduleName constructorName, fieldPatterns |> List.map lowerPattern)
 
+    and private lowerHandlerClause (clause: KBackendEffectHandlerClause) =
+        { OperationName = clause.OperationName
+          Arguments =
+            clause.Arguments
+            |> List.map (function
+                | BackendEffectUnitArgument -> KRuntimeEffectUnitArgument
+                | BackendEffectWildcardArgument -> KRuntimeEffectWildcardArgument
+                | BackendEffectNameArgument name -> KRuntimeEffectNameArgument name)
+          ResumptionName = clause.ResumptionName
+          Body = lowerExpression clause.Body }
+
     and private lowerStringPart part =
         match part with
         | BackendStringText text ->
@@ -127,6 +167,9 @@ module internal ClrAssemblyLowering =
                 Some($"{moduleName}.{typeName}")
             | BackendRepIOAction ->
                 Some "IO Unit"
+            | BackendRepEffectLabel
+            | BackendRepEffectOperation ->
+                None
             | BackendRepClosure _
             | BackendRepOpaque _ ->
                 None

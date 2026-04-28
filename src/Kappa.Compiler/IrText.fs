@@ -336,6 +336,8 @@ module internal IrText =
         | BackendRepTaggedData(moduleName, typeName) -> $"tagged-data:{moduleName}.{typeName}"
         | BackendRepClosure environmentLayout -> $"closure:{environmentLayout}"
         | BackendRepIOAction -> "io-action"
+        | BackendRepEffectLabel -> "effect-label"
+        | BackendRepEffectOperation -> "effect-operation"
         | BackendRepOpaque(Some label) -> $"opaque:{label}"
         | BackendRepOpaque None -> "opaque"
 
@@ -423,6 +425,17 @@ module internal IrText =
             $"():{backendRepresentationText representation}"
         | BackendName resolvedName ->
             backendResolvedNameText resolvedName
+        | BackendEffectLabel(labelName, interfaceId, labelId, operations, representation) ->
+            let operationText =
+                operations
+                |> List.map (fun operation ->
+                    let multiplicity = if operation.AllowsMultipleResumptions then "multi" else "one"
+                    $"{operation.Name}#{operation.OperationId}/{operation.ParameterArity}/{multiplicity}")
+                |> String.concat " "
+
+            $"(effect-label rep={backendRepresentationText representation} {labelName} iface={interfaceId} label={labelId} {operationText})"
+        | BackendEffectOperation(label, operationId, operationName, representation) ->
+            $"(effect-op rep={backendRepresentationText representation} op={operationName}#{operationId} {backendExpressionText label})"
         | BackendClosure(parameters, captures, environmentLayout, body, convention, representation) ->
             let parameterText =
                 parameters
@@ -452,6 +465,33 @@ module internal IrText =
             $"(match rep={backendRepresentationText resultRepresentation} {backendExpressionText scrutinee} {caseText})"
         | BackendExecute(expression, resultRepresentation) ->
             $"(execute rep={backendRepresentationText resultRepresentation} {backendExpressionText expression})"
+        | BackendPure(expression, resultRepresentation) ->
+            $"(pure rep={backendRepresentationText resultRepresentation} {backendExpressionText expression})"
+        | BackendBind(action, binder, resultRepresentation) ->
+            $"(bind rep={backendRepresentationText resultRepresentation} {backendExpressionText action} {backendExpressionText binder})"
+        | BackendThen(first, second, resultRepresentation) ->
+            $"(then rep={backendRepresentationText resultRepresentation} {backendExpressionText first} {backendExpressionText second})"
+        | BackendHandle(isDeep, label, body, returnClause, operationClauses, resultRepresentation) ->
+            let clauseText (clause: KBackendEffectHandlerClause) =
+                let argumentText =
+                    clause.Arguments
+                    |> List.map (function
+                        | BackendEffectUnitArgument -> "()"
+                        | BackendEffectWildcardArgument -> "_"
+                        | BackendEffectNameArgument name -> name)
+                    |> String.concat " "
+
+                let resumptionText =
+                    clause.ResumptionName
+                    |> Option.map (fun name -> $" k={name}")
+                    |> Option.defaultValue ""
+
+                $"(clause {clause.OperationName} ({argumentText}){resumptionText} {backendExpressionText clause.Body})"
+
+            let deepText = if isDeep then "deep" else "shallow"
+            let operationsText = operationClauses |> List.map clauseText |> String.concat " "
+            let returnText = clauseText returnClause
+            $"(handle {deepText} rep={backendRepresentationText resultRepresentation} {backendExpressionText label} {backendExpressionText body} {returnText} {operationsText})"
         | BackendLet(binding, value, body, resultRepresentation) ->
             $"(let {binding.Name}:{backendRepresentationText binding.Representation} {backendExpressionText value} {backendExpressionText body} rep={backendRepresentationText resultRepresentation})"
         | BackendSequence(first, second, resultRepresentation) ->

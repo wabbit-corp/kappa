@@ -2740,7 +2740,8 @@ module SurfaceElaboration =
     let private backendSupportsMultishotEffects (backendProfile: string) =
         match Stdlib.normalizeBackendProfile backendProfile with
         | "interpreter"
-        | "dotnet" -> true
+        | "dotnet"
+        | "zig" -> true
         | _ -> false
 
     let private quantityPermitsMultipleResumptions quantity =

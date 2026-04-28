@@ -98,6 +98,7 @@ module Compilation =
         if
             String.Equals(normalizedBackendProfile, "interpreter", StringComparison.Ordinal)
             || String.Equals(normalizedBackendProfile, "dotnet", StringComparison.Ordinal)
+            || String.Equals(normalizedBackendProfile, "zig", StringComparison.Ordinal)
         then
             []
         else
