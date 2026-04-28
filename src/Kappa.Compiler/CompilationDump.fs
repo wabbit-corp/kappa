@@ -1330,6 +1330,56 @@ module CompilationDump =
             { Modules = workspace.KFrontIR
               Diagnostics = workspace.Diagnostics }
 
+    let private sourceCheckpointDiagnostics (workspace: WorkspaceCompilation) =
+        workspace.Documents
+        |> List.collect (fun document -> document.Diagnostics)
+        |> List.filter (fun diagnostic ->
+            match diagnostic.Stage with
+            | None
+            | Some "source" ->
+                true
+            | _ ->
+                false)
+
+    let private workspaceDiagnosticsForStage (workspace: WorkspaceCompilation) stageName =
+        workspace.Diagnostics
+        |> List.filter (fun diagnostic -> diagnostic.Stage = Some stageName)
+
+    let private diagnosticsForCheckpoint (workspace: WorkspaceCompilation) checkpoint =
+        let verificationDiagnostics =
+            if CompilationCheckpoints.targetCheckpointNames workspace |> List.contains checkpoint then
+                CompilationCheckpoints.verifyTargetCheckpoint workspace checkpoint
+            else
+                CheckpointVerification.verifyCheckpoint workspace checkpoint
+
+        let baselineDiagnostics =
+            match checkpoint with
+            | "surface-source" ->
+                sourceCheckpointDiagnostics workspace
+            | "KCore" ->
+                let snapshot = frontendSnapshot workspace CORE_LOWERING
+                snapshot.Diagnostics @ workspaceDiagnosticsForStage workspace "KCore"
+            | "KRuntimeIR" ->
+                let snapshot = frontendSnapshot workspace CORE_LOWERING
+                snapshot.Diagnostics @ workspaceDiagnosticsForStage workspace "KRuntimeIR"
+            | "KBackendIR" ->
+                let snapshot = frontendSnapshot workspace CORE_LOWERING
+                snapshot.Diagnostics
+                @ workspaceDiagnosticsForStage workspace "KRuntimeIR"
+                @ workspaceDiagnosticsForStage workspace "KBackendIR"
+            | _ ->
+                match CheckpointVerification.tryParseCheckpoint checkpoint with
+                | Some(Some phase) ->
+                    (frontendSnapshot workspace phase).Diagnostics
+                | Some None ->
+                    sourceCheckpointDiagnostics workspace
+                | None when CompilationCheckpoints.targetCheckpointNames workspace |> List.contains checkpoint ->
+                    workspace.Diagnostics
+                | None ->
+                    workspace.Diagnostics
+
+        baselineDiagnostics @ verificationDiagnostics |> List.distinct
+
     let private renderCheckpointContractSexpr workspace checkpoint =
         let contract =
             CompilationCheckpoints.checkpointContractFor workspace checkpoint
@@ -1423,7 +1473,7 @@ module CompilationDump =
                entrySymbols = translationUnit.EntrySymbols
                functionSymbols = translationUnit.FunctionSymbols
                sourceText = translationUnit.SourceText
-               diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
+               diagnostics = diagnosticsForCheckpoint workspace checkpoint |> List.map dumpDiagnostic |}
 
     let renderTargetCheckpointSexpr
         (workspace: WorkspaceCompilation)
@@ -1443,7 +1493,7 @@ module CompilationDump =
             |> fun body -> $"(translation-unit {body})"
 
         let diagnosticsAtom =
-            workspace.Diagnostics
+            diagnosticsForCheckpoint workspace checkpoint
             |> List.map dumpDiagnostic
             |> List.map renderDumpDiagnosticSexpr
             |> String.concat " "
@@ -1472,7 +1522,7 @@ module CompilationDump =
                    buildConfiguration = buildConfigurationJson workspace
                    checkpointContract = CompilationCheckpoints.checkpointContractJson workspace checkpoint
                    documents = documents
-                   diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
+                   diagnostics = diagnosticsForCheckpoint workspace checkpoint |> List.map dumpDiagnostic |}
         | "KCore" ->
             let modules =
                 workspace.KCore
@@ -1492,7 +1542,7 @@ module CompilationDump =
                    buildConfiguration = buildConfigurationJson workspace
                    checkpointContract = CompilationCheckpoints.checkpointContractJson workspace checkpoint
                    modules = modules
-                   diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
+                   diagnostics = diagnosticsForCheckpoint workspace checkpoint |> List.map dumpDiagnostic |}
         | "KRuntimeIR" ->
             let modules =
                 workspace.KRuntimeIR
@@ -1512,7 +1562,7 @@ module CompilationDump =
                    buildConfiguration = buildConfigurationJson workspace
                    checkpointContract = CompilationCheckpoints.checkpointContractJson workspace checkpoint
                    modules = modules
-                   diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
+                   diagnostics = diagnosticsForCheckpoint workspace checkpoint |> List.map dumpDiagnostic |}
         | "KBackendIR" ->
             let modules =
                 workspace.KBackendIR
@@ -1532,7 +1582,7 @@ module CompilationDump =
                    buildConfiguration = buildConfigurationJson workspace
                    checkpointContract = CompilationCheckpoints.checkpointContractJson workspace checkpoint
                    modules = modules
-                   diagnostics = workspace.Diagnostics |> List.map dumpDiagnostic |}
+                   diagnostics = diagnosticsForCheckpoint workspace checkpoint |> List.map dumpDiagnostic |}
         | _ ->
             match CheckpointVerification.tryParseCheckpoint checkpoint with
             | Some(Some phase) ->
@@ -1572,7 +1622,7 @@ module CompilationDump =
                 |> String.concat " "
 
             let diagnostics =
-                workspace.Diagnostics
+                diagnosticsForCheckpoint workspace checkpoint
                 |> List.map dumpDiagnostic
                 |> List.map renderDumpDiagnosticSexpr
                 |> String.concat " "
@@ -1593,7 +1643,7 @@ module CompilationDump =
                 |> String.concat " "
 
             let diagnostics =
-                workspace.Diagnostics
+                diagnosticsForCheckpoint workspace checkpoint
                 |> List.map dumpDiagnostic
                 |> List.map renderDumpDiagnosticSexpr
                 |> String.concat " "
@@ -1614,7 +1664,7 @@ module CompilationDump =
                 |> String.concat " "
 
             let diagnostics =
-                workspace.Diagnostics
+                diagnosticsForCheckpoint workspace checkpoint
                 |> List.map dumpDiagnostic
                 |> List.map renderDumpDiagnosticSexpr
                 |> String.concat " "
@@ -1635,7 +1685,7 @@ module CompilationDump =
                 |> String.concat " "
 
             let diagnostics =
-                workspace.Diagnostics
+                diagnosticsForCheckpoint workspace checkpoint
                 |> List.map dumpDiagnostic
                 |> List.map renderDumpDiagnosticSexpr
                 |> String.concat " "

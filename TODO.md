@@ -642,11 +642,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Split “checkpoint representation is well-formed” from “artifact emission is permitted” if necessary, but do so consistently across backends.
   - Sources: `reviews/observability1.md`, `reviews/backend1.md`.
 
-- `[Medium] Make stage-dump diagnostics checkpoint-local for every checkpoint, not only frontend snapshots.`
-  - Frontend phase dumps use snapshot diagnostics, but `surface-source`, `KCore`, `KRuntimeIR`, and `KBackendIR` dumps currently attach global workspace diagnostics.
-  - Dump consumers should see diagnostics meaningful at that checkpoint rather than complaints discovered only later.
-  - Sources: `reviews/observability1.md`.
-
 - `[Medium] Reconcile `KRuntimeIR` checkpoint contract metadata with actual profile influence.`
   - The checkpoint contract currently marks `KRuntimeIR` as not profile-specific, but KRuntimeIR construction includes profile-dependent host binding modules.
   - Either mark it profile-specific or split profile-neutral runtime IR from profile-specific runtime augmentation.

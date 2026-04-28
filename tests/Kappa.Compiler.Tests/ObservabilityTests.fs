@@ -2030,6 +2030,136 @@ let ``stage dumps expose stable diagnostic codes and frontend phase metadata`` (
     Assert.Contains("(phase \"CHECKERS\")", checkerSexpr)
 
 [<Fact>]
+let ``surface source dumps exclude later frontend diagnostics`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-surface-dump-diagnostics-root"
+            [
+                "main.kp",
+                [
+                    "module wrong"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let surfaceJson =
+        match Compilation.dumpStage workspace "surface-source" StageDumpFormat.Json with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    use surfaceDocument = JsonDocument.Parse(surfaceJson)
+
+    let diagnosticCodes =
+        surfaceDocument.RootElement.GetProperty("diagnostics").EnumerateArray()
+        |> Seq.map (fun item -> item.GetProperty("code").GetString())
+        |> Seq.filter (isNull >> not)
+        |> Set.ofSeq
+
+    Assert.DoesNotContain(DiagnosticCode.toIdentifier DiagnosticCode.ModulePathMismatch, diagnosticCodes)
+
+[<Fact>]
+let ``non frontend stage dumps stay checkpoint local`` () =
+    let effectWorkspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-runtime-dump-diagnostics-root"
+            "custom-backend"
+            [
+                "main.kp",
+                [
+                    "@PrivateByDefault module main"
+                    "handled : Eff <[ ]> Int"
+                    "let handled : Eff <[ ]> Int ="
+                    "    block"
+                    "        scoped effect Ask ="
+                    "            ask : Unit -> Bool"
+                    ""
+                    "        let comp : Eff <[Ask : Ask]> Int ="
+                    "            do"
+                    "                let b <- Ask.ask ()"
+                    "                if b then 1 else 0"
+                    ""
+                    "        deep handle Ask comp with"
+                    "            case return x -> pure x"
+                    "            case ask () k -> k True"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let effectRuntimeUnsupportedCode =
+        DiagnosticCode.toIdentifier DiagnosticCode.EffectRuntimeUnsupportedBackend
+
+    let kCoreJson =
+        match Compilation.dumpStage effectWorkspace "KCore" StageDumpFormat.Json with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    use kCoreDocument = JsonDocument.Parse(kCoreJson)
+
+    let kCoreCodes =
+        kCoreDocument.RootElement.GetProperty("diagnostics").EnumerateArray()
+        |> Seq.map (fun item -> item.GetProperty("code").GetString())
+        |> Seq.filter (isNull >> not)
+        |> Set.ofSeq
+
+    Assert.DoesNotContain(effectRuntimeUnsupportedCode, kCoreCodes)
+
+    let runtimeJson =
+        match Compilation.dumpStage effectWorkspace "KRuntimeIR" StageDumpFormat.Json with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    use runtimeDocument = JsonDocument.Parse(runtimeJson)
+
+    let runtimeCodes =
+        runtimeDocument.RootElement.GetProperty("diagnostics").EnumerateArray()
+        |> Seq.map (fun item -> item.GetProperty("code").GetString())
+        |> Seq.filter (isNull >> not)
+        |> Set.ofSeq
+
+    Assert.Contains(effectRuntimeUnsupportedCode, runtimeCodes)
+
+    let backendWorkspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-backend-dump-diagnostics-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let malformedBackendWorkspace = { backendWorkspace with KBackendIR = [] }
+
+    let targetDiagnostics =
+        Compilation.verifyCheckpoint malformedBackendWorkspace "dotnet.clr"
+
+    let workspaceWithTargetDiagnostics =
+        { backendWorkspace with
+            Diagnostics = backendWorkspace.Diagnostics @ targetDiagnostics }
+
+    let targetCheckpointCode =
+        DiagnosticCode.toIdentifier DiagnosticCode.TargetCheckpoint
+
+    let backendJson =
+        match Compilation.dumpStage workspaceWithTargetDiagnostics "KBackendIR" StageDumpFormat.Json with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    use backendDocument = JsonDocument.Parse(backendJson)
+
+    let backendCodes =
+        backendDocument.RootElement.GetProperty("diagnostics").EnumerateArray()
+        |> Seq.map (fun item -> item.GetProperty("code").GetString())
+        |> Seq.filter (isNull >> not)
+        |> Set.ofSeq
+
+    Assert.DoesNotContain(targetCheckpointCode, backendCodes)
+
+[<Fact>]
 let ``checkpoint verification is available for frontend core and backend snapshots`` () =
     let workspace =
         compileInMemoryWorkspace
