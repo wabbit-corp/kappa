@@ -93,7 +93,12 @@ module Compilation =
             None
 
     let private validateBackendRuntimeSupport backendProfile (documents: ParsedDocument list) (kRuntimeIR: KRuntimeModule list) =
-        if String.Equals(Stdlib.normalizeBackendProfile backendProfile, "interpreter", StringComparison.Ordinal) then
+        let normalizedBackendProfile = Stdlib.normalizeBackendProfile backendProfile
+
+        if
+            String.Equals(normalizedBackendProfile, "interpreter", StringComparison.Ordinal)
+            || HostedDotNetBackend.requiresHostedRuntime normalizedBackendProfile kRuntimeIR
+        then
             []
         else
             let describeDeclaration (binding: KRuntimeBinding) =
@@ -119,7 +124,7 @@ module Compilation =
                           Stage = Some "KRuntimeIR"
                           Phase = None
                           Message =
-                            $"Backend profile '{Stdlib.normalizeBackendProfile backendProfile}' does not implement {describeUse effectUse} in declaration '{describeDeclaration binding}'. Effect runtime constructs are currently interpreter-only on compiled backends."
+                            $"Backend profile '{normalizedBackendProfile}' does not implement {describeUse effectUse} in declaration '{describeDeclaration binding}'. Managed 'dotnet' can host one-shot effect runtime through KRuntimeIR, but this backend still requires effect runtime constructs to be eliminated before backend lowering."
                           Location = provenanceLocation documents binding.Provenance
                           RelatedLocations = [] })))
 
@@ -253,6 +258,9 @@ module Compilation =
         let runtimeCapabilityDiagnostics =
             validateBackendRuntimeSupport normalizedBackendProfile documents kRuntimeIR
 
+        let usesHostedDotNetRuntime =
+            HostedDotNetBackend.requiresHostedRuntime normalizedBackendProfile kRuntimeIR
+
         let kBackendIR, backendLoweringDiagnostics =
             KBackendLowering.lowerKBackendModules normalizedBackendProfile options.AllowUnsafeConsume kRuntimeIR
 
@@ -272,6 +280,7 @@ module Compilation =
         let backendDiagnostics =
             if
                 requiresBackendImplementation
+                && not usesHostedDotNetRuntime
                 && not ((sourceDiagnostics @ runtimeCapabilityDiagnostics) |> List.exists (fun diagnostic -> diagnostic.Severity = Error))
             then
                 backendLoweringDiagnostics
@@ -304,6 +313,7 @@ module Compilation =
         let implementationDiagnostics =
             if
                 not requiresBackendImplementation
+                || usesHostedDotNetRuntime
                 || workspaceWithoutTrace.Diagnostics |> List.exists (fun diagnostic -> diagnostic.Severity = Error)
             then
                 []

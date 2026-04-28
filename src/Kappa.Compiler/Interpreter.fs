@@ -198,9 +198,9 @@ module Interpreter =
         | LiteralValue.Byte value -> ByteValue value
         | LiteralValue.Unit -> UnitValue
 
-    let private buildContextWithOutput (output: RuntimeOutput) (workspace: WorkspaceCompilation) =
+    let private buildContextWithOutputFromModules (output: RuntimeOutput) (runtimeModules: KRuntimeModule list) =
         let moduleRuntimes =
-            workspace.KRuntimeIR
+            runtimeModules
             |> List.groupBy (fun backendModule -> backendModule.Name)
             |> List.map (fun (moduleName, fragments) ->
                 let constructors =
@@ -325,6 +325,7 @@ module Interpreter =
                 String.Equals(moduleName, Stdlib.PreludeModuleText, StringComparison.Ordinal)
             let isUnicodeModule = String.Equals(moduleName, "std.unicode", StringComparison.Ordinal)
             let isHashModule = String.Equals(moduleName, "std.hash", StringComparison.Ordinal)
+            let isTestingModule = String.Equals(moduleName, "std.testing", StringComparison.Ordinal)
 
             match name with
             | "True" when isPreludeModule -> Some(BooleanValue true)
@@ -396,6 +397,8 @@ module Interpreter =
               | "hashNatTag"
               | "hashField"
               | "hashWith") when isHashModule ->
+                Some(BuiltinFunctionValue { Name = name; Arguments = [] })
+            | "failNow" when isTestingModule ->
                 Some(BuiltinFunctionValue { Name = name; Arguments = [] })
             | _ ->
                 None
@@ -1389,6 +1392,14 @@ module Interpreter =
                 error $"Intrinsic 'primitiveIntToString' expects an Int, but got {RuntimeValue.format value}."
             | "primitiveIntToString", _ ->
                 error "Intrinsic 'primitiveIntToString' received too many arguments."
+            | "failNow", [ StringValue message ] ->
+                error $"Testing failure: {message}"
+            | "failNow", arguments when List.length arguments < 1 ->
+                ok None
+            | "failNow", [ value ] ->
+                error $"Intrinsic 'failNow' expects a String, but got {RuntimeValue.format value}."
+            | "failNow", _ ->
+                error "Intrinsic 'failNow' received too many arguments."
             | "unsafeConsume", [ _ ] ->
                 ok (Some UnitValue)
             | "unsafeConsume", arguments when List.length arguments < 1 ->
@@ -1960,6 +1971,9 @@ module Interpreter =
 
         context
 
+    let private buildContextWithOutput (output: RuntimeOutput) (workspace: WorkspaceCompilation) =
+        buildContextWithOutputFromModules output workspace.KRuntimeIR
+
     let private buildContext workspace =
         buildContextWithOutput RuntimeOutput.console workspace
 
@@ -2016,6 +2030,14 @@ module Interpreter =
             let context = buildContextWithOutput output workspace
             evaluateBindingWithContext context entryPoint
 
+    let evaluateRuntimeBindingWithOutput
+        (runtimeModules: KRuntimeModule list)
+        (output: RuntimeOutput)
+        (entryPoint: string)
+        =
+        let context = buildContextWithOutputFromModules output runtimeModules
+        evaluateBindingWithContext context entryPoint
+
     let evaluateBinding (workspace: WorkspaceCompilation) (entryPoint: string) =
         evaluateBindingWithOutput workspace RuntimeOutput.console entryPoint
 
@@ -2033,6 +2055,26 @@ module Interpreter =
                 ok other
 
         evaluateBindingWithOutput workspace output entryPoint
+        |> Result.bind execute
+
+    let executeRuntimeBindingWithOutput
+        (runtimeModules: KRuntimeModule list)
+        (output: RuntimeOutput)
+        (entryPoint: string)
+        =
+        let rec execute value =
+            match value with
+            | IOActionValue action ->
+                action ()
+                |> Result.bind (function
+                    | RuntimeActionReturn nextValue ->
+                        execute nextValue
+                    | RuntimeActionRequest request ->
+                        error $"Unhandled effect operation '{request.Label.Name}.{request.OperationName}'.")
+            | other ->
+                ok other
+
+        evaluateRuntimeBindingWithOutput runtimeModules output entryPoint
         |> Result.bind execute
 
     let executeBinding (workspace: WorkspaceCompilation) (entryPoint: string) =

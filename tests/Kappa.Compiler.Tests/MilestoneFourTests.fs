@@ -1353,6 +1353,55 @@ let ``compiled backends reject direct effect operations before backend lowering`
     )
 
 [<Fact>]
+let ``managed dotnet backend runs one shot handled programs`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "result : Int"
+            "let result ="
+            "    block"
+            "        scoped effect Ask ="
+            "            ask : Unit -> Bool"
+            ""
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let b <- Ask.ask ()"
+            "                if b then 1 else 0"
+            ""
+            "        let handled : Eff <[ ]> Int ="
+            "            deep handle Ask comp with"
+            "                case return x -> pure x"
+            "                case ask () k -> k True"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-m4-dotnet-hosted-effect-root"
+            "dotnet"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+    Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.EffectRuntimeUnsupportedBackend)
+
+    let outputDirectory = createScratchDirectory "dotnet-m4-hosted-effects"
+
+    let artifact =
+        match Backend.emitDotNetArtifact workspace "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    let runResult =
+        runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
+
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("1", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
 let ``shallow handler resumptions do not collapse into the handled carrier`` () =
     let mainSource =
         [

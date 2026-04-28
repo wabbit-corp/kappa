@@ -49,6 +49,7 @@
     <Compile Include="IlDotNetBackendEmit.fs" />
     <Compile Include="IlDotNetBackend.fs" />
     <Compile Include="ClrDotNetBackend.fs" />
+    <Compile Include="HostedDotNetBackend.fs" />
     <Compile Include="ZigCcBackendSupport.fs" />
     <Compile Include="ZigCcBackendEmit.fs" />
     <Compile Include="ZigCcBackendRuntime.fs" />
