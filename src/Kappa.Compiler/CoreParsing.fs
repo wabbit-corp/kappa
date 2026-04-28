@@ -451,7 +451,8 @@ module private SurfaceEffectParsing =
         match remainingTokens with
         | nameToken :: colonToken :: signatureTokens when Token.isName nameToken && colonToken.Kind = Colon ->
             Some
-                { Name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
+                { OperationId = None
+                  Name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
                   ResumptionQuantity = quantity
                   SignatureTokens = signatureTokens }
         | _ ->
@@ -501,7 +502,9 @@ module private SurfaceEffectParsing =
                     |> List.choose parseOperationLine
 
             Some
-                { Visibility = None
+                { EffectInterfaceId = None
+                  EffectLabelId = None
+                  Visibility = None
                   Name = name
                   HeaderTokens = headerTokens
                   Operations = operations }

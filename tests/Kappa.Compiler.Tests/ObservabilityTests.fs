@@ -37,7 +37,7 @@ let rec private containsCoreSyntheticRecordApply expression =
         || containsCoreSyntheticRecordApply body
     | KCoreEffectLabel _ ->
         false
-    | KCoreEffectOperation(label, _) ->
+    | KCoreEffectOperation(label, _, _) ->
         containsCoreSyntheticRecordApply label
     | KCoreSequence(first, second)
     | KCoreBinary(first, _, second) ->
@@ -102,7 +102,7 @@ let rec private containsRuntimeSyntheticRecordApply expression =
         || containsRuntimeSyntheticRecordApply body
     | KRuntimeEffectLabel _ ->
         false
-    | KRuntimeEffectOperation(label, _) ->
+    | KRuntimeEffectOperation(label, _, _) ->
         containsRuntimeSyntheticRecordApply label
     | KRuntimeSequence(first, second)
     | KRuntimeBinary(first, _, second) ->
@@ -209,8 +209,8 @@ let rec private reintroduceDeepRuntimeHandle expression =
                 | KRuntimeStringText text -> KRuntimeStringText text
                 | KRuntimeStringInterpolation(inner, format) -> KRuntimeStringInterpolation(reintroduceDeepRuntimeHandle inner, format))
         )
-    | KRuntimeEffectOperation(label, operationName) ->
-        KRuntimeEffectOperation(reintroduceDeepRuntimeHandle label, operationName)
+    | KRuntimeEffectOperation(label, operationId, operationName) ->
+        KRuntimeEffectOperation(reintroduceDeepRuntimeHandle label, operationId, operationName)
     | KRuntimeLiteral _
     | KRuntimeName _
     | KRuntimeEffectLabel _

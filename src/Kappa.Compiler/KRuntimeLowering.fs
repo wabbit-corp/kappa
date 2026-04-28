@@ -431,17 +431,20 @@ module internal KRuntimeLowering =
             KRuntimeLiteral literal
         | KCoreStaticObject _ ->
             KRuntimeLiteral LiteralValue.Unit
-        | KCoreEffectLabel(labelName, operations) ->
+        | KCoreEffectLabel(labelName, interfaceId, labelId, operations) ->
             KRuntimeEffectLabel(
                 labelName,
+                interfaceId,
+                labelId,
                 operations
                 |> List.map (fun operation ->
-                    { KRuntimeEffectOperation.Name = operation.Name
+                    { KRuntimeEffectOperation.OperationId = operation.OperationId
+                      Name = operation.Name
                       ResumptionQuantity = operation.ResumptionQuantity
                       ParameterArity = operation.ParameterArity })
             )
-        | KCoreEffectOperation(label, operationName) ->
-            KRuntimeEffectOperation(lowerKRuntimeExpression runtimeParameterMasks label, operationName)
+        | KCoreEffectOperation(label, operationId, operationName) ->
+            KRuntimeEffectOperation(lowerKRuntimeExpression runtimeParameterMasks label, operationId, operationName)
         | KCoreName segments ->
             KRuntimeName segments
         | KCoreTopLevelSyntaxSplice inner ->

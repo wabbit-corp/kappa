@@ -76,16 +76,16 @@ module internal IlDotNetEffectBackend =
         typeof<KappaRuntime>.GetMethod("Unit", Type.EmptyTypes)
 
     let private runtimeCreateEffectLabelMethod =
-        typeof<KappaRuntime>.GetMethod("CreateEffectLabel", [| stringType; typeof<KappaEffectOperationMetadata[]> |])
+        typeof<KappaRuntime>.GetMethod("CreateEffectLabel", [| stringType; stringType; stringType; typeof<KappaEffectOperationMetadata[]> |])
 
     let private runtimeCreateEffectOperationMethod =
-        typeof<KappaRuntime>.GetMethod("CreateEffectOperation", [| objectType; stringType |])
+        typeof<KappaRuntime>.GetMethod("CreateEffectOperation", [| objectType; stringType; stringType |])
 
     let private runtimeValuesEqualMethod =
         typeof<KappaRuntime>.GetMethod("ValuesEqual", [| objectType; objectType |])
 
     let private effectOperationMetadataCtor =
-        typeof<KappaEffectOperationMetadata>.GetConstructor([| stringType; intType; boolType |])
+        typeof<KappaEffectOperationMetadata>.GetConstructor([| stringType; stringType; intType; boolType |])
 
     let private closureCtor =
         typeof<KappaClosure>.GetConstructor([| intType; objectType; typeof<KappaInvoke> |])
@@ -228,7 +228,7 @@ module internal IlDotNetEffectBackend =
         | KRuntimeEffectLabel _
         | KRuntimeDictionaryValue _ ->
             Set.empty
-        | KRuntimeEffectOperation(label, _) ->
+        | KRuntimeEffectOperation(label, _, _) ->
             collectClosureCaptures locals bound label
         | KRuntimeName [ name ] when Set.contains name locals && not (Set.contains name bound) ->
             Set.singleton name
@@ -677,16 +677,17 @@ module internal IlDotNetEffectBackend =
                             | None ->
                                 let text = String.concat "." segments
                                 Result.Error $"The effectful dotnet backend could not resolve name '{text}'."
-                | KRuntimeEffectLabel(labelName, operations) ->
+                | KRuntimeEffectLabel(labelName, interfaceId, labelId, operations) ->
                     let operationsLocal = il.DeclareLocal(typeof<KappaEffectOperationMetadata[]>)
 
                     loadSmallInt il operations.Length
                     il.Emit(OpCodes.Newarr, typeof<KappaEffectOperationMetadata>)
 
                     operations
-                    |> List.iteri (fun index operation ->
+                    |> List.iteri (fun index (operation: KRuntimeEffectOperation) ->
                         il.Emit(OpCodes.Dup)
                         loadSmallInt il index
+                        il.Emit(OpCodes.Ldstr, operation.OperationId)
                         il.Emit(OpCodes.Ldstr, operation.Name)
                         loadSmallInt il operation.ParameterArity
                         il.Emit(OpCodes.Ldc_I4, if effectResumptionAllowsMultiple operation.ResumptionQuantity then 1 else 0)
@@ -695,12 +696,15 @@ module internal IlDotNetEffectBackend =
 
                     il.Emit(OpCodes.Stloc, operationsLocal)
                     il.Emit(OpCodes.Ldstr, labelName)
+                    il.Emit(OpCodes.Ldstr, interfaceId)
+                    il.Emit(OpCodes.Ldstr, labelId)
                     il.Emit(OpCodes.Ldloc, operationsLocal)
                     il.Emit(OpCodes.Call, runtimeCreateEffectLabelMethod)
                     Result.Ok()
-                | KRuntimeEffectOperation(labelExpression, operationName) ->
+                | KRuntimeEffectOperation(labelExpression, operationId, operationName) ->
                     result {
                         do! emitExpression currentModule locals il labelExpression
+                        il.Emit(OpCodes.Ldstr, operationId)
                         il.Emit(OpCodes.Ldstr, operationName)
                         il.Emit(OpCodes.Call, runtimeCreateEffectOperationMethod)
                     }

@@ -42,9 +42,12 @@ type RuntimeValue =
     | DictionaryValue of RuntimeDictionary
 and RuntimeEffectLabel =
     { Name: string
+      InterfaceId: string
+      LabelId: string
       Operations: Map<string, RuntimeEffectOperationMetadata> }
 and RuntimeEffectOperationMetadata =
-    { Name: string
+    { OperationId: string
+      Name: string
       ResumptionQuantity: Quantity option
       ParameterArity: int }
 and RuntimeEffectOperationValue =
@@ -56,7 +59,7 @@ and RuntimeActionResult =
     | RuntimeActionRequest of RuntimeEffectRequest
 and RuntimeEffectRequest =
     { Label: RuntimeEffectLabel
-      OperationName: string
+      Operation: RuntimeEffectOperationMetadata
       Arguments: RuntimeValue list
       ContinueWith: RuntimeValue -> Result<RuntimeActionResult, EvaluationError> }
 and RuntimeNativeFunction =
@@ -561,29 +564,34 @@ module Interpreter =
             match expression with
             | KRuntimeLiteral literal ->
                 ok (literalToValue literal)
-            | KRuntimeEffectLabel(labelName, operations) ->
+            | KRuntimeEffectLabel(labelName, interfaceId, labelId, operations) ->
                 ok
                     (EffectLabelValue
                         { Name = labelName
+                          InterfaceId = interfaceId
+                          LabelId = labelId
                           Operations =
                             operations
                             |> List.map (fun operation ->
                                 operation.Name,
-                                { Name = operation.Name
+                                { OperationId = operation.OperationId
+                                  Name = operation.Name
                                   ResumptionQuantity = operation.ResumptionQuantity
                                   ParameterArity = operation.ParameterArity })
                             |> Map.ofList })
-            | KRuntimeEffectOperation(labelExpression, operationName) ->
+            | KRuntimeEffectOperation(labelExpression, operationId, operationName) ->
                 evaluateExpression scope labelExpression
                 |> Result.bind (function
                     | EffectLabelValue label ->
                         match label.Operations |> Map.tryFind operationName with
-                        | Some operation ->
+                        | Some operation when String.Equals(operation.OperationId, operationId, StringComparison.Ordinal) ->
                             ok
                                 (EffectOperationValue
                                     { Label = label
                                       Operation = operation
                                       AppliedArguments = [] })
+                        | Some _ ->
+                            error $"Effect label '{label.Name}' does not declare operation id '{operationId}' for '{operationName}'."
                         | None ->
                             error $"Effect label '{label.Name}' does not declare operation '{operationName}'."
                     | other ->
@@ -626,7 +634,7 @@ module Interpreter =
                     | RuntimeActionReturn value ->
                         ok value
                     | RuntimeActionRequest request ->
-                        error $"Unhandled effect operation '{request.Label.Name}.{request.OperationName}'.")
+                        error $"Unhandled effect operation '{request.Label.Name}.{request.Operation.Name}'.")
             | KRuntimeLet (bindingName, valueExpression, bodyExpression) ->
                 match valueExpression with
                 | KRuntimeClosure(parameters, body) ->
@@ -876,21 +884,17 @@ module Interpreter =
             match step with
             | RuntimeActionReturn value ->
                 executeHandlerClause scope isDeep label returnClause operationClauses returnClause [ value ] None
-            | RuntimeActionRequest request when String.Equals(request.Label.Name, label.Name, StringComparison.Ordinal) ->
-                match operationClauses |> List.tryFind (fun clause -> String.Equals(clause.OperationName, request.OperationName, StringComparison.Ordinal)) with
+            | RuntimeActionRequest request when String.Equals(request.Label.LabelId, label.LabelId, StringComparison.Ordinal) ->
+                match operationClauses |> List.tryFind (fun clause -> String.Equals(clause.OperationName, request.Operation.Name, StringComparison.Ordinal)) with
                 | Some clause ->
-                    let resumptionQuantity =
-                        request.Label.Operations
-                        |> Map.tryFind request.OperationName
-                        |> Option.map (fun operation -> operation.ResumptionQuantity)
-                        |> Option.defaultValue (Some QuantityOne)
+                    let resumptionQuantity = request.Operation.ResumptionQuantity |> Option.orElse (Some QuantityOne)
 
                     let resumptionValue =
                         makeResumptionValue
                             scope
                             isDeep
                             label
-                            request.OperationName
+                            request.Operation.Name
                             resumptionQuantity
                             returnClause
                             operationClauses
@@ -898,7 +902,7 @@ module Interpreter =
 
                     executeHandlerClause scope isDeep label returnClause operationClauses clause request.Arguments (Some resumptionValue)
                 | None ->
-                    error $"Handler for '{label.Name}' does not define a clause for operation '{request.OperationName}'."
+                    error $"Handler for '{label.Name}' does not define a clause for operation '{request.Operation.Name}'."
             | RuntimeActionRequest request ->
                 ok
                     (RuntimeActionRequest
@@ -1049,7 +1053,7 @@ module Interpreter =
                         ok
                             (RuntimeActionRequest
                                 { Label = operationValue.Label
-                                  OperationName = operationValue.Operation.Name
+                                  Operation = operationValue.Operation
                                   Arguments = collectedArguments
                                   ContinueWith = runtimeActionReturn })))
 
@@ -1329,7 +1333,7 @@ module Interpreter =
                 |> Result.bind (function
                     | RuntimeActionReturn value -> ok (Some value)
                     | RuntimeActionRequest request ->
-                        error $"runPure encountered an unhandled effect operation '{request.Label.Name}.{request.OperationName}'.")
+                        error $"runPure encountered an unhandled effect operation '{request.Label.Name}.{request.Operation.Name}'.")
             | "runPure", arguments when List.length arguments < 1 ->
                 ok None
             | "runPure", _ ->
@@ -2042,7 +2046,7 @@ module Interpreter =
                     | RuntimeActionReturn nextValue ->
                         execute nextValue
                     | RuntimeActionRequest request ->
-                        error $"Unhandled effect operation '{request.Label.Name}.{request.OperationName}'.")
+                        error $"Unhandled effect operation '{request.Label.Name}.{request.Operation.Name}'.")
             | other ->
                 ok other
 

@@ -28,7 +28,8 @@ type KCoreStaticObject =
       TypeText: string option }
 
 type KCoreEffectOperation =
-    { Name: string
+    { OperationId: string
+      Name: string
       ResumptionQuantity: Quantity option
       ParameterArity: int }
 
@@ -41,8 +42,8 @@ type KCoreExpression =
     | KCoreLiteral of LiteralValue
     | KCoreName of string list
     | KCoreStaticObject of KCoreStaticObject
-    | KCoreEffectLabel of labelName: string * operations: KCoreEffectOperation list
-    | KCoreEffectOperation of label: KCoreExpression * operationName: string
+    | KCoreEffectLabel of labelName: string * interfaceId: string * labelId: string * operations: KCoreEffectOperation list
+    | KCoreEffectOperation of label: KCoreExpression * operationId: string * operationName: string
     | KCoreSyntaxQuote of KCoreExpression
     | KCoreSyntaxSplice of KCoreExpression
     | KCoreTopLevelSyntaxSplice of KCoreExpression

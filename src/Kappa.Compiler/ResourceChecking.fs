@@ -75,6 +75,8 @@ module ResourceChecking =
 
     let private backendSupportsMultishotEffects configuredBackendProfile =
         match Stdlib.normalizeBackendProfile configuredBackendProfile with
+        | "interpreter"
+        | "dotnet" -> true
         | _ -> false
 
     let private isMultiShotResumptionQuantity quantity =

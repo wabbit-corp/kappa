@@ -59,7 +59,7 @@ let rec private containsDeepCoreHandle expression =
         |> List.exists (function
             | KCoreStringText _ -> false
             | KCoreStringInterpolation inner -> containsDeepCoreHandle inner)
-    | KCoreEffectOperation(label, _) ->
+    | KCoreEffectOperation(label, _, _) ->
         containsDeepCoreHandle label
     | KCoreLiteral _
     | KCoreName _
@@ -109,7 +109,7 @@ let rec private containsDeepRuntimeHandle expression =
         |> List.exists (function
             | KRuntimeStringText _ -> false
             | KRuntimeStringInterpolation(inner, _) -> containsDeepRuntimeHandle inner)
-    | KRuntimeEffectOperation(label, _) ->
+    | KRuntimeEffectOperation(label, _, _) ->
         containsDeepRuntimeHandle label
     | KRuntimeLiteral _
     | KRuntimeName _
@@ -265,7 +265,7 @@ let rec private containsRecursiveShallowCoreDriver expression =
         |> List.exists (function
             | KCoreStringText _ -> false
             | KCoreStringInterpolation inner -> recurse inner)
-    | KCoreEffectOperation(label, _) ->
+    | KCoreEffectOperation(label, _, _) ->
         recurse label
     | KCoreLiteral _
     | KCoreName _
@@ -1156,7 +1156,6 @@ let ``multishot scoped effect invocation rejects captured linear suffix at the o
 
     Assert.True(workspace.HasErrors, "Expected the multishot capture rule to reject the operation site.")
     Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.MultishotEffectUnsupportedBackend)
 
 [<Fact>]
 let ``multishot aliased effect labels still trigger capture and backend capability checks`` () =
@@ -1197,7 +1196,6 @@ let ``multishot aliased effect labels still trigger capture and backend capabili
 
     Assert.True(workspace.HasErrors, "Expected aliased multishot invocations to be rejected.")
     Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.MultishotEffectUnsupportedBackend)
 
 [<Fact>]
 let ``backends without multishot capability reject direct multishot invocations`` () =
@@ -1218,7 +1216,7 @@ let ``backends without multishot capability reject direct multishot invocations`
     let workspace =
         compileInMemoryWorkspaceWithBackend
             "memory-m4-multishot-capability-root"
-            "dotnet"
+            "zig"
             [ "main.kp", mainSource ]
 
     Assert.True(workspace.HasErrors, "Expected backends without rt-multishot-effects to reject direct multishot invocation.")
@@ -1229,7 +1227,7 @@ let ``backends without multishot capability reject direct multishot invocations`
 
     Assert.True(diagnostic.IsSome, "Expected a multishot backend-capability diagnostic.")
     Assert.Contains("Choice.choose", diagnostic.Value.Message)
-    Assert.Contains("dotnet", diagnostic.Value.Message)
+    Assert.Contains("zig", diagnostic.Value.Message)
 
 [<Fact>]
 let ``backends without multishot capability reject exported declarations that may invoke multishot effects`` () =
@@ -1400,6 +1398,179 @@ let ``dotnet backend runs one shot handled programs`` () =
     Assert.Equal(0, runResult.ExitCode)
     Assert.Equal("1", runResult.StandardOutput.Trim())
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
+let ``interpreter executes multishot handled programs`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "result : Int"
+            "let result ="
+            "    block"
+            "        scoped effect Choice ="
+            "            ω choose : Unit -> Bool"
+            ""
+            "        let comp : Eff <[Choice : Choice]> Int ="
+            "            do"
+            "                let b <- Choice.choose ()"
+            "                if b then 1 else 2"
+            ""
+            "        let handled : Eff <[ ]> Int ="
+            "            deep handle Choice comp with"
+            "                case return x -> pure x"
+            "                case choose () k ->"
+            "                    do"
+            "                        let a <- k True"
+            "                        let b <- k False"
+            "                        pure (a + b)"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-m4-interpreter-multishot-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("3", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected multishot interpreter evaluation to succeed, got %s" issue.Message
+
+[<Fact>]
+let ``dotnet backend runs multishot handled programs`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "result : Int"
+            "let result ="
+            "    block"
+            "        scoped effect Choice ="
+            "            ω choose : Unit -> Bool"
+            ""
+            "        let comp : Eff <[Choice : Choice]> Int ="
+            "            do"
+            "                let b <- Choice.choose ()"
+            "                if b then 1 else 2"
+            ""
+            "        let handled : Eff <[ ]> Int ="
+            "            deep handle Choice comp with"
+            "                case return x -> pure x"
+            "                case choose () k ->"
+            "                    do"
+            "                        let a <- k True"
+            "                        let b <- k False"
+            "                        pure (a + b)"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-m4-dotnet-multishot-effect-root"
+            "dotnet"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
+    Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.EffectRuntimeUnsupportedBackend)
+    Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.MultishotEffectUnsupportedBackend)
+
+    let outputDirectory = createScratchDirectory "dotnet-m4-multishot-effects"
+
+    let artifact =
+        match Backend.emitDotNetArtifact workspace "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    let runResult =
+        runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
+
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("3", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
+let ``carried outer scoped effect labels are not captured by inner same spelling handlers`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "result : Int"
+            "let result ="
+            "    block"
+            "        scoped effect Choice ="
+            "            ω choose : Unit -> Int"
+            "        let outer = Choice"
+            "        block"
+            "            scoped effect Choice ="
+            "                ω choose : Unit -> Int"
+            "            let inner = Choice"
+            "            let comp = outer.choose ()"
+            "            let handled : Eff <[ ]> Int ="
+            "                deep handle inner comp with"
+            "                    case return x -> pure x"
+            "                    case choose () k ->"
+            "                        do"
+            "                            let _ <- k 0"
+            "                            pure 0"
+            "            runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-shadowed-carried-label-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected the inner handler to reject the outer carried label statically.")
+    Assert.Contains(
+        workspace.Diagnostics,
+        fun diagnostic ->
+            diagnostic.Code = DiagnosticCode.HandlerEffectRowMismatch
+            && diagnostic.Message.Contains("expects the handled computation to carry label", StringComparison.Ordinal)
+    )
+
+[<Fact>]
+let ``annotated local computations reject shadowed carried effect label mismatches`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "result : Int"
+            "let result ="
+            "    block"
+            "        scoped effect Choice ="
+            "            ω choose : Unit -> Int"
+            "        let outer = Choice"
+            "        block"
+            "            scoped effect Choice ="
+            "                ω choose : Unit -> Int"
+            "            let comp : Eff <[Choice : Choice]> Int ="
+            "                outer.choose ()"
+            "            runPure comp"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-shadowed-carried-label-annotation-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected the shadowed carried-label annotation mismatch to be rejected.")
+    Assert.Contains(
+        workspace.Diagnostics,
+        fun diagnostic ->
+            diagnostic.Code = DiagnosticCode.TypeEqualityMismatch
+            && diagnostic.Message.Contains("Eff", StringComparison.Ordinal)
+    )
 
 [<Fact>]
 let ``shallow handler resumptions do not collapse into the handled carrier`` () =

@@ -232,7 +232,7 @@ module CheckpointVerification =
                 []
             | KRuntimeEffectLabel _ ->
                 []
-            | KRuntimeEffectOperation(label, _) ->
+            | KRuntimeEffectOperation(label, _, _) ->
                 verify locals label
             | KRuntimeClosure(parameters, body) ->
                 let duplicateParameters =
@@ -451,7 +451,7 @@ module CheckpointVerification =
             match expression with
             | KRuntimeEffectLabel _ ->
                 Set.singleton "effect-label"
-            | KRuntimeEffectOperation(label, _) ->
+            | KRuntimeEffectOperation(label, _, _) ->
                 Set.add "effect-operation" (recurse label)
             | KRuntimeHandle(isDeep, label, body, returnClause, operationClauses) ->
                 let handlerKind = if isDeep then "deep-handler" else "shallow-handler"

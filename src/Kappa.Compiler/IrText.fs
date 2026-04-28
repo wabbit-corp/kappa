@@ -58,7 +58,7 @@ module internal IrText =
             let nameText = String.concat "." staticObject.Name
             let typeText = staticObject.TypeText |> Option.defaultValue "_"
             $"({kindText} {nameText} : {typeText})"
-        | KCoreEffectLabel(labelName, operations) ->
+        | KCoreEffectLabel(labelName, _, _, operations) ->
             let operationText =
                 operations
                 |> List.map (fun operation -> operation.Name)
@@ -68,7 +68,7 @@ module internal IrText =
                 if String.IsNullOrWhiteSpace(operationText) then "" else " " + operationText
 
             $"(effect-label {labelName}{suffix})"
-        | KCoreEffectOperation(label, operationName) ->
+        | KCoreEffectOperation(label, _, operationName) ->
             $"(effect-op {kcoreExpressionText label} {operationName})"
         | KCoreSyntaxQuote inner ->
             $"('{{ {kcoreExpressionText inner} }})"
@@ -219,7 +219,7 @@ module internal IrText =
         | KRuntimeLiteral(LiteralValue.Grapheme value) -> $"g'{value}'"
         | KRuntimeLiteral(LiteralValue.Byte value) -> $"b'\\x{int value:X2}'"
         | KRuntimeLiteral LiteralValue.Unit -> "()"
-        | KRuntimeEffectLabel(labelName, operations) ->
+        | KRuntimeEffectLabel(labelName, _, _, operations) ->
             let operationText =
                 operations
                 |> List.map (fun operation -> operation.Name)
@@ -229,7 +229,7 @@ module internal IrText =
                 if String.IsNullOrWhiteSpace(operationText) then "" else " " + operationText
 
             $"(effect-label {labelName}{suffix})"
-        | KRuntimeEffectOperation(label, operationName) ->
+        | KRuntimeEffectOperation(label, _, operationName) ->
             $"(effect-op {runtimeExpressionText label} {operationName})"
         | KRuntimeName segments -> String.concat "." segments
         | KRuntimeClosure(parameters, body) ->

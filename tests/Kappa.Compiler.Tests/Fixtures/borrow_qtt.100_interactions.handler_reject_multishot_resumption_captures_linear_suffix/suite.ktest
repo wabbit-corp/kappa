@@ -1,4 +1,4 @@
 --! mode check
 --! packageMode
---! assertErrorCount 2
---! assertDiagnosticCodes E_QTT_CONTINUATION_CAPTURE,E_MULTISHOT_EFFECT_UNSUPPORTED_BACKEND
+--! assertErrorCount 1
+--! assertDiagnosticCodes E_QTT_CONTINUATION_CAPTURE

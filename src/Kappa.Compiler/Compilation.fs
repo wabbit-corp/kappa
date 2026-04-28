@@ -41,15 +41,15 @@ module Compilation =
 
     let private describeEffectLabelExpression expression =
         match expression with
-        | KRuntimeEffectLabel(labelName, _) -> labelName
+        | KRuntimeEffectLabel(labelName, _, _, _) -> labelName
         | KRuntimeName segments -> String.concat "." segments
         | _ -> "<effect>"
 
     let rec private tryFindEffectRuntimeUse expression =
         match expression with
-        | KRuntimeEffectLabel(labelName, _) ->
+        | KRuntimeEffectLabel(labelName, _, _, _) ->
             Some(EffectLabelUse labelName)
-        | KRuntimeEffectOperation(label, operationName) ->
+        | KRuntimeEffectOperation(label, _, operationName) ->
             Some(EffectOperationUse $"{describeEffectLabelExpression label}.{operationName}")
         | KRuntimeHandle(isDeep, _, _, _, _) ->
             Some(EffectHandlerUse isDeep)

@@ -330,12 +330,15 @@ type TypeAlias =
       BodyTokens: Token list option }
 
 type EffectOperation =
-    { Name: string
+    { OperationId: string option
+      Name: string
       ResumptionQuantity: Quantity option
       SignatureTokens: Token list }
 
 type EffectDeclaration =
-    { Visibility: Visibility option
+    { EffectInterfaceId: string option
+      EffectLabelId: string option
+      Visibility: Visibility option
       Name: string
       HeaderTokens: Token list
       Operations: EffectOperation list }

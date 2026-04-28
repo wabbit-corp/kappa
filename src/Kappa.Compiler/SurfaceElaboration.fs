@@ -62,7 +62,8 @@ module SurfaceElaboration =
     type private StaticObjectInfo =
         { ObjectKind: StaticObjectKind
           NameSegments: string list
-          Scheme: TypeScheme option }
+          Scheme: TypeScheme option
+          ScopedEffect: EffectSemanticDeclaration option }
 
     type private RecordSurfaceFieldInfo =
         { Name: string
@@ -762,6 +763,42 @@ module SurfaceElaboration =
                 | TypeName([ "Type" ], []) -> true
                 | _ -> false))
 
+    let private annotateLambdaWithTypeTokens typeTokens value =
+        let signatureParameterLayouts =
+            typeTokens
+            |> splitSignatureParameterTokens
+            |> function
+                | [] -> None
+                | parameterTokens -> Some(parameterTokens |> List.map tryParseSignatureParameterLayout)
+
+        match TypeSignatures.parseScheme typeTokens, value with
+        | Some signatureScheme, Lambda(lambdaParameters, lambdaBody) ->
+            let parameterTypes, _ = TypeSignatures.schemeParts signatureScheme
+
+            if List.length parameterTypes = List.length lambdaParameters then
+                let annotatedParameters =
+                    List.zip lambdaParameters parameterTypes
+                    |> List.mapi (fun index (parameter, parameterType) ->
+                        let signatureLayout =
+                            signatureParameterLayouts
+                            |> Option.bind (List.tryItem index)
+                            |> Option.bind id
+
+                        { parameter with
+                            TypeTokens =
+                                parameter.TypeTokens
+                                |> Option.orElseWith (fun () ->
+                                    Some(typeTextTokens (TypeSignatures.toText parameterType)))
+                            Quantity = parameter.Quantity |> Option.orElseWith (fun () -> signatureLayout |> Option.bind (fun layout -> layout.Quantity))
+                            IsImplicit = parameter.IsImplicit || (signatureLayout |> Option.exists (fun layout -> layout.IsImplicit))
+                            IsInout = parameter.IsInout || (signatureLayout |> Option.exists (fun layout -> layout.IsInout)) })
+
+                Lambda(annotatedParameters, lambdaBody)
+            else
+                value
+        | _ ->
+            value
+
     let private tryResolveVisibleConstructorInfo
         (environment: BindingLoweringEnvironment)
         nameSegments
@@ -809,30 +846,43 @@ module SurfaceElaboration =
     let private typeFacetStaticObject (typeFacetInfo: TypeFacetInfo) =
         { ObjectKind = StaticTypeObject
           NameSegments = [ typeFacetInfo.Name ]
-          Scheme = Some typeFacetInfo.Scheme }
+          Scheme = Some typeFacetInfo.Scheme
+          ScopedEffect = None }
 
-    let private scopedEffectTypeStaticObject name =
+    let private sanitizeScopedEffectId (id: string) =
+        id.Replace(":", "_", StringComparison.Ordinal).Replace("-", "_", StringComparison.Ordinal)
+
+    let private scopedEffectLabelNameSegments (declaration: EffectSemanticDeclaration) =
+        [ $"__kappa_effect_label_{sanitizeScopedEffectId declaration.LabelId}" ]
+
+    let private scopedEffectInterfaceNameSegments (declaration: EffectSemanticDeclaration) =
+        [ $"__kappa_effect_interface_{sanitizeScopedEffectId declaration.InterfaceId}" ]
+
+    let private scopedEffectTypeStaticObject (declaration: EffectSemanticDeclaration) =
         { ObjectKind = StaticTypeObject
-          NameSegments = [ name ]
+          NameSegments = scopedEffectInterfaceNameSegments declaration
           Scheme =
             Some
                 { Forall = []
                   Constraints = []
-                  Body = typeObjectType } }
+                  Body = typeObjectType }
+          ScopedEffect = Some declaration }
 
-    let private scopedEffectLabelStaticObject name =
+    let private scopedEffectLabelStaticObject (declaration: EffectSemanticDeclaration) =
         { ObjectKind = StaticEffectLabelObject
-          NameSegments = [ name ]
+          NameSegments = scopedEffectLabelNameSegments declaration
           Scheme =
             Some
                 { Forall = []
                   Constraints = []
-                  Body = effectLabelObjectType } }
+                  Body = effectLabelObjectType }
+          ScopedEffect = Some declaration }
 
     let private traitStaticObject (traitInfo: TraitInfo) =
         { ObjectKind = StaticTraitObject
           NameSegments = [ traitInfo.Name ]
-          Scheme = Some(traitFacetScheme traitInfo) }
+          Scheme = Some(traitFacetScheme traitInfo)
+          ScopedEffect = None }
 
     let private tryResolveVisibleTypeFacetInfo
         (environment: BindingLoweringEnvironment)
@@ -879,7 +929,8 @@ module SurfaceElaboration =
                 Some
                     { ObjectKind = StaticModuleObject
                       NameSegments = nameSegments
-                      Scheme = None }
+                      Scheme = None
+                      ScopedEffect = None }
             else
                 None
         | Name nameSegments when not (List.isEmpty nameSegments) ->
@@ -925,10 +976,15 @@ module SurfaceElaboration =
         | _ ->
             tryResolveStaticObject environment expression
 
-    let private scopedEffects = AsyncLocal<Map<string, EffectDeclaration> option>()
+    let private scopedEffects = AsyncLocal<Map<string, EffectSemanticDeclaration> option>()
+    let private scopedEffectDeclarations = AsyncLocal<EffectSemanticDeclaration list option>()
+    let private scopedEffectIdentityCounter = AsyncLocal<int option>()
 
     let private currentScopedEffects () =
         scopedEffects.Value |> Option.defaultValue Map.empty
+
+    let private currentScopedEffectDeclarations () =
+        scopedEffectDeclarations.Value |> Option.defaultValue []
 
     let private currentScopedEffectNames () =
         currentScopedEffects () |> Map.keys |> Set.ofSeq
@@ -936,36 +992,62 @@ module SurfaceElaboration =
     let private tryFindScopedEffectDeclaration name =
         currentScopedEffects () |> Map.tryFind name
 
-    let private scopedEffectOperationMetadata (declaration: EffectDeclaration) =
-        declaration.Operations
-        |> List.map (fun operation ->
-            { KCoreEffectOperation.Name = operation.Name
-              ResumptionQuantity = operation.ResumptionQuantity |> Option.orElse (Some QuantityOne)
-              ParameterArity =
-                operation.SignatureTokens
-                |> TypeSignatures.parseType
-                |> Option.map TypeSignatures.functionParts
-                |> Option.map (fun (parameterTypes, _) -> List.length parameterTypes)
-                |> Option.defaultValue 0 })
+    let private tryFindScopedEffectDeclarationByStaticSegments segments =
+        let visibleNameSegments (declaration: EffectSemanticDeclaration) =
+            declaration.VisibleName.Split('.') |> Array.toList
 
-    let private scopedRuntimeEffectOperationMetadata (declaration: EffectDeclaration) =
+        currentScopedEffectDeclarations ()
+        |> List.tryFind (fun declaration ->
+            segments = visibleNameSegments declaration
+            || segments = scopedEffectLabelNameSegments declaration
+            || segments = scopedEffectInterfaceNameSegments declaration)
+
+    let private nextScopedEffectIdentitySeed () =
+        let current = scopedEffectIdentityCounter.Value |> Option.defaultValue 0
+        scopedEffectIdentityCounter.Value <- Some(current + 1)
+        $"surface-elaboration|{current}"
+
+    let private ensureScopedEffectDeclarationIdentity (declaration: EffectDeclaration) =
+        if declaration.EffectInterfaceId.IsSome && declaration.EffectLabelId.IsSome && (declaration.Operations |> List.forall (fun operation -> operation.OperationId.IsSome)) then
+            declaration
+        else
+            EffectSemantics.ensureLocal (nextScopedEffectIdentitySeed ()) declaration
+
+    let private scopedEffectOperationMetadata (declaration: EffectSemanticDeclaration) =
         declaration.Operations
         |> List.map (fun operation ->
-            { KRuntimeEffectOperation.Name = operation.Name
+            { KCoreEffectOperation.OperationId = operation.OperationId
+              Name = operation.Name
               ResumptionQuantity = operation.ResumptionQuantity |> Option.orElse (Some QuantityOne)
-              ParameterArity =
-                operation.SignatureTokens
-                |> TypeSignatures.parseType
-                |> Option.map TypeSignatures.functionParts
-                |> Option.map (fun (parameterTypes, _) -> List.length parameterTypes)
-                |> Option.defaultValue 0 })
+              ParameterArity = operation.ParameterArity })
+
+    let private scopedRuntimeEffectOperationMetadata (declaration: EffectSemanticDeclaration) =
+        declaration.Operations
+        |> List.map (fun operation ->
+            { KRuntimeEffectOperation.OperationId = operation.OperationId
+              Name = operation.Name
+              ResumptionQuantity = operation.ResumptionQuantity |> Option.orElse (Some QuantityOne)
+              ParameterArity = operation.ParameterArity })
+
+    let private scopedKCoreEffectLabel (declaration: EffectSemanticDeclaration) =
+        KCoreEffectLabel(
+            declaration.VisibleName,
+            declaration.InterfaceId,
+            declaration.LabelId,
+            scopedEffectOperationMetadata declaration
+        )
+
+    let private scopedKRuntimeEffectLabel (declaration: EffectSemanticDeclaration) =
+        KRuntimeEffectLabel(
+            declaration.VisibleName,
+            declaration.InterfaceId,
+            declaration.LabelId,
+            scopedRuntimeEffectOperationMetadata declaration
+        )
 
     let private tryFindScopedEffectOperation effectName operationName =
         tryFindScopedEffectDeclaration effectName
-        |> Option.bind (fun declaration ->
-            declaration.Operations
-            |> List.tryFind (fun operation -> String.Equals(operation.Name, operationName, StringComparison.Ordinal))
-            |> Option.map (fun operation -> declaration, operation))
+        |> Option.bind (fun declaration -> EffectSemantics.tryFindOperation operationName declaration |> Option.map (fun operation -> declaration, operation))
 
     let private significantEffectHandlerTokens tokens =
         tokens
@@ -997,24 +1079,20 @@ module SurfaceElaboration =
         | _ ->
             None
 
-    let private scopedEffectNameSegments (declaration: EffectDeclaration) =
-        declaration.Name.Split('.', StringSplitOptions.RemoveEmptyEntries)
-        |> Array.toList
-
-    let private scopedEffectTypeParameters (declaration: EffectDeclaration) =
+    let private scopedEffectTypeParameters (declaration: EffectSemanticDeclaration) =
         TypeSignatures.collectLeadingTypeParameters declaration.HeaderTokens
 
-    let private scopedEffectLabelType (declaration: EffectDeclaration) =
-        TypeName(scopedEffectNameSegments declaration, [])
+    let private scopedEffectLabelType (declaration: EffectSemanticDeclaration) =
+        TypeName(scopedEffectLabelNameSegments declaration, [])
 
-    let private scopedEffectInterfaceType (declaration: EffectDeclaration) =
+    let private scopedEffectInterfaceType (declaration: EffectSemanticDeclaration) =
         TypeName(
-            scopedEffectNameSegments declaration,
+            scopedEffectInterfaceNameSegments declaration,
             scopedEffectTypeParameters declaration
             |> List.map TypeVariable
         )
 
-    let private scopedEffectRowType (declaration: EffectDeclaration) =
+    let private scopedEffectRowType (declaration: EffectSemanticDeclaration) =
         TypeEffectRow(
             [
                 { Label = scopedEffectLabelType declaration
@@ -1024,27 +1102,43 @@ module SurfaceElaboration =
         )
 
     let private withScopedEffectDeclaration (declaration: EffectDeclaration) work =
+        let declaration = ensureScopedEffectDeclarationIdentity declaration |> EffectSemantics.toSemantic
         let saved = currentScopedEffects ()
-        scopedEffects.Value <- Some(Map.add declaration.Name declaration saved)
+        let savedDeclarations = currentScopedEffectDeclarations ()
+        let savedCounter = scopedEffectIdentityCounter.Value
+        scopedEffects.Value <- Some(Map.add declaration.VisibleName declaration saved)
+        scopedEffectDeclarations.Value <- Some(declaration :: savedDeclarations)
 
         try
             work ()
         finally
             scopedEffects.Value <- Some saved
+            scopedEffectDeclarations.Value <- Some savedDeclarations
+            scopedEffectIdentityCounter.Value <- savedCounter
 
     let private withScopedEffectDeclarations (declarations: EffectDeclaration list) work =
         let saved = currentScopedEffects ()
+        let savedDeclarations = currentScopedEffectDeclarations ()
+        let savedCounter = scopedEffectIdentityCounter.Value
+
+        let semanticDeclarations =
+            declarations
+            |> List.map ensureScopedEffectDeclarationIdentity
+            |> List.map EffectSemantics.toSemantic
 
         let merged =
-            declarations
-            |> List.fold (fun state declaration -> Map.add declaration.Name declaration state) saved
+            semanticDeclarations
+            |> List.fold (fun state declaration -> Map.add declaration.VisibleName declaration state) saved
 
         scopedEffects.Value <- Some merged
+        scopedEffectDeclarations.Value <- Some(semanticDeclarations @ savedDeclarations)
 
         try
             work ()
         finally
             scopedEffects.Value <- Some saved
+            scopedEffectDeclarations.Value <- Some savedDeclarations
+            scopedEffectIdentityCounter.Value <- savedCounter
 
     let private tryResolveScopedStaticObject
         (environment: BindingLoweringEnvironment)
@@ -1054,22 +1148,42 @@ module SurfaceElaboration =
 
         match expression with
         | Name [ name ] when Set.contains name scopedEffectNames ->
-            Some(scopedEffectLabelStaticObject name)
+            tryFindScopedEffectDeclaration name |> Option.map scopedEffectLabelStaticObject
+        | Name nameSegments when not (List.isEmpty nameSegments) ->
+            tryFindScopedEffectDeclarationByStaticSegments nameSegments
+            |> Option.map scopedEffectLabelStaticObject
+            |> Option.orElseWith (fun () -> tryResolveStaticObject environment expression)
         | KindQualifiedName(TypeKind, [ name ]) when Set.contains name scopedEffectNames ->
-            Some(scopedEffectTypeStaticObject name)
+            tryFindScopedEffectDeclaration name |> Option.map scopedEffectTypeStaticObject
+        | KindQualifiedName(TypeKind, nameSegments) when not (List.isEmpty nameSegments) ->
+            tryFindScopedEffectDeclarationByStaticSegments nameSegments
+            |> Option.map scopedEffectTypeStaticObject
+            |> Option.orElseWith (fun () -> tryResolveStaticObject environment expression)
         | KindQualifiedName(EffectLabelKind, [ name ]) when Set.contains name scopedEffectNames ->
-            Some(scopedEffectLabelStaticObject name)
+            tryFindScopedEffectDeclaration name |> Option.map scopedEffectLabelStaticObject
+        | KindQualifiedName(EffectLabelKind, nameSegments) when not (List.isEmpty nameSegments) ->
+            tryFindScopedEffectDeclarationByStaticSegments nameSegments
+            |> Option.map scopedEffectLabelStaticObject
+            |> Option.orElseWith (fun () -> tryResolveStaticObject environment expression)
         | _ ->
             tryResolveStaticObject environment expression
 
-    let private tryResolveHandledEffectName
+    let rec private tryResolveHandledEffectName
+        (environment: BindingLoweringEnvironment)
+        expression
+        =
+        tryResolveHandledEffectDeclaration environment expression
+        |> Option.map (fun declaration -> declaration.VisibleName)
+
+    and private tryResolveHandledEffectDeclaration
         (environment: BindingLoweringEnvironment)
         expression
         =
         tryResolveScopedStaticObject environment expression
         |> Option.bind (fun staticObject ->
-            match staticObject.ObjectKind, staticObject.NameSegments with
-            | StaticEffectLabelObject, [ effectName ] -> Some effectName
+            match staticObject.ObjectKind, staticObject.ScopedEffect, staticObject.NameSegments with
+            | StaticEffectLabelObject, Some declaration, _ -> Some declaration
+            | StaticEffectLabelObject, None, [ effectName ] -> tryFindScopedEffectDeclaration effectName
             | _ -> None)
 
     let private tryResolveEffectOperationNamePath
@@ -1082,8 +1196,11 @@ module SurfaceElaboration =
 
             tryResolveScopedStaticObject environment (Name prefix)
             |> Option.bind (fun staticObject ->
-                match staticObject.ObjectKind, staticObject.NameSegments with
-                | StaticEffectLabelObject, [ effectName ] ->
+                match staticObject.ObjectKind, staticObject.ScopedEffect, staticObject.NameSegments with
+                | StaticEffectLabelObject, Some declaration, _ ->
+                    EffectSemantics.tryFindOperation operationName declaration
+                    |> Option.map (fun operation -> declaration.VisibleName, declaration, operation)
+                | StaticEffectLabelObject, None, [ effectName ] ->
                     tryFindScopedEffectOperation effectName operationName
                     |> Option.map (fun (declaration, operation) -> effectName, declaration, operation)
                 | _ ->
@@ -1117,9 +1234,9 @@ module SurfaceElaboration =
                     { BaseExpression = current
                       AppliedArguments = [] })
             | MemberAccess(receiver, [ operationName ], []) ->
-                tryResolveHandledEffectName environment receiver
-                |> Option.bind (fun effectName ->
-                    tryFindScopedEffectOperation effectName operationName
+                tryResolveHandledEffectDeclaration environment receiver
+                |> Option.bind (fun declaration ->
+                    EffectSemantics.tryFindOperation operationName declaration
                     |> Option.map (fun _ ->
                         { BaseExpression = current
                           AppliedArguments = [] }))
@@ -2214,8 +2331,18 @@ module SurfaceElaboration =
         | TypeName([ "Eff" ], [ effectRow; inner ]) -> Some(effectRow, inner)
         | _ -> None
 
-    let private unwrapBindPayloadType typeExpr =
+    let rec private tryUnwrapComputationPayloadType typeExpr =
         match typeExpr with
+        | TypeCapture(inner, _) -> tryUnwrapComputationPayloadType inner
+        | TypeName([ "Eff" ], [ _; inner ]) -> Some inner
+        | TypeName([ "IO" ], [ inner ]) -> Some inner
+        | TypeName([ "IO" ], [ _; inner ]) -> Some inner
+        | TypeName([ "UIO" ], [ inner ]) -> Some inner
+        | _ -> None
+
+    let rec private unwrapBindPayloadType typeExpr =
+        match typeExpr with
+        | TypeCapture(inner, _) -> unwrapBindPayloadType inner
         | TypeName([ "Eff" ], [ _; inner ]) -> inner
         | TypeName(_, [ inner ]) -> inner
         | other -> unwrapIoType other
@@ -2612,6 +2739,8 @@ module SurfaceElaboration =
 
     let private backendSupportsMultishotEffects (backendProfile: string) =
         match Stdlib.normalizeBackendProfile backendProfile with
+        | "interpreter"
+        | "dotnet" -> true
         | _ -> false
 
     let private quantityPermitsMultipleResumptions quantity =
@@ -3124,7 +3253,7 @@ module SurfaceElaboration =
              |> List.collect (fun fragment ->
                  fragment.Declarations
                  |> List.choose (function
-                     | EffectDeclarationNode declaration -> Some declaration
+                     | EffectDeclarationNode declaration -> Some(EffectSemantics.ensureTopLevel moduleName declaration)
                      | _ -> None))))
         |> Map.ofList
 
@@ -3492,8 +3621,7 @@ module SurfaceElaboration =
 
                 importedName
                 |> Option.map (fun localName ->
-                    { declaration with
-                        Name = localName }))
+                    declaration |> EffectSemantics.importAs localName))
 
         importedModuleInfos surfaceIndex moduleName
         |> List.collect importedEffectsForSpec
@@ -3997,11 +4125,13 @@ module SurfaceElaboration =
 
         loop Set.empty
 
-    let private tryUnwrapBindablePayloadType
+    let rec private tryUnwrapBindablePayloadType
         (aliases: Map<string, TypeAliasInfo>)
         typeExpr
         =
         match normalizeTypeAliases aliases typeExpr with
+        | TypeCapture(inner, _) ->
+            tryUnwrapBindablePayloadType aliases inner
         | TypeName([ "Eff" ], [ _; inner ]) -> Some inner
         | TypeName([ "IO" ], [ inner ]) -> Some inner
         | TypeName([ "IO" ], [ _; inner ]) -> Some inner
@@ -4009,11 +4139,13 @@ module SurfaceElaboration =
         | TypeName(_, [ inner ]) -> Some inner
         | _ -> None
 
-    let private isCallableValidationType
+    let rec private isCallableValidationType
         (aliases: Map<string, TypeAliasInfo>)
         typeExpr
         =
         match normalizeTypeAliases aliases typeExpr with
+        | TypeCapture(inner, _) ->
+            isCallableValidationType aliases inner
         | TypeVariable _
         | TypeArrow _
         | TypeLambda _
@@ -4029,7 +4161,7 @@ module SurfaceElaboration =
 
     let private trySplitHandledEffectRow
         (aliases: Map<string, TypeAliasInfo>)
-        (declaration: EffectDeclaration)
+        (declaration: EffectSemanticDeclaration)
         effectRow
         =
         let normalize = normalizeTypeAliases aliases
@@ -4606,14 +4738,24 @@ module SurfaceElaboration =
                 TypeForce(loop inner)
             | TypeProject(target, fieldName) ->
                 TypeProject(loop target, fieldName)
-            | TypeName([ name ], arguments) when environment.VisibleTypeFacets.ContainsKey(name) ->
-                let typeFacet = environment.VisibleTypeFacets[name]
-                let qualifiedName =
-                    (typeFacet.ModuleName.Split('.', StringSplitOptions.RemoveEmptyEntries) |> Array.toList) @ [ typeFacet.Name ]
+            | TypeName(nameSegments, arguments) ->
+                match tryResolveHandledEffectDeclaration environment (Name nameSegments), nameSegments with
+                | Some declaration, _ ->
+                    TypeName(scopedEffectInterfaceNameSegments declaration, arguments |> List.map loop)
+                | None, [ name ] ->
+                    match environment.VisibleStaticObjects |> Map.tryFind name with
+                    | Some staticObject when staticObject.ObjectKind = StaticTypeObject ->
+                        TypeName(staticObject.NameSegments, arguments |> List.map loop)
+                    | _ when environment.VisibleTypeFacets.ContainsKey(name) ->
+                        let typeFacet = environment.VisibleTypeFacets[name]
+                        let qualifiedName =
+                            (typeFacet.ModuleName.Split('.', StringSplitOptions.RemoveEmptyEntries) |> Array.toList) @ [ typeFacet.Name ]
 
-                TypeName(qualifiedName, arguments |> List.map loop)
-            | TypeName(name, arguments) ->
-                TypeName(name, arguments |> List.map loop)
+                        TypeName(qualifiedName, arguments |> List.map loop)
+                    | _ ->
+                        TypeName(nameSegments, arguments |> List.map loop)
+                | _ ->
+                    TypeName(nameSegments, arguments |> List.map loop)
             | TypeArrow(quantity, parameterType, resultType) ->
                 TypeArrow(quantity, loop parameterType, loop resultType)
             | TypeEquality(left, right) ->
@@ -4624,7 +4766,7 @@ module SurfaceElaboration =
                 TypeEffectRow(
                     entries
                     |> List.map (fun entry ->
-                        { Label = loop entry.Label
+                        { Label = qualifyScopedEffectLabel entry.Label
                           Effect = loop entry.Effect }),
                     tail |> Option.map loop
                 )
@@ -4639,6 +4781,15 @@ module SurfaceElaboration =
                 TypeUnion(members |> List.map loop)
             | TypeVariable _ ->
                 current
+
+        and qualifyScopedEffectLabel current =
+            match normalizeTypeAliases environment.VisibleTypeAliases current with
+            | TypeName(nameSegments, []) when not (List.isEmpty nameSegments) ->
+                match tryResolveHandledEffectDeclaration environment (Name nameSegments) with
+                | Some declaration -> scopedEffectLabelType declaration
+                | None -> loop current
+            | _ ->
+                loop current
 
         loop typeExpr
 
@@ -5056,6 +5207,7 @@ module SurfaceElaboration =
 
     let private tryInferVisibleAppliedType
         (aliases: Map<string, TypeAliasInfo>)
+        (qualifyTypeNames: TypeExpr -> TypeExpr)
         (inferArgumentType: SurfaceExpression -> TypeExpr option)
         headType
         arguments
@@ -5070,6 +5222,7 @@ module SurfaceElaboration =
                 match normalize currentType with
                 | TypeArrow(_, parameterType, resultType) ->
                     inferArgumentType argument
+                    |> Option.map qualifyTypeNames
                     |> Option.bind (fun argumentType ->
                         tryUnifyVisibleTypes aliases [ parameterType, argumentType ]
                         |> Option.map (fun substitution ->
@@ -5083,16 +5236,33 @@ module SurfaceElaboration =
                 | _ ->
                     None
 
-        loop headType arguments
+        loop (qualifyTypeNames headType) arguments
+
+    let private tryInferLocalAppliedType
+        (aliases: Map<string, TypeAliasInfo>)
+        (qualifyTypeNames: TypeExpr -> TypeExpr)
+        (inferArgumentType: SurfaceExpression -> TypeExpr option)
+        (localTypes: Map<string, TypeExpr>)
+        expression
+        =
+        match expression with
+        | Apply(Name [ calleeName ], arguments) ->
+            localTypes
+            |> Map.tryFind calleeName
+            |> Option.bind (fun localType ->
+                tryInferVisibleAppliedType aliases qualifyTypeNames inferArgumentType localType arguments)
+        | _ ->
+            None
 
     let private tryInferSafeNavigationMemberType
         (aliases: Map<string, TypeAliasInfo>)
+        (qualifyTypeNames: TypeExpr -> TypeExpr)
         (inferArgumentType: SurfaceExpression -> TypeExpr option)
         payloadType
         (navigation: SurfaceSafeNavigationMember)
         =
         tryProjectVisibleRecordType aliases payloadType navigation.Segments
-        |> Option.bind (fun headType -> tryInferVisibleAppliedType aliases inferArgumentType headType navigation.Arguments)
+        |> Option.bind (fun headType -> tryInferVisibleAppliedType aliases qualifyTypeNames inferArgumentType headType navigation.Arguments)
 
     let rec private tryParseTypeLikeSurfaceExpression expression =
         match expression with
@@ -5866,25 +6036,37 @@ module SurfaceElaboration =
     let private noLocalImplicit (_: TypeExpr) : KCoreExpression option =
         None
 
-    let private tryResolveUniqueLocalImplicitByType
+    type private LocalImplicitResolution =
+        | NoLocalImplicitCandidate
+        | UniqueLocalImplicitCandidate of KCoreExpression
+        | AmbiguousLocalImplicitCandidates
+
+    let private classifyLocalImplicitByType
         (environment: BindingLoweringEnvironment)
         (localTypes: Map<string, TypeExpr>)
         parameterType
         =
+        let normalizeVisible currentType =
+            currentType
+            |> qualifyVisibleTypeNames environment
+            |> normalizeTypeAliases environment.VisibleTypeAliases
+
         let normalizedGoal =
-            normalizeTypeAliases environment.VisibleTypeAliases parameterType
+            normalizeVisible parameterType
 
         let matches =
             localTypes
             |> Map.toList
             |> List.filter (fun (_, localType) ->
                 TypeSignatures.definitionallyEqual
-                    (normalizeTypeAliases environment.VisibleTypeAliases localType)
+                    (normalizeVisible localType)
                     normalizedGoal)
 
         match matches with
         | [ name, _ ] ->
-            Some(KCoreName [ name ])
+            UniqueLocalImplicitCandidate(KCoreName [ name ])
+        | _ :: _ ->
+            AmbiguousLocalImplicitCandidates
         | [] ->
             match tryTraitConstraintFromType environment parameterType with
             | Some goalConstraint ->
@@ -5905,12 +6087,24 @@ module SurfaceElaboration =
 
                 match projectedMatches with
                 | [ name, _ ] ->
-                    Some(KCoreName [ name ])
-                | _ ->
-                    None
+                    UniqueLocalImplicitCandidate(KCoreName [ name ])
+                | _ :: _ ->
+                    AmbiguousLocalImplicitCandidates
+                | [] ->
+                    NoLocalImplicitCandidate
             | None ->
-                None
-        | _ ->
+                NoLocalImplicitCandidate
+
+    let private tryResolveUniqueLocalImplicitByType
+        (environment: BindingLoweringEnvironment)
+        (localTypes: Map<string, TypeExpr>)
+        parameterType
+        =
+        match classifyLocalImplicitByType environment localTypes parameterType with
+        | UniqueLocalImplicitCandidate candidate ->
+            Some candidate
+        | NoLocalImplicitCandidate
+        | AmbiguousLocalImplicitCandidates ->
             None
 
     let private tryAlignParameterTypesWithLayouts
@@ -6398,6 +6592,47 @@ module SurfaceElaboration =
                         else
                             None
 
+    let private bindingHasRuntimeImplicitParameter
+        (environment: BindingLoweringEnvironment)
+        (bindingInfo: BindingSchemeInfo)
+        =
+        match bindingInfo.ParameterLayouts with
+        | Some layouts ->
+            let parameterTypes, _ = TypeSignatures.schemeParts bindingInfo.Scheme
+
+            if List.length layouts = List.length parameterTypes then
+                List.zip layouts parameterTypes
+                |> List.exists (fun (layout, parameterType) ->
+                    layout.IsImplicit
+                    && not (isCompileTimeArgumentType environment.VisibleTypeAliases parameterType))
+            else
+                layouts |> List.exists (fun layout -> layout.IsImplicit)
+        | None ->
+            false
+
+    let private bindingHasResolvableLocalRuntimeImplicitParameter
+        (environment: BindingLoweringEnvironment)
+        (localTypes: Map<string, TypeExpr>)
+        (bindingInfo: BindingSchemeInfo)
+        =
+        match bindingInfo.ParameterLayouts with
+        | Some layouts ->
+            let parameterTypes, _ = TypeSignatures.schemeParts bindingInfo.Scheme
+
+            if List.length layouts = List.length parameterTypes then
+                List.zip layouts parameterTypes
+                |> List.exists (fun (layout, parameterType) ->
+                    layout.IsImplicit
+                    && not (isCompileTimeArgumentType environment.VisibleTypeAliases parameterType)
+                    && (match classifyLocalImplicitByType environment localTypes parameterType with
+                        | UniqueLocalImplicitCandidate _ -> true
+                        | NoLocalImplicitCandidate
+                        | AmbiguousLocalImplicitCandidates -> false))
+            else
+                false
+        | None ->
+            false
+
     let private tryPrepareVisibleTraitMemberCall
         (environment: BindingLoweringEnvironment)
         (freshCounter: int ref)
@@ -6546,23 +6781,42 @@ module SurfaceElaboration =
         expression
         =
         let inferExpressionType = inferValidationExpressionType environment freshCounter localTypes
+        let normalizeVisibleType typeExpr =
+            typeExpr |> qualifyVisibleTypeNames environment |> normalizeTypeAliases environment.VisibleTypeAliases
+        let visibleTypeEquals left right =
+            TypeSignatures.definitionallyEqual (normalizeVisibleType left) (normalizeVisibleType right)
 
         let tryInferMemberAccessType receiver segments arguments =
             match segments with
             | [] ->
                 inferExpressionType receiver
                 |> Option.bind (fun receiverType ->
-                    tryInferVisibleAppliedType environment.VisibleTypeAliases inferExpressionType receiverType arguments)
+                    tryInferVisibleAppliedType
+                        environment.VisibleTypeAliases
+                        (qualifyVisibleTypeNames environment)
+                        inferExpressionType
+                        receiverType
+                        arguments)
             | [ memberName ] ->
-                (tryResolveHandledEffectName environment receiver
-                 |> Option.bind (fun effectName ->
-                     tryFindScopedEffectOperation effectName memberName
-                     |> Option.bind (fun (_, operation) ->
+                (tryResolveHandledEffectDeclaration environment receiver
+                 |> Option.bind (fun declaration ->
+                     EffectSemantics.tryFindOperation memberName declaration
+                     |> Option.bind (fun operation ->
                          operation.SignatureTokens
                          |> TypeSignatures.parseType
-                         |> Option.map (qualifyVisibleTypeNames environment)))
-                 |> Option.bind (fun operationType ->
-                     tryInferVisibleAppliedType environment.VisibleTypeAliases inferExpressionType operationType arguments))
+                         |> Option.map (qualifyVisibleTypeNames environment)
+                         |> Option.bind (fun operationType ->
+                             let parameterTypes, resultType = TypeSignatures.functionParts operationType
+
+                             if List.length arguments = List.length parameterTypes then
+                                 Some(effType (scopedEffectRowType declaration) resultType)
+                             else
+                                 tryInferVisibleAppliedType
+                                     environment.VisibleTypeAliases
+                                     (qualifyVisibleTypeNames environment)
+                                     inferExpressionType
+                                     operationType
+                                     arguments))))
                 |> Option.orElseWith (fun () ->
                     tryInferStaticConstructorCall environment freshCounter inferExpressionType receiver memberName arguments)
                 |> Option.orElseWith (fun () ->
@@ -6586,6 +6840,7 @@ module SurfaceElaboration =
                         |> Option.bind (fun memberType ->
                             tryInferVisibleAppliedType
                                 environment.VisibleTypeAliases
+                                (qualifyVisibleTypeNames environment)
                                 inferExpressionType
                                 memberType
                                 arguments)))
@@ -6652,7 +6907,19 @@ module SurfaceElaboration =
                 |> Option.orElseWith (fun () ->
                     environment.VisibleBindings
                     |> Map.tryFind root
-                    |> Option.bind (fun _ -> instantiateVisibleBindingBodyType environment freshCounter root))
+                    |> Option.bind (fun bindingInfo ->
+                        if bindingHasResolvableLocalRuntimeImplicitParameter environment localTypes bindingInfo then
+                            tryPrepareVisibleBindingCall
+                                environment
+                                freshCounter
+                                bindingInfo
+                                (inferValidationExpressionType environment freshCounter localTypes)
+                                (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                []
+                            |> Option.map (fun preparedCall -> preparedCall.ResultType)
+                            |> Option.orElseWith (fun () -> instantiateVisibleBindingBodyType environment freshCounter root)
+                        else
+                            instantiateVisibleBindingBodyType environment freshCounter root))
                 |> Option.orElseWith (fun () ->
                     environment.VisibleConstructors
                     |> Map.tryFind root
@@ -6717,10 +6984,30 @@ module SurfaceElaboration =
                 |> Option.orElse ordinaryResolution
         | Name [] ->
             None
-        | Apply(Name [ effectName; operationName ], arguments) ->
+        | Apply(MemberAccess(receiver, [ memberName ], []), arguments) ->
             match
-                tryFindScopedEffectOperation effectName operationName
-                |> Option.bind (fun (declaration, operation) ->
+                tryResolveHandledEffectDeclaration environment receiver
+                |> Option.bind (fun declaration ->
+                    EffectSemantics.tryFindOperation memberName declaration
+                    |> Option.bind (fun operation ->
+                        operation.SignatureTokens
+                        |> TypeSignatures.parseType
+                        |> Option.map (qualifyVisibleTypeNames environment)
+                        |> Option.map TypeSignatures.functionParts
+                        |> Option.map (fun (parameterTypes, resultType) -> declaration, parameterTypes, resultType)))
+            with
+            | Some(declaration, parameterTypes, resultType) when List.length parameterTypes = List.length arguments ->
+                Some(effType (scopedEffectRowType declaration) resultType)
+            | _ ->
+                match tryInferQueryCarrierType environment freshCounter localTypes (inferValidationExpressionType environment freshCounter) expression with
+                | Some queryCarrierType ->
+                    Some queryCarrierType
+                | None ->
+                    inferValidationApplicationType environment freshCounter localTypes expression
+        | Apply(Name nameSegments, arguments) ->
+            match
+                tryResolveEffectOperationNamePath environment nameSegments
+                |> Option.bind (fun (_, declaration, operation) ->
                     operation.SignatureTokens
                     |> TypeSignatures.parseType
                     |> Option.map (qualifyVisibleTypeNames environment)
@@ -6768,14 +7055,33 @@ module SurfaceElaboration =
         | LocalScopedEffect(declaration, body) ->
             withScopedEffectDeclaration declaration (fun () ->
                 inferValidationExpressionType environment freshCounter localTypes body)
-        | Handle(_, _, _, returnClause, _) ->
-            inferValidationExpressionType environment freshCounter localTypes returnClause.Body
+        | Handle(_, label, body, returnClause, _) ->
+            let handledResultType =
+                match
+                    tryResolveHandledEffectDeclaration environment label,
+                    inferValidationExpressionType environment freshCounter localTypes body |> Option.bind tryUnwrapEffType
+                with
+                | Some declaration, Some(effectRow, payloadType) ->
+                    match trySplitHandledEffectRow environment.VisibleTypeAliases declaration effectRow with
+                    | SplitResolved remainderRow -> Some(effType remainderRow payloadType)
+                    | _ -> None
+                | _ ->
+                    None
+
+            handledResultType
+            |> Option.orElseWith (fun () ->
+                inferValidationExpressionType environment freshCounter localTypes returnClause.Body)
         | Lambda(parameters, body) ->
             let parameterTypes =
                 parameters
                 |> List.map (fun parameter ->
                     tryParseParameterType parameter
+                    |> Option.map (qualifyVisibleTypeNames environment)
                     |> Option.defaultValue (TypeVariable $"lambda{freshCounter.Value}"))
+
+            let parameterQuantities =
+                parameters
+                |> List.map (fun parameter -> parameter.Quantity |> Option.defaultValue QuantityOmega)
 
             let lambdaLocals =
                 List.zip parameters parameterTypes
@@ -6783,9 +7089,9 @@ module SurfaceElaboration =
 
             inferValidationExpressionType environment freshCounter lambdaLocals body
             |> Option.map (fun resultType ->
-                parameterTypes
+                List.zip parameterTypes parameterQuantities
                 |> List.rev
-                |> List.fold (fun state parameterType -> TypeArrow(QuantityOmega, parameterType, state)) resultType)
+                |> List.fold (fun state (parameterType, quantity) -> TypeArrow(quantity, parameterType, state)) resultType)
         | IfThenElse(_, whenTrue, whenFalse) ->
             match
                 inferValidationExpressionType environment freshCounter localTypes whenTrue,
@@ -6838,6 +7144,7 @@ module SurfaceElaboration =
                 |> Option.bind (fun payloadType ->
                     tryInferSafeNavigationMemberType
                         environment.VisibleTypeAliases
+                        (qualifyVisibleTypeNames environment)
                         (inferValidationExpressionType environment freshCounter localTypes)
                         payloadType
                         navigation
@@ -6871,9 +7178,9 @@ module SurfaceElaboration =
                 inferValidationExpressionType environment freshCounter localTypes left,
                 inferValidationExpressionType environment freshCounter localTypes right
             with
-            | Some leftType, Some rightType when leftType = intType && rightType = intType ->
+            | Some leftType, Some rightType when visibleTypeEquals leftType intType && visibleTypeEquals rightType intType ->
                 Some intType
-            | Some leftType, Some rightType when leftType = floatType && rightType = floatType ->
+            | Some leftType, Some rightType when visibleTypeEquals leftType floatType && visibleTypeEquals rightType floatType ->
                 Some floatType
             | _ ->
                 None
@@ -6954,17 +7261,39 @@ module SurfaceElaboration =
                                 receiverArguments
                             |> Option.map (fun preparedCall -> preparedCall.ResultType))))
             | Apply(Name [ calleeName ], arguments) ->
-                environment.VisibleBindings
+                localTypes
                 |> Map.tryFind calleeName
-                |> Option.bind (fun bindingInfo ->
-                    tryPrepareVisibleBindingCall
-                        environment
-                        freshCounter
-                        bindingInfo
+                |> Option.bind (fun localType ->
+                    tryInferVisibleAppliedType
+                        environment.VisibleTypeAliases
+                        (qualifyVisibleTypeNames environment)
                         (inferValidationExpressionType environment freshCounter localTypes)
-                        (tryResolveUniqueLocalImplicitByType environment localTypes)
-                        arguments
-                    |> Option.map (fun preparedCall -> preparedCall.ResultType))
+                        localType
+                        arguments)
+                |> Option.orElseWith (fun () ->
+                    environment.VisibleBindings
+                    |> Map.tryFind calleeName
+                    |> Option.bind (fun bindingInfo ->
+                        let preparedResultType =
+                            tryPrepareVisibleBindingCall
+                                environment
+                                freshCounter
+                                bindingInfo
+                                (inferValidationExpressionType environment freshCounter localTypes)
+                                (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                arguments
+                            |> Option.map (fun preparedCall -> preparedCall.ResultType)
+
+                        preparedResultType
+                        |> Option.orElseWith (fun () ->
+                            instantiateVisibleBindingBodyType environment freshCounter calleeName
+                            |> Option.bind (fun bodyType ->
+                                tryInferVisibleAppliedType
+                                    environment.VisibleTypeAliases
+                                    (qualifyVisibleTypeNames environment)
+                                    (inferValidationExpressionType environment freshCounter localTypes)
+                                    bodyType
+                                    arguments))))
                 |> Option.orElseWith (fun () ->
                     environment.VisibleConstructors
                     |> Map.tryFind calleeName
@@ -6994,6 +7323,19 @@ module SurfaceElaboration =
         (localTypes: Map<string, TypeExpr>)
         statements
         =
+        let tryMergeBranchResultTypes leftType rightType =
+            tryUnifyVisibleTypes environment.VisibleTypeAliases [ leftType, rightType ]
+            |> Option.map (fun substitution -> TypeSignatures.applySubstitution substitution leftType)
+            |> Option.orElseWith (fun () ->
+                if
+                    TypeSignatures.definitionallyEqual
+                        (normalizeTypeAliases environment.VisibleTypeAliases leftType)
+                        (normalizeTypeAliases environment.VisibleTypeAliases rightType)
+                then
+                    Some leftType
+                else
+                    None)
+
         match statements with
         | [] ->
             Some unitType
@@ -7059,6 +7401,15 @@ module SurfaceElaboration =
             inferValidationDoResultType environment freshCounter localTypes rest
         | DoDefer _ :: rest ->
             inferValidationDoResultType environment freshCounter localTypes rest
+        | DoIf(_, whenTrue, whenFalse) :: [] ->
+            match
+                inferValidationDoResultType environment freshCounter localTypes whenTrue,
+                inferValidationDoResultType environment freshCounter localTypes whenFalse
+            with
+            | Some whenTrueType, Some whenFalseType ->
+                tryMergeBranchResultTypes whenTrueType whenFalseType
+            | _ ->
+                None
         | DoIf(_, _, _) :: rest ->
             inferValidationDoResultType environment freshCounter localTypes rest
         | DoWhile _ :: rest ->
@@ -7777,6 +8128,7 @@ module SurfaceElaboration =
                     |> Option.bind (fun calleeType ->
                         tryInferVisibleAppliedType
                             environment.VisibleTypeAliases
+                            (qualifyVisibleTypeNames environment)
                             (fun argument ->
                                 tryInferExpressionTypeWithSiblingFallback visitedTopLevelNames localTypes argument)
                             calleeType
@@ -9480,6 +9832,7 @@ module SurfaceElaboration =
         let trueTermType = TypeName([ "True" ], [])
         let falseTermType = TypeName([ "False" ], [])
         let emptyStableAliases: Map<string, string> = Map.empty
+        let emptyStaticAliases: Map<string list, StaticObjectInfo> = Map.empty
         let emptyConstructorFacts: Map<string, string option * Set<string>> = Map.empty
 
         let canonicalStableRoot aliases name =
@@ -9495,6 +9848,21 @@ module SurfaceElaboration =
 
         let removeShadowedAliases aliases names =
             names |> List.fold (fun state name -> Map.remove name state) aliases
+
+        let removeShadowedStaticAliases
+            (aliases: Map<string list, StaticObjectInfo>)
+            names
+            =
+            if List.isEmpty names then
+                aliases
+            else
+                let shadowed = names |> Set.ofList
+
+                aliases
+                |> Map.filter (fun segments _ ->
+                    match segments with
+                    | root :: _ -> not (Set.contains root shadowed)
+                    | [] -> true)
 
         let tryLocalRootType aliases locals root =
             Map.tryFind root locals
@@ -9993,6 +10361,16 @@ module SurfaceElaboration =
                             tryUnifyVisibleTypes environment.VisibleTypeAliases [ expectedType, actualType ]
                             |> Option.isSome
 
+        let bindablePayloadTypesAgree locals refinements expectedType actualType =
+            match
+                tryUnwrapBindablePayloadType environment.VisibleTypeAliases expectedType,
+                tryUnwrapBindablePayloadType environment.VisibleTypeAliases actualType
+            with
+            | Some expectedPayload, Some actualPayload ->
+                expectedTypeAccepts locals refinements expectedPayload actualPayload
+            | _ ->
+                false
+
         let expectedMismatchDiagnostic locals refinements context expectedType actualType =
             let expectedType = normalizeExpectedType refinements expectedType
             let actualType = normalizeExpectedType refinements actualType
@@ -10032,6 +10410,31 @@ module SurfaceElaboration =
                         [ expectedMismatchDiagnostic locals refinements context expectedType actualType ]
                     | _ ->
                         []
+
+        let bindableCarrierExpectedTypeDiagnostics locals refinements context expectedType expression =
+            match expression with
+            | Do statements ->
+                match
+                    tryUnwrapBindablePayloadType environment.VisibleTypeAliases expectedType,
+                    inferValidationDoResultType environment freshCounter locals statements
+                with
+                | Some expectedPayload, Some actualDoResultType ->
+                    let actualPayload =
+                        tryUnwrapBindablePayloadType environment.VisibleTypeAliases actualDoResultType
+                        |> Option.defaultValue actualDoResultType
+
+                    if expectedTypeAccepts locals refinements expectedPayload actualPayload then
+                        []
+                    else
+                        [ expectedMismatchDiagnostic locals refinements context expectedPayload actualPayload ]
+                | _ ->
+                    expectedTypeDiagnostics locals refinements context expectedType expression
+            | _ ->
+                match inferValidationExpressionType environment freshCounter locals expression with
+                | Some actualType when bindablePayloadTypesAgree locals refinements expectedType actualType ->
+                    []
+                | _ ->
+                    expectedTypeDiagnostics locals refinements context expectedType expression
 
         let rec isHandlerCarrierResultType typeExpr =
             match normalizeTypeAliases environment.VisibleTypeAliases typeExpr with
@@ -11538,8 +11941,12 @@ module SurfaceElaboration =
 
             validateExpression localTypes parameterNames expression
 
-        let rec validateExpressionWithFlow locals refinements lexicalNames aliases constructorFacts expression =
-            let recurse = validateExpressionWithFlow locals refinements lexicalNames aliases constructorFacts
+        let rec validateExpressionWithFlow locals refinements lexicalNames aliases staticAliases constructorFacts expression =
+            let environment =
+                { environment with
+                    VisibleStaticObjects = aliasesAsVisibleStaticObjects staticAliases }
+
+            let recurse = validateExpressionWithFlow locals refinements lexicalNames aliases staticAliases constructorFacts
 
             let queryUseText useMode =
                 match useMode with
@@ -11733,10 +12140,10 @@ module SurfaceElaboration =
                 let validateYield currentLocals currentLexical =
                     match comprehension.Yield with
                     | YieldValue value ->
-                        validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts value
+                        validateExpressionWithFlow currentLocals refinements currentLexical aliases staticAliases constructorFacts value
                     | YieldKeyValue(key, value) ->
-                        validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts key
-                        @ validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts value
+                        validateExpressionWithFlow currentLocals refinements currentLexical aliases staticAliases constructorFacts key
+                        @ validateExpressionWithFlow currentLocals refinements currentLexical aliases staticAliases constructorFacts value
 
                 let rec loop currentLocals currentLexical clauses =
                     match clauses with
@@ -11746,7 +12153,7 @@ module SurfaceElaboration =
                         match clause with
                         | ForClause(_, isRefutable, binding, source) ->
                             let sourceDiagnostics =
-                                validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts source
+                                validateExpressionWithFlow currentLocals refinements currentLexical aliases staticAliases constructorFacts source
 
                             let refutableDiagnostics =
                                 if not isRefutable && not (patternIsDefinitelyIrrefutable binding.Pattern) then
@@ -11771,7 +12178,7 @@ module SurfaceElaboration =
                             sourceDiagnostics @ refutableDiagnostics @ loop nextLocals nextLexical rest
                         | JoinClause(binding, source, condition) ->
                             let sourceDiagnostics =
-                                validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts source
+                                validateExpressionWithFlow currentLocals refinements currentLexical aliases staticAliases constructorFacts source
 
                             let nextLocals =
                                 inferValidationExpressionType environment freshCounter currentLocals source
@@ -11784,12 +12191,12 @@ module SurfaceElaboration =
                                 Set.union currentLexical (collectPatternNames binding.Pattern |> Set.ofList)
 
                             let conditionDiagnostics =
-                                validateExpressionWithFlow nextLocals refinements nextLexical aliases constructorFacts condition
+                                validateExpressionWithFlow nextLocals refinements nextLexical aliases staticAliases constructorFacts condition
 
                             sourceDiagnostics @ conditionDiagnostics @ loop nextLocals nextLexical rest
                         | LetClause(_, binding, value) ->
                             let valueDiagnostics =
-                                validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts value
+                                validateExpressionWithFlow currentLocals refinements currentLexical aliases staticAliases constructorFacts value
 
                             let nextLocals =
                                 inferValidationExpressionType environment freshCounter currentLocals value
@@ -11802,39 +12209,39 @@ module SurfaceElaboration =
 
                             valueDiagnostics @ loop nextLocals nextLexical rest
                         | IfClause condition ->
-                            validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts condition
+                            validateExpressionWithFlow currentLocals refinements currentLexical aliases staticAliases constructorFacts condition
                             @ loop currentLocals currentLexical rest
                         | GroupByClause(key, aggregations, intoName) ->
                             let aggregationDiagnostics =
                                 aggregations
                                 |> List.collect (fun field ->
-                                    validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts field.Value)
+                                    validateExpressionWithFlow currentLocals refinements currentLexical aliases staticAliases constructorFacts field.Value)
 
                             let nextLocals =
                                 Map.add intoName (TypeSignatures.TypeVariable $"__kappa_group_{intoName}") Map.empty
 
                             let nextLexical = Set.singleton intoName
 
-                            validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts key
+                            validateExpressionWithFlow currentLocals refinements currentLexical aliases staticAliases constructorFacts key
                             @ aggregationDiagnostics
                             @ loop nextLocals nextLexical rest
                         | OrderByClause(_, key) ->
-                            validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts key
+                            validateExpressionWithFlow currentLocals refinements currentLexical aliases staticAliases constructorFacts key
                             @ loop currentLocals currentLexical rest
                         | DistinctClause ->
                             loop currentLocals currentLexical rest
                         | DistinctByClause key ->
-                            validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts key
+                            validateExpressionWithFlow currentLocals refinements currentLexical aliases staticAliases constructorFacts key
                             @ loop currentLocals currentLexical rest
                         | SkipClause count ->
-                            validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts count
+                            validateExpressionWithFlow currentLocals refinements currentLexical aliases staticAliases constructorFacts count
                             @ loop currentLocals currentLexical rest
                         | TakeClause count ->
-                            validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts count
+                            validateExpressionWithFlow currentLocals refinements currentLexical aliases staticAliases constructorFacts count
                             @ loop currentLocals currentLexical rest
                         | LeftJoinClause(binding, source, condition, intoName) ->
                             let sourceDiagnostics =
-                                validateExpressionWithFlow currentLocals refinements currentLexical aliases constructorFacts source
+                                validateExpressionWithFlow currentLocals refinements currentLexical aliases staticAliases constructorFacts source
 
                             let joinLocals =
                                 inferValidationExpressionType environment freshCounter currentLocals source
@@ -11847,7 +12254,7 @@ module SurfaceElaboration =
                                 Set.union currentLexical (collectPatternNames binding.Pattern |> Set.ofList)
 
                             let conditionDiagnostics =
-                                validateExpressionWithFlow joinLocals refinements joinLexical aliases constructorFacts condition
+                                validateExpressionWithFlow joinLocals refinements joinLexical aliases staticAliases constructorFacts condition
 
                             let nextLocals =
                                 Map.add intoName (TypeSignatures.TypeVariable $"__kappa_left_join_{intoName}") currentLocals
@@ -12611,10 +13018,10 @@ module SurfaceElaboration =
                                    |> Option.defaultValue [])
                             | DoIf(condition, whenTrue, whenFalse) ->
                                 recurseCurrent condition
-                                @ validateDoStatementsWithFlow locals refinements lexicalNames aliases constructorFacts whenTrue
-                                @ validateDoStatementsWithFlow locals refinements lexicalNames aliases constructorFacts whenFalse
+                                @ validateDoStatementsWithFlow locals refinements lexicalNames aliases staticAliases constructorFacts whenTrue
+                                @ validateDoStatementsWithFlow locals refinements lexicalNames aliases staticAliases constructorFacts whenFalse
                             | DoWhile(condition, body) ->
-                                recurseCurrent condition @ validateDoStatementsWithFlow locals refinements lexicalNames aliases constructorFacts body)
+                                recurseCurrent condition @ validateDoStatementsWithFlow locals refinements lexicalNames aliases staticAliases constructorFacts body)
                     | NamedApplicationBlock fields ->
                         fields |> List.collect (fun field -> recurseCurrent field.Value)
                     | Binary(left, _, right)
@@ -12664,6 +13071,17 @@ module SurfaceElaboration =
                     |> Option.map snd
                     |> Option.defaultValue (TypeVariable $"handlePayload{freshCounter.Value}")
 
+                let handledEffectSplit =
+                    match tryResolveHandledEffectDeclaration environment label, handledBodyType with
+                    | Some declaration, Some handledType ->
+                        match tryUnwrapEffType handledType with
+                        | Some(effectRow, payloadType) ->
+                            Some(declaration, effectRow, payloadType, trySplitHandledEffectRow environment.VisibleTypeAliases declaration effectRow)
+                        | None ->
+                            None
+                    | _ ->
+                        None
+
                 let extendHandlerLocals argumentTokens argumentTypes resumptionName resumptionType currentLocals =
                     let nextLocals =
                         argumentTokens
@@ -12685,11 +13103,18 @@ module SurfaceElaboration =
                 let returnClauseType =
                     inferValidationExpressionType environment freshCounter returnClauseLocals returnClause.Body
 
+                let splitDerivedHandlerResultType =
+                    handledEffectSplit
+                    |> Option.bind (fun (_, _, payloadType, splitResult) ->
+                        match splitResult with
+                        | SplitResolved remainderRow -> Some(effType remainderRow payloadType)
+                        | _ -> None)
+
                 let tryOperationClauseLocals (clause: SurfaceEffectHandlerClause) =
-                    match tryResolveHandledEffectName environment label with
-                    | Some effectName ->
-                        tryFindScopedEffectOperation effectName clause.OperationName
-                        |> Option.bind (fun (_, operation) ->
+                    match tryResolveHandledEffectDeclaration environment label with
+                    | Some declaration ->
+                        EffectSemantics.tryFindOperation clause.OperationName declaration
+                        |> Option.bind (fun operation ->
                             operation.SignatureTokens
                             |> TypeSignatures.parseType
                             |> Option.map (qualifyVisibleTypeNames environment)
@@ -12697,7 +13122,8 @@ module SurfaceElaboration =
                             |> Option.map (fun (parameterTypes, resultType) ->
                                 let resumptionResultType =
                                     if isDeep then
-                                        returnClauseType
+                                        splitDerivedHandlerResultType
+                                        |> Option.orElse returnClauseType
                                     else
                                         handledBodyType
 
@@ -12720,15 +13146,26 @@ module SurfaceElaboration =
                         let clauseLocals = tryOperationClauseLocals clause |> Option.defaultValue locals
                         clause, clauseLocals, inferValidationExpressionType environment freshCounter clauseLocals clause.Body)
 
-                let handledResultType =
-                    returnClauseType
+                let finalHandlerResultType =
+                    splitDerivedHandlerResultType
                     |> Option.orElseWith (fun () ->
-                        operationClauseInfos
-                        |> List.tryPick (fun (_, _, clauseType) -> clauseType))
+                        if isDeep then
+                            returnClauseType
+                            |> Option.orElseWith (fun () ->
+                                operationClauseInfos
+                                |> List.tryPick (fun (_, _, clauseType) -> clauseType))
+                        else
+                            returnClauseType)
+
+                let operationClauseExpectedType =
+                    if isDeep then
+                        finalHandlerResultType
+                    else
+                        handledBodyType
 
                 let handlerClauseTypeDiagnostics =
                     let carrierDiagnostics =
-                        handledResultType
+                        finalHandlerResultType
                         |> Option.filter (isHandlerCarrierResultType >> not)
                         |> Option.map (fun actualType ->
                             [
@@ -12739,17 +13176,22 @@ module SurfaceElaboration =
                         |> Option.defaultValue []
 
                     let returnDiagnostics =
-                        handledResultType
+                        finalHandlerResultType
                         |> Option.map (fun expectedType ->
-                            expectedTypeDiagnostics returnClauseLocals refinements "Handler return clause" expectedType returnClause.Body)
+                            bindableCarrierExpectedTypeDiagnostics
+                                returnClauseLocals
+                                refinements
+                                "Handler return clause"
+                                expectedType
+                                returnClause.Body)
                         |> Option.defaultValue []
 
                     let operationDiagnostics =
-                        match handledResultType with
+                        match operationClauseExpectedType with
                         | Some expectedType ->
                             operationClauseInfos
                             |> List.collect (fun (clause, clauseLocals, _) ->
-                                expectedTypeDiagnostics
+                                bindableCarrierExpectedTypeDiagnostics
                                     clauseLocals
                                     refinements
                                     $"Handler clause for operation '{clause.OperationName}'"
@@ -12761,139 +13203,127 @@ module SurfaceElaboration =
                     carrierDiagnostics @ returnDiagnostics @ operationDiagnostics
 
                 let handledEffectRowDiagnostics =
-                    match tryResolveHandledEffectName environment label, handledBodyType with
-                    | Some effectName, Some handledType ->
-                        match tryUnwrapEffType handledType with
-                        | Some(effectRow, _) ->
-                            match tryFindScopedEffectDeclaration effectName with
-                            | Some declaration ->
-                                match trySplitHandledEffectRow environment.VisibleTypeAliases declaration effectRow with
-                                | SplitMismatch ->
-                                    [
-                                        makeDiagnostic
-                                            DiagnosticCode.HandlerEffectRowMismatch
-                                            $"Handler for '{effectName}' expects the handled computation to carry label '{effectName}' in its effect row, but found '{TypeSignatures.toText effectRow}'."
-                                    ]
-                                | SplitNeedsTailRefinement ->
-                                    [
-                                        makeDiagnostic
-                                            DiagnosticCode.HandlerEffectRowMismatch
-                                            $"Handler for '{effectName}' cannot split label '{effectName}' out of open effect row '{TypeSignatures.toText effectRow}' without explicit row refinement. Mention '{effectName}' explicitly in the handled computation type."
-                                    ]
-                                | SplitResolved _ ->
-                                    []
-                            | None ->
-                                []
-                        | None ->
-                            [
-                                makeDiagnostic
-                                    DiagnosticCode.HandlerEffectRowMismatch
-                                    $"Handler for '{effectName}' expects an Eff computation, but the handled expression has type '{TypeSignatures.toText handledType}'."
-                            ]
-                    | _ , _ ->
+                    match handledEffectSplit, handledBodyType with
+                    | Some(declaration, effectRow, _, SplitMismatch), _ ->
+                        [
+                            makeDiagnostic
+                                DiagnosticCode.HandlerEffectRowMismatch
+                                $"Handler for '{declaration.VisibleName}' expects the handled computation to carry label '{declaration.VisibleName}' in its effect row, but found '{TypeSignatures.toText effectRow}'."
+                        ]
+                    | Some(declaration, effectRow, _, SplitNeedsTailRefinement), _ ->
+                        [
+                            makeDiagnostic
+                                DiagnosticCode.HandlerEffectRowMismatch
+                                $"Handler for '{declaration.VisibleName}' cannot split label '{declaration.VisibleName}' out of open effect row '{TypeSignatures.toText effectRow}' without explicit row refinement. Mention '{declaration.VisibleName}' explicitly in the handled computation type."
+                        ]
+                    | Some(_, _, _, SplitResolved _), _ ->
+                        []
+                    | None, Some handledType when tryUnwrapEffType handledType |> Option.isNone ->
+                        [
+                            makeDiagnostic
+                                DiagnosticCode.HandlerEffectRowMismatch
+                                $"Handler expects an Eff computation, but the handled expression has type '{TypeSignatures.toText handledType}'."
+                        ]
+                    | _ ->
                         []
 
                 let handlerDiagnostics =
-                    match tryResolveHandledEffectName environment label with
-                    | Some effectName ->
-                        match tryFindScopedEffectDeclaration effectName with
-                        | Some declaration ->
-                            let declaredOperationNames =
-                                declaration.Operations
-                                |> List.map (fun operation -> operation.Name)
-                                |> Set.ofList
+                    match tryResolveHandledEffectDeclaration environment label with
+                    | Some declaration ->
+                        let declaredOperationNames =
+                            declaration.Operations
+                            |> List.map (fun operation -> operation.Name)
+                            |> Set.ofList
 
-                            let declaredOperationMap =
-                                declaration.Operations
-                                |> List.map (fun operation -> operation.Name, operation)
-                                |> Map.ofList
+                        let declaredOperationMap =
+                            declaration.Operations
+                            |> List.map (fun operation -> operation.Name, operation)
+                            |> Map.ofList
 
-                            let clauseGroups =
-                                operationClauses
-                                |> List.groupBy (fun clause -> clause.OperationName)
+                        let clauseGroups =
+                            operationClauses
+                            |> List.groupBy (fun clause -> clause.OperationName)
 
-                            let missingDiagnostics =
-                                declaration.Operations
-                                |> List.choose (fun operation ->
-                                    if clauseGroups |> List.exists (fun (name, _) -> String.Equals(name, operation.Name, StringComparison.Ordinal)) then
-                                        None
-                                    else
-                                        Some(
-                                            makeDiagnostic
-                                                DiagnosticCode.HandlerClauseMissing
-                                                $"Handler for '{effectName}' is missing a clause for operation '{operation.Name}'."
-                                        ))
+                        let missingDiagnostics =
+                            declaration.Operations
+                            |> List.choose (fun operation ->
+                                if clauseGroups |> List.exists (fun (name, _) -> String.Equals(name, operation.Name, StringComparison.Ordinal)) then
+                                    None
+                                else
+                                    Some(
+                                        makeDiagnostic
+                                            DiagnosticCode.HandlerClauseMissing
+                                            $"Handler for '{declaration.VisibleName}' is missing a clause for operation '{operation.Name}'."
+                                    ))
 
-                            let duplicateDiagnostics =
-                                clauseGroups
-                                |> List.collect (fun (operationName, clauses) ->
-                                    if List.length clauses > 1 then
-                                        [
-                                            makeDiagnostic
-                                                DiagnosticCode.HandlerClauseDuplicate
-                                                $"Handler for '{effectName}' defines more than one clause for operation '{operationName}'."
-                                        ]
-                                    else
-                                        [])
+                        let duplicateDiagnostics =
+                            clauseGroups
+                            |> List.collect (fun (operationName, clauses) ->
+                                if List.length clauses > 1 then
+                                    [
+                                        makeDiagnostic
+                                            DiagnosticCode.HandlerClauseDuplicate
+                                            $"Handler for '{declaration.VisibleName}' defines more than one clause for operation '{operationName}'."
+                                    ]
+                                else
+                                    [])
 
-                            let unexpectedDiagnostics =
-                                clauseGroups
-                                |> List.collect (fun (operationName, _) ->
-                                    if Set.contains operationName declaredOperationNames then
-                                        []
-                                    else
-                                        [
-                                            makeDiagnostic
-                                                DiagnosticCode.HandlerClauseUnexpected
-                                                $"Handler for '{effectName}' defines a clause for undeclared operation '{operationName}'."
-                                        ])
+                        let unexpectedDiagnostics =
+                            clauseGroups
+                            |> List.collect (fun (operationName, _) ->
+                                if Set.contains operationName declaredOperationNames then
+                                    []
+                                else
+                                    [
+                                        makeDiagnostic
+                                            DiagnosticCode.HandlerClauseUnexpected
+                                            $"Handler for '{declaration.VisibleName}' defines a clause for undeclared operation '{operationName}'."
+                                    ])
 
-                            let resumptionDiagnostics =
-                                operationClauses
-                                |> List.collect (fun clause ->
-                                    match Map.tryFind clause.OperationName declaredOperationMap with
-                                    | Some operation ->
-                                        let operationArity =
-                                            operation.SignatureTokens
-                                            |> TypeSignatures.parseType
-                                            |> Option.map (qualifyVisibleTypeNames environment)
-                                            |> Option.map TypeSignatures.functionParts
-                                            |> Option.map (fun (parameterTypes, _) -> List.length parameterTypes)
+                        let resumptionDiagnostics =
+                            operationClauses
+                            |> List.collect (fun clause ->
+                                match Map.tryFind clause.OperationName declaredOperationMap with
+                                | Some operation ->
+                                    let operationArity =
+                                        operation.SignatureTokens
+                                        |> TypeSignatures.parseType
+                                        |> Option.map (qualifyVisibleTypeNames environment)
+                                        |> Option.map TypeSignatures.functionParts
+                                        |> Option.map (fun (parameterTypes, _) -> List.length parameterTypes)
 
-                                        let arityDiagnostics =
-                                            match operationArity with
-                                            | Some expectedArity when expectedArity <> List.length clause.ArgumentTokens ->
-                                                [
-                                                    makeDiagnostic
-                                                        DiagnosticCode.HandlerClauseArityMismatch
-                                                        $"Handler clause for operation '{clause.OperationName}' binds {List.length clause.ArgumentTokens} argument(s), but the effect declaration requires {expectedArity}."
-                                                ]
-                                            | _ ->
-                                                []
+                                    let arityDiagnostics =
+                                        match operationArity with
+                                        | Some expectedArity when expectedArity <> List.length clause.ArgumentTokens ->
+                                            [
+                                                makeDiagnostic
+                                                    DiagnosticCode.HandlerClauseArityMismatch
+                                                    $"Handler clause for operation '{clause.OperationName}' binds {List.length clause.ArgumentTokens} argument(s), but the effect declaration requires {expectedArity}."
+                                            ]
+                                        | _ ->
+                                            []
 
-                                        let resumptionUseDiagnostics =
-                                            match operation.ResumptionQuantity, clause.ResumptionName with
-                                            | Some QuantityZero, _
-                                            | Some QuantityAtMostOne, _
-                                            | None, _ ->
-                                                []
-                                            | Some _, Some resumptionName
-                                                when not (expressionReferencesName resumptionName Set.empty clause.Body) ->
-                                                [
-                                                    makeDiagnostic
-                                                        DiagnosticCode.QttLinearDrop
-                                                        $"Handler clause for operation '{clause.OperationName}' must use relevant resumption '{resumptionName}'."
-                                                ]
-                                            | Some _, _ ->
-                                                []
+                                    let resumptionUseDiagnostics =
+                                        match operation.ResumptionQuantity, clause.ResumptionName with
+                                        | Some QuantityZero, _
+                                        | Some QuantityAtMostOne, _
+                                        | None, _ ->
+                                            []
+                                        | Some _, Some resumptionName
+                                            when not (expressionReferencesName resumptionName Set.empty clause.Body) ->
+                                            [
+                                                makeDiagnostic
+                                                    DiagnosticCode.QttLinearDrop
+                                                    $"Handler clause for operation '{clause.OperationName}' must use relevant resumption '{resumptionName}'."
+                                            ]
+                                        | Some _, _ ->
+                                            []
 
-                                        arityDiagnostics @ resumptionUseDiagnostics
-                                    | None ->
-                                        [])
+                                    arityDiagnostics @ resumptionUseDiagnostics
+                                | None ->
+                                    [])
 
-                            missingDiagnostics @ duplicateDiagnostics @ unexpectedDiagnostics @ resumptionDiagnostics
-                        | None ->
-                            []
+                        missingDiagnostics @ duplicateDiagnostics @ unexpectedDiagnostics @ resumptionDiagnostics
                     | _ ->
                         []
 
@@ -12904,6 +13334,7 @@ module SurfaceElaboration =
                     refinements
                     returnClauseLexicalNames
                     aliases
+                    staticAliases
                     constructorFacts
                     returnClause.Body
                 @ (operationClauses
@@ -12914,6 +13345,7 @@ module SurfaceElaboration =
                            refinements
                            clauseLexicalNames
                            aliases
+                           staticAliases
                            constructorFacts
                            clause.Body))
                 @ handlerDiagnostics
@@ -13068,10 +13500,117 @@ module SurfaceElaboration =
             | Comprehension comprehension ->
                 recurseComprehension comprehension
             | LocalLet(binding, value, body) ->
-                let valueType =
+                let value =
+                    binding.TypeTokens
+                    |> Option.map (fun typeTokens -> annotateLambdaWithTypeTokens typeTokens value)
+                    |> Option.defaultValue value
+
+                let aliasAwareEnvironment =
+                    { environment with
+                        VisibleStaticObjects = aliasesAsVisibleStaticObjects staticAliases }
+
+                let declaredType =
                     binding.TypeTokens
                     |> Option.bind TypeSignatures.parseType
-                    |> Option.orElseWith (fun () -> tryInferMacroAwareValidationType locals value)
+                    |> Option.map (qualifyVisibleTypeNames aliasAwareEnvironment)
+
+                let valueLocals =
+                    match binding.Pattern, declaredType, value with
+                    | NamePattern bindingName, Some currentDeclaredType, Lambda _ ->
+                        Map.add bindingName currentDeclaredType locals
+                    | _ ->
+                        locals
+
+                let inferredValueType =
+                    tryInferPureElabResultType valueLocals value
+                    |> Option.orElseWith (fun () ->
+                        inferValidationExpressionType aliasAwareEnvironment freshCounter valueLocals value)
+
+                let valueType =
+                    declaredType
+                    |> Option.orElse inferredValueType
+
+                let compareDeclaredAndInferredTypes
+                    mismatchPrefix
+                    currentDeclaredType
+                    currentInferredType
+                    =
+                    let rec dropLeadingCompileTimeTypeBinders currentType =
+                        match normalizeTypeAliases aliasAwareEnvironment.VisibleTypeAliases currentType with
+                        | TypeLambda(_, parameterSort, body)
+                            when isCompileTimeArgumentType aliasAwareEnvironment.VisibleTypeAliases parameterSort ->
+                            dropLeadingCompileTimeTypeBinders body
+                        | _ ->
+                            currentType
+
+                    let currentDeclaredType =
+                        dropLeadingCompileTimeTypeBinders currentDeclaredType
+
+                    let normalizedDeclaredType =
+                        currentDeclaredType
+                        |> qualifyVisibleTypeNames aliasAwareEnvironment
+                        |> normalizeTypeAliases aliasAwareEnvironment.VisibleTypeAliases
+
+                    let normalizedInferredType =
+                        currentInferredType
+                        |> qualifyVisibleTypeNames aliasAwareEnvironment
+                        |> normalizeTypeAliases aliasAwareEnvironment.VisibleTypeAliases
+
+                    match tryUnifyVisibleTypes aliasAwareEnvironment.VisibleTypeAliases [ currentDeclaredType, currentInferredType ] with
+                    | Some _ ->
+                        []
+                    | None when TypeSignatures.definitionallyEqual normalizedDeclaredType normalizedInferredType ->
+                        []
+                    | None ->
+                        [ makeDiagnostic
+                              DiagnosticCode.TypeEqualityMismatch
+                              $"{mismatchPrefix}: declared '{TypeSignatures.toText normalizedDeclaredType}' but inferred '{TypeSignatures.toText normalizedInferredType}'." ]
+
+                let bindingTypeDiagnostics =
+                    match declaredType, value, inferredValueType with
+                    | Some currentDeclaredType, RecordLiteral _, Some currentInferredType ->
+                        let recordInfo =
+                            binding.TypeTokens
+                            |> Option.bind tryParseRecordSurfaceInfo
+
+                        let hasDependentFieldReferences =
+                            recordInfo
+                            |> Option.map (fun parsedRecordInfo ->
+                                parsedRecordInfo.Fields
+                                |> List.exists (fun field ->
+                                    fieldTypeReferences parsedRecordInfo field.TypeTokens |> List.isEmpty |> not))
+                            |> Option.defaultValue false
+
+                        if hasDependentFieldReferences then
+                            []
+                        else
+                            compareDeclaredAndInferredTypes
+                                "Local binding value type mismatch"
+                                currentDeclaredType
+                                currentInferredType
+                    | Some currentDeclaredType, Do statements, _ ->
+                        match
+                            tryUnwrapBindablePayloadType aliasAwareEnvironment.VisibleTypeAliases currentDeclaredType,
+                            inferValidationDoResultType aliasAwareEnvironment freshCounter locals statements
+                        with
+                        | Some declaredPayloadType, Some actualDoResultType ->
+                            let inferredPayloadType =
+                                tryUnwrapBindablePayloadType aliasAwareEnvironment.VisibleTypeAliases actualDoResultType
+                                |> Option.defaultValue actualDoResultType
+
+                            compareDeclaredAndInferredTypes
+                                "Local binding computation payload type mismatch"
+                                declaredPayloadType
+                                inferredPayloadType
+                        | _ ->
+                            []
+                    | Some currentDeclaredType, _, Some currentInferredType ->
+                        compareDeclaredAndInferredTypes
+                            "Local binding value type mismatch"
+                            currentDeclaredType
+                            currentInferredType
+                    | _ ->
+                        []
 
                 let nextLocals =
                     match valueType with
@@ -13206,10 +13745,17 @@ module SurfaceElaboration =
                     | _ ->
                         body
 
-                let localStaticAliases = collectPatternStaticAliases binding.Pattern value Map.empty
+                let localStaticAliases = collectScopedPatternStaticAliases aliasAwareEnvironment binding.Pattern value
                 let bodyForValidation = rewriteStaticObjectPathAliasUses localStaticAliases bodyForValidation
                 let localEffectOperationAliases = collectScopedPatternEffectOperationAliases environment binding.Pattern value
                 let bodyForValidation = rewriteEffectOperationPathAliasUses environment localEffectOperationAliases bodyForValidation
+
+                let nextStaticAliases =
+                    let shadowedNames = collectPatternNames binding.Pattern
+                    let inheritedAliases = removeShadowedStaticAliases staticAliases shadowedNames
+
+                    localStaticAliases
+                    |> Map.fold (fun state segments staticObject -> Map.add segments staticObject state) inheritedAliases
 
                 let nextLexicalNames =
                     collectPatternNames binding.Pattern
@@ -13224,11 +13770,26 @@ module SurfaceElaboration =
                     |> Set.union parameterNames
                     |> Set.union (locals |> Map.keys |> Set.ofSeq)
 
-                recurse value
+                validateExpressionWithFlow valueLocals refinements lexicalNames aliases staticAliases constructorFacts value
+                @ bindingTypeDiagnostics
                 @ (valueType
                    |> Option.map (fun inferredType -> syntaxCarrierEscapeDiagnostics visibleBindingSiteNames inferredType value)
                    |> Option.defaultValue [])
-                @ validateExpressionWithFlow nextLocals refinements nextLexicalNames nextAliases constructorFacts bodyForValidation
+                @ validateExpressionWithFlow nextLocals refinements nextLexicalNames nextAliases nextStaticAliases constructorFacts bodyForValidation
+            | LocalSignature(declaration, LocalLet(binding, value, body))
+                when binding.Pattern = NamePattern declaration.Name && binding.TypeTokens.IsNone ->
+                let typedBinding =
+                    { binding with
+                        TypeTokens = Some declaration.TypeTokens }
+
+                validateExpressionWithFlow
+                    locals
+                    refinements
+                    lexicalNames
+                    aliases
+                    staticAliases
+                    constructorFacts
+                    (LocalLet(typedBinding, value, body))
             | LocalSignature(declaration, body) ->
                 let nextLocals =
                     declaration.TypeTokens
@@ -13241,6 +13802,7 @@ module SurfaceElaboration =
                     refinements
                     (Set.add declaration.Name lexicalNames)
                     (Map.remove declaration.Name aliases)
+                    (removeShadowedStaticAliases staticAliases [ declaration.Name ])
                     constructorFacts
                     body
             | LocalTypeAlias(declaration, body) ->
@@ -13249,6 +13811,7 @@ module SurfaceElaboration =
                     refinements
                     (Set.add declaration.Name lexicalNames)
                     (Map.remove declaration.Name aliases)
+                    staticAliases
                     constructorFacts
                     (rewriteLocalTypeAliasesInSurfaceExpression environment.CurrentModuleName environment.VisibleTypeAliases expression)
             | LocalScopedEffect(declaration, body) ->
@@ -13259,6 +13822,7 @@ module SurfaceElaboration =
                         refinements
                         (Set.add declaration.Name lexicalNames)
                         (Map.remove declaration.Name aliases)
+                        (removeShadowedStaticAliases staticAliases [ declaration.Name ])
                         constructorFacts
                         body)
             | Lambda(parameters, body) ->
@@ -13267,6 +13831,7 @@ module SurfaceElaboration =
                     |> List.fold (fun state parameter ->
                         let parameterType =
                             tryParseParameterType parameter
+                            |> Option.map (qualifyVisibleTypeNames environment)
                             |> Option.defaultValue (TypeVariable $"lambda{freshCounter.Value}")
 
                         Map.add parameter.Name parameterType state) locals
@@ -13277,7 +13842,14 @@ module SurfaceElaboration =
                     |> Set.ofList
                     |> Set.union lexicalNames
 
-                validateExpressionWithFlow nextLocals refinements nextLexicalNames (removeShadowedAliases aliases (parameters |> List.map (fun parameter -> parameter.Name))) constructorFacts body
+                validateExpressionWithFlow
+                    nextLocals
+                    refinements
+                    nextLexicalNames
+                    (removeShadowedAliases aliases (parameters |> List.map (fun parameter -> parameter.Name)))
+                    (removeShadowedStaticAliases staticAliases (parameters |> List.map (fun parameter -> parameter.Name)))
+                    constructorFacts
+                    body
             | IfThenElse(condition, whenTrue, whenFalse) ->
                 let trueRefinements, falseRefinements =
                     match condition with
@@ -13296,10 +13868,10 @@ module SurfaceElaboration =
                 recurse condition
                 @ (trueConstructorFacts
                    |> List.collect (fun branchFacts ->
-                       validateExpressionWithFlow locals trueRefinements lexicalNames aliases branchFacts whenTrue))
+                       validateExpressionWithFlow locals trueRefinements lexicalNames aliases staticAliases branchFacts whenTrue))
                 @ (falseConstructorFacts
                    |> List.collect (fun branchFacts ->
-                       validateExpressionWithFlow locals falseRefinements lexicalNames aliases branchFacts whenFalse))
+                       validateExpressionWithFlow locals falseRefinements lexicalNames aliases staticAliases branchFacts whenFalse))
             | Match(scrutinee, cases) ->
                 let scrutineeType =
                     inferValidationExpressionType environment freshCounter locals scrutinee
@@ -13325,6 +13897,9 @@ module SurfaceElaboration =
                         let caseAliases =
                             removeShadowedAliases aliases (collectPatternNames caseClause.Pattern)
 
+                        let caseStaticAliases =
+                            removeShadowedStaticAliases staticAliases (collectPatternNames caseClause.Pattern)
+
                         let caseFacts =
                             match scrutineeRoot, tryTopLevelSurfaceConstructorPatternName caseClause.Pattern with
                             | Some root, Some constructorName ->
@@ -13344,11 +13919,11 @@ module SurfaceElaboration =
                             @ staticPatternIdentityDiagnostics locals caseClause.Pattern
                             @ activePatternLinearityDiagnostics caseClause.Pattern "match case"
                             @ (caseClause.Guard
-                               |> Option.map (validateExpressionWithFlow caseLocals refinements caseLexicalNames caseAliases caseFacts)
+                               |> Option.map (validateExpressionWithFlow caseLocals refinements caseLexicalNames caseAliases caseStaticAliases caseFacts)
                                |> Option.defaultValue [])
                             @ (bodyFactSets
                                |> List.collect (fun bodyFacts ->
-                                   validateExpressionWithFlow caseLocals refinements caseLexicalNames caseAliases bodyFacts caseClause.Body))
+                                   validateExpressionWithFlow caseLocals refinements caseLexicalNames caseAliases caseStaticAliases bodyFacts caseClause.Body))
 
                         let nextResidualFacts =
                             match scrutineeRoot, tryTopLevelSurfaceConstructorPatternName caseClause.Pattern, caseClause.Guard with
@@ -13487,6 +14062,7 @@ module SurfaceElaboration =
                             match
                                 tryInferSafeNavigationMemberType
                                     environment.VisibleTypeAliases
+                                    (qualifyVisibleTypeNames environment)
                                     (inferValidationExpressionType environment freshCounter locals)
                                     payloadType
                                     navigation
@@ -13510,7 +14086,7 @@ module SurfaceElaboration =
             | TagTest(receiver, _) ->
                 recurse receiver
             | Do statements ->
-                validateDoStatementsWithFlow locals refinements lexicalNames aliases constructorFacts statements
+                validateDoStatementsWithFlow locals refinements lexicalNames aliases staticAliases constructorFacts statements
             | MonadicSplice inner
             | InoutArgument inner
             | Unary(_, inner) ->
@@ -13809,11 +14385,29 @@ module SurfaceElaboration =
                                     |> List.exists (fun (layout, parameterType) ->
                                         layout.IsImplicit
                                         && not (isCompileTimeArgumentType environment.VisibleTypeAliases parameterType)
-                                        && (locals
-                                            |> Map.exists (fun _ localType ->
-                                                TypeSignatures.definitionallyEqual
-                                                    (normalizeTypeAliases environment.VisibleTypeAliases localType)
-                                                    (normalizeTypeAliases environment.VisibleTypeAliases parameterType))))
+                                        && (match classifyLocalImplicitByType environment locals parameterType with
+                                            | UniqueLocalImplicitCandidate _ -> true
+                                            | NoLocalImplicitCandidate
+                                            | AmbiguousLocalImplicitCandidates -> false))
+                                else
+                                    false
+                            | _ ->
+                                false
+
+                        let hasAmbiguousLocalImplicitParameter (bindingInfo: BindingSchemeInfo) =
+                            match runtimeRelevantParameterLayouts bindingInfo with
+                            | Some layouts when layouts |> List.exists (fun parameter -> parameter.IsImplicit) ->
+                                let parameterTypes, _ = TypeSignatures.schemeParts bindingInfo.Scheme
+
+                                if List.length layouts = List.length parameterTypes then
+                                    List.zip layouts parameterTypes
+                                    |> List.exists (fun (layout, parameterType) ->
+                                        layout.IsImplicit
+                                        && not (isCompileTimeArgumentType environment.VisibleTypeAliases parameterType)
+                                        && (match classifyLocalImplicitByType environment locals parameterType with
+                                            | AmbiguousLocalImplicitCandidates -> true
+                                            | NoLocalImplicitCandidate
+                                            | UniqueLocalImplicitCandidate _ -> false))
                                 else
                                     false
                             | _ ->
@@ -13839,7 +14433,10 @@ module SurfaceElaboration =
                                             layout.IsImplicit
                                             && not (isCompileTimeArgumentType environment.VisibleTypeAliases parameterType)
                                             && not (isTraitConstraintType parameterType)
-                                            && not (localCanSatisfyImplicitParameter bindingInfo)))
+                                            && (match classifyLocalImplicitByType environment locals parameterType with
+                                                | NoLocalImplicitCandidate -> true
+                                                | UniqueLocalImplicitCandidate _
+                                                | AmbiguousLocalImplicitCandidates -> false)))
                                 | None ->
                                     false
 
@@ -13860,7 +14457,10 @@ module SurfaceElaboration =
                                         |> List.choose (fun (layout, parameterType) ->
                                             if layout.IsImplicit
                                                && not (isCompileTimeArgumentType environment.VisibleTypeAliases parameterType)
-                                               && not (localCanSatisfyImplicitParameter bindingInfo) then
+                                               && (match classifyLocalImplicitByType environment locals parameterType with
+                                                   | NoLocalImplicitCandidate -> true
+                                                   | UniqueLocalImplicitCandidate _
+                                                   | AmbiguousLocalImplicitCandidates -> false) then
                                                 match tryTraitConstraintFromType environment parameterType with
                                                 | Some constraintInfo ->
                                                     match resolveConstraintInstanceDetailedWithSubstitution environment constraintInfo with
@@ -13978,6 +14578,12 @@ module SurfaceElaboration =
                                             |> Option.isSome
 
                                         if not isRuntimeImplicit then
+                                            walk restLayouts pending
+                                        elif parameterType |> Option.exists (fun current ->
+                                                match classifyLocalImplicitByType environment locals current with
+                                                | AmbiguousLocalImplicitCandidates -> true
+                                                | NoLocalImplicitCandidate
+                                                | UniqueLocalImplicitCandidate _ -> false) then
                                             walk restLayouts pending
                                         elif localCanSatisfyImplicitParameter bindingInfo || isTraitImplicit then
                                             walk restLayouts pending
@@ -14153,12 +14759,15 @@ module SurfaceElaboration =
                                                 when hasNamedBlock
                                                      || hasExplicitImplicitArgument
                                                      || hasUnsatisfiedRuntimeImplicit bindingInfo
+                                                     || hasAmbiguousLocalImplicitParameter bindingInfo
                                                      || not (List.isEmpty traitConstraintDiagnostics)
                                                      || hasTooManyArguments bindingInfo ->
                                                 let message =
                                                     if hasNamedBlock then
                                                         "Named application arguments do not match the callee parameter metadata."
                                                     elif not (List.isEmpty traitConstraintDiagnostics) then
+                                                        ""
+                                                    elif hasAmbiguousLocalImplicitParameter bindingInfo then
                                                         ""
                                                     elif hasExplicitImplicitArgument
                                                          || (runtimeRelevantParameterLayouts bindingInfo
@@ -14282,7 +14891,7 @@ module SurfaceElaboration =
                         recurse left
                         @ (rightFacts
                            |> List.collect (fun branchFacts ->
-                               validateExpressionWithFlow locals refinements lexicalNames aliases branchFacts right))
+                               validateExpressionWithFlow locals refinements lexicalNames aliases staticAliases branchFacts right))
                     | "||" ->
                         let rightFacts =
                             conditionConstructorFacts aliases constructorFacts left |> snd
@@ -14290,7 +14899,7 @@ module SurfaceElaboration =
                         recurse left
                         @ (rightFacts
                            |> List.collect (fun branchFacts ->
-                               validateExpressionWithFlow locals refinements lexicalNames aliases branchFacts right))
+                               validateExpressionWithFlow locals refinements lexicalNames aliases staticAliases branchFacts right))
                     | _ ->
                         recurse left @ recurse right
 
@@ -14472,6 +15081,7 @@ module SurfaceElaboration =
                                refinements
                                lexicalNames
                                aliases
+                               staticAliases
                                constructorFacts
                                (Apply(Name [ operatorName ], [ left; right ]))
                        else
@@ -14486,27 +15096,31 @@ module SurfaceElaboration =
                        | StringText _ -> []
                        | StringInterpolation(inner, _) -> recurse inner))
 
-        and validateDoStatementsWithFlow locals refinements lexicalNames aliases constructorFacts statements =
+        and validateDoStatementsWithFlow locals refinements lexicalNames aliases staticAliases constructorFacts statements =
             match statements with
             | [] ->
                 []
             | statement :: rest ->
                 match statement with
                 | DoLet(binding, expression) ->
+                    let aliasAwareEnvironment =
+                        { environment with
+                            VisibleStaticObjects = aliasesAsVisibleStaticObjects staticAliases }
+
                     let nextLexicalNames =
                         collectPatternNames binding.Pattern
                         |> Set.ofList
                         |> Set.union lexicalNames
 
                     let nextLocals =
-                        match inferValidationExpressionType environment freshCounter locals expression with
+                        match inferValidationExpressionType aliasAwareEnvironment freshCounter locals expression with
                         | Some valueType ->
                             collectPatternNames binding.Pattern
                             |> List.fold (fun state name -> Map.add name valueType state) locals
                         | None ->
                             locals
 
-                    let localStaticAliases = collectPatternStaticAliases binding.Pattern expression Map.empty
+                    let localStaticAliases = collectScopedPatternStaticAliases aliasAwareEnvironment binding.Pattern expression
                     let restForValidation =
                         match rewriteStaticObjectPathAliasUses localStaticAliases (Do rest) with
                         | Do rewritten -> rewritten
@@ -14515,16 +15129,27 @@ module SurfaceElaboration =
                     let nextAliases =
                         extendStableAliases aliases binding expression
 
-                    validateExpressionWithFlow locals refinements lexicalNames aliases constructorFacts expression
-                    @ validateDoStatementsWithFlow nextLocals refinements nextLexicalNames nextAliases constructorFacts restForValidation
+                    let nextStaticAliases =
+                        let shadowedNames = collectPatternNames binding.Pattern
+                        let inheritedAliases = removeShadowedStaticAliases staticAliases shadowedNames
+
+                        localStaticAliases
+                        |> Map.fold (fun state segments staticObject -> Map.add segments staticObject state) inheritedAliases
+
+                    validateExpressionWithFlow locals refinements lexicalNames aliases staticAliases constructorFacts expression
+                    @ validateDoStatementsWithFlow nextLocals refinements nextLexicalNames nextAliases nextStaticAliases constructorFacts restForValidation
                 | DoBind(binding, expression) ->
+                    let aliasAwareEnvironment =
+                        { environment with
+                            VisibleStaticObjects = aliasesAsVisibleStaticObjects staticAliases }
+
                     let nextLexicalNames =
                         collectPatternNames binding.Pattern
                         |> Set.ofList
                         |> Set.union lexicalNames
 
                     let bindSourceDiagnostics =
-                        match inferValidationExpressionType environment freshCounter locals expression with
+                        match inferValidationExpressionType aliasAwareEnvironment freshCounter locals expression with
                         | Some sourceType when tryUnwrapBindablePayloadType environment.VisibleTypeAliases sourceType |> Option.isNone ->
                             [
                                 makeDiagnostic
@@ -14535,7 +15160,7 @@ module SurfaceElaboration =
                             []
 
                     let nextLocals =
-                        match inferValidationExpressionType environment freshCounter locals expression with
+                        match inferValidationExpressionType aliasAwareEnvironment freshCounter locals expression with
                         | Some valueType ->
                             match tryUnwrapBindablePayloadType environment.VisibleTypeAliases valueType with
                             | Some payloadType ->
@@ -14549,17 +15174,24 @@ module SurfaceElaboration =
                     let nextAliases =
                         removeShadowedAliases aliases (collectPatternNames binding.Pattern)
 
-                    validateExpressionWithFlow locals refinements lexicalNames aliases constructorFacts expression
+                    let nextStaticAliases =
+                        removeShadowedStaticAliases staticAliases (collectPatternNames binding.Pattern)
+
+                    validateExpressionWithFlow locals refinements lexicalNames aliases staticAliases constructorFacts expression
                     @ bindSourceDiagnostics
-                    @ validateDoStatementsWithFlow nextLocals refinements nextLexicalNames nextAliases constructorFacts rest
+                    @ validateDoStatementsWithFlow nextLocals refinements nextLexicalNames nextAliases nextStaticAliases constructorFacts rest
                 | DoLetQuestion(binding, expression, failure) ->
+                    let aliasAwareEnvironment =
+                        { environment with
+                            VisibleStaticObjects = aliasesAsVisibleStaticObjects staticAliases }
+
                     let nextLexicalNames =
                         collectPatternNames binding.Pattern
                         |> Set.ofList
                         |> Set.union lexicalNames
 
                     let nextLocals =
-                        match inferValidationExpressionType environment freshCounter locals expression with
+                        match inferValidationExpressionType aliasAwareEnvironment freshCounter locals expression with
                         | Some valueType ->
                             collectPatternNames binding.Pattern
                             |> List.fold (fun state name -> Map.add name valueType state) locals
@@ -14569,6 +15201,9 @@ module SurfaceElaboration =
                     let nextAliases =
                         removeShadowedAliases aliases (collectPatternNames binding.Pattern)
 
+                    let nextStaticAliases =
+                        removeShadowedStaticAliases staticAliases (collectPatternNames binding.Pattern)
+
                     let failureDiagnostics =
                         match failure with
                         | Some failure ->
@@ -14577,43 +15212,61 @@ module SurfaceElaboration =
                                 |> Set.ofList
                                 |> Set.union lexicalNames
 
-                            validateDoStatementsWithFlow locals refinements failureLexicalNames aliases constructorFacts failure.Body
+                            validateDoStatementsWithFlow locals refinements failureLexicalNames aliases staticAliases constructorFacts failure.Body
                         | None -> []
 
-                    validateExpressionWithFlow locals refinements lexicalNames aliases constructorFacts expression
+                    validateExpressionWithFlow locals refinements lexicalNames aliases staticAliases constructorFacts expression
                     @ validatePatternHead binding.Pattern
                     @ activePatternLinearityDiagnostics binding.Pattern "let?"
                     @ failureDiagnostics
-                    @ validateDoStatementsWithFlow nextLocals refinements nextLexicalNames nextAliases constructorFacts rest
+                    @ validateDoStatementsWithFlow nextLocals refinements nextLexicalNames nextAliases nextStaticAliases constructorFacts rest
                 | DoUsing(binding, expression) ->
+                    let aliasAwareEnvironment =
+                        { environment with
+                            VisibleStaticObjects = aliasesAsVisibleStaticObjects staticAliases }
+
                     let nextLexicalNames =
                         collectPatternNames binding.Pattern
                         |> Set.ofList
                         |> Set.union lexicalNames
 
                     let nextLocals =
-                        match binding.Pattern, inferValidationExpressionType environment freshCounter locals expression with
+                        match binding.Pattern, inferValidationExpressionType aliasAwareEnvironment freshCounter locals expression with
                         | NamePattern bindingName, Some valueType -> Map.add bindingName (unwrapIoType valueType) locals
                         | _ -> locals
 
                     let nextAliases =
                         removeShadowedAliases aliases (collectPatternNames binding.Pattern)
 
-                    validateExpressionWithFlow locals refinements lexicalNames aliases constructorFacts expression
-                    @ validateDoStatementsWithFlow nextLocals refinements nextLexicalNames nextAliases constructorFacts rest
+                    let nextStaticAliases =
+                        removeShadowedStaticAliases staticAliases (collectPatternNames binding.Pattern)
+
+                    validateExpressionWithFlow locals refinements lexicalNames aliases staticAliases constructorFacts expression
+                    @ validateDoStatementsWithFlow nextLocals refinements nextLexicalNames nextAliases nextStaticAliases constructorFacts rest
                 | DoVar(bindingName, expression) ->
+                    let aliasAwareEnvironment =
+                        { environment with
+                            VisibleStaticObjects = aliasesAsVisibleStaticObjects staticAliases }
+
                     let nextLocals =
-                        match inferValidationExpressionType environment freshCounter locals expression with
+                        match inferValidationExpressionType aliasAwareEnvironment freshCounter locals expression with
                         | Some valueType -> Map.add bindingName (refType valueType) locals
                         | None -> locals
 
-                    validateExpressionWithFlow locals refinements lexicalNames aliases constructorFacts expression
-                    @ validateDoStatementsWithFlow nextLocals refinements (Set.add bindingName lexicalNames) (Map.remove bindingName aliases) constructorFacts rest
+                    validateExpressionWithFlow locals refinements lexicalNames aliases staticAliases constructorFacts expression
+                    @ validateDoStatementsWithFlow
+                        nextLocals
+                        refinements
+                        (Set.add bindingName lexicalNames)
+                        (Map.remove bindingName aliases)
+                        (removeShadowedStaticAliases staticAliases [ bindingName ])
+                        constructorFacts
+                        rest
                 | DoAssign(_, expression)
                 | DoDefer expression
                 | DoExpression expression ->
-                    validateExpressionWithFlow locals refinements lexicalNames aliases constructorFacts expression
-                    @ validateDoStatementsWithFlow locals refinements lexicalNames aliases constructorFacts rest
+                    validateExpressionWithFlow locals refinements lexicalNames aliases staticAliases constructorFacts expression
+                    @ validateDoStatementsWithFlow locals refinements lexicalNames aliases staticAliases constructorFacts rest
                 | DoIf(condition, whenTrue, whenFalse) ->
                     let trueConstructorFacts, falseConstructorFacts =
                         conditionConstructorFacts aliases constructorFacts condition
@@ -14623,36 +15276,36 @@ module SurfaceElaboration =
                         | false, true ->
                             trueConstructorFacts
                             |> List.collect (fun branchFacts ->
-                                validateDoStatementsWithFlow locals refinements lexicalNames aliases branchFacts rest)
+                                validateDoStatementsWithFlow locals refinements lexicalNames aliases staticAliases branchFacts rest)
                         | true, false ->
                             falseConstructorFacts
                             |> List.collect (fun branchFacts ->
-                                validateDoStatementsWithFlow locals refinements lexicalNames aliases branchFacts rest)
+                                validateDoStatementsWithFlow locals refinements lexicalNames aliases staticAliases branchFacts rest)
                         | _ ->
-                            validateDoStatementsWithFlow locals refinements lexicalNames aliases constructorFacts rest
+                            validateDoStatementsWithFlow locals refinements lexicalNames aliases staticAliases constructorFacts rest
 
-                    validateExpressionWithFlow locals refinements lexicalNames aliases constructorFacts condition
+                    validateExpressionWithFlow locals refinements lexicalNames aliases staticAliases constructorFacts condition
                     @ (trueConstructorFacts
                        |> List.collect (fun branchFacts ->
-                           validateDoStatementsWithFlow locals refinements lexicalNames aliases branchFacts whenTrue))
+                           validateDoStatementsWithFlow locals refinements lexicalNames aliases staticAliases branchFacts whenTrue))
                     @ (falseConstructorFacts
                        |> List.collect (fun branchFacts ->
-                           validateDoStatementsWithFlow locals refinements lexicalNames aliases branchFacts whenFalse))
+                           validateDoStatementsWithFlow locals refinements lexicalNames aliases staticAliases branchFacts whenFalse))
                     @ restDiagnostics
                 | DoWhile(condition, body) ->
                     let trueConstructorFacts, _ =
                         conditionConstructorFacts aliases constructorFacts condition
 
-                    validateExpressionWithFlow locals refinements lexicalNames aliases constructorFacts condition
+                    validateExpressionWithFlow locals refinements lexicalNames aliases staticAliases constructorFacts condition
                     @ (trueConstructorFacts
                        |> List.collect (fun branchFacts ->
-                           validateDoStatementsWithFlow locals refinements lexicalNames aliases branchFacts body))
-                    @ validateDoStatementsWithFlow locals refinements lexicalNames aliases constructorFacts rest
+                           validateDoStatementsWithFlow locals refinements lexicalNames aliases staticAliases branchFacts body))
+                    @ validateDoStatementsWithFlow locals refinements lexicalNames aliases staticAliases constructorFacts rest
                 | DoReturn expression ->
-                    validateExpressionWithFlow locals refinements lexicalNames aliases constructorFacts expression
+                    validateExpressionWithFlow locals refinements lexicalNames aliases staticAliases constructorFacts expression
 
         let validateExpression locals refinements lexicalNames expression =
-            validateExpressionWithFlow locals refinements lexicalNames emptyStableAliases emptyConstructorFacts expression
+            validateExpressionWithFlow locals refinements lexicalNames emptyStableAliases emptyStaticAliases emptyConstructorFacts expression
 
         let rec validateInoutPlacement insideDo expression =
             let recurse = validateInoutPlacement insideDo
@@ -15019,8 +15672,13 @@ module SurfaceElaboration =
                     @ validateProjectionDescriptorDoStatements aliases rest
 
         let validateLocalImplicitResolution body =
+            let normalizeVisible typeExpr =
+                typeExpr
+                |> qualifyVisibleTypeNames environment
+                |> normalizeTypeAliases environment.VisibleTypeAliases
+
             let normalizedKey typeExpr =
-                normalizeTypeAliases environment.VisibleTypeAliases typeExpr |> TypeSignatures.toText
+                normalizeVisible typeExpr |> TypeSignatures.toText
 
             let implicitQuantity quantity =
                 quantity |> Option.defaultValue QuantityOmega
@@ -15041,7 +15699,8 @@ module SurfaceElaboration =
                 if parameter.IsImplicit then
                     parameter.TypeTokens
                     |> Option.bind TypeSignatures.parseType
-                    |> Option.map (fun parameterType -> addCandidate parameter.Name parameter.Quantity parameterType scope)
+                    |> Option.map (fun parameterType ->
+                        addCandidate parameter.Name parameter.Quantity (qualifyVisibleTypeNames environment parameterType) scope)
                     |> Option.defaultValue scope
                 else
                     scope
@@ -15135,6 +15794,7 @@ module SurfaceElaboration =
                     let valueType =
                         binding.TypeTokens
                         |> Option.bind TypeSignatures.parseType
+                        |> Option.map (qualifyVisibleTypeNames environment)
                         |> Option.orElseWith (fun () -> inferValidationExpressionType environment freshCounter Map.empty value)
                     let nestedScopes =
                         valueType
@@ -15206,6 +15866,7 @@ module SurfaceElaboration =
                         let valueType =
                             binding.TypeTokens
                             |> Option.bind TypeSignatures.parseType
+                            |> Option.map (qualifyVisibleTypeNames environment)
                             |> Option.orElseWith (fun () ->
                                 inferValidationExpressionType environment freshCounter Map.empty expression
                                 |> Option.map (fun typeExpr ->
@@ -15224,6 +15885,7 @@ module SurfaceElaboration =
                         let valueType =
                             binding.TypeTokens
                             |> Option.bind TypeSignatures.parseType
+                            |> Option.map (qualifyVisibleTypeNames environment)
                             |> Option.orElseWith (fun () -> inferValidationExpressionType environment freshCounter Map.empty expression)
 
                         let restScopes =
@@ -15543,7 +16205,7 @@ module SurfaceElaboration =
                 let localEffects =
                     frontendModule.Declarations
                     |> List.choose (function
-                        | EffectDeclarationNode declaration -> Some declaration
+                        | EffectDeclarationNode declaration -> Some(EffectSemantics.ensureTopLevel moduleName declaration)
                         | _ -> None)
 
                 localEffects @ importedEffectDeclarations surfaceIndex effectDeclarationsByModule moduleName
@@ -15586,7 +16248,12 @@ module SurfaceElaboration =
                         topLevelEffects
                         |> List.filter (fun declaration -> declaration.Name.Contains("."))
                         |> List.fold (fun current declaration ->
-                            Map.add declaration.Name (scopedEffectLabelStaticObject declaration.Name) current) localAliases
+                            let semanticDeclaration =
+                                declaration
+                                |> EffectSemantics.ensureTopLevel moduleName
+                                |> EffectSemantics.toSemantic
+
+                            Map.add declaration.Name (scopedEffectLabelStaticObject semanticDeclaration) current) localAliases
 
                     { baseEnvironment with
                         VisibleStaticObjects = staticObjectAliases }
@@ -17139,25 +17806,7 @@ module SurfaceElaboration =
             substitute expression
 
         let annotateLambdaFromSignature (declaration: BindingSignature) value =
-            match TypeSignatures.parseScheme declaration.TypeTokens, value with
-            | Some signatureScheme, Lambda(lambdaParameters, lambdaBody) ->
-                let parameterTypes, _ = TypeSignatures.schemeParts signatureScheme
-
-                if List.length parameterTypes = List.length lambdaParameters then
-                    let annotatedParameters =
-                        List.zip lambdaParameters parameterTypes
-                        |> List.map (fun (parameter, parameterType) ->
-                            if parameter.TypeTokens.IsSome then
-                                parameter
-                            else
-                                { parameter with
-                                    TypeTokens = Some(typeTextTokens (TypeSignatures.toText parameterType)) })
-
-                    Lambda(annotatedParameters, lambdaBody)
-                else
-                    value
-            | _ ->
-                value
+            annotateLambdaWithTypeTokens declaration.TypeTokens value
 
         let mergeVisibleAndLocalTypeAliases localAliases =
             environment.VisibleTypeAliases
@@ -17429,6 +18078,11 @@ module SurfaceElaboration =
         let body = normalizeLocalDeclarationsWithAliases Map.empty body
 
         let rec inferExpressionType localTypes expression =
+            let normalizeVisibleType typeExpr =
+                typeExpr |> qualifyVisibleTypeNames environment |> normalizeTypeAliases environment.VisibleTypeAliases
+            let visibleTypeEquals left right =
+                TypeSignatures.definitionallyEqual (normalizeVisibleType left) (normalizeVisibleType right)
+
             match expression with
             | Literal literal ->
                 Some(inferLiteralType literal)
@@ -17519,14 +18173,17 @@ module SurfaceElaboration =
                         |> Map.tryFind root
                         |> Option.bind (fun bindingInfo ->
                             if List.isEmpty path then
-                                tryPrepareVisibleBindingCall
-                                    environment
-                                    freshCounter
-                                    bindingInfo
-                                    (inferExpressionType localTypes)
-                                    (tryResolveUniqueLocalImplicitByType environment localTypes)
-                                    []
-                                |> Option.map (fun preparedCall -> preparedCall.ResultType)
+                                (if bindingHasResolvableLocalRuntimeImplicitParameter environment localTypes bindingInfo then
+                                     tryPrepareVisibleBindingCall
+                                         environment
+                                         freshCounter
+                                         bindingInfo
+                                         (inferExpressionType localTypes)
+                                         (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                         []
+                                     |> Option.map (fun preparedCall -> preparedCall.ResultType)
+                                 else
+                                     None)
                                 |> Option.orElseWith (fun () -> instantiateVisibleBindingResultType environment freshCounter root)
                             else
                                 None))
@@ -17562,10 +18219,10 @@ module SurfaceElaboration =
                 None
             | Apply(MemberAccess(receiver, [ memberName ], []), arguments) ->
                 match
-                    tryResolveHandledEffectName environment receiver
-                    |> Option.bind (fun effectName ->
-                        tryFindScopedEffectOperation effectName memberName
-                        |> Option.bind (fun (declaration, operation) ->
+                    tryResolveHandledEffectDeclaration environment receiver
+                    |> Option.bind (fun declaration ->
+                        EffectSemantics.tryFindOperation memberName declaration
+                        |> Option.bind (fun operation ->
                             operation.SignatureTokens
                             |> TypeSignatures.parseType
                             |> Option.map (qualifyVisibleTypeNames environment)
@@ -17602,10 +18259,27 @@ module SurfaceElaboration =
             | LocalTypeAlias(_, body) ->
                 inferExpressionType localTypes body
             | LocalLet(binding, value, body) ->
+                let value =
+                    binding.TypeTokens
+                    |> Option.map (fun typeTokens -> annotateLambdaWithTypeTokens typeTokens value)
+                    |> Option.defaultValue value
+
                 let bindingNames = collectPatternNames binding.Pattern
 
+                let bindingDeclaredType =
+                    binding.TypeTokens
+                    |> Option.bind TypeSignatures.parseType
+                    |> Option.map (qualifyVisibleTypeNames environment)
+
+                let valueLocals =
+                    match binding.Pattern, bindingDeclaredType, value with
+                    | NamePattern bindingName, Some declaredType, Lambda _ ->
+                        Map.add bindingName declaredType localTypes
+                    | _ ->
+                        localTypes
+
                 let nextLocals =
-                    match inferExpressionType localTypes value with
+                    match inferExpressionType valueLocals value with
                     | Some valueType ->
                         extendBindingLocalTypes environment freshCounter localTypes binding (Some valueType)
                     | None ->
@@ -17631,14 +18305,32 @@ module SurfaceElaboration =
                 inferExpressionType nextLocals bodyForInference
             | LocalScopedEffect(declaration, body) ->
                 withScopedEffectDeclaration declaration (fun () -> inferExpressionType localTypes body)
-            | Handle(_, _, _, returnClause, _) ->
-                inferExpressionType localTypes returnClause.Body
+            | Handle(_, label, body, returnClause, _) ->
+                let handledResultType =
+                    match
+                        tryResolveHandledEffectDeclaration environment label,
+                        inferExpressionType localTypes body |> Option.bind tryUnwrapEffType
+                    with
+                    | Some declaration, Some(effectRow, payloadType) ->
+                        match trySplitHandledEffectRow environment.VisibleTypeAliases declaration effectRow with
+                        | SplitResolved remainderRow -> Some(effType remainderRow payloadType)
+                        | _ -> None
+                    | _ ->
+                        None
+
+                handledResultType
+                |> Option.orElseWith (fun () -> inferExpressionType localTypes returnClause.Body)
             | Lambda(lambdaParameters, lambdaBody) ->
                 let parameterTypes =
                     lambdaParameters
                     |> List.map (fun parameter ->
                         tryParseParameterType parameter
+                        |> Option.map (qualifyVisibleTypeNames environment)
                         |> Option.defaultValue (TypeVariable $"lambda{freshCounter.Value}"))
+
+                let parameterQuantities =
+                    lambdaParameters
+                    |> List.map (fun parameter -> parameter.Quantity |> Option.defaultValue QuantityOmega)
 
                 let lambdaLocals =
                     List.zip lambdaParameters parameterTypes
@@ -17646,9 +18338,9 @@ module SurfaceElaboration =
 
                 inferExpressionType lambdaLocals lambdaBody
                 |> Option.map (fun resultType ->
-                    parameterTypes
+                    List.zip parameterTypes parameterQuantities
                     |> List.rev
-                    |> List.fold (fun state parameterType -> TypeArrow(QuantityOmega, parameterType, state)) resultType)
+                    |> List.fold (fun state (parameterType, quantity) -> TypeArrow(quantity, parameterType, state)) resultType)
             | IfThenElse(_, whenTrue, whenFalse) ->
                 match inferExpressionType localTypes whenTrue, inferExpressionType localTypes whenFalse with
                 | Some trueType, Some falseType when trueType = falseType ->
@@ -17693,21 +18385,32 @@ module SurfaceElaboration =
                 | [] ->
                     inferExpressionType localTypes receiver
                     |> Option.bind (fun receiverType ->
-                        tryInferVisibleAppliedType environment.VisibleTypeAliases (inferExpressionType localTypes) receiverType arguments)
+                        tryInferVisibleAppliedType
+                            environment.VisibleTypeAliases
+                            (qualifyVisibleTypeNames environment)
+                            (inferExpressionType localTypes)
+                            receiverType
+                            arguments)
                 | [ memberName ] ->
-                    (tryResolveHandledEffectName environment receiver
-                     |> Option.bind (fun effectName ->
-                         tryFindScopedEffectOperation effectName memberName
-                         |> Option.bind (fun (_, operation) ->
+                    (tryResolveHandledEffectDeclaration environment receiver
+                     |> Option.bind (fun declaration ->
+                         EffectSemantics.tryFindOperation memberName declaration
+                         |> Option.bind (fun operation ->
                              operation.SignatureTokens
                              |> TypeSignatures.parseType
-                             |> Option.map (qualifyVisibleTypeNames environment)))
-                     |> Option.bind (fun operationType ->
-                         tryInferVisibleAppliedType
-                             environment.VisibleTypeAliases
-                             (inferExpressionType localTypes)
-                             operationType
-                             arguments))
+                             |> Option.map (qualifyVisibleTypeNames environment)
+                             |> Option.bind (fun operationType ->
+                                 let parameterTypes, resultType = TypeSignatures.functionParts operationType
+
+                                 if List.length arguments = List.length parameterTypes then
+                                     Some(effType (scopedEffectRowType declaration) resultType)
+                                 else
+                                     tryInferVisibleAppliedType
+                                         environment.VisibleTypeAliases
+                                         (qualifyVisibleTypeNames environment)
+                                         (inferExpressionType localTypes)
+                                         operationType
+                                         arguments))))
                     |> Option.orElseWith (fun () ->
                         tryInferStaticConstructorCall
                             environment
@@ -17737,6 +18440,7 @@ module SurfaceElaboration =
                             |> Option.bind (fun memberType ->
                                 tryInferVisibleAppliedType
                                     environment.VisibleTypeAliases
+                                    (qualifyVisibleTypeNames environment)
                                     (inferExpressionType localTypes)
                                     memberType
                                     arguments)))
@@ -17749,6 +18453,7 @@ module SurfaceElaboration =
                     |> Option.bind (fun payloadType ->
                         tryInferSafeNavigationMemberType
                             environment.VisibleTypeAliases
+                            (qualifyVisibleTypeNames environment)
                             (inferExpressionType localTypes)
                             payloadType
                             navigation
@@ -17778,9 +18483,9 @@ module SurfaceElaboration =
                 None
             | Binary(left, ("+" | "-" | "*" | "/"), right) ->
                 match inferExpressionType localTypes left, inferExpressionType localTypes right with
-                | Some leftType, Some rightType when leftType = intType && rightType = intType ->
+                | Some leftType, Some rightType when visibleTypeEquals leftType intType && visibleTypeEquals rightType intType ->
                     Some intType
-                | Some leftType, Some rightType when leftType = floatType && rightType = floatType ->
+                | Some leftType, Some rightType when visibleTypeEquals leftType floatType && visibleTypeEquals rightType floatType ->
                     Some floatType
                 | _ ->
                     None
@@ -17853,29 +18558,51 @@ module SurfaceElaboration =
                                     receiverArguments
                                 |> Option.map (fun preparedCall -> preparedCall.ResultType))))
                 | Apply(Name [ calleeName ], arguments) ->
-                    environment.VisibleConstructors
+                    localTypes
                     |> Map.tryFind calleeName
-                    |> Option.bind (fun constructorInfo ->
-                        tryPrepareVisibleBindingCall
-                            environment
-                            freshCounter
-                            constructorInfo
+                    |> Option.bind (fun localType ->
+                        tryInferVisibleAppliedType
+                            environment.VisibleTypeAliases
+                            (qualifyVisibleTypeNames environment)
                             (inferExpressionType localTypes)
-                            (tryResolveUniqueLocalImplicitByType environment localTypes)
-                            arguments
-                        |> Option.map (fun preparedCall -> preparedCall.ResultType))
+                            localType
+                            arguments)
                     |> Option.orElseWith (fun () ->
-                        environment.VisibleBindings
+                        environment.VisibleConstructors
                         |> Map.tryFind calleeName
-                        |> Option.bind (fun bindingInfo ->
+                        |> Option.bind (fun constructorInfo ->
                             tryPrepareVisibleBindingCall
                                 environment
                                 freshCounter
-                                bindingInfo
+                                constructorInfo
                                 (inferExpressionType localTypes)
                                 (tryResolveUniqueLocalImplicitByType environment localTypes)
                                 arguments
                             |> Option.map (fun preparedCall -> preparedCall.ResultType)))
+                    |> Option.orElseWith (fun () ->
+                        environment.VisibleBindings
+                        |> Map.tryFind calleeName
+                        |> Option.bind (fun bindingInfo ->
+                            let preparedResultType =
+                                tryPrepareVisibleBindingCall
+                                    environment
+                                    freshCounter
+                                    bindingInfo
+                                    (inferExpressionType localTypes)
+                                    (tryResolveUniqueLocalImplicitByType environment localTypes)
+                                    arguments
+                                |> Option.map (fun preparedCall -> preparedCall.ResultType)
+
+                            preparedResultType
+                            |> Option.orElseWith (fun () ->
+                                instantiateVisibleBindingBodyType environment freshCounter calleeName
+                                |> Option.bind (fun bodyType ->
+                                    tryInferVisibleAppliedType
+                                        environment.VisibleTypeAliases
+                                        (qualifyVisibleTypeNames environment)
+                                        (inferExpressionType localTypes)
+                                        bodyType
+                                        arguments))))
                     |> Option.orElseWith (fun () ->
                         tryPrepareVisibleTraitMemberCall
                             environment
@@ -17947,11 +18674,25 @@ module SurfaceElaboration =
                     TypeSignatures.applySubstitution substitution projectionInfo.ReturnType)
 
         and inferDoResultType localTypes statements =
+            let tryMergeBranchResultTypes leftType rightType =
+                tryUnifyVisibleTypes environment.VisibleTypeAliases [ leftType, rightType ]
+                |> Option.map (fun substitution ->
+                    TypeSignatures.applySubstitution substitution leftType)
+                |> Option.orElseWith (fun () ->
+                    if
+                        TypeSignatures.definitionallyEqual
+                            (normalizeTypeAliases environment.VisibleTypeAliases leftType)
+                            (normalizeTypeAliases environment.VisibleTypeAliases rightType)
+                    then
+                        Some leftType
+                    else
+                        None)
+
             match statements with
             | [] ->
                 Some unitType
             | DoExpression expression :: [] ->
-                inferExpressionType localTypes expression |> Option.map unwrapIoType
+                inferExpressionType localTypes expression
             | DoExpression _ :: rest ->
                 inferDoResultType localTypes rest
             | DoLet(binding, expression) :: rest ->
@@ -18010,6 +18751,12 @@ module SurfaceElaboration =
                 inferDoResultType localTypes rest
             | DoDefer _ :: rest ->
                 inferDoResultType localTypes rest
+            | DoIf(_, whenTrue, whenFalse) :: [] ->
+                match inferDoResultType localTypes whenTrue, inferDoResultType localTypes whenFalse with
+                | Some whenTrueType, Some whenFalseType ->
+                    tryMergeBranchResultTypes whenTrueType whenFalseType
+                | _ ->
+                    None
             | DoIf(_, _, _) :: rest ->
                 inferDoResultType localTypes rest
             | DoWhile _ :: rest ->
@@ -18887,11 +19634,13 @@ module SurfaceElaboration =
                     KCoreWildcardPattern
 
         and lowerStaticObject staticObject =
-            match staticObject.ObjectKind, staticObject.NameSegments with
-            | StaticEffectLabelObject, [ effectName ] ->
+            match staticObject.ObjectKind, staticObject.ScopedEffect, staticObject.NameSegments with
+            | StaticEffectLabelObject, Some declaration, _ ->
+                scopedKCoreEffectLabel declaration
+            | StaticEffectLabelObject, None, [ effectName ] ->
                 match tryFindScopedEffectDeclaration effectName with
                 | Some declaration ->
-                    KCoreEffectLabel(effectName, scopedEffectOperationMetadata declaration)
+                    scopedKCoreEffectLabel declaration
                 | None ->
                     KCoreStaticObject
                         { ObjectKind = KCoreEffectLabelObject
@@ -19109,7 +19858,16 @@ module SurfaceElaboration =
             let asEffectComputation currentLocals innerExpression =
                 let lowered = lowerExpression currentLocals innerExpression
 
-                match inferExpressionType currentLocals innerExpression |> Option.bind tryUnwrapEffType with
+                let inferredComputationType =
+                    tryInferLocalAppliedType
+                        environment.VisibleTypeAliases
+                        (qualifyVisibleTypeNames environment)
+                        (inferExpressionType currentLocals)
+                        currentLocals
+                        innerExpression
+                    |> Option.orElseWith (fun () -> inferExpressionType currentLocals innerExpression)
+
+                match inferredComputationType |> Option.bind tryUnwrapComputationPayloadType with
                 | Some _ ->
                     lowered
                 | None ->
@@ -19183,7 +19941,10 @@ module SurfaceElaboration =
                         |> Option.map (fun typeExpr -> Map.add parameterName typeExpr currentLocals)
                         |> Option.defaultValue currentLocals
 
-                    match tryLowerEffectfulDoStatements parameterLocals rest with
+                    let restLocals =
+                        extendBindingLocalTypes environment freshCounter currentLocals binding payloadType
+
+                    match tryLowerEffectfulDoStatements restLocals rest with
                     | Some loweredRest ->
                         let lambdaBody =
                             lowerPatternBinding
@@ -19364,7 +20125,7 @@ module SurfaceElaboration =
 
                 tryFind Set.empty bodyExpression
 
-            let lowerLambdaExpression parameterTypeHints lambdaParameters lambdaBody =
+            let lowerLambdaExpression baseLocals parameterTypeHints lambdaParameters lambdaBody =
                 let resolvedParameterTypes =
                     lambdaParameters
                     |> List.mapi (fun index parameter ->
@@ -19375,7 +20136,7 @@ module SurfaceElaboration =
 
                 let lambdaLocals =
                     List.zip lambdaParameters resolvedParameterTypes
-                    |> List.fold (fun state (parameter, parameterType) -> Map.add parameter.Name parameterType state) localTypes
+                    |> List.fold (fun state (parameter, parameterType) -> Map.add parameter.Name parameterType state) baseLocals
 
                 KCoreLambda(
                     List.zip lambdaParameters resolvedParameterTypes
@@ -19403,10 +20164,10 @@ module SurfaceElaboration =
                 | KCoreDictionaryValue _
                 | KCoreStaticObject _ ->
                     current
-                | KCoreEffectLabel(labelName, operations) ->
-                    KCoreEffectLabel(labelName, operations)
-                | KCoreEffectOperation(label, operationName) ->
-                    KCoreEffectOperation(substituteKCoreNames substitutions label, operationName)
+                | KCoreEffectLabel(labelName, interfaceId, labelId, operations) ->
+                    KCoreEffectLabel(labelName, interfaceId, labelId, operations)
+                | KCoreEffectOperation(label, operationId, operationName) ->
+                    KCoreEffectOperation(substituteKCoreNames substitutions label, operationId, operationName)
                 | KCoreLambda(parameters, body) ->
                     let nextSubstitutions =
                         parameters
@@ -19627,8 +20388,8 @@ module SurfaceElaboration =
                     |> Option.map snd
                     |> Option.defaultValue (TypeVariable $"handlePayload{freshCounter.Value}")
 
-                let handledEffectName =
-                    tryResolveHandledEffectName environment label
+                let handledEffectDeclaration =
+                    tryResolveHandledEffectDeclaration environment label
 
                 let lowerClause
                     (argumentTypes: TypeExpr list)
@@ -19666,10 +20427,10 @@ module SurfaceElaboration =
                     operationClauses
                     |> List.map (fun clause ->
                         let parameterTypes, resultType =
-                            handledEffectName
-                            |> Option.bind (fun effectName ->
-                                tryFindScopedEffectOperation effectName clause.OperationName
-                                |> Option.bind (fun (_, operation) ->
+                            handledEffectDeclaration
+                            |> Option.bind (fun declaration ->
+                                EffectSemantics.tryFindOperation clause.OperationName declaration
+                                |> Option.bind (fun operation ->
                                     operation.SignatureTokens
                                     |> TypeSignatures.parseType
                                     |> Option.map (qualifyVisibleTypeNames environment)
@@ -19790,7 +20551,7 @@ module SurfaceElaboration =
                 when not (Map.containsKey bindingName localTypes) ->
                 match tryFindScopedEffectDeclaration bindingName with
                 | Some declaration ->
-                    KCoreEffectLabel(bindingName, scopedEffectOperationMetadata declaration)
+                    scopedKCoreEffectLabel declaration
                 | None ->
                     match tryResolveScopedStaticObject environment expression with
                     | Some staticObject ->
@@ -19808,17 +20569,19 @@ module SurfaceElaboration =
                     match tryResolveEffectOperationNamePath environment (receiverName :: path) with
                     | Some(effectName, declaration, operation) ->
                         KCoreEffectOperation(
-                            KCoreEffectLabel(effectName, scopedEffectOperationMetadata declaration),
+                            scopedKCoreEffectLabel declaration,
+                            operation.OperationId,
                             operation.Name
                         )
                     | None ->
                         match path with
                         | [ operationName ] ->
                             match tryFindScopedEffectOperation receiverName operationName with
-                            | Some(declaration, _) ->
+                            | Some(declaration, operation) ->
                                 KCoreEffectOperation(
-                                    KCoreEffectLabel(receiverName, scopedEffectOperationMetadata declaration),
-                                    operationName
+                                    scopedKCoreEffectLabel declaration,
+                                    operation.OperationId,
+                                    operation.Name
                                 )
                             | None ->
                                 let loweredReceiver = lowerExpression localTypes (Name [ receiverName ])
@@ -19855,21 +20618,34 @@ module SurfaceElaboration =
             | LocalTypeAlias(_, body) ->
                 lowerExpressionWithExpectedType localTypes expectedType body
             | LocalLet(binding, value, body) ->
+                let value =
+                    binding.TypeTokens
+                    |> Option.map (fun typeTokens -> annotateLambdaWithTypeTokens typeTokens value)
+                    |> Option.defaultValue value
+
                 let bindingNames = collectPatternNames binding.Pattern
                 let bindingExpectedType =
                     binding.TypeTokens
                     |> Option.bind TypeSignatures.parseType
                     |> Option.map (qualifyVisibleTypeNames environment)
 
+                let valueLocals =
+                    match binding.Pattern, bindingExpectedType, value with
+                    | NamePattern bindingName, Some declaredType, Lambda _ ->
+                        Map.add bindingName declaredType localTypes
+                    | _ ->
+                        localTypes
+
                 let loweredValue =
                     match binding.Pattern, value with
                     | NamePattern bindingName, Lambda(lambdaParameters, lambdaBody) ->
                         lowerLambdaExpression
+                            valueLocals
                             (tryInferSeededLambdaParameterTypes bindingName lambdaParameters body)
                             lambdaParameters
                             lambdaBody
                     | _ ->
-                        lowerExpressionWithExpectedType localTypes bindingExpectedType value
+                        lowerExpressionWithExpectedType valueLocals bindingExpectedType value
                 let bodyForLowering =
                     match bindingNames, tryResolveScopedStaticObject environment value with
                     | [ aliasName ], Some staticObject ->
@@ -19895,7 +20671,7 @@ module SurfaceElaboration =
                 let localEffectOperationAliases = collectScopedPatternEffectOperationAliases environment binding.Pattern value
                 let bodyForLowering = rewriteEffectOperationPathAliasUses environment localEffectOperationAliases bodyForLowering
 
-                let valueType = bindingExpectedType |> Option.orElseWith (fun () -> inferExpressionType localTypes value)
+                let valueType = bindingExpectedType |> Option.orElseWith (fun () -> inferExpressionType valueLocals value)
 
                 lowerPatternBinding
                     localTypes
@@ -19906,7 +20682,7 @@ module SurfaceElaboration =
             | LocalScopedEffect(declaration, body) ->
                 withScopedEffectDeclaration declaration (fun () -> lowerExpressionWithExpectedType localTypes expectedType body)
             | Lambda(lambdaParameters, lambdaBody) ->
-                lowerLambdaExpression None lambdaParameters lambdaBody
+                lowerLambdaExpression localTypes None lambdaParameters lambdaBody
             | IfThenElse(condition, whenTrue, whenFalse) ->
                 KCoreIfThenElse(
                     lowerExpressionWithExpectedType localTypes None condition,
@@ -20062,15 +20838,16 @@ module SurfaceElaboration =
                     KCoreAppSpine(lowerExpression localTypes receiver, lowerArguments arguments)
                 | [ memberName ] ->
                     match
-                        tryResolveHandledEffectName environment receiver
-                        |> Option.bind (fun effectName ->
-                            tryFindScopedEffectOperation effectName memberName
-                            |> Option.map (fun (declaration, operation) -> effectName, declaration, operation))
+                        tryResolveHandledEffectDeclaration environment receiver
+                        |> Option.bind (fun declaration ->
+                            EffectSemantics.tryFindOperation memberName declaration
+                            |> Option.map (fun operation -> declaration.VisibleName, declaration, operation))
                     with
                     | Some(effectName, declaration, operation) ->
                         let loweredOperation =
                             KCoreEffectOperation(
-                                KCoreEffectLabel(effectName, scopedEffectOperationMetadata declaration),
+                                scopedKCoreEffectLabel declaration,
+                                operation.OperationId,
                                 operation.Name
                             )
 
@@ -20141,6 +20918,7 @@ module SurfaceElaboration =
                         |> Option.bind (fun payloadType ->
                             tryInferSafeNavigationMemberType
                                 environment.VisibleTypeAliases
+                                (qualifyVisibleTypeNames environment)
                                 (inferExpressionType localTypes)
                                 payloadType
                                 navigation))
@@ -20197,7 +20975,8 @@ module SurfaceElaboration =
                 | Some(effectName, declaration, operation) ->
                     KCoreAppSpine(
                         KCoreEffectOperation(
-                            KCoreEffectLabel(effectName, scopedEffectOperationMetadata declaration),
+                            scopedKCoreEffectLabel declaration,
+                            operation.OperationId,
                             operation.Name
                         ),
                         lowerArguments arguments
@@ -20242,7 +21021,8 @@ module SurfaceElaboration =
                 | Some(effectName, declaration, operation) ->
                     KCoreAppSpine(
                         KCoreEffectOperation(
-                            KCoreEffectLabel(effectName, scopedEffectOperationMetadata declaration),
+                            scopedKCoreEffectLabel declaration,
+                            operation.OperationId,
                             operation.Name
                         ),
                         lowerArguments arguments
@@ -21023,10 +21803,10 @@ module SurfaceElaboration =
                 KCoreCodeSplice(substituteSelfDictionary inner)
             | KCoreStaticObject _ ->
                 expression
-            | KCoreEffectLabel(labelName, operations) ->
-                KCoreEffectLabel(labelName, operations)
-            | KCoreEffectOperation(label, operationName) ->
-                KCoreEffectOperation(substituteSelfDictionary label, operationName)
+            | KCoreEffectLabel(labelName, interfaceId, labelId, operations) ->
+                KCoreEffectLabel(labelName, interfaceId, labelId, operations)
+            | KCoreEffectOperation(label, operationId, operationName) ->
+                KCoreEffectOperation(substituteSelfDictionary label, operationId, operationName)
             | KCoreLambda(parameters, body) ->
                 KCoreLambda(parameters, substituteSelfDictionary body)
             | KCoreIfThenElse(condition, whenTrue, whenFalse) ->
@@ -21238,7 +22018,7 @@ module SurfaceElaboration =
                 let localEffects =
                     frontendModule.Declarations
                     |> List.choose (function
-                        | EffectDeclarationNode declaration -> Some declaration
+                        | EffectDeclarationNode declaration -> Some(EffectSemantics.ensureTopLevel moduleName declaration)
                         | _ -> None)
 
                 localEffects @ importedEffectDeclarations surfaceIndex effectDeclarationsByModule moduleName
@@ -21275,7 +22055,12 @@ module SurfaceElaboration =
                         topLevelEffects
                         |> List.filter (fun declaration -> declaration.Name.Contains("."))
                         |> List.fold (fun current declaration ->
-                            Map.add declaration.Name (scopedEffectLabelStaticObject declaration.Name) current) localAliases
+                            let semanticDeclaration =
+                                declaration
+                                |> EffectSemantics.ensureTopLevel moduleName
+                                |> EffectSemantics.toSemantic
+
+                            Map.add declaration.Name (scopedEffectLabelStaticObject semanticDeclaration) current) localAliases
 
                     { baseEnvironment with
                         VisibleStaticObjects = staticObjectAliases }

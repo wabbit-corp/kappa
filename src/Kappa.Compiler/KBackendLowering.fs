@@ -402,7 +402,7 @@ module internal KBackendLowering =
                 Set.empty
             | KRuntimeEffectLabel _ ->
                 Set.empty
-            | KRuntimeEffectOperation(label, _) ->
+            | KRuntimeEffectOperation(label, _, _) ->
                 collectClosureCaptures locals bound label
             | KRuntimeName [ name ] when Set.contains name locals && not (Set.contains name bound) ->
                 Set.singleton name

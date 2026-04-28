@@ -141,12 +141,14 @@ public sealed class KappaConstructorCallable : IKappaCallable
 
 public sealed class KappaEffectOperationMetadata
 {
+    public string OperationId { get; }
     public string Name { get; }
     public int ParameterArity { get; }
     public bool AllowsMultipleResumptions { get; }
 
-    public KappaEffectOperationMetadata(string name, int parameterArity, bool allowsMultipleResumptions)
+    public KappaEffectOperationMetadata(string operationId, string name, int parameterArity, bool allowsMultipleResumptions)
     {
+        OperationId = operationId;
         Name = name;
         ParameterArity = parameterArity;
         AllowsMultipleResumptions = allowsMultipleResumptions;
@@ -156,11 +158,15 @@ public sealed class KappaEffectOperationMetadata
 public sealed class KappaEffectLabel
 {
     public string Name { get; }
+    public string InterfaceId { get; }
+    public string LabelId { get; }
     public IReadOnlyDictionary<string, KappaEffectOperationMetadata> Operations { get; }
 
-    public KappaEffectLabel(string name, IReadOnlyDictionary<string, KappaEffectOperationMetadata> operations)
+    public KappaEffectLabel(string name, string interfaceId, string labelId, IReadOnlyDictionary<string, KappaEffectOperationMetadata> operations)
     {
         Name = name;
+        InterfaceId = interfaceId;
+        LabelId = labelId;
         Operations = operations;
     }
 }
@@ -197,7 +203,7 @@ public sealed class KappaEffectOperationValue : IKappaCallable
         var invokedArguments = KappaRuntime.CopyPrefix(combined, Operation.ParameterArity);
         object? value =
             new KappaIoAction(
-                () => new KappaEffectRequest(Label, Operation.Name, invokedArguments, continuationValue => new KappaActionReturn(continuationValue)));
+                () => new KappaEffectRequest(Label, Operation, invokedArguments, KappaReturnContinuation.Instance));
 
         if (combined.Length == Operation.ParameterArity)
         {
@@ -225,16 +231,75 @@ public sealed class KappaActionReturn : KappaActionResult
 public sealed class KappaEffectRequest : KappaActionResult
 {
     public KappaEffectLabel Label { get; }
-    public string OperationName { get; }
+    public KappaEffectOperationMetadata Operation { get; }
     public object?[] Arguments { get; }
-    public Func<object?, KappaActionResult> ContinueWith { get; }
+    public KappaContinuation Continuation { get; }
 
-    public KappaEffectRequest(KappaEffectLabel label, string operationName, object?[] arguments, Func<object?, KappaActionResult> continueWith)
+    public KappaEffectRequest(KappaEffectLabel label, KappaEffectOperationMetadata operation, object?[] arguments, KappaContinuation continuation)
     {
         Label = label;
-        OperationName = operationName;
+        Operation = operation;
         Arguments = arguments;
-        ContinueWith = continueWith;
+        Continuation = continuation;
+    }
+}
+
+public abstract class KappaContinuation
+{
+    public abstract KappaActionResult Resume(object? value);
+}
+
+public sealed class KappaReturnContinuation : KappaContinuation
+{
+    public static KappaReturnContinuation Instance { get; } = new();
+
+    private KappaReturnContinuation()
+    {
+    }
+
+    public override KappaActionResult Resume(object? value)
+    {
+        return new KappaActionReturn(value);
+    }
+}
+
+public sealed class KappaBindContinuation : KappaContinuation
+{
+    private readonly KappaContinuation _continuation;
+    private readonly IKappaCallable _binder;
+
+    public KappaBindContinuation(KappaContinuation continuation, IKappaCallable binder)
+    {
+        _continuation = continuation;
+        _binder = binder;
+    }
+
+    public override KappaActionResult Resume(object? value)
+    {
+        return KappaRuntime.BindActionResult(_continuation.Resume(value), _binder);
+    }
+}
+
+public sealed class KappaHandleContinuation : KappaContinuation
+{
+    private readonly bool _isDeep;
+    private readonly KappaEffectLabel _label;
+    private readonly IKappaCallable _returnClause;
+    private readonly IKappaCallable _dispatcher;
+    private readonly KappaContinuation _continuation;
+
+    public KappaHandleContinuation(bool isDeep, KappaEffectLabel label, IKappaCallable returnClause, IKappaCallable dispatcher, KappaContinuation continuation)
+    {
+        _isDeep = isDeep;
+        _label = label;
+        _returnClause = returnClause;
+        _dispatcher = dispatcher;
+        _continuation = continuation;
+    }
+
+    public override KappaActionResult Resume(object? value)
+    {
+        return KappaRuntime.HandleActionResult(_isDeep, _label, _returnClause, _dispatcher, _continuation.Resume(value));
     }
 }
 
@@ -253,20 +318,20 @@ public sealed class KappaIoAction
     }
 }
 
-public sealed class KappaOneShotResumption : IKappaCallable
+public sealed class KappaResumption : IKappaCallable
 {
-    private readonly Func<object?, KappaActionResult> _continueWith;
+    private readonly KappaContinuation _continuation;
     private readonly bool _allowsMultipleResumptions;
     private bool _consumed;
 
     public string DisplayName { get; }
     public int Arity => 1;
 
-    public KappaOneShotResumption(string displayName, bool allowsMultipleResumptions, Func<object?, KappaActionResult> continueWith)
+    public KappaResumption(string displayName, bool allowsMultipleResumptions, KappaContinuation continuation)
     {
         DisplayName = displayName;
         _allowsMultipleResumptions = allowsMultipleResumptions;
-        _continueWith = continueWith;
+        _continuation = continuation;
     }
 
     public object? Apply(object?[] arguments)
@@ -287,7 +352,7 @@ public sealed class KappaOneShotResumption : IKappaCallable
         }
 
         var resumedValue = arguments[0];
-        return new KappaIoAction(() => _continueWith(resumedValue));
+        return new KappaIoAction(() => _continuation.Resume(resumedValue));
     }
 }
 
@@ -580,7 +645,7 @@ public static class KappaRuntime
         };
     }
 
-    public static KappaEffectLabel CreateEffectLabel(string name, KappaEffectOperationMetadata[] operations)
+    public static KappaEffectLabel CreateEffectLabel(string name, string interfaceId, string labelId, KappaEffectOperationMetadata[] operations)
     {
         var map = new Dictionary<string, KappaEffectOperationMetadata>(StringComparer.Ordinal);
 
@@ -589,16 +654,21 @@ public static class KappaRuntime
             map[operation.Name] = operation;
         }
 
-        return new KappaEffectLabel(name, map);
+        return new KappaEffectLabel(name, interfaceId, labelId, map);
     }
 
-    public static KappaEffectOperationValue CreateEffectOperation(object? labelValue, string operationName)
+    public static KappaEffectOperationValue CreateEffectOperation(object? labelValue, string operationId, string operationName)
     {
         var label = ExpectEffectLabel(labelValue);
 
         if (!label.Operations.TryGetValue(operationName, out var operation))
         {
             throw new KappaRuntimeException($"Effect label '{label.Name}' does not declare operation '{operationName}'.");
+        }
+
+        if (!String.Equals(operation.OperationId, operationId, StringComparison.Ordinal))
+        {
+            throw new KappaRuntimeException($"Effect label '{label.Name}' does not declare operation id '{operationId}' for '{operationName}'.");
         }
 
         return new KappaEffectOperationValue(label, operation);
@@ -691,7 +761,7 @@ public static class KappaRuntime
         };
     }
 
-    private static KappaActionResult BindActionResult(KappaActionResult step, IKappaCallable continuation)
+    internal static KappaActionResult BindActionResult(KappaActionResult step, IKappaCallable continuation)
     {
         return step switch
         {
@@ -699,9 +769,9 @@ public static class KappaRuntime
             KappaEffectRequest request =>
                 new KappaEffectRequest(
                     request.Label,
-                    request.OperationName,
+                    request.Operation,
                     request.Arguments,
-                    continuedValue => BindActionResult(request.ContinueWith(continuedValue), continuation)),
+                    new KappaBindContinuation(request.Continuation, continuation)),
             _ => throw new KappaRuntimeException("Unknown IO action result."),
         };
     }
@@ -712,12 +782,12 @@ public static class KappaRuntime
         {
             KappaActionReturn result => result.Value,
             KappaEffectRequest request =>
-                throw new KappaRuntimeException($"Unhandled effect operation '{request.Label.Name}.{request.OperationName}'."),
+                throw new KappaRuntimeException($"Unhandled effect operation '{request.Label.Name}.{request.Operation.Name}'."),
             _ => throw new KappaRuntimeException("Unknown IO action result."),
         };
     }
 
-    private static KappaActionResult HandleActionResult(
+    internal static KappaActionResult HandleActionResult(
         bool isDeep,
         KappaEffectLabel label,
         IKappaCallable returnClause,
@@ -731,29 +801,23 @@ public static class KappaRuntime
                 var handled = returnClause.Apply(new object?[] { result.Value });
                 return ExpectIoAction(handled).Execute();
             }
-            case KappaEffectRequest request when String.Equals(request.Label.Name, label.Name, StringComparison.Ordinal):
+            case KappaEffectRequest request when String.Equals(request.Label.LabelId, label.LabelId, StringComparison.Ordinal):
             {
-                if (!label.Operations.TryGetValue(request.OperationName, out var operation))
-                {
-                    throw new KappaRuntimeException($"Handler for '{label.Name}' does not recognize operation '{request.OperationName}'.");
-                }
+                KappaContinuation resumptionContinuation =
+                    isDeep
+                        ? new KappaHandleContinuation(isDeep, label, returnClause, dispatcher, request.Continuation)
+                        : request.Continuation;
 
-                var resumption = new KappaOneShotResumption(
-                    $"{label.Name}.{request.OperationName}",
-                    operation.AllowsMultipleResumptions,
-                    value =>
-                    {
-                        var next = request.ContinueWith(value);
-                        return isDeep
-                            ? HandleActionResult(isDeep, label, returnClause, dispatcher, next)
-                            : next;
-                    });
+                var resumption = new KappaResumption(
+                    $"{label.Name}.{request.Operation.Name}",
+                    request.Operation.AllowsMultipleResumptions,
+                    resumptionContinuation);
 
                 var handled =
                     dispatcher.Apply(
                         new object?[]
                         {
-                            request.OperationName,
+                            request.Operation.Name,
                             request.Arguments,
                             resumption,
                         });
@@ -763,9 +827,9 @@ public static class KappaRuntime
             case KappaEffectRequest request:
                 return new KappaEffectRequest(
                     request.Label,
-                    request.OperationName,
+                    request.Operation,
                     request.Arguments,
-                    continuedValue => HandleActionResult(isDeep, label, returnClause, dispatcher, request.ContinueWith(continuedValue)));
+                    new KappaHandleContinuation(isDeep, label, returnClause, dispatcher, request.Continuation));
             default:
                 throw new KappaRuntimeException("Unknown IO action result.");
         }

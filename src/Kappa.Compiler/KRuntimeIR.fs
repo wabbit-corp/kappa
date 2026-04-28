@@ -2,7 +2,8 @@ namespace Kappa.Compiler
 
 // The implementation-defined runtime IR that sits between KCore and KBackendIR.
 type KRuntimeEffectOperation =
-    { Name: string
+    { OperationId: string
+      Name: string
       ResumptionQuantity: Quantity option
       ParameterArity: int }
 
@@ -14,8 +15,8 @@ type KRuntimeEffectHandlerArgument =
 type KRuntimeExpression =
     | KRuntimeLiteral of LiteralValue
     | KRuntimeName of string list
-    | KRuntimeEffectLabel of labelName: string * operations: KRuntimeEffectOperation list
-    | KRuntimeEffectOperation of label: KRuntimeExpression * operationName: string
+    | KRuntimeEffectLabel of labelName: string * interfaceId: string * labelId: string * operations: KRuntimeEffectOperation list
+    | KRuntimeEffectOperation of label: KRuntimeExpression * operationId: string * operationName: string
     | KRuntimeClosure of string list * KRuntimeExpression
     | KRuntimeIfThenElse of KRuntimeExpression * KRuntimeExpression * KRuntimeExpression
     | KRuntimeHandle of

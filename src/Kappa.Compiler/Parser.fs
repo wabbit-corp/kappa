@@ -1584,7 +1584,8 @@ type private TokenParser
 
         match remainingTokens with
         | nameToken :: colonToken :: signatureTokens when Token.isName nameToken && colonToken.Kind = Colon ->
-            { Name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
+            { OperationId = None
+              Name = SyntaxFacts.trimIdentifierQuotes nameToken.Text
               ResumptionQuantity = quantity
               SignatureTokens = signatureTokens }
         | nameToken :: _ ->
@@ -1594,7 +1595,8 @@ type private TokenParser
                 source.GetLocation(nameToken.Span)
             )
 
-            { Name = "<missing>"
+            { OperationId = None
+              Name = "<missing>"
               ResumptionQuantity = quantity
               SignatureTokens = [] }
         | [] ->
@@ -1604,7 +1606,8 @@ type private TokenParser
                 source.GetLocation(this.Current.Span)
             )
 
-            { Name = "<missing>"
+            { OperationId = None
+              Name = "<missing>"
               ResumptionQuantity = quantity
               SignatureTokens = [] }
 
@@ -1626,7 +1629,9 @@ type private TokenParser
                 []
 
         EffectDeclarationNode
-            { Visibility = modifiers.Visibility
+            { EffectInterfaceId = None
+              EffectLabelId = None
+              Visibility = modifiers.Visibility
               Name = name
               HeaderTokens = List.ofSeq headerTokens
               Operations = operations }

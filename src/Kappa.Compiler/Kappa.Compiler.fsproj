@@ -25,6 +25,7 @@
     <Compile Include="Lexer.fs" />
     <Compile Include="BundledPrelude.fs" />
     <Compile Include="TypeSignatures.fs" />
+    <Compile Include="EffectSemantics.fs" />
     <Compile Include="Parser.fs" />
     <Compile Include="IntrinsicCatalog.fs" />
     <Compile Include="StandardModules.fs" />
