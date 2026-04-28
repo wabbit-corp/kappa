@@ -673,12 +673,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Unicode warning emission for bidi controls / confusables / non-normalized source text once implemented.
   - Sources: `reviews/frontend1.md`, `reviews/general1.md`.
 
-- `[High] Move ambiguous ordinary-name/import ambiguity detection fully into compilation and test it as such.`
-  - There is at least one current test that expects ambiguous imported ordinary names to survive compilation and fail only during interpreter evaluation.
-  - The spec makes ordinary lexical ambiguity a compile-time error.
-  - Add or use a dedicated diagnostic such as `NameAmbiguous`, and convert these tests into frontend diagnostic tests rather than runtime-error tests.
-  - Sources: `reviews/tests1.md`.
-
 - `[High] Add regression tests for the QTT fixes before changing behavior.`
   - Borrow-only must not discharge linear `1`.
   - Multiple borrowed uses of exact `1` must be rejected or otherwise accounted for correctly.

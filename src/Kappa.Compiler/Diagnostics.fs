@@ -43,6 +43,7 @@ type DiagnosticCode =
     | HandlerClauseArityMismatch
     | HandlerClauseUnexpected
     | EffectResumptionQuantityBorrowed
+    | NameAmbiguous
     | NameUnresolved
     | RecursiveTypeAlias
     | MalformedConstructorDeclaration
@@ -135,6 +136,7 @@ module DiagnosticCode =
         | HandlerClauseArityMismatch -> "E_HANDLER_CLAUSE_ARITY_MISMATCH"
         | HandlerClauseUnexpected -> "E_HANDLER_CLAUSE_UNEXPECTED"
         | EffectResumptionQuantityBorrowed -> "E_EFFECT_RESUMPTION_QUANTITY_BORROWED"
+        | NameAmbiguous -> "E_NAME_AMBIGUOUS"
         | NameUnresolved -> "E_NAME_UNRESOLVED"
         | RecursiveTypeAlias -> "E_RECURSIVE_TYPE_ALIAS"
         | MalformedConstructorDeclaration -> "E_MALFORMED_CONSTRUCTOR_DECLARATION"
@@ -226,6 +228,7 @@ module DiagnosticCode =
         | "E_HANDLER_CLAUSE_ARITY_MISMATCH" -> Some HandlerClauseArityMismatch
         | "E_HANDLER_CLAUSE_UNEXPECTED" -> Some HandlerClauseUnexpected
         | "E_EFFECT_RESUMPTION_QUANTITY_BORROWED" -> Some EffectResumptionQuantityBorrowed
+        | "E_NAME_AMBIGUOUS" -> Some NameAmbiguous
         | "E_NAME_UNRESOLVED" -> Some NameUnresolved
         | "E_RECURSIVE_TYPE_ALIAS" -> Some RecursiveTypeAlias
         | "E_MALFORMED_CONSTRUCTOR_DECLARATION" -> Some MalformedConstructorDeclaration
@@ -295,6 +298,8 @@ module DiagnosticCode =
             Some "An explicitly selected or excluded import item does not exist in the referenced module's export surface."
         | ModuleNameUnresolved ->
             Some "A referenced module name does not resolve to any module available in the current compilation unit or bundled standard-module inventory."
+        | NameAmbiguous ->
+            Some "A referenced name resolves to multiple admissible declarations in the nearest applicable binding group, so compilation must reject the use until it is disambiguated."
         | NameUnresolved ->
             Some "A referenced name is not in lexical, module, or imported scope."
         | OrPatternBinderTypeMismatch ->

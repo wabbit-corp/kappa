@@ -97,6 +97,7 @@ let ``import diagnostics expose long form explanations`` () =
             DiagnosticCode.ImportAmbiguous
             DiagnosticCode.ImportItemNotFound
             DiagnosticCode.ModuleNameUnresolved
+            DiagnosticCode.NameAmbiguous
         ]
 
     for code in explainedCodes do

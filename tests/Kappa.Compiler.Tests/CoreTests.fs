@@ -733,7 +733,7 @@ let ``interpreter resolves qualified aliases`` () =
         failwithf "Expected qualified lookup to succeed, got %s" issue.Message
 
 [<Fact>]
-let ``interpreter reports ambiguous imported names`` () =
+let ``compiler rejects ambiguous imported ordinary names`` () =
     let moduleASource =
         [
             "module a"
@@ -757,23 +757,18 @@ let ``interpreter reports ambiguous imported names`` () =
         ]
         |> String.concat "\n"
 
-    let workspace, result =
-        evaluateInMemoryBinding
+    let workspace =
+        compileInMemoryWorkspace
             "memory-ambiguous-root"
-            "main.result"
             [
                 "a.kp", moduleASource
                 "b.kp", moduleBSource
                 "main.kp", mainSource
             ]
 
-    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
-
-    match result with
-    | Result.Ok value ->
-        failwithf "Expected an ambiguity error, got %s" (RuntimeValue.format value)
-    | Result.Error issue ->
-        Assert.Contains("ambiguous", issue.Message)
+    Assert.True(workspace.HasErrors, "Expected ordinary lexical ambiguity to be rejected during compilation.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.NameAmbiguous)
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Message.Contains("value", StringComparison.Ordinal))
 
 [<Fact>]
 let ``parser captures recursive list matches and do blocks`` () =

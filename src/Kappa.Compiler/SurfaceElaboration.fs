@@ -92,6 +92,33 @@ module SurfaceElaboration =
           ReturnType: TypeExpr
           Body: SurfaceProjectionBody option }
 
+    type private OrdinaryVisibleTermCandidate =
+        | OrdinaryVisibleBindingCandidate of BindingSchemeInfo
+        | OrdinaryVisibleExportedBindingCandidate of string * string
+        | OrdinaryVisibleConstructorCandidate of BindingSchemeInfo
+        | OrdinaryVisibleModuleCandidate of string
+
+    let private renderOrdinaryVisibleTermCandidate candidate =
+        match candidate with
+        | OrdinaryVisibleBindingCandidate info when info.IsPattern ->
+            $"pattern term '{info.Name}' from module '{info.ModuleName}'"
+        | OrdinaryVisibleBindingCandidate info ->
+            $"term '{info.Name}' from module '{info.ModuleName}'"
+        | OrdinaryVisibleExportedBindingCandidate(moduleName, name) ->
+            $"term '{name}' from module '{moduleName}'"
+        | OrdinaryVisibleConstructorCandidate info ->
+            $"constructor '{info.Name}' from module '{info.ModuleName}'"
+        | OrdinaryVisibleModuleCandidate moduleName ->
+            $"module '{moduleName}'"
+
+    let private ordinaryNameAmbiguityMessage name candidates =
+        let candidateText =
+            candidates
+            |> List.map renderOrdinaryVisibleTermCandidate
+            |> String.concat ", "
+
+        $"Name '{name}' is ambiguous between {candidateText}. Use an explicit import item, module alias, or qualification."
+
     type private ProjectionDescriptorAliasInfo =
         { Projection: ProjectionInfo
           RemainingPlaceBinders: ProjectionPlaceBinder list }
@@ -137,6 +164,7 @@ module SurfaceElaboration =
           VisibleRecordTypes: Map<string, RecordSurfaceInfo>
           VisibleBindings: Map<string, BindingSchemeInfo>
           VisibleConstructors: Map<string, BindingSchemeInfo>
+          AmbiguousVisibleOrdinaryTerms: Map<string, OrdinaryVisibleTermCandidate list>
           VisibleProjections: Map<string, ProjectionInfo>
           VisibleTraits: Map<string, TraitInfo>
           VisibleInstances: InstanceInfo list
@@ -3627,12 +3655,26 @@ module SurfaceElaboration =
         importedModuleInfos surfaceIndex moduleName
         |> List.collect importedEffectsForSpec
 
-    let private mergeVisibleBindings (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
-        let importedBindings =
-            importedModuleInfos surfaceIndex moduleName
-            |> List.fold (fun state (spec, importedModule) ->
-                importedModule.BindingSchemes
-                |> Map.fold (fun current name info ->
+    let private appendVisibleCandidate localName candidate state =
+        let updatedCandidates =
+            state
+            |> Map.tryFind localName
+            |> Option.defaultValue []
+            |> fun existing -> candidate :: existing
+
+        Map.add localName updatedCandidates state
+
+    let private collectImportedOrdinaryTermCandidates (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
+        importedModuleInfos surfaceIndex moduleName
+        |> List.fold (fun state (spec, importedModule) ->
+            let importedModuleName =
+                match spec.Source with
+                | Dotted moduleSegments -> SyntaxFacts.moduleNameToText moduleSegments
+                | Url _ -> importedModule.BindingSchemes |> Map.toSeq |> Seq.tryHead |> Option.map (fun (_, info) -> info.ModuleName) |> Option.defaultValue "<unknown>"
+
+            let withBindings =
+                importedModule.ExportedTerms
+                |> Set.fold (fun current name ->
                     match
                         selectionImportedNameWithExplicitAccess
                             ImportNamespace.Term
@@ -3642,29 +3684,17 @@ module SurfaceElaboration =
                             spec.Selection
                             name
                     with
-                    | Some localName -> Map.add localName info current
-                    | None -> current) state) Map.empty
+                    | Some localName ->
+                        let candidate =
+                            match importedModule.BindingSchemes |> Map.tryFind name with
+                            | Some info -> OrdinaryVisibleBindingCandidate info
+                            | None -> OrdinaryVisibleExportedBindingCandidate(importedModuleName, name)
 
-        let preludeBindings =
-            surfaceIndex
-            |> Map.tryFind Stdlib.PreludeModuleText
-            |> Option.map (fun moduleInfo -> moduleInfo.BindingSchemes)
-            |> Option.defaultValue Map.empty
+                        appendVisibleCandidate localName candidate current
+                    | None ->
+                        current) state
 
-        let moduleBindings =
-            surfaceIndex
-            |> Map.tryFind moduleName
-            |> Option.map (fun moduleInfo -> moduleInfo.BindingSchemes)
-            |> Option.defaultValue Map.empty
-
-        preludeBindings
-        |> Map.fold (fun state name info -> Map.add name info state) importedBindings
-        |> fun state -> moduleBindings |> Map.fold (fun current name info -> Map.add name info current) state
-
-    let private mergeVisibleConstructors (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
-        let importedConstructors =
-            importedModuleInfos surfaceIndex moduleName
-            |> List.fold (fun state (spec, importedModule) ->
+            let withConstructors =
                 importedModule.Constructors
                 |> Map.fold (fun current name info ->
                     let parentTypeInfo =
@@ -3704,8 +3734,81 @@ module SurfaceElaboration =
                                         None)
 
                     match importedName with
-                    | Some localName -> Map.add localName info current
-                    | None -> current) state) Map.empty
+                    | Some localName ->
+                        appendVisibleCandidate localName (OrdinaryVisibleConstructorCandidate info) current
+                    | None ->
+                        current) withBindings
+
+            match spec.Source, spec.Alias, spec.Selection with
+            | Dotted moduleSegments, Some alias, QualifiedOnly ->
+                let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
+                appendVisibleCandidate alias (OrdinaryVisibleModuleCandidate importedModuleName) withConstructors
+            | Dotted moduleSegments, None, QualifiedOnly ->
+                let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
+
+                if surfaceIndex.ContainsKey importedModuleName then
+                    appendVisibleCandidate importedModuleName (OrdinaryVisibleModuleCandidate importedModuleName) withConstructors
+                else
+                    withConstructors
+            | _ ->
+                withConstructors) Map.empty
+
+    let private partitionImportedOrdinaryTermCandidates candidateMap =
+        candidateMap
+        |> Map.fold (fun (bindings, constructors, modules, ambiguities) localName reversedCandidates ->
+            let candidates = List.rev reversedCandidates
+
+            match candidates with
+            | [ OrdinaryVisibleBindingCandidate info ] ->
+                Map.add localName info bindings, constructors, modules, ambiguities
+            | [ OrdinaryVisibleExportedBindingCandidate _ ] ->
+                bindings, constructors, modules, ambiguities
+            | [ OrdinaryVisibleConstructorCandidate info ] ->
+                bindings, Map.add localName info constructors, modules, ambiguities
+            | [ OrdinaryVisibleModuleCandidate _ ] ->
+                bindings, constructors, Set.add localName modules, ambiguities
+            | _ ->
+                bindings, constructors, modules, Map.add localName candidates ambiguities)
+            (Map.empty, Map.empty, Set.empty, Map.empty)
+
+    let private shadowAmbiguousVisibleTermCandidates
+        (visibleBindings: Map<string, BindingSchemeInfo>)
+        (visibleConstructors: Map<string, BindingSchemeInfo>)
+        (visibleModules: Set<string>)
+        (ambiguities: Map<string, OrdinaryVisibleTermCandidate list>)
+        =
+        let shadowingNames =
+            [ visibleBindings |> Map.keys |> Set.ofSeq
+              visibleConstructors |> Map.keys |> Set.ofSeq
+              visibleModules ]
+            |> Set.unionMany
+
+        ambiguities
+        |> Map.filter (fun localName _ -> not (Set.contains localName shadowingNames))
+
+    let private mergeVisibleBindings (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
+        let importedTermCandidates = collectImportedOrdinaryTermCandidates surfaceIndex moduleName
+        let importedBindings, _, _, _ = partitionImportedOrdinaryTermCandidates importedTermCandidates
+
+        let preludeBindings =
+            surfaceIndex
+            |> Map.tryFind Stdlib.PreludeModuleText
+            |> Option.map (fun moduleInfo -> moduleInfo.BindingSchemes)
+            |> Option.defaultValue Map.empty
+
+        let moduleBindings =
+            surfaceIndex
+            |> Map.tryFind moduleName
+            |> Option.map (fun moduleInfo -> moduleInfo.BindingSchemes)
+            |> Option.defaultValue Map.empty
+
+        preludeBindings
+        |> Map.fold (fun state name info -> Map.add name info state) importedBindings
+        |> fun state -> moduleBindings |> Map.fold (fun current name info -> Map.add name info current) state
+
+    let private mergeVisibleConstructors (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
+        let importedTermCandidates = collectImportedOrdinaryTermCandidates surfaceIndex moduleName
+        let _, importedConstructors, _, _ = partitionImportedOrdinaryTermCandidates importedTermCandidates
 
         let preludeConstructors =
             surfaceIndex
@@ -3823,29 +3926,55 @@ module SurfaceElaboration =
         |> fun state -> moduleFacets |> Map.fold (fun current name info -> Map.add name info current) state
 
     let private mergeVisibleModules (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
-        let importedModules =
-            surfaceIndex
-            |> Map.tryFind moduleName
-            |> Option.map (fun moduleInfo ->
-                moduleInfo.Imports
-                |> List.choose (fun spec ->
-                    match spec.Source, spec.Alias, spec.Selection with
-                    | Dotted _, Some alias, QualifiedOnly
-                    | Url _, Some alias, QualifiedOnly ->
-                        Some alias
-                    | Dotted moduleSegments, None, QualifiedOnly ->
-                        let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
-
-                        if surfaceIndex.ContainsKey importedModuleName then
-                            Some importedModuleName
-                        else
-                            None
-                    | _ ->
-                        None))
-            |> Option.defaultValue []
-            |> Set.ofList
+        let importedTermCandidates = collectImportedOrdinaryTermCandidates surfaceIndex moduleName
+        let _, _, importedModules, _ = partitionImportedOrdinaryTermCandidates importedTermCandidates
 
         Set.add moduleName importedModules
+
+    let private mergeAmbiguousVisibleOrdinaryTerms (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
+        let importedTermCandidates = collectImportedOrdinaryTermCandidates surfaceIndex moduleName
+        let importedBindings, importedConstructors, importedModules, importedAmbiguities =
+            partitionImportedOrdinaryTermCandidates importedTermCandidates
+
+        let preludeBindings =
+            surfaceIndex
+            |> Map.tryFind Stdlib.PreludeModuleText
+            |> Option.map (fun moduleInfo -> moduleInfo.BindingSchemes)
+            |> Option.defaultValue Map.empty
+
+        let moduleBindings =
+            surfaceIndex
+            |> Map.tryFind moduleName
+            |> Option.map (fun moduleInfo -> moduleInfo.BindingSchemes)
+            |> Option.defaultValue Map.empty
+
+        let visibleBindings =
+            preludeBindings
+            |> Map.fold (fun state name info -> Map.add name info state) importedBindings
+            |> fun state -> moduleBindings |> Map.fold (fun current name info -> Map.add name info current) state
+
+        let preludeConstructors =
+            surfaceIndex
+            |> Map.tryFind Stdlib.PreludeModuleText
+            |> Option.map (fun moduleInfo ->
+                moduleInfo.Constructors
+                |> Map.filter (fun name _ -> List.contains name Stdlib.FixedPreludeConstructors))
+            |> Option.defaultValue Map.empty
+
+        let moduleConstructors =
+            surfaceIndex
+            |> Map.tryFind moduleName
+            |> Option.map (fun moduleInfo -> moduleInfo.Constructors)
+            |> Option.defaultValue Map.empty
+
+        let visibleConstructors =
+            preludeConstructors
+            |> Map.fold (fun state name info -> Map.add name info state) importedConstructors
+            |> fun state -> moduleConstructors |> Map.fold (fun current name info -> Map.add name info current) state
+
+        let visibleModules = Set.add moduleName importedModules
+
+        shadowAmbiguousVisibleTermCandidates visibleBindings visibleConstructors visibleModules importedAmbiguities
 
     let private mergeVisibleRecordTypes (surfaceIndex: Map<string, ModuleSurfaceInfo>) moduleName =
         let importedRecordTypes =
@@ -8078,6 +8207,26 @@ module SurfaceElaboration =
               Location = None
               RelatedLocations = [] }
 
+        let tryVisibleOrdinaryTermAmbiguityCandidates localName =
+            environment.AmbiguousVisibleOrdinaryTerms |> Map.tryFind localName
+
+        let tryVisiblePatternHeadAmbiguityCandidates localName =
+            tryVisibleOrdinaryTermAmbiguityCandidates localName
+            |> Option.bind (fun candidates ->
+                let admissible =
+                    candidates
+                    |> List.filter (function
+                        | OrdinaryVisibleConstructorCandidate _ -> true
+                        | OrdinaryVisibleBindingCandidate info when info.IsPattern -> true
+                        | _ -> false)
+
+                if List.length admissible > 1 then Some admissible else None)
+
+        let ordinaryNameAmbiguityDiagnostic name candidates =
+            makeDiagnostic
+                DiagnosticCode.NameAmbiguous
+                (ordinaryNameAmbiguityMessage name candidates)
+
         let declaredParameterContextConflictDiagnostics =
             bodyInferredNumericParameterTypes
             |> Map.toList
@@ -9708,13 +9857,17 @@ module SurfaceElaboration =
                     | [] -> []
                     | _ ->
                         let headName = List.last nameSegments
-                        let isConstructor = environment.VisibleConstructors |> Map.containsKey headName
+                        match tryVisiblePatternHeadAmbiguityCandidates headName with
+                        | Some candidates ->
+                            [ ordinaryNameAmbiguityDiagnostic headName candidates ]
+                        | None ->
+                            let isConstructor = environment.VisibleConstructors |> Map.containsKey headName
 
-                        match environment.VisibleBindings |> Map.tryFind headName with
-                        | Some bindingInfo when not bindingInfo.IsPattern && not isConstructor ->
-                            [ makeDiagnostic DiagnosticCode.ActivePatternInvalid $"Pattern head '{headName}' resolves to an ordinary term, not a constructor or active pattern." ]
-                        | _ ->
-                            []
+                            match environment.VisibleBindings |> Map.tryFind headName with
+                            | Some bindingInfo when not bindingInfo.IsPattern && not isConstructor ->
+                                [ makeDiagnostic DiagnosticCode.ActivePatternInvalid $"Pattern head '{headName}' resolves to an ordinary term, not a constructor or active pattern." ]
+                            | _ ->
+                                []
 
                 headDiagnostics @ nestedDiagnostics
             | NamedConstructorPattern(nameSegments, fields) ->
@@ -16231,6 +16384,7 @@ module SurfaceElaboration =
                       VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleName
                       VisibleBindings = mergeVisibleBindings surfaceIndex moduleName
                       VisibleConstructors = mergeVisibleConstructors surfaceIndex moduleName
+                      AmbiguousVisibleOrdinaryTerms = mergeAmbiguousVisibleOrdinaryTerms surfaceIndex moduleName
                       VisibleProjections = mergeVisibleProjections surfaceIndex moduleName
                       VisibleTraits = mergeVisibleTraits surfaceIndex moduleName
                       VisibleInstances = visibleInstances surfaceIndex moduleName
@@ -17164,7 +17318,236 @@ module SurfaceElaboration =
                     validateExpression initialLocalTypes expression
 
                 let expressionNameResolutionDiagnostics (definition: LetDefinition) expression =
-                    []
+                    let ordinaryNameAmbiguityDiagnostic name candidates =
+                        makeDiagnostic
+                            DiagnosticCode.NameAmbiguous
+                            (ordinaryNameAmbiguityMessage name candidates)
+
+                    let simpleClauseBinderName (tokens: Token list) =
+                        match significantTokens tokens with
+                        | [ token ] when Token.isName token ->
+                            Some(SyntaxFacts.trimIdentifierQuotes token.Text)
+                        | _ ->
+                            None
+
+                    let clauseBoundNames (clause: SurfaceEffectHandlerClause) =
+                        let argumentNames =
+                            clause.ArgumentTokens
+                            |> List.choose simpleClauseBinderName
+
+                        match clause.ResumptionName with
+                        | Some name -> name :: argumentNames
+                        | None -> argumentNames
+                        |> Set.ofList
+
+                    let ordinaryNameAmbiguityDiagnostics name =
+                        environment.AmbiguousVisibleOrdinaryTerms
+                        |> Map.tryFind name
+                        |> Option.bind (fun candidates ->
+                            let admissible =
+                                candidates
+                                |> List.filter (function
+                                    | OrdinaryVisibleBindingCandidate _
+                                    | OrdinaryVisibleExportedBindingCandidate _
+                                    | OrdinaryVisibleConstructorCandidate _
+                                    | OrdinaryVisibleModuleCandidate _ -> true)
+
+                            if List.length admissible > 1 then Some admissible else None)
+                        |> Option.map (fun candidates -> [ ordinaryNameAmbiguityDiagnostic name candidates ])
+                        |> Option.defaultValue []
+
+                    let rec walk shadowed current =
+                        match current with
+                        | Name [ name ] when not (Set.contains name shadowed) ->
+                            ordinaryNameAmbiguityDiagnostics name
+                        | Name _
+                        | KindQualifiedName _
+                        | Literal _
+                        | NumericLiteral _ ->
+                            []
+                        | SyntaxQuote inner
+                        | SyntaxSplice inner
+                        | TopLevelSyntaxSplice inner
+                        | CodeQuote inner
+                        | CodeSplice inner
+                        | MonadicSplice inner
+                        | ExplicitImplicitArgument inner
+                        | InoutArgument inner
+                        | Unary(_, inner)
+                        | Seal(inner, _) ->
+                            walk shadowed inner
+                        | LocalLet(binding, value, body) ->
+                            let nextShadowed =
+                                Set.union shadowed (collectPatternNames binding.Pattern |> Set.ofList)
+
+                            walk shadowed value @ walk nextShadowed body
+                        | LocalSignature(declaration, body) ->
+                            walk (Set.add declaration.Name shadowed) body
+                        | LocalTypeAlias(_, body) ->
+                            walk shadowed body
+                        | LocalScopedEffect(declaration, body) ->
+                            walk (Set.add declaration.Name shadowed) body
+                        | Lambda(parameters, body) ->
+                            let nextShadowed =
+                                parameters
+                                |> List.map (fun parameter -> parameter.Name)
+                                |> Set.ofList
+                                |> Set.union shadowed
+
+                            walk nextShadowed body
+                        | Handle(_, label, body, returnClause, operationClauses) ->
+                            walk shadowed label
+                            @ walk shadowed body
+                            @ walk (Set.union shadowed (clauseBoundNames returnClause)) returnClause.Body
+                            @ (operationClauses
+                               |> List.collect (fun clause ->
+                                   walk (Set.union shadowed (clauseBoundNames clause)) clause.Body))
+                        | IfThenElse(condition, whenTrue, whenFalse) ->
+                            walk shadowed condition @ walk shadowed whenTrue @ walk shadowed whenFalse
+                        | Match(scrutinee, cases) ->
+                            walk shadowed scrutinee
+                            @ (cases
+                               |> List.collect (fun caseClause ->
+                                   let caseShadowed =
+                                       Set.union shadowed (collectPatternNames caseClause.Pattern |> Set.ofList)
+
+                                   (caseClause.Guard |> Option.map (walk caseShadowed) |> Option.defaultValue [])
+                                   @ walk caseShadowed caseClause.Body))
+                        | RecordLiteral fields ->
+                            fields |> List.collect (fun field -> walk shadowed field.Value)
+                        | RecordUpdate(receiver, fields) ->
+                            walk shadowed receiver
+                            @ (fields |> List.collect (fun field -> walk shadowed field.Value))
+                        | MemberAccess(receiver, _, arguments) ->
+                            walk shadowed receiver @ (arguments |> List.collect (walk shadowed))
+                        | SafeNavigation(receiver, navigation) ->
+                            walk shadowed receiver @ (navigation.Arguments |> List.collect (walk shadowed))
+                        | TagTest(receiver, _) ->
+                            walk shadowed receiver
+                        | Do statements ->
+                            walkDo shadowed statements
+                        | Apply(callee, arguments) ->
+                            walk shadowed callee @ (arguments |> List.collect (walk shadowed))
+                        | NamedApplicationBlock fields ->
+                            fields |> List.collect (fun field -> walk shadowed field.Value)
+                        | Binary(left, _, right)
+                        | Elvis(left, right) ->
+                            walk shadowed left @ walk shadowed right
+                        | Comprehension comprehension ->
+                            walkComprehension shadowed comprehension
+                        | PrefixedString(_, parts) ->
+                            parts
+                            |> List.collect (function
+                                | StringText _ -> []
+                                | StringInterpolation(inner, _) -> walk shadowed inner)
+
+                    and walkComprehension shadowed (comprehension: SurfaceComprehension) =
+                        let walkYield currentShadowed =
+                            match comprehension.Yield with
+                            | YieldValue value ->
+                                walk currentShadowed value
+                            | YieldKeyValue(key, value) ->
+                                walk currentShadowed key @ walk currentShadowed value
+
+                        let rec loop currentShadowed clauses =
+                            match clauses with
+                            | [] ->
+                                walkYield currentShadowed
+                            | clause :: rest ->
+                                match clause with
+                                | ForClause(_, _, binding, source) ->
+                                    let nextShadowed =
+                                        Set.union currentShadowed (collectPatternNames binding.Pattern |> Set.ofList)
+
+                                    walk currentShadowed source @ loop nextShadowed rest
+                                | JoinClause(binding, source, condition) ->
+                                    let nextShadowed =
+                                        Set.union currentShadowed (collectPatternNames binding.Pattern |> Set.ofList)
+
+                                    walk currentShadowed source
+                                    @ walk nextShadowed condition
+                                    @ loop nextShadowed rest
+                                | LetClause(_, binding, value) ->
+                                    let nextShadowed =
+                                        Set.union currentShadowed (collectPatternNames binding.Pattern |> Set.ofList)
+
+                                    walk currentShadowed value @ loop nextShadowed rest
+                                | IfClause condition ->
+                                    walk currentShadowed condition @ loop currentShadowed rest
+                                | GroupByClause(key, aggregations, intoName) ->
+                                    walk currentShadowed key
+                                    @ (aggregations |> List.collect (fun field -> walk currentShadowed field.Value))
+                                    @ loop (Set.singleton intoName) rest
+                                | OrderByClause(_, key)
+                                | DistinctByClause key
+                                | SkipClause key
+                                | TakeClause key ->
+                                    walk currentShadowed key @ loop currentShadowed rest
+                                | DistinctClause ->
+                                    loop currentShadowed rest
+                                | LeftJoinClause(binding, source, condition, intoName) ->
+                                    let joinShadowed =
+                                        Set.union currentShadowed (collectPatternNames binding.Pattern |> Set.ofList)
+
+                                    walk currentShadowed source
+                                    @ walk joinShadowed condition
+                                    @ loop (Set.add intoName currentShadowed) rest
+
+                        loop shadowed comprehension.Clauses
+
+                    and walkDo shadowed statements =
+                        let rec loop currentShadowed remaining =
+                            match remaining with
+                            | [] ->
+                                []
+                            | statement :: rest ->
+                                match statement with
+                                | DoLet(binding, value)
+                                | DoBind(binding, value)
+                                | DoUsing(binding, value) ->
+                                    let nextShadowed =
+                                        Set.union currentShadowed (collectPatternNames binding.Pattern |> Set.ofList)
+
+                                    walk currentShadowed value @ loop nextShadowed rest
+                                | DoLetQuestion(binding, value, failure) ->
+                                    let nextShadowed =
+                                        Set.union currentShadowed (collectPatternNames binding.Pattern |> Set.ofList)
+
+                                    let failureDiagnostics =
+                                        failure
+                                        |> Option.map (fun block ->
+                                            let failureShadowed =
+                                                Set.union currentShadowed (collectPatternNames block.ResiduePattern.Pattern |> Set.ofList)
+
+                                            walkDo failureShadowed block.Body)
+                                        |> Option.defaultValue []
+
+                                    walk currentShadowed value @ failureDiagnostics @ loop nextShadowed rest
+                                | DoVar(name, value) ->
+                                    walk currentShadowed value @ loop (Set.add name currentShadowed) rest
+                                | DoAssign(_, value)
+                                | DoDefer value
+                                | DoExpression value
+                                | DoReturn value ->
+                                    walk currentShadowed value @ loop currentShadowed rest
+                                | DoIf(condition, whenTrue, whenFalse) ->
+                                    walk currentShadowed condition
+                                    @ walkDo currentShadowed whenTrue
+                                    @ walkDo currentShadowed whenFalse
+                                    @ loop currentShadowed rest
+                                | DoWhile(condition, body) ->
+                                    walk currentShadowed condition
+                                    @ walkDo currentShadowed body
+                                    @ loop currentShadowed rest
+
+                        loop shadowed statements
+
+                    let initialShadowed =
+                        definition.Parameters
+                        |> List.map (fun parameter -> parameter.Name)
+                        |> Set.ofList
+
+                    walk initialShadowed expression
 
                 let constructorDefaultDiagnostics =
                     let topLevelNames =
@@ -22153,6 +22536,7 @@ module SurfaceElaboration =
               VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleName
               VisibleBindings = visibleBindings
               VisibleConstructors = mergeVisibleConstructors surfaceIndex moduleName
+              AmbiguousVisibleOrdinaryTerms = mergeAmbiguousVisibleOrdinaryTerms surfaceIndex moduleName
               VisibleProjections = visibleProjections
               VisibleTraits = visibleTraits
               VisibleInstances = visibleInstances surfaceIndex moduleName
@@ -22278,6 +22662,7 @@ module SurfaceElaboration =
                       VisibleRecordTypes = mergeVisibleRecordTypes surfaceIndex moduleName
                       VisibleBindings = mergeVisibleBindings surfaceIndex moduleName
                       VisibleConstructors = mergeVisibleConstructors surfaceIndex moduleName
+                      AmbiguousVisibleOrdinaryTerms = mergeAmbiguousVisibleOrdinaryTerms surfaceIndex moduleName
                       VisibleProjections = mergeVisibleProjections surfaceIndex moduleName
                       VisibleTraits = mergeVisibleTraits surfaceIndex moduleName
                       VisibleInstances = visibleInstances surfaceIndex moduleName
