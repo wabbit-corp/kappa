@@ -117,12 +117,114 @@ module internal CompilationMetadata =
             frontendModule.FilePath, importedFiles)
         |> Map.ofList
 
+    let private isGeneratedStandardRuntimeSourceFile (sourceFile: string) =
+        sourceFile.StartsWith("<std:", StringComparison.Ordinal)
+
+    let private isGeneratedHostBindingSourceFile (sourceFile: string) =
+        sourceFile.StartsWith("<host:", StringComparison.Ordinal)
+
+    let private generatedStandardBackendModules (workspace: WorkspaceCompilation) =
+        workspace.KBackendIR
+        |> List.filter (fun backendModule -> isGeneratedStandardRuntimeSourceFile backendModule.SourceFile)
+        |> List.sortBy (fun backendModule -> backendModule.SourceFile)
+
+    let private generatedHostBindingBackendModules (workspace: WorkspaceCompilation) =
+        workspace.KBackendIR
+        |> List.filter (fun backendModule -> isGeneratedHostBindingSourceFile backendModule.SourceFile)
+        |> List.sortBy (fun backendModule -> backendModule.SourceFile)
+
+    let private runtimeIntrinsicSetInputKey (workspace: WorkspaceCompilation) =
+        $"{workspace.SourceRoot}#runtime-intrinsic-set"
+
+    let private backendRuntimeSupportInputKey (workspace: WorkspaceCompilation) =
+        $"{workspace.SourceRoot}#backend-runtime-support"
+
+    let private runtimeIntrinsicSetIdentity (workspace: WorkspaceCompilation) =
+        let intrinsicSet = Stdlib.intrinsicSetForCompilationProfile workspace.Backend workspace.AllowUnsafeConsume
+
+        let setText (values: Set<string>) =
+            values |> Set.toList |> List.sort |> String.concat ","
+
+        [
+            $"identity={intrinsicSet.Identity}"
+            $"types=[{setText intrinsicSet.TypeNames}]"
+            $"traits=[{setText intrinsicSet.TraitNames}]"
+            $"preludeTerms=[{setText intrinsicSet.PreludeTermNames}]"
+            $"moduleLocalTerms=[{setText intrinsicSet.ModuleLocalTermNames}]"
+            $"runtimeTerms=[{setText intrinsicSet.RuntimeTermNames}]"
+            $"elaborationTerms=[{setText intrinsicSet.ElaborationAvailableTermNames}]"
+        ]
+        |> String.concat ";"
+
+    let private backendRuntimeSupportIdentity (workspace: WorkspaceCompilation) =
+        let ownerText owner =
+            match owner with
+            | KBackendIRGuaranteed -> "KBackendIRGuaranteed"
+            | BackendSpecificRuntime -> "BackendSpecificRuntime"
+            | DeferredRuntimeObligation -> "DeferredRuntimeObligation"
+
+        let runtimeObligations =
+            portableRuntimeObligations workspace
+            |> List.map (fun obligation -> $"{obligation.Name}:{ownerText obligation.Owner}")
+            |> List.sort
+            |> String.concat ","
+
+        let targetCheckpoints =
+            targetCheckpointNames workspace |> List.sort |> String.concat ","
+
+        [
+            $"backend={workspace.BackendProfile}"
+            $"deployment={workspace.DeploymentMode}"
+            $"targets=[{targetCheckpoints}]"
+            $"runtimeObligations=[{runtimeObligations}]"
+        ]
+        |> String.concat ";"
+
     let querySketch (workspace: WorkspaceCompilation) =
         let documents =
             workspace.KFrontIR
             |> List.sortBy (fun document -> document.FilePath)
 
         let importedFilesByFile = importedFrontendFilesByFile workspace
+        let runtimeIntrinsicSetQuery =
+            queryRecord
+                workspace
+                ResolveRuntimeIntrinsicSetQuery
+                (runtimeIntrinsicSetInputKey workspace)
+                "runtime-intrinsic-set"
+                None
+                []
+
+        let backendRuntimeSupportQuery =
+            queryRecord
+                workspace
+                ResolveBackendRuntimeSupportQuery
+                (backendRuntimeSupportInputKey workspace)
+                "backend-runtime-support"
+                None
+                [ runtimeIntrinsicSetQuery.Id ]
+
+        let standardRuntimeModuleQueries =
+            generatedStandardBackendModules workspace
+            |> List.map (fun backendModule ->
+                queryRecord
+                    workspace
+                    MaterializeGeneratedStandardModuleQuery
+                    backendModule.SourceFile
+                    $"generated-standard-runtime-module:{backendModule.Name}"
+                    None
+                    [ runtimeIntrinsicSetQuery.Id; backendRuntimeSupportQuery.Id ])
+
+        let hostBindingModuleQueries =
+            generatedHostBindingBackendModules workspace
+            |> List.map (fun backendModule ->
+                queryRecord
+                    workspace
+                    MaterializeGeneratedHostBindingModuleQuery
+                    backendModule.SourceFile
+                    $"generated-host-binding-module:{backendModule.Name}"
+                    None
+                    [ runtimeIntrinsicSetQuery.Id; backendRuntimeSupportQuery.Id ])
 
         let importedInterfaceQueryIds inputKey =
             importedFilesByFile
@@ -213,13 +315,23 @@ module internal CompilationMetadata =
                     queryRecord workspace LowerKRuntimeIRQuery inputKey "KRuntimeIR" None [ core.Id ]
 
                 let backend =
-                    queryRecord workspace LowerKBackendIRQuery inputKey "KBackendIR" None [ runtime.Id ]
+                    queryRecord
+                        workspace
+                        LowerKBackendIRQuery
+                        inputKey
+                        "KBackendIR"
+                        None
+                        [ runtime.Id; runtimeIntrinsicSetQuery.Id; backendRuntimeSupportQuery.Id ]
 
                 [ parse; raw ] @ phaseQueries @ [ interfaceQuery; diagnostics; core; runtime; backend ])
 
         let backendDependencies =
             documentQueries
             |> List.filter (fun query -> query.QueryKind = LowerKBackendIRQuery)
+            |> List.map (fun query -> query.Id)
+
+        let generatedRuntimeDependencies =
+            standardRuntimeModuleQueries @ hostBindingModuleQueries
             |> List.map (fun query -> query.Id)
 
         let targetQueries =
@@ -231,9 +343,15 @@ module internal CompilationMetadata =
                     workspace.SourceRoot
                     checkpoint
                     None
-                    backendDependencies)
+                    (backendDependencies
+                     @ generatedRuntimeDependencies
+                     @ [ runtimeIntrinsicSetQuery.Id; backendRuntimeSupportQuery.Id ]))
 
-        documentQueries @ targetQueries
+        [ runtimeIntrinsicSetQuery; backendRuntimeSupportQuery ]
+        @ standardRuntimeModuleQueries
+        @ hostBindingModuleQueries
+        @ documentQueries
+        @ targetQueries
 
     let private fingerprintId (workspace: WorkspaceCompilation) fingerprintKind inputKey =
         $"{CompilerFingerprintKind.toPortableName fingerprintKind}:{metadataIdScope workspace}:input={inputKey}"
@@ -492,6 +610,9 @@ module internal CompilationMetadata =
 
     let compilerFingerprints (workspace: WorkspaceCompilation) =
         let importedFilesByFile = importedFrontendFilesByFile workspace
+        let runtimeIntrinsicSetFingerprintId = fingerprintId workspace RuntimeIntrinsicSetFingerprint (runtimeIntrinsicSetInputKey workspace)
+        let backendRuntimeSupportFingerprintId =
+            fingerprintId workspace BackendRuntimeSupportFingerprint (backendRuntimeSupportInputKey workspace)
 
         let importedInterfaceFingerprintIds filePath =
             importedFilesByFile
@@ -523,6 +644,22 @@ module internal CompilationMetadata =
             sourceFingerprints
             |> List.map (fun fingerprint -> fingerprint.InputKey, fingerprint)
             |> Map.ofList
+
+        let runtimeIntrinsicSetFingerprint =
+            fingerprintRecord
+                workspace
+                RuntimeIntrinsicSetFingerprint
+                (runtimeIntrinsicSetInputKey workspace)
+                (runtimeIntrinsicSetIdentity workspace)
+                []
+
+        let backendRuntimeSupportFingerprint =
+            fingerprintRecord
+                workspace
+                BackendRuntimeSupportFingerprint
+                (backendRuntimeSupportInputKey workspace)
+                (backendRuntimeSupportIdentity workspace)
+                [ runtimeIntrinsicSetFingerprint.Id ]
 
         let declarationFingerprints =
             workspace.KFrontIR
@@ -622,9 +759,38 @@ module internal CompilationMetadata =
                     BackendFingerprint
                     backendModule.SourceFile
                     (backendFingerprintIdentity workspace backendModule)
-                    (interfaceDependency :: bodyDependencies @ importDependencies))
+                    (interfaceDependency
+                     :: bodyDependencies
+                     @ importDependencies
+                     @ [ runtimeIntrinsicSetFingerprintId; backendRuntimeSupportFingerprintId ]))
 
-        sourceFingerprints @ declarationFingerprints @ interfaceFingerprints @ backendFingerprints
+        let standardRuntimeModuleFingerprints =
+            generatedStandardBackendModules workspace
+            |> List.map (fun backendModule ->
+                fingerprintRecord
+                    workspace
+                    GeneratedStandardRuntimeModuleFingerprint
+                    backendModule.SourceFile
+                    (backendFingerprintIdentity workspace backendModule)
+                    [ runtimeIntrinsicSetFingerprintId; backendRuntimeSupportFingerprintId ])
+
+        let hostBindingModuleFingerprints =
+            generatedHostBindingBackendModules workspace
+            |> List.map (fun backendModule ->
+                fingerprintRecord
+                    workspace
+                    GeneratedHostBindingModuleFingerprint
+                    backendModule.SourceFile
+                    (backendFingerprintIdentity workspace backendModule)
+                    [ runtimeIntrinsicSetFingerprintId; backendRuntimeSupportFingerprintId ])
+
+        sourceFingerprints
+        @ [ runtimeIntrinsicSetFingerprint; backendRuntimeSupportFingerprint ]
+        @ declarationFingerprints
+        @ interfaceFingerprints
+        @ backendFingerprints
+        @ standardRuntimeModuleFingerprints
+        @ hostBindingModuleFingerprints
 
     let private unitId (workspace: WorkspaceCompilation) unitKind inputKey =
         $"{IncrementalUnitKind.toPortableName unitKind}:{metadataIdScope workspace}:input={inputKey}"
@@ -651,6 +817,11 @@ module internal CompilationMetadata =
     let incrementalUnits (workspace: WorkspaceCompilation) =
         let importedFilesByFile = importedFrontendFilesByFile workspace
         let fingerprints = compilerFingerprints workspace
+        let runtimeIntrinsicSetFingerprintId =
+            fingerprintId workspace RuntimeIntrinsicSetFingerprint (runtimeIntrinsicSetInputKey workspace)
+
+        let backendRuntimeSupportFingerprintId =
+            fingerprintId workspace BackendRuntimeSupportFingerprint (backendRuntimeSupportInputKey workspace)
 
         let fingerprintById =
             fingerprints
@@ -659,6 +830,12 @@ module internal CompilationMetadata =
 
         let fingerprintIdFor fingerprintKind inputKey =
             fingerprintId workspace fingerprintKind inputKey
+
+        let runtimeIntrinsicSetUnitId =
+            unitId workspace RuntimeIntrinsicSetUnit (runtimeIntrinsicSetInputKey workspace)
+
+        let backendRuntimeSupportUnitId =
+            unitId workspace BackendRuntimeSupportUnit (backendRuntimeSupportInputKey workspace)
 
         let importedInterfaceFingerprintIds filePath =
             importedFilesByFile
@@ -689,6 +866,24 @@ module internal CompilationMetadata =
 
                 inputKey, unit)
             |> Map.ofList
+
+        let runtimeIntrinsicSetUnit =
+            incrementalUnit
+                workspace
+                RuntimeIntrinsicSetUnit
+                (runtimeIntrinsicSetInputKey workspace)
+                (Some "runtime-intrinsic-set")
+                [ runtimeIntrinsicSetFingerprintId ]
+                []
+
+        let backendRuntimeSupportUnit =
+            incrementalUnit
+                workspace
+                BackendRuntimeSupportUnit
+                (backendRuntimeSupportInputKey workspace)
+                (Some "backend-runtime-support")
+                [ backendRuntimeSupportFingerprintId ]
+                [ runtimeIntrinsicSetUnitId ]
 
         let importSurfaceUnits =
             workspace.KFrontIR
@@ -801,6 +996,28 @@ module internal CompilationMetadata =
             |> List.map (fun unit -> unit.InputKey, unit)
             |> Map.ofList
 
+        let standardRuntimeModuleUnits =
+            generatedStandardBackendModules workspace
+            |> List.map (fun backendModule ->
+                incrementalUnit
+                    workspace
+                    GeneratedStandardRuntimeModuleUnit
+                    backendModule.SourceFile
+                    (Some $"generated-standard-runtime-module:{backendModule.Name}")
+                    [ fingerprintIdFor GeneratedStandardRuntimeModuleFingerprint backendModule.SourceFile ]
+                    [ runtimeIntrinsicSetUnitId; backendRuntimeSupportUnitId ])
+
+        let hostBindingModuleUnits =
+            generatedHostBindingBackendModules workspace
+            |> List.map (fun backendModule ->
+                incrementalUnit
+                    workspace
+                    GeneratedHostBindingModuleUnit
+                    backendModule.SourceFile
+                    (Some $"generated-host-binding-module:{backendModule.Name}")
+                    [ fingerprintIdFor GeneratedHostBindingModuleFingerprint backendModule.SourceFile ]
+                    [ runtimeIntrinsicSetUnitId; backendRuntimeSupportUnitId ])
+
         let kBackendUnits =
             workspace.KBackendIR
             |> List.filter (fun backendModule -> kCoreUnitByFile.ContainsKey(backendModule.SourceFile))
@@ -813,9 +1030,14 @@ module internal CompilationMetadata =
                     KBackendIRModuleUnit
                     backendModule.SourceFile
                     (Some "KBackendIR")
-                    ([ fingerprintIdFor BackendFingerprint backendModule.SourceFile ] @ importFingerprintIds
+                    ([ fingerprintIdFor BackendFingerprint backendModule.SourceFile
+                       runtimeIntrinsicSetFingerprintId
+                       backendRuntimeSupportFingerprintId ]
+                     @ importFingerprintIds
                      |> List.distinct)
-                    [ kCoreUnitByFile[backendModule.SourceFile].Id ])
+                    [ kCoreUnitByFile[backendModule.SourceFile].Id
+                      runtimeIntrinsicSetUnitId
+                      backendRuntimeSupportUnitId ])
 
         let kBackendUnitIds =
             kBackendUnits
@@ -825,6 +1047,17 @@ module internal CompilationMetadata =
             fingerprints
             |> List.filter (fun fingerprint -> fingerprint.FingerprintKind = BackendFingerprint)
             |> List.map (fun fingerprint -> fingerprint.Id)
+
+        let generatedRuntimeFingerprintIds =
+            fingerprints
+            |> List.filter (fun fingerprint ->
+                fingerprint.FingerprintKind = GeneratedStandardRuntimeModuleFingerprint
+                || fingerprint.FingerprintKind = GeneratedHostBindingModuleFingerprint)
+            |> List.map (fun fingerprint -> fingerprint.Id)
+
+        let generatedRuntimeUnitIds =
+            standardRuntimeModuleUnits @ hostBindingModuleUnits
+            |> List.map (fun unit -> unit.Id)
 
         let targetUnits =
             targetCheckpointNames workspace
@@ -836,8 +1069,12 @@ module internal CompilationMetadata =
                     TargetLoweringUnit
                     inputKey
                     (Some checkpoint)
-                    backendFingerprintIds
-                    kBackendUnitIds)
+                    (backendFingerprintIds
+                     @ generatedRuntimeFingerprintIds
+                     @ [ runtimeIntrinsicSetFingerprintId; backendRuntimeSupportFingerprintId ])
+                    (kBackendUnitIds
+                     @ generatedRuntimeUnitIds
+                     @ [ runtimeIntrinsicSetUnitId; backendRuntimeSupportUnitId ]))
 
         let units =
             sourceUnitByFile
@@ -850,6 +1087,9 @@ module internal CompilationMetadata =
             @ declarationUnits
             @ moduleInterfaceUnits
             @ kCoreUnits
+            @ [ runtimeIntrinsicSetUnit; backendRuntimeSupportUnit ]
+            @ standardRuntimeModuleUnits
+            @ hostBindingModuleUnits
             @ kBackendUnits
             @ targetUnits
             |> List.collect (fun unit -> unit.FingerprintIds)
@@ -863,5 +1103,8 @@ module internal CompilationMetadata =
         @ declarationUnits
         @ moduleInterfaceUnits
         @ kCoreUnits
+        @ [ runtimeIntrinsicSetUnit; backendRuntimeSupportUnit ]
+        @ standardRuntimeModuleUnits
+        @ hostBindingModuleUnits
         @ kBackendUnits
         @ targetUnits

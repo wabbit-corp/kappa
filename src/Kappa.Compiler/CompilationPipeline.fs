@@ -166,6 +166,10 @@ type QueryKind =
     | AdvanceKFrontIRPhaseQuery
     | EmitInterfaceQuery
     | ComputeDiagnosticsQuery
+    | ResolveRuntimeIntrinsicSetQuery
+    | ResolveBackendRuntimeSupportQuery
+    | MaterializeGeneratedStandardModuleQuery
+    | MaterializeGeneratedHostBindingModuleQuery
     | LowerKCoreQuery
     | LowerKRuntimeIRQuery
     | LowerKBackendIRQuery
@@ -179,6 +183,10 @@ module QueryKind =
         | AdvanceKFrontIRPhaseQuery -> "advanceKFrontIRPhase"
         | EmitInterfaceQuery -> "emitInterface"
         | ComputeDiagnosticsQuery -> "computeDiagnostics"
+        | ResolveRuntimeIntrinsicSetQuery -> "resolveRuntimeIntrinsicSet"
+        | ResolveBackendRuntimeSupportQuery -> "resolveBackendRuntimeSupport"
+        | MaterializeGeneratedStandardModuleQuery -> "materializeGeneratedStandardModule"
+        | MaterializeGeneratedHostBindingModuleQuery -> "materializeGeneratedHostBindingModule"
         | LowerKCoreQuery -> "lowerKCore"
         | LowerKRuntimeIRQuery -> "lowerKRuntimeIR"
         | LowerKBackendIRQuery -> "lowerKBackendIR"
@@ -211,6 +219,10 @@ type CompilerFingerprintKind =
     | InterfaceFingerprint
     | BodyFingerprint
     | BackendFingerprint
+    | GeneratedStandardRuntimeModuleFingerprint
+    | GeneratedHostBindingModuleFingerprint
+    | RuntimeIntrinsicSetFingerprint
+    | BackendRuntimeSupportFingerprint
 
 module CompilerFingerprintKind =
     let toPortableName fingerprintKind =
@@ -220,6 +232,10 @@ module CompilerFingerprintKind =
         | InterfaceFingerprint -> "interface"
         | BodyFingerprint -> "body"
         | BackendFingerprint -> "backend"
+        | GeneratedStandardRuntimeModuleFingerprint -> "generated-standard-runtime-module"
+        | GeneratedHostBindingModuleFingerprint -> "generated-host-binding-module"
+        | RuntimeIntrinsicSetFingerprint -> "runtime-intrinsic-set"
+        | BackendRuntimeSupportFingerprint -> "backend-runtime-support"
 
 type CompilerFingerprint =
     { Id: string
@@ -241,6 +257,10 @@ type IncrementalUnitKind =
     | ModuleInterfaceUnit
     | KCoreModuleUnit
     | KBackendIRModuleUnit
+    | GeneratedStandardRuntimeModuleUnit
+    | GeneratedHostBindingModuleUnit
+    | RuntimeIntrinsicSetUnit
+    | BackendRuntimeSupportUnit
     | TargetLoweringUnit
 
 module IncrementalUnitKind =
@@ -254,6 +274,10 @@ module IncrementalUnitKind =
         | ModuleInterfaceUnit -> "module-interface"
         | KCoreModuleUnit -> "KCore-module"
         | KBackendIRModuleUnit -> "KBackendIR-module"
+        | GeneratedStandardRuntimeModuleUnit -> "generated-standard-runtime-module"
+        | GeneratedHostBindingModuleUnit -> "generated-host-binding-module"
+        | RuntimeIntrinsicSetUnit -> "runtime-intrinsic-set"
+        | BackendRuntimeSupportUnit -> "backend-runtime-support"
         | TargetLoweringUnit -> "target-lowering"
 
 type IncrementalUnit =

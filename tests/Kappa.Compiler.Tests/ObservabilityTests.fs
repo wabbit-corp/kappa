@@ -539,6 +539,135 @@ let ``compiler fingerprints and incremental units expose dependency inputs`` () 
     )
 
 [<Fact>]
+let ``observability metadata models generated runtime contributors explicitly`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-generated-runtime-contributors-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "import std.unicode.*"
+                    "import host.dotnet.Kappa.Compiler.TestHost.Sample.(term Create, term Echo)"
+                    "result : String"
+                    "let result ="
+                    "    let value = Create \"ok\""
+                    "    Echo value ()"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected generated runtime contributors to compile, got %A" workspace.Diagnostics)
+
+    let queries = Compilation.querySketch workspace
+    Assert.Contains(queries, fun query -> query.QueryKind = ResolveRuntimeIntrinsicSetQuery)
+    Assert.Contains(queries, fun query -> query.QueryKind = ResolveBackendRuntimeSupportQuery)
+    Assert.Contains(queries, fun query -> query.QueryKind = MaterializeGeneratedStandardModuleQuery)
+    Assert.Contains(queries, fun query -> query.QueryKind = MaterializeGeneratedHostBindingModuleQuery)
+
+    let runtimeIntrinsicQuery =
+        queries |> List.find (fun query -> query.QueryKind = ResolveRuntimeIntrinsicSetQuery)
+
+    let backendRuntimeSupportQuery =
+        queries |> List.find (fun query -> query.QueryKind = ResolveBackendRuntimeSupportQuery)
+
+    let unicodeRuntimeQuery =
+        queries
+        |> List.find (fun query ->
+            query.QueryKind = MaterializeGeneratedStandardModuleQuery
+            && String.Equals(query.InputKey, "<std:std.unicode>", StringComparison.Ordinal))
+
+    let hostRuntimeQuery =
+        queries
+        |> List.find (fun query ->
+            query.QueryKind = MaterializeGeneratedHostBindingModuleQuery
+            && String.Equals(query.InputKey, "<host:host.dotnet.Kappa.Compiler.TestHost.Sample>", StringComparison.Ordinal))
+
+    Assert.Contains(runtimeIntrinsicQuery.Id, unicodeRuntimeQuery.DependencyIds)
+    Assert.Contains(backendRuntimeSupportQuery.Id, unicodeRuntimeQuery.DependencyIds)
+    Assert.Contains(backendRuntimeSupportQuery.Id, hostRuntimeQuery.DependencyIds)
+
+    let targetQuery =
+        queries |> List.find (fun query -> query.QueryKind = LowerTargetQuery && query.OutputCheckpoint = "dotnet.clr")
+
+    Assert.Contains(runtimeIntrinsicQuery.Id, targetQuery.DependencyIds)
+    Assert.Contains(backendRuntimeSupportQuery.Id, targetQuery.DependencyIds)
+    Assert.Contains(unicodeRuntimeQuery.Id, targetQuery.DependencyIds)
+    Assert.Contains(hostRuntimeQuery.Id, targetQuery.DependencyIds)
+
+    let fingerprints = Compilation.compilerFingerprints workspace
+    let fingerprintKinds = fingerprints |> List.map (fun fingerprint -> fingerprint.FingerprintKind)
+    Assert.Contains(GeneratedStandardRuntimeModuleFingerprint, fingerprintKinds)
+    Assert.Contains(GeneratedHostBindingModuleFingerprint, fingerprintKinds)
+    Assert.Contains(RuntimeIntrinsicSetFingerprint, fingerprintKinds)
+    Assert.Contains(BackendRuntimeSupportFingerprint, fingerprintKinds)
+
+    let runtimeIntrinsicFingerprint =
+        fingerprints |> List.find (fun fingerprint -> fingerprint.FingerprintKind = RuntimeIntrinsicSetFingerprint)
+
+    let backendRuntimeSupportFingerprint =
+        fingerprints |> List.find (fun fingerprint -> fingerprint.FingerprintKind = BackendRuntimeSupportFingerprint)
+
+    let unicodeRuntimeFingerprint =
+        fingerprints
+        |> List.find (fun fingerprint ->
+            fingerprint.FingerprintKind = GeneratedStandardRuntimeModuleFingerprint
+            && String.Equals(fingerprint.InputKey, "<std:std.unicode>", StringComparison.Ordinal))
+
+    let hostRuntimeFingerprint =
+        fingerprints
+        |> List.find (fun fingerprint ->
+            fingerprint.FingerprintKind = GeneratedHostBindingModuleFingerprint
+            && String.Equals(fingerprint.InputKey, "<host:host.dotnet.Kappa.Compiler.TestHost.Sample>", StringComparison.Ordinal))
+
+    Assert.Contains(runtimeIntrinsicFingerprint.Id, unicodeRuntimeFingerprint.DependencyFingerprintIds)
+    Assert.Contains(backendRuntimeSupportFingerprint.Id, unicodeRuntimeFingerprint.DependencyFingerprintIds)
+    Assert.Contains(backendRuntimeSupportFingerprint.Id, hostRuntimeFingerprint.DependencyFingerprintIds)
+
+    let units = Compilation.incrementalUnits workspace
+    let unitKinds = units |> List.map (fun unit -> unit.UnitKind)
+    Assert.Contains(GeneratedStandardRuntimeModuleUnit, unitKinds)
+    Assert.Contains(GeneratedHostBindingModuleUnit, unitKinds)
+    Assert.Contains(RuntimeIntrinsicSetUnit, unitKinds)
+    Assert.Contains(BackendRuntimeSupportUnit, unitKinds)
+
+    let runtimeIntrinsicUnit =
+        units |> List.find (fun unit -> unit.UnitKind = RuntimeIntrinsicSetUnit)
+
+    let backendRuntimeSupportUnit =
+        units |> List.find (fun unit -> unit.UnitKind = BackendRuntimeSupportUnit)
+
+    let unicodeRuntimeUnit =
+        units
+        |> List.find (fun unit ->
+            unit.UnitKind = GeneratedStandardRuntimeModuleUnit
+            && String.Equals(unit.InputKey, "<std:std.unicode>", StringComparison.Ordinal))
+
+    let hostRuntimeUnit =
+        units
+        |> List.find (fun unit ->
+            unit.UnitKind = GeneratedHostBindingModuleUnit
+            && String.Equals(unit.InputKey, "<host:host.dotnet.Kappa.Compiler.TestHost.Sample>", StringComparison.Ordinal))
+
+    Assert.Contains(runtimeIntrinsicUnit.Id, unicodeRuntimeUnit.DependencyUnitIds)
+    Assert.Contains(backendRuntimeSupportUnit.Id, unicodeRuntimeUnit.DependencyUnitIds)
+    Assert.Contains(backendRuntimeSupportUnit.Id, hostRuntimeUnit.DependencyUnitIds)
+
+    let targetUnit =
+        units
+        |> List.find (fun unit -> unit.UnitKind = TargetLoweringUnit && unit.OutputCheckpoint = Some "dotnet.clr")
+
+    Assert.Contains(runtimeIntrinsicFingerprint.Id, targetUnit.FingerprintIds)
+    Assert.Contains(backendRuntimeSupportFingerprint.Id, targetUnit.FingerprintIds)
+    Assert.Contains(unicodeRuntimeFingerprint.Id, targetUnit.FingerprintIds)
+    Assert.Contains(hostRuntimeFingerprint.Id, targetUnit.FingerprintIds)
+    Assert.Contains(runtimeIntrinsicUnit.Id, targetUnit.DependencyUnitIds)
+    Assert.Contains(backendRuntimeSupportUnit.Id, targetUnit.DependencyUnitIds)
+    Assert.Contains(unicodeRuntimeUnit.Id, targetUnit.DependencyUnitIds)
+    Assert.Contains(hostRuntimeUnit.Id, targetUnit.DependencyUnitIds)
+
+[<Fact>]
 let ``source fingerprints change when source text changes with identical path length line count and module name`` () =
     let workspace41 =
         compileInMemoryWorkspaceWithBackend

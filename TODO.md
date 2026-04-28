@@ -580,11 +580,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
 
 ## 11A. Observability, Incrementality, and Checkpoint Metadata
 
-- `[High] Model generated standard modules, host-binding modules, runtime intrinsic sets, and backend runtime support as explicit incremental dependencies.`
-  - `KRuntimeIR` includes generated host-binding and standard modules, but backend fingerprints/units/target dependencies currently filter through user-module source files and can omit these generated contributors.
-  - Add explicit units/fingerprints for standard runtime modules, host-binding modules, runtime intrinsic sets, and backend runtime support, then thread them into KBackendIR and target-lowering dependencies.
-  - Sources: `reviews/observability1.md`.
-
 - `[High] Replace the current synthetic pipeline trace with actual execution tracing, or rename it honestly.`
   - The current pipeline trace is reconstructed after compilation from the final document list and target list, and it does not reflect real execution ordering, skipped work, lazy queries, failures, or reuse.
   - `Reuse` exists as a trace event but is not actually emitted.
