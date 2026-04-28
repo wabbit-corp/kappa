@@ -27,10 +27,10 @@ module Backend =
             |> Array.toList
 
         let tryMatchBinding moduleName bindingName =
-            workspace.KBackendIR
+            workspace.ClrAssemblyIR
             |> List.tryFind (fun moduleDump -> String.Equals(moduleDump.Name, moduleName, StringComparison.Ordinal))
             |> Option.bind (fun moduleDump ->
-                moduleDump.Functions
+                moduleDump.Bindings
                 |> List.tryFind (fun binding ->
                     String.Equals(binding.Name, bindingName, StringComparison.Ordinal)
                     && not binding.Intrinsic
@@ -42,9 +42,9 @@ module Backend =
             Result.Error "Expected a binding name to run."
         | [ bindingName ] ->
             let matches =
-                workspace.KBackendIR
+                workspace.ClrAssemblyIR
                 |> List.choose (fun moduleDump ->
-                    moduleDump.Functions
+                    moduleDump.Bindings
                     |> List.tryFind (fun binding ->
                         String.Equals(binding.Name, bindingName, StringComparison.Ordinal)
                         && not binding.Intrinsic

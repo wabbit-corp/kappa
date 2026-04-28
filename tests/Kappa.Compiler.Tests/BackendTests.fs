@@ -159,6 +159,79 @@ let ``effectful dotnet backend execution does not depend on KCore or KRuntimeIR`
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
+let ``dotnet backend resolves entrypoints from the emitted CLR model`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-dotnet-entrypoint-clr-model-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let result = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let driftedBackendIR =
+        workspace.KBackendIR
+        |> List.map (fun moduleDump ->
+            if moduleDump.Name = "main" then
+                { moduleDump with
+                    EntryPoints =
+                        moduleDump.EntryPoints
+                        |> List.map (fun entryPointName -> if entryPointName = "result" then "staleResult" else entryPointName)
+                    Functions =
+                        moduleDump.Functions
+                        |> List.map (fun binding ->
+                            if binding.Name = "result" then
+                                { binding with
+                                    Name = "staleResult"
+                                    Exported = binding.Exported
+                                    EntryPoint = binding.EntryPoint }
+                            else
+                                binding) }
+            else
+                moduleDump)
+
+    let outputDirectory = createScratchDirectory "dotnet-entrypoint-clr-model"
+
+    let artifact =
+        match Backend.emitDotNetArtifact { workspace with KBackendIR = driftedBackendIR } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    let runResult =
+        runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
+
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("42", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
+let ``dotnet backend rejects entrypoints absent from the emitted CLR model`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-dotnet-entrypoint-clr-missing-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let result = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "dotnet-entrypoint-clr-missing"
+
+    match Backend.emitDotNetArtifact { workspace with ClrAssemblyIR = [] } "main.result" outputDirectory DotNetDeployment.Managed with
+    | Result.Ok artifact ->
+        failwithf "Expected dotnet entrypoint resolution from ClrAssemblyIR to fail, but emitted '%s'." artifact.GeneratedFilePath
+    | Result.Error message ->
+        Assert.Contains("dotnet requires a zero-argument binding named 'result' in module 'main'.", message, StringComparison.Ordinal)
+
+[<Fact>]
 let ``cli can run the managed dotnet backend`` () =
     let workspaceRoot = createScratchDirectory "cli-dotnet-workspace"
 

@@ -594,11 +594,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Use async/event-based process stream collection.
   - Sources: `reviews/dotnet1.md`.
 
-- `[Low-Medium] Resolve entrypoints from the actually emitted CLR model, or assert their mapping from KBackendIR to ClrAssemblyIR.`
-  - Current entrypoint resolution uses `workspace.KBackendIR` while emission uses `workspace.ClrAssemblyIR`.
-  - This is probably fine when kept in lockstep, but it is a cheap place to add validation rather than relying on a silent invariant.
-  - Sources: `reviews/dotnet1.md`.
-
 ## 11. Target Backends: Zig
 
 - `[High] Make Zig arithmetic and comparisons representation-aware instead of always routing through integer helpers.`
