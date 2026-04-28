@@ -3737,6 +3737,52 @@ let ``backend verification accepts recursive list matches lowered through constr
         failwithf "Unexpected recursive list backend lowering: %A" other
 
 [<Fact>]
+let ``backend lowering preserves constructor identity on the right hand side of is`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-backend-is-constructor-root"
+            "zig"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "data Payload : Type ="
+                    "    Box Int"
+                    "    NatBox Int"
+                    "let result = if Box 42 is Box then 42 else 0"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.Empty(Compilation.verifyCheckpoint workspace "KBackendIR")
+
+    let backendModule =
+        workspace.KBackendIR
+        |> List.find (fun moduleDump -> moduleDump.Name = "main")
+
+    let resultBinding =
+        backendModule.Functions
+        |> List.find (fun binding -> binding.Name = "result")
+
+    match resultBinding.Body with
+    | Some(
+        BackendIfThenElse(
+            BackendCall(
+                BackendName(BackendIntrinsicName(_, "is", Some BackendRepBoolean)),
+                [ BackendConstructData(_, "Payload", "Box", _, _, _)
+                  BackendName(BackendConstructorName(_, "Payload", "Box", _, _, _)) ],
+                _,
+                BackendRepBoolean
+            ),
+            BackendLiteral(LiteralValue.Integer 42L, BackendRepInt64),
+            BackendLiteral(LiteralValue.Integer 0L, BackendRepInt64),
+            BackendRepInt64
+        )
+      ) -> ()
+    | other ->
+        failwithf "Unexpected constructor-test backend lowering: %A" other
+
+[<Fact>]
 let ``core and backend artifacts remain usable after source documents are discarded`` () =
     let workspace =
         compileInMemoryWorkspace

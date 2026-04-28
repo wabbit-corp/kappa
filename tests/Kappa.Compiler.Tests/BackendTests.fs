@@ -94,6 +94,38 @@ let ``dotnet backend runner copies host dotnet dependency assemblies`` () =
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
+let ``dotnet backend runs constructor tag tests`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-dotnet-is-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "data Payload : Type ="
+                    "    Box Int"
+                    "    NatBox Int"
+                    "let result = if Box 42 is Box then 42 else 0"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "dotnet-is-backend"
+
+    let artifact =
+        match Backend.emitDotNetArtifact workspace "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    let runResult =
+        runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
+
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("42", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
 let ``clr assembly ir carries durable host dotnet binding metadata`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend

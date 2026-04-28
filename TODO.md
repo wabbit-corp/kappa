@@ -609,11 +609,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - If structural equality/order on constructed data is intended, implement it in Zig. If not, reject such programs before Zig emission instead of silently diverging from interpreter semantics.
   - Sources: `reviews/zig1.md`.
 
-- `[Medium] Decide whether `is` is a real runtime operator and make Zig/backend lowering consistent.`
-  - `KBackendLowering` treats `"is"` as a boolean-producing binary operator and the interpreter implements it, but the intrinsic catalog and Zig emitter do not support it consistently.
-  - Either add `"is"` to the intrinsic catalog and implement it on the Zig path, or remove it from backend lowering.
-  - Sources: `reviews/zig1.md`.
-
 - `[Medium-High] Finish Unicode/bytes/byte/char runtime representation on the Zig path.`
   - The current representation model does not preserve the distinctions required by the spec.
   - Sources: `reviews/backend1.md`, `reviews/zig1.md`.

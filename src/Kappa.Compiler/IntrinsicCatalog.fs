@@ -64,7 +64,7 @@ module internal IntrinsicCatalog =
         Set.ofList [ "not"; "negate" ]
 
     let builtinBinaryOperatorNames =
-        Set.ofList [ "+"; "-"; "*"; "/"; "=="; "!="; "<"; "<="; ">"; ">="; "&&"; "||" ]
+        Set.ofList [ "+"; "-"; "*"; "/"; "=="; "!="; "<"; "<="; ">"; ">="; "&&"; "||"; "is" ]
 
     let shortCircuitBinaryOperatorNames =
         Set.ofList [ "&&"; "||" ]
@@ -73,7 +73,7 @@ module internal IntrinsicCatalog =
         Set.difference builtinBinaryOperatorNames shortCircuitBinaryOperatorNames
 
     let private booleanResultBinaryOperatorNames =
-        Set.ofList [ "&&"; "||"; "=="; "!="; "<"; "<="; ">"; ">=" ]
+        Set.ofList [ "&&"; "||"; "=="; "!="; "<"; "<="; ">"; ">="; "is" ]
 
     let private elaborationAvailablePreludeTermNames =
         Set.ofList

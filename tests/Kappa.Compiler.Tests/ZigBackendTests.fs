@@ -139,6 +139,36 @@ let ``cli can run the zig backend when KAPPA_ZIG_EXE is a PATH command name`` ()
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
+let ``cli can run the zig backend with constructor tag tests`` () =
+    let workspaceRoot = createScratchDirectory "cli-zig-constructor-tag-test-workspace"
+
+    writeWorkspaceFiles
+        workspaceRoot
+        [
+            "main.kp",
+            [
+                "module main"
+                "data Payload : Type ="
+                "    Box Int"
+                "    NatBox Int"
+                "let result = if Box 42 is Box then 42 else 0"
+            ]
+            |> String.concat "\n"
+        ]
+
+    let emitDirectory = createScratchDirectory "cli-zig-constructor-tag-test-emit"
+
+    let runResult =
+        runBuiltCliWithEnvironment
+            workspaceRoot
+            $"--source-root \"{workspaceRoot}\" --backend zig --emit-dir \"{emitDirectory}\" --run main.result"
+            [ "KAPPA_ZIG_EXE", ensureRepoZigExecutablePath () ]
+
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("42", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
 let ``zig backend runs constructor or patterns`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend

@@ -471,33 +471,49 @@ module internal IlDotNetBackendTyping =
                         if IntrinsicCatalog.isBuiltinBinaryOperator operatorName then
                             let builtinResult =
                                 result {
-                                    let! leftType = inferExpressionType currentModule localTypes active allowedTypeParameters None left
-                                    let! rightType = inferExpressionType currentModule localTypes active allowedTypeParameters None right
+                                    match operatorName, right with
+                                    | "is", KRuntimeName constructorName ->
+                                        let! leftType =
+                                            inferExpressionType currentModule localTypes active allowedTypeParameters None left
 
-                                    return!
-                                        match operatorName, leftType, rightType with
-                                        | ("+" | "-" | "*" | "/"), IlPrimitive IlInt64, IlPrimitive IlInt64 ->
-                                            ensureExpected (IlPrimitive IlInt64)
-                                        | ("+" | "-" | "*" | "/"), IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
-                                            ensureExpected (IlPrimitive IlFloat64)
-                                        | ("==" | "!="), IlPrimitive IlInt64, IlPrimitive IlInt64 ->
-                                            ensureExpected (IlPrimitive IlBool)
-                                        | ("==" | "!="), IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
-                                            ensureExpected (IlPrimitive IlBool)
-                                        | ("==" | "!="), IlPrimitive IlBool, IlPrimitive IlBool ->
-                                            ensureExpected (IlPrimitive IlBool)
-                                        | ("==" | "!="), IlPrimitive IlString, IlPrimitive IlString ->
-                                            ensureExpected (IlPrimitive IlBool)
-                                        | ("==" | "!="), IlPrimitive IlChar, IlPrimitive IlChar ->
-                                            ensureExpected (IlPrimitive IlBool)
-                                        | ("<" | "<=" | ">" | ">="), IlPrimitive IlInt64, IlPrimitive IlInt64 ->
-                                            ensureExpected (IlPrimitive IlBool)
-                                        | ("<" | "<=" | ">" | ">="), IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
-                                            ensureExpected (IlPrimitive IlBool)
-                                        | ("&&" | "||"), IlPrimitive IlBool, IlPrimitive IlBool ->
-                                            ensureExpected (IlPrimitive IlBool)
-                                        | _ ->
-                                            Result.Error ""
+                                        return!
+                                            match tryResolveConstructor rawModules currentModule constructorName with
+                                            | None ->
+                                                let constructorText = String.concat "." constructorName
+                                                Result.Error
+                                                    $"IL backend could not resolve constructor '{constructorText}' for operator 'is'."
+                                            | Some(_, constructorInfo) ->
+                                                unifyTypes Map.empty (constructorResultType constructorInfo) leftType
+                                                |> Result.map (fun _ -> IlPrimitive IlBool)
+                                                |> Result.bind ensureExpected
+                                    | _ ->
+                                        let! leftType = inferExpressionType currentModule localTypes active allowedTypeParameters None left
+                                        let! rightType = inferExpressionType currentModule localTypes active allowedTypeParameters None right
+
+                                        return!
+                                            match operatorName, leftType, rightType with
+                                            | ("+" | "-" | "*" | "/"), IlPrimitive IlInt64, IlPrimitive IlInt64 ->
+                                                ensureExpected (IlPrimitive IlInt64)
+                                            | ("+" | "-" | "*" | "/"), IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
+                                                ensureExpected (IlPrimitive IlFloat64)
+                                            | ("==" | "!="), IlPrimitive IlInt64, IlPrimitive IlInt64 ->
+                                                ensureExpected (IlPrimitive IlBool)
+                                            | ("==" | "!="), IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
+                                                ensureExpected (IlPrimitive IlBool)
+                                            | ("==" | "!="), IlPrimitive IlBool, IlPrimitive IlBool ->
+                                                ensureExpected (IlPrimitive IlBool)
+                                            | ("==" | "!="), IlPrimitive IlString, IlPrimitive IlString ->
+                                                ensureExpected (IlPrimitive IlBool)
+                                            | ("==" | "!="), IlPrimitive IlChar, IlPrimitive IlChar ->
+                                                ensureExpected (IlPrimitive IlBool)
+                                            | ("<" | "<=" | ">" | ">="), IlPrimitive IlInt64, IlPrimitive IlInt64 ->
+                                                ensureExpected (IlPrimitive IlBool)
+                                            | ("<" | "<=" | ">" | ">="), IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
+                                                ensureExpected (IlPrimitive IlBool)
+                                            | ("&&" | "||"), IlPrimitive IlBool, IlPrimitive IlBool ->
+                                                ensureExpected (IlPrimitive IlBool)
+                                            | _ ->
+                                                Result.Error ""
                                 }
 
                             builtinResult

@@ -514,15 +514,30 @@ module internal IlDotNetBackendEmit =
                     if IntrinsicCatalog.isBuiltinBinaryOperator operatorName then
                         let builtinResult =
                             result {
-                                let! leftType = infer left None
-                                let! rightType = infer right None
+                                match operatorName, right with
+                                | "is", KRuntimeName constructorName ->
+                                    let! leftType = infer left None
 
-                                return!
-                                    match operatorName, leftType, rightType with
-                                    | ("+" | "-" | "*" | "/"), IlPrimitive IlInt64, IlPrimitive IlInt64 ->
-                                        ensureExpected (IlPrimitive IlInt64)
-                                    | ("+" | "-" | "*" | "/"), IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
-                                        ensureExpected (IlPrimitive IlFloat64)
+                                    return!
+                                        match tryResolveConstructor modules currentModule constructorName with
+                                        | None ->
+                                            let constructorText = String.concat "." constructorName
+                                            Result.Error
+                                                $"IL backend could not resolve constructor '{constructorText}' for operator 'is'."
+                                        | Some(_, constructorInfo) ->
+                                            unifyTypes Map.empty (constructorResultType constructorInfo) leftType
+                                            |> Result.map (fun _ -> IlPrimitive IlBool)
+                                            |> Result.bind ensureExpected
+                                | _ ->
+                                    let! leftType = infer left None
+                                    let! rightType = infer right None
+
+                                    return!
+                                        match operatorName, leftType, rightType with
+                                        | ("+" | "-" | "*" | "/"), IlPrimitive IlInt64, IlPrimitive IlInt64 ->
+                                            ensureExpected (IlPrimitive IlInt64)
+                                        | ("+" | "-" | "*" | "/"), IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
+                                            ensureExpected (IlPrimitive IlFloat64)
                                         | ("==" | "!="), IlPrimitive IlInt64, IlPrimitive IlInt64 ->
                                             ensureExpected (IlPrimitive IlBool)
                                         | ("==" | "!="), IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
@@ -533,14 +548,14 @@ module internal IlDotNetBackendEmit =
                                             ensureExpected (IlPrimitive IlBool)
                                         | ("==" | "!="), IlPrimitive IlChar, IlPrimitive IlChar ->
                                             ensureExpected (IlPrimitive IlBool)
-                                    | ("<" | "<=" | ">" | ">="), IlPrimitive IlInt64, IlPrimitive IlInt64 ->
-                                        ensureExpected (IlPrimitive IlBool)
-                                    | ("<" | "<=" | ">" | ">="), IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
-                                        ensureExpected (IlPrimitive IlBool)
-                                    | ("&&" | "||"), IlPrimitive IlBool, IlPrimitive IlBool ->
-                                        ensureExpected (IlPrimitive IlBool)
-                                    | _ ->
-                                        Result.Error ""
+                                        | ("<" | "<=" | ">" | ">="), IlPrimitive IlInt64, IlPrimitive IlInt64 ->
+                                            ensureExpected (IlPrimitive IlBool)
+                                        | ("<" | "<=" | ">" | ">="), IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
+                                            ensureExpected (IlPrimitive IlBool)
+                                        | ("&&" | "||"), IlPrimitive IlBool, IlPrimitive IlBool ->
+                                            ensureExpected (IlPrimitive IlBool)
+                                        | _ ->
+                                            Result.Error ""
                             }
 
                         builtinResult
@@ -744,74 +759,102 @@ module internal IlDotNetBackendEmit =
 
         let emitBuiltinBinary operatorName left right =
             result {
-                let! leftType = inferExpressionType currentModule localTypes None left
-                let! rightType = inferExpressionType currentModule localTypes None right
-                do! emitExpression state currentModule typeParameters localValues (Some leftType) il left
-                do! emitExpression state currentModule typeParameters localValues (Some rightType) il right
+                match operatorName, right with
+                | "is", KRuntimeName constructorName ->
+                    let! leftType = inferExpressionType currentModule localTypes None left
+                    do! emitExpression state currentModule typeParameters localValues (Some leftType) il left
 
-                match operatorName, leftType, rightType with
-                | "+", IlPrimitive IlInt64, IlPrimitive IlInt64 ->
-                    il.Emit(OpCodes.Add)
-                | "-", IlPrimitive IlInt64, IlPrimitive IlInt64 ->
-                    il.Emit(OpCodes.Sub)
-                | "*", IlPrimitive IlInt64, IlPrimitive IlInt64 ->
-                    il.Emit(OpCodes.Mul)
-                | "/", IlPrimitive IlInt64, IlPrimitive IlInt64 ->
-                    il.Emit(OpCodes.Div)
-                | "+", IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
-                    il.Emit(OpCodes.Add)
-                | "-", IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
-                    il.Emit(OpCodes.Sub)
-                | "*", IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
-                    il.Emit(OpCodes.Mul)
-                | "/", IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
-                    il.Emit(OpCodes.Div)
-                | "==", IlPrimitive IlInt64, IlPrimitive IlInt64 ->
-                    emitComparisonFromCeq il false
-                | "!=", IlPrimitive IlInt64, IlPrimitive IlInt64 ->
-                    emitComparisonFromCeq il true
-                | "==", IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
-                    emitComparisonFromCeq il false
-                | "!=", IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
-                    emitComparisonFromCeq il true
-                | "==", IlPrimitive IlBool, IlPrimitive IlBool ->
-                    emitComparisonFromCeq il false
-                | "!=", IlPrimitive IlBool, IlPrimitive IlBool ->
-                    emitComparisonFromCeq il true
-                | "==", IlPrimitive IlString, IlPrimitive IlString ->
-                    emitStringEquality il false
-                | "!=", IlPrimitive IlString, IlPrimitive IlString ->
-                    emitStringEquality il true
-                | "==", IlPrimitive IlChar, IlPrimitive IlChar ->
-                    emitComparisonFromCeq il false
-                | "!=", IlPrimitive IlChar, IlPrimitive IlChar ->
-                    emitComparisonFromCeq il true
-                | "<", IlPrimitive IlInt64, IlPrimitive IlInt64 ->
-                    il.Emit(OpCodes.Clt)
-                | "<=", IlPrimitive IlInt64, IlPrimitive IlInt64 ->
-                    il.Emit(OpCodes.Cgt)
-                    il.Emit(OpCodes.Ldc_I4_0)
-                    il.Emit(OpCodes.Ceq)
-                | ">", IlPrimitive IlInt64, IlPrimitive IlInt64 ->
-                    il.Emit(OpCodes.Cgt)
-                | ">=", IlPrimitive IlInt64, IlPrimitive IlInt64 ->
-                    il.Emit(OpCodes.Clt)
-                    il.Emit(OpCodes.Ldc_I4_0)
-                    il.Emit(OpCodes.Ceq)
-                | "<", IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
-                    il.Emit(OpCodes.Clt)
-                | "<=", IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
-                    il.Emit(OpCodes.Cgt)
-                    il.Emit(OpCodes.Ldc_I4_0)
-                    il.Emit(OpCodes.Ceq)
-                | ">", IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
-                    il.Emit(OpCodes.Cgt)
-                | ">=", IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
-                    il.Emit(OpCodes.Clt)
-                    il.Emit(OpCodes.Ldc_I4_0)
-                    il.Emit(OpCodes.Ceq)
+                    return!
+                        match tryResolveConstructor state.Environment.Modules currentModule constructorName with
+                        | None ->
+                            let constructorText = String.concat "." constructorName
+                            Result.Error
+                                $"IL backend could not resolve constructor '{constructorText}' for operator 'is'."
+                        | Some(_, constructorInfo) ->
+                            unifyTypes Map.empty (constructorResultType constructorInfo) leftType
+                            |> Result.bind (fun substitution ->
+                                let constructorType, _, _ =
+                                    resolveConstructorTypeAndMembers state typeParameters substitution constructorInfo
+
+                                let successLabel = il.DefineLabel()
+                                let doneLabel = il.DefineLabel()
+                                il.Emit(OpCodes.Isinst, constructorType)
+                                il.Emit(OpCodes.Brtrue, successLabel)
+                                il.Emit(OpCodes.Ldc_I4_0)
+                                il.Emit(OpCodes.Br, doneLabel)
+                                il.MarkLabel(successLabel)
+                                il.Emit(OpCodes.Ldc_I4_1)
+                                il.MarkLabel(doneLabel)
+                                Result.Ok())
                 | _ ->
-                    return! Result.Error $"IL backend does not support '{operatorName}' for {formatIlType leftType} and {formatIlType rightType}."
+                    let! leftType = inferExpressionType currentModule localTypes None left
+                    let! rightType = inferExpressionType currentModule localTypes None right
+                    do! emitExpression state currentModule typeParameters localValues (Some leftType) il left
+                    do! emitExpression state currentModule typeParameters localValues (Some rightType) il right
+
+                    match operatorName, leftType, rightType with
+                    | "+", IlPrimitive IlInt64, IlPrimitive IlInt64 ->
+                        il.Emit(OpCodes.Add)
+                    | "-", IlPrimitive IlInt64, IlPrimitive IlInt64 ->
+                        il.Emit(OpCodes.Sub)
+                    | "*", IlPrimitive IlInt64, IlPrimitive IlInt64 ->
+                        il.Emit(OpCodes.Mul)
+                    | "/", IlPrimitive IlInt64, IlPrimitive IlInt64 ->
+                        il.Emit(OpCodes.Div)
+                    | "+", IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
+                        il.Emit(OpCodes.Add)
+                    | "-", IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
+                        il.Emit(OpCodes.Sub)
+                    | "*", IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
+                        il.Emit(OpCodes.Mul)
+                    | "/", IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
+                        il.Emit(OpCodes.Div)
+                    | "==", IlPrimitive IlInt64, IlPrimitive IlInt64 ->
+                        emitComparisonFromCeq il false
+                    | "!=", IlPrimitive IlInt64, IlPrimitive IlInt64 ->
+                        emitComparisonFromCeq il true
+                    | "==", IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
+                        emitComparisonFromCeq il false
+                    | "!=", IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
+                        emitComparisonFromCeq il true
+                    | "==", IlPrimitive IlBool, IlPrimitive IlBool ->
+                        emitComparisonFromCeq il false
+                    | "!=", IlPrimitive IlBool, IlPrimitive IlBool ->
+                        emitComparisonFromCeq il true
+                    | "==", IlPrimitive IlString, IlPrimitive IlString ->
+                        emitStringEquality il false
+                    | "!=", IlPrimitive IlString, IlPrimitive IlString ->
+                        emitStringEquality il true
+                    | "==", IlPrimitive IlChar, IlPrimitive IlChar ->
+                        emitComparisonFromCeq il false
+                    | "!=", IlPrimitive IlChar, IlPrimitive IlChar ->
+                        emitComparisonFromCeq il true
+                    | "<", IlPrimitive IlInt64, IlPrimitive IlInt64 ->
+                        il.Emit(OpCodes.Clt)
+                    | "<=", IlPrimitive IlInt64, IlPrimitive IlInt64 ->
+                        il.Emit(OpCodes.Cgt)
+                        il.Emit(OpCodes.Ldc_I4_0)
+                        il.Emit(OpCodes.Ceq)
+                    | ">", IlPrimitive IlInt64, IlPrimitive IlInt64 ->
+                        il.Emit(OpCodes.Cgt)
+                    | ">=", IlPrimitive IlInt64, IlPrimitive IlInt64 ->
+                        il.Emit(OpCodes.Clt)
+                        il.Emit(OpCodes.Ldc_I4_0)
+                        il.Emit(OpCodes.Ceq)
+                    | "<", IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
+                        il.Emit(OpCodes.Clt)
+                    | "<=", IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
+                        il.Emit(OpCodes.Cgt)
+                        il.Emit(OpCodes.Ldc_I4_0)
+                        il.Emit(OpCodes.Ceq)
+                    | ">", IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
+                        il.Emit(OpCodes.Cgt)
+                    | ">=", IlPrimitive IlFloat64, IlPrimitive IlFloat64 ->
+                        il.Emit(OpCodes.Clt)
+                        il.Emit(OpCodes.Ldc_I4_0)
+                        il.Emit(OpCodes.Ceq)
+                    | _ ->
+                        return! Result.Error $"IL backend does not support '{operatorName}' for {formatIlType leftType} and {formatIlType rightType}."
             }
 
         let rec emitSyntheticFileHandle resultType =

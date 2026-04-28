@@ -1436,6 +1436,23 @@ module internal ZigCcBackendEmit =
         (convention: KBackendCallingConvention)
         =
         match callee with
+        | BackendName(BackendIntrinsicName(_, "is", _)) ->
+            match arguments with
+            | [ scrutinee; BackendName(BackendConstructorName(moduleName, typeName, _, tag, _, _)) ] ->
+                result {
+                    let! emittedScrutinee = emitExpression context scope scrutinee
+                    let! typeId = lookupTypeId context moduleName typeName
+                    let statements, resultValue =
+                        wrapCallResult context "is_ctor" $"kappa_box_bool(kappa_is_ctor({emittedScrutinee.ValueExpression}, {typeId}, {tag}))"
+
+                    return
+                        { Statements = emittedScrutinee.Statements @ statements
+                          ValueExpression = resultValue }
+                }
+            | [ _; _ ] ->
+                Result.Error "zig intrinsic 'is' expects a constructor name on the right-hand side."
+            | _ ->
+                Result.Error "zig intrinsic 'is' expected exactly 2 arguments."
         | BackendName(BackendGlobalBindingName(moduleName, bindingName, _)) ->
             result {
                 let! emittedArguments = emitExpressions context scope arguments

@@ -405,6 +405,86 @@ module internal KBackendLowering =
                 | None ->
                     Result.Error $"unresolved module qualifier '{SyntaxFacts.moduleNameToText qualifierSegments}'"
 
+        let resolveRuntimeConstructor currentModule segments =
+            let resolvedConstructorRepresentation resolvedName =
+                match resolvedName with
+                | BackendConstructorName(_, _, _, _, arity, representation) ->
+                    if arity = 0 then representation else backendOpaqueRepresentation (Some "Constructor")
+                | _ ->
+                    backendOpaqueRepresentation None
+
+            let tryResolveModuleConstructor (targetModule: KRuntimeModule) constructorName =
+                if targetModule.Constructors |> List.exists (fun constructorInfo -> String.Equals(constructorInfo.Name, constructorName, StringComparison.Ordinal)) then
+                    let constructorInfo = context.ConstructorInfos[targetModule.Name, constructorName]
+
+                    Some(
+                        BackendConstructorName(
+                            targetModule.Name,
+                            constructorInfo.TypeName,
+                            constructorInfo.Name,
+                            constructorInfo.Tag,
+                            constructorInfo.Arity,
+                            constructorInfo.Representation
+                        )
+                    )
+                else
+                    None
+
+            match segments with
+            | [] ->
+                Result.Error "empty runtime constructor name"
+            | [ constructorName ] ->
+                match tryResolveModuleConstructor currentModule constructorName with
+                | Some resolved ->
+                    Result.Ok(resolved, resolvedConstructorRepresentation resolved)
+                | None ->
+                    let importedMatches =
+                        currentModule.Imports
+                        |> List.choose (fun (spec: ImportSpec) ->
+                            match spec.Source with
+                            | Url _ ->
+                                None
+                            | Dotted moduleSegments ->
+                                let importedModuleName = SyntaxFacts.moduleNameToText moduleSegments
+
+                                match context.RuntimeModules |> Map.tryFind importedModuleName with
+                                | Some importedModule ->
+                                    importedModule.Constructors
+                                    |> List.tryFind (fun constructorInfo ->
+                                        String.Equals(constructorInfo.Name, constructorName, StringComparison.Ordinal)
+                                        && selectionImportsRuntimeConstructorName
+                                            spec.Selection
+                                            constructorName
+                                            constructorInfo.TypeName)
+                                    |> Option.bind (fun _ ->
+                                        tryResolveModuleConstructor importedModule constructorName
+                                        |> Option.map (fun resolved -> importedModuleName, resolved))
+                                | None ->
+                                    None)
+                        |> List.distinctBy fst
+
+                    match importedMatches with
+                    | [ _, resolved ] ->
+                        Result.Ok(resolved, resolvedConstructorRepresentation resolved)
+                    | _ :: _ :: _ ->
+                        Result.Error $"ambiguous runtime constructor name '{constructorName}'"
+                    | [] ->
+                        Result.Error $"unresolved runtime constructor name '{constructorName}'"
+            | _ ->
+                let qualifierSegments = segments |> List.take (segments.Length - 1)
+                let constructorName = List.last segments
+
+                match resolveQualifiedRuntimeModule currentModule qualifierSegments with
+                | Some targetModule ->
+                    match tryResolveModuleConstructor targetModule constructorName with
+                    | Some resolved ->
+                        Result.Ok(resolved, resolvedConstructorRepresentation resolved)
+                    | None ->
+                        let text = String.concat "." segments
+                        Result.Error $"unresolved runtime constructor name '{text}'"
+                | None ->
+                    Result.Error $"unresolved module qualifier '{SyntaxFacts.moduleNameToText qualifierSegments}'"
+
         let rec collectClosureCaptures (locals: Set<string>) (bound: Set<string>) expression =
             match expression with
             | KRuntimeLiteral _ ->
@@ -1317,6 +1397,21 @@ module internal KBackendLowering =
                                 |> Result.map (fun (loweredRight, _) ->
                                     BackendIfThenElse(loweredLeft, loweredTrue, loweredRight, BackendRepBoolean),
                                     BackendRepBoolean)))
+                    | "is" ->
+                        lowerExpression scopeLabel locals left
+                        |> Result.bind (fun (loweredLeft, leftRepresentation) ->
+                            match right with
+                            | KRuntimeName constructorSegments ->
+                                resolveRuntimeConstructor runtimeModule constructorSegments
+                                |> Result.bind (fun (resolvedConstructor, constructorRepresentation) ->
+                                    lowerNamedRuntimeCall
+                                        locals
+                                        operatorName
+                                        [ loweredLeft; BackendName resolvedConstructor ]
+                                        [ leftRepresentation; constructorRepresentation ]
+                                        BackendRepBoolean)
+                            | _ ->
+                                Result.Error "Runtime operator 'is' expects a constructor name on the right-hand side.")
                     | _ ->
                         lowerExpression scopeLabel locals left
                         |> Result.bind (fun (loweredLeft, leftRepresentation) ->
