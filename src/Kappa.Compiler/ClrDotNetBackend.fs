@@ -13,4 +13,7 @@ module internal ClrDotNetBackend =
             if not (List.isEmpty verificationDiagnostics) then
                 Result.Error $"Cannot emit malformed KBackendIR:{Environment.NewLine}{String.concat Environment.NewLine (verificationDiagnostics |> List.map (fun diagnostic -> diagnostic.Message))}"
             else
-                IlDotNetBackend.emitClrAssemblyArtifact workspace.ClrAssemblyIR outputDirectory
+                if ClrAssemblyIR.modulesUseEffectRuntime workspace.ClrAssemblyIR then
+                    IlDotNetEffectBackend.emitClrAssemblyArtifact workspace.ClrAssemblyIR outputDirectory
+                else
+                    IlDotNetBackend.emitClrAssemblyArtifact workspace.ClrAssemblyIR outputDirectory

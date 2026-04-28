@@ -7,14 +7,7 @@ module internal CompilationCheckpoints =
     let targetCheckpointNames (workspace: WorkspaceCompilation) =
         Stdlib.targetCheckpointNamesFor workspace.BackendProfile
 
-    let targetInputCheckpoint (workspace: WorkspaceCompilation) checkpoint =
-        match Stdlib.normalizeBackendProfile workspace.BackendProfile, checkpoint with
-        | "dotnet", checkpointName
-            when checkpointName = Stdlib.ClrTargetCheckpointName
-                 && KRuntimeIR.modulesUseEffectRuntime workspace.KRuntimeIR ->
-            "KRuntimeIR"
-        | _ ->
-            "KBackendIR"
+    let targetInputCheckpoint (_workspace: WorkspaceCompilation) _checkpoint = "KBackendIR"
 
     let private checkpointContract name kind inputCheckpoint requiredBySpec profileSpecific =
         { Name = name
@@ -89,54 +82,34 @@ module internal CompilationCheckpoints =
             let clrSymbol moduleName functionName =
                 $"{IlDotNetBackend.emittedModuleTypeName moduleName}.{IlDotNetBackend.emittedMethodName functionName}"
 
-            match inputCheckpoint with
-            | "KBackendIR" ->
-                let functions =
-                    workspace.KBackendIR
-                    |> List.collect (fun moduleDump ->
-                        moduleDump.Functions
-                        |> List.filter (fun functionDump -> not functionDump.Intrinsic)
-                        |> List.map (fun functionDump -> moduleDump.Name, functionDump))
+            let functions =
+                workspace.KBackendIR
+                |> List.collect (fun moduleDump ->
+                    moduleDump.Functions
+                    |> List.filter (fun functionDump -> not functionDump.Intrinsic)
+                    |> List.map (fun functionDump -> moduleDump.Name, functionDump))
 
-                let functionSymbols =
-                    functions
-                    |> List.map (fun (moduleName, functionDump) -> clrSymbol moduleName functionDump.Name)
-                    |> List.sort
+            let functionSymbols =
+                functions
+                |> List.map (fun (moduleName, functionDump) -> clrSymbol moduleName functionDump.Name)
+                |> List.sort
 
-                let entrySymbols =
-                    functions
-                    |> List.choose (fun (moduleName, functionDump) ->
-                        if functionDump.EntryPoint then
-                            Some(clrSymbol moduleName functionDump.Name)
-                        else
-                            None)
-                    |> List.sort
+            let entrySymbols =
+                functions
+                |> List.choose (fun (moduleName, functionDump) ->
+                    if functionDump.EntryPoint then
+                        Some(clrSymbol moduleName functionDump.Name)
+                    else
+                        None)
+                |> List.sort
 
-                Result.Ok
-                    { ArtifactKind = "clr-assembly"
-                      TranslationUnitName = "Kappa.Generated.dll"
-                      InputCheckpoint = inputCheckpoint
-                      EntrySymbols = entrySymbols
-                      FunctionSymbols = functionSymbols
-                      SourceText = "" }
-            | "KRuntimeIR" ->
-                let functionSymbols =
-                    workspace.KRuntimeIR
-                    |> List.collect (fun moduleDump ->
-                        moduleDump.Bindings
-                        |> List.filter (fun binding -> not binding.Intrinsic)
-                        |> List.map (fun binding -> clrSymbol moduleDump.Name binding.Name))
-                    |> List.sort
-
-                Result.Ok
-                    { ArtifactKind = "clr-assembly"
-                      TranslationUnitName = "Kappa.Generated.dll"
-                      InputCheckpoint = inputCheckpoint
-                      EntrySymbols = []
-                      FunctionSymbols = functionSymbols
-                      SourceText = "" }
-            | unexpected ->
-                Result.Error $"Unsupported CLR target input checkpoint '{unexpected}'."
+            Result.Ok
+                { ArtifactKind = "clr-assembly"
+                  TranslationUnitName = "Kappa.Generated.dll"
+                  InputCheckpoint = inputCheckpoint
+                  EntrySymbols = entrySymbols
+                  FunctionSymbols = functionSymbols
+                  SourceText = "" }
 
     let tryEmitTargetTranslationUnit (workspace: WorkspaceCompilation) checkpoint =
         match Stdlib.normalizeBackendProfile workspace.BackendProfile, checkpoint with

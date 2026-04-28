@@ -44,6 +44,14 @@ type ClrAssemblyModule =
 // Converts KRuntimeIR modules into the managed assembly model consumed by CLR lowering.
 [<RequireQualifiedAccess>]
 module ClrAssemblyIR =
+    let private bindingUsesEffectRuntime (binding: ClrAssemblyBinding) =
+        binding.Body |> Option.exists KRuntimeIR.containsEffectRuntimeConstruct
+
+    let modulesUseEffectRuntime (modules: ClrAssemblyModule list) =
+        modules
+        |> List.exists (fun moduleDump ->
+            moduleDump.Bindings |> List.exists bindingUsesEffectRuntime)
+
     let private ofRuntimeParameter (parameter: KRuntimeParameter) : ClrAssemblyParameter =
         { Name = parameter.Name
           TypeText = parameter.TypeText }

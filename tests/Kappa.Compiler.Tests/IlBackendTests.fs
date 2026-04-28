@@ -460,10 +460,10 @@ let ``il backend evaluates recursive list matches through emitted clr types`` ()
     Assert.Equal(72L, resultMethod.Invoke(null, [||]) |> unbox<int64>)
 
 [<Fact>]
-let ``il backend requires explicit ctor imports for unqualified imported constructors`` () =
+let ``il backend emits explicitly imported constructors from lowered backend state`` () =
     let workspace =
         compileInMemoryWorkspace
-            "memory-il-wildcard-constructor-root"
+            "memory-il-explicit-constructor-root"
             [
                 "foo.kp",
                 [
@@ -475,23 +475,29 @@ let ``il backend requires explicit ctor imports for unqualified imported constru
                 "main.kp",
                 [
                     "module main"
-                    "import foo.*"
-                    "let result = Box 42"
+                    "import foo.(type Box(..))"
+                    "let result ="
+                    "    match Box 42"
+                    "    case Box value -> value"
                 ]
                 |> String.concat "\n"
             ]
 
-    let outputDirectory = createScratchDirectory "il-wildcard-constructor"
+    let outputDirectory = createScratchDirectory "il-explicit-constructor"
 
-    match Backend.emitIlAssemblyArtifact workspace outputDirectory with
-    | Result.Ok artifact ->
-        failwithf "Expected wildcard-imported constructor emission to fail, but emitted '%s'." artifact.AssemblyFilePath
-    | Result.Error message ->
-        Assert.True(
-            message.Contains("unresolved runtime name 'Box'", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("resolve callee 'Box'", StringComparison.OrdinalIgnoreCase),
-            sprintf "Expected unresolved-constructor failure, got: %s" message
-        )
+    let artifact =
+        match Backend.emitIlAssemblyArtifact { workspace with Documents = []; KCore = []; KRuntimeIR = [] } outputDirectory with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    use loaded = loadManagedAssembly artifact.AssemblyFilePath
+
+    let moduleType = loaded.Assembly.GetType("Kappa.Generated.main", throwOnError = true, ignoreCase = false)
+    let resultMethod = moduleType.GetMethod("result", BindingFlags.Public ||| BindingFlags.Static)
+
+    Assert.NotNull(resultMethod)
+    Assert.Equal(typeof<int64>, resultMethod.ReturnType)
+    Assert.Equal(42L, resultMethod.Invoke(null, [||]) |> unbox<int64>)
 
 [<Fact>]
 let ``il backend emission does not depend on frontend documents`` () =

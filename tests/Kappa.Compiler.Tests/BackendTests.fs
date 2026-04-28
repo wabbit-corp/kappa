@@ -113,6 +113,52 @@ let ``dotnet backend execution does not depend on KCore or KRuntimeIR`` () =
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
+let ``effectful dotnet backend execution does not depend on KCore or KRuntimeIR`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-dotnet-effectful-no-kruntime-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "@PrivateByDefault module main"
+                    ""
+                    "result : Int"
+                    "let result ="
+                    "    block"
+                    "        scoped effect Ask ="
+                    "            ask : Unit -> Bool"
+                    ""
+                    "        let comp : Eff <[Ask : Ask]> Int ="
+                    "            do"
+                    "                let b <- Ask.ask ()"
+                    "                if b then 1 else 0"
+                    ""
+                    "        let handled : Eff <[ ]> Int ="
+                    "            deep handle Ask comp with"
+                    "                case return x -> pure x"
+                    "                case ask () k -> k True"
+                    ""
+                    "        runPure handled"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "dotnet-effectful-no-kruntime-backend"
+
+    let artifact =
+        match Backend.emitDotNetArtifact { workspace with KCore = []; KRuntimeIR = [] } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    let runResult =
+        runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
+
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("1", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
 let ``cli can run the managed dotnet backend`` () =
     let workspaceRoot = createScratchDirectory "cli-dotnet-workspace"
 

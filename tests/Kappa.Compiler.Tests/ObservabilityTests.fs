@@ -1562,7 +1562,7 @@ let ``stage dumps expose checkpoint contract metadata`` () =
     Assert.Contains("(required-by-spec false)", runtimeSexpr)
 
 [<Fact>]
-let ``effectful dotnet target contract lowers directly from KRuntimeIR`` () =
+let ``effectful dotnet target contract still lowers from KBackendIR`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend
             "memory-effectful-dotnet-contract-root"
@@ -1598,7 +1598,7 @@ let ``effectful dotnet target contract lowers directly from KRuntimeIR`` () =
         |> List.find (fun contract -> contract.Name = "dotnet.clr")
 
     Assert.Equal(TargetLoweringCheckpoint, targetContract.CheckpointKind)
-    Assert.Equal(Some "KRuntimeIR", targetContract.InputCheckpoint)
+    Assert.Equal(Some "KBackendIR", targetContract.InputCheckpoint)
     Assert.True(targetContract.RequiredBySpec)
     Assert.True(targetContract.ProfileSpecific)
 

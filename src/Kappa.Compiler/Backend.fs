@@ -21,65 +21,35 @@ module Backend =
     let private csharpString (value: string) =
         value.Replace("\\", "\\\\").Replace("\"", "\\\"")
 
-    let private dotnetUsesRuntimeTargetLowering (workspace: WorkspaceCompilation) =
-        String.Equals(
-            CompilationCheckpoints.targetInputCheckpoint workspace Stdlib.ClrTargetCheckpointName,
-            "KRuntimeIR",
-            StringComparison.Ordinal
-        )
-
     let private resolveClrEntryPoint (workspace: WorkspaceCompilation) (entryPoint: string) =
         let segments =
             entryPoint.Split('.', StringSplitOptions.RemoveEmptyEntries)
             |> Array.toList
 
-        let runtimeTargetLowering = dotnetUsesRuntimeTargetLowering workspace
-
         let tryMatchBinding moduleName bindingName =
-            if runtimeTargetLowering then
-                workspace.KRuntimeIR
-                |> List.tryFind (fun moduleDump -> String.Equals(moduleDump.Name, moduleName, StringComparison.Ordinal))
-                |> Option.bind (fun moduleDump ->
-                    moduleDump.Bindings
-                    |> List.tryFind (fun binding ->
-                        String.Equals(binding.Name, bindingName, StringComparison.Ordinal)
-                        && not binding.Intrinsic
-                        && List.isEmpty binding.Parameters)
-                    |> Option.map (fun _ -> ()))
-            else
-                workspace.KBackendIR
-                |> List.tryFind (fun moduleDump -> String.Equals(moduleDump.Name, moduleName, StringComparison.Ordinal))
-                |> Option.bind (fun moduleDump ->
-                    moduleDump.Functions
-                    |> List.tryFind (fun binding ->
-                        String.Equals(binding.Name, bindingName, StringComparison.Ordinal)
-                        && not binding.Intrinsic
-                        && List.isEmpty binding.Parameters)
-                    |> Option.map (fun _ -> ()))
+            workspace.KBackendIR
+            |> List.tryFind (fun moduleDump -> String.Equals(moduleDump.Name, moduleName, StringComparison.Ordinal))
+            |> Option.bind (fun moduleDump ->
+                moduleDump.Functions
+                |> List.tryFind (fun binding ->
+                    String.Equals(binding.Name, bindingName, StringComparison.Ordinal)
+                    && not binding.Intrinsic
+                    && List.isEmpty binding.Parameters)
+                |> Option.map (fun _ -> ()))
 
         match segments with
         | [] ->
             Result.Error "Expected a binding name to run."
         | [ bindingName ] ->
             let matches =
-                if runtimeTargetLowering then
-                    workspace.KRuntimeIR
-                    |> List.choose (fun moduleDump ->
-                        moduleDump.Bindings
-                        |> List.tryFind (fun binding ->
-                            String.Equals(binding.Name, bindingName, StringComparison.Ordinal)
-                            && not binding.Intrinsic
-                            && List.isEmpty binding.Parameters)
-                        |> Option.map (fun binding -> moduleDump.Name, binding.Name))
-                else
-                    workspace.KBackendIR
-                    |> List.choose (fun moduleDump ->
-                        moduleDump.Functions
-                        |> List.tryFind (fun binding ->
-                            String.Equals(binding.Name, bindingName, StringComparison.Ordinal)
-                            && not binding.Intrinsic
-                            && List.isEmpty binding.Parameters)
-                        |> Option.map (fun binding -> moduleDump.Name, binding.Name))
+                workspace.KBackendIR
+                |> List.choose (fun moduleDump ->
+                    moduleDump.Functions
+                    |> List.tryFind (fun binding ->
+                        String.Equals(binding.Name, bindingName, StringComparison.Ordinal)
+                        && not binding.Intrinsic
+                        && List.isEmpty binding.Parameters)
+                    |> Option.map (fun binding -> moduleDump.Name, binding.Name))
 
             match matches with
             | [] ->
@@ -212,13 +182,10 @@ internal static class Program
                         "The CLR-backed dotnet profile currently supports managed builds only."
 
             let! moduleName, bindingName = resolveClrEntryPoint workspace entryPoint
-            let runtimeTargetLowering = dotnetUsesRuntimeTargetLowering workspace
+            let usesEffectRuntime = ClrAssemblyIR.modulesUseEffectRuntime workspace.ClrAssemblyIR
 
             let! clrAssembly =
-                if runtimeTargetLowering then
-                    IlDotNetEffectBackend.emitAssemblyArtifact workspace outputDirectory
-                else
-                    ClrDotNetBackend.emitAssemblyArtifact workspace outputDirectory
+                ClrDotNetBackend.emitAssemblyArtifact workspace outputDirectory
                 |> Result.mapError (fun message -> $"The CLR-backed dotnet profile could not lower '{entryPoint}': {message}")
 
             let projectDirectory = Path.GetFullPath(outputDirectory)
@@ -236,7 +203,7 @@ internal static class Program
             let generatedAssemblyFileName, generatedAssemblyPath = copySupportFile clrAssembly.AssemblyFilePath
 
             let! supportFiles =
-                if runtimeTargetLowering then
+                if usesEffectRuntime then
                     let runtimeAssemblyPath = typeof<KappaRuntime>.Assembly.Location
 
                     if String.IsNullOrWhiteSpace(runtimeAssemblyPath) then

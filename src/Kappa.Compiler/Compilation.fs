@@ -258,10 +258,6 @@ module Compilation =
         let runtimeCapabilityDiagnostics =
             validateBackendRuntimeSupport normalizedBackendProfile documents kRuntimeIR
 
-        let dotnetUsesRuntimeTargetLowering =
-            String.Equals(normalizedBackendProfile, "dotnet", StringComparison.Ordinal)
-            && KRuntimeIR.modulesUseEffectRuntime kRuntimeIR
-
         let kBackendIR, backendLoweringDiagnostics =
             KBackendLowering.lowerKBackendModules normalizedBackendProfile options.AllowUnsafeConsume kRuntimeIR
 
@@ -281,7 +277,6 @@ module Compilation =
         let backendDiagnostics =
             if
                 requiresBackendImplementation
-                && not dotnetUsesRuntimeTargetLowering
                 && not ((sourceDiagnostics @ runtimeCapabilityDiagnostics) |> List.exists (fun diagnostic -> diagnostic.Severity = Error))
             then
                 backendLoweringDiagnostics
@@ -314,7 +309,6 @@ module Compilation =
         let implementationDiagnostics =
             if
                 not requiresBackendImplementation
-                || dotnetUsesRuntimeTargetLowering
                 || workspaceWithoutTrace.Diagnostics |> List.exists (fun diagnostic -> diagnostic.Severity = Error)
             then
                 []

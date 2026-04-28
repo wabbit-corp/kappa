@@ -1845,13 +1845,9 @@ module internal IlDotNetBackendEmit =
         if workspace.HasErrors then
             Result.Error $"Cannot emit a CLR assembly for a workspace with diagnostics:{Environment.NewLine}{aggregateDiagnostics workspace.Diagnostics}"
         else
-            let verificationDiagnostics = CheckpointVerification.verifyCheckpoint workspace "KRuntimeIR"
+            let verificationDiagnostics = CheckpointVerification.verifyCheckpoint workspace "KBackendIR"
 
             if not (List.isEmpty verificationDiagnostics) then
-                Result.Error $"Cannot emit malformed KRuntimeIR:{Environment.NewLine}{aggregateDiagnostics verificationDiagnostics}"
+                Result.Error $"Cannot emit malformed KBackendIR:{Environment.NewLine}{aggregateDiagnostics verificationDiagnostics}"
             else
-                let modules =
-                    workspace.KRuntimeIR
-                    |> List.map ClrAssemblyIR.ofRuntimeModule
-
-                emitClrAssemblyArtifact modules outputDirectory
+                emitClrAssemblyArtifact workspace.ClrAssemblyIR outputDirectory
