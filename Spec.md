@@ -19660,19 +19660,54 @@ Minimal form:
 derive Eq Foo
 ```
 
-Deriving is implementation-defined in v0.1, but v1.0 should at least support deriving `Eq` and `Show`-like traits for
-standard algebraic data types.
+Phase 0 keeps declaration-level deriving implementation-defined except for the constraints already stated in this section.
+In particular, Phase 0 does not standardize user-written declaration-level derivers, declaration-level macro splices, or a general API by which macros publish coherent instances.
+
+The portable Phase 0 extension is instead the derivation-shape reflection module `std.deriving.shape` (§2.7H).
+A library may use that module to define ordinary expression macros that generate instance member bodies.
+Such a macro is invoked from inside a handwritten `instance` declaration.
+
+Example shape:
+
+```kappa
+instance Show User =
+    let show value =
+        $(deriveShowBody @User '{ User } '{ value })
+```
+
+The surrounding `instance` declaration is ordinary source code.
+The splice produces only the method body.
+It does not create the instance declaration and does not publish coherent evidence by itself.
+
+A Phase 0 body macro may:
+
+* inspect a visible data or closed-record shape through `std.deriving.shape`;
+* generate expression syntax such as `match`, constructor applications, record literals, field projections, and calls to ordinary trait members;
+* ask whether field instances for a trait constructor are available at the splice site; and
+* fail with structured diagnostics when the target shape or required field instances are unavailable.
+
+A Phase 0 body macro MUST NOT:
+
+* emit a declaration;
+* register an instance;
+* alter the local or global implicit-resolution environment;
+* bypass ordinary coherence rules;
+* inspect opaque representations unavailable to ordinary code at the splice site; or
+* treat a `Dict C` value as coherent evidence for implicit resolution.
 
 For `Eq` specifically:
 
 * `derive Eq T` is permitted only if the compiler can synthesize both `eqSound` and `eqComplete` for `T`.
 * If either proof cannot be synthesized, deriving `Eq` fails.
-* If `T` is declared as `opaque data`, any deriving algorithm that inspects the constructors or fields of `T` MUST do so
-  only in the defining module of `T`, where that representation is available. The resulting derived dictionary is still
-  an instance of the abstract type `T`; outside the defining module it may be used only through the trait interface and
-  does not grant constructor access, pattern-matching access, or additional definitional transparency for `T`.
-* A `derive` declaration that appears in a block scope generates a local instance. Its visibility, closure-conversion
-  behavior, and admissibility rules are exactly those of a handwritten local instance under §14.1.1.
+* A Phase 0 user-written body macro that generates only the boolean `(==)` member is not, by itself, a valid full `Eq` derivation unless the remaining proof members are supplied by handwritten code, by other macros whose generated proof terms typecheck, or by an implementation-defined built-in derivation path.
+* `std.deriving.shape.matchAdt2` may help generate field-wise branch syntax for equality, but it does not by itself expose constructor injectivity, constructor disjointness, no-confusion, or proof-producing equality certificates.
+
+If `T` is declared as `opaque data`, any deriving algorithm that inspects the constructors or fields of `T` MUST do so only in a scope where that representation is available.
+The resulting derived dictionary is still an instance of the abstract type `T`.
+Outside the defining module it may be used only through the trait interface and does not grant constructor access, pattern-matching access, or additional definitional transparency for `T`.
+
+A `derive` declaration that appears in a block scope generates a local instance when the implementation supports such declarations.
+Its visibility, closure-conversion behavior, and admissibility rules are exactly those of a handwritten local instance under §14.1.1.
 
 <!-- traits.derived_hashable -->
 #### Derived `Hashable`
