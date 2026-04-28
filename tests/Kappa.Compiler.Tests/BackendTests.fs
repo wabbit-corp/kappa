@@ -159,6 +159,71 @@ let ``effectful dotnet backend execution does not depend on KCore or KRuntimeIR`
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
+let ``dotnet backend executes constructor or patterns without KRuntimeIR`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-dotnet-or-pattern-no-kruntime-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "data Choice : Type ="
+                    "    A Int"
+                    "    B Int"
+                    "unwrap : Choice -> Int"
+                    "let unwrap choice ="
+                    "    match choice"
+                    "    case A value | B value -> value"
+                    "let result = unwrap (B 42)"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "dotnet-or-pattern-no-kruntime"
+
+    let artifact =
+        match Backend.emitDotNetArtifact { workspace with KCore = []; KRuntimeIR = [] } "main.result" outputDirectory DotNetDeployment.Managed with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    let runResult =
+        runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
+
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("42", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
+let ``dotnet backend rejects or patterns whose shared binders have different types`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-dotnet-or-pattern-mismatch-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "data Choice : Type ="
+                    "    A Int"
+                    "    B String"
+                    "probe : Choice -> Unit"
+                    "let probe choice ="
+                    "    match choice"
+                    "    case A value | B value -> ()"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected mismatched or-pattern binder representations to be rejected.")
+    Assert.Contains(
+        workspace.Diagnostics,
+        fun diagnostic ->
+            diagnostic.Code = DiagnosticCode.OrPatternBinderTypeMismatch
+            && diagnostic.Message.IndexOf("Binder 'value' has type", StringComparison.OrdinalIgnoreCase) >= 0
+    )
+
+[<Fact>]
 let ``dotnet backend resolves entrypoints from the emitted CLR model`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend

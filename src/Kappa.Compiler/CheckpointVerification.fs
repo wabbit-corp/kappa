@@ -453,17 +453,81 @@ module CheckpointVerification =
         bindingLabel
         (pattern: KBackendPattern)
         =
-        let rec verify locals backendPattern =
+        let rec collectBindings backendPattern =
             match backendPattern with
             | BackendWildcardPattern
             | BackendLiteralPattern _ ->
-                locals, []
+                Map.empty, []
             | BackendBindPattern binding ->
-                if Set.contains binding.Name locals then
-                    locals,
-                    [ makeDiagnostic $"Checkpoint '{checkpoint}' requires unique pattern binder names within '{bindingLabel}', but '{binding.Name}' was duplicated." ]
-                else
-                    Set.add binding.Name locals, []
+                Map.ofList [ binding.Name, binding.Representation ], []
+            | BackendConstructorPattern(_, _, _, _, fieldPatterns) ->
+                ((Map.empty, []), fieldPatterns)
+                ||> List.fold (fun (bindingsSoFar, diagnosticsSoFar) fieldPattern ->
+                    let fieldBindings, fieldDiagnostics = collectBindings fieldPattern
+
+                    let mergeDiagnostics =
+                        fieldBindings
+                        |> Map.fold
+                            (fun state name _ ->
+                                if Map.containsKey name bindingsSoFar then
+                                    state
+                                    @ [ makeDiagnostic $"Checkpoint '{checkpoint}' requires unique pattern binder names within '{bindingLabel}', but '{name}' was duplicated." ]
+                                else
+                                    state)
+                            diagnosticsSoFar
+
+                    let mergedBindings =
+                        fieldBindings |> Map.fold (fun state name representation -> state |> Map.add name representation) bindingsSoFar
+
+                    mergedBindings, mergeDiagnostics @ fieldDiagnostics)
+            | BackendOrPattern alternatives ->
+                let collected =
+                    alternatives |> List.map collectBindings
+
+                match collected with
+                | [] ->
+                    Map.empty, []
+                | (firstBindings, firstDiagnostics) :: rest ->
+                    let firstNames = firstBindings |> Map.keys |> Set.ofSeq
+
+                    let diagnostics =
+                        rest
+                        |> List.fold
+                            (fun state (candidateBindings, candidateDiagnostics) ->
+                                let state = state @ candidateDiagnostics
+                                let candidateNames = candidateBindings |> Map.keys |> Set.ofSeq
+
+                                let state =
+                                    if candidateNames <> firstNames then
+                                        state
+                                        @ [ makeDiagnostic $"Checkpoint '{checkpoint}' requires each or-pattern alternative within '{bindingLabel}' to bind the same names." ]
+                                    else
+                                        state
+
+                                firstBindings
+                                |> Map.fold
+                                    (fun comparisonState name representation ->
+                                        match candidateBindings |> Map.tryFind name with
+                                        | Some candidateRepresentation when candidateRepresentation = representation ->
+                                            comparisonState
+                                        | Some _ ->
+                                            comparisonState
+                                            @ [ makeDiagnostic $"Checkpoint '{checkpoint}' requires binder '{name}' within '{bindingLabel}' to keep the same backend representation across every or-pattern alternative." ]
+                                        | None ->
+                                            comparisonState)
+                                    state)
+                            firstDiagnostics
+
+                    firstBindings, diagnostics
+
+        let rec verifyConstructors backendPattern =
+            match backendPattern with
+            | BackendWildcardPattern
+            | BackendLiteralPattern _
+            | BackendBindPattern _ ->
+                []
+            | BackendOrPattern alternatives ->
+                alternatives |> List.collect verifyConstructors
             | BackendConstructorPattern(moduleName, typeName, constructorName, tag, fieldPatterns) ->
                 let constructorExists =
                     moduleMap
@@ -484,12 +548,10 @@ module CheckpointVerification =
                         let constructorText = $"{moduleName}.{typeName}.{constructorName}@{tag}"
                         [ makeDiagnostic $"Checkpoint '{checkpoint}' requires resolved constructor patterns, but '{constructorText}' in '{bindingLabel}' is not present in the backend module graph." ]
 
-                ((locals, diagnostics), fieldPatterns)
-                ||> List.fold (fun (localsSoFar, diagnosticsSoFar) fieldPattern ->
-                    let nextLocals, nextDiagnostics = verify localsSoFar fieldPattern
-                    nextLocals, diagnosticsSoFar @ nextDiagnostics)
+                diagnostics @ (fieldPatterns |> List.collect verifyConstructors)
 
-        verify Set.empty pattern
+        let bindings, bindingDiagnostics = collectBindings pattern
+        bindings |> Map.keys |> Set.ofSeq, bindingDiagnostics @ verifyConstructors pattern
 
     let private verifyKBackendIRCheckpoint (workspace: WorkspaceCompilation) =
         let isGeneratedHostBinding provenance =

@@ -49,6 +49,7 @@ type DiagnosticCode =
     | RecursionRequiresSignature
     | SignatureUnsatisfied
     | OrPatternBinderMismatch
+    | OrPatternBinderTypeMismatch
     | SafeNavigationAmbiguous
     | SafeNavigationReceiverNotOption
     | ElvisReceiverNotOption
@@ -140,6 +141,7 @@ module DiagnosticCode =
         | RecursionRequiresSignature -> "E_RECURSION_REQUIRES_SIGNATURE"
         | SignatureUnsatisfied -> "E_SIGNATURE_UNSATISFIED"
         | OrPatternBinderMismatch -> "E_OR_PATTERN_BINDER_MISMATCH"
+        | OrPatternBinderTypeMismatch -> "E_OR_PATTERN_BINDER_TYPE_MISMATCH"
         | SafeNavigationAmbiguous -> "E_SAFE_NAVIGATION_AMBIGUOUS"
         | SafeNavigationReceiverNotOption -> "E_SAFE_NAVIGATION_RECEIVER_NOT_OPTION"
         | ElvisReceiverNotOption -> "E_ELVIS_RECEIVER_NOT_OPTION"
@@ -230,6 +232,7 @@ module DiagnosticCode =
         | "E_RECURSION_REQUIRES_SIGNATURE" -> Some RecursionRequiresSignature
         | "E_SIGNATURE_UNSATISFIED" -> Some SignatureUnsatisfied
         | "E_OR_PATTERN_BINDER_MISMATCH" -> Some OrPatternBinderMismatch
+        | "E_OR_PATTERN_BINDER_TYPE_MISMATCH" -> Some OrPatternBinderTypeMismatch
         | "E_SAFE_NAVIGATION_AMBIGUOUS" -> Some SafeNavigationAmbiguous
         | "E_SAFE_NAVIGATION_RECEIVER_NOT_OPTION" -> Some SafeNavigationReceiverNotOption
         | "E_ELVIS_RECEIVER_NOT_OPTION" -> Some ElvisReceiverNotOption
@@ -294,6 +297,8 @@ module DiagnosticCode =
             Some "A referenced module name does not resolve to any module available in the current compilation unit or bundled standard-module inventory."
         | NameUnresolved ->
             Some "A referenced name is not in lexical, module, or imported scope."
+        | OrPatternBinderTypeMismatch ->
+            Some "Each corresponding binder across an or-pattern's alternatives must have definitionally equal types after refinement and normalization."
         | TypeEqualityMismatch ->
             Some "Two types that must agree after normalization do not definitionally equal one another."
         | NumericLiteralOutOfRange ->

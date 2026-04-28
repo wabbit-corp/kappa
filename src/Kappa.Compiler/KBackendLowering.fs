@@ -458,9 +458,7 @@ module internal KBackendLowering =
                                 Set.singleton name
                             | KRuntimeOrPattern alternatives ->
                                 alternatives
-                                |> List.tryHead
-                                |> Option.map collectPatternBindings
-                                |> Option.defaultValue Set.empty
+                                |> List.fold (fun state alternative -> Set.union state (collectPatternBindings alternative)) Set.empty
                             | KRuntimeConstructorPattern(_, arguments) ->
                                 arguments
                                 |> List.fold
@@ -853,6 +851,42 @@ module internal KBackendLowering =
                 | KRuntimeEffectWildcardArgument -> BackendEffectWildcardArgument
                 | KRuntimeEffectNameArgument name -> BackendEffectNameArgument name
 
+            let validateOrPatternBindings
+                (alternatives: (KBackendPattern * Map<string, KBackendRepresentationClass>) list)
+                : Result<Map<string, KBackendRepresentationClass>, string> =
+                match alternatives with
+                | [] ->
+                    Result.Ok Map.empty
+                | (_, firstBindings) :: rest ->
+                    let firstNames = firstBindings |> Map.keys |> Set.ofSeq
+
+                    rest
+                    |> List.fold
+                        (fun state (_, candidateBindings) ->
+                            state
+                            |> Result.bind (fun agreedBindings ->
+                                let candidateNames = candidateBindings |> Map.keys |> Set.ofSeq
+
+                                if candidateNames <> firstNames then
+                                    Result.Error "Backend lowering requires each or-pattern alternative to bind the same names."
+                                else
+                                    firstBindings
+                                    |> Map.fold
+                                        (fun comparisonState name representation ->
+                                            comparisonState
+                                            |> Result.bind (fun () ->
+                                                let candidateRepresentation = candidateBindings[name]
+
+                                                if candidateRepresentation = representation then
+                                                    Result.Ok()
+                                                else
+                                                    Result.Error
+                                                        $"Backend lowering requires binder '{name}' to keep the same runtime representation across every or-pattern alternative."))
+                                        (Result.Ok())
+                                    |> Result.map (fun () -> agreedBindings))
+                        )
+                        (Result.Ok firstBindings)
+
             let rec lowerPattern
                 (locals: Map<string, KBackendRepresentationClass>)
                 (patternRepresentation: KBackendRepresentationClass)
@@ -870,11 +904,20 @@ module internal KBackendLowering =
 
                     Result.Ok(BackendBindPattern binding, Map.ofList [ name, patternRepresentation ])
                 | KRuntimeOrPattern alternatives ->
-                    match alternatives with
-                    | first :: _ ->
-                        lowerPattern locals patternRepresentation first
-                    | [] ->
-                        Result.Ok(BackendWildcardPattern, Map.empty)
+                    alternatives
+                    |> List.fold
+                        (fun state alternative ->
+                            state
+                            |> Result.bind (fun loweredAlternatives ->
+                                lowerPattern locals patternRepresentation alternative
+                                |> Result.map (fun loweredAlternative -> loweredAlternative :: loweredAlternatives)))
+                        (Result.Ok [])
+                    |> Result.bind (fun loweredAlternatives ->
+                        let loweredAlternatives = List.rev loweredAlternatives
+
+                        validateOrPatternBindings loweredAlternatives
+                        |> Result.map (fun agreedBindings ->
+                            BackendOrPattern(loweredAlternatives |> List.map fst), agreedBindings))
                 | KRuntimeConstructorPattern(nameSegments, argumentPatterns) ->
                     let constructorText = String.concat "." nameSegments
 

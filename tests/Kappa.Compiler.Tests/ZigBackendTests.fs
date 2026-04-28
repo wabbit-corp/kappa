@@ -76,6 +76,49 @@ let ``cli can run the zig backend for recursive list matches`` () =
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
+let ``zig backend runs constructor or patterns`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-zig-or-pattern-root"
+            "zig"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "data Choice : Type ="
+                    "    A Int"
+                    "    B Int"
+                    "unwrap : Choice -> Int"
+                    "let unwrap choice ="
+                    "    match choice"
+                    "    case A value | B value -> value"
+                    "let result = unwrap (B 42)"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "zig-or-pattern"
+
+    let artifact =
+        match Backend.emitZigArtifact workspace "main.result" outputDirectory with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    let compileResult =
+        runProcess
+            outputDirectory
+            (ensureRepoZigExecutablePath ())
+            $"cc -std=c11 -O0 -o \"{artifact.ExecutableFilePath}\" \"{artifact.SourceFilePath}\""
+
+    Assert.Equal(0, compileResult.ExitCode)
+    Assert.True(String.IsNullOrWhiteSpace(compileResult.StandardError), compileResult.StandardError)
+
+    let runResult = runProcess outputDirectory artifact.ExecutableFilePath ""
+    Assert.Equal(0, runResult.ExitCode)
+    Assert.Equal("42", runResult.StandardOutput.Trim())
+    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
+
+[<Fact>]
 let ``cli can run the zig backend for the milestone one io entry point`` () =
     let workspaceRoot = createScratchDirectory "cli-zig-m1-workspace"
 

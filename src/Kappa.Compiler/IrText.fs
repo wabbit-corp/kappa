@@ -396,6 +396,8 @@ module internal IrText =
             $"b'\\x{int value:X2}':{backendRepresentationText representation}"
         | BackendLiteralPattern(LiteralValue.Unit, representation) ->
             $"():{backendRepresentationText representation}"
+        | BackendOrPattern alternatives ->
+            alternatives |> List.map backendPatternText |> String.concat " | "
         | BackendConstructorPattern(moduleName, typeName, constructorName, tag, fieldPatterns) ->
             let fields =
                 fieldPatterns

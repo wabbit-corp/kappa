@@ -196,6 +196,83 @@ let ``il backend matches string literal patterns by content`` () =
     Assert.Equal(0L, classifyMethod.Invoke(null, [| box xyz |]) |> unbox<int64>)
 
 [<Fact>]
+let ``il backend evaluates literal or patterns across all alternatives`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-il-or-pattern-literals-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "classify : Int -> Int"
+                    "let classify x ="
+                    "    match x"
+                    "    case 1 | 2 -> 10"
+                    "    case _ -> 20"
+                    "let result = classify 2"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "il-or-pattern-literals"
+
+    let artifact =
+        match Backend.emitIlAssemblyArtifact workspace outputDirectory with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    use loaded = loadManagedAssembly artifact.AssemblyFilePath
+
+    let moduleType = loaded.Assembly.GetType("Kappa.Generated.main", throwOnError = true, ignoreCase = false)
+    let classifyMethod = moduleType.GetMethod("classify", BindingFlags.Public ||| BindingFlags.Static)
+    let resultMethod = moduleType.GetMethod("result", BindingFlags.Public ||| BindingFlags.Static)
+
+    Assert.NotNull(classifyMethod)
+    Assert.NotNull(resultMethod)
+    Assert.Equal(typeof<int64>, classifyMethod.ReturnType)
+    Assert.Equal(10L, classifyMethod.Invoke(null, [| box 1L |]) |> unbox<int64>)
+    Assert.Equal(10L, classifyMethod.Invoke(null, [| box 2L |]) |> unbox<int64>)
+    Assert.Equal(20L, classifyMethod.Invoke(null, [| box 3L |]) |> unbox<int64>)
+    Assert.Equal(10L, resultMethod.Invoke(null, [||]) |> unbox<int64>)
+
+[<Fact>]
+let ``il backend evaluates constructor or patterns with shared binders`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-il-or-pattern-constructors-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "data Choice : Type ="
+                    "    A Int"
+                    "    B Int"
+                    "unwrap : Choice -> Int"
+                    "let unwrap choice ="
+                    "    match choice"
+                    "    case A value | B value -> value"
+                    "let result = unwrap (B 42)"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let outputDirectory = createScratchDirectory "il-or-pattern-constructors"
+
+    let artifact =
+        match Backend.emitIlAssemblyArtifact workspace outputDirectory with
+        | Result.Ok artifact -> artifact
+        | Result.Error message -> failwith message
+
+    use loaded = loadManagedAssembly artifact.AssemblyFilePath
+
+    let moduleType = loaded.Assembly.GetType("Kappa.Generated.main", throwOnError = true, ignoreCase = false)
+    let resultMethod = moduleType.GetMethod("result", BindingFlags.Public ||| BindingFlags.Static)
+
+    Assert.NotNull(resultMethod)
+    Assert.Equal(typeof<int64>, resultMethod.ReturnType)
+    Assert.Equal(42L, resultMethod.Invoke(null, [||]) |> unbox<int64>)
+
+[<Fact>]
 let ``il backend executes direct calls to top level zero capture lambda bindings`` () =
     let workspace =
         compileInMemoryWorkspace

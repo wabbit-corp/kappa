@@ -16678,6 +16678,180 @@ module SurfaceElaboration =
 
                     loop pattern |> List.distinctBy (fun diagnostic -> diagnostic.Message)
 
+                let extendPatternLocalsWithoutMutation locals expectedType pattern =
+                    let localCounter = ref 0
+                    extendPatternLocalTypes environment localCounter locals expectedType pattern
+
+                let orPatternBinderTypeDiagnostics expectedType pattern =
+                    let normalize = normalizeTypeAliases environment.VisibleTypeAliases
+
+                    let typedBindingsForAlternative currentExpected alternative =
+                        let boundNames =
+                            collectPatternNames alternative |> Set.ofList
+
+                        let inferredBindings =
+                            extendPatternLocalsWithoutMutation Map.empty currentExpected alternative
+
+                        boundNames
+                        |> Seq.choose (fun name -> inferredBindings |> Map.tryFind name |> Option.map (fun bindingType -> name, bindingType))
+                        |> Map.ofSeq
+
+                    let rec loop expected currentPattern =
+                        let currentDiagnostics =
+                            match currentPattern with
+                            | OrPattern alternatives ->
+                                match alternatives with
+                                | [] ->
+                                    []
+                                | firstAlternative :: restAlternatives ->
+                                    let firstNames = collectPatternNames firstAlternative |> Set.ofList
+                                    let firstBindings = typedBindingsForAlternative expected firstAlternative
+
+                                    restAlternatives
+                                    |> List.collect (fun alternative ->
+                                        let alternativeNames = collectPatternNames alternative |> Set.ofList
+                                        let alternativeBindings = typedBindingsForAlternative expected alternative
+
+                                        if alternativeNames <> firstNames then
+                                            []
+                                        else
+                                            let comparableNames =
+                                                Set.intersect
+                                                    (firstBindings |> Map.keys |> Set.ofSeq)
+                                                    (alternativeBindings |> Map.keys |> Set.ofSeq)
+
+                                            comparableNames
+                                            |> Seq.choose (fun name ->
+                                                let firstType = firstBindings[name] |> normalize
+                                                let alternativeType = alternativeBindings[name] |> normalize
+
+                                                if TypeSignatures.definitionallyEqual firstType alternativeType then
+                                                    None
+                                                else
+                                                    Some(
+                                                        makeDiagnostic
+                                                            DiagnosticCode.OrPatternBinderTypeMismatch
+                                                            $"Binder '{name}' has type '{TypeSignatures.toText firstType}' in one or-pattern alternative but '{TypeSignatures.toText alternativeType}' in another."
+                                                    ))
+                                            |> Seq.toList)
+                            | _ ->
+                                []
+
+                        let nestedDiagnostics =
+                            match currentPattern with
+                            | AsPattern(_, inner) ->
+                                loop expected inner
+                            | TypedPattern(inner, typeTokens) ->
+                                let ascribedType =
+                                    TypeSignatures.parseType typeTokens
+                                    |> Option.map (qualifyVisibleTypeNames environment)
+                                    |> Option.orElse expected
+
+                                loop ascribedType inner
+                            | TuplePattern elements ->
+                                let tupleFields =
+                                    elements
+                                    |> List.mapi (fun index element ->
+                                        { Name = $"_{index + 1}"
+                                          IsImplicit = false
+                                          Pattern = element })
+
+                                loop expected (AnonymousRecordPattern(tupleFields, None))
+                            | AnonymousRecordPattern(fields, _) ->
+                                match expected |> Option.bind (tryCanonicalRecordType environment.VisibleTypeAliases) with
+                                | Some(TypeRecord recordFields) ->
+                                    fields
+                                    |> List.collect (fun field ->
+                                        let fieldType =
+                                            recordFields
+                                            |> List.tryFind (fun recordField -> String.Equals(recordField.Name, field.Name, StringComparison.Ordinal))
+                                            |> Option.map (fun recordField -> recordField.Type)
+
+                                        loop fieldType field.Pattern)
+                                | _ ->
+                                    fields |> List.collect (fun field -> loop None field.Pattern)
+                            | ConstructorPattern(nameSegments, arguments) ->
+                                let argumentTypes =
+                                    match expected, tryResolveVisibleConstructorInfo environment nameSegments with
+                                    | Some expectedResultType, Some constructorInfo ->
+                                        let localCounter = ref 0
+                                        let instantiated = TypeSignatures.instantiate "t" !localCounter constructorInfo.Scheme
+                                        localCounter.Value <- !localCounter + instantiated.Forall.Length
+
+                                        let parameterTypes, constructorResultType = TypeSignatures.schemeParts instantiated
+
+                                        if List.length parameterTypes = List.length arguments then
+                                            match
+                                                TypeSignatures.tryUnifyMany
+                                                    [
+                                                        qualifyVisibleTypeNames environment constructorResultType,
+                                                        qualifyVisibleTypeNames environment expectedResultType
+                                                    ]
+                                            with
+                                            | Some substitution ->
+                                                parameterTypes
+                                                |> List.map (TypeSignatures.applySubstitution substitution >> Some)
+                                            | None ->
+                                                List.replicate arguments.Length None
+                                        else
+                                            List.replicate arguments.Length None
+                                    | _ ->
+                                        List.replicate arguments.Length None
+
+                                List.zip arguments argumentTypes
+                                |> List.collect (fun (argumentPattern, argumentType) -> loop argumentType argumentPattern)
+                            | NamedConstructorPattern(nameSegments, fields) ->
+                                let argumentTypes =
+                                    match expected, tryResolveVisibleConstructorInfo environment nameSegments with
+                                    | Some expectedResultType, Some constructorInfo ->
+                                        let localCounter = ref 0
+                                        let instantiated = TypeSignatures.instantiate "t" !localCounter constructorInfo.Scheme
+                                        localCounter.Value <- !localCounter + instantiated.Forall.Length
+
+                                        let parameterTypes, constructorResultType = TypeSignatures.schemeParts instantiated
+
+                                        let fieldTypeMap =
+                                            constructorInfo.ParameterLayouts
+                                            |> Option.map (fun layouts ->
+                                                layouts
+                                                |> List.filter (fun parameter -> not parameter.IsImplicit)
+                                                |> List.map (fun parameter -> parameter.Name)
+                                                |> List.zip parameterTypes
+                                                |> List.map (fun (fieldType, fieldName) -> fieldName, fieldType)
+                                                |> Map.ofList)
+                                            |> Option.defaultValue Map.empty
+
+                                        match
+                                            TypeSignatures.tryUnifyMany
+                                                [
+                                                    qualifyVisibleTypeNames environment constructorResultType,
+                                                    qualifyVisibleTypeNames environment expectedResultType
+                                                ]
+                                        with
+                                        | Some substitution ->
+                                            fieldTypeMap
+                                            |> Map.map (fun _ fieldType -> TypeSignatures.applySubstitution substitution fieldType)
+                                        | None ->
+                                            Map.empty
+                                    | _ ->
+                                        Map.empty
+
+                                fields
+                                |> List.collect (fun field ->
+                                    let fieldType = argumentTypes |> Map.tryFind field.Name
+                                    loop fieldType field.Pattern)
+                            | OrPattern alternatives ->
+                                alternatives |> List.collect (loop expected)
+                            | VariantPattern _
+                            | WildcardPattern
+                            | NamePattern _
+                            | LiteralPattern _ ->
+                                []
+
+                        currentDiagnostics @ nestedDiagnostics
+
+                    loop expectedType pattern
+
                 let unsignedRecursiveBindingDiagnostics =
                     let signatureNames =
                         frontendModule.Declarations
@@ -16848,104 +17022,146 @@ module SurfaceElaboration =
                         | _ ->
                             None)
 
-                let expressionPatternDiagnostics expression =
-                    let rec validateExpression current =
+                let expressionPatternDiagnostics initialLocalTypes expression =
+                    let extendParameterLocalTypes locals (parameters: Parameter list) =
+                        parameters
+                        |> List.fold
+                            (fun current parameter ->
+                                match parameter.TypeTokens |> Option.bind TypeSignatures.parseType with
+                                | Some parameterType ->
+                                    Map.add parameter.Name (qualifyVisibleTypeNames environment parameterType) current
+                                | None ->
+                                    current)
+                            locals
+
+                    let inferExpectedType localTypes expression =
+                        inferValidationExpressionType environment (ref 0) localTypes expression
+
+                    let rec validateExpression localTypes current =
                         match current with
                         | SyntaxQuote inner
                         | SyntaxSplice inner
                         | TopLevelSyntaxSplice inner
                         | CodeQuote inner
                         | CodeSplice inner ->
-                            validateExpression inner
+                            validateExpression localTypes inner
                         | LocalLet(binding, value, body) ->
-                            patternDuplicateDiagnostics binding.Pattern @ validateExpression value @ validateExpression body
+                            let valueType = inferExpectedType localTypes value
+                            let nextLocals = extendPatternLocalsWithoutMutation localTypes valueType binding.Pattern
+
+                            patternDuplicateDiagnostics binding.Pattern
+                            @ orPatternBinderTypeDiagnostics valueType binding.Pattern
+                            @ validateExpression localTypes value
+                            @ validateExpression nextLocals body
                         | LocalSignature(_, body) ->
-                            validateExpression body
+                            validateExpression localTypes body
                         | LocalTypeAlias(_, body) ->
-                            validateExpression body
+                            validateExpression localTypes body
                         | LocalScopedEffect(_, body) ->
-                            validateExpression body
+                            validateExpression localTypes body
                         | Handle(_, label, body, returnClause, operationClauses) ->
-                            validateExpression label
-                            @ validateExpression body
-                            @ validateExpression returnClause.Body
-                            @ (operationClauses |> List.collect (fun clause -> validateExpression clause.Body))
-                        | Lambda(_, body) ->
-                            validateExpression body
+                            validateExpression localTypes label
+                            @ validateExpression localTypes body
+                            @ validateExpression localTypes returnClause.Body
+                            @ (operationClauses |> List.collect (fun clause -> validateExpression localTypes clause.Body))
+                        | Lambda(parameters, body) ->
+                            validateExpression (extendParameterLocalTypes localTypes parameters) body
                         | IfThenElse(condition, whenTrue, whenFalse) ->
-                            validateExpression condition @ validateExpression whenTrue @ validateExpression whenFalse
+                            validateExpression localTypes condition
+                            @ validateExpression localTypes whenTrue
+                            @ validateExpression localTypes whenFalse
                         | Match(scrutinee, cases) ->
-                            validateExpression scrutinee
+                            let scrutineeType = inferExpectedType localTypes scrutinee
+
+                            validateExpression localTypes scrutinee
                             @ (cases
                                |> List.collect (fun caseClause ->
+                                   let caseLocals =
+                                       extendPatternLocalsWithoutMutation localTypes scrutineeType caseClause.Pattern
+
                                    patternDuplicateDiagnostics caseClause.Pattern
-                                   @ (caseClause.Guard |> Option.map validateExpression |> Option.defaultValue [])
-                                   @ validateExpression caseClause.Body))
+                                   @ orPatternBinderTypeDiagnostics scrutineeType caseClause.Pattern
+                                   @ (caseClause.Guard |> Option.map (validateExpression caseLocals) |> Option.defaultValue [])
+                                   @ validateExpression caseLocals caseClause.Body))
                         | RecordLiteral fields ->
-                            fields |> List.collect (fun field -> validateExpression field.Value)
+                            fields |> List.collect (fun field -> validateExpression localTypes field.Value)
                         | Seal(value, _) ->
-                            validateExpression value
+                            validateExpression localTypes value
                         | RecordUpdate(receiver, fields) ->
-                            validateExpression receiver @ (fields |> List.collect (fun field -> validateExpression field.Value))
+                            validateExpression localTypes receiver
+                            @ (fields |> List.collect (fun field -> validateExpression localTypes field.Value))
                         | MemberAccess(receiver, _, arguments) ->
-                            validateExpression receiver @ (arguments |> List.collect validateExpression)
+                            validateExpression localTypes receiver @ (arguments |> List.collect (validateExpression localTypes))
                         | SafeNavigation(receiver, navigation) ->
-                            validateExpression receiver @ (navigation.Arguments |> List.collect validateExpression)
+                            validateExpression localTypes receiver
+                            @ (navigation.Arguments |> List.collect (validateExpression localTypes))
                         | TagTest(receiver, _) ->
-                            validateExpression receiver
+                            validateExpression localTypes receiver
                         | Comprehension comprehension ->
-                            validateExpression comprehension.Lowered
+                            validateExpression localTypes comprehension.Lowered
                         | Do statements ->
-                            validateDo statements
+                            validateDo localTypes statements
                         | MonadicSplice inner
                         | ExplicitImplicitArgument inner
                         | InoutArgument inner
                         | Unary(_, inner) ->
-                            validateExpression inner
+                            validateExpression localTypes inner
                         | NamedApplicationBlock fields ->
-                            fields |> List.collect (fun field -> validateExpression field.Value)
+                            fields |> List.collect (fun field -> validateExpression localTypes field.Value)
                         | Binary(left, _, right)
                         | Elvis(left, right) ->
-                            validateExpression left @ validateExpression right
+                            validateExpression localTypes left @ validateExpression localTypes right
                         | Apply(callee, arguments) ->
-                            validateExpression callee @ (arguments |> List.collect validateExpression)
+                            validateExpression localTypes callee @ (arguments |> List.collect (validateExpression localTypes))
                         | PrefixedString(_, parts) ->
                             parts
                             |> List.collect (function
                                 | StringText _ -> []
-                                | StringInterpolation(inner, _) -> validateExpression inner)
+                                | StringInterpolation(inner, _) -> validateExpression localTypes inner)
                         | Literal _
                         | NumericLiteral _
                         | KindQualifiedName _
                         | Name _ ->
                             []
 
-                    and validateDo statements =
+                    and validateDo localTypes statements =
                         statements
                         |> List.collect (function
                             | DoLet(binding, expression)
                             | DoBind(binding, expression)
                             | DoUsing(binding, expression) ->
-                                patternDuplicateDiagnostics binding.Pattern @ validateExpression expression
-                            | DoLetQuestion(binding, expression, failure) ->
+                                let valueType = inferExpectedType localTypes expression
+
                                 patternDuplicateDiagnostics binding.Pattern
-                                @ validateExpression expression
+                                @ orPatternBinderTypeDiagnostics valueType binding.Pattern
+                                @ validateExpression localTypes expression
+                                @ []
+                            | DoLetQuestion(binding, expression, failure) ->
+                                let valueType = inferExpectedType localTypes expression
+
+                                patternDuplicateDiagnostics binding.Pattern
+                                @ orPatternBinderTypeDiagnostics valueType binding.Pattern
+                                @ validateExpression localTypes expression
                                 @ (failure
                                    |> Option.map (fun block ->
-                                       patternDuplicateDiagnostics block.ResiduePattern.Pattern @ validateDo block.Body)
+                                       patternDuplicateDiagnostics block.ResiduePattern.Pattern
+                                       @ orPatternBinderTypeDiagnostics valueType block.ResiduePattern.Pattern
+                                       @ validateDo localTypes block.Body)
                                    |> Option.defaultValue [])
                             | DoVar(_, expression)
                             | DoAssign(_, expression)
                             | DoDefer expression
                             | DoExpression expression
                             | DoReturn expression ->
-                                validateExpression expression
+                                validateExpression localTypes expression
                             | DoIf(condition, whenTrue, whenFalse) ->
-                                validateExpression condition @ validateDo whenTrue @ validateDo whenFalse
+                                validateExpression localTypes condition
+                                @ validateDo localTypes whenTrue
+                                @ validateDo localTypes whenFalse
                             | DoWhile(condition, body) ->
-                                validateExpression condition @ validateDo body)
+                                validateExpression localTypes condition @ validateDo localTypes body)
 
-                    validateExpression expression
+                    validateExpression initialLocalTypes expression
 
                 let expressionNameResolutionDiagnostics (definition: LetDefinition) expression =
                     []
@@ -17570,11 +17786,35 @@ module SurfaceElaboration =
                                 moduleTopLevelDefinitionsByName
                                 definition
                                 scheme
-                            @ (definition.Body
-                                |> Option.map (fun body ->
-                                    expressionPatternDiagnostics body
-                                    @ expressionNameResolutionDiagnostics definition body)
-                                |> Option.defaultValue [])
+                            @
+                                (let initialParameterLocals =
+                                     let annotatedParameterLocals =
+                                         definition.Parameters
+                                         |> List.choose (fun parameter ->
+                                             parameter.TypeTokens
+                                             |> Option.bind TypeSignatures.parseType
+                                             |> Option.map (fun parsedType ->
+                                                 parameter.Name, qualifyVisibleTypeNames bodyEnvironment parsedType))
+                                         |> Map.ofList
+
+                                     match scheme with
+                                     | Some bindingScheme ->
+                                         let parameterTypes, _ = TypeSignatures.schemeParts bindingScheme
+
+                                         if List.length parameterTypes = List.length definition.Parameters then
+                                             List.zip definition.Parameters parameterTypes
+                                             |> List.map (fun (parameter, parameterType) -> parameter.Name, parameterType)
+                                             |> Map.ofList
+                                         else
+                                             annotatedParameterLocals
+                                     | None ->
+                                         annotatedParameterLocals
+
+                                 definition.Body
+                                 |> Option.map (fun body ->
+                                     expressionPatternDiagnostics initialParameterLocals body
+                                     @ expressionNameResolutionDiagnostics definition body)
+                                 |> Option.defaultValue [])
                         | ProjectionDeclarationNode declaration ->
                             validateProjectionDeclaration declaration
                         | _ ->

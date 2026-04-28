@@ -163,6 +163,7 @@ and KBackendPattern =
     | BackendWildcardPattern
     | BackendBindPattern of KBackendPatternBinding
     | BackendLiteralPattern of LiteralValue * KBackendRepresentationClass
+    | BackendOrPattern of KBackendPattern list
     | BackendConstructorPattern of
         moduleName: string *
         typeName: string *

@@ -168,6 +168,40 @@ module internal IlDotNetBackendTyping =
                             }
 
                 and inferPatternBindings currentModule active expectedType pattern =
+                    let mergeOrPatternBindings (alternatives: Map<string, IlType> list) =
+                        match alternatives with
+                        | [] ->
+                            Result.Ok Map.empty
+                        | firstBindings :: rest ->
+                            let firstNames = firstBindings |> Map.keys |> Set.ofSeq
+
+                            rest
+                            |> List.fold
+                                (fun state candidateBindings ->
+                                    state
+                                    |> Result.bind (fun agreedBindings ->
+                                        let candidateNames = candidateBindings |> Map.keys |> Set.ofSeq
+
+                                        if candidateNames <> firstNames then
+                                            Result.Error "IL backend requires each or-pattern alternative to bind the same names."
+                                        else
+                                            firstBindings
+                                            |> Map.fold
+                                                (fun comparisonState name expectedBindingType ->
+                                                    comparisonState
+                                                    |> Result.bind (fun () ->
+                                                        let actualBindingType = candidateBindings[name]
+
+                                                        if actualBindingType = expectedBindingType then
+                                                            Result.Ok()
+                                                        else
+                                                            Result.Error
+                                                                $"IL backend requires binder '{name}' to have the same type in every or-pattern alternative, but found {formatIlType expectedBindingType} and {formatIlType actualBindingType}."))
+                                                (Result.Ok())
+                                            |> Result.map (fun () -> agreedBindings))
+                                )
+                                (Result.Ok firstBindings)
+
                     match pattern with
                     | KRuntimeWildcardPattern ->
                         Result.Ok(Map.empty<string, IlType>)
@@ -190,11 +224,15 @@ module internal IlDotNetBackendTyping =
                             Result.Error
                                 $"IL backend cannot match literal of type {formatIlType literalType} against {formatIlType expectedType}."
                     | KRuntimeOrPattern alternatives ->
-                        match alternatives with
-                        | first :: _ ->
-                            inferPatternBindings currentModule active expectedType first
-                        | [] ->
-                            Result.Ok(Map.empty<string, IlType>)
+                        alternatives
+                        |> List.fold
+                            (fun state alternative ->
+                                state
+                                |> Result.bind (fun collected ->
+                                    inferPatternBindings currentModule active expectedType alternative
+                                    |> Result.map (fun bindings -> bindings :: collected)))
+                            (Result.Ok [])
+                        |> Result.bind (fun collected -> mergeOrPatternBindings (List.rev collected))
                     | KRuntimeConstructorPattern(nameSegments, argumentPatterns) ->
                         match tryResolveConstructor rawModules currentModule nameSegments with
                         | None ->

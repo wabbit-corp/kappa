@@ -54,6 +54,8 @@ module internal ZigCcBackendEmit =
                         Set.empty
                     | BackendBindPattern binding ->
                         Set.singleton binding.Name
+                    | BackendOrPattern alternatives ->
+                        alternatives |> List.fold (fun state current -> Set.union state (loop current)) Set.empty
                     | BackendConstructorPattern(_, _, _, _, fieldPatterns) ->
                         fieldPatterns |> List.fold (fun state current -> Set.union state (loop current)) Set.empty
 
@@ -1457,6 +1459,100 @@ module internal ZigCcBackendEmit =
                     [ $"if ({literalGuard literal scrutineeExpression}) {{" ]
                     @ (successLines |> indentLines 1)
                     @ [ "}" ]
+            }
+        | BackendOrPattern alternatives ->
+            let rec collectBindings currentPattern =
+                match currentPattern with
+                | BackendWildcardPattern
+                | BackendLiteralPattern _ ->
+                    Result.Ok Map.empty
+                | BackendBindPattern binding ->
+                    Result.Ok(Map.ofList [ binding.Name, binding.Representation ])
+                | BackendConstructorPattern(_, _, _, _, fieldPatterns) ->
+                    fieldPatterns
+                    |> List.fold
+                        (fun state fieldPattern ->
+                            state
+                            |> Result.bind (fun bindings ->
+                                collectBindings fieldPattern
+                                |> Result.map (fun childBindings ->
+                                    Map.fold (fun acc key value -> acc |> Map.add key value) bindings childBindings)))
+                        (Result.Ok Map.empty)
+                | BackendOrPattern nestedAlternatives ->
+                    nestedAlternatives
+                    |> List.fold
+                        (fun state alternative ->
+                            state
+                            |> Result.bind (fun collected ->
+                                collectBindings alternative
+                                |> Result.map (fun alternativeBindings -> alternativeBindings :: collected)))
+                        (Result.Ok [])
+                    |> Result.bind (fun collected ->
+                        match List.rev collected with
+                        | [] ->
+                            Result.Ok Map.empty
+                        | firstBindings :: rest ->
+                            let firstNames = firstBindings |> Map.keys |> Set.ofSeq
+
+                            rest
+                            |> List.fold
+                                (fun comparisonState candidateBindings ->
+                                    comparisonState
+                                    |> Result.bind (fun agreedBindings ->
+                                        let candidateNames = candidateBindings |> Map.keys |> Set.ofSeq
+
+                                        if candidateNames <> firstNames then
+                                            Result.Error "zig backend requires each or-pattern alternative to bind the same names."
+                                        else
+                                            firstBindings
+                                            |> Map.fold
+                                                (fun bindingState name representation ->
+                                                    bindingState
+                                                    |> Result.bind (fun () ->
+                                                        let candidateRepresentation = candidateBindings[name]
+
+                                                        if candidateRepresentation = representation then
+                                                            Result.Ok()
+                                                        else
+                                                            Result.Error
+                                                                $"zig backend requires binder '{name}' to keep the same runtime representation across every or-pattern alternative."))
+                                                (Result.Ok())
+                                            |> Result.map (fun () -> agreedBindings))
+                                )
+                                (Result.Ok firstBindings))
+
+            result {
+                let! agreedBindings = collectBindings pattern
+
+                let sharedBindings =
+                    agreedBindings
+                    |> Map.toList
+                    |> List.map (fun (name, representation) -> name, representation, freshTemp context name)
+
+                let successScope =
+                    { scope with
+                        Bindings =
+                            sharedBindings
+                            |> List.fold (fun bindings (name, _, sharedLocal) -> bindings.Add(name, sharedLocal)) scope.Bindings }
+
+                let! successLines = emitSuccess successScope
+
+                let rec emitAlternatives remaining =
+                    match remaining with
+                    | [] ->
+                        Result.Ok []
+                    | alternative :: tail ->
+                        emitPatternCase context scope scrutineeExpression alternative (fun alternativeScope ->
+                            let assignments =
+                                sharedBindings
+                                |> List.map (fun (name, _, sharedLocal) ->
+                                    $"KValue* {sharedLocal} = {alternativeScope.Bindings[name]};")
+
+                            Result.Ok(assignments @ successLines))
+                        |> Result.bind (fun emittedAlternative ->
+                            emitAlternatives tail |> Result.map (fun emittedTail -> emittedAlternative @ emittedTail))
+
+                return! emitAlternatives alternatives
             }
         | BackendConstructorPattern(moduleName, typeName, _, tag, fieldPatterns) ->
             result {

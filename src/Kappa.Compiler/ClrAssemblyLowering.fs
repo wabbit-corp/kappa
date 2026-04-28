@@ -118,6 +118,8 @@ module internal ClrAssemblyLowering =
             KRuntimeNamePattern binding.Name
         | BackendLiteralPattern(literal, _) ->
             KRuntimeLiteralPattern literal
+        | BackendOrPattern alternatives ->
+            KRuntimeOrPattern(alternatives |> List.map lowerPattern)
         | BackendConstructorPattern(moduleName, _, constructorName, _, fieldPatterns) ->
             KRuntimeConstructorPattern(qualifiedName moduleName constructorName, fieldPatterns |> List.map lowerPattern)
 

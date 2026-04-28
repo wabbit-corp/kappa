@@ -241,6 +241,40 @@ module internal IlDotNetBackendEmit =
             let modules = state.Environment.Modules
 
             let rec inferPatternBindings expectedType pattern =
+                let mergeOrPatternBindings (alternatives: Map<string, IlType> list) =
+                    match alternatives with
+                    | [] ->
+                        Result.Ok Map.empty
+                    | firstBindings :: rest ->
+                        let firstNames = firstBindings |> Map.keys |> Set.ofSeq
+
+                        rest
+                        |> List.fold
+                            (fun state candidateBindings ->
+                                state
+                                |> Result.bind (fun agreedBindings ->
+                                    let candidateNames = candidateBindings |> Map.keys |> Set.ofSeq
+
+                                    if candidateNames <> firstNames then
+                                        Result.Error "IL backend requires each or-pattern alternative to bind the same names."
+                                    else
+                                        firstBindings
+                                        |> Map.fold
+                                            (fun comparisonState name expectedBindingType ->
+                                                comparisonState
+                                                |> Result.bind (fun () ->
+                                                    let actualBindingType = candidateBindings[name]
+
+                                                    if actualBindingType = expectedBindingType then
+                                                        Result.Ok()
+                                                    else
+                                                        Result.Error
+                                                            $"IL backend requires binder '{name}' to have the same type in every or-pattern alternative, but found {formatIlType expectedBindingType} and {formatIlType actualBindingType}."))
+                                            (Result.Ok())
+                                        |> Result.map (fun () -> agreedBindings))
+                            )
+                            (Result.Ok firstBindings)
+
                 match pattern with
                 | KRuntimeWildcardPattern ->
                     Result.Ok(Map.empty<string, IlType>)
@@ -263,11 +297,15 @@ module internal IlDotNetBackendEmit =
                         Result.Error
                             $"IL backend cannot match literal of type {formatIlType literalType} against {formatIlType expectedType}."
                 | KRuntimeOrPattern alternatives ->
-                    match alternatives with
-                    | first :: _ ->
-                        inferPatternBindings expectedType first
-                    | [] ->
-                        Result.Ok(Map.empty<string, IlType>)
+                    alternatives
+                    |> List.fold
+                        (fun state alternative ->
+                            state
+                            |> Result.bind (fun collected ->
+                                inferPatternBindings expectedType alternative
+                                |> Result.map (fun bindings -> bindings :: collected)))
+                        (Result.Ok [])
+                    |> Result.bind (fun collected -> mergeOrPatternBindings (List.rev collected))
                 | KRuntimeConstructorPattern(nameSegments, argumentPatterns) ->
                     match tryResolveConstructor modules currentModule nameSegments with
                     | None ->
@@ -1052,11 +1090,149 @@ module internal IlDotNetBackendEmit =
                     return currentScope
                 }
             | KRuntimeOrPattern alternatives ->
-                match alternatives with
-                | first :: _ ->
-                    emitPatternMatch currentScope expectedType first valueLocal failureLabel
-                | [] ->
-                    Result.Ok currentScope
+                result {
+                    let rec collectBindings currentExpectedType currentPattern =
+                        match currentPattern with
+                        | KRuntimeWildcardPattern ->
+                            Result.Ok(Map.empty<string, IlType>)
+                        | KRuntimeNamePattern name ->
+                            Result.Ok(Map.ofList [ name, currentExpectedType ])
+                        | KRuntimeLiteralPattern literal ->
+                            let literalType =
+                                match literal with
+                                | LiteralValue.Integer _ -> IlPrimitive IlInt64
+                                | LiteralValue.Float _ -> IlPrimitive IlFloat64
+                                | LiteralValue.String _ -> IlPrimitive IlString
+                                | LiteralValue.Character _
+                                | LiteralValue.Grapheme _ -> IlPrimitive IlString
+                                | LiteralValue.Byte _ -> IlPrimitive IlInt64
+                                | LiteralValue.Unit -> IlNamed("std.prelude", "Unit", [])
+
+                            if literalType = currentExpectedType then
+                                Result.Ok(Map.empty<string, IlType>)
+                            else
+                                Result.Error
+                                    $"IL backend cannot match literal of type {formatIlType literalType} against {formatIlType currentExpectedType}."
+                        | KRuntimeOrPattern nestedAlternatives ->
+                            nestedAlternatives
+                            |> List.fold
+                                (fun state alternative ->
+                                    state
+                                    |> Result.bind (fun collected ->
+                                        collectBindings currentExpectedType alternative
+                                        |> Result.map (fun bindings -> bindings :: collected)))
+                                (Result.Ok [])
+                            |> Result.bind (fun collected ->
+                                match List.rev collected with
+                                | [] ->
+                                    Result.Ok(Map.empty<string, IlType>)
+                                | firstBindings :: rest ->
+                                    let firstNames = firstBindings |> Map.keys |> Set.ofSeq
+
+                                    rest
+                                    |> List.fold
+                                        (fun state candidateBindings ->
+                                            state
+                                            |> Result.bind (fun agreedBindings ->
+                                                let candidateNames = candidateBindings |> Map.keys |> Set.ofSeq
+
+                                                if candidateNames <> firstNames then
+                                                    Result.Error "IL backend requires each or-pattern alternative to bind the same names."
+                                                else
+                                                    firstBindings
+                                                    |> Map.fold
+                                                        (fun comparisonState name expectedBindingType ->
+                                                            comparisonState
+                                                            |> Result.bind (fun () ->
+                                                                let actualBindingType = candidateBindings[name]
+
+                                                                if actualBindingType = expectedBindingType then
+                                                                    Result.Ok()
+                                                                else
+                                                                    Result.Error
+                                                                        $"IL backend requires binder '{name}' to have the same type in every or-pattern alternative, but found {formatIlType expectedBindingType} and {formatIlType actualBindingType}."))
+                                                        (Result.Ok())
+                                                    |> Result.map (fun () -> agreedBindings))
+                                        )
+                                        (Result.Ok firstBindings))
+                        | KRuntimeConstructorPattern(nameSegments, argumentPatterns) ->
+                            match tryResolveConstructor state.Environment.Modules currentModule nameSegments with
+                            | None ->
+                                let patternName = String.concat "." nameSegments
+                                Result.Error $"IL backend could not resolve constructor pattern '{patternName}'."
+                            | Some(_, constructorInfo) ->
+                                unifyTypes Map.empty (constructorResultType constructorInfo) currentExpectedType
+                                |> Result.bind (fun substitution ->
+                                    if List.length argumentPatterns <> List.length constructorInfo.FieldTypes then
+                                        Result.Error
+                                            $"IL backend expected pattern '{constructorInfo.Name}' to receive {List.length constructorInfo.FieldTypes} argument(s), but received {List.length argumentPatterns}."
+                                    else
+                                        List.zip argumentPatterns constructorInfo.FieldTypes
+                                        |> List.fold
+                                            (fun stateResult (argumentPattern, fieldTemplate) ->
+                                                stateResult
+                                                |> Result.bind (fun bindings ->
+                                                    let fieldType = substituteType substitution fieldTemplate
+
+                                                    collectBindings fieldType argumentPattern
+                                                    |> Result.map (fun childBindings ->
+                                                        Map.fold (fun acc key value -> acc |> Map.add key value) bindings childBindings)))
+                                            (Result.Ok(Map.empty<string, IlType>)))
+
+                    let! agreedBindings = collectBindings expectedType pattern
+
+                    let sharedBindings =
+                        agreedBindings
+                        |> Map.toList
+                        |> List.map (fun (name, bindingType) ->
+                            let sharedLocal = il.DeclareLocal(resolveClrType state typeParameters bindingType)
+                            name,
+                            { Location = Local sharedLocal
+                              Type = bindingType })
+
+                    let sharedScope =
+                        sharedBindings
+                        |> List.fold (fun scope (name, value) -> scope |> Map.add name value) currentScope
+
+                    let successLabel = il.DefineLabel()
+
+                    let emitSharedAssignments alternativeScope =
+                        sharedBindings
+                        |> List.iter (fun (name, sharedValue) ->
+                            let alternativeValue = alternativeScope |> Map.find name
+                            loadValue il alternativeValue
+                            emitCoerceStackValue state typeParameters alternativeValue.Type sharedValue.Type il
+
+                            match sharedValue.Location with
+                            | Local sharedLocal ->
+                                il.Emit(OpCodes.Stloc, sharedLocal)
+                            | Argument _ ->
+                                invalidOp "IL backend shared or-pattern bindings must lower to locals.")
+
+                    let rec emitAlternatives remaining =
+                        match remaining with
+                        | [] ->
+                            il.Emit(OpCodes.Br, (failureLabel: Label))
+                            Result.Ok()
+                        | [ alternative ] ->
+                            emitPatternMatch currentScope expectedType alternative valueLocal failureLabel
+                            |> Result.map (fun alternativeScope ->
+                                emitSharedAssignments alternativeScope
+                                il.Emit(OpCodes.Br, (successLabel: Label)))
+                        | alternative :: rest ->
+                            let nextAlternativeLabel = il.DefineLabel()
+
+                            emitPatternMatch currentScope expectedType alternative valueLocal nextAlternativeLabel
+                            |> Result.bind (fun alternativeScope ->
+                                emitSharedAssignments alternativeScope
+                                il.Emit(OpCodes.Br, (successLabel: Label))
+                                il.MarkLabel(nextAlternativeLabel)
+                                emitAlternatives rest)
+
+                    do! emitAlternatives alternatives
+                    il.MarkLabel(successLabel)
+                    return sharedScope
+                }
             | KRuntimeConstructorPattern(nameSegments, argumentPatterns) ->
                 match tryResolveConstructor state.Environment.Modules currentModule nameSegments with
                 | None ->

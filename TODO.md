@@ -563,11 +563,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Either fail early at CLI validation or generate a runner that statically references the emitted assembly and calls the entrypoint directly.
   - Sources: `reviews/dotnet1.md`.
 
-- `[High] Implement or reject or-patterns honestly on the IL path.`
-  - Current typing and emission appear to compile `A | B` as only the first alternative.
-  - Either implement shared-success-label multi-alternative pattern matching correctly, including binder compatibility checks, or reject or-patterns before IL emission.
-  - Sources: `reviews/dotnet1.md`.
-
 - `[Medium-High] Pick one canonical CLR-facing representation for `Char`, `UnicodeScalar`, `Grapheme`, and `Byte`.`
   - The current pipeline inconsistently treats them as `System.Char`, `System.String`, or integer-like values depending on where the value entered the pipeline.
   - Decide the representation model explicitly and make literals, type parsing, host interop, backend lowering, and emission agree.
