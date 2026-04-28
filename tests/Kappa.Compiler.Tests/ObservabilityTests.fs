@@ -572,6 +572,72 @@ let ``query fingerprint and unit ids are scoped by backend profile and analysis 
     Assert.False(String.Equals(zigUnit.Id, zigOtherSessionUnit.Id, StringComparison.Ordinal))
 
 [<Fact>]
+let ``declaration input keys stay stable when unrelated declarations are inserted earlier in the file`` () =
+    let originalWorkspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-declaration-key-stability-root"
+            "zig"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                    "let next = answer"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let insertedWorkspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-declaration-key-stability-root"
+            "zig"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let prelude = 0"
+                    "let answer = 42"
+                    "let next = answer"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let declarationHeaderKey workspace name =
+        Compilation.compilerFingerprints workspace
+        |> List.find (fun fingerprint ->
+            fingerprint.FingerprintKind = HeaderFingerprint
+            && fingerprint.Identity.Contains($"name={name}", StringComparison.Ordinal))
+        |> fun fingerprint -> fingerprint.InputKey
+
+    let declarationBodyKey workspace name =
+        Compilation.compilerFingerprints workspace
+        |> List.find (fun fingerprint ->
+            fingerprint.FingerprintKind = BodyFingerprint
+            && fingerprint.Identity.Contains($"name={name}", StringComparison.Ordinal))
+        |> fun fingerprint -> fingerprint.InputKey
+
+    let declarationUnitKey workspace unitKind name =
+        let inputKey = declarationHeaderKey workspace name
+
+        Compilation.incrementalUnits workspace
+        |> List.find (fun unit -> unit.UnitKind = unitKind && unit.InputKey = inputKey)
+        |> fun unit -> unit.InputKey
+
+    for declarationName in [ "answer"; "next" ] do
+        Assert.Equal(declarationHeaderKey originalWorkspace declarationName, declarationHeaderKey insertedWorkspace declarationName)
+        Assert.Equal(declarationBodyKey originalWorkspace declarationName, declarationBodyKey insertedWorkspace declarationName)
+
+        Assert.Equal(
+            declarationUnitKey originalWorkspace DeclarationHeaderUnit declarationName,
+            declarationUnitKey insertedWorkspace DeclarationHeaderUnit declarationName
+        )
+
+        Assert.Equal(
+            declarationUnitKey originalWorkspace DeclarationBodyUnit declarationName,
+            declarationUnitKey insertedWorkspace DeclarationBodyUnit declarationName
+        )
+
+[<Fact>]
 let ``checkpoint contract makes implementation defined runtime IR and profile targets explicit`` () =
     let source =
         [

@@ -188,11 +188,6 @@ module internal CompilationMetadata =
           BackendIntrinsicSet = workspace.BackendIntrinsicIdentity
           DependencyFingerprintIds = dependencyFingerprintIds }
 
-    let private declarationInputKey filePath index declaration =
-        let kind = declarationKindText declaration
-        let name = declarationName declaration |> Option.defaultValue "<anonymous>"
-        $"{filePath}#declaration:{index}:{kind}:{name}"
-
     let private parameterHeaderIdentity (parameter: Parameter) =
         match parameter.TypeTokens with
         | Some typeTokens -> $"{parameter.Name}:{tokensText typeTokens}"
@@ -334,6 +329,33 @@ module internal CompilationMetadata =
         let name = declarationName declaration |> Option.defaultValue "<anonymous>"
         $"body:kind={declarationKindText declaration};name={name};body={body}"
 
+    let private declarationInputKeyBase filePath declaration =
+        let kind = declarationKindText declaration
+        let name = declarationName declaration |> Option.defaultValue "<anonymous>"
+        let spellingHash = sha256Hex $"{declarationHeaderIdentity declaration}|{declarationBodyIdentity declaration}"
+        $"{filePath}#declaration:{kind}:{name}:spelling={spellingHash}"
+
+    let private declarationInputKeys filePath declarations =
+        let occurrenceCounts = System.Collections.Generic.Dictionary<string, int>(StringComparer.Ordinal)
+
+        declarations
+        |> List.map (fun declaration ->
+            let baseKey = declarationInputKeyBase filePath declaration
+
+            let occurrence =
+                match occurrenceCounts.TryGetValue(baseKey) with
+                | true, count ->
+                    occurrenceCounts[baseKey] <- count + 1
+                    count + 1
+                | false, _ ->
+                    occurrenceCounts[baseKey] <- 1
+                    1
+
+            if occurrence = 1 then
+                declaration, baseKey
+            else
+                declaration, $"{baseKey}:peer={occurrence}")
+
     let private moduleInterfaceIdentity (frontendModule: KFrontIRModule) =
         let imports =
             frontendModule.Imports
@@ -431,9 +453,8 @@ module internal CompilationMetadata =
             workspace.KFrontIR
             |> List.sortBy (fun frontendModule -> frontendModule.FilePath)
             |> List.collect (fun frontendModule ->
-                frontendModule.Declarations
-                |> List.mapi (fun index declaration ->
-                    let inputKey = declarationInputKey frontendModule.FilePath index declaration
+                declarationInputKeys frontendModule.FilePath frontendModule.Declarations
+                |> List.map (fun (declaration, inputKey) ->
                     let sourceDependency = sourceFingerprintByFile[frontendModule.FilePath].Id
 
                     let header =
@@ -599,9 +620,8 @@ module internal CompilationMetadata =
             workspace.KFrontIR
             |> List.sortBy (fun frontendModule -> frontendModule.FilePath)
             |> List.collect (fun frontendModule ->
-                frontendModule.Declarations
-                |> List.mapi (fun index declaration ->
-                    let inputKey = declarationInputKey frontendModule.FilePath index declaration
+                declarationInputKeys frontendModule.FilePath frontendModule.Declarations
+                |> List.map (fun (_declaration, inputKey) ->
 
                     let headerUnit =
                         incrementalUnit
