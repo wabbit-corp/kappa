@@ -52,8 +52,18 @@ module internal CompilationMetadata =
           BackendIntrinsicSet = workspace.BackendIntrinsicIdentity
           DeploymentMode = workspace.DeploymentMode }
 
-    let private queryId queryKind inputKey outputCheckpoint =
-        $"{QueryKind.toPortableName queryKind}:{inputKey}->{outputCheckpoint}"
+    let private metadataIdScope (workspace: WorkspaceCompilation) =
+        [
+            $"compiler={compilerImplementationId}/{compilerImplementationVersion}"
+            $"session={workspace.AnalysisSessionIdentity}"
+            $"build={workspace.BuildConfigurationIdentity}"
+            $"backend={workspace.BackendProfile}"
+            $"intrinsics={workspace.BackendIntrinsicIdentity}"
+        ]
+        |> String.concat ";"
+
+    let private queryId (workspace: WorkspaceCompilation) queryKind inputKey outputCheckpoint =
+        $"{QueryKind.toPortableName queryKind}:{metadataIdScope workspace}:input={inputKey}:output={outputCheckpoint}"
 
     let private queryRecord
         (workspace: WorkspaceCompilation)
@@ -63,7 +73,7 @@ module internal CompilationMetadata =
         requiredPhase
         dependencyIds
         =
-        { Id = queryId queryKind inputKey outputCheckpoint
+        { Id = queryId workspace queryKind inputKey outputCheckpoint
           QueryKind = queryKind
           InputKey = inputKey
           OutputCheckpoint = outputCheckpoint
@@ -158,8 +168,8 @@ module internal CompilationMetadata =
 
         documentQueries @ targetQueries
 
-    let private fingerprintId fingerprintKind inputKey =
-        $"{CompilerFingerprintKind.toPortableName fingerprintKind}:{inputKey}"
+    let private fingerprintId (workspace: WorkspaceCompilation) fingerprintKind inputKey =
+        $"{CompilerFingerprintKind.toPortableName fingerprintKind}:{metadataIdScope workspace}:input={inputKey}"
 
     let private fingerprintRecord
         (workspace: WorkspaceCompilation)
@@ -168,7 +178,7 @@ module internal CompilationMetadata =
         identity
         dependencyFingerprintIds
         =
-        { Id = fingerprintId fingerprintKind inputKey
+        { Id = fingerprintId workspace fingerprintKind inputKey
           FingerprintKind = fingerprintKind
           InputKey = inputKey
           Identity = identity
@@ -517,8 +527,8 @@ module internal CompilationMetadata =
 
         sourceFingerprints @ declarationFingerprints @ interfaceFingerprints @ backendFingerprints
 
-    let private unitId unitKind inputKey =
-        $"{IncrementalUnitKind.toPortableName unitKind}:{inputKey}"
+    let private unitId (workspace: WorkspaceCompilation) unitKind inputKey =
+        $"{IncrementalUnitKind.toPortableName unitKind}:{metadataIdScope workspace}:input={inputKey}"
 
     let private incrementalUnit
         (workspace: WorkspaceCompilation)
@@ -528,7 +538,7 @@ module internal CompilationMetadata =
         fingerprintIds
         dependencyUnitIds
         =
-        { Id = unitId unitKind inputKey
+        { Id = unitId workspace unitKind inputKey
           UnitKind = unitKind
           InputKey = inputKey
           OutputCheckpoint = outputCheckpoint
@@ -548,7 +558,7 @@ module internal CompilationMetadata =
             |> Map.ofList
 
         let fingerprintIdFor fingerprintKind inputKey =
-            fingerprintId fingerprintKind inputKey
+            fingerprintId workspace fingerprintKind inputKey
 
         let sourceUnitByFile =
             workspace.Documents

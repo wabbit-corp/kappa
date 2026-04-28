@@ -480,6 +480,98 @@ let ``source fingerprints change when source text changes with identical path le
     Assert.False(String.Equals(fingerprint41.Identity, fingerprint42.Identity, StringComparison.Ordinal))
 
 [<Fact>]
+let ``query fingerprint and unit ids are scoped by backend profile and analysis session`` () =
+    let source =
+        [
+            "main.kp",
+            [
+                "module main"
+                "let answer = 42"
+            ]
+            |> String.concat "\n"
+        ]
+
+    let zigWorkspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-scoped-ids-root"
+            "zig"
+            source
+
+    let dotnetWorkspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-scoped-ids-root"
+            "dotnet"
+            source
+
+    let zigOtherSessionWorkspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-scoped-ids-other-root"
+            "zig"
+            source
+
+    let sourceQuery workspace =
+        Compilation.queryPlan workspace
+        |> List.find (fun query ->
+            query.QueryKind = ParseSourceFileQuery
+            && query.InputKey.EndsWith("main.kp", StringComparison.OrdinalIgnoreCase))
+
+    let sourceFingerprint workspace =
+        Compilation.compilerFingerprints workspace
+        |> List.find (fun fingerprint ->
+            fingerprint.FingerprintKind = SourceFingerprint
+            && fingerprint.InputKey.EndsWith("main.kp", StringComparison.OrdinalIgnoreCase))
+
+    let sourceUnit workspace =
+        Compilation.incrementalUnits workspace
+        |> List.find (fun unit ->
+            unit.UnitKind = SourceFileTextUnit
+            && unit.InputKey.Contains("main.kp", StringComparison.OrdinalIgnoreCase))
+
+    let assertScopedId (identifier: string) =
+        Assert.Contains("compiler=", identifier, StringComparison.Ordinal)
+        Assert.Contains("session=", identifier, StringComparison.Ordinal)
+        Assert.Contains("build=", identifier, StringComparison.Ordinal)
+        Assert.Contains("backend=", identifier, StringComparison.Ordinal)
+        Assert.Contains("intrinsics=", identifier, StringComparison.Ordinal)
+
+    let zigQuery = sourceQuery zigWorkspace
+    let dotnetQuery = sourceQuery dotnetWorkspace
+    let zigOtherSessionQuery = sourceQuery zigOtherSessionWorkspace
+
+    let zigFingerprint = sourceFingerprint zigWorkspace
+    let dotnetFingerprint = sourceFingerprint dotnetWorkspace
+    let zigOtherSessionFingerprint = sourceFingerprint zigOtherSessionWorkspace
+
+    let zigUnit = sourceUnit zigWorkspace
+    let dotnetUnit = sourceUnit dotnetWorkspace
+    let zigOtherSessionUnit = sourceUnit zigOtherSessionWorkspace
+
+    Assert.Equal(zigWorkspace.SourceRoot, dotnetWorkspace.SourceRoot)
+    Assert.False(String.Equals(zigWorkspace.BackendProfile, dotnetWorkspace.BackendProfile, StringComparison.Ordinal))
+    Assert.False(String.Equals(zigWorkspace.AnalysisSessionIdentity, dotnetWorkspace.AnalysisSessionIdentity, StringComparison.Ordinal))
+    Assert.False(String.Equals(zigWorkspace.SourceRoot, zigOtherSessionWorkspace.SourceRoot, StringComparison.Ordinal))
+    Assert.False(String.Equals(zigWorkspace.AnalysisSessionIdentity, zigOtherSessionWorkspace.AnalysisSessionIdentity, StringComparison.Ordinal))
+
+    [ zigQuery.Id
+      dotnetQuery.Id
+      zigOtherSessionQuery.Id
+      zigFingerprint.Id
+      dotnetFingerprint.Id
+      zigOtherSessionFingerprint.Id
+      zigUnit.Id
+      dotnetUnit.Id
+      zigOtherSessionUnit.Id ]
+    |> List.iter assertScopedId
+
+    Assert.False(String.Equals(zigQuery.Id, dotnetQuery.Id, StringComparison.Ordinal))
+    Assert.False(String.Equals(zigFingerprint.Id, dotnetFingerprint.Id, StringComparison.Ordinal))
+    Assert.False(String.Equals(zigUnit.Id, dotnetUnit.Id, StringComparison.Ordinal))
+
+    Assert.False(String.Equals(zigQuery.Id, zigOtherSessionQuery.Id, StringComparison.Ordinal))
+    Assert.False(String.Equals(zigFingerprint.Id, zigOtherSessionFingerprint.Id, StringComparison.Ordinal))
+    Assert.False(String.Equals(zigUnit.Id, zigOtherSessionUnit.Id, StringComparison.Ordinal))
+
+[<Fact>]
 let ``checkpoint contract makes implementation defined runtime IR and profile targets explicit`` () =
     let source =
         [

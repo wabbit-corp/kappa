@@ -620,11 +620,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
 
 ## 11A. Observability, Incrementality, and Checkpoint Metadata
 
-- `[High] Scope query/fingerprint/incremental-unit IDs by analysis session, build configuration, backend profile, and compiler version.`
-  - The records carry session/build/profile data, but the IDs themselves are too small and can collide across configurations or backend profiles.
-  - Either include session/build/profile/compiler-version information in IDs, or make the current IDs clearly local/display-only and add a real globally stable key.
-  - Sources: `reviews/observability1.md`.
-
 - `[Critical] Add imported-interface dependency edges to the incremental/query graph.`
   - The current metadata largely models per-file linear chains and omits dependencies from importing modules to imported module interfaces/fingerprints.
   - That makes downstream invalidation unsound when exported signatures change.
