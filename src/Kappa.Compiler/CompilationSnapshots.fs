@@ -19,6 +19,17 @@ module internal CompilationSnapshots =
         | None ->
             true
 
+    let private resolvedPhasesAtSnapshot ownershipFactsByFile phase (document: ParsedDocument) =
+        let effectivePhase =
+            if KFrontIRPhase.ordinal phase < KFrontIRPhase.ordinal BODY_RESOLVE then
+                phase
+            elif Map.containsKey document.Source.FilePath ownershipFactsByFile then
+                phase
+            else
+                IMPLICIT_SIGNATURES
+
+        effectivePhase
+
     let private documentSnapshot ownershipFactsByFile phase (document: ParsedDocument) =
         let imports =
             if KFrontIRPhase.ordinal phase >= KFrontIRPhase.ordinal IMPORTS then
@@ -40,7 +51,7 @@ module internal CompilationSnapshots =
                 Map.tryFind document.Source.FilePath ownershipFactsByFile
             else
                 None
-          ResolvedPhases = KFrontIRPhase.phasesThrough phase |> Set.ofList }
+          ResolvedPhases = resolvedPhasesAtSnapshot ownershipFactsByFile phase document |> KFrontIRPhase.phasesThrough |> Set.ofList }
 
     let buildFrontendSnapshots ownershipFactsByFile (diagnostics: Diagnostic list) (documents: ParsedDocument list) =
         KFrontIRPhase.all

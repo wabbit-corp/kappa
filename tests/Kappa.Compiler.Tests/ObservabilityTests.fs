@@ -672,6 +672,55 @@ let ``frontend checkpoints dump phase specific snapshots`` () =
     Assert.NotEqual(JsonValueKind.Null, bodyResolveMainDocument.GetProperty("ownership").ValueKind)
 
 [<Fact>]
+let ``frontend checkpoints do not overclaim late KFrontIR phases when frontend errors block checking`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-frontend-phase-blocked-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "import missing"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected a frontend import diagnostic.")
+
+    let checkersJson =
+        match Compilation.dumpStage workspace "KFrontIR.CHECKERS" StageDumpFormat.Json with
+        | Result.Ok dump -> dump
+        | Result.Error message -> failwith message
+
+    use checkersDocument = JsonDocument.Parse(checkersJson)
+
+    let checkersMainDocument =
+        checkersDocument.RootElement.GetProperty("documents").EnumerateArray()
+        |> Seq.find (fun item -> item.GetProperty("moduleIdentity").GetString() = "main")
+
+    let checkersPhases =
+        checkersMainDocument.GetProperty("resolvedPhases").EnumerateArray()
+        |> Seq.map (fun item -> item.GetString())
+        |> Seq.filter (isNull >> not)
+        |> Seq.toList
+
+    Assert.Contains("IMPLICIT_SIGNATURES", checkersPhases)
+    Assert.DoesNotContain("BODY_RESOLVE", checkersPhases)
+    Assert.DoesNotContain("CHECKERS", checkersPhases)
+    Assert.Equal(JsonValueKind.Null, checkersMainDocument.GetProperty("ownership").ValueKind)
+
+    let frontendModule =
+        workspace.KFrontIR
+        |> List.find (fun moduleDump -> moduleDump.ModuleIdentity = Some [ "main" ])
+
+    Assert.Contains(IMPLICIT_SIGNATURES, frontendModule.ResolvedPhases)
+    Assert.DoesNotContain(BODY_RESOLVE, frontendModule.ResolvedPhases)
+    Assert.DoesNotContain(CHECKERS, frontendModule.ResolvedPhases)
+
+    Assert.Empty(Compilation.verifyCheckpoint workspace "KFrontIR.CHECKERS")
+
+[<Fact>]
 let ``KBackendIR dumps expose graph ids provenance and dump format metadata`` () =
     let workspace =
         compileInMemoryWorkspace

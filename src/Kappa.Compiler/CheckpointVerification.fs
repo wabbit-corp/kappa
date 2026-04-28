@@ -64,9 +64,6 @@ module CheckpointVerification =
             workspace
 
     let private verifyFrontendCheckpoint (workspace: WorkspaceCompilation) checkpoint phase =
-        let expectedResolvedPhases =
-            KFrontIRPhase.phasesThrough phase |> Set.ofList
-
         [
             let duplicatePaths =
                 workspace.KFrontIR
@@ -81,6 +78,17 @@ module CheckpointVerification =
                 | Some token when token.Kind = EndOfFile -> ()
                 | _ ->
                     yield makeDiagnostic $"Checkpoint '{checkpoint}' requires an EOF token for '{document.FilePath}'."
+
+                let expectedPhase =
+                    if KFrontIRPhase.ordinal phase < KFrontIRPhase.ordinal BODY_RESOLVE then
+                        phase
+                    elif document.Ownership.IsSome then
+                        phase
+                    else
+                        IMPLICIT_SIGNATURES
+
+                let expectedResolvedPhases =
+                    KFrontIRPhase.phasesThrough expectedPhase |> Set.ofList
 
                 if document.ResolvedPhases <> expectedResolvedPhases then
                     let actual =

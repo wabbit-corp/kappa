@@ -101,9 +101,9 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Continue with standardized families, payloads, labels, related origins, fix-it support, and long-form explanation entries for visibility, trait, resource, and backend diagnostics.
   - Sources: `reviews/frontend1.md`, `reviews/general1.md`.
 
-- `[Medium] Complete the intended KFrontIR phase model instead of leaving it as scaffolding.`
-  - The phase/checkpoint scaffolding exists and is useful, but the spec’s KFrontIR model is more detailed than the current implementation.
-  - Continue filling in phase-accurate semantics, error tolerance, and tooling-facing behavior.
+- `[Medium] Complete the remaining KFrontIR query/error-tolerance model beyond honest phase claims.`
+  - KFrontIR snapshots now stop claiming `BODY_RESOLVE`/`CHECKERS` when frontend errors prevented those phases from running, but the spec’s fuller KFrontIR model is still more detailed than the current implementation.
+  - Continue filling in declaration/query-level lazy resolution, error-tolerant placeholder nodes, and tooling-facing behavior grounded in checker facts.
   - Sources: `reviews/frontend1.md`.
 
 ## 5. Surface Elaboration and Static Semantics
