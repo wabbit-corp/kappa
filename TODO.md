@@ -430,12 +430,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Either implement these terms in the interpreter/runtime surface or stop exporting them until they work.
   - Sources: `reviews/unicode1.md`.
 
-- `[High] Make `String` ordering Unicode-scalar-order, not UTF-16 ordinal.`
-  - The interpreter currently uses `String.CompareOrdinal` for `String`, `Character`, and `Grapheme`.
-  - That diverges from Unicode scalar order for supplementary characters.
-  - Replace this with scalar-sequence comparison over `Rune` values.
-  - Sources: `reviews/unicode1.md`.
-
 - `[Medium-High] Emit the declared Unicode warning diagnostics or remove the illusion that they exist.`
   - The diagnostic codes for bidi control, confusable identifiers, and non-normalized source text exist, but the review found no emitters.
   - Implement them or clearly narrow the current behavior.

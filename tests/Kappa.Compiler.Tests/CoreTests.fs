@@ -190,6 +190,33 @@ let ``decodeUtf8 returns Err UnicodeDecodeError on invalid bytes`` () =
         failwithf "Expected invalid UTF-8 to return a Result value, got %s" issue.Message
 
 [<Fact>]
+let ``interpreter orders text values by unicode scalar sequence not utf16 ordinal`` () =
+    let mainSource =
+        [
+            "module main"
+            "let stringOrder = \"\\u{E000}\" < \"\\u{1F600}\""
+            "let charOrder = '\\u{E000}' < '\\u{1F600}'"
+            "let graphemeOrder = g'\\u{E000}' < g'\\u{1F600}'"
+            "let result = stringOrder && charOrder && graphemeOrder"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-unicode-scalar-order-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok(BooleanValue true) -> ()
+    | Result.Ok value ->
+        failwithf "Expected Unicode scalar ordering regression to evaluate to True, got %A" value
+    | Result.Error issue ->
+        failwithf "Expected Unicode scalar ordering regression to evaluate successfully, got %s" issue.Message
+
+[<Fact>]
 let ``interpreter supports type scoped constructor patterns`` () =
     let mainSource =
         [

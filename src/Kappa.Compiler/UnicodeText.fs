@@ -49,6 +49,25 @@ module UnicodeText =
     let scalarValues (text: string) =
         text.EnumerateRunes() |> Seq.toList
 
+    let compareScalarSequences (left: string) (right: string) =
+        let rec loop (leftRunes: Rune list) (rightRunes: Rune list) =
+            match leftRunes, rightRunes with
+            | [], [] ->
+                0
+            | [], _ :: _ ->
+                -1
+            | _ :: _, [] ->
+                1
+            | leftRune :: remainingLeft, rightRune :: remainingRight ->
+                let comparison = compare leftRune.Value rightRune.Value
+
+                if comparison <> 0 then
+                    comparison
+                else
+                    loop remainingLeft remainingRight
+
+        loop (scalarValues left) (scalarValues right)
+
     let trySingleScalar (text: string) =
         let runes = scalarValues text
 
