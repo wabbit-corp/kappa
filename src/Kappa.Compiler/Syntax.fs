@@ -1309,11 +1309,118 @@ module SyntaxFacts =
             trimStringQuotes value
             |> tryDecodeOrdinary
 
-    let private tryDecodeQuotedLiteralBody prefix (value: string) =
+    let private tryTrimQuotedLiteralBody prefix (value: string) =
         if value.Length >= 2 && value[0] = '\'' && value[value.Length - 1] = '\'' then
-            tryUnescapeStringContent (value.Substring(1, value.Length - 2))
+            Result.Ok(value.Substring(1, value.Length - 2))
         else
             Result.Error $"Invalid {prefix} literal."
+
+    let private tryDecodeQuotedLiteralBody prefix (value: string) =
+        tryTrimQuotedLiteralBody prefix value
+        |> Result.bind tryUnescapeStringContent
+
+    let private tryDecodeByteLiteralBody (body: string) =
+        let bytes = ResizeArray<byte>()
+        let mutable index = 0
+        let mutable error = None
+
+        let rejectInvalidByteLiteral () =
+            error <- Some "Byte literals must decode to exactly one byte value."
+
+        let appendByte (value: byte) =
+            bytes.Add(value)
+
+        let appendRawPrintableAscii (value: char) =
+            if value >= ' ' && value <= '~' then
+                appendByte (byte value)
+            else
+                rejectInvalidByteLiteral ()
+
+        let appendUnicodeEscape escapePrefix (codePointText: string) =
+            match Int32.TryParse(codePointText, Globalization.NumberStyles.HexNumber, null) with
+            | true, value ->
+                match UnicodeText.tryScalarFromValue value with
+                | Some rune ->
+                    let encoded = UnicodeText.encodeUtf8 (rune.ToString())
+
+                    if encoded.Length = 1 then
+                        appendByte encoded[0]
+                    else
+                        rejectInvalidByteLiteral ()
+                | None ->
+                    error <- Some $"Invalid Unicode escape '{escapePrefix}'."
+            | _ ->
+                error <- Some $"Invalid Unicode escape '{escapePrefix}'."
+
+        let appendByteEscape escapePrefix (byteText: string) =
+            match Byte.TryParse(byteText, Globalization.NumberStyles.HexNumber, null) with
+            | true, value ->
+                appendByte value
+            | _ ->
+                error <- Some $"Invalid byte escape '{escapePrefix}'."
+
+        while index < body.Length && error.IsNone do
+            if body[index] <> '\\' then
+                appendRawPrintableAscii body[index]
+                index <- index + 1
+            elif index + 1 >= body.Length then
+                error <- Some "Unterminated escape sequence."
+            else
+                match body[index + 1] with
+                | '\\' ->
+                    appendByte (byte '\\')
+                    index <- index + 2
+                | '"' ->
+                    appendByte (byte '"')
+                    index <- index + 2
+                | '\'' ->
+                    appendByte (byte '\'')
+                    index <- index + 2
+                | '$' ->
+                    appendByte (byte '$')
+                    index <- index + 2
+                | 'n' ->
+                    appendByte (byte '\n')
+                    index <- index + 2
+                | 't' ->
+                    appendByte (byte '\t')
+                    index <- index + 2
+                | 'r' ->
+                    appendByte (byte '\r')
+                    index <- index + 2
+                | 'b' ->
+                    appendByte (byte '\b')
+                    index <- index + 2
+                | 'x' when index + 3 < body.Length ->
+                    let byteText = body.Substring(index + 2, 2)
+                    appendByteEscape ($"\\x{byteText}") byteText
+                    index <- index + 4
+                | 'u' when index + 2 < body.Length && body[index + 2] = '{' ->
+                    let closingBrace = body.IndexOf('}', index + 3)
+
+                    if closingBrace < 0 then
+                        error <- Some "Unterminated Unicode escape sequence."
+                        index <- body.Length
+                    else
+                        let codePointText = body.Substring(index + 3, closingBrace - (index + 3))
+
+                        if String.IsNullOrWhiteSpace(codePointText) || codePointText.Length > 6 then
+                            error <- Some $"Invalid Unicode escape '\\u{{{codePointText}}}'."
+                        else
+                            appendUnicodeEscape ($"\\u{{{codePointText}}}") codePointText
+
+                        index <- closingBrace + 1
+                | 'u' when index + 5 < body.Length ->
+                    let codePointText = body.Substring(index + 2, 4)
+                    appendUnicodeEscape ($"\\u{codePointText}") codePointText
+                    index <- index + 6
+                | other ->
+                    error <- Some $"Unknown escape sequence '\\{other}'."
+
+        match error with
+        | Some message -> Result.Error message
+        | None when bytes.Count = 1 -> Result.Ok bytes[0]
+        | None -> Result.Error "Byte literals must decode to exactly one byte value."
 
     let tryDecodeCharacterLiteral (value: string) =
         tryDecodeQuotedLiteralBody "Unicode scalar" value
@@ -1336,14 +1443,8 @@ module SyntaxFacts =
         )
 
     let tryDecodeByteLiteral (value: string) =
-        tryDecodeQuotedLiteralBody "byte" value
-        |> Result.bind (fun text ->
-            match UnicodeText.trySingleByte text with
-            | Some value ->
-                Result.Ok value
-            | None ->
-                Result.Error "Byte literals must decode to exactly one byte value."
-        )
+        tryTrimQuotedLiteralBody "byte" value
+        |> Result.bind tryDecodeByteLiteralBody
 
     let moduleNameToText (segments: string seq) = String.Join(".", segments)
 

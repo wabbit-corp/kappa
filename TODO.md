@@ -419,12 +419,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
 
 ## 8A. Unicode, Bytes, and Hash Semantics
 
-- `[High] Fix byte literal decoding to preserve spec semantics and escape provenance.`
-  - Byte literals are currently decoded through the ordinary string unescaper, then accepted whenever the resulting scalar value is `<= 0xFF`.
-  - That incorrectly accepts forms like `b'ÿ'` / `b'\u{00FF}'` even though the spec only permits Unicode escapes when the resulting scalar’s UTF-8 encoding is exactly one byte.
-  - Implement a byte-literal-specific decoder so `\xNN` is a raw byte and Unicode escapes are accepted only when their UTF-8 encoding length is exactly one byte.
-  - Sources: `reviews/unicode1.md`.
-
 - `[High] Implement or retract missing `std.unicode` surface terms.`
   - `StandardModules.fs` advertises terms such as `scalars`, `graphemes`, `words`, and `sentences`, but the interpreter does not create them.
   - Either implement these terms in the interpreter/runtime surface or stop exporting them until they work.

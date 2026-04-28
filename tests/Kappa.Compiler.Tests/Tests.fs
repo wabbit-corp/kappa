@@ -191,6 +191,58 @@ let ``lexer reports malformed prefixed numeric literals directly`` () =
     Assert.Equal(3, lexicalDiagnostics.Length)
 
 [<Fact>]
+let ``byte literal decoder preserves raw byte escape provenance`` () =
+    match SyntaxFacts.tryDecodeByteLiteral "'\\xFF'" with
+    | Result.Ok value ->
+        Assert.Equal(0xFFuy, value)
+    | Result.Error message ->
+        failwithf "Expected \\xFF byte escape to decode, got %s" message
+
+    match SyntaxFacts.tryDecodeByteLiteral "'\\u{61}'" with
+    | Result.Ok value ->
+        Assert.Equal(byte 'a', value)
+    | Result.Error message ->
+        failwithf "Expected one-byte Unicode escape to decode, got %s" message
+
+    match SyntaxFacts.tryDecodeByteLiteral "'ÿ'" with
+    | Result.Ok value ->
+        failwithf "Expected raw non-ASCII byte literal to be rejected, but decoded to %A" value
+    | Result.Error _ -> ()
+
+    match SyntaxFacts.tryDecodeByteLiteral "'\\u{00FF}'" with
+    | Result.Ok value ->
+        failwithf "Expected two-byte UTF-8 Unicode escape to be rejected, but decoded to %A" value
+    | Result.Error _ -> ()
+
+    match SyntaxFacts.tryDecodeByteLiteral "'\\u{0080}'" with
+    | Result.Ok value ->
+        failwithf "Expected non-ASCII two-byte UTF-8 escape to be rejected, but decoded to %A" value
+    | Result.Error _ -> ()
+
+[<Fact>]
+let ``frontend rejects byte literals whose payload is not exactly one byte under spec rules`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithPackageMode
+            "memory-invalid-byte-literal-root"
+            true
+            [
+                "main.kp",
+                [
+                    "let raw = b'ÿ'"
+                    "let escaped = b'\\u{00FF}'"
+                    "let escaped2 = b'\\u{0080}'"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let invalidByteDiagnostics =
+        workspace.Diagnostics
+        |> List.filter (fun diagnostic -> diagnostic.Code = DiagnosticCode.UnicodeInvalidByteLiteral)
+
+    Assert.True(workspace.HasErrors, "Expected invalid byte literals to produce diagnostics.")
+    Assert.Equal(3, invalidByteDiagnostics.Length)
+
+[<Fact>]
 let ``lexer preserves spec suffixed identifier adjacency for numeric literals`` () =
     let source =
         createSource
