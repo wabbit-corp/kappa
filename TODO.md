@@ -642,12 +642,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Split “checkpoint representation is well-formed” from “artifact emission is permitted” if necessary, but do so consistently across backends.
   - Sources: `reviews/observability1.md`, `reviews/backend1.md`.
 
-- `[High] Attach structured locations/related origins to checkpoint verification diagnostics.`
-  - Current checkpoint-verification diagnostics are created with no locations and no related locations.
-  - The observability contract requires at least one related node/source origin when provenance exists.
-  - Thread provenance/origin data into verification failures and expose them structurally.
-  - Sources: `reviews/observability1.md`.
-
 - `[Medium] Make stage-dump diagnostics checkpoint-local for every checkpoint, not only frontend snapshots.`
   - Frontend phase dumps use snapshot diagnostics, but `surface-source`, `KCore`, `KRuntimeIR`, and `KBackendIR` dumps currently attach global workspace diagnostics.
   - Dump consumers should see diagnostics meaningful at that checkpoint rather than complaints discovered only later.

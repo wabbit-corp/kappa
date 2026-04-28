@@ -13,6 +13,67 @@ module CheckpointVerification =
           Location = None
           RelatedLocations = [] }
 
+    let private tokenName (token: Token) =
+        match token.Kind with
+        | Identifier
+        | Keyword _ ->
+            Some(SyntaxFacts.trimIdentifierQuotes token.Text)
+        | Operator ->
+            Some token.Text
+        | _ ->
+            None
+
+    let private relatedLocation role location =
+        { Message = role
+          Location = location }
+
+    let private fileOriginLocation (documents: ParsedDocument list) filePath =
+        documents
+        |> List.tryFind (fun document -> String.Equals(document.Source.FilePath, filePath, StringComparison.Ordinal))
+        |> Option.map (fun document -> document.Source.GetLocation(TextSpan.FromBounds(0, 0)))
+
+    let private provenancePrimaryLocation (documents: ParsedDocument list) (origin: KCoreOrigin) =
+        documents
+        |> List.tryFind (fun document -> String.Equals(document.Source.FilePath, origin.FilePath, StringComparison.Ordinal))
+        |> Option.bind (fun document ->
+            origin.DeclarationName
+            |> Option.bind (fun declarationName ->
+                document.Syntax.Tokens
+                |> List.tryPick (fun token ->
+                    tokenName token
+                    |> Option.filter (fun tokenText -> String.Equals(tokenText, declarationName, StringComparison.Ordinal))
+                    |> Option.map (fun _ -> document.Source.GetLocation(token.Span)))))
+
+    let private moduleOriginRelatedLocations (documents: ParsedDocument list) moduleName filePath =
+        fileOriginLocation documents filePath
+        |> Option.map (fun location -> [ relatedLocation $"module origin: {moduleName}" location ])
+        |> Option.defaultValue []
+
+    let private makeModuleDiagnostic (documents: ParsedDocument list) moduleName filePath message =
+        let location = fileOriginLocation documents filePath
+
+        { makeDiagnostic message with
+            Location = location
+            RelatedLocations = moduleOriginRelatedLocations documents moduleName filePath }
+
+    let private makeOriginDiagnostic (documents: ParsedDocument list) (origin: KCoreOrigin) message =
+        let location =
+            provenancePrimaryLocation documents origin
+            |> Option.orElseWith (fun () -> fileOriginLocation documents origin.FilePath)
+
+        { makeDiagnostic message with
+            Location = location
+            RelatedLocations = moduleOriginRelatedLocations documents origin.ModuleName origin.FilePath }
+
+    let private makeDuplicateLocationDiagnostic message role locations =
+        match locations with
+        | head :: tail ->
+            { makeDiagnostic message with
+                Location = Some head
+                RelatedLocations = tail |> List.map (relatedLocation role) }
+        | [] ->
+            makeDiagnostic message
+
     let private tryParseTypeText text =
         let source = SourceText.From("__checkpoint_type__.kp", text)
         let lexResult = Lexer.tokenize source
@@ -42,16 +103,29 @@ module CheckpointVerification =
     let private verifySurfaceSource (workspace: WorkspaceCompilation) =
         let duplicatePaths =
             workspace.Documents
-            |> List.countBy (fun document -> document.Source.FilePath)
-            |> List.filter (fun (_, count) -> count > 1)
+            |> List.groupBy (fun document -> document.Source.FilePath)
+            |> List.filter (fun (_, documents) -> List.length documents > 1)
 
         [
-            for filePath, _ in duplicatePaths do
-                yield makeDiagnostic $"Checkpoint 'surface-source' requires unique file identities, but '{filePath}' appeared more than once."
+            for filePath, documents in duplicatePaths do
+                let locations =
+                    documents
+                    |> List.map (fun document -> document.Source.GetLocation(TextSpan.FromBounds(0, 0)))
+
+                yield
+                    makeDuplicateLocationDiagnostic
+                        $"Checkpoint 'surface-source' requires unique file identities, but '{filePath}' appeared more than once."
+                        "also appears here"
+                        locations
 
             for document in workspace.Documents do
                 if document.Source.LineCount <= 0 then
-                    yield makeDiagnostic $"Checkpoint 'surface-source' requires non-empty line tables for '{document.Source.FilePath}'."
+                    yield
+                        makeModuleDiagnostic
+                            workspace.Documents
+                            (document.ModuleName |> Option.map SyntaxFacts.moduleNameToText |> Option.defaultValue document.Source.FilePath)
+                            document.Source.FilePath
+                            $"Checkpoint 'surface-source' requires non-empty line tables for '{document.Source.FilePath}'."
         ]
 
     let private frontendWorkspaceForPhase (workspace: WorkspaceCompilation) phase =
@@ -67,17 +141,30 @@ module CheckpointVerification =
         [
             let duplicatePaths =
                 workspace.KFrontIR
-                |> List.countBy (fun document -> document.FilePath)
-                |> List.filter (fun (_, count) -> count > 1)
+                |> List.groupBy (fun document -> document.FilePath)
+                |> List.filter (fun (_, documents) -> List.length documents > 1)
 
-            for filePath, _ in duplicatePaths do
-                yield makeDiagnostic $"Checkpoint '{checkpoint}' requires unique file identities, but '{filePath}' appeared more than once."
+            for filePath, documents in duplicatePaths do
+                let locations =
+                    documents
+                    |> List.choose (fun document -> fileOriginLocation workspace.Documents document.FilePath)
+
+                yield
+                    makeDuplicateLocationDiagnostic
+                        $"Checkpoint '{checkpoint}' requires unique file identities, but '{filePath}' appeared more than once."
+                        "also appears here"
+                        locations
 
             for document in workspace.KFrontIR do
                 match List.tryLast document.Tokens with
                 | Some token when token.Kind = EndOfFile -> ()
                 | _ ->
-                    yield makeDiagnostic $"Checkpoint '{checkpoint}' requires an EOF token for '{document.FilePath}'."
+                    yield
+                        makeModuleDiagnostic
+                            workspace.Documents
+                            (document.ModuleIdentity |> Option.map SyntaxFacts.moduleNameToText |> Option.defaultValue document.FilePath)
+                            document.FilePath
+                            $"Checkpoint '{checkpoint}' requires an EOF token for '{document.FilePath}'."
 
                 let expectedPhase =
                     if KFrontIRPhase.ordinal phase < KFrontIRPhase.ordinal BODY_RESOLVE then
@@ -104,7 +191,10 @@ module CheckpointVerification =
                         |> String.concat ", "
 
                     yield
-                        makeDiagnostic
+                        makeModuleDiagnostic
+                            workspace.Documents
+                            (document.ModuleIdentity |> Option.map SyntaxFacts.moduleNameToText |> Option.defaultValue document.FilePath)
+                            document.FilePath
                             $"Checkpoint '{checkpoint}' requires '{document.FilePath}' to expose resolved phases [{expected}], but found [{actual}]."
 
                 if
@@ -112,23 +202,33 @@ module CheckpointVerification =
                     && document.Ownership.IsSome
                 then
                     yield
-                        makeDiagnostic
+                        makeModuleDiagnostic
+                            workspace.Documents
+                            (document.ModuleIdentity |> Option.map SyntaxFacts.moduleNameToText |> Option.defaultValue document.FilePath)
+                            document.FilePath
                             $"Checkpoint '{checkpoint}' must not expose BODY_RESOLVE ownership facts for '{document.FilePath}' before BODY_RESOLVE."
         ]
 
     let private verifyKCoreCheckpoint (workspace: WorkspaceCompilation) =
         let duplicateModules =
             workspace.KCore
-            |> List.map (fun moduleDump -> moduleDump.Name)
-            |> List.countBy id
-            |> List.filter (fun (_, count) -> count > 1)
+            |> List.groupBy (fun moduleDump -> moduleDump.Name)
+            |> List.filter (fun (_, modules) -> List.length modules > 1)
 
         [
             let frontendWorkspace = frontendWorkspaceForPhase workspace CORE_LOWERING
             yield! verifyFrontendCheckpoint frontendWorkspace "KCore" CORE_LOWERING
 
-            for moduleName, _ in duplicateModules do
-                yield makeDiagnostic $"Checkpoint 'KCore' requires unique module identities, but '{moduleName}' appeared more than once."
+            for moduleName, modules in duplicateModules do
+                let locations =
+                    modules
+                    |> List.choose (fun moduleDump -> fileOriginLocation workspace.Documents moduleDump.SourceFile)
+
+                yield
+                    makeDuplicateLocationDiagnostic
+                        $"Checkpoint 'KCore' requires unique module identities, but '{moduleName}' appeared more than once."
+                        "also appears here"
+                        locations
         ]
 
     let private importedModuleName (spec: ImportSpec) : string option =
@@ -141,7 +241,7 @@ module CheckpointVerification =
     let private availableIntrinsicTerms backendProfile allowUnsafeConsume moduleName =
         Stdlib.intrinsicTermNamesAvailableInModuleTextForCompilation backendProfile allowUnsafeConsume moduleName
 
-    let private verifyRuntimePattern checkpoint bindingLabel (pattern: KRuntimePattern) =
+    let private verifyRuntimePattern documents checkpoint bindingLabel bindingOrigin (pattern: KRuntimePattern) =
         let rec verify locals runtimePattern =
             match runtimePattern with
             | KRuntimeWildcardPattern
@@ -150,7 +250,7 @@ module CheckpointVerification =
             | KRuntimeNamePattern name ->
                 if Set.contains name locals then
                     locals,
-                    [ makeDiagnostic $"Checkpoint '{checkpoint}' requires unique pattern binder names within '{bindingLabel}', but '{name}' was duplicated." ]
+                    [ makeOriginDiagnostic documents bindingOrigin $"Checkpoint '{checkpoint}' requires unique pattern binder names within '{bindingLabel}', but '{name}' was duplicated." ]
                 else
                     Set.add name locals, []
             | KRuntimeOrPattern alternatives ->
@@ -224,7 +324,7 @@ module CheckpointVerification =
             || typeText.Contains("&[", StringComparison.Ordinal)
             || typeText.Contains("(&", StringComparison.Ordinal)
 
-    let private verifyRuntimeExpression checkpoint bindingLabel (expression: KRuntimeExpression) =
+    let private verifyRuntimeExpression documents checkpoint bindingLabel bindingOrigin (expression: KRuntimeExpression) =
         let rec verify locals runtimeExpression =
             match runtimeExpression with
             | KRuntimeLiteral _
@@ -240,7 +340,7 @@ module CheckpointVerification =
                     |> List.countBy id
                     |> List.filter (fun (_, count) -> count > 1)
                     |> List.map (fun (name, _) ->
-                        makeDiagnostic $"Checkpoint '{checkpoint}' requires closures in '{bindingLabel}' to have unique parameter names, but '{name}' was duplicated.")
+                        makeOriginDiagnostic documents bindingOrigin $"Checkpoint '{checkpoint}' requires closures in '{bindingLabel}' to have unique parameter names, but '{name}' was duplicated.")
 
                 let extendedLocals =
                     parameters
@@ -266,7 +366,7 @@ module CheckpointVerification =
 
                 let deepHandlerDiagnostics =
                     if isDeep then
-                        [ makeDiagnostic $"Checkpoint '{checkpoint}' requires direct deep-handle runtime nodes in '{bindingLabel}' to be desugared into the recursive shallow-handler driver before KRuntimeIR verification." ]
+                        [ makeOriginDiagnostic documents bindingOrigin $"Checkpoint '{checkpoint}' requires direct deep-handle runtime nodes in '{bindingLabel}' to be desugared into the recursive shallow-handler driver before KRuntimeIR verification." ]
                     else
                         []
 
@@ -280,7 +380,7 @@ module CheckpointVerification =
                 @ (cases
                    |> List.collect (fun (caseClause: KRuntimeMatchCase) ->
                        let caseLocals, patternDiagnostics =
-                           verifyRuntimePattern checkpoint bindingLabel caseClause.Pattern
+                           verifyRuntimePattern documents checkpoint bindingLabel bindingOrigin caseClause.Pattern
 
                        let extendedLocals = Set.union locals caseLocals
 
@@ -401,56 +501,100 @@ module CheckpointVerification =
                 for spec in moduleDump.Imports do
                     match importedModuleName spec with
                     | Some importedName when not (moduleMap.ContainsKey importedName) ->
-                        yield makeDiagnostic $"Checkpoint 'KRuntimeIR' requires imported runtime module '{importedName}' to be present for module '{moduleDump.Name}'."
+                        yield
+                            makeModuleDiagnostic
+                                workspace.Documents
+                                moduleDump.Name
+                                moduleDump.SourceFile
+                                $"Checkpoint 'KRuntimeIR' requires imported runtime module '{importedName}' to be present for module '{moduleDump.Name}'."
                     | _ ->
                         ()
 
                 let duplicateBindings =
                     moduleDump.Bindings
-                    |> List.countBy (fun binding -> binding.Name)
-                    |> List.filter (fun (_, count) -> count > 1)
+                    |> List.groupBy (fun binding -> binding.Name)
+                    |> List.filter (fun (_, bindings) -> List.length bindings > 1)
 
-                for bindingName, _ in duplicateBindings do
-                    yield makeDiagnostic $"Checkpoint 'KRuntimeIR' requires unique binding identities within module '{moduleDump.Name}', but '{bindingName}' was duplicated."
+                for bindingName, bindings in duplicateBindings do
+                    let locations =
+                        bindings
+                        |> List.choose (fun binding -> provenancePrimaryLocation workspace.Documents binding.Provenance)
+
+                    yield
+                        makeDuplicateLocationDiagnostic
+                            $"Checkpoint 'KRuntimeIR' requires unique binding identities within module '{moduleDump.Name}', but '{bindingName}' was duplicated."
+                            "also declared here"
+                            locations
 
                 let duplicateConstructors =
                     moduleDump.Constructors
-                    |> List.countBy (fun constructor -> constructor.Name)
-                    |> List.filter (fun (_, count) -> count > 1)
+                    |> List.groupBy (fun constructor -> constructor.Name)
+                    |> List.filter (fun (_, constructors) -> List.length constructors > 1)
 
-                for constructorName, _ in duplicateConstructors do
-                    yield makeDiagnostic $"Checkpoint 'KRuntimeIR' requires unique constructor identities within module '{moduleDump.Name}', but '{constructorName}' was duplicated."
+                for constructorName, constructors in duplicateConstructors do
+                    let locations =
+                        constructors
+                        |> List.choose (fun constructor -> provenancePrimaryLocation workspace.Documents constructor.Provenance)
+
+                    yield
+                        makeDuplicateLocationDiagnostic
+                            $"Checkpoint 'KRuntimeIR' requires unique constructor identities within module '{moduleDump.Name}', but '{constructorName}' was duplicated."
+                            "also declared here"
+                            locations
 
                 let supportedIntrinsics = availableIntrinsicTerms workspace.BackendProfile workspace.AllowUnsafeConsume moduleDump.Name
 
                 for intrinsicName in moduleDump.IntrinsicTerms do
                     if not (supportedIntrinsics.Contains intrinsicName) then
-                        yield makeDiagnostic $"Checkpoint 'KRuntimeIR' requires intrinsic term '{intrinsicName}' in module '{moduleDump.Name}' to be provided by backend profile '{workspace.BackendProfile}'."
+                        yield
+                            makeModuleDiagnostic
+                                workspace.Documents
+                                moduleDump.Name
+                                moduleDump.SourceFile
+                                $"Checkpoint 'KRuntimeIR' requires intrinsic term '{intrinsicName}' in module '{moduleDump.Name}' to be provided by backend profile '{workspace.BackendProfile}'."
 
                 for binding in moduleDump.Bindings do
                     if binding.Intrinsic then
                         if binding.Body.IsSome then
-                            yield makeDiagnostic $"Checkpoint 'KRuntimeIR' requires intrinsic binding '{moduleDump.Name}.{binding.Name}' to omit a body."
+                            yield
+                                makeOriginDiagnostic
+                                    workspace.Documents
+                                    binding.Provenance
+                                    $"Checkpoint 'KRuntimeIR' requires intrinsic binding '{moduleDump.Name}.{binding.Name}' to omit a body."
 
                         if not (List.contains binding.Name moduleDump.IntrinsicTerms) then
-                            yield makeDiagnostic $"Checkpoint 'KRuntimeIR' requires intrinsic binding '{moduleDump.Name}.{binding.Name}' to be listed in module intrinsic terms."
+                            yield
+                                makeOriginDiagnostic
+                                    workspace.Documents
+                                    binding.Provenance
+                                    $"Checkpoint 'KRuntimeIR' requires intrinsic binding '{moduleDump.Name}.{binding.Name}' to be listed in module intrinsic terms."
 
                         if not (supportedIntrinsics.Contains binding.Name) then
-                            yield makeDiagnostic $"Checkpoint 'KRuntimeIR' requires intrinsic term '{binding.Name}' in module '{moduleDump.Name}' to be provided by backend profile '{workspace.BackendProfile}'."
+                            yield
+                                makeOriginDiagnostic
+                                    workspace.Documents
+                                    binding.Provenance
+                                    $"Checkpoint 'KRuntimeIR' requires intrinsic term '{binding.Name}' in module '{moduleDump.Name}' to be provided by backend profile '{workspace.BackendProfile}'."
                     else
                         match binding.Body with
                         | None ->
                             if not (isGeneratedHostBinding binding.Provenance) then
-                                yield makeDiagnostic $"Checkpoint 'KRuntimeIR' requires runtime binding '{moduleDump.Name}.{binding.Name}' to have a body."
+                                yield
+                                    makeOriginDiagnostic
+                                        workspace.Documents
+                                        binding.Provenance
+                                        $"Checkpoint 'KRuntimeIR' requires runtime binding '{moduleDump.Name}.{binding.Name}' to have a body."
                         | Some body ->
                             let bindingLabel = $"{moduleDump.Name}.{binding.Name}"
-                            yield! verifyRuntimeExpression "KRuntimeIR" bindingLabel body
+                            yield! verifyRuntimeExpression workspace.Documents "KRuntimeIR" bindingLabel binding.Provenance body
         ]
 
     let private verifyKBackendPattern
+        (documents: ParsedDocument list)
         (moduleMap: Map<string, KBackendModule>)
         checkpoint
         bindingLabel
+        bindingOrigin
         (pattern: KBackendPattern)
         =
         let rec collectBindings backendPattern =
@@ -471,7 +615,7 @@ module CheckpointVerification =
                             (fun state name _ ->
                                 if Map.containsKey name bindingsSoFar then
                                     state
-                                    @ [ makeDiagnostic $"Checkpoint '{checkpoint}' requires unique pattern binder names within '{bindingLabel}', but '{name}' was duplicated." ]
+                                    @ [ makeOriginDiagnostic documents bindingOrigin $"Checkpoint '{checkpoint}' requires unique pattern binder names within '{bindingLabel}', but '{name}' was duplicated." ]
                                 else
                                     state)
                             diagnosticsSoFar
@@ -500,7 +644,7 @@ module CheckpointVerification =
                                 let state =
                                     if candidateNames <> firstNames then
                                         state
-                                        @ [ makeDiagnostic $"Checkpoint '{checkpoint}' requires each or-pattern alternative within '{bindingLabel}' to bind the same names." ]
+                                        @ [ makeOriginDiagnostic documents bindingOrigin $"Checkpoint '{checkpoint}' requires each or-pattern alternative within '{bindingLabel}' to bind the same names." ]
                                     else
                                         state
 
@@ -512,7 +656,7 @@ module CheckpointVerification =
                                             comparisonState
                                         | Some _ ->
                                             comparisonState
-                                            @ [ makeDiagnostic $"Checkpoint '{checkpoint}' requires binder '{name}' within '{bindingLabel}' to keep the same backend representation across every or-pattern alternative." ]
+                                            @ [ makeOriginDiagnostic documents bindingOrigin $"Checkpoint '{checkpoint}' requires binder '{name}' within '{bindingLabel}' to keep the same backend representation across every or-pattern alternative." ]
                                         | None ->
                                             comparisonState)
                                     state)
@@ -546,7 +690,7 @@ module CheckpointVerification =
                         []
                     else
                         let constructorText = $"{moduleName}.{typeName}.{constructorName}@{tag}"
-                        [ makeDiagnostic $"Checkpoint '{checkpoint}' requires resolved constructor patterns, but '{constructorText}' in '{bindingLabel}' is not present in the backend module graph." ]
+                        [ makeOriginDiagnostic documents bindingOrigin $"Checkpoint '{checkpoint}' requires resolved constructor patterns, but '{constructorText}' in '{bindingLabel}' is not present in the backend module graph." ]
 
                 diagnostics @ (fieldPatterns |> List.collect verifyConstructors)
 
@@ -603,7 +747,9 @@ module CheckpointVerification =
                             match parameter.TypeText with
                             | Some typeText when runtimeTypeLeaksErasureMetadata allowEffectRowMetadata typeText ->
                                 yield
-                                    makeDiagnostic
+                                    makeOriginDiagnostic
+                                        workspace.Documents
+                                        binding.Provenance
                                         $"Checkpoint 'KBackendIR' requires pre-erasure runtime metadata to be removed before backend lowering, but parameter '{runtimeModule.Name}.{binding.Name}.{parameter.Name}' still exposes '{typeText}'."
                             | _ ->
                                 ()
@@ -611,7 +757,9 @@ module CheckpointVerification =
                         match binding.ReturnTypeText with
                         | Some typeText when runtimeTypeLeaksErasureMetadata allowEffectRowMetadata typeText ->
                             yield
-                                makeDiagnostic
+                                makeOriginDiagnostic
+                                    workspace.Documents
+                                    binding.Provenance
                                     $"Checkpoint 'KBackendIR' requires pre-erasure runtime metadata to be removed before backend lowering, but return type of '{runtimeModule.Name}.{binding.Name}' still exposes '{typeText}'."
                         | _ ->
                             ()
@@ -621,14 +769,19 @@ module CheckpointVerification =
                             for index, fieldTypeText in constructor.FieldTypeTexts |> List.indexed do
                                 if runtimeTypeLeaksErasureMetadata allowEffectRowMetadata fieldTypeText then
                                     yield
-                                        makeDiagnostic
+                                        makeOriginDiagnostic
+                                            workspace.Documents
+                                            constructor.Provenance
                                             $"Checkpoint 'KBackendIR' requires pre-erasure runtime metadata to be removed before backend lowering, but constructor field '{runtimeModule.Name}.{constructor.Name}[{index}]' still exposes '{fieldTypeText}'."
 
                     for instanceInfo in runtimeModule.TraitInstances do
                         for index, headTypeText in instanceInfo.HeadTypeTexts |> List.indexed do
                             if runtimeTypeLeaksErasureMetadata allowEffectRowMetadata headTypeText then
                                 yield
-                                    makeDiagnostic
+                                    makeModuleDiagnostic
+                                        workspace.Documents
+                                        runtimeModule.Name
+                                        runtimeModule.SourceFile
                                         $"Checkpoint 'KBackendIR' requires pre-erasure runtime metadata to be removed before backend lowering, but instance head '{runtimeModule.Name}.{instanceInfo.TraitName}[{index}]' still exposes '{headTypeText}'."
             ]
 
@@ -670,7 +823,7 @@ module CheckpointVerification =
             | BackendConstructorName(moduleName, typeName, constructorName, tag, _, _) ->
                 $"{moduleName}.{typeName}.{constructorName}@{tag}"
 
-        let rec verifyBackendExpression (currentModule: KBackendModule) bindingLabel backendExpression =
+        let rec verifyBackendExpression (currentModule: KBackendModule) bindingLabel bindingOrigin backendExpression =
             match backendExpression with
             | BackendLiteral _ ->
                 []
@@ -678,128 +831,128 @@ module CheckpointVerification =
                 if resolvedNameExists resolvedName then
                     []
                 else
-                    [ makeDiagnostic $"Checkpoint 'KBackendIR' requires resolved runtime names, but '{resolvedNameText resolvedName}' in '{bindingLabel}' is not present in the backend module graph." ]
+                    [ makeOriginDiagnostic workspace.Documents bindingOrigin $"Checkpoint 'KBackendIR' requires resolved runtime names, but '{resolvedNameText resolvedName}' in '{bindingLabel}' is not present in the backend module graph." ]
             | BackendEffectLabel _ ->
                 []
             | BackendEffectOperation(label, _, _, _) ->
-                verifyBackendExpression currentModule bindingLabel label
+                verifyBackendExpression currentModule bindingLabel bindingOrigin label
             | BackendClosure(parameters, captures, environmentLayout, body, convention, representation) ->
                 let duplicateParameters =
                     parameters
                     |> List.countBy (fun parameter -> parameter.Name)
                     |> List.filter (fun (_, count) -> count > 1)
                     |> List.map (fun (name, _) ->
-                        makeDiagnostic $"Checkpoint 'KBackendIR' requires closures in '{bindingLabel}' to have unique parameter names, but '{name}' was duplicated.")
+                        makeOriginDiagnostic workspace.Documents bindingOrigin $"Checkpoint 'KBackendIR' requires closures in '{bindingLabel}' to have unique parameter names, but '{name}' was duplicated.")
 
                 let duplicateCaptures =
                     captures
                     |> List.countBy (fun capture -> capture.Name)
                     |> List.filter (fun (_, count) -> count > 1)
                     |> List.map (fun (name, _) ->
-                        makeDiagnostic $"Checkpoint 'KBackendIR' requires closures in '{bindingLabel}' to have unique capture names, but '{name}' was duplicated.")
+                        makeOriginDiagnostic workspace.Documents bindingOrigin $"Checkpoint 'KBackendIR' requires closures in '{bindingLabel}' to have unique capture names, but '{name}' was duplicated.")
 
                 let environmentDiagnostics =
                     if environmentLayoutNames currentModule |> Set.contains environmentLayout then
                         []
                     else
-                        [ makeDiagnostic $"Checkpoint 'KBackendIR' requires closure environment layout '{environmentLayout}' in '{bindingLabel}' to be present in module '{currentModule.Name}'." ]
+                        [ makeOriginDiagnostic workspace.Documents bindingOrigin $"Checkpoint 'KBackendIR' requires closure environment layout '{environmentLayout}' in '{bindingLabel}' to be present in module '{currentModule.Name}'." ]
 
                 let conventionDiagnostics =
                     [
                         if convention.RuntimeArity <> List.length parameters then
-                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires closure '{bindingLabel}' to have a calling convention arity matching its parameter count."
+                            yield makeOriginDiagnostic workspace.Documents bindingOrigin $"Checkpoint 'KBackendIR' requires closure '{bindingLabel}' to have a calling convention arity matching its parameter count."
 
                         if convention.ParameterRepresentations <> (parameters |> List.map (fun parameter -> parameter.Representation)) then
-                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires closure '{bindingLabel}' to have calling convention parameter representations that match its parameters."
+                            yield makeOriginDiagnostic workspace.Documents bindingOrigin $"Checkpoint 'KBackendIR' requires closure '{bindingLabel}' to have calling convention parameter representations that match its parameters."
 
                         match representation with
                         | BackendRepClosure layoutName when not (String.Equals(layoutName, environmentLayout, StringComparison.Ordinal)) ->
-                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires closure '{bindingLabel}' to have a representation that references environment layout '{environmentLayout}'."
+                            yield makeOriginDiagnostic workspace.Documents bindingOrigin $"Checkpoint 'KBackendIR' requires closure '{bindingLabel}' to have a representation that references environment layout '{environmentLayout}'."
                         | BackendRepClosure _ -> ()
                         | _ ->
-                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires closure '{bindingLabel}' to use a closure representation."
+                            yield makeOriginDiagnostic workspace.Documents bindingOrigin $"Checkpoint 'KBackendIR' requires closure '{bindingLabel}' to use a closure representation."
                     ]
 
                 duplicateParameters
                 @ duplicateCaptures
                 @ environmentDiagnostics
                 @ conventionDiagnostics
-                @ verifyBackendExpression currentModule bindingLabel body
+                @ verifyBackendExpression currentModule bindingLabel bindingOrigin body
             | BackendIfThenElse(condition, whenTrue, whenFalse, _) ->
-                verifyBackendExpression currentModule bindingLabel condition
-                @ verifyBackendExpression currentModule bindingLabel whenTrue
-                @ verifyBackendExpression currentModule bindingLabel whenFalse
+                verifyBackendExpression currentModule bindingLabel bindingOrigin condition
+                @ verifyBackendExpression currentModule bindingLabel bindingOrigin whenTrue
+                @ verifyBackendExpression currentModule bindingLabel bindingOrigin whenFalse
             | BackendMatch(scrutinee, cases, _) ->
-                verifyBackendExpression currentModule bindingLabel scrutinee
+                verifyBackendExpression currentModule bindingLabel bindingOrigin scrutinee
                 @ (cases
                    |> List.collect (fun caseClause ->
                        let _, patternDiagnostics =
-                           verifyKBackendPattern moduleMap "KBackendIR" bindingLabel caseClause.Pattern
+                           verifyKBackendPattern workspace.Documents moduleMap "KBackendIR" bindingLabel bindingOrigin caseClause.Pattern
 
                        let guardDiagnostics =
                            caseClause.Guard
-                           |> Option.map (verifyBackendExpression currentModule bindingLabel)
+                           |> Option.map (verifyBackendExpression currentModule bindingLabel bindingOrigin)
                            |> Option.defaultValue []
 
-                       patternDiagnostics @ guardDiagnostics @ verifyBackendExpression currentModule bindingLabel caseClause.Body))
+                       patternDiagnostics @ guardDiagnostics @ verifyBackendExpression currentModule bindingLabel bindingOrigin caseClause.Body))
             | BackendExecute(expression, _) ->
-                verifyBackendExpression currentModule bindingLabel expression
+                verifyBackendExpression currentModule bindingLabel bindingOrigin expression
             | BackendPure(expression, _) ->
-                verifyBackendExpression currentModule bindingLabel expression
+                verifyBackendExpression currentModule bindingLabel bindingOrigin expression
             | BackendBind(action, binder, _) ->
-                verifyBackendExpression currentModule bindingLabel action
-                @ verifyBackendExpression currentModule bindingLabel binder
+                verifyBackendExpression currentModule bindingLabel bindingOrigin action
+                @ verifyBackendExpression currentModule bindingLabel bindingOrigin binder
             | BackendThen(first, second, _) ->
-                verifyBackendExpression currentModule bindingLabel first
-                @ verifyBackendExpression currentModule bindingLabel second
+                verifyBackendExpression currentModule bindingLabel bindingOrigin first
+                @ verifyBackendExpression currentModule bindingLabel bindingOrigin second
             | BackendHandle(_, label, body, returnClause, operationClauses, _) ->
-                verifyBackendExpression currentModule bindingLabel label
-                @ verifyBackendExpression currentModule bindingLabel body
-                @ verifyBackendExpression currentModule bindingLabel returnClause.Body
-                @ (operationClauses |> List.collect (fun clause -> verifyBackendExpression currentModule bindingLabel clause.Body))
+                verifyBackendExpression currentModule bindingLabel bindingOrigin label
+                @ verifyBackendExpression currentModule bindingLabel bindingOrigin body
+                @ verifyBackendExpression currentModule bindingLabel bindingOrigin returnClause.Body
+                @ (operationClauses |> List.collect (fun clause -> verifyBackendExpression currentModule bindingLabel bindingOrigin clause.Body))
             | BackendLet(_, value, body, _) ->
-                verifyBackendExpression currentModule bindingLabel value
-                @ verifyBackendExpression currentModule bindingLabel body
+                verifyBackendExpression currentModule bindingLabel bindingOrigin value
+                @ verifyBackendExpression currentModule bindingLabel bindingOrigin body
             | BackendSequence(first, second, _) ->
-                verifyBackendExpression currentModule bindingLabel first
-                @ verifyBackendExpression currentModule bindingLabel second
+                verifyBackendExpression currentModule bindingLabel bindingOrigin first
+                @ verifyBackendExpression currentModule bindingLabel bindingOrigin second
             | BackendWhile(condition, body) ->
-                verifyBackendExpression currentModule bindingLabel condition
-                @ verifyBackendExpression currentModule bindingLabel body
+                verifyBackendExpression currentModule bindingLabel bindingOrigin condition
+                @ verifyBackendExpression currentModule bindingLabel bindingOrigin body
             | BackendCall(callee, arguments, convention, _) ->
                 let conventionDiagnostics =
                     [
                         if convention.RuntimeArity <> List.length arguments then
-                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires calls in '{bindingLabel}' to have an argument count matching the calling convention arity."
+                            yield makeOriginDiagnostic workspace.Documents bindingOrigin $"Checkpoint 'KBackendIR' requires calls in '{bindingLabel}' to have an argument count matching the calling convention arity."
 
                         if List.length convention.ParameterRepresentations <> List.length arguments then
-                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires calls in '{bindingLabel}' to have a parameter representation for each argument."
+                            yield makeOriginDiagnostic workspace.Documents bindingOrigin $"Checkpoint 'KBackendIR' requires calls in '{bindingLabel}' to have a parameter representation for each argument."
                     ]
 
                 conventionDiagnostics
-                @ verifyBackendExpression currentModule bindingLabel callee
-                @ (arguments |> List.collect (verifyBackendExpression currentModule bindingLabel))
+                @ verifyBackendExpression currentModule bindingLabel bindingOrigin callee
+                @ (arguments |> List.collect (verifyBackendExpression currentModule bindingLabel bindingOrigin))
             | BackendDictionaryValue(_, _, _, _) ->
                 []
             | BackendTraitCall(_, _, dictionary, arguments, _) ->
-                verifyBackendExpression currentModule bindingLabel dictionary
-                @ (arguments |> List.collect (verifyBackendExpression currentModule bindingLabel))
+                verifyBackendExpression currentModule bindingLabel bindingOrigin dictionary
+                @ (arguments |> List.collect (verifyBackendExpression currentModule bindingLabel bindingOrigin))
             | BackendConstructData(moduleName, typeName, constructorName, tag, fields, _) ->
                 let constructorDiagnostics =
                     if constructorExists moduleName typeName constructorName tag (List.length fields) then
                         []
                     else
                         let constructorText = $"{moduleName}.{typeName}.{constructorName}@{tag}"
-                        [ makeDiagnostic $"Checkpoint 'KBackendIR' requires constructed data '{constructorText}' in '{bindingLabel}' to match a backend data layout." ]
+                        [ makeOriginDiagnostic workspace.Documents bindingOrigin $"Checkpoint 'KBackendIR' requires constructed data '{constructorText}' in '{bindingLabel}' to match a backend data layout." ]
 
-                constructorDiagnostics @ (fields |> List.collect (verifyBackendExpression currentModule bindingLabel))
+                constructorDiagnostics @ (fields |> List.collect (verifyBackendExpression currentModule bindingLabel bindingOrigin))
             | BackendPrefixedString(_, parts, _) ->
                 parts
                 |> List.collect (function
                     | BackendStringText _ ->
                         []
                     | BackendStringInterpolation inner ->
-                        verifyBackendExpression currentModule bindingLabel inner)
+                        verifyBackendExpression currentModule bindingLabel bindingOrigin inner)
 
         [
             yield! verifyKRuntimeIRCheckpoint workspace
@@ -812,31 +965,61 @@ module CheckpointVerification =
 
             for runtimeModuleName in runtimeModuleNames do
                 if not (moduleMap.ContainsKey runtimeModuleName) then
-                    yield makeDiagnostic $"Checkpoint 'KBackendIR' requires a backend module for runtime module '{runtimeModuleName}'."
+                    match workspace.KRuntimeIR |> List.tryFind (fun runtimeModule -> String.Equals(runtimeModule.Name, runtimeModuleName, StringComparison.Ordinal)) with
+                    | Some runtimeModule ->
+                        yield
+                            makeModuleDiagnostic
+                                workspace.Documents
+                                runtimeModule.Name
+                                runtimeModule.SourceFile
+                                $"Checkpoint 'KBackendIR' requires a backend module for runtime module '{runtimeModuleName}'."
+                    | None ->
+                        yield makeDiagnostic $"Checkpoint 'KBackendIR' requires a backend module for runtime module '{runtimeModuleName}'."
 
             for moduleDump in backendModules do
                 for spec in moduleDump.Imports do
                     match importedModuleName spec with
                     | Some importedName when not (moduleMap.ContainsKey importedName) ->
-                        yield makeDiagnostic $"Checkpoint 'KBackendIR' requires imported backend module '{importedName}' to be present for module '{moduleDump.Name}'."
+                        yield
+                            makeModuleDiagnostic
+                                workspace.Documents
+                                moduleDump.Name
+                                moduleDump.SourceFile
+                                $"Checkpoint 'KBackendIR' requires imported backend module '{importedName}' to be present for module '{moduleDump.Name}'."
                     | _ ->
                         ()
 
                 let duplicateFunctions =
                     moduleDump.Functions
-                    |> List.countBy (fun binding -> binding.Name)
-                    |> List.filter (fun (_, count) -> count > 1)
+                    |> List.groupBy (fun binding -> binding.Name)
+                    |> List.filter (fun (_, bindings) -> List.length bindings > 1)
 
-                for functionName, _ in duplicateFunctions do
-                    yield makeDiagnostic $"Checkpoint 'KBackendIR' requires unique function identities within module '{moduleDump.Name}', but '{functionName}' was duplicated."
+                for functionName, bindings in duplicateFunctions do
+                    let locations =
+                        bindings
+                        |> List.choose (fun binding -> provenancePrimaryLocation workspace.Documents binding.Provenance)
+
+                    yield
+                        makeDuplicateLocationDiagnostic
+                            $"Checkpoint 'KBackendIR' requires unique function identities within module '{moduleDump.Name}', but '{functionName}' was duplicated."
+                            "also declared here"
+                            locations
 
                 let duplicateDataLayouts =
                     moduleDump.DataLayouts
-                    |> List.countBy (fun layout -> layout.TypeName)
-                    |> List.filter (fun (_, count) -> count > 1)
+                    |> List.groupBy (fun layout -> layout.TypeName)
+                    |> List.filter (fun (_, layouts) -> List.length layouts > 1)
 
-                for typeName, _ in duplicateDataLayouts do
-                    yield makeDiagnostic $"Checkpoint 'KBackendIR' requires unique data-layout identities within module '{moduleDump.Name}', but '{typeName}' was duplicated."
+                for typeName, layouts in duplicateDataLayouts do
+                    let locations =
+                        layouts
+                        |> List.choose (fun layout -> provenancePrimaryLocation workspace.Documents layout.Provenance)
+
+                    yield
+                        makeDuplicateLocationDiagnostic
+                            $"Checkpoint 'KBackendIR' requires unique data-layout identities within module '{moduleDump.Name}', but '{typeName}' was duplicated."
+                            "also declared here"
+                            locations
 
                 let duplicateEnvironmentLayouts =
                     moduleDump.EnvironmentLayouts
@@ -844,20 +1027,39 @@ module CheckpointVerification =
                     |> List.filter (fun (_, count) -> count > 1)
 
                 for layoutName, _ in duplicateEnvironmentLayouts do
-                    yield makeDiagnostic $"Checkpoint 'KBackendIR' requires unique environment-layout identities within module '{moduleDump.Name}', but '{layoutName}' was duplicated."
+                    yield
+                        makeModuleDiagnostic
+                            workspace.Documents
+                            moduleDump.Name
+                            moduleDump.SourceFile
+                            $"Checkpoint 'KBackendIR' requires unique environment-layout identities within module '{moduleDump.Name}', but '{layoutName}' was duplicated."
 
                 let supportedIntrinsics = availableIntrinsicTerms workspace.BackendProfile workspace.AllowUnsafeConsume moduleDump.Name
 
                 for intrinsicName in moduleDump.IntrinsicTerms do
                     if not (supportedIntrinsics.Contains intrinsicName) then
-                        yield makeDiagnostic $"Checkpoint 'KBackendIR' requires intrinsic term '{intrinsicName}' in module '{moduleDump.Name}' to be provided by backend profile '{workspace.BackendProfile}'."
+                        yield
+                            makeModuleDiagnostic
+                                workspace.Documents
+                                moduleDump.Name
+                                moduleDump.SourceFile
+                                $"Checkpoint 'KBackendIR' requires intrinsic term '{intrinsicName}' in module '{moduleDump.Name}' to be provided by backend profile '{workspace.BackendProfile}'."
 
                 for entryPointName in moduleDump.EntryPoints do
                     match moduleDump.Functions |> List.tryFind (fun binding -> String.Equals(binding.Name, entryPointName, StringComparison.Ordinal)) with
                     | None ->
-                        yield makeDiagnostic $"Checkpoint 'KBackendIR' requires listed entry point '{moduleDump.Name}.{entryPointName}' to be present as a function."
+                        yield
+                            makeModuleDiagnostic
+                                workspace.Documents
+                                moduleDump.Name
+                                moduleDump.SourceFile
+                                $"Checkpoint 'KBackendIR' requires listed entry point '{moduleDump.Name}.{entryPointName}' to be present as a function."
                     | Some binding when not binding.EntryPoint ->
-                        yield makeDiagnostic $"Checkpoint 'KBackendIR' requires listed entry point '{moduleDump.Name}.{entryPointName}' to be marked as an entry point."
+                        yield
+                            makeOriginDiagnostic
+                                workspace.Documents
+                                binding.Provenance
+                                $"Checkpoint 'KBackendIR' requires listed entry point '{moduleDump.Name}.{entryPointName}' to be marked as an entry point."
                     | Some _ ->
                         ()
 
@@ -865,40 +1067,76 @@ module CheckpointVerification =
                     let bindingLabel = $"{moduleDump.Name}.{binding.Name}"
 
                     if binding.CallingConvention.RuntimeArity <> List.length binding.Parameters then
-                        yield makeDiagnostic $"Checkpoint 'KBackendIR' requires function '{bindingLabel}' to have a calling convention arity matching its parameter count."
+                        yield
+                            makeOriginDiagnostic
+                                workspace.Documents
+                                binding.Provenance
+                                $"Checkpoint 'KBackendIR' requires function '{bindingLabel}' to have a calling convention arity matching its parameter count."
 
                     if binding.CallingConvention.ParameterRepresentations <> (binding.Parameters |> List.map (fun parameter -> parameter.Representation)) then
-                        yield makeDiagnostic $"Checkpoint 'KBackendIR' requires function '{bindingLabel}' to have calling convention parameter representations that match its parameters."
+                        yield
+                            makeOriginDiagnostic
+                                workspace.Documents
+                                binding.Provenance
+                                $"Checkpoint 'KBackendIR' requires function '{bindingLabel}' to have calling convention parameter representations that match its parameters."
 
                     match binding.EnvironmentLayout with
                     | Some layoutName when not (environmentLayoutNames moduleDump |> Set.contains layoutName) ->
-                        yield makeDiagnostic $"Checkpoint 'KBackendIR' requires function '{bindingLabel}' to reference an environment layout present in module '{moduleDump.Name}'."
+                        yield
+                            makeOriginDiagnostic
+                                workspace.Documents
+                                binding.Provenance
+                                $"Checkpoint 'KBackendIR' requires function '{bindingLabel}' to reference an environment layout present in module '{moduleDump.Name}'."
                     | _ ->
                         ()
 
                     if binding.EntryPoint then
                         if not binding.Exported then
-                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires entry point '{bindingLabel}' to be exported."
+                            yield
+                                makeOriginDiagnostic
+                                    workspace.Documents
+                                    binding.Provenance
+                                    $"Checkpoint 'KBackendIR' requires entry point '{bindingLabel}' to be exported."
 
                         if not (List.contains binding.Name moduleDump.EntryPoints) then
-                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires function '{bindingLabel}' marked as an entry point to be listed in module entry points."
+                            yield
+                                makeOriginDiagnostic
+                                    workspace.Documents
+                                    binding.Provenance
+                                    $"Checkpoint 'KBackendIR' requires function '{bindingLabel}' marked as an entry point to be listed in module entry points."
 
                     if binding.Intrinsic then
                         if binding.Body.IsSome then
-                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires intrinsic function '{bindingLabel}' to omit a body."
+                            yield
+                                makeOriginDiagnostic
+                                    workspace.Documents
+                                    binding.Provenance
+                                    $"Checkpoint 'KBackendIR' requires intrinsic function '{bindingLabel}' to omit a body."
 
                         if not (List.contains binding.Name moduleDump.IntrinsicTerms) then
-                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires intrinsic function '{bindingLabel}' to be listed in module intrinsic terms."
+                            yield
+                                makeOriginDiagnostic
+                                    workspace.Documents
+                                    binding.Provenance
+                                    $"Checkpoint 'KBackendIR' requires intrinsic function '{bindingLabel}' to be listed in module intrinsic terms."
 
                         if not (supportedIntrinsics.Contains binding.Name) then
-                            yield makeDiagnostic $"Checkpoint 'KBackendIR' requires intrinsic term '{binding.Name}' in module '{moduleDump.Name}' to be provided by backend profile '{workspace.BackendProfile}'."
+                            yield
+                                makeOriginDiagnostic
+                                    workspace.Documents
+                                    binding.Provenance
+                                    $"Checkpoint 'KBackendIR' requires intrinsic term '{binding.Name}' in module '{moduleDump.Name}' to be provided by backend profile '{workspace.BackendProfile}'."
                     else
                         match binding.Body with
                         | None ->
                             if not (isGeneratedHostBinding binding.Provenance) then
-                                yield makeDiagnostic $"Checkpoint 'KBackendIR' requires function '{bindingLabel}' to have a body."
+                                yield
+                                    makeOriginDiagnostic
+                                        workspace.Documents
+                                        binding.Provenance
+                                        $"Checkpoint 'KBackendIR' requires function '{bindingLabel}' to have a body."
                         | Some body ->
-                            yield! verifyBackendExpression moduleDump bindingLabel body
+                            yield! verifyBackendExpression moduleDump bindingLabel binding.Provenance body
         ]
 
     let verifyCheckpoint (workspace: WorkspaceCompilation) checkpoint =

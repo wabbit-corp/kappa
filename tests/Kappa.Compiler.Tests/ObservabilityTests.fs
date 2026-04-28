@@ -3231,6 +3231,59 @@ let ``backend verification rejects runtime bindings without bodies`` () =
     Assert.Contains(diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
 
 [<Fact>]
+let ``checkpoint verification diagnostics expose provenance for runtime binding failures`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-verify-runtime-provenance-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let malformedWorkspace =
+        { workspace with
+            KRuntimeIR =
+                workspace.KRuntimeIR
+                |> List.map (fun moduleDump ->
+                    if moduleDump.Name = "main" then
+                        { moduleDump with
+                            Bindings =
+                                moduleDump.Bindings
+                                |> List.map (fun binding ->
+                                    if binding.Name = "answer" then
+                                        { binding with Body = None }
+                                    else
+                                        binding) }
+                    else
+                        moduleDump) }
+
+    let diagnostic =
+        Compilation.verifyCheckpoint malformedWorkspace "KRuntimeIR"
+        |> List.exactlyOne
+
+    Assert.Equal(DiagnosticCode.CheckpointVerification, diagnostic.Code)
+
+    match diagnostic.Location with
+    | Some location ->
+        Assert.Equal("main.kp", Path.GetFileName(location.FilePath))
+        Assert.Equal(2, location.Start.Line)
+    | None ->
+        failwith "Expected checkpoint verification diagnostic to expose a primary source origin."
+
+    Assert.NotEmpty(diagnostic.RelatedLocations)
+
+    let relatedFiles =
+        diagnostic.RelatedLocations
+        |> List.map (fun related -> Path.GetFileName(related.Location.FilePath))
+        |> Set.ofList
+
+    Assert.Contains("main.kp", relatedFiles)
+
+[<Fact>]
 let ``backend verification rejects intrinsic bindings with bodies`` () =
     let workspace =
         compileInMemoryWorkspace
@@ -3521,6 +3574,62 @@ let ``backend verification rejects malformed calling conventions`` () =
 
     Assert.Single(diagnostics) |> ignore
     Assert.Contains(diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
+
+[<Fact>]
+let ``checkpoint verification diagnostics expose provenance for backend function failures`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-verify-backend-provenance-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let malformedWorkspace =
+        { workspace with
+            KBackendIR =
+                workspace.KBackendIR
+                |> List.map (fun moduleDump ->
+                    if moduleDump.Name = "main" then
+                        { moduleDump with
+                            Functions =
+                                moduleDump.Functions
+                                |> List.map (fun binding ->
+                                    if binding.Name = "answer" then
+                                        { binding with
+                                            CallingConvention =
+                                                { binding.CallingConvention with
+                                                    RuntimeArity = binding.CallingConvention.RuntimeArity + 1 } }
+                                    else
+                                        binding) }
+                    else
+                        moduleDump) }
+
+    let diagnostic =
+        Compilation.verifyCheckpoint malformedWorkspace "KBackendIR"
+        |> List.exactlyOne
+
+    Assert.Equal(DiagnosticCode.CheckpointVerification, diagnostic.Code)
+
+    match diagnostic.Location with
+    | Some location ->
+        Assert.Equal("main.kp", Path.GetFileName(location.FilePath))
+        Assert.Equal(2, location.Start.Line)
+    | None ->
+        failwith "Expected checkpoint verification diagnostic to expose a primary source origin."
+
+    Assert.NotEmpty(diagnostic.RelatedLocations)
+
+    let relatedFiles =
+        diagnostic.RelatedLocations
+        |> List.map (fun related -> Path.GetFileName(related.Location.FilePath))
+        |> Set.ofList
+
+    Assert.Contains("main.kp", relatedFiles)
 
 [<Fact>]
 let ``backend verification rejects leaked pre-erasure runtime metadata`` () =
