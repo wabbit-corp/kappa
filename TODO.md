@@ -637,11 +637,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Collect trace events at the point work really executes, including reuse/invalidate/skip/cache-probe events, or rename the current output to make clear that it is a planned/synthesized trace.
   - Sources: `reviews/observability1.md`.
 
-- `[Medium-High] Normalize target-checkpoint verification semantics across backends.`
-  - Zig target emission rejects erroneous workspaces, while the CLR target-manifest path verifies `KBackendIR` but does not consistently gate on the broader workspace diagnostic state.
-  - Split “checkpoint representation is well-formed” from “artifact emission is permitted” if necessary, but do so consistently across backends.
-  - Sources: `reviews/observability1.md`, `reviews/backend1.md`.
-
 - `[Medium] Reconcile `KRuntimeIR` checkpoint contract metadata with actual profile influence.`
   - The checkpoint contract currently marks `KRuntimeIR` as not profile-specific, but KRuntimeIR construction includes profile-dependent host binding modules.
   - Either mark it profile-specific or split profile-neutral runtime IR from profile-specific runtime augmentation.

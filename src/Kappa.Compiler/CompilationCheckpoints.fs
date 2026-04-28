@@ -71,52 +71,63 @@ module internal CompilationCheckpoints =
         |> List.map (fun diagnostic -> diagnostic.Message)
         |> String.concat Environment.NewLine
 
+    let private ensureTargetLoweringPreconditions (workspace: WorkspaceCompilation) checkpoint =
+        if workspace.HasErrors then
+            Result.Error
+                $"Cannot emit target checkpoint '{checkpoint}' for a workspace with diagnostics:{Environment.NewLine}{aggregateDiagnostics workspace.Diagnostics}"
+        else
+            let inputCheckpoint = targetInputCheckpoint workspace checkpoint
+            let verificationDiagnostics = CheckpointVerification.verifyCheckpoint workspace inputCheckpoint
+
+            if not (List.isEmpty verificationDiagnostics) then
+                Result.Error
+                    $"Cannot emit target checkpoint '{checkpoint}' from malformed {inputCheckpoint}:{Environment.NewLine}{aggregateDiagnostics verificationDiagnostics}"
+            else
+                Result.Ok()
+
     let private emitClrTargetManifest (workspace: WorkspaceCompilation) =
         let inputCheckpoint = targetInputCheckpoint workspace Stdlib.ClrTargetCheckpointName
-        let verificationDiagnostics = CheckpointVerification.verifyCheckpoint workspace inputCheckpoint
 
-        if not (List.isEmpty verificationDiagnostics) then
-            Result.Error
-                $"Cannot emit CLR target manifest from malformed {inputCheckpoint}:{Environment.NewLine}{aggregateDiagnostics verificationDiagnostics}"
-        else
-            let clrSymbol moduleName functionName =
-                $"{IlDotNetBackend.emittedModuleTypeName moduleName}.{IlDotNetBackend.emittedMethodName functionName}"
+        let clrSymbol moduleName functionName =
+            $"{IlDotNetBackend.emittedModuleTypeName moduleName}.{IlDotNetBackend.emittedMethodName functionName}"
 
-            let functions =
-                workspace.KBackendIR
-                |> List.collect (fun moduleDump ->
-                    moduleDump.Functions
-                    |> List.filter (fun functionDump -> not functionDump.Intrinsic)
-                    |> List.map (fun functionDump -> moduleDump.Name, functionDump))
+        let functions =
+            workspace.KBackendIR
+            |> List.collect (fun moduleDump ->
+                moduleDump.Functions
+                |> List.filter (fun functionDump -> not functionDump.Intrinsic)
+                |> List.map (fun functionDump -> moduleDump.Name, functionDump))
 
-            let functionSymbols =
-                functions
-                |> List.map (fun (moduleName, functionDump) -> clrSymbol moduleName functionDump.Name)
-                |> List.sort
+        let functionSymbols =
+            functions
+            |> List.map (fun (moduleName, functionDump) -> clrSymbol moduleName functionDump.Name)
+            |> List.sort
 
-            let entrySymbols =
-                functions
-                |> List.choose (fun (moduleName, functionDump) ->
-                    if functionDump.EntryPoint then
-                        Some(clrSymbol moduleName functionDump.Name)
-                    else
-                        None)
-                |> List.sort
+        let entrySymbols =
+            functions
+            |> List.choose (fun (moduleName, functionDump) ->
+                if functionDump.EntryPoint then
+                    Some(clrSymbol moduleName functionDump.Name)
+                else
+                    None)
+            |> List.sort
 
-            Result.Ok
-                { ArtifactKind = "clr-assembly"
-                  TranslationUnitName = "Kappa.Generated.dll"
-                  InputCheckpoint = inputCheckpoint
-                  EntrySymbols = entrySymbols
-                  FunctionSymbols = functionSymbols
-                  SourceText = "" }
+        Result.Ok
+            { ArtifactKind = "clr-assembly"
+              TranslationUnitName = "Kappa.Generated.dll"
+              InputCheckpoint = inputCheckpoint
+              EntrySymbols = entrySymbols
+              FunctionSymbols = functionSymbols
+              SourceText = "" }
 
     let tryEmitTargetTranslationUnit (workspace: WorkspaceCompilation) checkpoint =
         match Stdlib.normalizeBackendProfile workspace.BackendProfile, checkpoint with
         | "zig", checkpointName when checkpointName = Stdlib.ZigTargetCheckpointName ->
-            ZigCcBackend.emitTranslationUnit workspace
+            ensureTargetLoweringPreconditions workspace checkpoint
+            |> Result.bind (fun () -> ZigCcBackend.emitTranslationUnit workspace)
         | "dotnet", checkpointName when checkpointName = Stdlib.ClrTargetCheckpointName ->
-            emitClrTargetManifest workspace
+            ensureTargetLoweringPreconditions workspace checkpoint
+            |> Result.bind (fun () -> emitClrTargetManifest workspace)
         | _ ->
             Result.Error $"Unknown checkpoint '{checkpoint}'."
 

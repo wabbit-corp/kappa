@@ -2365,6 +2365,60 @@ let ``zig target checkpoint verification is available`` () =
     Assert.Empty(Compilation.verifyCheckpoint workspace "zig.c")
 
 [<Fact>]
+let ``target checkpoint verification rejects erroneous workspaces consistently across compiled backends`` () =
+    let source =
+        [
+            "main.kp",
+            [
+                "module wrong"
+                "let answer = 42"
+            ]
+            |> String.concat "\n"
+        ]
+
+    for backendProfile, checkpoint in [ "zig", "zig.c"; "dotnet", "dotnet.clr" ] do
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                $"memory-target-verify-errors-{backendProfile}-root"
+                backendProfile
+                source
+
+        Assert.True(workspace.HasErrors)
+
+        let diagnostics = Compilation.verifyCheckpoint workspace checkpoint
+
+        Assert.NotEmpty(diagnostics)
+        Assert.Contains(diagnostics, hasDiagnosticCode DiagnosticCode.TargetCheckpoint)
+        Assert.Contains("workspace with diagnostics", diagnosticsText diagnostics)
+
+[<Fact>]
+let ``target checkpoint dumps reject erroneous workspaces consistently across compiled backends`` () =
+    let source =
+        [
+            "main.kp",
+            [
+                "module wrong"
+                "let answer = 42"
+            ]
+            |> String.concat "\n"
+        ]
+
+    for backendProfile, checkpoint in [ "zig", "zig.c"; "dotnet", "dotnet.clr" ] do
+        let workspace =
+            compileInMemoryWorkspaceWithBackend
+                $"memory-target-dump-errors-{backendProfile}-root"
+                backendProfile
+                source
+
+        Assert.True(workspace.HasErrors)
+
+        match Compilation.dumpStage workspace checkpoint StageDumpFormat.Json with
+        | Result.Ok dump ->
+            failwithf "Expected target checkpoint dump for backend '%s' to fail, got %s" backendProfile dump
+        | Result.Error message ->
+            Assert.Contains("workspace with diagnostics", message)
+
+[<Fact>]
 let ``source compilation surfaces missing imported runtime modules as diagnostics`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend
