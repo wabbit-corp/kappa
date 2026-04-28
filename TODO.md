@@ -36,8 +36,8 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - Sources: `reviews/principles1.md`, `reviews/general1.md`.
 
 - `[High] Replace stringly backend/profile handling with a typed internal model.`
-  - Backend profile strings such as `interpreter`, `dotnet`, `dotnet-il`, `zig`, and `zigcc` are scattered across `Stdlib.fs`, `Compilation.fs`, `CompilationCheckpoints.fs`, `HostBindings.fs`, and `Program.fs`.
-  - Add a discriminated union such as `BackendProfile = Interpreter | DotNet | DotNetIl | Zig`, parse once at the boundary, and use the typed form internally.
+  - Backend profile strings such as `interpreter`, `dotnet`, `zig`, and `zigcc` are scattered across `Stdlib.fs`, `Compilation.fs`, `CompilationCheckpoints.fs`, `HostBindings.fs`, and `Program.fs`.
+  - Add a discriminated union such as `BackendProfile = Interpreter | DotNet | Zig`, parse once at the boundary, and use the typed form internally.
   - Sources: `reviews/principles1.md`.
 
 - `[High] Stop repeating semantic facts as hardcoded names or rendered type text.`
@@ -549,7 +549,7 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - `Char` / `UnicodeScalar` / `Grapheme` / `Byte` lowering is semantically wrong.
   - Sources: `reviews/backend1.md`.
 
-## 10. Target Backends: CLR / `dotnet` / `dotnet-il`
+## 10. Target Backends: CLR / `dotnet`
 
 - `[High] Make `host.dotnet` bindings self-contained in emitted IR and emitted artifacts.`
   - Current host binding emission depends on process-local compiler caches rather than durable IR-carried callable identity.
@@ -587,11 +587,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
 - `[Medium-High] Fix generic ADT construction inside generic methods.`
   - Constructor resolution on the IL path appears to expect result types to be more concrete than they should be, which risks breaking generic code such as `singleton x = Cons x Nil`.
   - Thread method-level generic parameters through constructor resolution and emitted member resolution.
-  - Sources: `reviews/dotnet1.md`.
-
-- `[Medium] Make `dotnet` and `dotnet-il` result-printing behavior consistent.`
-  - `dotnet-il` appears to print unit results that the managed runner suppresses.
-  - Centralize result-printing policy and apply it across both backend paths.
   - Sources: `reviews/dotnet1.md`.
 
 - `[Medium] Read stdout/stderr asynchronously when shelling out to `dotnet build/run/publish`.`
@@ -860,7 +855,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
   - `printlnString`.
   - Generic constructor inside a generic function.
   - `host.dotnet` binding through a generated runner process, not just in-process test loading.
-  - `dotnet` vs `dotnet-il` unit-result printing behavior.
   - Sources: `reviews/dotnet1.md`.
 
 - `[High] Expand Zig-specific test coverage beyond the current narrow list/CLI/demo cases.`

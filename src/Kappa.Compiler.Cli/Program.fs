@@ -1,7 +1,5 @@
 open System
 open System.IO
-open System.Reflection
-open System.Runtime.Loader
 open Kappa.Compiler
 
 type CliOptions =
@@ -25,7 +23,7 @@ module private Cli =
             "kp [--source-root <path>] [--backend <profile>] [--emit-dir <path>] [--native-aot] [--dump-tokens] [--dump-ast] [--dump-stage <checkpoint>] [--dump-format <json|sexpr>] [--trace] [--verify <checkpoint>] [--run <binding>] [inputs...]"
             ""
             "If no input paths are supplied, the compiler scans the source root for *.kp files."
-            "Runtime backends: interpreter | dotnet | dotnet-il | zig (alias: zigcc)"
+            "Runtime backends: interpreter | dotnet | zig (alias: zigcc)"
         ]
         |> String.concat Environment.NewLine
 
@@ -340,99 +338,6 @@ let private runDotNetBackend
 
                 runResult.ExitCode
 
-let private resolveIlEntryPoint (workspace: WorkspaceCompilation) (entryPoint: string) =
-    let segments =
-        entryPoint.Split('.', StringSplitOptions.RemoveEmptyEntries)
-        |> Array.toList
-
-    let tryMatchBinding moduleName bindingName =
-        workspace.KRuntimeIR
-        |> List.tryFind (fun (moduleDump: KRuntimeModule) -> String.Equals(moduleDump.Name, moduleName, StringComparison.Ordinal))
-        |> Option.bind (fun moduleDump ->
-            moduleDump.Bindings
-            |> List.tryFind (fun (binding: KRuntimeBinding) ->
-                String.Equals(binding.Name, bindingName, StringComparison.Ordinal)
-                && not binding.Intrinsic
-                && List.isEmpty binding.Parameters))
-
-    match segments with
-    | [] ->
-        Result.Error "Expected a binding name to run."
-    | [ bindingName ] ->
-        let matches =
-            workspace.KRuntimeIR
-            |> List.choose (fun (moduleDump: KRuntimeModule) ->
-                moduleDump.Bindings
-                |> List.tryFind (fun (binding: KRuntimeBinding) ->
-                    String.Equals(binding.Name, bindingName, StringComparison.Ordinal)
-                    && not binding.Intrinsic
-                    && List.isEmpty binding.Parameters)
-                |> Option.map (fun binding -> moduleDump.Name, binding.Name))
-
-        match matches with
-        | [] ->
-            Result.Error $"No zero-argument binding named '{bindingName}' was found for dotnet-il."
-        | [ moduleName, resolvedBindingName ] ->
-            Result.Ok(moduleName, resolvedBindingName)
-        | _ ->
-            Result.Error $"Binding name '{bindingName}' is ambiguous. Use a fully qualified name."
-    | _ ->
-        let moduleName = segments |> List.take (segments.Length - 1) |> String.concat "."
-        let bindingName = List.last segments
-
-        match tryMatchBinding moduleName bindingName with
-        | Some _ ->
-            Result.Ok(moduleName, bindingName)
-        | None ->
-            Result.Error $"dotnet-il requires a zero-argument binding named '{bindingName}' in module '{moduleName}'."
-
-let private formatIlValue (value: obj) =
-    match value with
-    | :? int64 as integerValue -> string integerValue
-    | :? double as floatValue -> string floatValue
-    | :? bool as boolValue -> if boolValue then "True" else "False"
-    | :? string as stringValue -> $"\"{stringValue}\""
-    | :? char as characterValue -> $"'{characterValue}'"
-    | null -> "()"
-    | other -> other.ToString()
-
-let private runIlBackend (workspace: WorkspaceCompilation) (entryPoint: string) (emitDirectory: string option) =
-    let outputDirectory =
-        emitDirectory
-        |> Option.defaultWith (fun () ->
-            Path.Combine(Path.GetTempPath(), "kappa-cli-il", Guid.NewGuid().ToString("N")))
-
-    match resolveIlEntryPoint workspace entryPoint with
-    | Result.Error message ->
-        Console.Error.WriteLine(message)
-        1
-    | Result.Ok(moduleName, bindingName) ->
-        match Backend.emitIlAssemblyArtifact workspace outputDirectory with
-        | Result.Error message ->
-            Console.Error.WriteLine(message)
-            1
-        | Result.Ok artifact ->
-            let assemblyPath = Path.GetFullPath(artifact.AssemblyFilePath)
-            let assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(assemblyPath)
-            let typeName = IlDotNetBackend.emittedModuleTypeName moduleName
-            let methodName = IlDotNetBackend.emittedMethodName bindingName
-            let moduleType = assembly.GetType(typeName, throwOnError = false, ignoreCase = false)
-
-            if isNull moduleType then
-                Console.Error.WriteLine($"dotnet-il could not find emitted type '{typeName}'.")
-                1
-            else
-                let method =
-                    moduleType.GetMethod(methodName, BindingFlags.Public ||| BindingFlags.Static)
-
-                if isNull method then
-                    Console.Error.WriteLine($"dotnet-il could not find emitted method '{typeName}.{methodName}'.")
-                    1
-                else
-                    let value = method.Invoke(null, [||])
-                    Console.Out.WriteLine(formatIlValue value)
-                    0
-
 let private resolveZigExecutable () =
     let configuredPath = Environment.GetEnvironmentVariable("KAPPA_ZIG_EXE")
 
@@ -571,7 +476,7 @@ let main argv =
                 | None ->
                     0
                 | Some entryPoint ->
-                    match options.BackendProfile.ToLowerInvariant() with
+                    match Stdlib.normalizeBackendProfile options.BackendProfile with
                     | "interpreter" ->
                         match Interpreter.executeBinding workspace entryPoint with
                         | Result.Ok value ->
@@ -584,11 +489,8 @@ let main argv =
                             1
                     | "dotnet" ->
                         runDotNetBackend Backend.emitDotNetArtifact workspace entryPoint options.EmitDirectory options.NativeAot
-                    | "dotnet-il" ->
-                        runIlBackend workspace entryPoint options.EmitDirectory
-                    | "zig"
-                    | "zigcc" ->
+                    | "zig" ->
                         runZigBackend workspace entryPoint options.EmitDirectory options.NativeAot
                     | other ->
-                        Console.Error.WriteLine($"Unsupported runtime backend '{other}'. Expected interpreter, dotnet, dotnet-il, or zig.")
+                        Console.Error.WriteLine($"Unsupported runtime backend '{other}'. Expected interpreter, dotnet, or zig.")
                         1

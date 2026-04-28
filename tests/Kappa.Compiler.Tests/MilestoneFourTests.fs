@@ -1218,7 +1218,7 @@ let ``backends without multishot capability reject direct multishot invocations`
     let workspace =
         compileInMemoryWorkspaceWithBackend
             "memory-m4-multishot-capability-root"
-            "dotnet-il"
+            "dotnet"
             [ "main.kp", mainSource ]
 
     Assert.True(workspace.HasErrors, "Expected backends without rt-multishot-effects to reject direct multishot invocation.")
@@ -1229,7 +1229,7 @@ let ``backends without multishot capability reject direct multishot invocations`
 
     Assert.True(diagnostic.IsSome, "Expected a multishot backend-capability diagnostic.")
     Assert.Contains("Choice.choose", diagnostic.Value.Message)
-    Assert.Contains("dotnet-il", diagnostic.Value.Message)
+    Assert.Contains("dotnet", diagnostic.Value.Message)
 
 [<Fact>]
 let ``backends without multishot capability reject exported declarations that may invoke multishot effects`` () =
@@ -1294,7 +1294,7 @@ let ``compiled backends reject effect handlers before backend lowering`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend
             "memory-m4-effect-handler-backend-root"
-            "dotnet-il"
+            "dotnet"
             [ "main.kp", mainSource ]
 
     Assert.True(workspace.HasErrors, "Expected compiled backends to reject effect handlers before backend lowering.")
@@ -1304,7 +1304,7 @@ let ``compiled backends reject effect handlers before backend lowering`` () =
         |> List.tryFind (fun current -> current.Code = DiagnosticCode.EffectRuntimeUnsupportedBackend)
 
     Assert.True(diagnostic.IsSome, sprintf "Expected an effect-runtime backend capability diagnostic, got:%s%s" Environment.NewLine (diagnosticsText workspace.Diagnostics))
-    Assert.Contains("dotnet-il", diagnostic.Value.Message)
+    Assert.Contains("dotnet", diagnostic.Value.Message)
     Assert.Contains("main.result", diagnostic.Value.Message)
     Assert.DoesNotContain(
         workspace.Diagnostics,
@@ -1351,55 +1351,6 @@ let ``compiled backends reject direct effect operations before backend lowering`
             current.Code = DiagnosticCode.CheckpointVerification
             && current.Message.Contains("does not support effect handlers yet", StringComparison.Ordinal)
     )
-
-[<Fact>]
-let ``managed dotnet backend runs one shot handled programs`` () =
-    let mainSource =
-        [
-            "@PrivateByDefault module main"
-            ""
-            "result : Int"
-            "let result ="
-            "    block"
-            "        scoped effect Ask ="
-            "            ask : Unit -> Bool"
-            ""
-            "        let comp : Eff <[Ask : Ask]> Int ="
-            "            do"
-            "                let b <- Ask.ask ()"
-            "                if b then 1 else 0"
-            ""
-            "        let handled : Eff <[ ]> Int ="
-            "            deep handle Ask comp with"
-            "                case return x -> pure x"
-            "                case ask () k -> k True"
-            ""
-            "        runPure handled"
-        ]
-        |> String.concat "\n"
-
-    let workspace =
-        compileInMemoryWorkspaceWithBackend
-            "memory-m4-dotnet-hosted-effect-root"
-            "dotnet"
-            [ "main.kp", mainSource ]
-
-    Assert.False(workspace.HasErrors, diagnosticsText workspace.Diagnostics)
-    Assert.DoesNotContain(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.EffectRuntimeUnsupportedBackend)
-
-    let outputDirectory = createScratchDirectory "dotnet-m4-hosted-effects"
-
-    let artifact =
-        match Backend.emitDotNetArtifact workspace "main.result" outputDirectory DotNetDeployment.Managed with
-        | Result.Ok artifact -> artifact
-        | Result.Error message -> failwith message
-
-    let runResult =
-        runProcess outputDirectory "dotnet" $"run --project \"{artifact.ProjectFilePath}\" -c Release"
-
-    Assert.Equal(0, runResult.ExitCode)
-    Assert.Equal("1", runResult.StandardOutput.Trim())
-    Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
 let ``shallow handler resumptions do not collapse into the handled carrier`` () =

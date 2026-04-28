@@ -168,42 +168,39 @@ internal static class Program
         (deployment: DotNetDeployment)
         =
         result {
-            if HostedDotNetBackend.requiresHostedRuntime workspace.BackendProfile workspace.KRuntimeIR then
-                return! HostedDotNetBackend.emitArtifact workspace entryPoint outputDirectory deployment
-            else
-                if deployment <> DotNetDeployment.Managed then
-                    return!
-                        Result.Error
-                            "The CLR-backed dotnet profile currently supports managed builds only."
+            if deployment <> DotNetDeployment.Managed then
+                return!
+                    Result.Error
+                        "The CLR-backed dotnet profile currently supports managed builds only."
 
-                let! moduleName, bindingName = resolveClrEntryPoint workspace entryPoint
+            let! moduleName, bindingName = resolveClrEntryPoint workspace entryPoint
 
-                let! clrAssembly =
-                    ClrDotNetBackend.emitAssemblyArtifact workspace outputDirectory
-                    |> Result.mapError (fun message -> $"The CLR-backed dotnet profile could not lower '{entryPoint}': {message}")
+            let! clrAssembly =
+                ClrDotNetBackend.emitAssemblyArtifact workspace outputDirectory
+                |> Result.mapError (fun message -> $"The CLR-backed dotnet profile could not lower '{entryPoint}': {message}")
 
-                let projectDirectory = Path.GetFullPath(outputDirectory)
-                Directory.CreateDirectory(projectDirectory) |> ignore
+            let projectDirectory = Path.GetFullPath(outputDirectory)
+            Directory.CreateDirectory(projectDirectory) |> ignore
 
-                let generatedAssemblyFileName = Path.GetFileName(clrAssembly.AssemblyFilePath)
-                let generatedAssemblyPath = Path.Combine(projectDirectory, generatedAssemblyFileName)
+            let generatedAssemblyFileName = Path.GetFileName(clrAssembly.AssemblyFilePath)
+            let generatedAssemblyPath = Path.Combine(projectDirectory, generatedAssemblyFileName)
 
-                if not (String.Equals(Path.GetFullPath(clrAssembly.AssemblyFilePath), generatedAssemblyPath, StringComparison.OrdinalIgnoreCase)) then
-                    File.Copy(clrAssembly.AssemblyFilePath, generatedAssemblyPath, true)
+            if not (String.Equals(Path.GetFullPath(clrAssembly.AssemblyFilePath), generatedAssemblyPath, StringComparison.OrdinalIgnoreCase)) then
+                File.Copy(clrAssembly.AssemblyFilePath, generatedAssemblyPath, true)
 
-                let projectFilePath = Path.Combine(projectDirectory, "Kappa.Generated.Runner.csproj")
-                let programFilePath = Path.Combine(projectDirectory, "Program.cs")
-                File.WriteAllText(projectFilePath, buildClrRunnerProjectText generatedAssemblyFileName)
-                File.WriteAllText(programFilePath, buildClrRunnerProgramText generatedAssemblyFileName moduleName bindingName)
+            let projectFilePath = Path.Combine(projectDirectory, "Kappa.Generated.Runner.csproj")
+            let programFilePath = Path.Combine(projectDirectory, "Program.cs")
+            File.WriteAllText(projectFilePath, buildClrRunnerProjectText generatedAssemblyFileName)
+            File.WriteAllText(programFilePath, buildClrRunnerProgramText generatedAssemblyFileName moduleName bindingName)
 
-                return
-                    { ProjectDirectory = projectDirectory
-                      ProjectFilePath = projectFilePath
-                      ProgramFilePath = programFilePath
-                      RuntimeFilePath = generatedAssemblyPath
-                      GeneratedFilePath = generatedAssemblyPath
-                      EntryPoint = entryPoint
-                      Deployment = deployment }
+            return
+                { ProjectDirectory = projectDirectory
+                  ProjectFilePath = projectFilePath
+                  ProgramFilePath = programFilePath
+                  RuntimeFilePath = generatedAssemblyPath
+                  GeneratedFilePath = generatedAssemblyPath
+                  EntryPoint = entryPoint
+                  Deployment = deployment }
         }
 
     let emitDotNetArtifact

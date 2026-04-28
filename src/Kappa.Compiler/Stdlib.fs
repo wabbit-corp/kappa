@@ -117,13 +117,13 @@ module Stdlib =
         else
             match backendProfile.Trim().ToLowerInvariant() with
             | "zigcc" -> "zig"
+            | "dotnet-il" -> "dotnet"
             | normalized -> normalized
 
     let intrinsicSetForBackendProfile backendProfile =
         match normalizeBackendProfile backendProfile with
         | "interpreter"
         | "dotnet"
-        | "dotnet-il"
         | "zig" ->
             preludeIntrinsicSet
         | _ ->
@@ -175,8 +175,7 @@ module Stdlib =
         match normalizeBackendProfile backendProfile with
         | "zig" ->
             [ ZigTargetCheckpointName ]
-        | "dotnet"
-        | "dotnet-il" ->
+        | "dotnet" ->
             [ ClrTargetCheckpointName ]
         | _ ->
             []

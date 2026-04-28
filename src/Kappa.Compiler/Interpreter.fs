@@ -2030,14 +2030,6 @@ module Interpreter =
             let context = buildContextWithOutput output workspace
             evaluateBindingWithContext context entryPoint
 
-    let evaluateRuntimeBindingWithOutput
-        (runtimeModules: KRuntimeModule list)
-        (output: RuntimeOutput)
-        (entryPoint: string)
-        =
-        let context = buildContextWithOutputFromModules output runtimeModules
-        evaluateBindingWithContext context entryPoint
-
     let evaluateBinding (workspace: WorkspaceCompilation) (entryPoint: string) =
         evaluateBindingWithOutput workspace RuntimeOutput.console entryPoint
 
@@ -2055,26 +2047,6 @@ module Interpreter =
                 ok other
 
         evaluateBindingWithOutput workspace output entryPoint
-        |> Result.bind execute
-
-    let executeRuntimeBindingWithOutput
-        (runtimeModules: KRuntimeModule list)
-        (output: RuntimeOutput)
-        (entryPoint: string)
-        =
-        let rec execute value =
-            match value with
-            | IOActionValue action ->
-                action ()
-                |> Result.bind (function
-                    | RuntimeActionReturn nextValue ->
-                        execute nextValue
-                    | RuntimeActionRequest request ->
-                        error $"Unhandled effect operation '{request.Label.Name}.{request.OperationName}'.")
-            | other ->
-                ok other
-
-        evaluateRuntimeBindingWithOutput runtimeModules output entryPoint
         |> Result.bind execute
 
     let executeBinding (workspace: WorkspaceCompilation) (entryPoint: string) =

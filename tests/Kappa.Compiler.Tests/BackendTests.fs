@@ -145,8 +145,8 @@ let ``cli can run the managed dotnet backend`` () =
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
-let ``cli can run the managed dotnet il backend for zero argument bindings`` () =
-    let workspaceRoot = createScratchDirectory "cli-dotnet-il-workspace"
+let ``cli can run the dotnet backend for zero argument bindings with call heavy bodies`` () =
+    let workspaceRoot = createScratchDirectory "cli-dotnet-workspace-calls"
 
     writeWorkspaceFiles
         workspaceRoot
@@ -162,7 +162,7 @@ let ``cli can run the managed dotnet il backend for zero argument bindings`` () 
             |> String.concat "\n"
         ]
 
-    let emitDirectory = createScratchDirectory "cli-dotnet-il-emit"
+    let emitDirectory = createScratchDirectory "cli-dotnet-emit-calls"
 
     let cliProjectPath =
         Path.GetFullPath(
@@ -173,15 +173,15 @@ let ``cli can run the managed dotnet il backend for zero argument bindings`` () 
         runProcess
             workspaceRoot
             "dotnet"
-            $"run --project \"{cliProjectPath}\" -v q -- --source-root \"{workspaceRoot}\" --backend dotnet-il --emit-dir \"{emitDirectory}\" --run main.result"
+            $"run --project \"{cliProjectPath}\" -v q -- --source-root \"{workspaceRoot}\" --backend dotnet --emit-dir \"{emitDirectory}\" --run main.result"
 
     Assert.Equal(0, runResult.ExitCode)
     Assert.Equal("82", runResult.StandardOutput.Trim())
     Assert.True(String.IsNullOrWhiteSpace(runResult.StandardError), runResult.StandardError)
 
 [<Fact>]
-let ``cli can run the managed dotnet il backend for recursive list matches`` () =
-    let workspaceRoot = createScratchDirectory "cli-dotnet-il-list-workspace"
+let ``cli can run the dotnet backend for recursive list matches`` () =
+    let workspaceRoot = createScratchDirectory "cli-dotnet-list-workspace"
 
     writeWorkspaceFiles
         workspaceRoot
@@ -199,7 +199,7 @@ let ``cli can run the managed dotnet il backend for recursive list matches`` () 
             |> String.concat "\n"
         ]
 
-    let emitDirectory = createScratchDirectory "cli-dotnet-il-list-emit"
+    let emitDirectory = createScratchDirectory "cli-dotnet-list-emit"
 
     let cliProjectPath =
         Path.GetFullPath(
@@ -210,7 +210,7 @@ let ``cli can run the managed dotnet il backend for recursive list matches`` () 
         runProcess
             workspaceRoot
             "dotnet"
-            $"run --project \"{cliProjectPath}\" -v q -- --source-root \"{workspaceRoot}\" --backend dotnet-il --emit-dir \"{emitDirectory}\" --run main.result"
+            $"run --project \"{cliProjectPath}\" -v q -- --source-root \"{workspaceRoot}\" --backend dotnet --emit-dir \"{emitDirectory}\" --run main.result"
 
     Assert.Equal(0, runResult.ExitCode)
     Assert.Equal("72", runResult.StandardOutput.Trim())

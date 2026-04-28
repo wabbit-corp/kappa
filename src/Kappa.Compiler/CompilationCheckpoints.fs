@@ -112,7 +112,7 @@ module internal CompilationCheckpoints =
         match Stdlib.normalizeBackendProfile workspace.BackendProfile, checkpoint with
         | "zig", checkpointName when checkpointName = Stdlib.ZigTargetCheckpointName ->
             ZigCcBackend.emitTranslationUnit workspace
-        | ("dotnet" | "dotnet-il"), checkpointName when checkpointName = Stdlib.ClrTargetCheckpointName ->
+        | "dotnet", checkpointName when checkpointName = Stdlib.ClrTargetCheckpointName ->
             emitClrTargetManifest workspace
         | _ ->
             Result.Error $"Unknown checkpoint '{checkpoint}'."

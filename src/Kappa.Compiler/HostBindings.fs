@@ -73,7 +73,7 @@ module HostBindings =
 
     let private backendProvidesRoot backendProfile hostRoot =
         match Stdlib.normalizeBackendProfile backendProfile, hostRoot with
-        | ("dotnet" | "dotnet-il"), HostDotNet -> true
+        | "dotnet", HostDotNet -> true
         | _ -> false
 
     let private dotNetTypeName segments =
