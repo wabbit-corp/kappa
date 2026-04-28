@@ -23209,6 +23209,61 @@ Payload MUST include:
 A macro-defined diagnostic may use a more specific implementation- or package-defined family, but it MUST still expose
 the expansion stack and origin information required here.
 
+<!-- compiler.kfrontir.standard_diagnostics.derivation_shape -->
+##### 17.2.4A.10A Derivation-shape diagnostics
+
+Diagnostics emitted by the standard `std.deriving.shape` module belong to diagnostic family:
+
+```text
+kappa.deriving.shape
+```
+
+Implementations SHOULD use the following diagnostic codes for the corresponding failures:
+
+```text
+E_DERIVING_SHAPE_NOT_DATA
+E_DERIVING_SHAPE_NOT_CLOSED_RECORD
+E_DERIVING_SHAPE_OPAQUE_REPRESENTATION
+E_DERIVING_SHAPE_UNSUPPORTED_TYPE
+E_DERIVING_SHAPE_BAD_CONSTRUCTOR_ARGUMENTS
+E_DERIVING_SHAPE_BAD_RECORD_ARGUMENTS
+E_DERIVING_SHAPE_MISSING_RUNTIME_FIELD_INSTANCE
+E_DERIVING_SHAPE_DECLARATION_EFFECT
+```
+
+Equivalent implementation-specific codes are permitted only if the diagnostic family and structured payload expose the same information.
+
+Payload fields for this family SHOULD include, when available:
+
+```text
+kind                  : String
+macroOrigin           : SyntaxOrigin
+shapeTargetOrigin     : SyntaxOrigin
+targetType            : rendered type
+shapeKind             : String
+constructorName       : Option String
+constructorOrigin     : Option SyntaxOrigin
+fieldName             : Option String
+fieldOrigin           : Option SyntaxOrigin
+fieldType             : Option rendered type
+requiredConstraint    : Option rendered constraint
+visibility            : Option String
+```
+
+Required diagnostic meanings:
+
+* `E_DERIVING_SHAPE_NOT_DATA` is emitted when `inspectAdt` is requested for a type whose visible head is not an inspectable data type.
+* `E_DERIVING_SHAPE_NOT_CLOSED_RECORD` is emitted when `inspectRecord` is requested for a type that is not a closed record type.
+* `E_DERIVING_SHAPE_OPAQUE_REPRESENTATION` is emitted when a data or record representation exists but is unavailable because of ordinary opacity or visibility rules.
+* `E_DERIVING_SHAPE_UNSUPPORTED_TYPE` is emitted when the target is a language form outside Phase 0 shape support even though it is otherwise well-typed.
+* `E_DERIVING_SHAPE_BAD_CONSTRUCTOR_ARGUMENTS` is emitted when `constructAdt` receives missing, duplicate, ill-typed, or constructor-mismatched field arguments.
+* `E_DERIVING_SHAPE_BAD_RECORD_ARGUMENTS` is emitted when `constructRecord` receives missing, duplicate, ill-typed, or record-mismatched field arguments.
+* `E_DERIVING_SHAPE_MISSING_RUNTIME_FIELD_INSTANCE` is emitted when a required runtime field constraint cannot be solved by ordinary implicit resolution at the splice site.
+* `E_DERIVING_SHAPE_DECLARATION_EFFECT` is emitted if an implementation exposes an experimental derivation-shape helper that attempts to create or publish a declaration through the Phase 0 API.
+
+When a shape diagnostic arises from generated syntax, the primary origin MUST be the macro invocation, splice, or user-written target type expression unless a more specific user-written constructor or field origin is more faithful.
+Generated-only syntax MUST NOT be the sole primary origin when a user-written origin is available.
+
 <!-- compiler.kfrontir.standard_diagnostic_families.boundary_bridge_dynamic -->
 ##### 17.2.4A.11 Boundary, bridge, and dynamic diagnostics
 
@@ -23621,6 +23676,9 @@ queries exist:
 * advance node or declaration to phase `P`;
 * compute declaration header information;
 * compute declaration body resolution;
+* compute derivation-shape summary for a type at a source location, including visible ADT shape, closed-record shape,
+  runtime-relevant field classification, field-instance requirement checks, and generated-shape helper products
+  required by `std.deriving.shape`;
 * solve modality predicates for a declaration or module when an enabled modal/coeffect extension emits any;
 * compute module interface;
 * compute inhabitance summary for a KCore type, declaration result type, or pattern-refined case type;
@@ -23692,6 +23750,32 @@ Canonical semantic ordering, where an order is required, SHOULD use:
 
 This ordering is for deterministic implementation behavior only. It does not create source-language shadowing,
 priority, or overload-resolution rules.
+
+Derivation-shape query determinism:
+
+Derivation-shape queries MUST be deterministic within an analysis or compilation session.
+
+The query key for a derivation-shape query MUST include:
+
+* the target type after elaboration;
+* the source location and lexical context of the query;
+* the effective import environment at that location;
+* the visibility, opacity, `unhide`, and `clarify` state;
+* the identities and fingerprints of imported module interfaces used to resolve the target type;
+* the implementation version of the derivation-shape API; and
+* any explicit macro input transcript entries that the query depends on in script mode.
+
+A derivation-shape query result MUST record dependencies on every declaration, module interface, alias, opaque item,
+constructor, record shape, and field type whose identity or transparency affected the result.
+
+If a derivation-shape query encounters a dependency cycle not already resolved by ordinary declaration processing, it
+MUST fail with a deterministic diagnostic or return `ShapeUnsupportedType` through the `try...` form.
+It MUST NOT observe a partially published declaration, partially elaborated instance, or partially computed module
+interface.
+
+Reordering unrelated imports, changing physical interface load order, changing worker count, or reusing an equivalent
+cached interface MUST NOT change a derivation-shape query result except for deterministic diagnostic presentation
+ordering permitted elsewhere in this specification.
 
 Inhabitance-query determinism:
 
