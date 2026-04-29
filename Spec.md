@@ -29150,11 +29150,13 @@ A package dependency declared by `buildConfig` cannot be used to evaluate the sa
 Build-plan resolution consumes:
 
 * the evaluated `BuildConfig`;
-* its value provenance;
+* value provenance for that `BuildConfig`;
 * the explicit build request;
 * selected toolchain identity;
 * selected config-safe library identities;
+* workspace identity, when applicable;
 * existing lockfile or transcript artifacts, when applicable.
+* implementation version and backend availability.
 
 It produces:
 
@@ -29164,52 +29166,107 @@ ResolvedBuildPlan
 
 A `ResolvedBuildPlan` records at least:
 
-* package identity;
-* source roots;
+* package or workspace identity;
+* build request identity;
+* package mode or script mode;
+* selected packages;
+* selected features per package and per target;
 * selected targets;
+* expanded aggregate and matrix members;
+* target dependency graph;
+* selected source roots;
+* generated source roots and their materialization identities;
 * selected fragment tags per target;
 * selected source files per target;
 * effective modules per target;
 * selected module providers;
+* selected provider alternatives;
 * selected dependency identities;
+* dependency scopes and dependency uses;
+* selected target artifact dependencies;
+* selected tool dependencies;
+* selected macro dependencies;
 * selected host binding providers;
-* selected bridge providers;
-* selected backend profile per target;
-* selected artifact kind per target;
-* selected deployment mode per target;
-* unsafe/debug policy;
+* selected bridge targets and bridge providers;
+* selected codegen targets and materialized codegen outputs;
+* selected backend profile per artifact target;
+* selected backend profile per test execution;
+* selected execution backend or tool artifact identity per codegen target;
+* selected backend profile per benchmark execution;
+* selected primary artifact family per artifact target;
+* selected export surfaces per artifact target;
+* selected companion artifacts;
+* selected deployment mode and deployment layout;
+* selected native link and load specifications;
+* selected JVM packaging mode;
+* selected .NET deployment mode;
+* selected WASM component interface and runtime requirements;
+* selected unsafe/debug policy;
+* selected build profile, optimization profile, sanitizer profile, coverage profile, profiling profile, PGO profile, and
+  LTO profile where applicable;
+* selected test expectations;
+* selected benchmark datasets and runtime parameters;
+* selected publish artifacts and publish dependency policy;
 * external discovery results;
-* lockfile identities;
+* runtime prerequisites and system prerequisites;
+* reproducibility status and reasons;
+* lockfile identities and lockfile entries consulted or produced;
 * diagnostics with config-value provenance.
 
 Build-plan resolution includes, when requested by the build:
 
+* workspace graph validation;
+* package graph validation;
 * source-root validation;
 * source-file enumeration;
 * module-name derivation;
+* feature selection;
+* feature constraint validation;
+* matrix expansion;
+* aggregate target expansion;
 * fragment selection;
 * target validation;
+* target-reference resolution;
+* target dependency graph construction;
 * dependency resolution;
 * registry lookup;
 * git resolution;
 * URL fetch or verification;
 * path dependency validation;
+* target artifact dependency validation;
+* Maven resolution;
+* NuGet resolution;
+* tool dependency resolution;
+* macro dependency resolution;
 * host binding provider selection;
 * `pkg-config` execution;
-* native header or module-map scanning;
+* native header, module-map, or symbol-list scanning;
 * native library lookup;
+* SDK discovery;
 * JVM classpath or module-path inspection;
 * CLR assembly inspection;
 * bridge-provider inspection;
+* bridge contract selection or derivation;
+* codegen target planning;
+* generated-output cache lookup;
+* generated-output materialization when required for downstream module discovery;
 * backend capability checking;
-* artifact-kind checking;
+* artifact-family checking;
+* export-surface checking;
+* C ABI export checking;
+* interface-equivalence checking;
+* test execution planning;
+* benchmark execution planning;
+* deployment layout resolution;
+* publish plan resolution;
 * lockfile validation or update.
 
 Build-plan resolution is not config evaluation.
 
 Any external fact discovered during build-plan resolution that affects compilation, interface generation, artifact
-identity, host binding surface, bridge contract, deployment, or diagnostics MUST be represented explicitly in the
-`ResolvedBuildPlan` and, in package mode, in a lockfile, transcript, or equivalent artifact.
+identity, generated code, generated interfaces, host binding surface, bridge contract, deployment, tests, benchmarks,
+publishing, query results, or diagnostics MUST be represented explicitly in the `ResolvedBuildPlan` and, in package
+mode, in a lockfile, transcript, cache record, or equivalent artifact.
 
 A build-plan resolver MUST NOT let hidden ambient host state affect compilation unless that state is represented in the
 `ResolvedBuildPlan`.
@@ -29220,8 +29277,14 @@ The default lockfile path is:
 kappa.lock
 ```
 
-A package-mode build MUST reject when `BuildConfig`, build request, resolved external facts, and lockfile entries
-disagree, unless the user explicitly requests a lockfile update operation.
+A package-mode build MUST reject when `BuildConfig`, build request, resolved external facts, materialized generated
+outputs, and lockfile entries disagree, unless the user explicitly requests a lockfile update operation.
+
+A script-mode build MAY admit unpinned, transient, or host-dependent facts, but each such fact MUST be visible in the
+`ResolvedBuildPlan.reproducibilityStatus`.
+
+Compiler frontend analysis, interface generation, KCore construction, KBackendIR construction, and target lowering MUST
+use the `ResolvedBuildPlan`, not the raw `BuildConfig`, as the effective build configuration.
 
 <!-- build_system.fragments -->
 ### 19.4 Fragment selection
