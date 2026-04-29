@@ -21554,6 +21554,51 @@ Escape restriction:
 For multi-shot resumptions, each logical clone of the captured segment carries its own pending exit-action obligations.
 Abandoning one clone does not discharge obligations of any other clone.
 
+<!-- core_semantics.runtime_model.abandonment_and_escape_of_unused_resumptions.example -->
+#### 14.8.8B Finalizers when an operation does not resume
+
+Worked example:
+
+```kappa
+scoped effect Abort =
+    1 stop : Unit -> Int
+
+let example : IO e Int =
+    handle abort
+        do
+            using r <- acquireResource ()
+            defer cleanupMarker ()
+            abort.stop ()
+            useResource r
+    with
+        case return x -> pure x
+        case stop _ k ->
+            pure 0
+```
+
+The `stop` clause does not resume `k`.
+
+The captured continuation segment begins at `abort.stop ()` and extends to the nearest dynamically enclosing matching
+handler. That segment includes the active `do`-scope frames between the operation site and the handler.
+
+Therefore, before the handler result `pure 0` is allowed to complete observably:
+
+* the `defer cleanupMarker ()` action is run exactly once;
+* the `using` release action for `r` is run exactly once;
+* both actions run in masked LIFO order according to the ordinary `do`-scope unwinding rules;
+* the expression `useResource r` is not executed;
+* heap effects that happened before `abort.stop ()` are not rolled back.
+
+If abandonment cleanup produces a cause in a carrier that records `Cause`, the cleanup cause is composed with the
+handler-clause result according to §14.8.4C.
+
+If the handler clause itself fails or is interrupted before resuming `k`, leaving the clause still abandons any
+non-escaping captured segment. Cleanup of the abandoned segment still runs. The clause failure and cleanup failure are
+composed according to the same cause-composition rules that govern ordinary scope exit.
+
+A conforming implementation MUST NOT implement abortive handler clauses by simply dropping the captured continuation
+without unwinding its captured `do`-scope exit actions.
+
 <!-- core_semantics.runtime_model.deep_handler_reinstallation -->
 #### 14.8.9 Deep handler reinstallation
 
