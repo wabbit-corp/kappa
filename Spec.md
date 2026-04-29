@@ -29484,6 +29484,117 @@ when the publish metadata records the corresponding runtime prerequisites.
 `ReproducibilityStatus` is part of the query key for any query whose result can depend on a fact that differs between
 these statuses.
 
+<!-- build_system.lockfile_structure -->
+### 19.3C Lockfile structure and update modes
+
+The default lockfile path is `kappa.lock`, as specified in §19.3.
+
+A package-mode lockfile has the following portable top-level structure:
+
+```text
+Lockfile:
+    schema version
+    std.build schema identity
+    Kappa language version
+    toolchain entries
+    config-safe library entries
+    workspace entries
+    package graph entries
+    dependency entries
+    target artifact entries
+    host binding entries
+    generated binding entries
+    codegen output entries
+    bridge entries
+    macro entries
+    deployment entries
+    runtime prerequisite entries
+    reproducibility entries
+    transcript entries
+    provenance backreferences
+```
+
+A lockfile entry has at least:
+
+* entry kind;
+* stable entry key;
+* resolved identity;
+* all authored inputs that contributed to the entry;
+* all resolved facts that contributed to the entry;
+* relevant tool, generator, macro, backend, adapter, bridge, or loader identity;
+* content digest or transcript identity when applicable;
+* reproducibility vector under §19.3A;
+* provenance backreferences to the manifest values, lockfile entries, generated outputs, or external facts that produced
+  it; and
+* schema identity under which the entry was written.
+
+Portable lockfile entry kinds include:
+
+```text
+package-graph
+registry-dependency
+git-dependency
+url-dependency
+path-dependency-content
+artifact-dependency
+target-artifact
+maven-artifact
+nuget-package
+tool-dependency
+macro-dependency
+host-binding
+generated-binding
+codegen-output
+bridge-contract
+bridge-companion
+native-library
+managed-assembly
+wasm-component
+runtime-prerequisite
+deployment-layout
+macro-transcript
+external-discovery-transcript
+reproducibility-summary
+```
+
+A lockfile entry MUST NOT be reused for a different entry kind, even when its textual key is the same.
+
+A lockfile entry MUST NOT be reused when the current `std.build` schema identity is incompatible with the schema
+identity recorded in that entry.
+
+Portable lockfile update modes are:
+
+```text
+locked
+verify-only
+update-selected
+update-all
+write-transcript
+```
+
+Meanings:
+
+* `locked` requires every package-mode resolved fact that needs a lockfile entry to match an existing entry. Missing or
+  mismatched entries are errors.
+* `verify-only` behaves like `locked` but additionally rejects any operation that would write or rewrite the lockfile,
+  generated-output cache, or transcript artifacts.
+* `update-selected` permits rewriting only entries selected by the build request or by explicit lockfile-update
+  selectors.
+* `update-all` permits rewriting any stale or missing entry reachable from the selected build request.
+* `write-transcript` permits writing transcript entries for observations that are transcript-reproducible but not
+  content-pinned.
+
+In package mode, ordinary compilation uses `locked` unless the build request explicitly selects another update mode.
+
+A package-mode build MUST reject when a required lockfile entry is missing, stale, schema-incompatible, or contradicted
+by newly resolved facts, unless the selected update mode permits rewriting that entry.
+
+A publish target MUST use `verify-only` or an observationally equivalent policy for all artifacts selected for
+publication.
+
+A script-mode build MAY use transient lockfile or transcript state. Such state MUST be recorded in the resolved plan
+and MUST contribute to the target's reproducibility vector.
+
 <!-- build_system.fragments -->
 ### 19.4 Fragment selection
 
