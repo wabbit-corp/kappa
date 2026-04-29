@@ -20297,9 +20297,20 @@ instance Eq a => Equiv a =
 Here `refl` denotes the canonical reflexivity proof of `=`, and `sym` and `trans` are the standard
 propositional-equality combinators definable from `=`.
 
-An instance declaration elaborates to a dictionary value of type `Dict (Tr args)`, where `Tr args` is the instance head
-constraint. It also contributes coherent implicit evidence for the constraint `Tr args`. This elaborated dictionary is
-not an ordinary exported top-level item; it participates in instance search according to the rules below.
+An instance declaration elaborates to an instance artifact containing a coherent evidence value of type `Tr args`, where
+`Tr args` is the instance head. This evidence value is not an ordinary exported top-level item; it participates in
+instance search according to the rules below.
+
+The instance artifact records at least:
+
+* the normalized instance head;
+* the generated evidence value;
+* all supertrait evidence;
+* all associated static members;
+* all runtime method fields;
+* all erased law fields;
+* the active intrinsic-trait and solver dependencies used while checking the instance; and
+* the canonical Easy Hash and, when available or required, Hard Hash used by §15.2.1 coherence.
 
 Rules:
 
@@ -20313,8 +20324,9 @@ Rules:
 * Local instances are permitted only in block scopes under the rules of §6.3.1 and §14.1.1. In particular, a local
   instance MUST mention at least one trait or type declared in the same block scope or an enclosing local block scope,
   participates in implicit resolution only within that lexical scope, and does not become part of the global instance
-  environment outside it. An explicit dictionary value produced from such an instance may still escape as an ordinary
-  term.
+  environment outside it. An explicit trait evidence value produced from such an instance may still escape as an
+  ordinary term only if its type may escape and its evidence provenance can be recorded in the escaping value under
+  §15.2.1.
 * Instance coherence is defined exclusively by Section 15.2.1. Overlap is harmless only when that section deems the
   candidate implementations equivalent; otherwise the program is rejected.
 * Orphan instances are permitted. An instance is an orphan when neither the trait definition nor the type constructor
@@ -20341,28 +20353,41 @@ and therefore new ambiguity or coherence failures. This is by design.
 <!-- traits.instances.resolution_algorithm -->
 #### 12.3.1 Instance resolution algorithm
 
-When solving a trait constraint goal `Tr args`, instance resolution proceeds as follows:
+When solving an implicit goal `G`, trait evidence resolution applies only if `G : Type u` and `IsTrait G` is available.
 
-1. **Local implicit context first.** For goals of trait-constraint form `Tr args`, perform step 1 of the
-   implicit-resolution procedure of §7.3.3. If that step yields a unique local candidate, use it. If that step yields
-   ambiguity, compilation fails. Only if that step yields no local candidate does instance resolution continue to step 2
-   below.
+Resolution proceeds as follows:
 
-2. **Then global instances** Normalize the goal and instance heads according to §12.3.1A. Collect all top-level instance
-   declarations in the compilation unit's module closure whose normalized instance heads unify with the normalized goal.
+1. **Local implicit context first.** Perform step 1 of the implicit-resolution procedure of §7.3.3. If that step yields a
+   unique local candidate, use it. If that step yields ambiguity, compilation fails. Only if that step yields no local
+   candidate does trait evidence resolution continue.
 
-3. **Recursive premise solving** For each collected candidate, solve its premises recursively using this same algorithm.
+2. **Intrinsic solver traits.** If `G` is headed by an intrinsic solver trait, invoke that trait's compiler-owned solver.
+   This includes `IsTrait`, compiler-generated `IsProp` evidence for trait evidence types, and the standard row traits
+   `ContainsRec`, `LacksRec`, `ContainsVar`, `LacksVar`, `ContainsEff`, `LacksEff`, and `SplitEff`.
 
-4. **Discard failing candidates** Any candidate whose premises cannot be solved is discarded.
+   * If the intrinsic solver produces a unique coherent evidence artifact, use it.
+   * If the intrinsic solver proves the goal unsatisfiable, the implicit goal is unsolved or rejected according to the
+     enclosing obligation.
+   * If the intrinsic solver cannot decide the goal from the current normalized inputs and active refinement context,
+     continue only if the trait explicitly permits fallback to ordinary instances. The standard row traits do not permit
+     such fallback.
 
-5. **Coherence check on surviving candidates**
+3. **Global ordinary instances.** Normalize the goal and instance heads according to §12.3.1A. Collect all top-level
+   ordinary instance declarations in the compilation unit's module closure whose normalized instance heads unify with the
+   normalized goal.
+
+4. **Recursive premise solving.** For each collected candidate, solve its premises recursively using this same algorithm.
+
+5. **Discard failing candidates.** Any candidate whose premises cannot be solved is discarded.
+
+6. **Coherence check on surviving candidates.**
    * If zero candidates survive, the implicit goal is unsolved.
    * If one candidate survives, use it.
-   * If multiple candidates survive, compare their instantiated candidate dictionaries according to §15.2.1:
+   * If multiple candidates survive, compare their instantiated evidence artifacts according to §15.2.1:
      * compare Easy Hashes first;
      * if needed compare Hard Hashes;
-     * if all surviving instantiated candidate dictionaries have the same canonical Hard Hash, accept the constraint and
-       select the canonical representative by the deterministic ordering below;
+     * if all surviving instantiated evidence artifacts have the same canonical Hard Hash, accept the goal and select the
+       canonical representative by the deterministic ordering below;
      * otherwise reject the program as incoherent.
 
 Canonical representative ordering for equivalent surviving instances:
@@ -20376,7 +20401,7 @@ Canonical representative ordering for equivalent surviving instances:
 
 The selected representative affects diagnostics, reflection, hole-goal display, and generated evidence names.
 
-Because the surviving dictionaries have the same canonical Hard Hash, the choice of representative MUST NOT affect
+Because the surviving evidence artifacts have the same canonical Hard Hash, the choice of representative MUST NOT affect
 source-language semantics, definitional equality, accepted/rejected status, generated KCore modulo alpha-renaming, or
 runtime behavior.
 
@@ -20388,7 +20413,7 @@ order, interface reload order, hash-map iteration order, cache insertion order, 
 
 Instance resolution compares trait goals and instance heads after ordinary transparent normalization.
 
-For a trait goal `Tr args`, the normalized goal is obtained by:
+For a trait evidence goal `Tr args`, the normalized goal is obtained by:
 
 * elaborating all arguments;
 * normalizing transparent type aliases, transparent families, and transparent compile-time definitions available at the
@@ -20434,25 +20459,26 @@ Supertrait projection is evidence projection. It is not ambient global instance 
 Consequences:
 
 * A global instance for `Ord T` does not by itself create a separate global instance candidate for `Eq T`.
-* Solving a global goal `Eq T` uses directly declared `Eq` instances for `T`, plus local implicit evidence, according
-  to §12.3.1.
-* Supertrait evidence from an `Ord T` dictionary is available only when that dictionary itself is already available as
-  local implicit evidence or as an explicit dictionary value.
+* Solving a global goal `Eq T` uses directly declared `Eq` instances for `T`, intrinsic solver evidence when applicable,
+  plus local implicit evidence, according to §12.3.1.
+* Supertrait evidence from an `Ord T` evidence value is available only when that evidence value itself is already
+  available as local implicit evidence or as an explicit ordinary value.
 
 Local supertrait projection:
 
-When local implicit resolution considers an in-scope dictionary `d : Tr args`, it may project any declared supertrait
-reachable from `Tr args`.
+When local implicit resolution considers an in-scope trait evidence value `d : Tr args`, it may project any declared
+supertrait reachable from `Tr args`.
 
-If several projection paths from the same dictionary reach the same normalized supertrait goal, the trait declaration
-is well-formed only if those projected dictionaries are coherent under §15.2.1.
+If several projection paths from the same trait evidence value reach the same normalized supertrait goal, the trait
+declaration is well-formed only if those projected evidence values are coherent under §15.2.1.
 
-If several local dictionaries at the same lexical scope can project evidence for the same normalized supertrait goal,
-local implicit resolution treats them as ambiguous unless their projected dictionaries are coherent under §15.2.1.
+If several local trait evidence values at the same lexical scope can project evidence for the same normalized
+supertrait goal, local implicit resolution treats them as ambiguous unless their projected evidence values are coherent
+under §15.2.1.
 
-If a direct local dictionary for the goal and one or more projected local dictionaries for the same goal are visible in
-the same lexical scope, they are ordinary local candidates for the same implicit goal. They are accepted only when the
-ordinary local-implicit uniqueness or coherence rule accepts them.
+If a direct local trait evidence value for the goal and one or more projected local trait evidence values for the same
+goal are visible in the same lexical scope, they are ordinary local candidates for the same implicit goal. They are
+accepted only when the ordinary local-implicit uniqueness or coherence rule accepts them.
 
 No implementation-dependent path choice:
 
@@ -20460,7 +20486,7 @@ An implementation MUST NOT choose arbitrarily among multiple refinement paths.
 
 Whenever more than one path can supply evidence for the same normalized trait goal, the checker must either:
 
-* prove the resulting dictionaries coherent under §15.2.1 and select a deterministic representative; or
+* prove the resulting evidence values coherent under §15.2.1 and select a deterministic representative; or
 * reject the implicit goal as ambiguous or incoherent.
 
 Deterministic representative ordering for coherent projected evidence follows the representative ordering of §12.3.1,
@@ -20472,7 +20498,7 @@ A supertrait-path ambiguity diagnostic MUST identify:
 
 * the requested trait goal;
 * every direct and projected candidate considered;
-* the dictionary or instance from which each projected candidate originated;
+* the trait evidence value or instance from which each projected candidate originated;
 * the projection path;
 * whether candidates failed uniqueness or failed coherence;
 * the deterministic representative if candidates were coherent.
