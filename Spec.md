@@ -22827,6 +22827,56 @@ MUST expose the listed `family` value and payload information in machine-readabl
 Payload field names below are normative at the conceptual schema level. A JSON schema MAY use casing conventions
 appropriate to JSON, provided the mapping is documented and stable.
 
+<!-- compiler.kfrontir.standard_diagnostic_families.feature_gates -->
+##### 17.2.4A.0 Feature-gating diagnostics
+
+Family:
+
+```text
+kappa.feature.gated
+```
+
+Used when a source form, generated form, semantic rule, elaboration behavior, backend obligation, or standard-library
+surface is rejected because its owning language feature gate is inactive, unavailable, unsafe, or weaker than the
+semantic consequence required by the occurrence.
+
+Implementations SHOULD use the following stable diagnostic codes when the corresponding meaning applies:
+
+```text
+E_FEATURE_INACTIVE
+E_FEATURE_REQUIRES_STRONGER_GATE
+E_FEATURE_BACKEND_CAPABILITY_MISSING
+E_FEATURE_UNSAFE_DEBUG_GATE_REQUIRED
+E_FEATURE_PROFILE_INCONSISTENT
+```
+
+Payload MUST include:
+
+* rejected construct kind;
+* source or synthetic origin of the construct;
+* owning feature gate;
+* required feature gate, when different from the owning gate;
+* active language profile;
+* active feature gates relevant to the decision;
+* inactive or unavailable gate that caused rejection;
+* feature-provenance record for each relevant gate;
+* implication path considered, when any;
+* parser-recovery status, when the syntax was recognized only for recovery;
+* backend profile and backend capability set, when the rejection depends on the selected backend; and
+* suggested repair, when one is evident.
+
+A human renderer MUST distinguish these cases:
+
+* syntax recognized only for recovery;
+* syntax accepted by the parser but rejected by semantic gating;
+* source accepted by the frontend but rejected because the selected backend lacks a required runtime capability;
+* unsafe/debug functionality rejected because the build mode does not permit it; and
+* a feature implied by another feature gate but unavailable because the implication is not part of the selected
+  profile.
+
+A feature-gating diagnostic SHOULD NOT suggest enabling a broader feature gate when a local source-preserving repair is
+more likely to be the intended fix.
+
 <!-- compiler.kfrontir.standard_diagnostic_families.name_import -->
 ##### 17.2.4A.1 Name and import diagnostics
 
