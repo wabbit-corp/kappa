@@ -31719,25 +31719,89 @@ Required diagnostic classes include:
 
 ```text
 E_BUILD_CONFIG_EXPECTED
+E_BUILD_SCHEMA_INCOMPATIBLE
 E_BUILD_TARGET_UNKNOWN
 E_BUILD_TARGET_DUPLICATE
+E_BUILD_TARGET_KIND_INVALID
+E_BUILD_TARGET_BACKEND_RULE_VIOLATED
+E_BUILD_TARGET_ARTIFACT_INCOMPATIBLE
+E_BUILD_MATRIX_COMBINATION_INVALID
+E_BUILD_MATRIX_TARGET_NAME_COLLISION
 E_BUILD_FRAGMENT_TAG_UNKNOWN
 E_BUILD_FRAGMENT_AXIS_CONFLICT
+E_BUILD_FRAGMENT_COMPOSITION_AMBIGUOUS
+E_BUILD_FRAGMENT_FIXITY_CONFLICT
 E_BUILD_SOURCE_COLLISION
 E_BUILD_PROVIDER_COLLISION
+E_BUILD_PROVIDER_ALIAS_COLLISION
+E_BUILD_PROVIDER_ALIAS_INVALID
+E_BUILD_PROVIDER_ALTERNATIVE_UNSELECTED
+E_BUILD_FEATURE_UNKNOWN
+E_BUILD_FEATURE_CONFLICT
+E_BUILD_FEATURE_REQUIREMENT_UNSATISFIED
+E_BUILD_FEATURE_NON_MONOTONE
 E_BUILD_DEP_UNRESOLVED
+E_BUILD_DEP_IDENTITY_UNPINNED
+E_BUILD_TARGET_ARTIFACT_UNKNOWN
+E_BUILD_TARGET_ARTIFACT_INCOMPATIBLE_USAGE
 E_BUILD_LOCK_MISSING
 E_BUILD_LOCK_MISMATCH
+E_BUILD_LOCK_SCHEMA_INCOMPATIBLE
+E_BUILD_LOCK_UPDATE_REQUIRED
 E_BUILD_BACKEND_UNAVAILABLE
 E_BUILD_ARTIFACT_UNSUPPORTED
+E_BUILD_EXPORT_SURFACE_UNSUPPORTED
+E_BUILD_C_ABI_UNSUPPORTED_SURFACE
+E_BUILD_INTERFACE_EQUIVALENCE_MISMATCH
 E_BUILD_HOST_BINDING_UNAVAILABLE
 E_BUILD_HOST_BINDING_UNPINNED
+E_BUILD_HOST_BINDING_PRECISION_UNSUPPORTED
 E_BUILD_NATIVE_ADAPTER_UNAVAILABLE
 E_BUILD_NATIVE_LOAD_UNSUPPORTED
+E_BUILD_RUNTIME_PREREQUISITE_UNRECORDED
 E_BUILD_BRIDGE_UNAVAILABLE
 E_BUILD_BRIDGE_CONTRACT_MISMATCH
+E_BUILD_BRIDGE_PHASE_CYCLE
+E_BUILD_BRIDGE_CALLBACK_UNSUPPORTED
+E_BUILD_CODEGEN_INPUT_UNPINNED
+E_BUILD_CODEGEN_OUTPUT_MISSING
+E_BUILD_CODEGEN_OUTPUT_MISMATCH
+E_BUILD_CODEGEN_UNDECLARED_INPUT
+E_BUILD_CODEGEN_UNDECLARED_OUTPUT
+E_BUILD_MACRO_DEP_UNPINNED
+E_BUILD_MACRO_TRANSCRIPT_MISSING
+E_BUILD_MACRO_TRANSCRIPT_MISMATCH
+E_BUILD_TEST_EXPECTATION_MISMATCH
+E_BUILD_TEST_UNSUPPORTED_BACKEND
+E_BUILD_BENCHMARK_DATASET_UNPINNED
+E_BUILD_BENCHMARK_ENVIRONMENT_UNPINNED
 E_BUILD_DEPLOYMENT_UNREPRODUCIBLE
+E_BUILD_PUBLISH_UNREPRODUCIBLE
+E_BUILD_PUBLISH_PATH_DEPENDENCY_REJECTED
+E_BUILD_QUERY_PLAN_NOT_FINAL
 ```
+
+A diagnostic for interface equivalence mismatch MUST identify the equivalence group, compared targets, equivalence
+mode, first differing fingerprint component, and relevant target/module/declaration provenance.
+
+A diagnostic for feature conflict or unsatisfied requirement MUST identify the feature fixed point, the feature edge or
+selection that introduced each relevant feature, and the target/package context.
+
+A diagnostic for matrix expansion failure MUST identify the matrix target, selected axis values, include/exclude rule,
+generated target name if one was computed, and generated-field provenance.
+
+A diagnostic for codegen hermeticity failure MUST identify the codegen target, generator identity, undeclared input or
+output, execution policy, and provenance of the generator selection.
+
+A diagnostic for bridge phase cycle MUST identify the bridge target, phase outputs in the cycle, provider target or
+artifact, consumer target or artifact, and the bridge realization.
+
+A diagnostic for macro transcript mismatch MUST identify the macro package identity, macro symbol identity, invocation
+origin, expected transcript identity, actual observation when available, and whether a lockfile or transcript update
+mode can repair the mismatch.
+
+A diagnostic for publish rejection MUST identify the publish target, rejected artifact, rejected dependency or
+prerequisite when applicable, reproducibility vector, and publication policy that caused rejection.
 
 A diagnostic for provider collision MUST identify every provider and the mechanism by which it was introduced.
 
