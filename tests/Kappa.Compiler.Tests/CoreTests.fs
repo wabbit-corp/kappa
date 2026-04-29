@@ -973,6 +973,42 @@ let ``interpreter resolves bundled summon helper across imported trait modules``
         failwithf "Expected imported bundled summon helper resolution to succeed, got %s" issue.Message
 
 [<Fact>]
+let ``bundled prelude comparison helpers and range operators are ordinary working bindings`` () =
+    let mainSource =
+        [
+            "module main"
+            ""
+            "neq : Bool"
+            "let neq = 1 /= 2"
+            ""
+            "lt : Bool"
+            "let lt = 1 < 2"
+            ""
+            "lte : Bool"
+            "let lte = 2 <= 2"
+            ""
+            "gt : Bool"
+            "let gt = 3 > 2"
+            ""
+            "gte : Bool"
+            "let gte = 3 >= 3"
+            ""
+            "intRange : Rangeable.Range Int"
+            "let intRange = 1 .. 3"
+            ""
+            "intRangeExclusive : Rangeable.Range Int"
+            "let intRangeExclusive = 1 ..< 3"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-prelude-comparison-and-range-helpers-root"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected prelude comparison and range helper bindings to compile, got %A" workspace.Diagnostics)
+
+[<Fact>]
 let ``resource checker lets parameters shadow prelude interpolation helpers`` () =
     let mainSource =
         [

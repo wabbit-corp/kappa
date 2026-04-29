@@ -4518,6 +4518,7 @@ let ``bundled bootstrap prelude exposes the current bootstrap surface and IO sha
               "InterpolatedMacro"
               "Lift"
               "IntoQuery"
+              "BorrowIntoQuery"
               "FromComprehensionPlan"
               "FromComprehensionRaw"
               "WellFoundedRelation"
@@ -4534,6 +4535,11 @@ let ``bundled bootstrap prelude exposes the current bootstrap surface and IO sha
         Set.ofList
             [ "witness"
               "summon"
+              "/="
+              "<"
+              "<="
+              ">"
+              ">="
               "pure"
               ">>="
               ">>"
@@ -4542,10 +4548,16 @@ let ``bundled bootstrap prelude exposes the current bootstrap surface and IO sha
               "not"
               "and"
               "or"
+              ".."
+              "..<"
               "force"
               "empty"
               "<|>"
               "orElse"
+              "++"
+              "for_"
+              "sequence"
+              "sequence_"
               "negate"
               "absurd"
               "subst"
@@ -4747,11 +4759,102 @@ let ``bundled bootstrap prelude exposes the current bootstrap surface and IO sha
     Assert.Equal("Elab ( Dict ( InterpolatedMacro String ) )", expectTermTypes["re"])
     Assert.Equal("Elab ( Dict ( InterpolatedMacro String ) )", expectTermTypes["b"])
     Assert.Equal("Elab ( Dict ( InterpolatedMacro Type ) )", expectTermTypes["type"])
+    Assert.Equal("( ~= ) : ( & x : a ) -> ( & y : a ) -> Bool", traitMemberTypes["Equiv"]["~="])
+    Assert.Equal(
+        "map : forall ( a : Type ) ( b : Type ) . ( a -> b ) -> f a -> f b",
+        traitMemberTypes["Functor"]["map"]
+    )
+    Assert.Equal("pure : forall ( a : Type ) . a -> f a", traitMemberTypes["Applicative"]["pure"])
+    Assert.Equal(
+        "liftA2 : forall ( a : Type ) ( b : Type ) ( c : Type ) . ( a -> b -> c ) -> f a -> f b -> f c",
+        traitMemberTypes["Applicative"]["liftA2"]
+    )
+    Assert.Equal(
+        "let ( <*> ) : forall ( a : Type ) ( b : Type ) . f ( a -> b ) -> f a -> f b = \\ ff -> \\ fa -> liftA2 ( \\ f -> \\ x -> f x ) ff fa",
+        traitMemberTypes["Applicative"]["<*>"]
+    )
+    Assert.Equal(
+        "( >>= ) : forall ( a : Type ) ( b : Type ) . m a -> ( a -> m b ) -> m b",
+        traitMemberTypes["Monad"][">>="]
+    )
+    Assert.Equal(
+        "let ( >> ) : forall ( a : Type ) ( b : Type ) . m a -> m b -> m b = \\ ma -> \\ mb -> ma >>= \\ ignored -> mb",
+        traitMemberTypes["Monad"][">>"]
+    )
+    Assert.Equal("empty : f a", traitMemberTypes["Alternative"]["empty"])
+    Assert.Equal("( <|> ) : f a -> f a -> f a", traitMemberTypes["Alternative"]["<|>"])
+    Assert.Equal("foldr : forall ( a : Type ) ( b : Type ) . ( a -> b -> b ) -> b -> f a -> b", traitMemberTypes["Foldable"]["foldr"])
+    Assert.Equal("foldl : forall ( a : Type ) ( b : Type ) . ( b -> a -> b ) -> b -> f a -> b", traitMemberTypes["Foldable"]["foldl"])
+    Assert.Equal(
+        "foldMap : forall ( a : Type ) ( m : Type ) . ( @ _ : Monoid m ) -> ( a -> m ) -> f a -> m",
+        traitMemberTypes["Foldable"]["foldMap"]
+    )
+    Assert.Equal(
+        "traverse : forall ( g : Type -> Type ) ( a : Type ) ( b : Type ) . ( @ _ : Applicative g ) -> ( a -> g b ) -> f a -> g ( f b )",
+        traitMemberTypes["Traversable"]["traverse"]
+    )
+    Assert.Equal("filter : forall ( a : Type ) . ( a -> Bool ) -> f a -> f a", traitMemberTypes["Filterable"]["filter"])
+    Assert.Equal(
+        "filterMap : forall ( a : Type ) ( b : Type ) . ( a -> Option b ) -> f a -> f b",
+        traitMemberTypes["FilterMap"]["filterMap"]
+    )
+    Assert.Equal("empty : a", traitMemberTypes["Monoid"]["empty"])
+    Assert.Equal("append : a -> a -> a", traitMemberTypes["Monoid"]["append"])
+    Assert.Equal("Range : Type", traitMemberTypes["Rangeable"]["Range"])
+    Assert.Equal("range : ( from : v ) -> ( to : v ) -> ( exclusive : Bool ) -> Range", traitMemberTypes["Rangeable"]["range"])
+    Assert.Equal("Item : Type", traitMemberTypes["Iterator"]["Item"])
+    Assert.Equal("next : ( 1 this : it ) -> Option ( item : Item , rest : it )", traitMemberTypes["Iterator"]["next"])
+    Assert.Equal("buildInterpolated : List SyntaxFragment -> Elab ( Syntax t )", traitMemberTypes["InterpolatedMacro"]["buildInterpolated"])
+    Assert.Equal("liftCode : a -> Code a", traitMemberTypes["Lift"]["liftCode"])
+    Assert.Equal("Mode : QueryMode", traitMemberTypes["IntoQuery"]["Mode"])
+    Assert.Equal("ItemQuantity : Quantity", traitMemberTypes["IntoQuery"]["ItemQuantity"])
+    Assert.Equal("Item : Type", traitMemberTypes["IntoQuery"]["Item"])
+    Assert.Equal("SourceDemand : Quantity", traitMemberTypes["IntoQuery"]["SourceDemand"])
+    Assert.Equal("toQuery : src -> QueryCore Mode ItemQuantity Item", traitMemberTypes["IntoQuery"]["toQuery"])
+    Assert.Equal("Card : QueryCard", traitMemberTypes["BorrowIntoQuery"]["Card"])
+    Assert.Equal("Item : Type", traitMemberTypes["BorrowIntoQuery"]["Item"])
+    Assert.Equal(
+        "toBorrowQuery : forall ( ρ : Region ) . ( & [ ρ ] source : src ) -> QueryCore ( QueryMode Reusable Card ) ω ( BorrowView ρ Item ) captures ( ρ )",
+        traitMemberTypes["BorrowIntoQuery"]["toBorrowQuery"]
+    )
+    Assert.Equal("Item : Type", traitMemberTypes["FromComprehensionPlan"]["Item"])
+    Assert.Equal(
+        "fromComprehensionPlan : ComprehensionPlan Item -> Elab ( Syntax c )",
+        traitMemberTypes["FromComprehensionPlan"]["fromComprehensionPlan"]
+    )
+    Assert.Equal("Item : Type", traitMemberTypes["FromComprehensionRaw"]["Item"])
+    Assert.Equal(
+        "fromComprehensionRaw : RawComprehension Item -> Elab ( Syntax c )",
+        traitMemberTypes["FromComprehensionRaw"]["fromComprehensionRaw"]
+    )
+    Assert.Equal("rel : a -> a -> Type", traitMemberTypes["WellFoundedRelation"]["rel"])
+    Assert.Equal("wf : WellFounded a rel", traitMemberTypes["WellFoundedRelation"]["wf"])
+    Assert.Equal("fromInteger : Nat -> a", traitMemberTypes["FromInteger"]["fromInteger"])
+    Assert.Equal("fromFloat : Double -> a", traitMemberTypes["FromFloat"]["fromFloat"])
+    Assert.Equal("fromString : String -> a", traitMemberTypes["FromString"]["fromString"])
+    Assert.Equal("finally : forall ( a : Type ) . m a -> m Unit -> m a", traitMemberTypes["MonadFinally"]["finally"])
+    Assert.Equal("Error : Type", traitMemberTypes["MonadError"]["Error"])
+    Assert.Equal("throwError : Error -> m a", traitMemberTypes["MonadError"]["throwError"])
+    Assert.Equal("catchError : m a -> ( Error -> m a ) -> m a", traitMemberTypes["MonadError"]["catchError"])
+    Assert.Equal(
+        "bracket : forall ( a : Type ) ( b : Type ) . ( 1 acquire : m a ) -> ( 1 release : ( 1 r : a ) -> m Unit ) -> ( 1 use : ( & r : a ) -> m b ) -> m b",
+        traitMemberTypes["MonadResource"]["bracket"]
+    )
+    Assert.Equal("Ref : Type -> Type", traitMemberTypes["MonadRef"]["Ref"])
+    Assert.Equal("release : ( 1 resource : a ) -> m Unit", traitMemberTypes["Releasable"]["release"])
     Assert.Equal("forall ( @ 0 t : Type ) . Code t -> Option ( ClosedCode t )", expectTermTypes["closeCode"])
     Assert.Equal("forall ( @ 0 t : Type ) . Code t -> Code t", expectTermTypes["genlet"])
     Assert.Equal("ClosedCode t -> UIO t", expectTermTypes["runCode"])
+    Assert.Equal("( c : Constraint ) -> ( @ v : c ) -> Dict c", signatureTypes["summon"])
+    Assert.Equal("forall ( a : Type ) . ( @ eq : Eq a ) -> ( & x : a ) -> ( & y : a ) -> Bool", signatureTypes["/="])
+    Assert.Equal("forall ( a : Type ) . ( @ ord : Ord a ) -> ( & x : a ) -> ( & y : a ) -> Bool", signatureTypes["<"])
+    Assert.Equal("forall ( a : Type ) . ( @ ord : Ord a ) -> ( & x : a ) -> ( & y : a ) -> Bool", signatureTypes["<="])
+    Assert.Equal("forall ( a : Type ) . ( @ ord : Ord a ) -> ( & x : a ) -> ( & y : a ) -> Bool", signatureTypes[">"])
+    Assert.Equal("forall ( a : Type ) . ( @ ord : Ord a ) -> ( & x : a ) -> ( & y : a ) -> Bool", signatureTypes[">="])
     Assert.Equal("( 1 value : a ) -> UIO a", expectTermTypes["pure"])
     Assert.Equal("UIO a -> ( a -> UIO b ) -> UIO b", expectTermTypes[">>="])
+    Assert.Equal("forall ( v : Type ) . ( @ rangeable : Rangeable v ) -> v -> v -> Rangeable . Range v", signatureTypes[".."])
+    Assert.Equal("forall ( v : Type ) . ( @ rangeable : Rangeable v ) -> v -> v -> Rangeable . Range v", signatureTypes["..<"])
     Assert.Equal("String -> UIO Unit", expectTermTypes["println"])
     Assert.Equal("String -> UIO Unit", expectTermTypes["print"])
     Assert.Equal("a -> UIO ( Ref a )", expectTermTypes["newRef"])
@@ -4763,6 +4866,17 @@ let ``bundled bootstrap prelude exposes the current bootstrap surface and IO sha
     Assert.Contains("printlnString", letNames)
     Assert.Contains("printInt", letNames)
     Assert.Contains("printString", letNames)
+    Assert.Contains("/=", letNames)
+    Assert.Contains("<", letNames)
+    Assert.Contains("<=", letNames)
+    Assert.Contains(">", letNames)
+    Assert.Contains(">=", letNames)
+    Assert.Contains("..", letNames)
+    Assert.Contains("..<", letNames)
+    Assert.Contains("++", letNames)
+    Assert.Contains("for_", letNames)
+    Assert.Contains("sequence", letNames)
+    Assert.Contains("sequence_", letNames)
     Assert.Equal("UIO a -> UIO b -> UIO b", expectTermTypes[">>"])
     Assert.Equal("Option a -> Option a -> Option a", expectTermTypes["orElse"])
     Assert.Equal("a -> ( a -> b ) -> b", expectTermTypes["|>"])

@@ -18,6 +18,8 @@ infix left 70 (*)
 infix left 70 (/)
 infix right 30 (&&)
 infix right 20 (||)
+infix left 10 (>>=)
+infix right 20 (<|>)
 infix left 1 (|>)
 infix right 0 (<|)
 
@@ -186,49 +188,105 @@ expect type Regex
 expect type Thunk (a : Type)
 expect type Need (a : Type)
 
-trait Equiv (a : Type)
+trait Equiv (a : Type) =
+    (~=) : (& x : a) -> (& y : a) -> Bool
 trait Eq (a : Type) =
     (==) : (& x : a) -> (& y : a) -> Bool
+    let (/=) x y = not (x == y)
 trait Eq a => Ord (a : Type) =
     compare : (& x : a) -> (& y : a) -> Ordering
+    let (<) x y = compare x y == LT
+    let (<=) x y =
+        let ordering = compare x y
+        in (ordering == LT) || (ordering == EQ)
+    let (>) x y = compare x y == GT
+    let (>=) x y =
+        let ordering = compare x y
+        in (ordering == GT) || (ordering == EQ)
 trait Show (a : Type) =
     show : (& value : a) -> String
 trait Shareable (a : Type)
-trait Functor (f : Type -> Type)
-trait Applicative (f : Type -> Type)
-trait Monad (m : Type -> Type)
-trait Alternative (f : Type -> Type)
-trait Foldable (f : Type -> Type)
-trait Traversable (f : Type -> Type)
-trait Filterable (f : Type -> Type)
-trait FilterMap (f : Type -> Type)
-trait Monoid (a : Type)
+trait Functor (f : Type -> Type) =
+    map : forall (a : Type) (b : Type). (a -> b) -> f a -> f b
+trait Functor f => Applicative (f : Type -> Type) =
+    pure : forall (a : Type). a -> f a
+    liftA2 : forall (a : Type) (b : Type) (c : Type). (a -> b -> c) -> f a -> f b -> f c
+    let (<*>) : forall (a : Type) (b : Type). f (a -> b) -> f a -> f b = \ff -> \fa -> liftA2 (\f -> \x -> f x) ff fa
+trait Applicative m => Monad (m : Type -> Type) =
+    (>>=) : forall (a : Type) (b : Type). m a -> (a -> m b) -> m b
+    let (>>) : forall (a : Type) (b : Type). m a -> m b -> m b = \ma -> \mb -> ma >>= \ignored -> mb
+trait Alternative (f : Type -> Type) =
+    empty : f a
+    (<|>) : f a -> f a -> f a
+    let orElse x y = x <|> y
+trait Foldable (f : Type -> Type) =
+    foldr : forall (a : Type) (b : Type). (a -> b -> b) -> b -> f a -> b
+    foldl : forall (a : Type) (b : Type). (b -> a -> b) -> b -> f a -> b
+    foldMap : forall (a : Type) (m : Type). (@_ : Monoid m) -> (a -> m) -> f a -> m
+trait (Functor f, Foldable f) => Traversable (f : Type -> Type) =
+    traverse : forall (g : Type -> Type) (a : Type) (b : Type). (@_ : Applicative g) -> (a -> g b) -> f a -> g (f b)
+trait Filterable (f : Type -> Type) =
+    filter : forall (a : Type). (a -> Bool) -> f a -> f a
+trait FilterMap (f : Type -> Type) =
+    filterMap : forall (a : Type) (b : Type). (a -> Option b) -> f a -> f b
+trait Monoid (a : Type) =
+    empty : a
+    append : a -> a -> a
 trait Rangeable (v : Type) =
     Range : Type
     range : (from : v) -> (to : v) -> (exclusive : Bool) -> Range
-trait Iterator (it : Type)
+trait Iterator (it : Type) =
+    Item : Type
+    next : (1 this : it) -> Option (item : Item, rest : it)
 trait InterpolatedMacro (t : Type) =
     buildInterpolated : List SyntaxFragment -> Elab (Syntax t)
 trait Lift (a : Type) =
     liftCode : a -> Code a
-trait IntoQuery (src : Type)
-trait BorrowIntoQuery (src : Type)
-trait FromComprehensionPlan (c : Type)
-trait FromComprehensionRaw (c : Type)
-trait WellFoundedRelation (a : Type)
-trait FromInteger (a : Type)
-trait FromFloat (a : Type)
-trait FromString (a : Type)
-trait MonadError (m : Type -> Type)
-trait MonadFinally (m : Type -> Type)
-trait MonadResource (m : Type -> Type)
-trait MonadRef (m : Type -> Type)
-trait Releasable (m : Type -> Type) (a : Type)
+trait IntoQuery (src : Type) =
+    Mode : QueryMode
+    ItemQuantity : Quantity
+    Item : Type
+    SourceDemand : Quantity
+    toQuery : src -> QueryCore Mode ItemQuantity Item
+trait BorrowIntoQuery (src : Type) =
+    Card : QueryCard
+    Item : Type
+    toBorrowQuery : forall (ρ : Region). (&[ρ] source : src) -> QueryCore (QueryMode Reusable Card) ω (BorrowView ρ Item) captures (ρ)
+trait FromComprehensionPlan (c : Type) =
+    Item : Type
+    fromComprehensionPlan : ComprehensionPlan Item -> Elab (Syntax c)
+trait FromComprehensionRaw (c : Type) =
+    Item : Type
+    fromComprehensionRaw : RawComprehension Item -> Elab (Syntax c)
+trait WellFoundedRelation (a : Type) =
+    rel : a -> a -> Type
+    wf : WellFounded a rel
+trait FromInteger (a : Type) =
+    fromInteger : Nat -> a
+trait FromFloat (a : Type) =
+    fromFloat : Double -> a
+trait FromString (a : Type) =
+    fromString : String -> a
+trait MonadFinally (m : Type -> Type) =
+    finally : forall (a : Type). m a -> m Unit -> m a
+trait MonadFinally m => MonadError (m : Type -> Type) =
+    Error : Type
+    throwError : Error -> m a
+    catchError : m a -> (Error -> m a) -> m a
+trait MonadFinally m => MonadResource (m : Type -> Type) =
+    bracket : forall (a : Type) (b : Type). (1 acquire : m a) -> (1 release : (1 r : a) -> m Unit) -> (1 use : (& r : a) -> m b) -> m b
+trait MonadRef (m : Type -> Type) =
+    Ref : Type -> Type
+    newRef : a -> m (Ref a)
+    readRef : Ref a -> m a
+    writeRef : Ref a -> a -> m Unit
+trait Releasable (m : Type -> Type) (a : Type) =
+    release : (1 resource : a) -> m Unit
 
 witness : (t : Type) -> (@v : t) -> t
 let witness (t : Type) (@v : t) = v
 
-summon : (c : Constraint) -> (@v : c) -> c
+summon : (c : Constraint) -> (@v : c) -> Dict c
 let summon (c : Constraint) (@v : c) = v
 
 expect term pure : (1 value : a) -> UIO a
@@ -251,8 +309,11 @@ or : Bool -> Bool -> Bool
 let or left right =
     if left then True else right
 
-expect term (..) : forall (v : Type). (@_ : Rangeable v) -> v -> v -> Rangeable.Range v
-expect term (..<) : forall (v : Type). (@_ : Rangeable v) -> v -> v -> Rangeable.Range v
+( .. ) : forall (v : Type). (@rangeable : Rangeable v) -> v -> v -> Rangeable.Range v
+let (..) (@0 v : Type) @rangeable from to = range from to False
+
+( ..< ) : forall (v : Type). (@rangeable : Rangeable v) -> v -> v -> Rangeable.Range v
+let (..<) (@0 v : Type) @rangeable from to = range from to True
 expect term force : Thunk a -> a
 expect term captureBorrow : forall (rho : Region) (a : Type). (&[rho] x : a) -> BorrowView rho a
 expect term withBorrowView : forall (rho : Region) (a : Type) (r : Type). BorrowView rho a -> (((&[rho] x : a) -> r)) -> r
@@ -262,6 +323,33 @@ expect term composeProjector :
 expect term empty : a
 expect term (<|>) : a -> a -> a
 expect term orElse : Option a -> Option a -> Option a
+
+( ++ ) : forall (a : Type). (@monoid : Monoid a) -> a -> a -> a
+let (++) (@0 a : Type) @monoid x y = append x y
+
+for_ :
+    forall (t : Type -> Type) (m : Type -> Type) (a : Type).
+    (@foldable : Foldable t) ->
+    (@applicative : Applicative m) ->
+    t a -> (a -> m Unit) -> m Unit
+let for_ (@0 t : Type -> Type) (@0 m : Type -> Type) (@0 a : Type) @foldable @applicative items action =
+    foldl (\acc item -> liftA2 (\_ _ -> Unit) acc (action item)) (pure Unit) items
+
+sequence :
+    forall (t : Type -> Type) (m : Type -> Type) (a : Type).
+    (@traversable : Traversable t) ->
+    (@applicative : Applicative m) ->
+    t (m a) -> m (t a)
+let sequence (@0 t : Type -> Type) (@0 m : Type -> Type) (@0 a : Type) @traversable @applicative actions =
+    traverse (\action -> action) actions
+
+sequence_ :
+    forall (t : Type -> Type) (m : Type -> Type) (a : Type).
+    (@foldable : Foldable t) ->
+    (@applicative : Applicative m) ->
+    t (m a) -> m Unit
+let sequence_ (@0 t : Type -> Type) (@0 m : Type -> Type) (@0 a : Type) @foldable @applicative actions =
+    for_ actions (\action -> liftA2 (\_ _ -> Unit) action (pure Unit))
 
 expect term negate : a -> a
 expect term absurd : Void -> a
