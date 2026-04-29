@@ -12637,9 +12637,9 @@ Resolution proceeds in this order:
    candidate, attempt to resolve an instance from the instance environment using the algorithm of §12.3.1.
 
 3. **Boolean proposition normalization**:
-    * If `G` is `b = True` and `b` normalizes under the current active refinement context (§14.3A) to `True`,
+    * If `G` is `b = True` and `b` normalizes under the current active refinement context (§14.3B) to `True`,
       synthesize `refl`.
-    * If `G` is `b = False` and `b` normalizes under the current active refinement context (§14.3A) to `False`,
+    * If `G` is `b = False` and `b` normalizes under the current active refinement context (§14.3B) to `False`,
       synthesize `refl`.
 
 This rule uses only the current active refinement context. It does not make arbitrary user-provided propositional
@@ -12837,7 +12837,7 @@ case _ ->
 Outside a module where an opaque data type's constructors are visible, failure-side `LacksCtor` evidence does not reveal
 hidden constructors.
 
-Failure-side constructor facts participate in branch-local normalization under §14.3A.
+Failure-side constructor facts participate in branch-local normalization under §14.3B.
 
 Example:
 
@@ -12865,7 +12865,7 @@ Therefore constructor-field projection `x.value` is well-formed in the `else` br
 
 For a type with more than two visible constructors, ruling out one constructor does not by itself introduce a positive
 constructor fact. It may still allow a residual catch-all branch to be selected during normalization, as specified by
-§14.3A.
+§14.3B.
 
 These erased assumptions participate in implicit resolution (§7.3.3).
 
@@ -13242,7 +13242,7 @@ Residual negative evidence:
 If residual negative evidence leaves exactly one visible constructor, the failure-side constructor narrowing rule of
 §7.4 MUST derive the corresponding `HasCtor` evidence.
 
-Residual negative evidence participates in branch-local normalization under §14.3A.
+Residual negative evidence participates in branch-local normalization under §14.3B.
 
 Example:
 
@@ -20228,7 +20228,7 @@ context and subject to opacity rules:
   `unhide`, and `clarify` environment.
 * ι-reduction: reducing `match`, `if`, constructor-tag tests, and case-tree decisions on known constructors/literals.
   Knowledge may come either from the normalized scrutinee itself or from the active refinement context, as specified in
-  §14.3A.
+  §14.3B.
 * η-equality (definitional):
     * Functions: `f ≡ (\(x : A) -> f x)` when `x` is not free in `f`.
     * Records: a record is definitionally equal to a record reconstructed from its projections (field-wise η), up to
@@ -20297,8 +20297,69 @@ Definitional equality also includes canonical normalization of:
 * projection of a non-erased field through a seal is not required to reduce for definitional equality. It remains a
   well-typed neutral elimination form whose runtime behavior is ordinary projection.
 
+<!-- core_semantics.definitional_equality.position_independent_transparent_normalization -->
+#### 14.3A Position-independent transparent normalization
+
+Transparent normalization is position-independent.
+
+Subject to the ordinary opacity, visibility, `unhide`, `clarify`, totality, and conversion-reducibility rules of this
+chapter, the same transparent definition, transparent type alias, transparent family, transparent associated static
+member, and transparent compile-time computation MUST reduce uniformly in all source positions where its classifier is
+well-formed.
+
+This includes occurrences in:
+
+* term types;
+* type expressions;
+* universe-indexed type expressions;
+* kind/classifier position;
+* row expressions;
+* label and effect-label expressions;
+* effect rows;
+* constraint expressions;
+* associated static-member result types;
+* instance heads and premises;
+* trait headers and supertrait premises;
+* record field types;
+* constructor result types;
+* equality goals;
+* ambiguity checks;
+* semantic reflection queries.
+
+An implementation MUST NOT leave a transparent family application stuck solely because it occurs in kind position,
+constraint position, instance-head position, or associated-member position.
+
+Associated static-member projections:
+
+* A projection from a dictionary or coherent evidence value to an associated static member normalizes when:
+  * the governing trait evidence has been selected;
+  * the selected instance defines or inherits the member;
+  * the member definition is transparent at the use site; and
+  * ordinary compile-time normalization can reduce the instantiated member body.
+* The instance head is substituted into the associated static member before checking or normalizing the member body.
+* All refined kind, universe, row, and equality information obtained from the instance head participates in that
+  substitution.
+* If the governing evidence is missing, ambiguous, incoherent, opaque, or blocked, the projection remains stuck and
+  diagnostics are governed by `kappa.associated.normalization-blocked`.
+
+No raw syntactic-shape shortcut:
+
+A checker MUST NOT accept or reject an associated static-member definition merely by comparing the written syntactic
+shape of the instance member against the trait declaration.
+
+Instance member checking uses ordinary elaboration after:
+
+* substituting the instance head into the trait member declaration;
+* normalizing transparent type aliases and families;
+* applying branch-local and instance-local equality refinements;
+* solving available implicit arguments; and
+* checking the resulting definition against the instantiated member type.
+
+If this ordinary checking succeeds, the member is accepted. If it fails, the failure is reported as an ordinary
+source-level diagnostic.
+
 <!-- core_semantics.definitional_equality.refinement_aware_normalization -->
-#### 14.3A Branch-local refinement-aware normalization
+#### 14.3B Branch-local refinement-aware normalization
 
 Normalization and definitional equality are parameterized by the active refinement context of the branch being checked.
 
@@ -25362,7 +25423,7 @@ case trees whose decision nodes expose:
 * the branch-local facts introduced by taking each alternative; and
 * the negative facts introduced by falling through each failed unguarded constructor alternative.
 
-The KCore normalizer MUST implement the refinement-aware reduction rules of §14.3A over these case trees.
+The KCore normalizer MUST implement the refinement-aware reduction rules of §14.3B over these case trees.
 
 In particular:
 
