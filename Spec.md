@@ -29980,6 +29980,36 @@ Diagnostics emitted by a cached action result MUST be replayed with the same str
 only for presentation details that do not change source origins, provenance, diagnostic code, related origins, or
 fix-it semantics.
 
+<!-- build_system.action_identity_cache.reproducible_environment -->
+#### Reproducible action environment
+
+A `ReproducibleActionEnvironment` records the environment contract under which a build action is executed or replayed.
+
+It records at least:
+
+* locale policy;
+* timezone policy;
+* source-date-epoch policy;
+* path-prefix mapping policy;
+* current working directory policy;
+* temporary directory policy;
+* username and hostname policy;
+* random seed policy;
+* stable input ordering policy;
+* stable output ordering policy;
+* archive metadata policy;
+* filesystem timestamp policy;
+* debug-path policy;
+* environment-variable allowlist or exact environment map;
+* process umask or permission policy when observable; and
+* line-ending normalization policy when observable.
+
+A build action whose result claims `FullyPinnedArtifactContents`, `PinnedGeneratedOutputs`, or
+`SelfContainedPinnedDeployment` MUST either fix each field above or record why the field cannot affect the result.
+
+If an action observes one of these environment dimensions without a pinned value, recorded transcript, or proof of
+irrelevance, the corresponding target's reproducibility record MUST include an ambient or unpinned dimension.
+
 <!-- build_system.external_observations -->
 ### 19.3F External observations
 
