@@ -29675,6 +29675,35 @@ publication.
 A script-mode build MAY use transient lockfile or transcript state. Such state MUST be recorded in the resolved plan
 and MUST contribute to the target's reproducibility vector.
 
+<!-- build_system.graph_layers -->
+### 19.3D Build graph layers
+
+A conforming implementation MUST distinguish the following graph layers.
+
+```text
+AuthoredTargetGraph:
+    The target graph described by the evaluated BuildConfig before feature selection, matrix expansion, provider
+    selection, external discovery, or target-reference resolution.
+
+ConfiguredTargetGraph:
+    The graph after feature selection, matrix expansion, aggregate expansion, target-reference resolution,
+    backend/profile selection, fragment-tag computation, and provider-selection intent have been applied.
+
+ResolvedTargetGraph:
+    The configured graph plus resolved dependency identities, selected providers, selected host binding facts, selected
+    bridge contracts, generated-output requirements, platform/toolchain selections, deployment prerequisites, lockfile
+    entries, and reproducibility classification.
+
+BuildActionGraph:
+    The executable action graph derived from a ResolvedTargetGraph. It contains only executable build actions and their
+    declared or recorded inputs, outputs, tools, execution platforms, target platforms, environments, cache policies,
+    reproducibility policies, and provenance.
+```
+
+Compiler semantic queries MUST consume the `ResolvedTargetGraph` projection relevant to the selected target.
+
+Build execution queries MUST consume the `BuildActionGraph` projection relevant to the selected action.
+
 <!-- build_system.fragments -->
 ### 19.4 Fragment selection
 
