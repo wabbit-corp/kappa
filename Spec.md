@@ -30706,6 +30706,37 @@ If a feature combination is invalid, build-plan resolution MUST emit a diagnosti
   introduced by the feature when relevant;
 * build-manifest provenance for every contributing feature selection.
 
+<!-- build_system.features.configured_package_instances -->
+#### Configured package instances
+
+A `ConfiguredPackageInstance` is a resolved use of a package under a selected build context.
+
+Its identity records at least:
+
+* package identity;
+* selected package version or source identity;
+* selected feature fixed point;
+* dependency-use scope;
+* target platform context when it affects selected fragments, host bindings, generated outputs, or dependencies;
+* backend family context when it affects selected fragments, host bindings, generated outputs, or dependencies;
+* selected provider alternatives visible through the package's public module surface; and
+* provenance for every dependency edge that contributed to the instance.
+
+Feature unification occurs only within one configured package instance.
+
+Portable Kappa does not perform hidden global feature unification across unrelated targets, unrelated backend contexts,
+or unrelated dependency-use scopes.
+
+When two dependency edges require the same package identity but produce different configured package instance
+identities, the resolved plan records two configured package instances unless the package's declared compatibility
+policy requires them to be unified.
+
+A dependency resolver MAY share artifacts or module interface results between configured package instances only when the
+corresponding instance identities are compatibility-equal.
+
+A diagnostic for feature conflict MUST identify the configured package instance in which the conflict occurs and every
+dependency edge that contributed to that instance's selected feature fixed point.
+
 <!-- build_system.features.resolution_algorithm -->
 #### Feature resolution algorithm
 
