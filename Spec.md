@@ -19912,6 +19912,102 @@ trait Applicative m => Monad (m : Type -> Type) =
             \ma mb -> ma >>= \_ -> mb
 ```
 
+<!-- traits.headers.abstract_evidence_records -->
+#### 12.1.0 Trait declarations as abstract evidence records
+
+A trait declaration introduces an abstract evidence record family.
+
+For example:
+
+```kappa
+trait Eq (a : Type) =
+    (==) : (& x : a) -> (& y : a) -> Bool
+    eqSound    : (x : a) -> (y : a) -> ((x == y) = True -> x = y)
+    eqComplete : (x : a) -> (y : a) -> (x = y -> (x == y) = True)
+```
+
+elaborates as if it introduced an abstract evidence type:
+
+```text
+Eq : Type -> Type
+```
+
+with public eliminators for `(==)`, `eqSound`, and `eqComplete`, and with compiler-private introduction.
+
+This elaboration is not an ordinary public record declaration. Source code may project members from evidence values, but
+it may not construct, update, pattern match on, or structurally reflect the evidence record except through the
+operations specified for traits.
+
+For every well-formed full application `Tr args`, the compiler provides:
+
+```kappa
+IsTrait (Tr args)
+```
+
+and therefore:
+
+```kappa
+IsProp (Tr args)
+```
+
+by the `IsTrait` supertrait.
+
+The following are well-formed explicit evidence uses:
+
+```kappa
+let d : Eq Int = summon
+let b = d.(==) 1 2
+```
+
+The following are not source-level construction forms:
+
+```kappa
+__MkEq { ... }      -- rejected: compiler-private constructor
+Eq.{ ... }          -- rejected: no trait record literal construction
+d.{ (==) = ... }    -- rejected: no trait evidence update
+match d with ...    -- rejected: no constructor pattern for trait evidence
+```
+
+An implementation may internally lower trait evidence to records, closures, vtables, erased tokens, specialized code,
+or another representation. The source-language contract is the abstract evidence type plus its public eliminators.
+
+<!-- traits.headers.intrinsic_traits -->
+#### 12.1.0A Intrinsic traits
+
+An intrinsic trait is a trait whose evidence introduction rules are owned by the compiler.
+
+The implementation-provided declaration form is rendered as:
+
+```kappa
+intrinsic trait Tr params
+```
+
+or, when the intrinsic trait also declares public members:
+
+```kappa
+intrinsic trait Tr params =
+    ...
+```
+
+Unless an intrinsic trait explicitly specifies a checked source-level introduction form, user-written `instance`
+declarations for that trait are rejected.
+
+Intrinsic traits still produce ordinary trait evidence types. They participate in `=>`, implicit binders, explicit
+evidence passing, member projection, supertrait projection, proof irrelevance, and coherence exactly like ordinary
+traits. They differ only in evidence introduction.
+
+Standard intrinsic traits include:
+
+```kappa
+IsTrait
+ContainsRec, LacksRec
+ContainsVar, LacksVar
+ContainsEff, LacksEff, SplitEff
+```
+
+The compiler synthesizes `IsTrait (Tr args)` for every well-formed full application of any trait constructor `Tr`,
+whether `Tr` is ordinary or intrinsic.
+
 The comparison helper operators are derived from `compare`; they do not consume their operands.
 
 For any lawful `Ord a` instance, `compare x y = EQ` must agree with `(x == y) = True`.
@@ -19921,7 +20017,8 @@ interchange, associativity, and unit laws up to observational equivalence for th
 
 These laws are normative even when not represented as explicit erased trait members.
 
-Fully applied trait applications have type `Constraint`, not `Type` (§5.1.3).
+Fully applied trait applications are ordinary types. A full application `Tr args` is a trait evidence type, and the
+compiler provides `IsTrait (Tr args)` (§5.1.3).
 
 `Eq` is reflective decidable equality. Its comparison operation is non-consuming: both operands are received by borrow.
 An `Eq` instance participates in equality reflection only because `eqSound` and `eqComplete` are required members whose
