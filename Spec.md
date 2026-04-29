@@ -29125,6 +29125,20 @@ nonSelfContainedDeployment
 unreproducible
 ```
 
+Reproducibility-related constructors in `std.build` construct authored reproducibility policies or requirements.
+
+They do not construct resolved reproducibility facts.
+
+A build manifest MAY request that a target require full reproducibility, allow transcript-backed reproduction, allow
+recorded system runtime prerequisites, require self-contained deployment, or explicitly permit unreproducible
+script-mode execution.
+
+A build manifest MUST NOT assign the resolved `ReproducibilityStatus` of a target.
+
+The resolved reproducibility record and summary status are derived only during build-plan resolution and action
+materialization from selected dependencies, generated outputs, external observations, lockfile entries, deployment
+layout, runtime prerequisites, action results, and transcript records.
+
 The exact surface spelling MAY be extended by implementations, but a conforming implementation MUST provide an
 equivalent portable schema capable of expressing the concepts in this chapter.
 
