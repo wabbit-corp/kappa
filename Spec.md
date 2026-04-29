@@ -23130,6 +23130,56 @@ Payload MUST include:
 Family:
 
 ```text
+kappa.associated.normalization-blocked
+```
+
+Used when a projected associated static member, associated family, dictionary member, or signature depending on such a
+projection cannot normalize because the governing trait instance or owner dictionary is unavailable, ambiguous,
+incoherent, opaque, or not yet solved.
+
+Payload MUST include:
+
+* associated member being projected;
+* projected owner expression or dictionary;
+* governing trait;
+* owner type or trait arguments;
+* missing, ambiguous, or incoherent trait goal;
+* instance candidates considered;
+* local implicit evidence considered;
+* candidates rejected by head mismatch;
+* candidates rejected by failed premises;
+* candidates rejected by coherence;
+* normalization context;
+* source expression or declaration requiring normalization; and
+* fallback unreduced type, when useful.
+
+The primary message MUST identify the missing or blocked governing trait instance before reporting a large unreduced
+type mismatch.
+
+Family:
+
+```text
+kappa.associated.member-undeclared
+```
+
+Used when an instance body, trait body, derive output, macro output, or generated declaration defines what appears to
+be an associated static member but the governing trait declares no associated static member with that name.
+
+Payload MUST include:
+
+* governing trait;
+* invalid member name;
+* member definition origin;
+* declared associated static members of the trait;
+* expected declaration shape; and
+* whether the invalid member was written by the user or generated.
+
+The diagnostic SHOULD explain that an associated static member must first be declared in the trait body before an
+instance can define it.
+
+Family:
+
+```text
 kappa.hole.unsolved
 ```
 
