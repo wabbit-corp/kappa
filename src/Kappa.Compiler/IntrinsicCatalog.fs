@@ -9,6 +9,10 @@ type internal BundledPreludeExpectContract =
 
 // Centralizes intrinsic names, operator classes, and backend-visible builtin metadata.
 module internal IntrinsicCatalog =
+    type internal TraitSensitiveIntrinsicLowering =
+        { EraseBuiltinPreludeConstraintEvidence: bool
+          PreferTraitDispatchForNonBuiltinInstances: bool }
+
     let private aggregateDiagnostics diagnostics =
         diagnostics
         |> List.map (fun diagnostic -> diagnostic.Message)
@@ -118,6 +122,27 @@ module internal IntrinsicCatalog =
     let isEagerBuiltinBinaryOperator name =
         eagerBuiltinBinaryOperatorNames.Contains name
 
+    let private tryTraitSensitiveIntrinsicLowering moduleName bindingName =
+        if String.Equals(moduleName, "std.prelude", StringComparison.Ordinal) then
+            match bindingName with
+            | "show"
+            | "compare" ->
+                Some
+                    { EraseBuiltinPreludeConstraintEvidence = true
+                      PreferTraitDispatchForNonBuiltinInstances = true }
+            | _ ->
+                None
+        else
+            None
+
+    let erasesBuiltinPreludeConstraintEvidence moduleName bindingName =
+        tryTraitSensitiveIntrinsicLowering moduleName bindingName
+        |> Option.exists (fun lowering -> lowering.EraseBuiltinPreludeConstraintEvidence)
+
+    let prefersTraitDispatchForNonBuiltinInstances moduleName bindingName =
+        tryTraitSensitiveIntrinsicLowering moduleName bindingName
+        |> Option.exists (fun lowering -> lowering.PreferTraitDispatchForNonBuiltinInstances)
+
     let intrinsicRuntimeArity name =
         match name with
         | "True"
@@ -176,9 +201,9 @@ module internal IntrinsicCatalog =
         | "normalize"
         | "isNormalized"
         | "canonicalEquivalent"
-        | "hashWith"
         | "hashBool"
-        | "hashChar"
+        | "hashUnicodeScalar"
+        | "hashGrapheme"
         | "hashString"
         | "hashBytes"
         | "hashInt"
@@ -189,8 +214,6 @@ module internal IntrinsicCatalog =
             2
         | "hashUnit" ->
             1
-        | "hashField" ->
-            2
         | _ when isBuiltinBinaryOperator name ->
             2
         | _ ->
@@ -250,18 +273,17 @@ module internal IntrinsicCatalog =
         | "newHashState"
         | "hashUnit"
         | "hashBool"
-        | "hashChar"
+        | "hashUnicodeScalar"
+        | "hashGrapheme"
         | "hashString"
         | "hashBytes"
         | "hashInt"
         | "hashInteger"
         | "hashFloatRaw"
         | "hashDoubleRaw"
-        | "hashNatTag"
-        | "hashField" ->
+        | "hashNatTag" ->
             Some(BackendRepOpaque(Some "HashState"))
-        | "finishHashState"
-        | "hashWith" ->
+        | "finishHashState" ->
             Some(BackendRepOpaque(Some "HashCode"))
         | "unsafeConsume" ->
             Some BackendRepUnit

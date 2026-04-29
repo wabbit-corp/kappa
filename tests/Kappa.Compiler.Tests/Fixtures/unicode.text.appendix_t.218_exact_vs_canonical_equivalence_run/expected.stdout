@@ -1,0 +1,4 @@
+exact-eq-false-ok
+canonical-equivalent-ok
+nfc-eq-ok
+nfd-eq-ok

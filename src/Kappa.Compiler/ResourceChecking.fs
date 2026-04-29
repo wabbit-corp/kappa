@@ -6776,10 +6776,11 @@ module ResourceChecking =
                 | _ ->
                     state
 
-            let parameterNames, parameterQuantities, parameterTypes, parameterInout =
+            let parameterNames, parameterImplicit, parameterQuantities, parameterTypes, parameterInout =
                 match localLambda with
                 | Some lambdaValue ->
                     lambdaValue.Parameters |> List.map (fun parameter -> Some parameter.Name),
+                    (lambdaValue.Parameters |> List.map (fun _ -> false)),
                     lambdaValue.Parameters |> List.map parameterQuantity,
                     (lambdaValue.Parameters |> List.map (fun parameter -> parameter.TypeTokens |> Option.bind TypeSignatures.parseType)),
                     (lambdaValue.Parameters |> List.map (fun parameter -> parameter.IsInout))
@@ -6789,25 +6790,27 @@ module ResourceChecking =
                         match Map.tryFind name localTypes with
                         | Some localType ->
                             let quantities, parameterTypes = functionParameterInfoFromType localType
-                            [], quantities, parameterTypes, List.replicate parameterTypes.Length false
+                            [], List.replicate parameterTypes.Length false, quantities, parameterTypes, List.replicate parameterTypes.Length false
                         | None ->
                             calleeName
                             |> Option.bind (fun resolvedName -> Map.tryFind resolvedName signatures)
                             |> Option.map (fun signature ->
                                 signature.ParameterNames,
+                                signature.ParameterImplicit,
                                 signature.ParameterQuantities,
                                 (signature.ParameterTypeTokens |> List.map (Option.bind TypeSignatures.parseType)),
                                 signature.ParameterInout)
-                            |> Option.defaultValue ([], [], [], [])
+                            |> Option.defaultValue ([], [], [], [], [])
                     | _ ->
                         calleeName
                         |> Option.bind (fun name -> Map.tryFind name signatures)
                         |> Option.map (fun signature ->
                             signature.ParameterNames,
+                            signature.ParameterImplicit,
                             signature.ParameterQuantities,
                             (signature.ParameterTypeTokens |> List.map (Option.bind TypeSignatures.parseType)),
                             signature.ParameterInout)
-                        |> Option.defaultValue ([], [], [], [])
+                        |> Option.defaultValue ([], [], [], [], [])
 
             let calleeSignature =
                 match localLambda with
@@ -6843,17 +6846,61 @@ module ResourceChecking =
 
                 match splitTrailingNamedArgumentBlock runtimeArgumentsWithSource with
                 | Some(positionalArguments, namedFields) ->
+                    let parameterIsCompileTime index =
+                        parameterTypes
+                        |> List.tryItem index
+                        |> Option.flatten
+                        |> Option.exists typeIsElaborationOnlyCarrierType
+
+                    let parameterIsImplicit index =
+                        parameterImplicit
+                        |> List.tryItem index
+                        |> Option.defaultValue false
+
+                    let rec alignPositionalArguments parameterIndex remainingArguments aligned =
+                        if List.isEmpty remainingArguments then
+                            List.rev aligned, parameterIndex
+                        elif parameterIndex >= List.length parameterTypes then
+                            let trailing =
+                                remainingArguments
+                                |> List.rev
+                                |> List.fold (fun state (sourceIndex, argument) ->
+                                    (sourceIndex, None, argument) :: state) []
+
+                            List.rev aligned @ trailing, parameterIndex
+                        elif parameterIsCompileTime parameterIndex then
+                            alignPositionalArguments (parameterIndex + 1) remainingArguments aligned
+                        elif parameterIsImplicit parameterIndex then
+                            match remainingArguments with
+                            | (sourceIndex, ExplicitImplicitArgument explicitArgument) :: rest ->
+                                alignPositionalArguments
+                                    (parameterIndex + 1)
+                                    rest
+                                    ((sourceIndex, Some parameterIndex, ExplicitImplicitArgument explicitArgument) :: aligned)
+                            | _ ->
+                                alignPositionalArguments (parameterIndex + 1) remainingArguments aligned
+                        else
+                            match remainingArguments with
+                            | (sourceIndex, argument) :: rest ->
+                                alignPositionalArguments
+                                    (parameterIndex + 1)
+                                    rest
+                                    ((sourceIndex, Some parameterIndex, argument) :: aligned)
+                            | [] ->
+                                List.rev aligned, parameterIndex
+
+                    let positionalActuals, nextNamedSearchIndex =
+                        alignPositionalArguments 0 positionalArguments []
+
                     let namedParameterIndices =
                         parameterNames
                         |> List.mapi (fun index name -> index, name)
-                        |> List.skip positionalArguments.Length
+                        |> List.filter (fun (index, _) ->
+                            index >= nextNamedSearchIndex
+                            && not (parameterIsCompileTime index)
+                            && not (parameterIsImplicit index))
                         |> List.choose (fun (index, name) -> name |> Option.map (fun parameterName -> parameterName, index))
                         |> Map.ofList
-
-                    let positionalActuals =
-                        positionalArguments
-                        |> List.mapi (fun positionalIndex (sourceIndex, argument) ->
-                            sourceIndex, Some positionalIndex, argument)
 
                     let namedActuals =
                         namedFields
@@ -6864,8 +6911,50 @@ module ResourceChecking =
 
                     positionalActuals @ namedActuals
                 | None ->
-                    runtimeArgumentsWithSource
-                    |> List.mapi (fun positionalIndex (sourceIndex, argument) -> sourceIndex, Some positionalIndex, argument)
+                    let parameterIsCompileTime index =
+                        parameterTypes
+                        |> List.tryItem index
+                        |> Option.flatten
+                        |> Option.exists typeIsElaborationOnlyCarrierType
+
+                    let parameterIsImplicit index =
+                        parameterImplicit
+                        |> List.tryItem index
+                        |> Option.defaultValue false
+
+                    let rec alignPositionalArguments parameterIndex remainingArguments aligned =
+                        if List.isEmpty remainingArguments then
+                            List.rev aligned
+                        elif parameterIndex >= List.length parameterTypes then
+                            let trailing =
+                                remainingArguments
+                                |> List.rev
+                                |> List.fold (fun state (sourceIndex, argument) ->
+                                    (sourceIndex, None, argument) :: state) []
+
+                            List.rev aligned @ trailing
+                        elif parameterIsCompileTime parameterIndex then
+                            alignPositionalArguments (parameterIndex + 1) remainingArguments aligned
+                        elif parameterIsImplicit parameterIndex then
+                            match remainingArguments with
+                            | (sourceIndex, ExplicitImplicitArgument explicitArgument) :: rest ->
+                                alignPositionalArguments
+                                    (parameterIndex + 1)
+                                    rest
+                                    ((sourceIndex, Some parameterIndex, ExplicitImplicitArgument explicitArgument) :: aligned)
+                            | _ ->
+                                alignPositionalArguments (parameterIndex + 1) remainingArguments aligned
+                        else
+                            match remainingArguments with
+                            | (sourceIndex, argument) :: rest ->
+                                alignPositionalArguments
+                                    (parameterIndex + 1)
+                                    rest
+                                    ((sourceIndex, Some parameterIndex, argument) :: aligned)
+                            | [] ->
+                                List.rev aligned
+
+                    alignPositionalArguments 0 runtimeArgumentsWithSource []
 
             let state =
                 let inoutPlaces =

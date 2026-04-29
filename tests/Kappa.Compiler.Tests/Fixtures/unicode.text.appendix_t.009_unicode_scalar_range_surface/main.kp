@@ -1,0 +1,8 @@
+--! mode check
+--! packageMode
+--! assertNoErrors
+
+let lowerAsciiScalars = 'a' .. 'z'
+let halfOpenAsciiScalars = 'a' ..< '{'
+let greekScalars = '\u{03B1}' .. '\u{03C9}'
+

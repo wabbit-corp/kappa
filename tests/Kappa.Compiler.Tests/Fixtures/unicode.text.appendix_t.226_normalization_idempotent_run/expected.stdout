@@ -1,0 +1,4 @@
+nfc-idempotent-ok
+nfd-idempotent-ok
+is-nfc-after-normalize-ok
+is-nfd-after-normalize-ok

@@ -3096,6 +3096,33 @@ let ``type signature schemes parse typed forall binders and captures`` () =
     )
 
 [<Fact>]
+let ``type signature schemes accept both grouped and chained constraint prefixes`` () =
+    let grouped =
+        parseSchemeText "(Eq a, Hashable a) => Hashable (Option a)"
+
+    let chained =
+        parseSchemeText "Eq a => Hashable a => Hashable (Option a)"
+
+    let expectedConstraints : TypeSignatures.TraitConstraint list =
+        [
+            { TraitName = "Eq"
+              Arguments = [ TypeSignatures.TypeVariable "a" ] }
+            { TraitName = "Hashable"
+              Arguments = [ TypeSignatures.TypeVariable "a" ] }
+        ]
+
+    let expectedBody =
+        TypeSignatures.TypeName(
+            [ "Hashable" ],
+            [ TypeSignatures.TypeName([ "Option" ], [ TypeSignatures.TypeVariable "a" ]) ]
+        )
+
+    Assert.Equal<TypeSignatures.TraitConstraint list>(expectedConstraints, grouped.Constraints)
+    Assert.Equal<TypeSignatures.TraitConstraint list>(expectedConstraints, chained.Constraints)
+    Assert.Equal(expectedBody, grouped.Body)
+    Assert.Equal(expectedBody, chained.Body)
+
+[<Fact>]
 let ``type signature schemes preserve dependent forall telescope structure under instantiation and alpha equality`` () =
     let left =
         parseSchemeText "forall (u : Universe) (a : Type u). a -> a"
@@ -3512,6 +3539,43 @@ let ``KCore lowers calls as application spines with explicit arguments`` () =
       ) -> ()
     | other ->
         failwithf "Expected KCore app spine for answer, got %A" other
+
+[<Fact>]
+let ``KCore does not pass builtin Ord dictionaries to intrinsic compare`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-kcore-compare-builtin-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let ordering = compare \"a\" \"b\""
+                ]
+                |> String.concat "\n"
+            ]
+
+    let orderingBinding =
+        workspace.KCore
+        |> List.find (fun moduleDump -> moduleDump.Name = "main")
+        |> fun moduleDump ->
+            moduleDump.Declarations
+            |> List.pick (fun declaration ->
+                match declaration.Binding with
+                | Some binding when binding.Name = Some "ordering" -> Some binding
+                | _ -> None)
+
+    match orderingBinding.Body with
+    | Some(
+        KCoreAppSpine(
+            KCoreName [ "compare" ],
+            [ { ArgumentKind = KCoreExplicitArgument
+                Expression = KCoreLiteral(LiteralValue.String "a") }
+              { ArgumentKind = KCoreExplicitArgument
+                Expression = KCoreLiteral(LiteralValue.String "b") } ]
+        )
+      ) -> ()
+    | other ->
+        failwithf "Expected builtin compare call without runtime dictionary arguments, got %A" other
 
 [<Fact>]
 let ``KCore preserves qualified Res constructor applications from map sugar`` () =
@@ -4630,6 +4694,61 @@ let ``bundled bootstrap prelude exposes the current bootstrap surface and IO sha
     Assert.Equal("a -> UIO ( Ref a )", expectTermTypes["newRef"])
     Assert.Equal("Ref a -> UIO a", expectTermTypes["readRef"])
     Assert.Equal("Ref a -> a -> UIO Unit", expectTermTypes["writeRef"])
+
+[<Fact>]
+let ``bundled std hash module exposes real Hashable members and ordinary helpers`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-bundled-std-hash-surface-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "import std.hash.*"
+                    "result : HashCode"
+                    "let result = hashWith defaultHashSeed \"a\""
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected bundled std.hash surface to compile, got %A" workspace.Diagnostics)
+
+    let hashDocument =
+        workspace.Documents
+        |> List.find (fun document -> document.ModuleName = Some [ "std"; "hash" ])
+
+    let traitMembers =
+        hashDocument.Syntax.Declarations
+        |> List.choose (function
+            | TraitDeclarationNode declaration ->
+                Some(
+                    declaration.Name,
+                    declaration.Members
+                    |> List.choose (fun memberDeclaration ->
+                        memberDeclaration.Name
+                        |> Option.map (fun memberName -> memberName, tokensText memberDeclaration.Tokens))
+                    |> Map.ofList
+                )
+            | _ ->
+                None)
+        |> Map.ofList
+
+    Assert.Equal("hashInto : ( & value : a ) -> ( 1 state : HashState ) -> HashState", traitMembers["Hashable"]["hashInto"])
+
+    let hashFieldIsOrdinary =
+        hashDocument.Syntax.Declarations
+        |> List.exists (function
+            | LetDeclaration declaration when declaration.Name = Some "hashField" -> true
+            | _ -> false)
+
+    let hashWithIsOrdinary =
+        hashDocument.Syntax.Declarations
+        |> List.exists (function
+            | LetDeclaration declaration when declaration.Name = Some "hashWith" -> true
+            | _ -> false)
+
+    Assert.True(hashFieldIsOrdinary, "Expected std.hash.hashField to be an ordinary bundled definition.")
+    Assert.True(hashWithIsOrdinary, "Expected std.hash.hashWith to be an ordinary bundled definition.")
 
 [<Fact>]
 let ``backend intrinsic bootstrap contract is derived from bundled prelude expectations with explicit module local supplement`` () =

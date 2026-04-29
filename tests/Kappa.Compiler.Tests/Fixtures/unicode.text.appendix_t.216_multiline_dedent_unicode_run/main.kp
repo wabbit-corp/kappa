@@ -1,0 +1,20 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+sample : String
+let sample = """
+    λ
+    书
+    e\u{301}
+    """
+
+main : UIO Unit
+let main =
+    do
+        check (byteLength sample == 11) "multiline-bytes-ok" "multiline-bytes-fail"
+        check (scalarCount sample == 7) "multiline-scalars-ok" "multiline-scalars-fail"
+        check (graphemeCount sample == 6) "multiline-graphemes-ok" "multiline-graphemes-fail"

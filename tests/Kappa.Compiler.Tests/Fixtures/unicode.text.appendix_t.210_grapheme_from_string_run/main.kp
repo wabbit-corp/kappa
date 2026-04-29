@@ -1,0 +1,28 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+isSomeGrapheme : Option Grapheme -> Bool
+let isSomeGrapheme x =
+    match x
+    case Some _ -> True
+    case None -> False
+
+isNoneGrapheme : Option Grapheme -> Bool
+let isNoneGrapheme x =
+    match x
+    case Some _ -> False
+    case None -> True
+
+main : UIO Unit
+let main =
+    do
+        check (isSomeGrapheme (graphemeFromString "a")) "grapheme-a-ok" "grapheme-a-fail"
+        check (isSomeGrapheme (graphemeFromString "e\u{301}")) "grapheme-combining-ok" "grapheme-combining-fail"
+        check (isSomeGrapheme (graphemeFromString "\u{1F1FA}\u{1F1F8}")) "grapheme-flag-ok" "grapheme-flag-fail"
+        check (isSomeGrapheme (graphemeFromString "\u{1F44B}\u{1F3FD}")) "grapheme-skin-tone-ok" "grapheme-skin-tone-fail"
+        check (isNoneGrapheme (graphemeFromString "")) "grapheme-empty-none-ok" "grapheme-empty-none-fail"
+        check (isNoneGrapheme (graphemeFromString "ab")) "grapheme-ab-none-ok" "grapheme-ab-none-fail"

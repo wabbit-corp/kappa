@@ -1,0 +1,15 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+main : UIO Unit
+let main =
+    do
+        check (#"\u{1F642}"# == "\\u{1F642}") "raw-equals-literal-backslash-ok" "raw-equals-literal-backslash-fail"
+        check (byteLength #"\u{1F642}"# == 9) "raw-escape-bytes-ok" "raw-escape-bytes-fail"
+        check (scalarCount #"\u{1F642}"# == 9) "raw-escape-scalars-ok" "raw-escape-scalars-fail"
+        check (graphemeCount #"\u{1F642}"# == 9) "raw-escape-graphemes-ok" "raw-escape-graphemes-fail"
+        check (byteLength "\u{1F642}" == 4) "ordinary-escape-bytes-ok" "ordinary-escape-bytes-fail"

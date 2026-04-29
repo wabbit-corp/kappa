@@ -1,0 +1,15 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+main : UIO Unit
+let main =
+    do
+        check (scalarValue '\u{0}' == 0) "scalar-zero-ok" "scalar-zero-fail"
+        check (scalarValue 'a' == 97) "scalar-a-ok" "scalar-a-fail"
+        check (scalarValue '\u{D7FF}' == 55295) "scalar-before-surrogate-ok" "scalar-before-surrogate-fail"
+        check (scalarValue '\u{E000}' == 57344) "scalar-after-surrogate-ok" "scalar-after-surrogate-fail"
+        check (scalarValue '\u{10FFFF}' == 1114111) "scalar-max-ok" "scalar-max-fail"

@@ -1,0 +1,5 @@
+scalar-zero-ok
+scalar-a-ok
+scalar-before-surrogate-ok
+scalar-after-surrogate-ok
+scalar-max-ok

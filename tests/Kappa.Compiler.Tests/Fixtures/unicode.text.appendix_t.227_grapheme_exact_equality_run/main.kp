@@ -1,0 +1,13 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+main : UIO Unit
+let main =
+    do
+        check (g'e\u{301}' == g'e\u{301}') "grapheme-exact-same-ok" "grapheme-exact-same-fail"
+        check ((g'\u{00E9}' == g'e\u{301}') == False) "grapheme-exact-not-canonical-ok" "grapheme-exact-not-canonical-fail"
+        check (canonicalEquivalent (graphemeToString g'\u{00E9}') (graphemeToString g'e\u{301}')) "grapheme-canonical-via-string-ok" "grapheme-canonical-via-string-fail"

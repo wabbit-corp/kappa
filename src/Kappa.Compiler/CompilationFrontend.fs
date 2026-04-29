@@ -999,24 +999,9 @@ module internal CompilationFrontend =
                     "ChildSpec", [ "ChildSpec" ] ]
               "std.hash",
               inventory
-                  [ "defaultHashSeed"
-                    "newHashState"
-                    "finishHashState"
-                    "hashUnit"
-                    "hashBool"
-                    "hashUnicodeScalar"
-                    "hashGrapheme"
-                    "hashString"
-                    "hashBytes"
-                    "hashInt"
-                    "hashInteger"
-                    "hashFloatRaw"
-                    "hashDoubleRaw"
-                    "hashNatTag"
-                    "hashField"
-                    "hashWith" ]
-                  [ "HashSeed"; "HashState"; "HashCode" ]
-                  [ "Hashable" ]
+                  (Stdlib.standardModuleTermNames "std.hash" |> Set.toList)
+                  (Stdlib.standardModuleTypeNames "std.hash" |> Set.toList)
+                  (Stdlib.standardModuleTraitNames "std.hash" |> Set.toList)
                   []
                   [] ]
              @ (StandardModules.all

@@ -1,0 +1,13 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+main : UIO Unit
+let main =
+    do
+        check ('a' < 'b') "scalar-less-ascii-ok" "scalar-less-ascii-fail"
+        check ('\u{03BB}' < '\u{4E66}') "scalar-less-lambda-cjk-ok" "scalar-less-lambda-cjk-fail"
+        check (compare '\u{10FFFF}' '\u{0}' == GT) "scalar-compare-max-zero-ok" "scalar-compare-max-zero-fail"

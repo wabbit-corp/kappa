@@ -1,0 +1,15 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+main : UIO Unit
+let main =
+    do
+        let x = "e\u{301}"
+        check (normalize NFC (normalize NFC x) == normalize NFC x) "nfc-idempotent-ok" "nfc-idempotent-fail"
+        check (normalize NFD (normalize NFD x) == normalize NFD x) "nfd-idempotent-ok" "nfd-idempotent-fail"
+        check (isNormalized NFC (normalize NFC x)) "is-nfc-after-normalize-ok" "is-nfc-after-normalize-fail"
+        check (isNormalized NFD (normalize NFD x)) "is-nfd-after-normalize-ok" "is-nfd-after-normalize-fail"

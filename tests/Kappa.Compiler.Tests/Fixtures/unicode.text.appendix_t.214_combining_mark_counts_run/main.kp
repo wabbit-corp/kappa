@@ -1,0 +1,16 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+main : UIO Unit
+let main =
+    do
+        check (byteLength "\u{301}" == 2) "combining-alone-bytes-ok" "combining-alone-bytes-fail"
+        check (scalarCount "\u{301}" == 1) "combining-alone-scalars-ok" "combining-alone-scalars-fail"
+        check (graphemeCount "\u{301}" == 1) "combining-alone-grapheme-ok" "combining-alone-grapheme-fail"
+        check (byteLength "a\u{301}\u{327}" == 5) "multi-combining-bytes-ok" "multi-combining-bytes-fail"
+        check (scalarCount "a\u{301}\u{327}" == 3) "multi-combining-scalars-ok" "multi-combining-scalars-fail"
+        check (graphemeCount "a\u{301}\u{327}" == 1) "multi-combining-grapheme-ok" "multi-combining-grapheme-fail"

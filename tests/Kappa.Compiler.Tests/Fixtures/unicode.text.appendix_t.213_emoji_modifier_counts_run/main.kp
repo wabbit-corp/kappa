@@ -1,0 +1,16 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+main : UIO Unit
+let main =
+    do
+        check (byteLength "\u{1F44B}\u{1F3FD}" == 8) "skin-bytes-ok" "skin-bytes-fail"
+        check (scalarCount "\u{1F44B}\u{1F3FD}" == 2) "skin-scalars-ok" "skin-scalars-fail"
+        check (graphemeCount "\u{1F44B}\u{1F3FD}" == 1) "skin-grapheme-ok" "skin-grapheme-fail"
+        check (byteLength "\u{1F469}\u{200D}\u{1F4BB}" == 11) "zwj-bytes-ok" "zwj-bytes-fail"
+        check (scalarCount "\u{1F469}\u{200D}\u{1F4BB}" == 3) "zwj-scalars-ok" "zwj-scalars-fail"
+        check (graphemeCount "\u{1F469}\u{200D}\u{1F4BB}" == 1) "zwj-grapheme-ok" "zwj-grapheme-fail"

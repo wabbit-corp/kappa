@@ -1,0 +1,110 @@
+module std.hash
+
+expect type HashSeed
+expect type HashState
+expect type HashCode
+
+expect term defaultHashSeed : HashSeed
+expect term newHashState : HashSeed -> HashState
+expect term finishHashState : (1 state : HashState) -> HashCode
+expect term hashUnit : (1 state : HashState) -> HashState
+expect term hashBool : Bool -> (1 state : HashState) -> HashState
+expect term hashUnicodeScalar : UnicodeScalar -> (1 state : HashState) -> HashState
+expect term hashGrapheme : Grapheme -> (1 state : HashState) -> HashState
+expect term hashString : String -> (1 state : HashState) -> HashState
+expect term hashBytes : Bytes -> (1 state : HashState) -> HashState
+expect term hashInt : Int -> (1 state : HashState) -> HashState
+expect term hashInteger : Integer -> (1 state : HashState) -> HashState
+expect term hashFloatRaw : Float -> (1 state : HashState) -> HashState
+expect term hashDoubleRaw : Double -> (1 state : HashState) -> HashState
+expect term hashNatTag : Nat -> (1 state : HashState) -> HashState
+
+trait Eq a => Hashable (a : Type) =
+    hashInto : (& value : a) -> (1 state : HashState) -> HashState
+
+hashField :
+    forall (a : Type).
+    Hashable a =>
+    (& value : a) ->
+    (1 state : HashState) ->
+    HashState
+
+let hashField value state =
+    hashInto value state
+
+hashWith :
+    forall (a : Type).
+    Hashable a =>
+    HashSeed ->
+    (& value : a) ->
+    HashCode
+
+let hashWith seed value =
+    finishHashState (hashInto value (newHashState seed))
+
+instance Eq a => Eq (Option a) =
+
+instance Eq a => Eq (List a) =
+
+instance (Eq e, Eq a) => Eq (Result e a) =
+
+instance Hashable Unit =
+    let hashInto value state = hashUnit state
+
+instance Hashable Bool =
+    let hashInto value state = hashBool value state
+
+instance Hashable Byte =
+    let hashInto value state = hashString (show value) state
+
+instance Hashable Bytes =
+    let hashInto value state = hashBytes value state
+
+instance Hashable UnicodeScalar =
+    let hashInto value state = hashUnicodeScalar value state
+
+instance Hashable Grapheme =
+    let hashInto value state = hashGrapheme value state
+
+instance Hashable String =
+    let hashInto value state = hashString value state
+
+instance Hashable Int =
+    let hashInto value state = hashInt value state
+
+instance Hashable Integer =
+    let hashInto value state = hashInteger value state
+
+instance Hashable Double =
+    let hashInto value state = hashDoubleRaw value state
+
+instance Hashable Ordering =
+    let hashInto value state =
+        match value
+        case LT -> hashNatTag 0 state
+        case EQ -> hashNatTag 1 state
+        case GT -> hashNatTag 2 state
+
+instance (Eq (Option a), Hashable a) => Hashable (Option a) =
+    let hashInto value state =
+        match value
+        case None ->
+            hashNatTag 0 state
+        case Some inner ->
+            hashField inner (hashNatTag 1 state)
+
+instance (Eq (List a), Hashable a) => Hashable (List a) =
+    let hashInto value state =
+        match value
+        case Nil ->
+            hashNatTag 0 state
+        case head :: tail ->
+            hashField tail (hashField head (hashNatTag 1 state))
+
+instance (Eq (Result e a), Hashable e, Hashable a) => Hashable (Result e a) =
+    let hashInto value state =
+        match value
+        case Ok inner ->
+            hashField inner (hashNatTag 0 state)
+        case Err problem ->
+            hashField problem (hashNatTag 1 state)

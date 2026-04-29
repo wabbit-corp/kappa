@@ -4,7 +4,7 @@ module main
 import std.hash.(type HashSeed, type HashState, type HashCode)
 import std.hash.(trait Hashable)
 import std.hash.(term defaultHashSeed, term newHashState, term finishHashState)
-import std.hash.(term hashUnit, term hashBool, term hashChar, term hashString, term hashBytes)
+import std.hash.(term hashUnit, term hashBool, term hashUnicodeScalar, term hashGrapheme, term hashString, term hashBytes)
 import std.hash.(term hashInt, term hashInteger, term hashFloatRaw, term hashDoubleRaw, term hashNatTag)
 import std.hash.(term hashField, term hashWith)
 
@@ -14,7 +14,7 @@ let keepHashSeed seed = seed
 keepHashState : HashState -> HashState
 let keepHashState state = state
 
-keepHashableWitness : (@_ : Hashable a) -> a -> a
+keepHashableWitness : Hashable a => a -> a
 let keepHashableWitness value = value
 
 seed : HashSeed
@@ -29,6 +29,12 @@ let finishState state = finishHashState state
 hashBoolValue : Bool -> (1 state : HashState) -> HashState
 let hashBoolValue value state = hashBool value state
 
+hashUnicodeScalarValue : UnicodeScalar -> (1 state : HashState) -> HashState
+let hashUnicodeScalarValue value state = hashUnicodeScalar value state
+
+hashGraphemeValue : Grapheme -> (1 state : HashState) -> HashState
+let hashGraphemeValue value state = hashGrapheme value state
+
 hashIntValue : Int -> (1 state : HashState) -> HashState
 let hashIntValue value state = hashInt value state
 
@@ -38,10 +44,10 @@ let hashIntegerValue value state = hashInteger value state
 hashDoubleValue : Double -> (1 state : HashState) -> HashState
 let hashDoubleValue value state = hashDoubleRaw value state
 
-hashFieldValue : (@_ : Hashable a) -> (& value : a) -> (1 state : HashState) -> HashState
+hashFieldValue : Hashable a => (& value : a) -> (1 state : HashState) -> HashState
 let hashFieldValue value state = hashField value state
 
-hashWithSeed : (@_ : Hashable a) -> HashSeed -> (& value : a) -> HashCode
+hashWithSeed : Hashable a => HashSeed -> (& value : a) -> HashCode
 let hashWithSeed seed value = hashWith seed value
 
 --! assertNoErrors

@@ -1,0 +1,13 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+main : UIO Unit
+let main =
+    do
+        check (b'\x00' < b'\x01') "byte-less-low-ok" "byte-less-low-fail"
+        check (b'a' < b'b') "byte-less-ascii-ok" "byte-less-ascii-fail"
+        check (compare b'\xFF' b'\x00' == GT) "byte-compare-high-low-ok" "byte-compare-high-low-fail"

@@ -1,0 +1,21 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+isOkString : Result UnicodeDecodeError String -> String -> Bool
+let isOkString result expected =
+    match result
+    case Ok s -> s == expected
+    case Err _ -> False
+
+main : UIO Unit
+let main =
+    do
+        let composed = "\u{00E9}"
+        let decomposed = "e\u{301}"
+        check ((utf8Bytes composed == utf8Bytes decomposed) == False) "utf8-bytes-exact-different-ok" "utf8-bytes-exact-different-fail"
+        check (isOkString (decodeUtf8 (utf8Bytes composed)) composed) "utf8-composed-roundtrip-ok" "utf8-composed-roundtrip-fail"
+        check (isOkString (decodeUtf8 (utf8Bytes decomposed)) decomposed) "utf8-decomposed-roundtrip-ok" "utf8-decomposed-roundtrip-fail"

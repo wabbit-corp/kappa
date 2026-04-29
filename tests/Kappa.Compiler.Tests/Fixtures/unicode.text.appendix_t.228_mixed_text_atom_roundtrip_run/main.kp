@@ -1,0 +1,15 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+main : UIO Unit
+let main =
+    do
+        let s = scalarToString '\u{1F642}'
+        let g = graphemeToString g'\u{1F642}'
+        check (s == g) "scalar-grapheme-string-roundtrip-ok" "scalar-grapheme-string-roundtrip-fail"
+        check (byteLength s == 4) "scalar-roundtrip-bytes-ok" "scalar-roundtrip-bytes-fail"
+        check (graphemeCount g == 1) "grapheme-roundtrip-count-ok" "grapheme-roundtrip-count-fail"

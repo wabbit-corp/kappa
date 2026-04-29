@@ -2,6 +2,7 @@ namespace Kappa.Compiler
 
 open System
 open System.Globalization
+open System.Buffers.Binary
 open System.Text
 
 // Centralizes Unicode scalar, grapheme, UTF-8, normalization, and hashing helpers.
@@ -145,11 +146,37 @@ module UnicodeText =
     let private fnvOffset = 1469598103934665603UL
     let private fnvPrime = 1099511628211UL
 
-    let hashBytesWithSeed (seed: int64) (bytes: byte array) =
-        let mutable state = uint64 seed ^^^ fnvOffset
+    let initHashState (seed: int64) =
+        uint64 seed ^^^ fnvOffset
+
+    let updateHashStateWithBytes (state: uint64) (bytes: byte array) =
+        let mutable nextState = state
 
         for value in bytes do
-            state <- state ^^^ uint64 value
-            state <- state * fnvPrime
+            nextState <- nextState ^^^ uint64 value
+            nextState <- nextState * fnvPrime
 
+        nextState
+
+    let finishHashState (state: uint64) =
         int64 state
+
+    let hashBytesWithSeed (seed: int64) (bytes: byte array) =
+        initHashState seed
+        |> fun state -> updateHashStateWithBytes state bytes
+        |> finishHashState
+
+    let int64ToLittleEndianBytes (value: int64) =
+        let bytes = Array.zeroCreate<byte> 8
+        BinaryPrimitives.WriteInt64LittleEndian(bytes, value)
+        bytes
+
+    let uint64ToLittleEndianBytes (value: uint64) =
+        let bytes = Array.zeroCreate<byte> 8
+        BinaryPrimitives.WriteUInt64LittleEndian(bytes, value)
+        bytes
+
+    let doubleToLittleEndianBytes (value: double) =
+        value
+        |> BitConverter.DoubleToUInt64Bits
+        |> uint64ToLittleEndianBytes

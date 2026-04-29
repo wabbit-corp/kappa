@@ -1,0 +1,19 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+main : UIO Unit
+let main =
+    do
+        check (byteLength "\r\n" == 2) "crlf-bytes-ok" "crlf-bytes-fail"
+        check (scalarCount "\r\n" == 2) "crlf-scalars-ok" "crlf-scalars-fail"
+        check (graphemeCount "\r\n" == 1) "crlf-grapheme-ok" "crlf-grapheme-fail"
+        check (byteLength "\u{1F1FA}\u{1F1F8}" == 8) "flag-bytes-ok" "flag-bytes-fail"
+        check (scalarCount "\u{1F1FA}\u{1F1F8}" == 2) "flag-scalars-ok" "flag-scalars-fail"
+        check (graphemeCount "\u{1F1FA}\u{1F1F8}" == 1) "flag-grapheme-ok" "flag-grapheme-fail"
+        check (byteLength "1\u{FE0F}\u{20E3}" == 7) "keycap-bytes-ok" "keycap-bytes-fail"
+        check (scalarCount "1\u{FE0F}\u{20E3}" == 3) "keycap-scalars-ok" "keycap-scalars-fail"
+        check (graphemeCount "1\u{FE0F}\u{20E3}" == 1) "keycap-grapheme-ok" "keycap-grapheme-fail"

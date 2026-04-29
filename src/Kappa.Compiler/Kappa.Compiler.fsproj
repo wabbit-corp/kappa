@@ -16,6 +16,7 @@
     <Compile Include="Diagnostics.fs" />
     <Compile Include="BackendTypes.fs" />
     <Compile Include="Syntax.fs" />
+    <Compile Include="TypeSignatures.fs" />
     <Compile Include="CoreParsing.fs" />
     <Compile Include="CompilationPipeline.fs" />
     <Compile Include="KFrontIR.fs" />
@@ -25,7 +26,7 @@
     <Compile Include="ClrAssemblyIR.fs" />
     <Compile Include="Lexer.fs" />
     <Compile Include="BundledPrelude.fs" />
-    <Compile Include="TypeSignatures.fs" />
+    <Compile Include="BundledStandardModules.fs" />
     <Compile Include="EffectSemantics.fs" />
     <Compile Include="Parser.fs" />
     <Compile Include="IntrinsicCatalog.fs" />
@@ -63,6 +64,7 @@
     <Compile Include="IrText.fs" />
     <Compile Include="CompilationCommon.fs" />
     <Compile Include="CompilationFrontend.fs" />
+    <Compile Include="ElaborationEvaluation.fs" />
     <Compile Include="CompilationSnapshots.fs" />
     <Compile Include="CompilationMetadata.fs" />
     <Compile Include="CompilationCheckpoints.fs" />
@@ -75,6 +77,8 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Stdlib\std\prelude.kp" LogicalName="Kappa.Compiler.Stdlib.std.prelude.kp" />
+    <EmbeddedResource Include="Stdlib\std\deriving\shape.kp" LogicalName="Kappa.Compiler.Stdlib.std.deriving.shape.kp" />
+    <EmbeddedResource Include="Stdlib\std\hash.kp" LogicalName="Kappa.Compiler.Stdlib.std.hash.kp" />
     <EmbeddedResource Include="Runtime\Hosted\KappaRuntime.cs" LogicalName="Kappa.Compiler.Runtime.Hosted.KappaRuntime.cs" />
     <EmbeddedResource Include="Runtime\Zig\kappa_runtime.c" LogicalName="Kappa.Compiler.Runtime.Zig.kappa_runtime.c" />
     <EmbeddedResource Include="Runtime\Zig\kappa_entrypoint.c" LogicalName="Kappa.Compiler.Runtime.Zig.kappa_entrypoint.c" />

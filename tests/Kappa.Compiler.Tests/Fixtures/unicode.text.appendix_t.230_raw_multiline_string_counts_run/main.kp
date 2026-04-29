@@ -1,0 +1,24 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+raw : String
+let raw = #"""
+    \u{03BB}
+    """#
+
+cooked : String
+let cooked = """
+    \u{03BB}
+    """
+
+main : UIO Unit
+let main =
+    do
+        check (byteLength raw == 9) "raw-multiline-bytes-ok" "raw-multiline-bytes-fail"
+        check (scalarCount raw == 9) "raw-multiline-scalars-ok" "raw-multiline-scalars-fail"
+        check (byteLength cooked == 3) "cooked-multiline-bytes-ok" "cooked-multiline-bytes-fail"
+        check (scalarCount cooked == 2) "cooked-multiline-scalars-ok" "cooked-multiline-scalars-fail"

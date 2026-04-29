@@ -1,0 +1,28 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+isSomeScalar : Option UnicodeScalar -> Bool
+let isSomeScalar x =
+    match x
+    case Some _ -> True
+    case None -> False
+
+isNoneScalar : Option UnicodeScalar -> Bool
+let isNoneScalar x =
+    match x
+    case Some _ -> False
+    case None -> True
+
+main : UIO Unit
+let main =
+    do
+        check (isSomeScalar (unicodeScalarFromValue 0)) "from-zero-ok" "from-zero-fail"
+        check (isSomeScalar (unicodeScalarFromValue 97)) "from-a-ok" "from-a-fail"
+        check (isNoneScalar (unicodeScalarFromValue 55296)) "from-high-surrogate-none-ok" "from-high-surrogate-none-fail"
+        check (isNoneScalar (unicodeScalarFromValue 56320)) "from-low-surrogate-none-ok" "from-low-surrogate-none-fail"
+        check (isSomeScalar (unicodeScalarFromValue 1114111)) "from-max-ok" "from-max-fail"
+        check (isNoneScalar (unicodeScalarFromValue 1114112)) "from-out-of-range-none-ok" "from-out-of-range-none-fail"

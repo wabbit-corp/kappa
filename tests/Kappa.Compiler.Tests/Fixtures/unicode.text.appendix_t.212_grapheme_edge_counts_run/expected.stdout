@@ -1,0 +1,9 @@
+crlf-bytes-ok
+crlf-scalars-ok
+crlf-grapheme-ok
+flag-bytes-ok
+flag-scalars-ok
+flag-grapheme-ok
+keycap-bytes-ok
+keycap-scalars-ok
+keycap-grapheme-ok

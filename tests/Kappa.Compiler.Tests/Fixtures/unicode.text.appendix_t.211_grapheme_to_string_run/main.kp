@@ -1,0 +1,14 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+main : UIO Unit
+let main =
+    do
+        check (graphemeToString g'a' == "a") "grapheme-string-a-ok" "grapheme-string-a-fail"
+        check (graphemeToString g'e\u{301}' == "e\u{301}") "grapheme-string-combining-ok" "grapheme-string-combining-fail"
+        check (scalarCount (graphemeToString g'\u{1F1FA}\u{1F1F8}') == 2) "grapheme-string-flag-scalars-ok" "grapheme-string-flag-scalars-fail"
+        check (graphemeCount (graphemeToString g'\u{1F1FA}\u{1F1F8}') == 1) "grapheme-string-flag-cluster-ok" "grapheme-string-flag-cluster-fail"

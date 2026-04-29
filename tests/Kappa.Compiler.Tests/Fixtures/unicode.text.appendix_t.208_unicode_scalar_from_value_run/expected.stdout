@@ -1,0 +1,6 @@
+from-zero-ok
+from-a-ok
+from-high-surrogate-none-ok
+from-low-surrogate-none-ok
+from-max-ok
+from-out-of-range-none-ok

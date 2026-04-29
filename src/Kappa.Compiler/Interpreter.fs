@@ -92,7 +92,8 @@ and RuntimeRefCell =
 and RuntimeDictionary =
     { ModuleName: string
       TraitName: string
-      InstanceKey: string }
+      InstanceKey: string
+      Captures: RuntimeValue list }
 and RuntimeScope =
     { Locals: Map<string, RuntimeValue>
       CurrentModule: string
@@ -361,6 +362,7 @@ module Interpreter =
             | "printString"
             | "printlnString"
             | "compare"
+            | "show"
             | "primitiveIntToString"
             | "unsafeConsume"
             | "newRef"
@@ -404,16 +406,15 @@ module Interpreter =
               | "finishHashState"
               | "hashUnit"
               | "hashBool"
-              | "hashChar"
+              | "hashUnicodeScalar"
+              | "hashGrapheme"
               | "hashString"
               | "hashBytes"
               | "hashInt"
               | "hashInteger"
               | "hashFloatRaw"
               | "hashDoubleRaw"
-              | "hashNatTag"
-              | "hashField"
-              | "hashWith") when isHashModule ->
+              | "hashNatTag") when isHashModule ->
                 Some(BuiltinFunctionValue { Name = name; Arguments = [] })
             | "failNow" when isTestingModule ->
                 Some(BuiltinFunctionValue { Name = name; Arguments = [] })
@@ -710,12 +711,14 @@ module Interpreter =
                 |> Result.bind (fun functionValue ->
                     evaluateArguments scope arguments
                     |> Result.bind (apply functionValue))
-            | KRuntimeDictionaryValue (moduleName, traitName, instanceKey) ->
-                ok
-                    (DictionaryValue
+            | KRuntimeDictionaryValue (moduleName, traitName, instanceKey, captures) ->
+                evaluateArguments scope captures
+                |> Result.map (fun captureValues ->
+                    DictionaryValue
                         { ModuleName = moduleName
                           TraitName = traitName
-                          InstanceKey = instanceKey })
+                          InstanceKey = instanceKey
+                          Captures = captureValues })
             | KRuntimeTraitCall (traitName, memberName, dictionaryExpression, arguments) ->
                 evaluateExpression scope dictionaryExpression
                 |> Result.bind (fun dictionaryValue ->
@@ -740,7 +743,8 @@ module Interpreter =
                             match Map.tryFind dictionary.ModuleName scope.Context.Modules with
                             | Some runtimeModule ->
                                 forceBinding runtimeModule bindingName
-                                |> Result.bind (fun memberFunction -> apply memberFunction (List.rev values))
+                                |> Result.bind (fun memberFunction ->
+                                    apply memberFunction (dictionaryValue :: dictionary.Captures @ List.rev values))
                             | None ->
                                 error $"Dictionary module '{dictionary.ModuleName}' is not present in the runtime context."
                         | other ->
@@ -1269,30 +1273,32 @@ module Interpreter =
 
         and invokeBuiltin (builtin: BuiltinFunction) : Result<RuntimeValue option, EvaluationError> =
             let hashStateWithBytes state bytes =
-                HashStateValue(UnicodeText.hashBytesWithSeed state bytes)
+                UnicodeText.updateHashStateWithBytes (uint64 state) bytes
+                |> UnicodeText.finishHashState
+                |> HashStateValue
 
             let hashIntoState state value =
                 match value with
                 | StringValue text ->
-                    Some(hashStateWithBytes state (UnicodeText.encodeUtf8 text))
+                    ok (hashStateWithBytes state (UnicodeText.encodeUtf8 text))
                 | BytesValue bytes ->
-                    Some(hashStateWithBytes state bytes)
+                    ok (hashStateWithBytes state bytes)
                 | CharacterValue scalar ->
-                    Some(hashStateWithBytes state (UnicodeText.encodeUtf8 scalar))
+                    ok (hashStateWithBytes state (UnicodeText.encodeUtf8 scalar))
                 | GraphemeValue grapheme ->
-                    Some(hashStateWithBytes state (UnicodeText.encodeUtf8 grapheme))
+                    ok (hashStateWithBytes state (UnicodeText.encodeUtf8 grapheme))
                 | ByteValue value ->
-                    Some(hashStateWithBytes state [| value |])
+                    ok (hashStateWithBytes state [| value |])
                 | IntegerValue value ->
-                    Some(hashStateWithBytes state (BitConverter.GetBytes value))
+                    ok (hashStateWithBytes state (UnicodeText.int64ToLittleEndianBytes value))
                 | FloatValue value ->
-                    Some(hashStateWithBytes state (BitConverter.GetBytes value))
+                    ok (hashStateWithBytes state (UnicodeText.doubleToLittleEndianBytes value))
                 | BooleanValue value ->
-                    Some(hashStateWithBytes state [| if value then 1uy else 0uy |])
+                    ok (hashStateWithBytes state [| if value then 1uy else 0uy |])
                 | UnitValue ->
-                    Some(hashStateWithBytes state [||])
+                    ok (hashStateWithBytes state [||])
                 | _ ->
-                    None
+                    error $"Intrinsic '{builtin.Name}' is not supported for {RuntimeValue.format value} and HashState({state})."
 
             match builtin.Name, builtin.Arguments with
             | "not", [ BooleanValue value ] ->
@@ -1618,7 +1624,7 @@ module Interpreter =
             | "show", _ ->
                 error "Intrinsic 'show' received too many arguments."
             | "newHashState", [ HashSeedValue seed ] ->
-                ok (Some(HashStateValue seed))
+                ok (Some(HashStateValue(UnicodeText.initHashState seed |> UnicodeText.finishHashState)))
             | "newHashState", arguments when List.length arguments < 1 ->
                 ok None
             | "newHashState", [ value ] ->
@@ -1626,7 +1632,7 @@ module Interpreter =
             | "newHashState", _ ->
                 error "Intrinsic 'newHashState' received too many arguments."
             | "finishHashState", [ HashStateValue state ] ->
-                ok (Some(HashCodeValue state))
+                ok (Some(HashCodeValue(UnicodeText.finishHashState (uint64 state))))
             | "finishHashState", arguments when List.length arguments < 1 ->
                 ok None
             | "finishHashState", [ value ] ->
@@ -1641,44 +1647,14 @@ module Interpreter =
                 error $"Intrinsic 'hashUnit' expects a HashState, but got {RuntimeValue.format value}."
             | "hashUnit", _ ->
                 error "Intrinsic 'hashUnit' received too many arguments."
-            | ("hashBool" | "hashChar" | "hashString" | "hashBytes" | "hashInt" | "hashInteger" | "hashFloatRaw" | "hashDoubleRaw" | "hashNatTag"), [ value; HashStateValue state ] ->
-                hashIntoState state value |> optionValue |> Result.map Some
-            | ("hashBool" | "hashChar" | "hashString" | "hashBytes" | "hashInt" | "hashInteger" | "hashFloatRaw" | "hashDoubleRaw" | "hashNatTag"), arguments when List.length arguments < 2 ->
+            | ("hashBool" | "hashUnicodeScalar" | "hashGrapheme" | "hashString" | "hashBytes" | "hashInt" | "hashInteger" | "hashFloatRaw" | "hashDoubleRaw" | "hashNatTag"), [ value; HashStateValue state ] ->
+                hashIntoState state value |> Result.map Some
+            | ("hashBool" | "hashUnicodeScalar" | "hashGrapheme" | "hashString" | "hashBytes" | "hashInt" | "hashInteger" | "hashFloatRaw" | "hashDoubleRaw" | "hashNatTag"), arguments when List.length arguments < 2 ->
                 ok None
-            | ("hashBool" | "hashChar" | "hashString" | "hashBytes" | "hashInt" | "hashInteger" | "hashFloatRaw" | "hashDoubleRaw" | "hashNatTag"), [ value; state ] ->
+            | ("hashBool" | "hashUnicodeScalar" | "hashGrapheme" | "hashString" | "hashBytes" | "hashInt" | "hashInteger" | "hashFloatRaw" | "hashDoubleRaw" | "hashNatTag"), [ value; state ] ->
                 error $"Intrinsic '{builtin.Name}' is not supported for {RuntimeValue.format value} and {RuntimeValue.format state}."
-            | ("hashBool" | "hashChar" | "hashString" | "hashBytes" | "hashInt" | "hashInteger" | "hashFloatRaw" | "hashDoubleRaw" | "hashNatTag"), _ ->
+            | ("hashBool" | "hashUnicodeScalar" | "hashGrapheme" | "hashString" | "hashBytes" | "hashInt" | "hashInteger" | "hashFloatRaw" | "hashDoubleRaw" | "hashNatTag"), _ ->
                 error $"Intrinsic '{builtin.Name}' received too many arguments."
-            | "hashField", [ value; HashStateValue state ] ->
-                hashIntoState state value |> optionValue |> Result.map Some
-            | "hashField", arguments when List.length arguments < 2 ->
-                ok None
-            | "hashField", [ value; state ] ->
-                error $"Intrinsic 'hashField' is not supported for {RuntimeValue.format value} and {RuntimeValue.format state}."
-            | "hashField", _ ->
-                error "Intrinsic 'hashField' received too many arguments."
-            | "hashWith", [ HashSeedValue seed; StringValue value ] ->
-                ok (Some(HashCodeValue(UnicodeText.hashBytesWithSeed seed (UnicodeText.encodeUtf8 value))))
-            | "hashWith", [ HashSeedValue seed; BytesValue value ] ->
-                ok (Some(HashCodeValue(UnicodeText.hashBytesWithSeed seed value)))
-            | "hashWith", [ HashSeedValue seed; CharacterValue value ] ->
-                ok (Some(HashCodeValue(UnicodeText.hashBytesWithSeed seed (UnicodeText.encodeUtf8 value))))
-            | "hashWith", [ HashSeedValue seed; GraphemeValue value ] ->
-                ok (Some(HashCodeValue(UnicodeText.hashBytesWithSeed seed (UnicodeText.encodeUtf8 value))))
-            | "hashWith", [ HashSeedValue seed; ByteValue value ] ->
-                ok (Some(HashCodeValue(UnicodeText.hashBytesWithSeed seed [| value |])))
-            | "hashWith", [ HashSeedValue seed; IntegerValue value ] ->
-                ok (Some(HashCodeValue(UnicodeText.hashBytesWithSeed seed (BitConverter.GetBytes value))))
-            | "hashWith", [ HashSeedValue seed; BooleanValue value ] ->
-                ok (Some(HashCodeValue(UnicodeText.hashBytesWithSeed seed [| if value then 1uy else 0uy |])))
-            | "hashWith", [ HashSeedValue seed; UnitValue ] ->
-                ok (Some(HashCodeValue(UnicodeText.hashBytesWithSeed seed [||])))
-            | "hashWith", arguments when List.length arguments < 2 ->
-                ok None
-            | "hashWith", [ seed; value ] ->
-                error $"Intrinsic 'hashWith' is not supported for {RuntimeValue.format seed} and {RuntimeValue.format value}."
-            | "hashWith", _ ->
-                error "Intrinsic 'hashWith' received too many arguments."
             | name, [ left; right ] when IntrinsicCatalog.isBuiltinBinaryOperator name ->
                 applyBuiltinBinary name left right
                 |> Result.map Some

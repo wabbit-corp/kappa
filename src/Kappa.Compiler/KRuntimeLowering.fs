@@ -539,8 +539,13 @@ module internal KRuntimeLowering =
                 runtimeArguments
                 |> List.map (fun argument -> lowerKRuntimeExpression runtimeParameterMasks argument.Expression)
             )
-        | KCoreDictionaryValue(moduleName, traitName, instanceKey) ->
-            KRuntimeDictionaryValue(moduleName, traitName, instanceKey)
+        | KCoreDictionaryValue(moduleName, traitName, instanceKey, captures) ->
+            KRuntimeDictionaryValue(
+                moduleName,
+                traitName,
+                instanceKey,
+                captures |> List.map (lowerKRuntimeExpression runtimeParameterMasks)
+            )
         | KCoreTraitCall(traitName, memberName, dictionary, arguments) ->
             KRuntimeTraitCall(
                 traitName,
@@ -768,7 +773,11 @@ module internal KRuntimeLowering =
                     let isCompileTimeOnlyTrait =
                         traitDeclaration.Members
                         |> List.choose tryParseTraitMemberScheme
-                        |> List.exists (schemeRequiresRuntimeErasure Set.empty)
+                        |> function
+                            | [] -> false
+                            | memberSchemes ->
+                                memberSchemes
+                                |> List.forall (schemeRequiresRuntimeErasure Set.empty)
 
                     if isCompileTimeOnlyTrait then
                         Some traitDeclaration.Name

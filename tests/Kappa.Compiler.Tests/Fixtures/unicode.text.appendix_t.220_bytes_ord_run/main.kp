@@ -1,0 +1,14 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+main : UIO Unit
+let main =
+    do
+        check (utf8Bytes "a" == utf8Bytes "a") "bytes-eq-ok" "bytes-eq-fail"
+        check ((utf8Bytes "a" == utf8Bytes "b") == False) "bytes-neq-ok" "bytes-neq-fail"
+        check (compare (utf8Bytes "a") (utf8Bytes "b") == LT) "bytes-ord-ascii-ok" "bytes-ord-ascii-fail"
+        check (compare (utf8Bytes "\u{03BB}") (utf8Bytes "\u{4E66}") == LT) "bytes-ord-utf8-ok" "bytes-ord-utf8-fail"

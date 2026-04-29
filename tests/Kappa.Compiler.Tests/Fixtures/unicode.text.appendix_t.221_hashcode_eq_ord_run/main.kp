@@ -1,0 +1,14 @@
+module main
+import std.hash.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+main : UIO Unit
+let main =
+    do
+        let h = hashWith defaultHashSeed "abc"
+        let hAgain = hashWith defaultHashSeed "abc"
+        check (h == hAgain) "hashcode-eq-same-run-ok" "hashcode-eq-same-run-fail"
+        check (compare h hAgain == EQ) "hashcode-ord-eq-class-ok" "hashcode-ord-eq-class-fail"

@@ -1,0 +1,16 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+main : UIO Unit
+let main =
+    do
+        check (byteLength "" == 0) "empty-bytes-ok" "empty-bytes-fail"
+        check (scalarCount "" == 0) "empty-scalars-ok" "empty-scalars-fail"
+        check (graphemeCount "" == 0) "empty-graphemes-ok" "empty-graphemes-fail"
+        check (byteLength "abc" == 3) "ascii-bytes-ok" "ascii-bytes-fail"
+        check (scalarCount "abc" == 3) "ascii-scalars-ok" "ascii-scalars-fail"
+        check (graphemeCount "abc" == 3) "ascii-graphemes-ok" "ascii-graphemes-fail"

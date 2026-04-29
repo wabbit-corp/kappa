@@ -233,7 +233,8 @@ expect term False : Bool
 expect term not : Bool -> Bool
 expect term and : Bool -> Bool -> Bool
 expect term or : Bool -> Bool -> Bool
-expect term compare : a -> a -> Ordering
+expect term compare : forall (a : Type). Ord a => (& x : a) -> (& y : a) -> Ordering
+expect term show : forall (a : Type). Show a => (& value : a) -> String
 expect term (..) : forall (v : Type). (@_ : Rangeable v) -> v -> v -> Rangeable.Range v
 expect term (..<) : forall (v : Type). (@_ : Rangeable v) -> v -> v -> Rangeable.Range v
 expect term force : Thunk a -> a

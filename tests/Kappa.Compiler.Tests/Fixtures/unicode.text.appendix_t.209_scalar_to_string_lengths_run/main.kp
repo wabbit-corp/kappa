@@ -1,0 +1,16 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+main : UIO Unit
+let main =
+    do
+        check (scalarToString 'a' == "a") "scalar-string-a-ok" "scalar-string-a-fail"
+        check (byteLength (scalarToString '\u{03BB}') == 2) "scalar-string-lambda-bytes-ok" "scalar-string-lambda-bytes-fail"
+        check (byteLength (scalarToString '\u{4E66}') == 3) "scalar-string-cjk-bytes-ok" "scalar-string-cjk-bytes-fail"
+        check (byteLength (scalarToString '\u{1F642}') == 4) "scalar-string-emoji-bytes-ok" "scalar-string-emoji-bytes-fail"
+        check (scalarCount (scalarToString '\u{1F642}') == 1) "scalar-string-count-ok" "scalar-string-count-fail"
+        check (graphemeCount (scalarToString '\u{301}') == 1) "scalar-string-combining-grapheme-ok" "scalar-string-combining-grapheme-fail"

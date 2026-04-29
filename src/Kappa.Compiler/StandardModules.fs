@@ -2,7 +2,7 @@ namespace Kappa.Compiler
 
 open System
 
-// Describes compiler-synthesized standard modules such as std.unicode, std.hash, and std.testing.
+// Describes compiler-synthesized standard modules such as std.unicode and std.testing.
 module internal StandardModules =
     type StandardTermDescription =
         { Name: string
@@ -62,30 +62,6 @@ module internal StandardModules =
           Terms = []
           Traits = [] }
 
-    let private hashModule =
-        { ModuleName = "std.hash"
-          Types = [ "HashSeed"; "HashState"; "HashCode" ]
-          Terms =
-            [ { Name = "defaultHashSeed"; TypeText = "HashSeed" }
-              { Name = "newHashState"; TypeText = "HashSeed -> HashState" }
-              { Name = "finishHashState"; TypeText = "(1 state : HashState) -> HashCode" }
-              { Name = "hashUnit"; TypeText = "(1 state : HashState) -> HashState" }
-              { Name = "hashBool"; TypeText = "Bool -> (1 state : HashState) -> HashState" }
-              { Name = "hashUnicodeScalar"; TypeText = "UnicodeScalar -> (1 state : HashState) -> HashState" }
-              { Name = "hashGrapheme"; TypeText = "Grapheme -> (1 state : HashState) -> HashState" }
-              { Name = "hashString"; TypeText = "String -> (1 state : HashState) -> HashState" }
-              { Name = "hashBytes"; TypeText = "Bytes -> (1 state : HashState) -> HashState" }
-              { Name = "hashInt"; TypeText = "Int -> (1 state : HashState) -> HashState" }
-              { Name = "hashInteger"; TypeText = "Integer -> (1 state : HashState) -> HashState" }
-              { Name = "hashFloatRaw"; TypeText = "Float -> (1 state : HashState) -> HashState" }
-              { Name = "hashDoubleRaw"; TypeText = "Double -> (1 state : HashState) -> HashState" }
-              { Name = "hashNatTag"; TypeText = "Nat -> (1 state : HashState) -> HashState" }
-              { Name = "hashField"
-                TypeText = "forall (a : Type). (@_ : Hashable a) -> (& value : a) -> (1 state : HashState) -> HashState" }
-              { Name = "hashWith"
-                TypeText = "forall (a : Type). (@_ : Hashable a) -> HashSeed -> (& value : a) -> HashCode" } ]
-          Traits = [ { Name = "Hashable"; TypeParameterCount = 1; Members = [] } ] }
-
     let private testingModule =
         { ModuleName = "std.testing"
           Types = []
@@ -93,7 +69,7 @@ module internal StandardModules =
           Traits = [] }
 
     let all =
-        [ unicodeModule; bytesModule; hashModule; testingModule ]
+        [ unicodeModule; bytesModule; testingModule ]
 
     let byName =
         all |> List.map (fun description -> description.ModuleName, description) |> Map.ofList

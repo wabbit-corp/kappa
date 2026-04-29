@@ -97,7 +97,9 @@ module ResourceModel =
 
     type FunctionSignature =
         { Name: string
+          Scheme: TypeSignatures.TypeScheme option
           ParameterNames: string option list
+          ParameterImplicit: bool list
           ParameterQuantities: ResourceQuantity option list
           ParameterTypeTokens: Token list option list
           ReturnTypeTokens: Token list option
@@ -141,6 +143,7 @@ module ResourceModel =
         { Id: string
           BindingKind: ResourceBindingKind
           Name: string
+          IsElaborationOnlyCarrier: bool
           DeclaredQuantity: ResourceQuantity option
           Place: ResourcePlace
           ConsumedPaths: string list list

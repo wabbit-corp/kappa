@@ -1,0 +1,6 @@
+empty-bytes-ok
+empty-scalars-ok
+empty-graphemes-ok
+ascii-bytes-ok
+ascii-scalars-ok
+ascii-graphemes-ok

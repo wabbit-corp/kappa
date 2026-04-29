@@ -1,0 +1,14 @@
+module main
+import std.unicode.*
+
+check : Bool -> String -> String -> UIO Unit
+let check cond ok fail =
+    if cond then printlnString ok else printlnString fail
+
+main : UIO Unit
+let main =
+    do
+        check (compare "Z" "a" == LT) "ord-Z-a-ok" "ord-Z-a-fail"
+        check (compare "z" "\u{00E4}" == LT) "ord-z-a-umlaut-ok" "ord-z-a-umlaut-fail"
+        check (compare "\u{03BB}" "\u{4E66}" == LT) "ord-lambda-cjk-ok" "ord-lambda-cjk-fail"
+        check (compare "a" "aa" == LT) "ord-prefix-ok" "ord-prefix-fail"

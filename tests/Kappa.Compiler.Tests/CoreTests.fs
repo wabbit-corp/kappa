@@ -216,6 +216,187 @@ let ``interpreter orders text values by unicode scalar sequence not utf16 ordina
         failwithf "Expected Unicode scalar ordering regression to evaluate successfully, got %s" issue.Message
 
 [<Fact>]
+let ``streaming hash intrinsics return HashState and can be finished`` () =
+    let mainSource =
+        [
+            "module main"
+            "import std.hash.*"
+            "let result = finishHashState (hashString \"a\" (newHashState defaultHashSeed))"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-hash-streaming-finish-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected hash streaming program to compile, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok(HashCodeValue _) -> ()
+    | Result.Ok value ->
+        failwithf "Expected hashString/newHashState composition to produce a finishable HashState, got %A" value
+    | Result.Error issue ->
+        failwithf "Expected finishHashState(hashString ...) to evaluate successfully, got %s" issue.Message
+
+[<Fact>]
+let ``streaming hash updates compose across chunks`` () =
+    let mainSource =
+        [
+            "module main"
+            "import std.hash.*"
+            "let direct = finishHashState (hashString \"ab\" (newHashState defaultHashSeed))"
+            "let chunked ="
+            "    finishHashState"
+            "        (hashString \"b\""
+            "            (hashString \"a\" (newHashState defaultHashSeed)))"
+            "let result = direct == chunked"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-hash-streaming-compose-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected chunked hash streaming program to compile, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok(BooleanValue true) -> ()
+    | Result.Ok value ->
+        failwithf "Expected chunked hash updates to match one-shot hashing, got %A" value
+    | Result.Error issue ->
+        failwithf "Expected chunked hash updates to evaluate successfully, got %s" issue.Message
+
+[<Fact>]
+let ``ordinary calls synthesize omitted leading implicit runtime parameters before explicit arguments`` () =
+    let mainSource =
+        [
+            "module main"
+            "trait Render (a : Type) ="
+            "    render : a -> String"
+            "instance Render Int ="
+            "    let render x = primitiveIntToString x"
+            "f : (@_ : Render Int) -> Int -> String"
+            "let f @D x = D.render x"
+            "let result = f 1"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-leading-implicit-runtime-parameter-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(
+        workspace.HasErrors,
+        sprintf "Expected omitted leading implicit runtime parameters to synthesize before explicit arguments, got %A" workspace.Diagnostics
+    )
+
+    match result with
+    | Result.Ok(StringValue "1") -> ()
+    | Result.Ok value ->
+        failwithf "Expected omitted implicit Render argument to synthesize and return \"1\", got %A" value
+    | Result.Error issue ->
+        failwithf "Expected omitted implicit Render argument to synthesize successfully, got %s" issue.Message
+
+[<Fact>]
+let ``grouped constrained instances expose premise dictionaries to ordinary helper calls`` () =
+    let mainSource =
+        [
+            "module main"
+            "trait Render (a : Type) ="
+            "    render : a -> String"
+            "instance Render Int ="
+            "    let render x = primitiveIntToString x"
+            "helper : (@_ : Render a) -> a -> String"
+            "let helper @R x = R.render x"
+            "trait Lift (a : Type) ="
+            "    lift : a -> String"
+            "instance (Render a) => Lift (Option a) ="
+            "    let lift value ="
+            "        match value"
+            "        case Some inner -> helper inner"
+            "        case None -> \"none\""
+            "let result = lift (Some 1)"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-grouped-instance-premise-helper-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(
+        workspace.HasErrors,
+        sprintf "Expected grouped constrained instance premises to satisfy ordinary helper implicits, got %A" workspace.Diagnostics
+    )
+
+    match result with
+    | Result.Ok(StringValue "1") -> ()
+    | Result.Ok value ->
+        failwithf "Expected grouped constrained instance helper call to return \"1\", got %A" value
+    | Result.Error issue ->
+        failwithf "Expected grouped constrained instance helper call to evaluate successfully, got %s" issue.Message
+
+[<Fact>]
+let ``real Hashable instances support structural option and result hashing`` () =
+    let mainSource =
+        [
+            "module main"
+            "import std.hash.*"
+            "noneValue : Option Int"
+            "let noneValue = None"
+            "okValue : Result Int Int"
+            "let okValue = Ok 1"
+            "errValue : Result Int Int"
+            "let errValue = Err 1"
+            "let someHash = hashWith defaultHashSeed (Some 1)"
+            "let noneHash = hashWith defaultHashSeed noneValue"
+            "let okHash = hashWith defaultHashSeed okValue"
+            "let errHash = hashWith defaultHashSeed errValue"
+            "let result = (someHash != noneHash) && (okHash != errHash)"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-hash-structural-instances-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected structural Hashable instances to compile, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok(BooleanValue true) -> ()
+    | Result.Ok value ->
+        failwithf "Expected structural Hashable instances to distinguish constructors, got %A" value
+    | Result.Error issue ->
+        failwithf "Expected structural Hashable instances to evaluate successfully, got %s" issue.Message
+
+[<Fact>]
+let ``missing Hashable evidence now fails in compilation instead of surviving to runtime`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-hash-missing-evidence-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "import std.hash.*"
+                    "result : HashCode"
+                    "let result = hashWith defaultHashSeed (\\x -> x)"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected non-Hashable function values to be rejected during compilation.")
+
+[<Fact>]
 let ``interpreter supports type scoped constructor patterns`` () =
     let mainSource =
         [
@@ -540,6 +721,59 @@ let ``interpreter resolves ordinary implicit helpers across imported trait modul
         Assert.Equal("42", RuntimeValue.format value)
     | Result.Error issue ->
         failwithf "Expected imported helper-based dictionary resolution to succeed, got %s" issue.Message
+
+[<Fact>]
+let ``resource checking does not demand runtime use for compile time constraint parameters`` () =
+    let sqlSource =
+        [
+            "module dsl.sql"
+            ""
+            "data PreparedSql (row : Type) : Type ="
+            "    PreparedSql (text : String)"
+            ""
+            "summonDict : (c : Constraint) -> (@v : c) -> Dict c"
+            "let summonDict c @v = v"
+            ""
+            "instance InterpolatedMacro (PreparedSql row) ="
+            "    let buildInterpolated fragments ="
+            "        pure '{ PreparedSql \"prepared-sql-from-fragments\" }"
+            ""
+            "sql : forall (row : Type). Elab (Dict (InterpolatedMacro (PreparedSql row)))"
+            "let sql @row ="
+            "    pure (summonDict (InterpolatedMacro (PreparedSql row)))"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-compile-time-constraint-parameter-root"
+            [ "dsl/sql.kp", sqlSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected compile-time Constraint parameters not to trigger runtime quantity demand, got %A" workspace.Diagnostics)
+
+[<Fact>]
+let ``resource checking allows payload pattern matching without double consuming the scrutinee root`` () =
+    let mainSource =
+        [
+            "module main"
+            ""
+            "isOkString : Result String String -> String -> Bool"
+            "let isOkString result expected ="
+            "    match result"
+            "    case Ok s -> s == expected"
+            "    case Err _ -> False"
+            ""
+            "result : Bool"
+            "let result = isOkString (Ok \"hi\") \"hi\""
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-match-payload-does-not-double-consume-root"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected constructor payload pattern matching not to double-consume the scrutinee root, got %A" workspace.Diagnostics)
 
 [<Fact>]
 let ``interpreter resolves bundled summon helper as an ordinary binding`` () =

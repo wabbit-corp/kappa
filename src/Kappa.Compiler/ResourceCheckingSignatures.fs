@@ -33,6 +33,86 @@ module internal ResourceCheckingSignatures =
 
         loop 0 [] tokens []
 
+    let private bindingSignatureBodyTokens (tokens: Token list) =
+        let tokenArray =
+            tokens
+            |> List.filter (fun token ->
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent
+                | EndOfFile -> false
+                | _ -> true)
+            |> List.toArray
+
+        let mutable parenDepth = 0
+        let mutable braceDepth = 0
+        let mutable bracketDepth = 0
+        let mutable bodyStart = 0
+
+        for index = 0 to tokenArray.Length - 1 do
+            match tokenArray[index].Kind with
+            | LeftParen -> parenDepth <- parenDepth + 1
+            | RightParen -> parenDepth <- max 0 (parenDepth - 1)
+            | LeftBrace -> braceDepth <- braceDepth + 1
+            | RightBrace -> braceDepth <- max 0 (braceDepth - 1)
+            | LeftBracket -> bracketDepth <- bracketDepth + 1
+            | RightBracket -> bracketDepth <- max 0 (bracketDepth - 1)
+            | Operator when parenDepth = 0 && braceDepth = 0 && bracketDepth = 0 && String.Equals(tokenArray[index].Text, "=>", StringComparison.Ordinal) ->
+                bodyStart <- index + 1
+            | Equals when parenDepth = 0 && braceDepth = 0 && bracketDepth = 0 && index + 1 < tokenArray.Length ->
+                match tokenArray[index + 1] with
+                | { Kind = Operator; Text = ">" } ->
+                    bodyStart <- index + 2
+                | _ ->
+                    ()
+            | _ ->
+                ()
+
+        let stripLeadingForall startIndex =
+            if startIndex >= tokenArray.Length then
+                startIndex
+            else
+                match tokenArray[startIndex] with
+                | token when Token.isKeyword Keyword.Forall token ->
+                    let mutable index = startIndex + 1
+                    let mutable parsed = true
+                    let mutable foundDot = false
+                    let mutable nextIndex = startIndex
+
+                    while parsed && not foundDot && index < tokenArray.Length do
+                        match tokenArray[index] with
+                        | token when Token.isName token ->
+                            index <- index + 1
+                        | { Kind = LeftParen } ->
+                            let mutable depth = 1
+                            let mutable innerIndex = index + 1
+
+                            while depth > 0 && innerIndex < tokenArray.Length do
+                                match tokenArray[innerIndex].Kind with
+                                | LeftParen -> depth <- depth + 1
+                                | RightParen -> depth <- depth - 1
+                                | _ -> ()
+
+                                innerIndex <- innerIndex + 1
+
+                            if depth = 0 then
+                                index <- innerIndex
+                            else
+                                parsed <- false
+                        | { Kind = Dot } ->
+                            nextIndex <- index + 1
+                            foundDot <- true
+                        | _ ->
+                            parsed <- false
+
+                    if parsed && foundDot then nextIndex else startIndex
+                | _ ->
+                    startIndex
+
+        let bodyStart = stripLeadingForall bodyStart
+        List.ofArray tokenArray[bodyStart..]
+
     let private quantityFromSignatureSegment (tokens: Token list) =
         let trimSignificant tokens =
             tokens
@@ -57,34 +137,72 @@ module internal ResourceCheckingSignatures =
             | _ ->
                 significant
 
-        let binderTokens =
-            match binderTokens with
-            | { Kind = AtSign } :: rest -> rest
-            | _ -> binderTokens
+        let trimIdentifier token =
+            SyntaxFacts.trimIdentifierQuotes token.Text
 
         match binderTokens with
-        | token :: _ when token.Text = "&" -> Some(ResourceQuantity.Borrow None)
-        | token :: _ when token.Text = "1" -> Some ResourceQuantity.one
-        | token :: _ when token.Text = "0" -> Some ResourceQuantity.zero
-        | token :: _ when token.Text = "omega" || token.Text = "ω" -> Some ResourceQuantity.omega
-        | first :: second :: _ when first.Text = "<=" && second.Text = "1" ->
+        | { Kind = AtSign } :: { Kind = IntegerLiteral; Text = "0" } :: _ ->
+            Some ResourceQuantity.zero
+        | { Kind = AtSign } :: { Kind = IntegerLiteral; Text = "1" } :: _ ->
+            Some ResourceQuantity.one
+        | { Kind = AtSign } :: { Kind = Operator; Text = "<=" } :: { Kind = IntegerLiteral; Text = "1" } :: _ ->
             Some ResourceQuantity.atMostOne
-        | first :: second :: _ when first.Text = ">=" && second.Text = "1" ->
+        | { Kind = AtSign } :: { Kind = Operator; Text = ">=" } :: { Kind = IntegerLiteral; Text = "1" } :: _ ->
+            Some(ResourceQuantity.atLeastOne)
+        | { Kind = AtSign } :: head :: _ when Token.isName head && (head.Text = "omega" || head.Text = "ω") ->
+            Some ResourceQuantity.omega
+        | { Kind = AtSign } :: { Kind = Operator; Text = "&" } :: { Kind = LeftBracket } :: regionToken :: { Kind = RightBracket } :: _
+            when Token.isName regionToken ->
+            Some(ResourceQuantity.Borrow(Some(trimIdentifier regionToken)))
+        | { Kind = AtSign } :: { Kind = Operator; Text = "&" } :: _ ->
+            Some(ResourceQuantity.Borrow None)
+        | { Kind = Operator; Text = "&" } :: { Kind = LeftBracket } :: regionToken :: { Kind = RightBracket } :: _
+            when Token.isName regionToken ->
+            Some(ResourceQuantity.Borrow(Some(trimIdentifier regionToken)))
+        | { Kind = Operator; Text = "&" } :: _ ->
+            Some(ResourceQuantity.Borrow None)
+        | { Kind = IntegerLiteral; Text = "1" } :: _ ->
+            Some ResourceQuantity.one
+        | { Kind = IntegerLiteral; Text = "0" } :: _ ->
+            Some ResourceQuantity.zero
+        | head :: _ when Token.isName head && (head.Text = "omega" || head.Text = "ω") ->
+            Some ResourceQuantity.omega
+        | { Kind = Operator; Text = "<=" } :: { Kind = IntegerLiteral; Text = "1" } :: _ ->
+            Some ResourceQuantity.atMostOne
+        | { Kind = Operator; Text = ">=" } :: { Kind = IntegerLiteral; Text = "1" } :: _ ->
             Some(ResourceQuantity.atLeastOne)
         | _ ->
             None
 
-    let private signatureParameterQuantities tokens =
-        let segments =
-            splitTopLevelArrows tokens
-            |> List.filter (List.isEmpty >> not)
+    let private signatureParameterQuantitiesFromScheme (scheme: TypeSignatures.TypeScheme) : ResourceQuantity option list =
+        let rec loop (current: TypeSignatures.TypeExpr) : ResourceQuantity list =
+            match current with
+            | TypeSignatures.TypeCapture(inner, _) ->
+                loop inner
+            | TypeSignatures.TypeArrow(quantity, _, resultType) ->
+                ResourceQuantity.ofSurface quantity :: loop resultType
+            | _ ->
+                []
 
-        if List.length segments <= 1 then
-            []
-        else
-            segments
-            |> List.take (segments.Length - 1)
-            |> List.map quantityFromSignatureSegment
+        scheme.Body |> loop |> List.map Some
+
+    let private signatureParameterQuantities (scheme: TypeSignatures.TypeScheme option) (tokens: Token list) : ResourceQuantity option list =
+        match scheme with
+        | Some parsedScheme ->
+            signatureParameterQuantitiesFromScheme parsedScheme
+        | None ->
+            let segments =
+                tokens
+                |> bindingSignatureBodyTokens
+                |> splitTopLevelArrows
+                |> List.filter (List.isEmpty >> not)
+
+            if List.length segments <= 1 then
+                []
+            else
+                segments
+                |> List.take (segments.Length - 1)
+                |> List.map quantityFromSignatureSegment
 
     let private signatureParameterTypeTokens tokens =
         let trimSignificant tokens =
@@ -115,6 +233,9 @@ module internal ResourceCheckingSignatures =
             | { Kind = IntegerLiteral; Text = "0" } :: rest
             | { Kind = IntegerLiteral; Text = "1" } :: rest ->
                 rest
+            | { Kind = Operator; Text = "&" } :: { Kind = LeftBracket } :: regionToken :: { Kind = RightBracket } :: rest
+                when Token.isName regionToken ->
+                rest
             | { Kind = Operator; Text = "&" } :: rest ->
                 rest
             | { Kind = Operator; Text = "<=" } :: { Kind = IntegerLiteral; Text = "1" } :: rest
@@ -140,7 +261,9 @@ module internal ResourceCheckingSignatures =
                 Some trimmed
 
         let segments =
-            splitTopLevelArrows tokens
+            tokens
+            |> bindingSignatureBodyTokens
+            |> splitTopLevelArrows
             |> List.filter (List.isEmpty >> not)
 
         if List.length segments <= 1 then
@@ -179,6 +302,9 @@ module internal ResourceCheckingSignatures =
             | { Kind = IntegerLiteral; Text = "0" } :: rest
             | { Kind = IntegerLiteral; Text = "1" } :: rest ->
                 rest
+            | { Kind = Operator; Text = "&" } :: { Kind = LeftBracket } :: regionToken :: { Kind = RightBracket } :: rest
+                when Token.isName regionToken ->
+                rest
             | { Kind = Operator; Text = "&" } :: rest ->
                 rest
             | { Kind = Operator; Text = "<=" } :: { Kind = IntegerLiteral; Text = "1" } :: rest
@@ -215,7 +341,9 @@ module internal ResourceCheckingSignatures =
                 None
 
         let segments =
-            splitTopLevelArrows tokens
+            tokens
+            |> bindingSignatureBodyTokens
+            |> splitTopLevelArrows
             |> List.filter (List.isEmpty >> not)
 
         if List.length segments <= 1 then
@@ -248,7 +376,9 @@ module internal ResourceCheckingSignatures =
                 trimmed
 
         let segments =
-            splitTopLevelArrows tokens
+            tokens
+            |> bindingSignatureBodyTokens
+            |> splitTopLevelArrows
             |> List.filter (List.isEmpty >> not)
 
         if List.length segments <= 1 then
@@ -265,15 +395,57 @@ module internal ResourceCheckingSignatures =
                 | token :: _ when Token.isKeyword Keyword.Inout token -> true
                 | _ -> false)
 
+    let private signatureParameterImplicit tokens =
+        let trimSignificant tokens =
+            tokens
+            |> List.filter (fun token ->
+                match token.Kind with
+                | Newline
+                | Indent
+                | Dedent
+                | EndOfFile -> false
+                | _ -> true)
+
+        let stripBinderShell tokens =
+            match trimSignificant tokens with
+            | { Kind = LeftParen } :: rest ->
+                match List.rev rest with
+                | { Kind = RightParen } :: reversedInner ->
+                    reversedInner |> List.rev |> trimSignificant
+                | _ ->
+                    trimSignificant tokens
+            | trimmed ->
+                trimmed
+
+        let segments =
+            tokens
+            |> bindingSignatureBodyTokens
+            |> splitTopLevelArrows
+            |> List.filter (List.isEmpty >> not)
+
+        if List.length segments <= 1 then
+            []
+        else
+            segments
+            |> List.take (segments.Length - 1)
+            |> List.map (fun segmentTokens ->
+                match stripBinderShell segmentTokens with
+                | { Kind = AtSign } :: _ -> true
+                | _ -> false)
+
     let private signatureReturnTypeTokens tokens =
-        splitTopLevelArrows tokens
+        tokens
+        |> bindingSignatureBodyTokens
+        |> splitTopLevelArrows
         |> List.filter (List.isEmpty >> not)
         |> List.tryLast
 
     let private signatureEntries
         (document: ParsedDocument)
         (name: string)
+        scheme
         parameterNames
+        parameterImplicit
         quantities
         parameterTypes
         returnTypeTokens
@@ -283,11 +455,47 @@ module internal ResourceCheckingSignatures =
         |> List.map (fun signatureName ->
             signatureName,
             { Name = signatureName
+              Scheme = scheme
               ParameterNames = parameterNames
+              ParameterImplicit = parameterImplicit
               ParameterQuantities = quantities
               ParameterTypeTokens = parameterTypes
               ReturnTypeTokens = returnTypeTokens
               ParameterInout = parameterInout })
+
+    let rec private isCompileTimeDefinitionParameterType typeExpr =
+        match typeExpr with
+        | TypeSignatures.TypeUniverse _
+        | TypeSignatures.TypeIntrinsic _
+        | TypeSignatures.TypeName([ "Type" ], [])
+        | TypeSignatures.TypeName([ "Constraint" ], [])
+        | TypeSignatures.TypeName([ "Quantity" ], [])
+        | TypeSignatures.TypeName([ "Region" ], [])
+        | TypeSignatures.TypeName([ "RecRow" ], [])
+        | TypeSignatures.TypeName([ "VarRow" ], [])
+        | TypeSignatures.TypeName([ "EffRow" ], [])
+        | TypeSignatures.TypeName([ "Label" ], [])
+        | TypeSignatures.TypeName([ "EffLabel" ], []) ->
+            true
+        | TypeSignatures.TypeArrow(_, parameterType, resultType) ->
+            isCompileTimeDefinitionParameterType parameterType
+            && isCompileTimeDefinitionParameterType resultType
+        | _ ->
+            false
+
+    let private stripLeadingCompileTimeDefinitionParameters (parameters: Parameter list) =
+        let rec loop (remainingParameters: Parameter list) =
+            match remainingParameters with
+            | (parameter: Parameter) :: rest ->
+                match parameter.TypeTokens |> Option.bind TypeSignatures.parseType with
+                | Some parameterType when isCompileTimeDefinitionParameterType parameterType ->
+                    loop rest
+                | _ ->
+                    remainingParameters
+            | [] ->
+                []
+
+        loop parameters
 
     let private constructorSignatureEntries (document: ParsedDocument) (declaration: DataDeclaration) =
         let typeParameterNames = TypeSignatures.collectLeadingTypeParameters declaration.HeaderTokens
@@ -321,7 +529,9 @@ module internal ResourceCheckingSignatures =
             signatureEntries
                 document
                 constructor.Name
+                None
                 parameterNames
+                (parameterTypes |> List.map (fun _ -> false))
                 quantities
                 parameterTypes
                 returnTypeTokens
@@ -342,6 +552,19 @@ module internal ResourceCheckingSignatures =
                 List.tryItem index existing |> Option.defaultValue None)
 
     let private mergeParameterInout existing next =
+        let length = max (List.length existing) (List.length next)
+
+        [ 0 .. length - 1 ]
+        |> List.map (fun index ->
+            match List.tryItem index next with
+            | Some true ->
+                true
+            | Some false ->
+                List.tryItem index existing |> Option.defaultValue false
+            | None ->
+                List.tryItem index existing |> Option.defaultValue false)
+
+    let private mergeParameterImplicit existing next =
         let length = max (List.length existing) (List.length next)
 
         [ 0 .. length - 1 ]
@@ -382,8 +605,11 @@ module internal ResourceCheckingSignatures =
 
     let private mergeSignature existing next =
         { next with
+            Scheme = next.Scheme |> Option.orElse existing.Scheme
             ParameterNames =
                 mergeParameterNames existing.ParameterNames next.ParameterNames
+            ParameterImplicit =
+                mergeParameterImplicit existing.ParameterImplicit next.ParameterImplicit
             ParameterQuantities =
                 mergeParameterQuantities existing.ParameterQuantities next.ParameterQuantities
             ParameterTypeTokens =
@@ -400,15 +626,30 @@ module internal ResourceCheckingSignatures =
             document.Syntax.Declarations
             |> List.choose (function
                 | SignatureDeclaration declaration ->
+                    let scheme = TypeSignatures.parseScheme declaration.TypeTokens
                     let parameterNames = signatureParameterNames declaration.TypeTokens
-                    let quantities = signatureParameterQuantities declaration.TypeTokens
+                    let parameterImplicit = signatureParameterImplicit declaration.TypeTokens
+                    let quantities = signatureParameterQuantities scheme declaration.TypeTokens
                     let parameterTypes = signatureParameterTypeTokens declaration.TypeTokens
                     let returnTypeTokens = signatureReturnTypeTokens declaration.TypeTokens
                     let parameterInout = signatureParameterInout declaration.TypeTokens
-                    Some(signatureEntries document declaration.Name parameterNames quantities parameterTypes returnTypeTokens parameterInout)
+                    Some(
+                        signatureEntries
+                            document
+                            declaration.Name
+                            scheme
+                            parameterNames
+                            parameterImplicit
+                            quantities
+                            parameterTypes
+                            returnTypeTokens
+                            parameterInout
+                    )
                 | ExpectDeclarationNode (ExpectTermDeclaration declaration) ->
+                    let scheme = TypeSignatures.parseScheme declaration.TypeTokens
                     let parameterNames = signatureParameterNames declaration.TypeTokens
-                    let quantities = signatureParameterQuantities declaration.TypeTokens
+                    let parameterImplicit = signatureParameterImplicit declaration.TypeTokens
+                    let quantities = signatureParameterQuantities scheme declaration.TypeTokens
                     let parameterTypes = signatureParameterTypeTokens declaration.TypeTokens
                     let returnTypeTokens = signatureReturnTypeTokens declaration.TypeTokens
 
@@ -416,7 +657,9 @@ module internal ResourceCheckingSignatures =
                         signatureEntries
                             document
                             declaration.Name
+                            scheme
                             parameterNames
+                            parameterImplicit
                             quantities
                             parameterTypes
                             returnTypeTokens
@@ -425,12 +668,19 @@ module internal ResourceCheckingSignatures =
                 | LetDeclaration definition ->
                     definition.Name
                     |> Option.map (fun name ->
+                        let runtimeParameters =
+                            definition.Parameters |> stripLeadingCompileTimeDefinitionParameters
+
                         let parameterNames =
-                            definition.Parameters
+                            runtimeParameters
                             |> List.map (fun (parameter: Parameter) -> Some parameter.Name)
 
+                        let parameterImplicit =
+                            runtimeParameters
+                            |> List.map (fun (parameter: Parameter) -> parameter.IsImplicit)
+
                         let quantities =
-                            definition.Parameters
+                            runtimeParameters
                             |> List.map (fun (parameter: Parameter) ->
                                 if parameter.IsInout then
                                     Some ResourceQuantity.one
@@ -438,17 +688,19 @@ module internal ResourceCheckingSignatures =
                                     parameter.Quantity |> Option.map ResourceQuantity.ofSurface)
 
                         let parameterTypes =
-                            definition.Parameters
+                            runtimeParameters
                             |> List.map (fun (parameter: Parameter) -> parameter.TypeTokens)
 
                         signatureEntries
                             document
                             name
+                            None
                             parameterNames
+                            parameterImplicit
                             quantities
                             parameterTypes
                             definition.ReturnTypeTokens
-                            (definition.Parameters |> List.map (fun parameter -> parameter.IsInout)))
+                            (runtimeParameters |> List.map (fun parameter -> parameter.IsInout)))
                 | DataDeclarationNode declaration ->
                     Some(constructorSignatureEntries document declaration)
                 | _ -> None)
