@@ -31269,6 +31269,48 @@ managed artifact identity and the generated host binding provider identity.
 A dependency may contribute multiple provider families, but each contribution is recorded separately in
 `ResolvedBuildPlan`.
 
+<!-- build_system.dependencies.resolver_profiles -->
+#### Dependency resolver profiles and explanations
+
+A dependency resolver profile describes the algorithm family used to resolve dependency constraints.
+
+Portable resolver profile names include:
+
+```text
+minimal-version-selection
+highest-compatible-version
+pubgrub-compatible
+ecosystem-native
+locked-only
+implementation-defined-resolver
+```
+
+A resolved dependency graph records at least:
+
+* resolver profile;
+* resolver implementation identity;
+* root dependency requests;
+* package or artifact constraints;
+* selected package or artifact identities;
+* rejected candidate identities when recorded by the resolver;
+* feature selections and configured package instances;
+* variant selections;
+* ecosystem-specific conflict-resolution decisions;
+* lockfile entries consulted;
+* repository or mirror identities consulted;
+* solver trace identity; and
+* conflict explanation, when resolution fails.
+
+A package-mode build MUST record the resolver profile and resolver implementation identity in the resolved plan and
+lockfile.
+
+Changing resolver profile or resolver implementation identity invalidates dependency graph entries unless the new
+resolver proves and records that the selected graph is compatibility-identical to the previous graph.
+
+A dependency-resolution diagnostic MUST include a structured conflict explanation sufficient to identify the
+incompatible constraints, the package or artifact that introduced each constraint, and the manifest or dependency
+metadata provenance for each edge.
+
 <!-- build_system.dependencies.maven -->
 ### 19.6A JVM ecosystem dependencies and packaging
 
