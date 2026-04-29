@@ -22996,6 +22996,96 @@ Payload MUST include:
 * implicit-resolution result for that goal; and
 * relevant local equality or boolean-refinement evidence.
 
+Family:
+
+```text
+kappa.type.hidden-structure-mismatch
+```
+
+Used when a type, kind, row, constraint, associated-member projection, implicit argument, binder telescope, or other
+semantic object fails to match another object, and the ordinary compact renderer would make the two sides appear
+identical or materially indistinguishable.
+
+A diagnostic MUST use this family, or an equally specific family with the same payload information, when the real
+distinction is hidden by ordinary pretty-printing.
+
+Hidden distinctions include, but are not limited to:
+
+* generalized binders;
+* implicit binders;
+* erased binders;
+* binder quantities;
+* capture annotations;
+* universe or kind arguments;
+* runtime-representation or backend-layout parameters;
+* associated static-member owners;
+* associated-member normalization blockers;
+* transparent family expansions;
+* opaque aliases or hidden definitions;
+* associated-data indices;
+* namespace-versus-field lookup distinctions;
+* record dependency substitutions;
+* effect-row residuals;
+* variant-row member identities;
+* local nominal-scope tokens;
+* blocked metavariables whose forced instantiation would reveal one of the facts above.
+
+A human renderer MUST NOT emit a primary message equivalent to:
+
+```text
+cannot match T with T
+```
+
+unless the same diagnostic also displays or explains the semantic structure that distinguishes the two printed `T`
+fragments.
+
+Payload MUST include:
+
+* compact expected rendering;
+* compact actual rendering;
+* fully explicit expected rendering, or a stable reference to it;
+* fully explicit actual rendering, or a stable reference to it;
+* the smallest distinguishing path inside the compared objects;
+* hidden binders, arguments, quantities, captures, universes, kinds, rows, owners, or aliases responsible for the
+  mismatch;
+* normalization steps attempted;
+* opacity, `unhide`, and `clarify` status relevant to the mismatch;
+* blocked metavariables and the obligations blocking them;
+* associated-member owner obligations, when relevant;
+* whether the mismatch arose during ordinary checking, ambiguity checking, instance search, overlap checking,
+  projection resolution, or another named phase.
+
+If the mismatch arises from field or dotted syntax, the diagnostic MUST prefer the source-level lookup story when it is
+more specific. For example, it should report an unknown qualified name, absent field, inaccessible constructor field,
+or namespace collision before falling back to a downstream type mismatch.
+
+Family:
+
+```text
+kappa.type.ambiguity-check
+```
+
+Used when a signature, instance, declaration, associated member, or inferred generalized type fails an ambiguity check
+because some required equality, trait, row, kind, universe, representation, or associated-member obligation is
+insoluble.
+
+Payload MUST include:
+
+* checked declaration or signature;
+* ambiguity-check phase;
+* generalized binders;
+* offending obligation;
+* origin of the obligation;
+* local assumptions available to the ambiguity check;
+* normalization and instance-search attempts relevant to the obligation;
+* why the obligation is insoluble, ambiguous, blocked, or non-deferrable;
+* any expected/actual type pair involved, if useful;
+* hidden structure that would otherwise make the expected/actual pair appear identical.
+
+A human renderer MUST make the insoluble obligation the primary explanation. It MUST NOT report only an
+identical-looking expected/actual signature pair when the ambiguity check failed because a hidden obligation could not
+be solved.
+
 <!-- compiler.kfrontir.standard_diagnostic_families.implicit_trait_proof -->
 ##### 17.2.4A.3 Implicit, trait, and proof-search diagnostics
 
