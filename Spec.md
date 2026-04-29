@@ -31551,6 +31551,54 @@ Macro transcript identity contributes to:
 * diagnostics involving generated syntax; and
 * query keys for elaboration, normalization, interface generation, and downstream compilation.
 
+<!-- build_system.dependencies.workspace_resolution -->
+### 19.6D Workspace resolution
+
+A workspace build config describes one or more local packages resolved together.
+
+A resolved workspace records at least:
+
+* workspace identity;
+* workspace root identity;
+* workspace package list;
+* package name for each workspace package;
+* package root identity for each workspace package;
+* package build manifest semantic identity;
+* package dependency declarations;
+* local path dependency edges between workspace packages;
+* target namespace for each package;
+* qualified target names;
+* selected workspace targets;
+* selected publishable packages;
+* workspace-level feature selections;
+* workspace-level lockfile policy;
+* workspace-level repository and publish policy; and
+* provenance for every workspace package declaration.
+
+Within a workspace, unqualified target references are valid only when they resolve to exactly one target in the active
+package context.
+
+A cross-package target reference MUST resolve to a qualified target identity.
+
+Two workspace packages MUST NOT define the same publish package identity unless the publish target explicitly marks one
+as a replacement, alias, or implementation-defined publication variant.
+
+A workspace-local dependency edge is resolved as a path dependency during local development, but publish mode MUST apply
+the publish target's path dependency policy.
+
+Workspace graph validation MUST reject:
+
+* duplicate workspace package names;
+* duplicate qualified target identities;
+* dependency cycles not permitted by this chapter;
+* package roots that overlap without an explicit nesting policy;
+* source roots that escape their package root;
+* publishable package metadata that depends on unpublishable local-only facts; and
+* cross-package module provider collisions not resolved by provider alternatives, aliases, or exclusions.
+
+A workspace lockfile records both workspace-level resolution and per-package resolved facts. A package published from a
+workspace MUST include or reference the lockfile entries needed to reproduce that package's published artifacts.
+
 <!-- build_system.host_bindings_native_loading -->
 ### 19.7 Host bindings and native loading
 
