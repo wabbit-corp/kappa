@@ -27643,9 +27643,36 @@ In particular:
 ---
 
 <!-- config_mode -->
-## 18. Config mode and value provenance
+## 18. Config mode
 
-Kappa supports a restricted source mode called **config mode**.
+Kappa supports restricted config evaluation profiles.
+
+A config unit is parsed using ordinary Kappa syntax and checked under one of the following profiles:
+
+```text
+config-data
+config-expression
+config-schema
+```
+
+Config mode adds no expression syntax.
+
+A construct accepted in config mode must be valid ordinary Kappa syntax.
+Config mode may reject ordinary Kappa constructs, but it must not accept a construct that ordinary Kappa cannot parse.
+
+A config unit does not produce an ordinary module interface and does not participate in ordinary project module
+discovery.
+
+A config unit evaluates to one or more named config values together with value provenance.
+
+The config evaluator of §18.7 is deterministic and total for fixed:
+
+* config source;
+* selected config profile;
+* loader-supplied schema scope;
+* loader-supplied external inputs;
+* config-safe library versions;
+* toolchain version.
 
 Config mode is used for source files whose purpose is to produce typed configuration data, such as:
 
@@ -27656,17 +27683,6 @@ Config mode is used for source files whose purpose is to produce typed configura
 * tool configuration;
 * reproducible benchmark descriptions;
 * implementation-defined compiler-driver configuration.
-
-A config-mode file is parsed using Kappa lexical structure and expression syntax, but it is not an ordinary Kappa module.
-
-A config-mode file:
-
-* does not produce an ordinary module interface;
-* does not contribute ordinary source declarations to package module discovery;
-* is evaluated before the ordinary project dependency graph that depends on it;
-* is evaluated by the config evaluator of §18.4;
-* produces one or more named config values; and
-* records value provenance as specified by §18.5.
 
 A tool selects config mode by role, file extension, command-line option, or embedding API.
 
@@ -27682,46 +27698,22 @@ The canonical build-manifest path, when standardized by the build system, is:
 kappa.build.kp
 ```
 
-A file named `kappa.build.kp` is parsed as Kappa syntax but evaluated in config-expression mode unless an implementation
-documents a stricter manifest mode.
-
-Config mode has two standardized profiles:
-
-```text
-config-data
-config-expression
-```
-
-`config-data` is the minimal data-only profile intended for test fixtures, bootstrap inputs, and simple manifests.
-
-`config-expression` extends `config-data` with saturated calls to config-safe functions and limited branching.
+A file named `kappa.build.kp` is parsed as ordinary Kappa syntax but evaluated in config-expression mode unless an
+implementation documents a stricter manifest mode.
 
 <!-- config_mode.syntax -->
 ### 18.1 Config units
 
-A config unit contains only imports and simple value bindings.
+A config unit contains only top-level value bindings.
 
 Grammar:
 
 ```text
-configUnit      ::= configImport* configLet*
-
-configImport    ::= ordinary import declaration restricted by §18.3
+configUnit      ::= configLet*
 
 configLet       ::= 'let' ident [ ':' type ] '=' configExpr
 
-configExpr      ::= configLiteral
-                  | ident
-                  | configInterpolatedString
-                  | tupleExpr
-                  | recordExpr
-                  | listExpr
-                  | constructorApp
-                  | configCall
-                  | projectionExpr
-                  | typeAscriptionExpr
-                  | ifExpr                 -- config-expression only
-                  | matchExpr              -- config-expression only
+configExpr      ::= ordinary Kappa expression syntax admitted by the selected config profile
 ```
 
 Rules:
@@ -27729,79 +27721,61 @@ Rules:
 * A config unit has no `module` header.
 * A config unit has no `export` declarations.
 * A config unit has no top-level signatures separate from definitions.
-* Every `let` binding binds exactly one simple identifier.
-* Config `let` bindings are non-recursive.
+* Every top-level binding binds exactly one simple identifier.
+* Top-level config `let` bindings are non-recursive.
 * Duplicate top-level config binding names are rejected.
-* A config binding may refer only to earlier config bindings and imported config-safe names.
+* A config binding may refer only to earlier config bindings, loader-supplied schema names, and explicit external
+  inputs.
 * A config binding may carry an explicit type annotation.
 * If no type annotation is present, ordinary inference is used within the restrictions of config mode.
-
-The following declarations and expressions are rejected in config mode:
-
-* `data`;
-* `type`;
-* `trait`;
-* `effect`;
-* `instance`;
-* `derive`;
-* `projection`;
-* `pattern`;
-* `expect`;
-* `public`;
-* `private`;
-* `opaque`;
-* `block`;
-* `do`;
-* `var`;
-* `while`;
-* `for`;
-* comprehensions;
-* `using`;
-* `defer`;
-* `try`;
-* `handle`;
-* `return`;
-* `break`;
-* `continue`;
-* lambda expressions;
-* local function definitions;
-* macro splices;
-* syntax quotations;
-* staged-code quotations;
-* `Elab`;
-* `IO`;
-* semantic reflection;
-* host imports;
-* unsafe/debug forms.
+* Portable v1 config profiles reject ordinary import declarations.
+* All declaration and expression restrictions of this chapter are additional restrictions on ordinary Kappa; they do not
+  define a separate parser.
 
 An implementation MAY provide an extension profile that admits more of Kappa, but such extensions are not part of
 portable config mode.
 
 <!-- config_mode.profiles -->
-### 18.2 Profiles
+### 18.2 Config profiles
 
 <!-- config_mode.profiles.config_data -->
 #### 18.2.1 `config-data`
 
-The `config-data` profile admits only first-order data construction.
+The `config-data` profile admits first-order data construction.
 
 It permits:
 
 * literals;
 * identifiers bound by earlier config `let`s;
+* explicit config-input reads through `input key`;
 * records;
 * tuples;
 * lists;
-* closed data constructors imported from config-safe schema modules;
-* field projection from config values;
+* constructor application for constructors in the loader-supplied schema scope;
+* field projection;
+* record update;
 * type ascription;
-* config string interpolation.
+* config-safe prefixed strings whose handlers are admitted by the loader;
+* top-level `let`;
+* `block`, restricted to the same forms admitted at top level.
 
-It rejects ordinary function calls except constructor application.
+It rejects:
 
-It rejects `if` and `match`.
-
-This profile is intended for bootstrap-safe data files and test fixtures.
+* ordinary function calls except constructor application and the standard external-input form `input key`;
+* `if`;
+* `match`;
+* local `type`;
+* local `data`;
+* function definitions;
+* macro definitions;
+* macro splices except admitted config-safe prefixed strings;
+* imports;
+* `IO`;
+* `Elab`;
+* host binding imports;
+* project imports;
+* dependency imports;
+* effects, handlers, loops, mutable state, and unsafe/debug forms.
 
 <!-- config_mode.profiles.config_expression -->
 #### 18.2.2 `config-expression`
@@ -27811,19 +27785,36 @@ The `config-expression` profile includes all of `config-data`.
 It additionally permits:
 
 * saturated calls to config-safe functions;
-* `if` expressions whose condition has type `Bool`;
-* `match` expressions over config-admissible scrutinee types;
-* ordinary total normalization required to evaluate those expressions.
+* `if`;
+* `match`;
+* nonrecursive local `type` aliases whose right-hand sides are config-admissible types;
+* macro splices whose called macro is config-safe and supplied by the loader or schema scope;
+* use of config-safe prefixed-string handlers supplied by the loader or schema scope.
+
+It rejects:
+
+* user-defined functions;
+* user-defined macros;
+* local `data`;
+* traits;
+* instances;
+* derive;
+* ordinary imports;
+* project imports;
+* dependency imports;
+* host imports;
+* `IO`;
+* user-authored `Elab` actions.
 
 A config-expression evaluator MUST NOT admit first-class function values.
 
 A function call in config-expression mode is well-formed only if:
 
-* the callee is imported from a config-safe module;
-* the callee is marked config-safe under §18.3;
+* the callee is available in the loader-supplied schema scope;
+* the callee is marked config-safe under §18.6;
 * all explicit arguments are supplied at the call site;
 * all implicit arguments can be resolved from config-safe evidence;
-* the result type is config-admissible under §18.3; and
+* the result type is config-admissible under §18.6; and
 * the call can be evaluated deterministically by the config evaluator.
 
 Partial application is rejected in config mode.
@@ -27831,28 +27822,175 @@ Partial application is rejected in config mode.
 A config-safe function may be higher-order internally, but a config-mode source file cannot construct or pass lambda
 values unless a later extension profile explicitly permits that.
 
-<!-- config_mode.imports -->
-### 18.3 Config imports
+<!-- config_mode.profiles.config_schema -->
+#### 18.2.3 `config-schema`
 
-A **config-safe module** is a module whose interface explicitly marks some exported declarations as admissible in config
-mode.
+The `config-schema` profile includes all of `config-expression`.
 
-An implementation MUST provide at least:
+It additionally permits closed first-order local `data` declarations.
+
+A local `data` declaration in `config-schema`:
+
+* must be nonrecursive unless the implementation explicitly supports recursive config schemas;
+* must have only config-admissible constructor fields;
+* must not define GADT-style constructors;
+* must not introduce trait instances; and
+* must not use deriving unless the derived operation is config-safe and deterministic.
+
+`config-schema` still rejects user function definitions, traits, instances, ordinary imports, host imports, effects,
+`IO`, and user-authored `Elab`.
+
+<!-- config_mode.schema_scope -->
+### 18.3 Config schema scope
+
+A config unit is checked under a loader-supplied schema scope.
+
+The schema scope contains config-safe names selected by the tool invoking config evaluation.
+
+For example, a build manifest may be checked under a schema scope containing names from:
 
 ```text
 std.config
+std.build
 ```
 
-as a config-safe module.
+A test-fixture config may instead be checked under a schema scope containing names from:
 
-Other standard modules, such as `std.build` or `std.test.config`, may also expose config-safe declarations.
+```text
+std.config
+std.test.config
+```
 
 Config mode does not implicitly import the ordinary `std.prelude`.
 
-Instead, a config unit is checked under a config prelude containing only config-safe names required for literals,
-records, tuples, lists, booleans, options, results, ordering, and ordinary config construction.
+Instead, the schema scope provides only the config-safe names required for literals, records, tuples, lists, booleans,
+options, results, ordering, prefixed-string handlers, and other config construction forms admitted by the selected
+profile.
 
-A config unit may import only config-safe modules.
+Config units do not use ordinary Kappa imports in the portable v1 config profiles.
+
+An implementation may provide an extension profile that admits imports from other config units or config-safe schema
+modules, but ordinary project imports, dependency imports, URL imports, and host binding imports remain rejected unless a
+future specification explicitly admits them.
+
+<!-- config_mode.external_inputs -->
+### 18.4 Config external inputs
+
+Config evaluation may refer to loader-supplied external inputs.
+
+External inputs are explicit, typed, and provenance-marked.
+
+The portable API shape is:
+
+```kappa
+ConfigInputKey : Type -> Type
+
+input :
+    forall (a : Type).
+    ConfigInputKey a -> a
+```
+
+A loader that exposes this API at source level MUST make `ConfigInputKey` and `input` available in the schema scope.
+
+A use of `input key` succeeds only when the config loader supplies a value of the corresponding type for `key`.
+
+`input key` is admitted in all standardized config profiles as the standard external-input form.
+
+A config evaluator must not read environment variables, files, network resources, subprocess output, clocks, random
+state, host reflection, or mutable global state directly.
+
+A loader may map such external sources into explicit config inputs.
+When it does so, it must record the source in the config input transcript and attach external-input provenance to the
+value.
+
+Examples of external input provenance include:
+
+```text
+command-line
+environment variable mediated by loader
+editor/API input
+lockfile
+tool default
+```
+
+<!-- modules.config -->
+### 18.5 Standard config module `std.config`
+
+Implementations supporting config mode must provide a config-safe module:
+
+```kappa
+std.config
+```
+
+The module is not part of the ordinary implicit prelude.
+
+It may be made available by a config loader's schema scope.
+
+The portable minimum includes:
+
+```kappa
+ConfigInputKey : Type -> Type
+
+input :
+    forall (a : Type).
+    ConfigInputKey a -> a
+
+ConfigPath : Type
+ConfigConflict : Type
+ConfigConflictSide : Type
+
+trait ConfigUnify (a : Type)
+trait ConfigOverride (a : Type)
+trait ConfigMerge (a : Type)
+
+tryUnify :
+    forall (a : Type).
+    (@_ : ConfigUnify a) ->
+    List a ->
+    Result ConfigConflict a
+
+unify :
+    forall (a : Type).
+    (@_ : ConfigUnify a) ->
+    (xs : List a) ->
+    (@_ : IsOk (tryUnify xs) = True) ->
+    a
+
+(<&>) :
+    forall (a : Type).
+    (@_ : ConfigUnify a) ->
+    (x : a) ->
+    (y : a) ->
+    (@_ : IsOk (tryUnify [x, y]) = True) ->
+    a
+```
+
+`unify xs` and `x <&> y` are checked forms.
+
+If their corresponding `tryUnify` expression normalizes to `Ok v`, they evaluate to `v`.
+
+If it normalizes to `Err conflict`, config evaluation or ordinary elaboration must fail with a diagnostic derived from
+`conflict`.
+
+If the corresponding `tryUnify` expression cannot be normalized enough to determine success, elaboration fails with an
+unsolved config-check diagnostic.
+
+The value-level `tryUnify` remains available for ordinary programs that want to handle conflicts explicitly.
+
+Suggested fixity:
+
+```kappa
+infix left 35 (<&>)
+```
+
+<!-- config_mode.safe_declarations -->
+### 18.6 Config-safe declarations
+
+A config-safe module is a module whose interface explicitly marks some exported declarations as admissible in config mode
+and eligible for inclusion in a loader-supplied schema scope.
+
+A declaration may be marked config-safe only if it is valid ordinary Kappa and satisfies the restrictions of this
+section.
 
 A config-safe declaration may be:
 
@@ -27861,16 +27999,8 @@ A config-safe declaration may be:
 * a type alias whose expansion is config-admissible;
 * a record/signature type whose fields are config-admissible;
 * a total transparent function whose arguments and result are config-admissible;
+* a config-safe macro or prefixed-string handler;
 * coherent erased evidence needed to elaborate config-safe functions.
-
-Config mode rejects imports of:
-
-* ordinary project modules;
-* package dependency modules unless already resolved as toolchain-provided config-safe schema modules;
-* host binding modules;
-* bridge-supplied modules;
-* modules requiring backend-specific intrinsics;
-* modules whose initialization or interface depends on ordinary build target selection.
 
 A type is **config-admissible** iff it is first-order and all runtime-relevant components are themselves
 config-admissible.
@@ -27880,7 +28010,10 @@ The portable minimum config-admissible types include:
 ```text
 Unit
 Bool
-Char
+Byte
+Bytes
+UnicodeScalar
+Grapheme
 String
 Int
 Nat
@@ -27890,6 +28023,7 @@ Option a
 Result e a
 List a
 Array a
+SizedArray n a
 closed tuples of config-admissible types
 closed records of config-admissible fields
 closed data types explicitly marked config-safe
@@ -27905,6 +28039,7 @@ Syntax a
 Core Γ a
 Code a
 ClosedCode a
+Query ...
 QueryCore ...
 Fiber ...
 Ref ...
@@ -27919,47 +28054,66 @@ host binding type
 
 unless a later section explicitly marks that type as config-admissible with a precise deterministic representation.
 
-A config-safe function MUST be:
+A config-safe function must be:
 
 * pure;
 * total-certified;
 * deterministic;
-* independent of ordinary project dependency resolution;
+* independent of ordinary project imports;
+* independent of package dependency resolution;
 * independent of filesystem, network, subprocess, environment, wall-clock time, randomness, mutable global state, host
   runtime reflection, and backend-specific code generation;
-* evaluable without executing macros or `Elab` actions;
-* evaluable without ordinary runtime `IO`.
+* evaluable without executing user-authored `Elab`;
+* evaluable without ordinary runtime `IO`;
+* defined over config-admissible argument and result types.
 
 A config-safe function MUST NOT observe or branch on value provenance.
 
+A config-safe macro or prefixed-string handler must be:
+
+* deterministic;
+* total-certified;
+* free of package-mode-forbidden effects;
+* independent of ordinary project modules and dependency modules;
+* limited to config-admissible generated syntax or config-admissible values;
+* provenance-preserving or explicitly provenance-degrading.
+
+A config-expression or config-schema file may use config-safe functions, macros, and prefixed-string handlers supplied by
+the loader or schema scope.
+
+It may not define them.
+
 <!-- config_mode.evaluator -->
-### 18.4 Config evaluator
+### 18.7 Config evaluator
 
 The config evaluator evaluates config-mode source to config values.
 
 Evaluation is deterministic and total.
 
-For fixed config source text, config profile, config-safe module interfaces, toolchain version, and explicit invocation
-inputs, config evaluation MUST produce the same value, diagnostics, and value provenance.
+For fixed config source text, selected config profile, loader-supplied schema scope, loader-supplied external inputs,
+config-safe library versions, and toolchain version, config evaluation MUST produce the same value, diagnostics, and
+value provenance.
 
 The config evaluator:
 
 * performs ordinary Kappa parsing for the admitted config syntax;
-* performs ordinary name resolution restricted to config bindings and config-safe imports;
+* performs ordinary name resolution restricted to config bindings, the loader-supplied schema scope, and explicit config
+  inputs;
 * performs ordinary typechecking restricted to config-admissible types;
 * performs implicit insertion only for config-safe implicit evidence;
 * performs deterministic normalization of config-safe terms;
+* executes only those config-safe macros and prefixed-string handlers admitted by the selected profile and schema scope;
 * records value provenance for every produced config value.
 
 The config evaluator MUST NOT:
 
 * evaluate ordinary project modules;
-* execute macros;
-* execute `Elab`;
-* execute `IO`;
+* execute user-defined macros;
+* execute user-authored `Elab`;
+* execute ordinary runtime `IO`;
 * inspect the filesystem except for the explicit config files being evaluated;
 * inspect the network;
-* inspect environment variables;
+* inspect environment variables except through explicit loader-supplied config inputs;
 * run subprocesses;
 * consult host runtime reflection;
 * consult package dependencies declared by the config currently being evaluated;
@@ -27974,7 +28128,7 @@ Any external fact discovered by those phases that affects a build or tool result
 tool's resolved plan, lockfile, transcript, or equivalent artifact.
 
 <!-- config_mode.provenance -->
-### 18.5 Value provenance
+### 18.8 Value provenance
 
 Every config value produced by config evaluation has associated value provenance.
 
@@ -28016,6 +28170,9 @@ Meanings:
 
 A source provenance origin MUST use the same source/synthetic origin model as compiler diagnostics.
 
+When the value originates from `input key`, a source provenance origin may instead identify the corresponding config
+input transcript entry supplied by the loader.
+
 For every config value, the implementation SHOULD preserve:
 
 * whole-value provenance;
@@ -28026,7 +28183,8 @@ For every config value, the implementation SHOULD preserve:
 * the source origin of the binding name that introduced the value, when applicable;
 * the source origin of the expression that computed the value;
 * the source origin of variable references that reused another value;
-* the provenance of the referenced value.
+* the provenance of the referenced value;
+* the transcript origin of any explicit external input that contributed to the value.
 
 A value produced by a config `let` binding has at least two relevant origins:
 
@@ -28050,88 +28208,62 @@ An implementation MUST NOT fabricate precise provenance.
 Approximate provenance is permitted only when marked as approximate.
 
 <!-- config_mode.string_interpolation_provenance -->
-### 18.6 Config string interpolation and string provenance
+### 18.9 Prefixed strings and string provenance in config mode
 
-In config mode, ordinary non-raw string literals support config interpolation.
+Config mode adds no string-interpolation syntax beyond ordinary prefixed strings.
 
-Config interpolation admits:
+Ordinary unprefixed string literals remain ordinary `String` literals and do not gain config-specific interpolation.
 
-```text
-$name
-${expr}
-```
-
-A literal dollar sign may be escaped as:
-
-```text
-\$
-```
-
-Raw string literals do not interpolate.
-
-Config interpolation is config-mode syntax only. It does not change ordinary Kappa source-mode string literals.
-
-A config interpolated string evaluates to a `String`.
-
-Each interpolation expression must evaluate to a config-admissible value accepted by the implementation's config string
-conversion rules.
-
-The portable minimum conversions are:
-
-```text
-String
-Char
-Bool
-Int
-Nat
-Integer
-Ordering
-```
-
-An implementation MAY admit additional config-safe display conversions.
-
-Config string interpolation records per-slice provenance.
-
-For an interpolated string:
+A config unit may use an ordinary prefixed string such as:
 
 ```kappa
-"pre$name:${expr}post"
+f"hello $name"
 ```
 
-the resulting string has `SequenceProvenance` whose slices correspond to:
+or another config-safe prefixed-string handler such as:
 
-* the literal segment `"pre"`;
-* the interpolation use site `$name`;
-* the literal segment `":"`;
-* the interpolation use site `${expr}`;
-* the literal segment `"post"`.
+```kappa
+cfg"$packageFullName:$version"
+```
 
-A literal segment's provenance is the source range of that segment inside the string literal.
+provided the handler is available in the schema scope, is config-safe under §18.6, and is admitted by the selected
+config profile.
 
-An interpolation segment's provenance is `DerivedProvenance` containing:
+Prefixed-string processing in config mode follows the ordinary rules of §4.3.3.
+No config-specific parser form is introduced.
 
-* the source range of the interpolation hole;
-* the source range of the interpolation expression;
-* the provenance of the evaluated interpolation value;
-* the config string conversion used.
+Literal `$` escaping, raw-prefixed-string behavior, interpolation-hole syntax, and segment formation are exactly those of
+ordinary prefixed strings.
 
-If the interpolated value is itself a string with per-slice provenance, the implementation SHOULD preserve and nest or
-flatten that string's existing slice provenance under the interpolation segment.
+When a config-safe prefixed-string handler produces a `String`, it SHOULD preserve per-slice provenance for literal
+fragments and interpolated subexpressions whenever its own semantics make that mapping faithful.
+
+If a handler intentionally degrades provenance, that degradation must be explicit in the handler's documented contract.
 
 A conforming implementation MUST preserve enough information to answer both:
 
 * “Which source range produced this substring in the final string?”
-* “Which earlier config binding or literal contributed to this substring?”
+* “Which earlier config binding, external input, or literal contributed to this substring?”
 
 Example:
 
 ```kappa
 let majorVersion = 1
-let version = "$majorVersion.0.1"
+let version = f"$majorVersion.0.1"
 let packageGroup = "one.wabbit"
-let packageFullName = "$packageGroup:kappa"
-let buildConfig = (dependencies = [ "$packageFullName:$version" ])
+let packageFullName = f"$packageGroup:kappa"
+
+let buildConfig =
+    package
+        ( dependencies =
+            [ f"$packageFullName:$version" ]
+        )
 ```
+
+`f` must be config-safe in the selected config profile.
+
+If stronger config-specific formatting or provenance behavior is needed, a loader or schema module may instead expose a
+config-safe handler such as `cfg`, still through the ordinary prefixed-string pipeline.
 
 The resulting dependency string:
 
@@ -28139,7 +28271,7 @@ The resulting dependency string:
 one.wabbit:kappa:1.0.1
 ```
 
-has provenance that records at least:
+should have provenance that records at least:
 
 * the dependency list element source range in `buildConfig`;
 * the interpolation use of `packageFullName`;
@@ -28158,7 +28290,7 @@ A tool that updates the whole semantic version should be able to identify the so
 A tool that updates the final dependency coordinate may choose the outermost dependency string occurrence.
 
 <!-- config_mode.function_provenance -->
-### 18.7 Provenance through config-safe functions
+### 18.10 Provenance through config-safe functions
 
 A config-safe function has a default provenance behavior.
 
@@ -28183,13 +28315,14 @@ A provenance transformer maps argument provenances to result provenance without 
 Examples of functions that SHOULD have precise provenance transformers include:
 
 * string concatenation;
-* config string interpolation;
 * list append;
 * record merge;
 * semantic-version parsers;
 * dependency-coordinate parsers;
 * path-join helpers;
 * target-name helpers.
+
+Config-safe prefixed-string handlers and config-safe macros MAY use observationally equivalent provenance transformers.
 
 A provenance transformer MUST be deterministic.
 
@@ -28202,7 +28335,7 @@ If a provenance transformer fails, the config value remains valid if ordinary ev
 provenance is downgraded to `PartialProvenance` or `UnknownProvenance`.
 
 <!-- config_mode.tooling_queries -->
-### 18.8 Config tooling queries
+### 18.11 Config tooling queries
 
 A conforming implementation intended for editor, build-tool, or test-harness use SHOULD provide tooling queries for
 config mode.
@@ -28244,7 +28377,7 @@ Editable-range ranking is implementation-defined, but SHOULD prefer:
 6. unknown or whole-file fallback only when no precise range is available.
 
 <!-- config_mode.diagnostics -->
-### 18.9 Config diagnostics
+### 18.12 Config diagnostics
 
 Config diagnostics are ordinary compiler diagnostics.
 
@@ -28256,23 +28389,24 @@ A config diagnostic MUST identify:
 * the primary source origin;
 * relevant value provenance when the diagnostic concerns a derived value.
 
-When a diagnostic concerns a value derived through config bindings, interpolation, record construction, function calls,
-or list construction, the diagnostic SHOULD include related origins for the most relevant provenance contributors.
+When a diagnostic concerns a value derived through config bindings, prefixed-string handling, record construction,
+function calls, or list construction, the diagnostic SHOULD include related origins for the most relevant provenance
+contributors.
 
 Example diagnostic shape:
 
 ```text
 error[E_CONFIG_DEP_VERSION]: dependency version does not satisfy the required range
-  --> kappa.build.kp:5:31
+  --> kappa.build.kp:7:15
    |
-5  | let buildConfig = (dependencies = [ "$packageFullName:$version" ])
-   |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ final dependency string
+7  |             [ f"$packageFullName:$version" ]
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ final dependency string
    |
 note: version came from here
   --> kappa.build.kp:2:15
    |
-2  | let version = "$majorVersion.0.1"
-   |               ^^^^^^^^^^^^^^^^^^^
+2  | let version = f"$majorVersion.0.1"
+   |               ^^^^^^^^^^^^^^^^^^^^
 
 note: major version came from here
   --> kappa.build.kp:1:20
@@ -28310,7 +28444,7 @@ A diagnostic for `E_CONFIG_PROVENANCE_UNAVAILABLE` MUST distinguish:
 * unavailable because the value came from an explicit unknown external input.
 
 <!-- config_mode.relationship_to_macros -->
-### 18.10 Relationship to macros and diagnostics
+### 18.13 Relationship to macros and diagnostics
 
 The value-provenance model of this chapter is independent of config mode.
 
