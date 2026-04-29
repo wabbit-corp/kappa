@@ -28650,59 +28650,225 @@ Portable build manifests do not import `std.build`; its exported config-safe nam
 
 `std.build` provides the portable vocabulary for build manifests.
 
-At minimum, it supplies config-admissible types equivalent to:
+At minimum, `std.build` supplies config-admissible types equivalent to:
 
 ```text
 BuildConfig
+PackageConfig
+WorkspaceConfig
+
 PackageName
 PackageVersion
+PackageId
+WorkspacePackageName
+
 SourceRoot
+GeneratedSourceRoot
+ResourceRoot
 FragmentTag
 FragmentAxis
+FeatureName
+Feature
+FeatureSelection
+FeatureConstraint
+CapabilityPredicate
+
 TargetName
+QualifiedTargetName
+TargetRef
 Target
+ArtifactTarget
+TestTarget
+TestExecutionTarget
+DiagnosticTestTarget
+GoldenTestTarget
+CodegenTarget
+BridgeTarget
+AggregateTarget
+PublishTarget
+BenchmarkTarget
+
 TargetKind
+ArtifactTargetKind
+TestKind
+CodegenKind
+AggregateKind
+PublishKind
+BenchmarkKind
+
 ModuleSelector
+ModuleName
+ModuleProviderSelection
+ProviderAlternativeGroup
+InterfaceEquivalenceGroup
+
 BackendProfile
+BackendFamily
+ExecutionBackend
+BackendOption
+BackendCapability
+TargetTriple
+OperatingSystem
+Architecture
+BuildMode
+BuildProfile
+OptimizationProfile
+
+ArtifactFamily
 ArtifactKind
+ArtifactIdentity
+ArtifactRef
+TargetArtifactRef
+CompanionArtifact
+ExportSurface
+CAbiExport
+PortableAbiPolicy
+HeaderGenerationPolicy
+SymbolVisibilityPolicy
+AbiMetadataPolicy
+InterfaceArtifactPolicy
+
 Dependency
+DependencyName
 DependencySource
+DependencyScope
+DependencyUse
+RegistryDependency
+GitDependency
+PathDependency
+UrlDependency
+ArtifactDependency
+TargetArtifactDependency
+MavenDependency
+NuGetDependency
+ToolDependency
+MacroDependency
+
+Repository
+RepositoryIdentity
+MavenCoordinate
+MavenScope
+MavenPackagingMode
+JvmDeploymentMode
+NuGetCoordinate
+DotNetTargetFramework
+DotNetRuntimeIdentifier
+DotNetDeploymentMode
+
 HostBinding
 HostBindingSource
+HostRoot
 NativeBinding
 NativeBindingSource
 NativeAbi
 NativeAdapterMode
 NativeLinkSpec
 NativeLoadSpec
+NativeLibraryIdentity
+NativeDeploymentSpec
+RuntimePrerequisite
+SystemPrerequisite
+
 BridgeSpec
 BridgeRealization
+BridgeDirection
+BridgeContractPolicy
+CallbackPolicy
+BridgeCompanionPolicy
+
+CodegenInput
+CodegenOutput
+GeneratorSpec
+GeneratorIdentity
+GeneratedOutputPolicy
+
+TestSuiteSpec
+TestExpectation
+DiagnosticExpectation
+GoldenExpectation
+TestFixture
+TestResultGrouping
+
+BenchmarkSpec
+BenchmarkDataset
+BenchmarkRuntimeParameters
+BenchmarkResultAttribution
+
+PublishSpec
+PublishArtifactSelection
+PublishDependencyPolicy
+
 DeploymentMode
+DeploymentLayout
+BundlingPolicy
+RuntimeLoaderPolicy
+
 UnsafePolicy
 ReproducibilityPolicy
+ReproducibilityStatus
+UnreproducibilityReason
+
+LockfilePolicy
+LockEntryKind
+ResolvedFactKind
+ProvenancePath
 ```
 
-At minimum, it supplies config-safe constructors or builder functions equivalent to:
+At minimum, `std.build` supplies config-safe constructors or builder functions equivalent to:
 
 ```text
 package
+workspace
+workspacePackage
 semver
 
 sourceRoot
+generatedSourceRoot
+resourceRoot
+
 tag
 axis
 tags
+feature
+featureDefault
+featureRequires
+featureConflicts
+featureEnables
 
 module
 modules
 modulesUnder
 excludeModules
+providerAlternative
+selectProvider
+aliasProvider
+excludeProvider
+interfaceEquivalent
 
+artifact
 executable
 library
-testTarget
-artifactTarget
-bridgeTarget
+staticLibrary
+sharedLibrary
+jvmJar
+dotnetAssembly
+wasmComponentArtifact
+
+test
+testExecution
+diagnosticTest
+goldenTest
+compileFailTest
+codegen
+bridge
+aggregate
+aliasTarget
+matrixTarget
+publish
+benchmark
+
+targetRef
+targetArtifact
 
 native
 jvm
@@ -28710,11 +28876,27 @@ dotnet
 wasmCore
 wasmComponent
 
+debugProfile
+releaseProfile
+sanitizerProfile
+coverageProfile
+profilingProfile
+optimization
+
 registry
 git
 pathDependency
 urlDependency
 artifactDependency
+targetArtifactDependency
+maven
+nuget
+toolDependency
+macroDependency
+
+repository
+mavenCoordinate
+nugetCoordinate
 
 hostBinding
 nativeBinding
@@ -28727,28 +28909,64 @@ moduleMap
 symbolList
 shim
 prebuiltNative
+sdkProvided
+systemProvided
 
 cAbi
+kappaInterface
+jvmHostSurface
+dotnetHostSurface
+wasmComponentInterface
+bridgeSurface
+
 dynamicLink
 staticLink
+noLink
 runtimeLoad
 systemLoader
 bundledLoader
 providedByHost
+bundledNative
 
 kappaJni
+bridgeCallbacks
+bridgeCompanions
+
+generator
+codegenInput
+codegenOutput
+generatedSources
+generatedInterface
+generatedResource
+
+thinJar
+fatJar
+modularJar
+jvmRuntimeImage
+
+frameworkDependent
+selfContainedDotNet
+singleFileDotNet
+nativeAotDotNet
+
+fullyReproducible
+reproducibleWithTranscript
+systemRuntimePrerequisite
+nonSelfContainedDeployment
+unreproducible
 ```
 
-The exact surface spelling MAY be extended by implementations, but conforming implementations MUST provide an equivalent
-portable schema capable of expressing the concepts in this chapter.
+The exact surface spelling MAY be extended by implementations, but a conforming implementation MUST provide an
+equivalent portable schema capable of expressing the concepts in this chapter.
 
-Every public declaration in `std.build` that is usable by portable manifests MUST be config-safe under §18.6.
+Every public declaration in `std.build` usable by portable manifests MUST be config-safe under §18.6.
 
 Constructing values from `std.build` MUST NOT perform source discovery, dependency resolution, host inspection,
-`pkg-config`, header preprocessing, classpath inspection, assembly inspection, bridge generation, native linking, or
-filesystem enumeration.
+`pkg-config`, header preprocessing, classpath inspection, assembly inspection, bridge generation, native linking, code
+generation, test execution, benchmark execution, publication, or filesystem enumeration.
 
-Such effects occur only during build-plan resolution.
+Such effects occur only during build-plan resolution, build scheduling, or target execution as specified by this
+chapter.
 
 <!-- build_system.manifest_shape -->
 ### 19.2 Build manifest shape
