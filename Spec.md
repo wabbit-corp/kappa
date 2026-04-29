@@ -30201,13 +30201,73 @@ The resolved plan MUST distinguish:
 * native libraries attached to JVM artifacts.
 
 <!-- build_system.dependencies.nuget -->
-### 19.6B NuGet dependency resolution
+### 19.6B .NET ecosystem dependencies and packaging
 
-This subsection is reserved for the standardized NuGet-resolution rules referenced by §19.6.
+A NuGet dependency source describes .NET package artifacts.
 
-Until those rules are specified in full, a conforming implementation that exposes NuGet dependencies in portable build
-manifests MUST still record the exact package identities, package digests, asset-selection identities, and transitive
-graph identities required by §19.6.
+A NuGet dependency has at least:
+
+* package id;
+* version, version range, or pinned version;
+* source list;
+* target framework;
+* optional runtime identifier;
+* asset selection policy;
+* exclusions.
+
+Build-plan resolution resolves NuGet dependencies to a .NET dependency graph.
+
+A resolved NuGet dependency graph records at least:
+
+* exact package identity for every selected package;
+* package digest for every selected package;
+* package metadata identity and digest;
+* source or mirror identity;
+* transitive dependency graph;
+* selected target framework;
+* selected runtime identifier, when any;
+* selected compile assets;
+* selected runtime assets;
+* selected native assets;
+* selected analyzers or source generators, when admitted by the build;
+* generated `host.dotnet` binding provider identities, when generated;
+* assembly identities;
+* binding redirects or equivalent assembly resolution metadata, when applicable;
+* deployment contribution.
+
+A .NET artifact target may select one .NET deployment mode:
+
+```text
+framework-dependent
+self-contained
+single-file
+native-aot
+```
+
+`framework-dependent` records the required framework/runtime prerequisite.
+
+`self-contained` records the runtime assets bundled into the deployment.
+
+`single-file` records bundling policy and extraction/runtime-load behavior.
+
+`native-aot` records the native-AOT toolchain identity, target runtime identifier, native library prerequisites, and
+generated artifact identity.
+
+A .NET target that also uses native ABI bindings MUST keep `host.dotnet` and `host.native` provider families separate in
+the resolved plan.
+
+A P/Invoke-style native ABI binding is a `host.native` binding or native adapter realization, even when consumed by a
+.NET artifact target.
+
+The resolved plan MUST distinguish:
+
+* ordinary Kappa package dependencies;
+* NuGet package dependencies;
+* CLR assembly metadata;
+* generated `host.dotnet` binding providers;
+* native assets selected from NuGet;
+* native ABI bindings selected through `host.native`;
+* runtime framework or runtime identifier prerequisites.
 
 <!-- build_system.host_bindings_native_loading -->
 ### 19.7 Host bindings and native loading
