@@ -26219,7 +26219,7 @@ Rules:
 * `NomScope` values are compile-time only and are erased before KBackendIR.
 
 <!-- compiler.kcore.application_spines.intrinsic_compile_time_types -->
-##### 17.3.1.6 KCore intrinsic compile-time types
+##### 17.3.1.6 KCore intrinsic compile-time types and trait evidence
 
 A conforming implementation MUST behave as if KCore supports ordinary binding, projection, application, sealing, and
 packaging of inhabitants of the intrinsic compile-time types of §5.1.3 and of the elaboration-time reflection types of
@@ -26227,8 +26227,8 @@ packaging of inhabitants of the intrinsic compile-time types of §5.1.3 and of t
 
 Rules:
 
-* `Universe`, `Quantity`, `Region`, `Constraint`, `RecRow`, `VarRow`, `EffRow`, `Label`, `EffLabel`, and the internal
-  nominal-scope type `NomScope` are ordinary compile-time types in KCore.
+* `Universe`, `Quantity`, `Region`, `RecRow`, `VarRow`, `EffRow`, `Label`, `EffLabel`, and the internal nominal-scope
+  type `NomScope` are ordinary compile-time types in KCore.
 * `CoreCtx`, `Symbol`, `Core Γ t`, and `CoreEq x y` are ordinary elaboration-time-only compile-time types in KCore.
 * `Type u` is a primitive universe family indexed by `u : Universe`; it is not required to be represented as ordinary
   first-order application.
@@ -26237,8 +26237,12 @@ Rules:
 * Compile-time binders, fields, and package members may carry any quantity annotation otherwise admitted by source or
   KCore.
 * Erasure of compile-time terms is classifier-based under §§5.1.4 and 14.4.
-* Raw terms of type `Constraint` are descriptors only. Coherent evidence for a concrete descriptor `C` is separate and
-  is reified explicitly by `Dict C`.
+* Trait declarations elaborate to abstract evidence record families in KCore. Their constructors are not represented as
+  source-nameable constants.
+* A KCore trait evidence value may be projected through the public eliminators of its trait and through canonical
+  supertrait projections.
+* Intrinsic solver traits are represented as abstract trait evidence types whose introduction forms are KCore intrinsics
+  owned by the corresponding solver.
 * The reflection operations of §5.8.5 MAY be realized as KCore intrinsics or as observationally equivalent
   elaboration-time evaluator primitives.
 * Reflection values MUST NOT survive lowering to KBackendIR except through ordinary reification to `Syntax` followed by
