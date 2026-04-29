@@ -29797,6 +29797,55 @@ If a feature combination is invalid, build-plan resolution MUST emit a diagnosti
   introduced by the feature when relevant;
 * build-manifest provenance for every contributing feature selection.
 
+<!-- build_system.provider_alternatives -->
+### 19.5D Provider alternatives and public facades
+
+A provider alternative group declares that one effective module name may be supplied by one of several candidate
+providers for a target.
+
+A provider alternative group has at least:
+
+* public effective module name;
+* candidate providers;
+* selection rule;
+* optional default candidate;
+* optional aliases for non-selected candidates;
+* collision policy.
+
+Candidate provider kinds are the module provider kinds of §19.9.
+
+Portable selection rules are:
+
+```text
+select-exactly-one
+select-at-most-one
+select-first-available
+select-by-feature
+select-by-backend-family
+select-by-platform
+```
+
+`select-exactly-one` requires exactly one candidate provider to be selected for each resolved target.
+
+`select-at-most-one` permits no provider to be selected when the public module is not needed by the target.
+
+`select-first-available` is permitted only when candidate order is explicitly authored and deterministic.
+
+`select-by-feature`, `select-by-backend-family`, and `select-by-platform` select by resolved feature set, backend
+family, OS, architecture, or target triple.
+
+A provider alternative group resolves before ordinary provider collision checking.
+
+After resolution, the effective module name MUST have at most one selected provider.
+
+Non-selected providers do not contribute to name resolution, import/export discovery, interface identity, hashing,
+diagnostics, lowering, or query keys except through provider-selection provenance and diagnostics.
+
+An alias MUST NOT cause two different module interfaces to masquerade as one semantic module identity.
+
+A public facade module such as `crypto.Hashing` SHOULD be modeled as a provider alternative group when the build may
+choose among pure Kappa, native, JVM, .NET, or other implementations.
+
 <!-- build_system.dependencies -->
 ### 19.6 Dependencies
 
