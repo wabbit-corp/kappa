@@ -27331,6 +27331,51 @@ Rules:
   features that the selected backend profile cannot represent soundly under the selected adapter mode MUST be rejected or
   require an explicit shim or trusted binding summary rather than guessed.
 
+Worked example: deterministic overload spelling
+
+Suppose a host binding source contains two same-spelling functions:
+
+```text
+host function parse(text : CString) : CInt
+host function parse(text : CString, radix : CInt) : CInt
+```
+
+A generated raw Kappa surface may expose:
+
+```kappa
+parse :
+    std.ffi.RawPtr -> IO HostError std.ffi.CInt
+
+parse__arity2 :
+    std.ffi.RawPtr -> std.ffi.CInt -> IO HostError std.ffi.CInt
+```
+
+or another deterministic spelling scheme documented by the implementation.
+
+The module interface artifact MUST record, for each generated binding:
+
+```text
+generated spelling: parse
+original host spelling: parse
+original host identity: <host-specific stable member identity>
+host signature: (CString) -> CInt
+overload rule: unsuffixed unique after filtering
+adapter mode: <selected adapter mode>
+
+generated spelling: parse__arity2
+original host spelling: parse
+original host identity: <host-specific stable member identity>
+host signature: (CString, CInt) -> CInt
+overload rule: suffix by arity
+adapter mode: <selected adapter mode>
+```
+
+Diagnostics involving a generated raw binding MUST be able to report both the generated Kappa spelling and the original
+host identity.
+
+The generated spelling is a Kappa source name. The original host identity is binding metadata. They are not
+interchangeable.
+
 <!-- compiler.ffi.native_abi_adapter_modes -->
 #### 17.7.2.1 Native-ABI adapter modes
 
