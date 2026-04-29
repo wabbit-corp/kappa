@@ -29123,6 +29123,32 @@ The schema identity is part of:
 * build diagnostics that depend on schema interpretation; and
 * query keys for build-sensitive compiler queries.
 
+<!-- build_system.std_build.semantic_identity -->
+#### Semantic build identity and provenance identity
+
+Every portable build value has two distinct identities:
+
+* semantic build identity; and
+* provenance identity.
+
+The semantic build identity is computed from the canonical build serialization of the value after applying schema
+normalization, defaulting, and compatibility mapping. It excludes source provenance, binding-origin provenance,
+editor-origin metadata, diagnostic backreferences, and other metadata that does not change the semantic build request.
+
+The provenance identity is computed from the semantic build identity plus the value-provenance graph that explains how
+the value was produced.
+
+Artifact identity, module-provider identity, dependency identity, generated-output identity, interface identity,
+deployment identity, action cache keys, and reproducibility classification MUST use semantic build identity unless this
+chapter explicitly says that provenance affects the result.
+
+Diagnostics, lockfile-update suggestions, editor refactorings, provenance queries, build explanation queries, and
+publication provenance records MAY use provenance identity.
+
+A change to manifest source text that preserves semantic build identity but changes provenance identity MUST NOT by
+itself force recompilation, relinking, regenerated bindings, repackaging, or republishing, except when the selected
+operation explicitly publishes or verifies provenance metadata.
+
 <!-- build_system.manifest_shape -->
 ### 19.2 Build manifest shape
 
