@@ -31230,6 +31230,78 @@ In package mode, the lockfile or equivalent artifact MUST record at least:
 * deployment prerequisites;
 * native, managed, WASM, or bridge runtime identities required by the bridge when available.
 
+<!-- build_system.bridges.scheduling_phases -->
+#### Bridge scheduling phases
+
+A bridge target is resolved into phase outputs so that bridge-supplied modules do not create artificial target cycles.
+
+Portable bridge phases are:
+
+```text
+BridgeContractPlan
+BridgeConsumerCompanions
+BridgeProviderCompanions
+BridgeDeploymentMetadata
+```
+
+`BridgeContractPlan` records the selected bridge realization and bridge contract before provider or consumer final
+packaging.
+
+It depends on:
+
+* provider Kappa interface surface or exported signature surface;
+* provider backend profile;
+* consumer backend profile or consumer artifact identity;
+* selected bridge realization;
+* selected callback policy;
+* selected runtime representation policy;
+* selected error/exception mapping policy;
+* selected deployment policy; and
+* relevant lockfile or transcript entries.
+
+`BridgeConsumerCompanions` are generated modules, stubs, wrappers, registration declarations, metadata, or interface
+artifacts required before compiling or packaging the consumer side.
+
+They depend on the `BridgeContractPlan` and on the consumer-side backend/profile context.
+
+A consumer artifact target that statically imports a bridge-supplied Kappa module depends on
+`BridgeConsumerCompanions` and on the provider module interface identities recorded by the `BridgeContractPlan`. It
+does not depend on provider final deployment metadata merely to typecheck the imported Kappa module.
+
+`BridgeProviderCompanions` are generated entry points, wrappers, callback trampolines, registration tables, export
+metadata, native stubs, managed stubs, or other artifacts required before final provider-side linking or packaging.
+
+They depend on the `BridgeContractPlan` and on the provider-side backend/profile context.
+
+A provider artifact target MAY have a split build shape:
+
+```text
+provider compile/interface phase
+provider bridge companion phase
+provider final link/package phase
+```
+
+When such a split is used, the `BridgeContractPlan` may depend on the provider compile/interface phase, and the
+provider final link/package phase may depend on `BridgeProviderCompanions`, without forming a target dependency cycle.
+
+`BridgeDeploymentMetadata` records loader metadata, bundled runtime files, runtime prerequisites, deployment-relative
+paths, registration metadata, bridge runtime identities, and final provider/consumer artifact identities.
+
+It depends on:
+
+* provider final artifact identity when required by deployment;
+* consumer final artifact identity when required by deployment;
+* `BridgeContractPlan`;
+* materialized provider companions;
+* materialized consumer companions; and
+* deployment layout resolution.
+
+A bridge target creates a target dependency cycle only when a phase dependency cycle remains after expanding the bridge
+target into the phase outputs above.
+
+Portable v1 does not standardize mutually recursive static bridge bundles. Any implementation-defined bridge-bundle
+mechanism MUST define an equivalent phase decomposition and MUST record it in the resolved plan.
+
 <!-- build_system.test_targets -->
 ### 19.8A Test targets
 
@@ -31384,6 +31456,80 @@ A benchmark result MUST be attributable to:
 Benchmark results are not part of ordinary compilation semantics, but benchmark configuration is part of the resolved
 plan when the benchmark target is selected.
 
+<!-- build_system.publish_targets -->
+### 19.8C Publish targets
+
+A publish target describes packaging and publication of already built or already resolved artifacts.
+
+A publish target has at least:
+
+* target name;
+* package or workspace package selection;
+* artifact selection;
+* package metadata selection;
+* dependency metadata policy;
+* path dependency policy;
+* lockfile inclusion policy;
+* provenance inclusion policy;
+* reproducibility policy;
+* signing or attestation policy, when any;
+* repository or destination selection; and
+* dry-run or publication execution policy.
+
+A publish target has no backend profile.
+
+A publish target MUST NOT compile modules.
+
+A publish target MUST NOT select a different backend profile, artifact family, export surface, dependency graph,
+provider alternative, host binding, bridge contract, generated output, or deployment layout from the one recorded in
+the `ResolvedBuildPlanFinal` for the artifacts being published.
+
+A publish artifact record includes at least:
+
+* producing target identity;
+* artifact identity;
+* primary artifact family;
+* companion artifact identities selected for publication;
+* export surface identities;
+* module interface identities;
+* backend profile;
+* toolchain identity;
+* dependency graph identity;
+* host binding identities;
+* bridge identities;
+* generated output identities;
+* deployment layout identity, when publishing a deployment; and
+* reproducibility vector.
+
+A publish target MUST reject an artifact whose reproducibility summary is `Unreproducible`.
+
+A publish target MUST reject an artifact whose lockfile entries, generated-output cache entries, host binding
+identities, bridge identities, or dependency identities are missing or stale.
+
+A publish target MAY publish an artifact with recorded system runtime prerequisites only if the published metadata
+explicitly records those prerequisites and marks the artifact or deployment as non-self-contained.
+
+Path dependencies in publish mode are governed by the publish target's path dependency policy:
+
+```text
+reject-path-dependencies
+record-path-content-identities
+vendor-path-dependencies
+implementation-defined-path-policy
+```
+
+Portable publish mode defaults to `reject-path-dependencies`.
+
+If `record-path-content-identities` is selected, every path dependency reachable from the published artifact MUST be
+represented by content identity sufficient to reproduce the dependency's source, manifest, selected generated outputs,
+and exported interfaces.
+
+If `vendor-path-dependencies` is selected, the published package MUST include the vendored dependency contents and
+record their content identities.
+
+A publish plan records every package metadata field emitted, the manifest value or generated value that supplied it,
+and the provenance for that value.
+
 <!-- build_system.module_providers -->
 ### 19.9 Module providers
 
@@ -31413,6 +31559,43 @@ Provider collision diagnostics MUST identify:
 * build-config source origin or value provenance that selected or failed to select the provider.
 
 An alias MUST NOT cause two different module interfaces to masquerade as one semantic module identity.
+
+<!-- build_system.module_providers.identity_collision -->
+#### Provider identity and collision checking
+
+A resolved module provider identity records at least:
+
+* provider kind;
+* effective module name;
+* source package or artifact identity;
+* source root or generated root identity when applicable;
+* selected fragment file identities when applicable;
+* module interface identity;
+* host binding provider identity when applicable;
+* bridge target and bridge phase identity when applicable;
+* generated output identity when applicable;
+* provider alias identity when applicable;
+* selected feature set that enabled the provider;
+* target for which the provider is selected; and
+* provenance of the build value that selected or introduced the provider.
+
+Collision checking is performed after feature resolution, matrix expansion, provider alternative resolution,
+generated-output materialization required for module discovery, and provider alias resolution.
+
+For each target, every effective module name MUST map to at most one selected provider identity.
+
+Two providers with byte-identical source text are still distinct providers unless their resolved provider identities are
+the same.
+
+Two providers with the same module interface fingerprint are still distinct providers unless their resolved provider
+identities are the same.
+
+A provider alternative group may resolve a collision only by selecting, aliasing, or excluding providers before final
+provider collision checking.
+
+A provider exclusion removes a provider only for the target and module-provider scope in which the exclusion is active.
+It does not remove the dependency, artifact, host binding, or bridge from the resolved plan unless no other selected
+target uses it.
 
 <!-- build_system.module_providers.aliases -->
 ### 19.9A Provider aliases
