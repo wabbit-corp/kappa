@@ -31665,6 +31665,36 @@ identity, bridge identity, or source-root membership invalidates all affected qu
 The implementation MUST NOT maintain a separate build graph whose target selection, module providers, host bindings,
 bridge selections, or backend profiles can disagree with the `ResolvedBuildPlan`.
 
+Additional query-key inputs:
+
+A query result whose answer can depend on any of the following MUST also include the corresponding
+`ResolvedBuildPlanFinal` projection in its query key:
+
+* `std.build` schema identity;
+* selected feature fixed point;
+* matrix-generated target identity and axis values;
+* interface surface fingerprint;
+* provider alias identity;
+* full reproducibility record under §19.3B;
+* lockfile update mode;
+* lockfile entry identities consulted by the target;
+* generated-output cache entries consulted by the target;
+* materialization-step identities required by the target;
+* macro dependency identities;
+* macro transcript identities;
+* codegen transcript identities;
+* bridge phase identities;
+* deployment layout identity;
+* runtime prerequisite identities; and
+* publish plan projection when the query concerns publish metadata.
+
+A compiler query MUST NOT key only on the authored `BuildConfig` when resolution can select a different dependency
+identity, provider identity, generated output, host binding, bridge realization, backend profile, feature set, or
+deployment prerequisite.
+
+If a query is valid for a `BuildPlanDraft` only, its key MUST identify that it is a planning query and MUST NOT be
+reused as a compilation query key for `ResolvedBuildPlanFinal`.
+
 <!-- build_system.diagnostics -->
 ### 19.11 Build diagnostics
 
