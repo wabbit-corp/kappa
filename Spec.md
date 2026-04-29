@@ -4408,10 +4408,11 @@ data FieldArgument : Type =
     OmittedImplicitFieldArgument
         (field : ShapeField)
 
-data FieldConstraint (tc : Type -> Constraint) : Type =
+data FieldConstraint (tc : Type -> Type) : Type =
     FieldConstraint
         (field : ShapeField)
         (@0 fieldType : Type)
+        (@0 fieldTrait : IsTrait (tc fieldType))
         (origin : SyntaxOrigin)
 ```
 
@@ -4442,15 +4443,18 @@ runtimeRecordFields :
     RecordShape a -> List ShapeField
 
 requiredRuntimeFieldConstraints :
-    forall (tc : Type -> Constraint) (@0 a : Type).
+    forall (tc : Type -> Type) (@0 a : Type).
+    (@_ : forall (x : Type). IsTrait (tc x)) ->
     AdtShape a -> Elab (List (FieldConstraint tc))
 
 requireRuntimeFieldInstances :
-    forall (tc : Type -> Constraint) (@0 a : Type).
+    forall (tc : Type -> Type) (@0 a : Type).
+    (@_ : forall (x : Type). IsTrait (tc x)) ->
     AdtShape a -> Elab Unit
 
 requireRecordFieldInstances :
-    forall (tc : Type -> Constraint) (@0 a : Type).
+    forall (tc : Type -> Type) (@0 a : Type).
+    (@_ : forall (x : Type). IsTrait (tc x)) ->
     RecordShape a -> Elab Unit
 
 fieldArgument :
@@ -4581,10 +4585,14 @@ For example, generated `Show`, JSON encoding, runtime hashing, and ordinary bool
 <!-- modules.deriving_shape.required_field_constraints -->
 #### Required field constraints
 
-`requiredRuntimeFieldConstraints tc shape` returns one `FieldConstraint tc` for every runtime-relevant constructor field in `shape`.
-For each returned field with type `F`, the required constraint is `tc F`.
+`requiredRuntimeFieldConstraints tc shape` returns one `FieldConstraint tc` for every runtime-relevant constructor field
+in `shape`. For each returned field with type `F`, the required trait obligation is `tc F`.
 
-`requireRuntimeFieldInstances tc shape` checks, at the current elaboration site, that ordinary implicit resolution can synthesize coherent evidence for every constraint returned by `requiredRuntimeFieldConstraints tc shape`.
+The argument `tc` must be a unary trait constructor in the sense that `IsTrait (tc x)` is available for every field type
+`x` considered by the operation.
+
+`requireRuntimeFieldInstances tc shape` checks, at the current elaboration site, that ordinary implicit resolution can
+synthesize coherent evidence for every trait obligation returned by `requiredRuntimeFieldConstraints tc shape`.
 If any field constraint is missing, the action fails with diagnostic family `kappa.deriving.shape` and code `KAPPA_DERIVING_SHAPE_MISSING_RUNTIME_FIELD_INSTANCE`.
 The diagnostic MUST identify:
 
@@ -4592,7 +4600,7 @@ The diagnostic MUST identify:
 * the constructor containing the field;
 * the field name or stable rendered field name;
 * the field type;
-* the required constraint; and
+* the required trait obligation; and
 * the macro invocation or splice that requested the check.
 
 `requireRecordFieldInstances tc shape` performs the analogous check for runtime-relevant closed-record fields.
