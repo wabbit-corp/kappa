@@ -4572,7 +4572,7 @@ Record fields in `RecordShape.fields` are listed in the canonical dependency-res
 In particular, `runtimeRelevant` is `False` for:
 
 * fields whose type is compile-time-only in the sense of §5.1.4.1;
-* implicit constraint-evidence fields that elaborate to concrete constraint descriptors;
+* implicit trait evidence fields that elaborate to trait evidence types;
 * erased proof fields whose quantity and type make them runtime-erased; and
 * any other field whose value would not be present in the runtime representation after mandatory erasure.
 
@@ -21295,13 +21295,13 @@ numeric literals appearing as type indices are normalized before comparison.
 ### 14.4 Erasure
 
 Intrinsic compile-time values, meta-phase values, syntax values, elaboration actions, reflection values,
-captured-region annotations, universes, `Type u` terms, quantities, regions, constraint descriptors, rows, labels,
+captured-region annotations, universes, `Type u` terms, quantities, regions, trait-obligation type expressions, rows, labels,
 proof terms used only for compile-time reasoning, and erased indices do not require implicit runtime representation.
 
 The runtime representation of a term is obtained by deleting:
 
 * all computational binders and fields whose quantity is `0`, together with the corresponding erased arguments at
-  applications, except for retained coherent constraint evidence and explicit `Dict` values governed by §5.1.3;
+  applications, except for retained trait evidence values governed by §§5.1.3 and 12.4;
 * all capture-annotation structure introduced by `captures (...)`; and
 * all binders, fields, arguments, and package members whose values are compile-time values or meta-phase values in the
   sense of §§5.1.4, 5.1.4.1, 5.1.4.2, and 5.1.4.3, including `Syntax`, `SyntaxOrigin`, `SyntaxFragment`, `Elab`, `ElabGoal`, `CoreCtx`,
@@ -21348,7 +21348,7 @@ Restrictions:
 * The implementation MUST NOT elide storage merely because a type is proposition-shaped or conventionally used as proof.
 * Ordinary inhabitants of `P : Type` are runtime-relevant when bound at a runtime quantity unless another rule of this
   specification erases them or the type is proven contractible.
-* Explicit `Dict C`, `DynRep a`, `BridgeContract sig`, foreign handles, backend intrinsics, and any value whose runtime
+* Explicit trait evidence values, `DynRep a`, `BridgeContract sig`, foreign handles, backend intrinsics, and any value whose runtime
   representation is explicitly required by a library, ABI, dynamic boundary, bridge boundary, or backend profile MUST
   retain whatever representation that boundary requires.
 * Inhabitant-driven elision MUST NOT change exported ABI layout, FFI layout, bridge contracts, dynamic casts, stable
@@ -22523,7 +22523,7 @@ Normative meaning:
 * `compare` is a debug comparison only. It MUST NOT participate in implicit resolution, equality reflection,
   definitional equality, instance search, or coherence.
 * `std.debug` does not synthesize or bind ordinary trait evidence. In particular, importing or using `std.debug` MUST
-  NOT make a missing implicit goal of type `Show a`, `Eq a`, or any other ordinary trait constraint become solvable.
+  NOT make a missing implicit goal of type `Show a`, `Eq a`, or any other ordinary trait obligation become solvable.
 * Implementations MAY consult already-available `Show a` or `Eq a` evidence when computing `render` or `compare`, but
   only if that evidence was already independently resolvable at the call site.
 * If ordinary elaboration at the call site could not inspect a value's representation because of visibility or opacity,
@@ -22911,7 +22911,7 @@ A module interface artifact MUST record at least:
 * for each exported reified static-object term facet, its elaborated compile-time type;
 * for each exported reified type-object facet, the static-member table identity needed for downstream dotted static
   member selection on rebound values;
-* for each exported reified trait-constructor facet, the trait telescope and resulting `Constraint` classifier;
+* for each exported reified trait-constructor facet, the trait telescope, the resulting `Type` classifier, and the compiler-issued `IsTrait` rule for full applications;
 * for each exported effect-label value or operation selection value, the effect-label identity and effect-interface
   operation identity needed for downstream effect-row checking and operation invocation;
 * any escaped local nominal families referenced by exported signatures, exported compile-time members, or transparent
@@ -24162,7 +24162,7 @@ Payload MUST include:
 * goal classifier;
 * binder or application site requiring the implicit;
 * local implicit candidates considered;
-* instance candidates considered when the goal is a trait constraint;
+* instance candidates considered when the goal is a trait evidence goal;
 * candidates rejected by head mismatch;
 * candidates rejected by failed premises;
 * candidates rejected by visibility, opacity, `unhide`, or `clarify` rules;
@@ -24468,7 +24468,7 @@ Payload MUST include:
 * actual effect row;
 * missing effect labels;
 * extra effect labels;
-* failed `ContainsEff`, `LacksEff`, or `SplitEff` constraints;
+* failed `ContainsEff`, `LacksEff`, or `SplitEff` trait obligations;
 * origin of the demanded row;
 * origin of the effect operation or handler that introduced the actual row.
 
@@ -24626,6 +24626,8 @@ requiredConstraint    : Option rendered constraint
 visibility            : Option String
 ```
 
+For compatibility, `requiredConstraint` denotes a rendered trait obligation or other typechecking constraint.
+
 Required diagnostic meanings:
 
 * `E_DERIVING_SHAPE_NOT_DATA` is emitted when `inspectAdt` is requested for a type whose visible head is not an inspectable data type.
@@ -24634,7 +24636,7 @@ Required diagnostic meanings:
 * `E_DERIVING_SHAPE_UNSUPPORTED_TYPE` is emitted when the target is a language form outside Phase 0 shape support even though it is otherwise well-typed.
 * `E_DERIVING_SHAPE_BAD_CONSTRUCTOR_ARGUMENTS` is emitted when `constructAdt` receives missing, duplicate, ill-typed, or constructor-mismatched field arguments.
 * `E_DERIVING_SHAPE_BAD_RECORD_ARGUMENTS` is emitted when `constructRecord` receives missing, duplicate, ill-typed, or record-mismatched field arguments.
-* `E_DERIVING_SHAPE_MISSING_RUNTIME_FIELD_INSTANCE` is emitted when a required runtime field constraint cannot be solved by ordinary implicit resolution at the splice site.
+* `E_DERIVING_SHAPE_MISSING_RUNTIME_FIELD_INSTANCE` is emitted when a required runtime field trait obligation cannot be solved by ordinary implicit resolution at the splice site.
 * `E_DERIVING_SHAPE_DECLARATION_EFFECT` is emitted if an implementation exposes an experimental derivation-shape helper that attempts to create or publish a declaration through the Phase 0 API.
 
 When a shape diagnostic arises from generated syntax, the primary origin MUST be the macro invocation, splice, or user-written target type expression unless a more specific user-written constructor or field origin is more faithful.
@@ -25686,8 +25688,8 @@ KCore is after:
 
 KCore retains all compile-time structure needed by the source semantics. In particular, KCore may contain:
 
-* intrinsic compile-time types and their inhabitants, including `Universe`, `Quantity`, `Region`, `Constraint`, row
-  types, label types, universe terms, and `Type u`;
+* intrinsic compile-time types and their inhabitants, including `Universe`, `Quantity`, `Region`, row types, label
+  types, universe terms, trait-obligation type expressions, and `Type u`;
 * source/synthetic origin chains and syntax-scope metadata needed to justify generated code, diagnostics, and interface
   identity after macro expansion;
 * explicit binder quantities, explicit regions, and explicit implicit binders;
@@ -26458,7 +26460,7 @@ Rules:
 * A reified trait declaration lowers to a KCore compile-time value preserving:
   * its trait identity;
   * its elaborated telescope; and
-  * its resulting `Constraint` classifier.
+  * its resulting `Type` classifier and compiler-issued `IsTrait` evidence.
 * A reified effect label lowers to a KCore compile-time value of type `EffLabel` preserving its label identity.
 * A selected effect operation `label.op` lowers to a KCore term value preserving:
   * the selected effect label identity;
@@ -27133,7 +27135,7 @@ The following do not appear in KBackendIR except insofar as they are explicitly 
 intrinsic:
 
 * intrinsic compile-time types and their inhabitants, including universes, `Type u`, row terms, label terms, raw
-  `Constraint` descriptors, and anonymous or explicit region variables;
+  trait-obligation type expressions, and anonymous or explicit region variables;
 * nominal-scope tokens introduced by `FreshNomScope`;
 * capture-annotation structure introduced by `captures (...)`;
 * quantity-`0` computational binders or fields;
@@ -27674,16 +27676,19 @@ The following source-level entities are never implicit runtime foreign-call argu
 * erased proof parameters;
 * quantity-`0` parameters;
 * coherent implicit evidence erased by §14.4;
-* raw constraint descriptors;
-* `Constraint`, `RecRow`, `VarRow`, `EffRow`, `Label`, and `EffLabel` values;
+* raw trait-obligation type expressions;
+* `RecRow`, `VarRow`, `EffRow`, `Label`, and `EffLabel` values;
 * `Region` values;
 * `Quantity` values;
 * capture annotations;
 * local nominal-scope tokens;
 * erased indices of dependent data.
 
-A foreign surface may pass runtime type information, runtime representation information, dictionaries, descriptors, or
-capabilities only when the surface explicitly models them as runtime values, such as `DynRep a`, `Dict C`,
+Trait evidence values cross runtime boundaries only through explicit runtime evidence values whose representation and
+provenance are specified.
+
+A foreign surface may pass runtime type information, runtime representation information, descriptors, or capabilities
+only when the surface explicitly models them as runtime values, such as `DynRep a`, an explicit trait evidence value,
 `BridgeContract sig`, `OpaqueHandle`, or another ordinary runtime-capable carrier.
 
 Consequences:
