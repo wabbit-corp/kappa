@@ -26850,13 +26850,23 @@ For a propositional equality type `x = y`:
 The implementation MUST NOT assume uniqueness of arbitrary proof types merely because the type is proposition-shaped.
 This rule applies only to the built-in equality family and only in the cases listed above.
 
-Coherent constraint evidence:
+Trait evidence types:
 
-A concrete coherent constraint evidence type `C : Constraint` follows the proof-irrelevance and coherence rules of
-§5.1.3.
+If `T : Type u` and `IsTrait T` is available, then `T` is a subsingleton: any two inhabitants of `T` are equal by the
+`IsProp T` evidence supplied through §12.4.
 
-Explicit `Dict C` values are ordinary runtime values. They summarize according to their explicit runtime representation,
-specialization, inlining, or dead-code erasure status, and otherwise the required result is `Unknown`.
+This does not by itself prove that `T` is inhabited.
+
+For the required inhabitance-summary fragment:
+
+* if trait evidence resolution can synthesize evidence for `T` in the current context, the required summary may be
+  `Contractible`;
+* if the intrinsic solver for `T` proves the goal unsatisfiable, the required summary may be `Empty`;
+* otherwise the required summary is `Unknown`.
+
+An explicit trait evidence value has the ordinary runtime representation of its trait evidence type, subject to
+specialization, inlining, and dead-code erasure. Its type remains subsingleton even when the representation is not
+statically known.
 
 Dependent record telescopes:
 
@@ -26898,7 +26908,8 @@ Additional restriction:
 
 * An implementation MUST NOT conclude `Contractible` merely because a type is proposition-shaped or is commonly used as
   proof. Ordinary inhabitants of `P : Type` remain observationally distinct unless uniqueness is established within the
-  supported fragment. Only coherent `Constraint` evidence follows the built-in proof-irrelevance rule of §5.1.3.
+  supported fragment. Only trait evidence types with compiler-issued `IsTrait` evidence follow the built-in
+  proof-irrelevance rule of §§5.1.3 and 12.4.
 
 Source-acceptance stability:
 
