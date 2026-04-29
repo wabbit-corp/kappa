@@ -5073,15 +5073,22 @@ Trait declarations:
 * If a trait declaration has elaborated telescope
 
   ```text
-  (x1 : A1) -> ... -> (xn : An) -> Constraint
+  (x1 : A1) -> ... -> (xn : An) -> Type u
   ```
 
   then its reified term facet has that same compile-time function type.
 * Thus a declaration `trait Eq (a : Type) = ...` introduces a reified term facet:
 
   ```kappa
-  Eq : Type -> Constraint
+  Eq : Type -> Type
   ```
+* For every well-formed full application `Tr args`, the compiler provides intrinsic evidence:
+
+  ```kappa
+  IsTrait (Tr args)
+  ```
+
+  and therefore, through the `IsTrait` supertrait, `IsProp (Tr args)`.
 
 Effect-label declarations:
 
@@ -5119,7 +5126,7 @@ let PersonType = type Person
 
 -- Trait constructors as values
 let C = Eq
-let d : Dict (C Int) = ...
+let d : C Int = summon
 
 -- Effect labels and operations as values
 scoped effect state : State Int
