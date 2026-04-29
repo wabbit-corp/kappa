@@ -27173,6 +27173,43 @@ Portable ABI functions:
 * Erasure of compile-time information does not by itself make the remaining runtime representation portable. The
   remaining ABI-visible type must still be admitted by this subsection.
 
+Foreign-call arity after erasure:
+
+Raw foreign-call lowering and portable ABI adapter lowering MUST erase all compile-time-only parameters before
+computing the host-call argument list.
+
+The following source-level entities are never implicit runtime foreign-call arguments:
+
+* type parameters;
+* universe parameters;
+* kind/classifier parameters;
+* erased proof parameters;
+* quantity-`0` parameters;
+* coherent implicit evidence erased by §14.4;
+* raw constraint descriptors;
+* `Constraint`, `RecRow`, `VarRow`, `EffRow`, `Label`, and `EffLabel` values;
+* `Region` values;
+* `Quantity` values;
+* capture annotations;
+* local nominal-scope tokens;
+* erased indices of dependent data.
+
+A foreign surface may pass runtime type information, runtime representation information, dictionaries, descriptors, or
+capabilities only when the surface explicitly models them as runtime values, such as `DynRep a`, `Dict C`,
+`BridgeContract sig`, `OpaqueHandle`, or another ordinary runtime-capable carrier.
+
+Consequences:
+
+* The host arity of a raw binding is determined after mandatory erasure.
+* Adding an erased type parameter to a Kappa wrapper MUST NOT shift the host-call arity.
+* An adapter MUST NOT fabricate a runtime argument merely because the source type is dependent or polymorphic.
+* A trusted binding summary that requires a runtime type token must expose that token as an explicit parameter or
+  captured runtime value.
+
+If lowering would pass compile-time-only information as a hidden runtime foreign-call argument, the binding is
+ill-formed and the diagnostic uses code `E_FFI_PORTABLE_ABI_ERASED_RUNTIME_PARAMETER` in family
+`kappa.ffi.portable-abi-exclusion`.
+
 PortableAbi type grammar:
 
 A type is PortableAbi iff it is one of the following:
