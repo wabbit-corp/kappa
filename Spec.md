@@ -29286,6 +29286,75 @@ A script-mode build MAY admit unpinned, transient, or host-dependent facts, but 
 Compiler frontend analysis, interface generation, KCore construction, KBackendIR construction, and target lowering MUST
 use the `ResolvedBuildPlan`, not the raw `BuildConfig`, as the effective build configuration.
 
+<!-- build_system.reproducibility_status -->
+### 19.3A Reproducibility status
+
+A `ResolvedBuildPlan` MUST record a reproducibility status for the whole build request and for each selected resolved
+target.
+
+Portable reproducibility statuses are:
+
+```text
+FullyReproducible
+ReproducibleWithRecordedTranscript
+ReproducibleCompilationButSystemRuntimePrerequisite
+NonSelfContainedDeployment
+Unreproducible
+```
+
+Meanings:
+
+* `FullyReproducible` means that all build-affecting inputs needed to reproduce compilation, generated interfaces,
+  generated code, artifact contents, and deployment layout are pinned by content identity, tool identity, lockfile
+  entry, or equivalent immutable identity.
+
+* `ReproducibleWithRecordedTranscript` means the build depends on observations that are reproducible only by replaying or
+  consulting a recorded transcript, generated-output cache record, or equivalent artifact.
+
+* `ReproducibleCompilationButSystemRuntimePrerequisite` means compilation and artifact identity are reproducible, but the
+  produced deployment intentionally depends at runtime on system-provided libraries, SDKs, drivers, loaders, frameworks,
+  runtimes, or services.
+
+* `NonSelfContainedDeployment` means the produced deployment intentionally omits at least one runtime dependency and
+  records it as a runtime prerequisite.
+
+* `Unreproducible` means at least one build-affecting input is unpinned, moving, unavailable for transcript replay, or
+  intentionally ambient.
+
+A target whose status is `Unreproducible` MUST record at least one `UnreproducibilityReason`.
+
+Portable unreproducibility reasons include:
+
+```text
+UnpinnedUrl
+MovingRegistryVersion
+MovingGitRef
+UnpinnedPathDependency
+UnpinnedSystemLibrary
+UnpinnedSdk
+UnpinnedHeader
+UnpinnedManagedAssembly
+UnpinnedGenerator
+UnpinnedGeneratedOutput
+UnpinnedTool
+UnpinnedMacroDependency
+HostEnvironmentInput
+ScriptModeExternalInput
+RuntimeLoaderSearchPath
+SystemDriverOrDevice
+ImplementationDefinedAmbientFact
+```
+
+A package-mode build MUST reject `Unreproducible` targets unless the build request explicitly permits them.
+
+A publish target MUST reject `Unreproducible` artifacts.
+
+A publish target MAY accept `ReproducibleCompilationButSystemRuntimePrerequisite` or `NonSelfContainedDeployment` only
+when the publish metadata records the corresponding runtime prerequisites.
+
+`ReproducibilityStatus` is part of the query key for any query whose result can depend on a fact that differs between
+these statuses.
+
 <!-- build_system.fragments -->
 ### 19.4 Fragment selection
 
