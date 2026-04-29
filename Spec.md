@@ -26807,6 +26807,52 @@ A change that does not alter the erased calling convention, selected runtime rep
 `BackendFingerprint(profile)` inputs SHOULD preserve previously computed KBackendIR and target-lowering results where
 possible.
 
+<!-- compiler.kbackendir.resumption_optimization_stability -->
+#### 17.4.6A Resumption and handler optimization stability
+
+Optimization, specialization, inlining, closure conversion, CPS conversion, stack copying, defunctionalization,
+join-point lowering, tail-resumptive lowering, and target-profile lowering MUST preserve the observable handler and
+resumption semantics of Chapters 8 and 14.
+
+In particular, lowering MUST preserve:
+
+* exact effect-label matching;
+* nearest dynamically enclosing matching handler selection;
+* shallow-handler non-reinstallation;
+* deep-handler reinstallation;
+* one-shot versus multi-shot resumption quantities;
+* fresh logical re-entry for each multi-shot resumption use;
+* independent copied exit-action obligations for each resumed multi-shot clone;
+* abandonment unwinding for unused resumptions;
+* store interaction rules of §14.8.7;
+* interruption-mask state captured at the operation site;
+* capture, quantity, borrow, and region restrictions on resumptions.
+
+A multi-shot resumption MUST NOT be optimized into a one-shot destructive continuation.
+
+Two uses of the same multi-shot resumption MUST NOT share a single already-advanced continuation state.
+
+A finalizer, release action, `defer`, `using` obligation, or cleanup frame inside a captured multi-shot segment MUST NOT
+be hoisted, merged, eliminated, or shared across logical resumption clones unless the transformation is observationally
+equivalent for all possible success, typed failure, interruption, defect, and abandonment outcomes.
+
+Tail-resumptive optimization:
+
+A tail-resumptive realization permitted by §14.8.6A may avoid allocating a general resumption object only when the
+handler clause satisfies the tail-resumptive conditions and the optimized transfer is observationally equivalent to the
+ordinary resumption semantics.
+
+Such an optimization MUST NOT be applied to a clause merely because the backend can represent the local control flow as
+a jump. The source-level resumption quantity and captured cleanup obligations remain authoritative.
+
+Capability failure:
+
+If the selected backend profile cannot realize reachable multi-shot behavior while preserving these rules, compilation
+MUST fail with `E_FEATURE_BACKEND_CAPABILITY_MISSING` under family `kappa.feature.gated`.
+
+The implementation MUST NOT silently weaken multi-shot semantics, duplicate linear resources, skip captured cleanup, or
+change deep-handler reinstallation behavior.
+
 <!-- compiler.kbackendir.runtime_calling_convention -->
 #### 17.4.7 Runtime calling convention
 
