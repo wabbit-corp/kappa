@@ -27935,12 +27935,119 @@ A config-safe function MUST NOT observe or branch on value provenance.
 <!-- config_mode.evaluator -->
 ### 18.4 Config evaluator
 
-This section is reserved for config-mode evaluation semantics.
+The config evaluator evaluates config-mode source to config values.
+
+Evaluation is deterministic and total.
+
+For fixed config source text, config profile, config-safe module interfaces, toolchain version, and explicit invocation
+inputs, config evaluation MUST produce the same value, diagnostics, and value provenance.
+
+The config evaluator:
+
+* performs ordinary Kappa parsing for the admitted config syntax;
+* performs ordinary name resolution restricted to config bindings and config-safe imports;
+* performs ordinary typechecking restricted to config-admissible types;
+* performs implicit insertion only for config-safe implicit evidence;
+* performs deterministic normalization of config-safe terms;
+* records value provenance for every produced config value.
+
+The config evaluator MUST NOT:
+
+* evaluate ordinary project modules;
+* execute macros;
+* execute `Elab`;
+* execute `IO`;
+* inspect the filesystem except for the explicit config files being evaluated;
+* inspect the network;
+* inspect environment variables;
+* run subprocesses;
+* consult host runtime reflection;
+* consult package dependencies declared by the config currently being evaluated;
+* consult mutable global state.
+
+External discovery, such as dependency resolution, `pkg-config`, header scanning, registry lookup, git lookup, native
+library lookup, JVM classpath inspection, or CLR assembly inspection, is not config evaluation.
+
+Such discovery belongs to later tool-specific resolution phases.
+
+Any external fact discovered by those phases that affects a build or tool result MUST be represented explicitly in that
+tool's resolved plan, lockfile, transcript, or equivalent artifact.
 
 <!-- config_mode.provenance -->
 ### 18.5 Value provenance
 
-This section is reserved for config-value provenance rules.
+Every config value produced by config evaluation has associated value provenance.
+
+Value provenance is metadata.
+
+It does not affect:
+
+* typing;
+* definitional equality;
+* ordinary source-level equality;
+* hashing;
+* interface identity;
+* backend output;
+* build artifact identity,
+
+except where a tool explicitly chooses to include config source identity or config provenance metadata in a diagnostic,
+lockfile-update operation, refactoring operation, or editor operation.
+
+A provenance record is one of:
+
+```text
+UnknownProvenance
+SourceProvenance
+DerivedProvenance
+CompositeProvenance
+SequenceProvenance
+PartialProvenance
+```
+
+Meanings:
+
+* `UnknownProvenance` means the implementation cannot identify a useful source origin.
+* `SourceProvenance` identifies a source or synthetic origin that directly produced the value.
+* `DerivedProvenance` identifies an operation origin together with the provenances of input values.
+* `CompositeProvenance` identifies a record, tuple, constructor, option, result, or other structured value together
+  with per-component provenance.
+* `SequenceProvenance` identifies a sequence-like value together with per-element or per-slice provenance.
+* `PartialProvenance` combines known provenance for some components with unknown provenance for others.
+
+A source provenance origin MUST use the same source/synthetic origin model as compiler diagnostics.
+
+For every config value, the implementation SHOULD preserve:
+
+* whole-value provenance;
+* per-field provenance for records;
+* per-element provenance for lists, arrays, tuples, options, and results;
+* per-constructor-argument provenance for data values;
+* per-slice provenance for strings and bytes;
+* the source origin of the binding name that introduced the value, when applicable;
+* the source origin of the expression that computed the value;
+* the source origin of variable references that reused another value;
+* the provenance of the referenced value.
+
+A value produced by a config `let` binding has at least two relevant origins:
+
+* the binding-origin, identifying the bound name; and
+* the value-origin, identifying the expression that produced the value.
+
+A later reference to that binding creates a provenance edge from the reference origin to the referenced value provenance.
+
+Consequently, tools can distinguish:
+
+* where a value was used;
+* where it was named;
+* where it was computed;
+* which earlier values contributed to it.
+
+When exact provenance would be too expensive, unavailable, or misleading, the implementation may use
+`PartialProvenance` or `UnknownProvenance`.
+
+An implementation MUST NOT fabricate precise provenance.
+
+Approximate provenance is permitted only when marked as approximate.
 
 <!-- config_mode.examples -->
 ### 18.6 Config examples
