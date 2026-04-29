@@ -6208,6 +6208,108 @@ constraint solving. Occurrences of `Type u` therefore share exactly the same use
 introducing fresh metavariables. If the constraints are unsatisfiable, compilation fails. Unconstrained universe
 metavariables may be generalized at top-level (implementation-defined).
 
+<!-- types.universes.defaulting_non_user_written_inference_variables -->
+#### 5.1.2A Defaulting of non-user-written inference variables
+
+This subsection governs inference variables introduced by elaboration for universes, kinds, rows, regions, quantities,
+capture sets, runtime representations, backend representation classes, and similar non-user-written structure.
+
+Defaulting is never an implementation accident. A metavariable may be defaulted only when this specification explicitly
+permits defaulting for its class and phase.
+
+General rule:
+
+* If an inference variable remains unsolved at the end of the checking unit that owns it, elaboration must either:
+  * generalize it according to an explicit generalization rule;
+  * default it according to an explicit defaulting rule in this specification; or
+  * reject the program with diagnostic family `kappa.type.unsolved-metavariable`.
+
+The implementation MUST NOT silently default an unresolved variable merely because one possible value would make later
+checking convenient.
+
+Universe variables:
+
+* A universe metavariable introduced by bare `Type` may be solved by ordinary universe constraints.
+* At a generalization boundary, an unconstrained or underconstrained universe metavariable that appears in the
+  generalized type is generalized.
+* A universe metavariable that does not appear in any exported, stored, or user-observable type MAY be instantiated to
+  the least universe level satisfying its constraints.
+* This least-level instantiation is permitted only when it is order-independent for the fixed constraint set.
+* Failure to determine such a least level is an unsolved-metavariable error, not implementation-defined behavior.
+
+Kind and classifier variables:
+
+* A metavariable whose classifier would determine whether a binder ranges over `Type u`, `Constraint`, `RecRow`,
+  `VarRow`, `EffRow`, `Label`, `EffLabel`, `Region`, `Quantity`, or another intrinsic compile-time classifier MUST NOT
+  be defaulted.
+* Such a metavariable must be solved by context, generalized by an explicit rule, or rejected.
+
+Row variables:
+
+* Record-row, variant-row, and effect-row variables are not defaulted to empty rows unless a rule for the surrounding
+  construct explicitly demands the empty row.
+* In particular, failure to solve whether an effect row is empty is not silently defaulted to `<[ ]>`.
+
+Region variables:
+
+* Anonymous rigid regions introduced by borrow checking are never defaulted, generalized, or written into ordinary
+  module interfaces.
+* If a value would require such a region to escape, the program is rejected by the borrow-escape rules.
+* Explicit region variables may be generalized only when introduced by an explicit binder in the generalized type.
+
+Quantity variables:
+
+* Quantity metavariables are not defaulted except by a rule that explicitly states a default quantity for a source
+  binder or field.
+* The ordinary omitted-quantity default `ω` applies only where the source grammar permits an omitted quantity.
+* It does not license defaulting of arbitrary internal quantity metavariables created by type inference.
+
+Capture variables:
+
+* When a capture annotation is omitted, elaboration infers the minimal capture set required by the value.
+* That inferred set is not a defaulting heuristic; it is the structural capture inference rule of §5.1.6.1.
+* If capture inference cannot determine a sound minimal set, the program is rejected.
+
+Runtime-representation and backend-representation variables:
+
+* Runtime-representation choices, calling-convention classes, layout classes, backend-specialization keys, and ABI
+  representation variables are not source-level type inference variables.
+* They may not affect source acceptance except where this specification explicitly makes backend capability or ABI
+  layout part of checking.
+* A backend MAY choose among several observationally equivalent runtime representations after source elaboration, but it
+  MUST NOT use that choice to solve source-level type, kind, equality, instance, or ambiguity obligations.
+
+Numeric and string literal defaulting:
+
+* Numeric and string literal defaulting is exactly the rule of §4.1.5.
+* That defaulting is local to unsuffixed literal elaboration.
+* It does not default arbitrary overloaded aliases, associated members, kind variables, representation variables, or
+  unresolved trait goals unless a later specification explicitly extends literal defaulting.
+
+Order independence:
+
+Defaulting and generalization decisions MUST be independent of:
+
+* declaration-processing order within one semantic SCC;
+* import loading order;
+* hash-map iteration order;
+* parallel worker scheduling;
+* cache reuse;
+* interactive reload history, when semantic inputs are unchanged.
+
+Diagnostics:
+
+When an unresolved variable is rejected, the diagnostic MUST identify:
+
+* metavariable kind;
+* source origin that introduced it;
+* constraints mentioning it;
+* phase in which solving stopped;
+* whether generalization was attempted;
+* whether defaulting was permitted for that metavariable class;
+* if defaulting was not permitted, the rule forbidding it;
+* if defaulting was attempted, why it failed.
+
 <!-- types.universes.constraints_dictionaries -->
 #### 5.1.3 Constraints and dictionaries
 
