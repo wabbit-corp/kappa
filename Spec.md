@@ -30124,13 +30124,81 @@ A dependency may contribute multiple provider families, but each contribution is
 `ResolvedBuildPlan`.
 
 <!-- build_system.dependencies.maven -->
-### 19.6A Maven dependency resolution
+### 19.6A JVM ecosystem dependencies and packaging
 
-This subsection is reserved for the standardized Maven-resolution rules referenced by §19.6.
+A Maven dependency source describes JVM ecosystem artifacts.
 
-Until those rules are specified in full, a conforming implementation that exposes Maven dependencies in portable build
-manifests MUST still record the exact artifact coordinates, artifact digests, metadata digests, and transitive graph
-identities required by §19.6.
+A Maven dependency has at least:
+
+* group id;
+* artifact id;
+* version, version range, or pinned version;
+* optional classifier;
+* packaging;
+* repository list;
+* scope;
+* exclusions;
+* optional module-path or classpath placement policy.
+
+Portable Maven scopes are:
+
+```text
+compile
+runtime
+test
+provided
+annotation-processor
+```
+
+Build-plan resolution resolves Maven dependencies to a JVM dependency graph.
+
+A resolved Maven dependency graph records at least:
+
+* exact coordinates for every selected artifact;
+* artifact digest for every selected artifact;
+* POM or module metadata identity and digest;
+* repository identity or mirror identity for every resolved artifact;
+* selected classifiers and packaging;
+* transitive dependency graph;
+* exclusions applied;
+* conflict-resolution decisions;
+* classpath placement;
+* module-path placement;
+* generated `host.jvm` binding provider identities, when generated;
+* native attached artifacts, when selected;
+* deployment contribution.
+
+In package mode, a JVM target depending on Maven artifacts MUST use the resolved Maven graph recorded in the lockfile or
+equivalent build artifact.
+
+A JVM artifact target may select one JVM deployment mode:
+
+```text
+thin-jar
+fat-jar
+modular-jar
+runtime-image
+```
+
+`thin-jar` records external runtime classpath or module-path prerequisites.
+
+`fat-jar` records the exact included artifact set and merge policy.
+
+`modular-jar` records module descriptors and module-path requirements.
+
+`runtime-image` records the runtime image tool identity, selected modules, launcher metadata, and produced runtime image
+identity.
+
+Generated host binding modules under `host.jvm...` are derived from classfiles, JARs, module path entries, or
+equivalent JVM metadata as specified by §2.3.3 and §17.7.
+
+The resolved plan MUST distinguish:
+
+* ordinary Kappa package dependencies;
+* Maven/JAR ecosystem dependencies;
+* generated `host.jvm` binding providers;
+* runtime classpath/module-path deployment prerequisites;
+* native libraries attached to JVM artifacts.
 
 <!-- build_system.dependencies.nuget -->
 ### 19.6B NuGet dependency resolution
