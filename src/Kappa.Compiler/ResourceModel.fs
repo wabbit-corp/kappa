@@ -129,6 +129,14 @@ module ResourceModel =
           Body: SurfaceExpression
           CapturedBindings: ResourceBinding list }
 
+    and PendingMultishotOperation =
+        { EffectVisibleName: string
+          EffectInterfaceId: string
+          EffectLabelId: string
+          OperationId: string
+          OperationName: string
+          InvocationExpression: SurfaceExpression }
+
     and ResourceBinding =
         { Id: string
           BindingKind: ResourceBindingKind
@@ -146,6 +154,7 @@ module ResourceModel =
           CheckLinearDrop: bool
           ClosureFactId: string option
           LocalLambda: LocalLambda option
+          PendingMultishotOperations: PendingMultishotOperation list
           Origin: SourceLocation option
           FirstConsumeOrigin: SourceLocation option }
 

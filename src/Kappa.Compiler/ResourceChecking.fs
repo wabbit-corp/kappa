@@ -100,7 +100,7 @@ module ResourceChecking =
             true
         | _ -> false
 
-    let private semanticEffectDeclaration declaration =
+    let private semanticEffectDeclaration (declaration: EffectDeclaration) =
         if declaration.EffectInterfaceId.IsSome && declaration.EffectLabelId.IsSome && (declaration.Operations |> List.forall (fun operation -> operation.OperationId.IsSome)) then
             EffectSemantics.toSemantic declaration
         else
@@ -888,6 +888,280 @@ module ResourceChecking =
     let private effectResolutionCallbacks tryResolveHandledEffectDeclaration : EffectSemantics.EffectResolutionCallbacks =
         { TryResolveHandledEffectDeclaration = tryResolveHandledEffectDeclaration
           TryResolveEffectOperationNamePath = tryResolveScopedEffectOperationNamePath }
+
+    let private pendingMultishotOperation (resolved: EffectSemantics.ResolvedEffectOperation) =
+        { PendingMultishotOperation.EffectVisibleName = resolved.Declaration.VisibleName
+          EffectInterfaceId = resolved.Declaration.InterfaceId
+          EffectLabelId = resolved.Declaration.LabelId
+          OperationId = resolved.Operation.OperationId
+          OperationName = resolved.Operation.Name
+          InvocationExpression = resolved.BaseExpression }
+
+    let private bindPendingMultishotOperations names pendingOperations (state: CheckState) =
+        if List.isEmpty pendingOperations then
+            state
+        else
+            names
+            |> List.fold (fun current name ->
+                match tryFindBindingId name current with
+                | Some bindingId ->
+                    updateBinding bindingId (fun binding ->
+                        { binding with
+                            PendingMultishotOperations =
+                                binding.PendingMultishotOperations @ pendingOperations
+                                |> List.distinct }) current
+                | None ->
+                    current)
+                state
+
+    let rec private wholeValueBindingNames pattern =
+        match pattern with
+        | NamePattern name -> [ name ]
+        | AsPattern(name, inner) -> name :: wholeValueBindingNames inner
+        | TypedPattern(inner, _) -> wholeValueBindingNames inner
+        | _ -> []
+
+    let private collectPendingMultishotOperations
+        (resolvedEffects: EffectSemantics.EffectResolutionCallbacks)
+        (state: CheckState)
+        expression
+        =
+        let rec collect localPending expression =
+            let recurse = collect localPending
+
+            let pendingFromName name =
+                localPending
+                |> Map.tryFind name
+                |> Option.orElseWith (fun () ->
+                    tryFindBinding name state
+                    |> Option.map (fun binding -> binding.PendingMultishotOperations))
+                |> Option.defaultValue []
+
+            let removeShadowed names pending =
+                names
+                |> List.fold (fun current name -> Map.remove name current) pending
+
+            let pendingHere =
+                match expression with
+                | Apply(_, _) ->
+                    EffectSemantics.tryResolveOperationExpression resolvedEffects expression
+                    |> Option.filter (fun resolved -> isMultiShotResumptionQuantity resolved.Operation.ResumptionQuantity)
+                    |> Option.map pendingMultishotOperation
+                    |> Option.toList
+                | Name [ name ] ->
+                    pendingFromName name
+                | _ ->
+                    []
+
+            let pendingChildren =
+                match expression with
+                | Handle(_, label, body, returnClause, operationClauses) ->
+                    let handledLabelId =
+                        EffectSemantics.tryResolveHandledLabel resolvedEffects label
+                        |> Option.map (fun resolved -> resolved.Declaration.LabelId)
+
+                    let filterHandled pending =
+                        match handledLabelId with
+                        | Some labelId ->
+                            pending |> List.filter (fun pending -> not (String.Equals(pending.EffectLabelId, labelId, StringComparison.Ordinal)))
+                        | None ->
+                            pending
+
+                    recurse label
+                    @ filterHandled (recurse body)
+                    @ filterHandled (recurse returnClause.Body)
+                    @ (operationClauses |> List.collect (fun clause -> filterHandled (recurse clause.Body)))
+                | LocalLet(binding, value, body) ->
+                    let pendingValue = recurse value
+                    let bodyPending =
+                        match binding.Pattern with
+                        | NamePattern name ->
+                            let nextPending =
+                                localPending
+                                |> removeShadowed [ name ]
+                                |> Map.add name pendingValue
+
+                            collect nextPending body
+                        | AsPattern(name, _) ->
+                            let nextPending =
+                                localPending
+                                |> removeShadowed [ name ]
+                                |> Map.add name pendingValue
+
+                            collect nextPending body
+                        | TypedPattern(inner, _) ->
+                            match inner with
+                            | NamePattern name
+                            | AsPattern(name, _) ->
+                                let nextPending =
+                                    localPending
+                                    |> removeShadowed [ name ]
+                                    |> Map.add name pendingValue
+
+                                collect nextPending body
+                            | _ ->
+                                collect localPending body
+                        | _ ->
+                            collect localPending body
+
+                    pendingValue @ bodyPending
+                | LocalSignature(declaration, body) ->
+                    collect (removeShadowed [ declaration.Name ] localPending) body
+                | LocalTypeAlias(_, body) ->
+                    recurse body
+                | LocalScopedEffect(declaration, body) ->
+                    collect (removeShadowed [ declaration.Name ] localPending) body
+                | Lambda(parameters, body) ->
+                    let nextPending =
+                        parameters
+                        |> List.map (fun parameter -> parameter.Name)
+                        |> fun names -> removeShadowed names localPending
+
+                    collect nextPending body
+                | IfThenElse(condition, whenTrue, whenFalse) ->
+                    recurse condition @ recurse whenTrue @ recurse whenFalse
+                | Match(scrutinee, cases) ->
+                    let casePending (caseClause: SurfaceMatchCase) =
+                        let nextPending =
+                            collectPatternNames caseClause.Pattern
+                            |> fun names -> removeShadowed names localPending
+
+                        (caseClause.Guard |> Option.map (collect nextPending) |> Option.defaultValue [])
+                        @ collect nextPending caseClause.Body
+
+                    recurse scrutinee @ (cases |> List.collect casePending)
+                | RecordLiteral fields ->
+                    fields |> List.collect (fun field -> recurse field.Value)
+                | Seal(value, _) ->
+                    recurse value
+                | RecordUpdate(receiver, fields) ->
+                    recurse receiver @ (fields |> List.collect (fun field -> recurse field.Value))
+                | MemberAccess(receiver, _, arguments) ->
+                    recurse receiver @ (arguments |> List.collect recurse)
+                | SafeNavigation(receiver, navigation) ->
+                    recurse receiver @ (navigation.Arguments |> List.collect recurse)
+                | TagTest(receiver, _) ->
+                    recurse receiver
+                | Do statements ->
+                    let rec collectStatements pending statements =
+                        match statements with
+                        | [] -> []
+                        | statement :: rest ->
+                            match statement with
+                            | DoLet(binding, value) ->
+                                let pendingValue = collect pending value
+                                let nextPending =
+                                    match binding.Pattern with
+                                    | NamePattern name ->
+                                        pending |> removeShadowed [ name ] |> Map.add name pendingValue
+                                    | AsPattern(name, _) ->
+                                        pending |> removeShadowed [ name ] |> Map.add name pendingValue
+                                    | TypedPattern(inner, _) ->
+                                        match inner with
+                                        | NamePattern name
+                                        | AsPattern(name, _) ->
+                                            pending |> removeShadowed [ name ] |> Map.add name pendingValue
+                                        | _ ->
+                                            pending
+                                    | _ ->
+                                        pending
+
+                                pendingValue @ collectStatements nextPending rest
+                            | DoLetQuestion(binding, value, failure) ->
+                                let pendingValue = collect pending value
+                                let nextPending =
+                                    match binding.Pattern with
+                                    | NamePattern name ->
+                                        pending |> removeShadowed [ name ] |> Map.add name pendingValue
+                                    | AsPattern(name, _) ->
+                                        pending |> removeShadowed [ name ] |> Map.add name pendingValue
+                                    | TypedPattern(inner, _) ->
+                                        match inner with
+                                        | NamePattern name
+                                        | AsPattern(name, _) ->
+                                            pending |> removeShadowed [ name ] |> Map.add name pendingValue
+                                        | _ ->
+                                            pending
+                                    | _ ->
+                                        pending
+
+                                let failurePending =
+                                    failure
+                                    |> Option.map (fun failureClause ->
+                                        let failurePendingEnv =
+                                            collectPatternNames failureClause.ResiduePattern.Pattern
+                                            |> fun names -> removeShadowed names pending
+
+                                        collectStatements failurePendingEnv failureClause.Body)
+                                    |> Option.defaultValue []
+
+                                pendingValue @ failurePending @ collectStatements nextPending rest
+                            | DoBind(binding, value) ->
+                                let pendingValue = collect pending value
+                                let nextPending =
+                                    collectPatternNames binding.Pattern
+                                    |> fun names -> removeShadowed names pending
+
+                                pendingValue @ collectStatements nextPending rest
+                            | DoUsing(binding, value) ->
+                                let pendingValue = collect pending value
+                                let nextPending =
+                                    collectPatternNames binding.Pattern
+                                    |> fun names -> removeShadowed names pending
+
+                                pendingValue @ collectStatements nextPending rest
+                            | DoVar(name, value) ->
+                                collect pending value @ collectStatements (pending |> removeShadowed [ name ]) rest
+                            | DoAssign(_, value) ->
+                                collect pending value @ collectStatements pending rest
+                            | DoDefer value
+                            | DoExpression value
+                            | DoReturn value ->
+                                collect pending value @ collectStatements pending rest
+                            | DoIf(condition, whenTrue, whenFalse) ->
+                                collect pending condition
+                                @ collectStatements pending whenTrue
+                                @ collectStatements pending whenFalse
+                                @ collectStatements pending rest
+                            | DoWhile(condition, body) ->
+                                collect pending condition
+                                @ collectStatements pending body
+                                @ collectStatements pending rest
+
+                    collectStatements localPending statements
+                | MonadicSplice inner
+                | ExplicitImplicitArgument inner
+                | InoutArgument inner
+                | Unary(_, inner)
+                | SyntaxQuote inner
+                | SyntaxSplice inner
+                | TopLevelSyntaxSplice inner
+                | CodeQuote inner
+                | CodeSplice inner ->
+                    recurse inner
+                | Apply(callee, arguments) ->
+                    recurse callee @ (arguments |> List.collect recurse)
+                | NamedApplicationBlock fields ->
+                    fields |> List.collect (fun field -> recurse field.Value)
+                | Binary(left, _, right)
+                | Elvis(left, right) ->
+                    recurse left @ recurse right
+                | Comprehension comprehension ->
+                    recurse comprehension.Lowered
+                | PrefixedString(_, parts) ->
+                    parts
+                    |> List.collect (function
+                        | StringText _ -> []
+                        | StringInterpolation(inner, _) -> recurse inner)
+                | Literal _
+                | NumericLiteral _
+                | KindQualifiedName _
+                | Name _ ->
+                    []
+
+            pendingHere @ pendingChildren
+
+        collect Map.empty expression |> List.distinct
 
     let private tryFindMultiShotScopedOperation expression =
         let tryResolveHandledEffectDeclaration expression =
@@ -2577,6 +2851,7 @@ module ResourceChecking =
               CheckLinearDrop = checkDrop
               ClosureFactId = closureFactId
               LocalLambda = localLambda
+              PendingMultishotOperations = []
               Origin = origin
               FirstConsumeOrigin = None }
 
@@ -3881,6 +4156,9 @@ module ResourceChecking =
             CapturedBindingOrigins =
                 leftBinding.CapturedBindingOrigins @ rightBinding.CapturedBindingOrigins
                 |> List.distinctBy (fun location -> location.FilePath, location.Span.Start, location.Span.Length)
+            PendingMultishotOperations =
+                leftBinding.PendingMultishotOperations @ rightBinding.PendingMultishotOperations
+                |> List.distinct
             UseMinimum = min leftBinding.UseMinimum rightBinding.UseMinimum
             UseMaximum = max leftBinding.UseMaximum rightBinding.UseMaximum
             FirstConsumeOrigin = leftBinding.FirstConsumeOrigin |> Option.orElse rightBinding.FirstConsumeOrigin }
@@ -4538,7 +4816,7 @@ module ResourceChecking =
                 withScope "lambda_call" (fun scopedState ->
                     let scopedState =
                         lambdaValue.CapturedBindings
-                        |> List.fold (fun current binding -> addBindingSnapshot binding current) scopedState
+                        |> List.fold (fun current (binding: ResourceBinding) -> addBindingSnapshot binding current) scopedState
 
                     let scopedState =
                         (scopedState, List.zip lambdaValue.Parameters arguments)
@@ -5495,6 +5773,9 @@ module ResourceChecking =
                 EffectSemantics.collectPatternOperationAliases resolvedEffects binding.Pattern value
                 |> fun aliases -> EffectSemantics.rewriteOperationAliasUses resolvedEffects aliases bodyForChecking
 
+            let pendingMultishotOperations =
+                collectPendingMultishotOperations resolvedEffects state value
+
             let projectionDescriptorAliasUse =
                 projectionDescriptorAlias
                 |> Option.map (fun (aliasName, _) -> aliasName, countProjectionDescriptorAliasUses aliasName body)
@@ -5648,6 +5929,7 @@ module ResourceChecking =
                     projectionDescriptorAliasUse
                     |> Option.map (fun (aliasName, useCount) -> noteProjectionDescriptorAliasUses document aliasName useCount current)
                     |> Option.defaultValue current
+                |> bindPendingMultishotOperations (wholeValueBindingNames binding.Pattern) pendingMultishotOperations
                 |> noteValueDemandingNameUse document bodyForChecking
                 |> fun current -> checkExpression projectionSummaries document signatures nextLocalTypes current bodyForChecking
                 |> checkResultEscapeAtBoundary allowedRegions document bodyForChecking
@@ -6119,11 +6401,11 @@ module ResourceChecking =
                 match calleeBinding, localLambda with
                 | None, Some lambdaValue ->
                     lambdaValue.CapturedBindings
-                    |> List.fold (fun current binding ->
+                    |> List.fold (fun current (binding: ResourceBinding) ->
                     addEvent OwnershipUseKind.Capture (findUseLocation document binding.Name 1) binding current) state
                     |> fun current ->
                         lambdaValue.CapturedBindings
-                        |> List.fold (fun next binding ->
+                        |> List.fold (fun next (binding: ResourceBinding) ->
                             transferCapturedBindingIntoClosure document binding next) current
                 | _ ->
                     state
@@ -6640,6 +6922,8 @@ module ResourceChecking =
                         tryMovedLinearBinding expression current
                     else
                         None
+                let pendingMultishotOperations =
+                    collectPendingMultishotOperations resolvedEffects current expression
 
                 let captured =
                     match expression, delayedBody with
@@ -6786,6 +7070,9 @@ module ResourceChecking =
                     else
                         current
 
+                let current =
+                    bindPendingMultishotOperations (wholeValueBindingNames binding.Pattern) pendingMultishotOperations current
+
                 let nextLocalTypes =
                     tryInferConservativeExpressionType signatures localTypes expression
                     |> Option.orElseWith (fun () -> Some(inferConservativeFallbackBindingType expression))
@@ -6929,8 +7216,13 @@ module ResourceChecking =
                 loop successLocalTypes current rest
             | DoBind(binding, expression) :: rest ->
                 let current =
-                    match tryFindMultiShotScopedOperation expression with
-                    | Some(effectName, operation) ->
+                    let pendingMultishotOperations =
+                        collectPendingMultishotOperations resolvedEffects current expression
+
+                    match pendingMultishotOperations with
+                    | [] ->
+                        current
+                    | _ ->
                         let riskyBindings, linearNames, borrowedNames = continuationCaptureHazards current rest
 
                         if List.isEmpty riskyBindings then
@@ -6954,15 +7246,15 @@ module ResourceChecking =
                                 |> List.choose id
                                 |> String.concat " and "
 
-                            addDiagnostic
-                                DiagnosticCode.QttContinuationCapture
-                                $"Multi-shot operation '{effectName}.{operation.Name}' cannot capture {capturedSummary} in its continuation."
-                                (argumentLocation document expression)
-                                []
-                                document
-                                current
-                    | None ->
-                        current
+                            pendingMultishotOperations
+                            |> List.fold (fun state pendingOperation ->
+                                addDiagnostic
+                                    DiagnosticCode.QttContinuationCapture
+                                    $"Multi-shot operation '{pendingOperation.EffectVisibleName}.{pendingOperation.OperationName}' cannot capture {capturedSummary} in its continuation."
+                                    (argumentLocation document pendingOperation.InvocationExpression)
+                                    []
+                                    document
+                                    state) current
 
                 let current = checkExpression projectionSummaries document signatures localTypes current expression
                 let declaredQuantity = binding.Quantity |> Option.map ResourceQuantity.ofSurface

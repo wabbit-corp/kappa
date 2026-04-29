@@ -288,12 +288,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
 
 ## 7. Effects and Handlers
 
-- `[High] Make multi-shot continuation capture analysis semantic rather than syntax-shaped.`
-  - Current logic appears too tied to narrow `DoBind` / direct-operation-call forms.
-  - It needs to recognize semantically equivalent operation invocations through aliases, records, qualified names, and nested expressions.
-  - Tie continuation capture analysis to the nearest dynamically relevant handler boundary rather than just the lexical remainder of a `do` block.
-  - Sources: `reviews/effects1.md`.
-
 - `[Medium-High] Support non-self effect-row entries correctly.`
   - The implementation often appears to assume rows like `<[State : State]>`, while the spec allows first-class labels whose interface is `State`.
   - Effect-row entries should carry both label identity and interface identity.

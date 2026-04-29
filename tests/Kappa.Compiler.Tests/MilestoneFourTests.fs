@@ -1278,6 +1278,89 @@ let ``multishot record carried operation values still trigger capture checks`` (
     Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
 
 [<Fact>]
+let ``multishot operations nested inside ordinary application still trigger capture checks`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "bad : (1 x : Int) -> Int"
+            "let bad (1 x : Int) : Int ="
+            "    block"
+            "        scoped effect Choice ="
+            "            ω choose : Unit -> Bool"
+            ""
+            "        let id m = m"
+            ""
+            "        let comp : Eff <[Choice : Choice]> Int ="
+            "            do"
+            "                let b <- id (Choice.choose ())"
+            "                if b then x else x"
+            ""
+            "        let handled ="
+            "            deep handle Choice comp with"
+            "                case return y -> pure y"
+            "                case choose _ k ->"
+            "                    do"
+            "                        let a <- k True"
+            "                        let _ <- k False"
+            "                        pure a"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-multishot-nested-application-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected multishot operations nested inside ordinary application to be rejected.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
+
+[<Fact>]
+let ``multishot named nested computations still trigger capture checks`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "bad : (1 x : Int) -> Int"
+            "let bad (1 x : Int) : Int ="
+            "    block"
+            "        scoped effect Choice ="
+            "            ω choose : Unit -> Bool"
+            ""
+            "        let nested : Eff <[Choice : Choice]> Int ="
+            "            do"
+            "                let b <- Choice.choose ()"
+            "                if b then 1 else 0"
+            ""
+            "        let comp : Eff <[Choice : Choice]> Int ="
+            "            do"
+            "                let y <- nested"
+            "                if y == 0 then x else x"
+            ""
+            "        let handled ="
+            "            deep handle Choice comp with"
+            "                case return y -> pure y"
+            "                case choose _ k ->"
+            "                    do"
+            "                        let a <- k True"
+            "                        let _ <- k False"
+            "                        pure a"
+            ""
+            "        runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-multishot-nested-computation-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected named nested multishot computations to be rejected.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttContinuationCapture)
+
+[<Fact>]
 let ``shadowed same spelling effects do not widen rebound one shot operation values`` () =
     let mainSource =
         [
