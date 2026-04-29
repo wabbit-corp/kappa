@@ -29932,6 +29932,54 @@ deployment metadata, or subsequent provider identity.
 An implementation MUST NOT reuse a cached action result for a `BuildActionKey` unless the action result was produced
 under a cache-compatible action identity and reproducibility policy.
 
+<!-- build_system.action_identity_cache.results -->
+#### Build action results
+
+A `BuildActionResult` records the observed result of executing, retrieving, or verifying a `BuildAction`.
+
+A `BuildActionResult` records at least:
+
+* action key;
+* action result status;
+* produced output identities;
+* produced output digests;
+* produced output directory listing identities;
+* materialized output paths or logical output names;
+* diagnostics emitted by the action;
+* structured stdout/stderr identity when the action exposes them to diagnostics or later actions;
+* external observations recorded under the action's observation policy;
+* execution platform actually used;
+* tool identity actually executed;
+* exit status or tool-level failure identity;
+* resource usage when resource usage is declared build-affecting;
+* cache source when reused from cache; and
+* provenance linking the result to the owning target and build request.
+
+Portable action result statuses are:
+
+```text
+ActionSucceeded
+ActionFailed
+ActionCancelled
+ActionRejectedByPolicy
+ActionCacheHit
+ActionCacheMiss
+ActionVerified
+ActionStale
+```
+
+A cached `BuildActionResult` MAY be reused only when:
+
+* the current `BuildActionKey` is identical to the recorded action key;
+* the current execution policy is compatible with the recorded execution policy;
+* all recorded output identities are available or can be materialized;
+* all transcript entries required by the result are present and current; and
+* the result's reproducibility policy is compatible with the current build request.
+
+Diagnostics emitted by a cached action result MUST be replayed with the same structured diagnostic identity, adjusted
+only for presentation details that do not change source origins, provenance, diagnostic code, related origins, or
+fix-it semantics.
+
 <!-- build_system.external_observations -->
 ### 19.3F External observations
 
