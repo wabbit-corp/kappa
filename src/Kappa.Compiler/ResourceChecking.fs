@@ -29,7 +29,7 @@ module ResourceChecking =
         { Parameters: string list
           Body: TypeSignatures.TypeExpr }
 
-    let private scopedEffects = AsyncLocal<Map<string, EffectDeclaration> option>()
+    let private scopedEffects = AsyncLocal<Map<string, EffectSemanticDeclaration> option>()
     let private backendProfile = AsyncLocal<BackendProfile option>()
 
     let private currentScopedEffects () =
@@ -38,24 +38,36 @@ module ResourceChecking =
     let private currentBackendProfile () =
         backendProfile.Value |> Option.defaultValue BackendProfile.defaultValue
 
+    let private effectBindingKeys (declaration: EffectSemanticDeclaration) =
+        [
+            declaration.VisibleName
+            SyntaxFacts.moduleNameToText (EffectSemantics.labelNameSegments declaration)
+            SyntaxFacts.moduleNameToText (EffectSemantics.interfaceNameSegments declaration)
+        ]
+        |> List.distinct
+
+    let private bindEffectDeclaration (declaration: EffectSemanticDeclaration) current =
+        effectBindingKeys declaration
+        |> List.fold (fun state key -> Map.add key declaration state) current
+
     let private tryFindScopedEffectDeclaration name =
         currentScopedEffects () |> Map.tryFind name
 
-    let private withScopedEffectDeclaration (declaration: EffectDeclaration) work =
+    let private withScopedEffectDeclaration (declaration: EffectSemanticDeclaration) work =
         let saved = currentScopedEffects ()
-        scopedEffects.Value <- Some(Map.add declaration.Name declaration saved)
+        scopedEffects.Value <- Some(bindEffectDeclaration declaration saved)
 
         try
             work ()
         finally
             scopedEffects.Value <- Some saved
 
-    let private withScopedEffectDeclarations (declarations: EffectDeclaration list) work =
+    let private withScopedEffectDeclarations (declarations: EffectSemanticDeclaration list) work =
         let saved = currentScopedEffects ()
 
         let merged =
             declarations
-            |> List.fold (fun state declaration -> Map.add declaration.Name declaration state) saved
+            |> List.fold (fun state declaration -> bindEffectDeclaration declaration state) saved
 
         scopedEffects.Value <- Some merged
 
@@ -87,6 +99,14 @@ module ResourceChecking =
         | QuantityVariable _ ->
             true
         | _ -> false
+
+    let private semanticEffectDeclaration declaration =
+        if declaration.EffectInterfaceId.IsSome && declaration.EffectLabelId.IsSome && (declaration.Operations |> List.forall (fun operation -> operation.OperationId.IsSome)) then
+            EffectSemantics.toSemantic declaration
+        else
+            declaration
+            |> EffectSemantics.ensureLocal $"{declaration.Name}|resource-checking"
+            |> EffectSemantics.toSemantic
 
     let private isPrivateByDefault (document: ParsedDocument) =
         document.Syntax.ModuleAttributes
@@ -854,19 +874,19 @@ module ResourceChecking =
         riskyBindings, linearNames, borrowedNames
 
     let private tryFindMultiShotScopedOperation expression =
-        let tryResolveHandledEffectName expression =
+        let tryResolveHandledEffectDeclaration expression =
             match expression with
             | Name [ effectName ]
             | KindQualifiedName(EffectLabelKind, [ effectName ]) ->
-                tryFindScopedEffectDeclaration effectName |> Option.map (fun _ -> effectName)
+                tryFindScopedEffectDeclaration effectName
             | Name nameSegments when not (List.isEmpty nameSegments) ->
                 let qualifiedName = SyntaxFacts.moduleNameToText nameSegments
-                tryFindScopedEffectDeclaration qualifiedName |> Option.map (fun _ -> qualifiedName)
+                tryFindScopedEffectDeclaration qualifiedName
             | _ ->
                 None
 
-        let tryResolveScopedOperation effectName operationName =
-            tryFindScopedEffectDeclaration effectName
+        let tryResolveScopedOperation declaration operationName =
+            Some declaration
             |> Option.bind (fun declaration ->
                 declaration.Operations
                 |> List.tryFind (fun operation -> String.Equals(operation.Name, operationName, StringComparison.Ordinal))
@@ -878,17 +898,18 @@ module ResourceChecking =
             | operationName :: reversedEffectSegments when not (List.isEmpty reversedEffectSegments) ->
                 let effectName = List.rev reversedEffectSegments |> SyntaxFacts.moduleNameToText
 
-                tryResolveScopedOperation effectName operationName
+                tryFindScopedEffectDeclaration effectName
+                |> Option.bind (fun declaration -> tryResolveScopedOperation declaration operationName)
                 |> Option.filter (fun (_, operation) -> isMultiShotResumptionQuantity operation.ResumptionQuantity)
-                |> Option.map (fun (_, operation) -> effectName, operation)
+                |> Option.map (fun (declaration, operation) -> declaration.VisibleName, operation)
             | _ ->
                 None
         | Apply(MemberAccess(receiver, [ operationName ], []), _) ->
-            tryResolveHandledEffectName receiver
-            |> Option.bind (fun effectName ->
-                tryResolveScopedOperation effectName operationName
+            tryResolveHandledEffectDeclaration receiver
+            |> Option.bind (fun declaration ->
+                tryResolveScopedOperation declaration operationName
                 |> Option.filter (fun (_, operation) -> isMultiShotResumptionQuantity operation.ResumptionQuantity)
-                |> Option.map (fun (_, operation) -> effectName, operation))
+                |> Option.map (fun (declaration, operation) -> declaration.VisibleName, operation))
         | _ ->
             None
 
@@ -2436,7 +2457,7 @@ module ResourceChecking =
                 |> List.collect (fun document ->
                     document.Syntax.Declarations
                     |> List.choose (function
-                        | EffectDeclarationNode declaration -> Some declaration
+                        | EffectDeclarationNode declaration -> Some(EffectSemantics.toSemantic declaration)
                         | _ -> None)))
 
         let exportedEffectDeclarationsByModule =
@@ -2450,14 +2471,14 @@ module ResourceChecking =
                     |> List.choose (function
                         | EffectDeclarationNode declaration
                             when isExportedVisibility privateByDefault declaration.Visibility ->
-                            Some declaration
+                            Some(EffectSemantics.toSemantic declaration)
                         | _ -> None)))
 
         localEffectDeclarationsByModule, exportedEffectDeclarationsByModule
 
     let private visibleTopLevelEffectDeclarations
-        (localEffectDeclarationsByModule: Map<string, EffectDeclaration list>)
-        (exportedEffectDeclarationsByModule: Map<string, EffectDeclaration list>)
+        (localEffectDeclarationsByModule: Map<string, EffectSemanticDeclaration list>)
+        (exportedEffectDeclarationsByModule: Map<string, EffectSemanticDeclaration list>)
         (document: ParsedDocument)
         =
         let moduleName =
@@ -2490,23 +2511,23 @@ module ResourceChecking =
                             match spec.Selection with
                             | QualifiedOnly ->
                                 let qualifiedPrefix = spec.Alias |> Option.defaultValue importedModuleName
-                                Some(qualifiedPrefix + "." + declaration.Name)
+                                Some(qualifiedPrefix + "." + declaration.VisibleName)
                             | _ ->
                                 selectionImportedName
                                     ImportNamespace.Type
                                     (exportedEffectDeclarationsByModule
                                      |> Map.tryFind importedModuleName
                                      |> Option.defaultValue []
-                                     |> List.map (fun effect -> effect.Name)
+                                     |> List.map (fun effect -> effect.VisibleName)
                                      |> Set.ofList)
                                     itemImportsTypeName
                                     spec.Selection
-                                    declaration.Name
+                                    declaration.VisibleName
 
                         importedName
                         |> Option.map (fun localName ->
                             { declaration with
-                                Name = localName })))
+                                VisibleName = localName })))
 
         localEffects @ importedEffects
 
@@ -5102,24 +5123,24 @@ module ResourceChecking =
 
         let aliasKey segments = SyntaxFacts.moduleNameToText segments
 
-        let copyNestedEffectLabelAliases sourcePrefix targetPrefix (aliases: Map<string, string>) =
+        let copyNestedEffectLabelAliases sourcePrefix targetPrefix (aliases: Map<string, EffectSemanticDeclaration>) =
             let sourceKey = aliasKey sourcePrefix
             let sourceNestedPrefix = sourceKey + "."
 
             aliases
             |> Map.toList
             |> List.filter (fun (key, _) -> key.StartsWith(sourceNestedPrefix, StringComparison.Ordinal))
-            |> List.fold (fun current (key, effectName) ->
+            |> List.fold (fun current (key, declaration) ->
                 let suffix = key.Substring(sourceNestedPrefix.Length)
-                Map.add (aliasKey targetPrefix + "." + suffix) effectName current) aliases
+                Map.add (aliasKey targetPrefix + "." + suffix) declaration current) aliases
 
         let rec collectEffectLabelAliases
             (prefix: string list)
             (expression: SurfaceExpression)
-            (aliases: Map<string, string>)
+            (aliases: Map<string, EffectSemanticDeclaration>)
             =
-            let addDirect effectName current =
-                let current = Map.add (aliasKey prefix) effectName current
+            let addDirect declaration current =
+                let current = Map.add (aliasKey prefix) declaration current
 
                 match expression with
                 | Name sourcePrefix ->
@@ -5131,12 +5152,12 @@ module ResourceChecking =
             | Name [ effectName ]
             | KindQualifiedName(EffectLabelKind, [ effectName ])
                 when tryFindScopedEffectDeclaration effectName |> Option.isSome ->
-                addDirect effectName aliases
+                addDirect (tryFindScopedEffectDeclaration effectName |> Option.get) aliases
             | Name nameSegments when not (List.isEmpty nameSegments) ->
                 let qualifiedName = SyntaxFacts.moduleNameToText nameSegments
 
                 if tryFindScopedEffectDeclaration qualifiedName |> Option.isSome then
-                    addDirect qualifiedName aliases
+                    addDirect (tryFindScopedEffectDeclaration qualifiedName |> Option.get) aliases
                 else
                     aliases
             | RecordLiteral fields ->
@@ -5148,7 +5169,7 @@ module ResourceChecking =
             | _ ->
                 aliases
 
-        let rec rewriteEffectLabelAliasUses (aliases: Map<string, string>) current =
+        let rec rewriteEffectLabelAliasUses (aliases: Map<string, EffectSemanticDeclaration>) current =
             let rewrite = rewriteEffectLabelAliasUses aliases
 
             match current with
@@ -5161,11 +5182,11 @@ module ResourceChecking =
 
                         aliases
                         |> Map.tryFind (aliasKey prefix)
-                        |> Option.map (fun effectName ->
+                        |> Option.map (fun declaration ->
                             if List.isEmpty suffix then
-                                KindQualifiedName(EffectLabelKind, [ effectName ])
+                                KindQualifiedName(EffectLabelKind, EffectSemantics.labelNameSegments declaration)
                             else
-                                Name(effectName :: suffix)))
+                                Name(EffectSemantics.labelNameSegments declaration @ suffix)))
 
                 rewritten |> Option.defaultValue current
             | Name _ ->
@@ -5320,14 +5341,14 @@ module ResourceChecking =
             | KindQualifiedName _ ->
                 current
 
-        let tryResolveHandledEffectName expression =
+        let tryResolveHandledEffectDeclaration expression =
             match expression with
             | Name [ effectName ]
             | KindQualifiedName(EffectLabelKind, [ effectName ]) ->
-                tryFindScopedEffectDeclaration effectName |> Option.map (fun _ -> effectName)
+                tryFindScopedEffectDeclaration effectName
             | Name nameSegments when not (List.isEmpty nameSegments) ->
                 let qualifiedName = SyntaxFacts.moduleNameToText nameSegments
-                tryFindScopedEffectDeclaration qualifiedName |> Option.map (fun _ -> qualifiedName)
+                tryFindScopedEffectDeclaration qualifiedName
             | _ ->
                 None
 
@@ -5381,7 +5402,7 @@ module ResourceChecking =
             let nextState =
                 checkHandlerClause None returnArgumentNames None returnClause.Body nextState
 
-            let handledEffectName = tryResolveHandledEffectName label
+            let handledEffectDeclaration = tryResolveHandledEffectDeclaration label
 
             operationClauses
             |> List.fold
@@ -5391,16 +5412,14 @@ module ResourceChecking =
                         |> List.choose tryParseHandlerArgumentName
 
                     let resumptionQuantity =
-                        handledEffectName
-                        |> Option.bind (fun effectName ->
-                            tryFindScopedEffectDeclaration effectName
-                            |> Option.bind (fun declaration ->
-                                declaration.Operations
-                                |> List.tryFind (fun operation -> String.Equals(operation.Name, clause.OperationName, StringComparison.Ordinal))
-                                |> Option.map (fun operation ->
-                                    operation.ResumptionQuantity
-                                    |> Option.defaultValue QuantityOne
-                                    |> ResourceQuantity.ofSurface)))
+                        handledEffectDeclaration
+                        |> Option.bind (fun declaration ->
+                            declaration.Operations
+                            |> List.tryFind (fun operation -> String.Equals(operation.Name, clause.OperationName, StringComparison.Ordinal))
+                            |> Option.map (fun operation ->
+                                operation.ResumptionQuantity
+                                |> Option.defaultValue QuantityOne
+                                |> ResourceQuantity.ofSurface))
 
                     checkHandlerClause resumptionQuantity argumentNames clause.ResumptionName clause.Body clauseState)
                 nextState
@@ -5414,7 +5433,7 @@ module ResourceChecking =
         | LocalTypeAlias(_, body) ->
             checkExpression projectionSummaries document signatures localTypes state body
         | LocalScopedEffect(declaration, body) ->
-            withScopedEffectDeclaration declaration (fun () ->
+            withScopedEffectDeclaration (semanticEffectDeclaration declaration) (fun () ->
                 checkExpression projectionSummaries document signatures localTypes state body)
         | Name(root :: path) ->
             validatePlaceAccess

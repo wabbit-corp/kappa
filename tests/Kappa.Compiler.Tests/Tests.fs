@@ -59,6 +59,110 @@ let private tryFindLetDeclaration declarationName (document: ParsedDocument) =
         | LetDeclaration declaration when declaration.Name = Some declarationName -> Some declaration
         | _ -> None)
 
+let private diagnosticsSummary diagnostics =
+    diagnostics
+    |> List.map (fun diagnostic -> $"{DiagnosticCode.toIdentifier diagnostic.Code}: {diagnostic.Message}")
+    |> String.concat Environment.NewLine
+
+let rec private tryFindLocalScopedEffect expression =
+    match expression with
+    | LocalScopedEffect(declaration, _) ->
+        Some declaration
+    | LocalLet(_, value, body) ->
+        tryFindLocalScopedEffect value |> Option.orElseWith (fun () -> tryFindLocalScopedEffect body)
+    | LocalSignature(_, body)
+    | LocalTypeAlias(_, body)
+    | Lambda(_, body)
+    | Unary(_, body)
+    | SyntaxQuote body
+    | SyntaxSplice body
+    | TopLevelSyntaxSplice body
+    | CodeQuote body
+    | CodeSplice body
+    | MonadicSplice body
+    | ExplicitImplicitArgument body
+    | InoutArgument body ->
+        tryFindLocalScopedEffect body
+    | IfThenElse(condition, whenTrue, whenFalse) ->
+        tryFindLocalScopedEffect condition
+        |> Option.orElseWith (fun () -> tryFindLocalScopedEffect whenTrue)
+        |> Option.orElseWith (fun () -> tryFindLocalScopedEffect whenFalse)
+    | Elvis(left, right) ->
+        tryFindLocalScopedEffect left |> Option.orElseWith (fun () -> tryFindLocalScopedEffect right)
+    | Handle(_, label, body, returnClause, operationClauses) ->
+        tryFindLocalScopedEffect label
+        |> Option.orElseWith (fun () -> tryFindLocalScopedEffect body)
+        |> Option.orElseWith (fun () -> tryFindLocalScopedEffect returnClause.Body)
+        |> Option.orElseWith (fun () ->
+            operationClauses
+            |> List.tryPick (fun clause -> tryFindLocalScopedEffect clause.Body))
+    | Match(scrutinee, cases) ->
+        tryFindLocalScopedEffect scrutinee
+        |> Option.orElseWith (fun () ->
+            cases
+            |> List.tryPick (fun caseClause ->
+                caseClause.Guard
+                |> Option.bind tryFindLocalScopedEffect
+                |> Option.orElseWith (fun () -> tryFindLocalScopedEffect caseClause.Body)))
+    | RecordLiteral fields
+    | NamedApplicationBlock fields ->
+        fields |> List.tryPick (fun field -> tryFindLocalScopedEffect field.Value)
+    | Seal(value, _)
+    | TagTest(value, _) ->
+        tryFindLocalScopedEffect value
+    | RecordUpdate(receiver, fields) ->
+        tryFindLocalScopedEffect receiver
+        |> Option.orElseWith (fun () -> fields |> List.tryPick (fun field -> tryFindLocalScopedEffect field.Value))
+    | MemberAccess(receiver, _, arguments) ->
+        tryFindLocalScopedEffect receiver
+        |> Option.orElseWith (fun () -> arguments |> List.tryPick tryFindLocalScopedEffect)
+    | SafeNavigation(receiver, navigation) ->
+        tryFindLocalScopedEffect receiver
+        |> Option.orElseWith (fun () -> navigation.Arguments |> List.tryPick tryFindLocalScopedEffect)
+    | Do statements ->
+        let rec inDo statement =
+            match statement with
+            | DoLet(_, value)
+            | DoBind(_, value)
+            | DoUsing(_, value)
+            | DoVar(_, value)
+            | DoAssign(_, value)
+            | DoDefer value
+            | DoExpression value
+            | DoReturn value ->
+                tryFindLocalScopedEffect value
+            | DoLetQuestion(_, value, failure) ->
+                tryFindLocalScopedEffect value
+                |> Option.orElseWith (fun () ->
+                    failure
+                    |> Option.bind (fun block -> block.Body |> List.tryPick inDo))
+            | DoIf(condition, whenTrue, whenFalse) ->
+                tryFindLocalScopedEffect condition
+                |> Option.orElseWith (fun () -> whenTrue |> List.tryPick inDo)
+                |> Option.orElseWith (fun () -> whenFalse |> List.tryPick inDo)
+            | DoWhile(condition, body) ->
+                tryFindLocalScopedEffect condition
+                |> Option.orElseWith (fun () -> body |> List.tryPick inDo)
+
+        statements |> List.tryPick inDo
+    | Apply(callee, arguments) ->
+        tryFindLocalScopedEffect callee
+        |> Option.orElseWith (fun () -> arguments |> List.tryPick tryFindLocalScopedEffect)
+    | Binary(left, _, right) ->
+        tryFindLocalScopedEffect left |> Option.orElseWith (fun () -> tryFindLocalScopedEffect right)
+    | Comprehension comprehension ->
+        tryFindLocalScopedEffect comprehension.Lowered
+    | PrefixedString(_, parts) ->
+        parts
+        |> List.tryPick (function
+            | StringText _ -> None
+            | StringInterpolation(inner, _) -> tryFindLocalScopedEffect inner)
+    | Literal _
+    | NumericLiteral _
+    | Name _
+    | KindQualifiedName _ ->
+        None
+
 let private assertSurfaceIntegerLiteral (expectedValue: int) expectedText expression =
     match expression with
     | NumericLiteral(SurfaceIntegerLiteral(value, sourceText, None)) ->
@@ -104,6 +208,59 @@ let ``import diagnostics expose long form explanations`` () =
     for code in explainedCodes do
         let explanation = DiagnosticCode.tryGetExplanation code
         Assert.True(explanation.IsSome, $"Expected {DiagnosticCode.toIdentifier code} to have a long-form explanation.")
+
+[<Fact>]
+let ``frontend assigns effect identities before elaboration and checking`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-effect-identities-root"
+            [
+                "main.kp",
+                [
+                    "@PrivateByDefault module main"
+                    "effect Top ="
+                    "    ping : Unit -> Unit"
+                    ""
+                    "result : Unit"
+                    "let result ="
+                    "    block"
+                    "        scoped effect Local ="
+                    "            pong : Unit -> Unit"
+                    "        ()"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, diagnosticsSummary workspace.Diagnostics)
+
+    let document =
+        workspace
+        |> tryFindDocument "main"
+        |> Option.defaultWith (fun () -> failwith "Expected main document.")
+
+    let topLevelEffect =
+        document.Syntax.Declarations
+        |> List.pick (function
+            | EffectDeclarationNode declaration -> Some declaration
+            | _ -> None)
+
+    Assert.True(topLevelEffect.EffectInterfaceId.IsSome)
+    Assert.True(topLevelEffect.EffectLabelId.IsSome)
+    Assert.True(topLevelEffect.Operations |> List.forall (fun operation -> operation.OperationId.IsSome))
+
+    let resultDeclaration =
+        document
+        |> tryFindLetDeclaration "result"
+        |> Option.defaultWith (fun () -> failwith "Expected result declaration.")
+
+    let localEffect =
+        resultDeclaration.Body
+        |> Option.bind tryFindLocalScopedEffect
+        |> Option.defaultWith (fun () -> failwith "Expected local scoped effect.")
+
+    Assert.True(localEffect.EffectInterfaceId.IsSome)
+    Assert.True(localEffect.EffectLabelId.IsSome)
+    Assert.True(localEffect.Operations |> List.forall (fun operation -> operation.OperationId.IsSome))
 
 [<Fact>]
 let ``path derived module inference is ascii only validates fragments and requires exact kp suffix`` () =

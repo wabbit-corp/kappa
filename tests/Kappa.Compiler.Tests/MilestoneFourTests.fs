@@ -1718,6 +1718,50 @@ let ``one shot resumptions remain one shot under a qualified imported handled la
     Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttLinearOveruse)
 
 [<Fact>]
+let ``shadowed same spelling effects do not widen rebound one shot resumptions`` () =
+    let mainSource =
+        [
+            "@PrivateByDefault module main"
+            ""
+            "bad : Int"
+            "let bad : Int ="
+            "    block"
+            "        scoped effect Ask ="
+            "            1 ask : Unit -> Bool"
+            ""
+            "        let l = Ask"
+            ""
+            "        let comp : Eff <[Ask : Ask]> Int ="
+            "            do"
+            "                let _ <- l.ask ()"
+            "                pure 1"
+            ""
+            "        block"
+            "            scoped effect Ask ="
+            "                ω ask : Unit -> Bool"
+            ""
+            "            let handled ="
+            "                deep handle l comp with"
+            "                    case return y -> pure y"
+            "                    case ask () k ->"
+            "                        do"
+            "                            let a <- k True"
+            "                            let _ <- k False"
+            "                            pure a"
+            ""
+            "            runPure handled"
+        ]
+        |> String.concat "\n"
+
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-m4-shadowed-rebound-oneshot-root"
+            [ "main.kp", mainSource ]
+
+    Assert.True(workspace.HasErrors, "Expected one-shot resumption overuse to stay rejected under same-spelling shadowing.")
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.QttLinearOveruse)
+
+[<Fact>]
 let ``shallow handlers type resumptions against the remainder row`` () =
     let mainSource =
         [

@@ -879,14 +879,11 @@ module SurfaceElaboration =
           ScopedEffect = None
           TypeFacet = Some typeFacetInfo }
 
-    let private sanitizeScopedEffectId (id: string) =
-        id.Replace(":", "_", StringComparison.Ordinal).Replace("-", "_", StringComparison.Ordinal)
-
     let private scopedEffectLabelNameSegments (declaration: EffectSemanticDeclaration) =
-        [ $"__kappa_effect_label_{sanitizeScopedEffectId declaration.LabelId}" ]
+        EffectSemantics.labelNameSegments declaration
 
     let private scopedEffectInterfaceNameSegments (declaration: EffectSemanticDeclaration) =
-        [ $"__kappa_effect_interface_{sanitizeScopedEffectId declaration.InterfaceId}" ]
+        EffectSemantics.interfaceNameSegments declaration
 
     let private scopedEffectTypeStaticObject (declaration: EffectSemanticDeclaration) =
         { ObjectKind = StaticTypeObject

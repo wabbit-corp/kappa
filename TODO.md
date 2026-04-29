@@ -288,12 +288,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
 
 ## 7. Effects and Handlers
 
-- `[Critical] Introduce semantic effect/interface/label identities and use them everywhere.`
-  - Runtime handler matching currently compares effect labels by name instead of by identity.
-  - Resource checking and row splitting also rediscover handled effects syntactically in places where they should consume elaborated semantic identity.
-  - Add stable IDs such as `EffectInterfaceId`, `EffectLabelId`, and operation IDs; handlers and row entries should match on IDs, not strings.
-  - Sources: `reviews/effects1.md`.
-
 - `[High] Resolve handled labels and operations before resource checking.`
   - Resource checking appears to recover one-shot and multi-shot semantics only for narrow syntactic forms such as direct names.
   - Alias-carried labels, record-carried labels, qualified imports, and rebound operation values can bypass or weaken the intended checks.

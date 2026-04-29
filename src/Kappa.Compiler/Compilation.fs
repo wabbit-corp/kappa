@@ -220,6 +220,7 @@ module Compilation =
             initialDocuments
             |> reparseDocumentsWithImportedFixities options
             |> resolveImportExportSemantics backendProfile
+            |> List.map EffectSemantics.assignDocumentEffectIdentities
 
         let hostBindingModules =
             HostBindings.collectImportedModules backendProfile documents

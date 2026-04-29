@@ -41,6 +41,15 @@ module internal EffectSemantics =
     let private effectLabelId seed =
         stableId "effect-label" seed
 
+    let private sanitizeScopedEffectId (id: string) =
+        id.Replace(":", "_", StringComparison.Ordinal).Replace("-", "_", StringComparison.Ordinal)
+
+    let labelNameSegments (declaration: EffectSemanticDeclaration) =
+        [ $"__kappa_effect_label_{sanitizeScopedEffectId declaration.LabelId}" ]
+
+    let interfaceNameSegments (declaration: EffectSemanticDeclaration) =
+        [ $"__kappa_effect_interface_{sanitizeScopedEffectId declaration.InterfaceId}" ]
+
     let private effectOperationParameterArity signatureTokens =
         signatureTokens
         |> TypeSignatures.parseType
@@ -110,6 +119,224 @@ module internal EffectSemantics =
                   ResumptionQuantity = operation.ResumptionQuantity
                   SignatureTokens = operation.SignatureTokens
                   ParameterArity = effectOperationParameterArity operation.SignatureTokens }) }
+
+    let private rewriteLetDefinition rewriteExpression (definition: LetDefinition) =
+        { definition with
+            Body = definition.Body |> Option.map rewriteExpression }
+
+    let private rewriteProjectionBody rewriteExpression projectionBody =
+        let rec rewrite current =
+            match current with
+            | ProjectionYield expression ->
+                ProjectionYield(rewriteExpression expression)
+            | ProjectionIfThenElse(condition, whenTrue, whenFalse) ->
+                ProjectionIfThenElse(rewriteExpression condition, rewrite whenTrue, rewrite whenFalse)
+            | ProjectionMatch(scrutinee, cases) ->
+                ProjectionMatch(
+                    rewriteExpression scrutinee,
+                    cases
+                    |> List.map (fun caseClause ->
+                        { caseClause with
+                            Guard = caseClause.Guard |> Option.map rewriteExpression
+                            Body = rewrite caseClause.Body })
+                )
+            | ProjectionAccessors clauses ->
+                ProjectionAccessors(
+                    clauses
+                    |> List.map (function
+                        | ProjectionGet expression -> ProjectionGet(rewriteExpression expression)
+                        | ProjectionInout expression -> ProjectionInout(rewriteExpression expression)
+                        | ProjectionSet(parameterName, typeTokens, body) ->
+                            ProjectionSet(parameterName, typeTokens, rewriteExpression body)
+                        | ProjectionSink expression -> ProjectionSink(rewriteExpression expression))
+                )
+
+        rewrite projectionBody
+
+    let private rewriteDataConstructorParameters rewriteExpression parameters =
+        parameters
+        |> List.map (fun parameter ->
+            { parameter with
+                DefaultValue = parameter.DefaultValue |> Option.map rewriteExpression })
+
+    let assignDocumentEffectIdentities (document: ParsedDocument) =
+        let moduleIdentitySeed =
+            document.ModuleName
+            |> Option.map SyntaxFacts.moduleNameToText
+            |> Option.defaultValue document.Source.FilePath
+
+        let localEffectCounter = ref 0
+
+        let nextLocalEffectSeed () =
+            let current = !localEffectCounter
+            localEffectCounter := current + 1
+            $"{document.Source.FilePath}|local-effect|{current}"
+
+        let rec rewriteExpression expression =
+            match expression with
+            | LocalScopedEffect(declaration, body) ->
+                let rewrittenDeclaration = ensureLocal (nextLocalEffectSeed ()) declaration
+                LocalScopedEffect(rewrittenDeclaration, rewriteExpression body)
+            | LocalLet(binding, value, body) ->
+                LocalLet(binding, rewriteExpression value, rewriteExpression body)
+            | LocalSignature(declaration, body) ->
+                LocalSignature(declaration, rewriteExpression body)
+            | LocalTypeAlias(declaration, body) ->
+                LocalTypeAlias(declaration, rewriteExpression body)
+            | Lambda(parameters, body) ->
+                Lambda(parameters, rewriteExpression body)
+            | IfThenElse(condition, whenTrue, whenFalse) ->
+                IfThenElse(rewriteExpression condition, rewriteExpression whenTrue, rewriteExpression whenFalse)
+            | Handle(isDeep, label, body, returnClause, operationClauses) ->
+                let rewriteClause (clause: SurfaceEffectHandlerClause) =
+                    { clause with
+                        Body = rewriteExpression clause.Body }
+
+                Handle(
+                    isDeep,
+                    rewriteExpression label,
+                    rewriteExpression body,
+                    rewriteClause returnClause,
+                    operationClauses |> List.map rewriteClause
+                )
+            | Match(scrutinee, cases) ->
+                Match(
+                    rewriteExpression scrutinee,
+                    cases
+                    |> List.map (fun caseClause ->
+                        { caseClause with
+                            Guard = caseClause.Guard |> Option.map rewriteExpression
+                            Body = rewriteExpression caseClause.Body })
+                )
+            | RecordLiteral fields ->
+                RecordLiteral(fields |> List.map (fun field -> { field with Value = rewriteExpression field.Value }))
+            | Seal(value, ascriptionTokens) ->
+                Seal(rewriteExpression value, ascriptionTokens)
+            | RecordUpdate(receiver, fields) ->
+                RecordUpdate(receiver |> rewriteExpression, fields |> List.map (fun field -> { field with Value = rewriteExpression field.Value }))
+            | MemberAccess(receiver, segments, arguments) ->
+                MemberAccess(rewriteExpression receiver, segments, arguments |> List.map rewriteExpression)
+            | SafeNavigation(receiver, navigation) ->
+                SafeNavigation(rewriteExpression receiver, { navigation with Arguments = navigation.Arguments |> List.map rewriteExpression })
+            | TagTest(receiver, constructorName) ->
+                TagTest(rewriteExpression receiver, constructorName)
+            | Do statements ->
+                let rec rewriteDoStatement statement =
+                    match statement with
+                    | DoLet(binding, value) -> DoLet(binding, rewriteExpression value)
+                    | DoLetQuestion(binding, value, failure) ->
+                        let rewrittenFailure =
+                            failure
+                            |> Option.map (fun block ->
+                                { block with
+                                    Body = block.Body |> List.map rewriteDoStatement })
+
+                        DoLetQuestion(binding, rewriteExpression value, rewrittenFailure)
+                    | DoBind(binding, value) -> DoBind(binding, rewriteExpression value)
+                    | DoUsing(binding, value) -> DoUsing(binding, rewriteExpression value)
+                    | DoVar(name, value) -> DoVar(name, rewriteExpression value)
+                    | DoAssign(name, value) -> DoAssign(name, rewriteExpression value)
+                    | DoDefer value -> DoDefer(rewriteExpression value)
+                    | DoExpression value -> DoExpression(rewriteExpression value)
+                    | DoReturn value -> DoReturn(rewriteExpression value)
+                    | DoIf(condition, whenTrue, whenFalse) ->
+                        DoIf(rewriteExpression condition, whenTrue |> List.map rewriteDoStatement, whenFalse |> List.map rewriteDoStatement)
+                    | DoWhile(condition, body) ->
+                        DoWhile(rewriteExpression condition, body |> List.map rewriteDoStatement)
+
+                Do(statements |> List.map rewriteDoStatement)
+            | MonadicSplice inner ->
+                MonadicSplice(rewriteExpression inner)
+            | Apply(callee, arguments) ->
+                Apply(rewriteExpression callee, arguments |> List.map rewriteExpression)
+            | ExplicitImplicitArgument inner ->
+                ExplicitImplicitArgument(rewriteExpression inner)
+            | NamedApplicationBlock fields ->
+                NamedApplicationBlock(fields |> List.map (fun field -> { field with Value = rewriteExpression field.Value }))
+            | InoutArgument inner ->
+                InoutArgument(rewriteExpression inner)
+            | Unary(operatorName, inner) ->
+                Unary(operatorName, rewriteExpression inner)
+            | Binary(left, operatorName, right) ->
+                Binary(rewriteExpression left, operatorName, rewriteExpression right)
+            | Elvis(left, right) ->
+                Elvis(rewriteExpression left, rewriteExpression right)
+            | Comprehension comprehension ->
+                Comprehension { comprehension with Lowered = rewriteExpression comprehension.Lowered }
+            | PrefixedString(prefix, parts) ->
+                PrefixedString(
+                    prefix,
+                    parts
+                    |> List.map (function
+                        | StringText text -> StringText text
+                        | StringInterpolation(inner, format) -> StringInterpolation(rewriteExpression inner, format))
+                )
+            | SyntaxQuote inner ->
+                SyntaxQuote(rewriteExpression inner)
+            | SyntaxSplice inner ->
+                SyntaxSplice(rewriteExpression inner)
+            | TopLevelSyntaxSplice inner ->
+                TopLevelSyntaxSplice(rewriteExpression inner)
+            | CodeQuote inner ->
+                CodeQuote(rewriteExpression inner)
+            | CodeSplice inner ->
+                CodeSplice(rewriteExpression inner)
+            | Literal _
+            | NumericLiteral _
+            | Name _
+            | KindQualifiedName _ ->
+                expression
+
+        let rewriteTopLevelDeclaration declaration =
+            match declaration with
+            | LetDeclaration definition ->
+                LetDeclaration(rewriteLetDefinition rewriteExpression definition)
+            | DataDeclarationNode dataDeclaration ->
+                DataDeclarationNode(
+                    { dataDeclaration with
+                        Constructors =
+                            dataDeclaration.Constructors
+                            |> List.map (fun constructor ->
+                                { constructor with
+                                    Parameters =
+                                        constructor.Parameters
+                                        |> Option.map (rewriteDataConstructorParameters rewriteExpression) }) }
+                )
+            | EffectDeclarationNode declaration ->
+                EffectDeclarationNode(ensureTopLevel moduleIdentitySeed declaration)
+            | ProjectionDeclarationNode declaration ->
+                ProjectionDeclarationNode(
+                    { declaration with
+                        Body = declaration.Body |> Option.map (rewriteProjectionBody rewriteExpression) }
+                )
+            | TraitDeclarationNode declaration ->
+                TraitDeclarationNode(
+                    { declaration with
+                        Members =
+                            declaration.Members
+                            |> List.map (fun memberDeclaration ->
+                                { memberDeclaration with
+                                    DefaultDefinition =
+                                        memberDeclaration.DefaultDefinition
+                                        |> Option.map (rewriteLetDefinition rewriteExpression) }) }
+                )
+            | InstanceDeclarationNode declaration ->
+                InstanceDeclarationNode(
+                    { declaration with
+                        Members = declaration.Members |> List.map (rewriteLetDefinition rewriteExpression) }
+                )
+            | ImportDeclaration _
+            | FixityDeclarationNode _
+            | ExpectDeclarationNode _
+            | SignatureDeclaration _
+            | TypeAliasNode _
+            | UnknownDeclaration _ ->
+                declaration
+
+        { document with
+            Syntax =
+                { document.Syntax with
+                    Declarations = document.Syntax.Declarations |> List.map rewriteTopLevelDeclaration } }
 
     let importAs localName (declaration: EffectDeclaration) =
         { declaration with Name = localName }
