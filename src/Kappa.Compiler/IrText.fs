@@ -151,8 +151,12 @@ module internal IrText =
                 $"(app-spine {kcoreExpressionText callee})"
             else
                 $"(app-spine {kcoreExpressionText callee} {argumentText})"
-        | KCoreDictionaryValue(moduleName, traitName, instanceKey) ->
-            $"(dictionary {moduleName} {traitName} {instanceKey})"
+        | KCoreDictionaryValue(moduleName, traitName, instanceKey, captures) ->
+            if List.isEmpty captures then
+                $"(dictionary {moduleName} {traitName} {instanceKey})"
+            else
+                let captureText = captures |> List.map kcoreExpressionText |> String.concat " "
+                $"(dictionary {moduleName} {traitName} {instanceKey} {captureText})"
         | KCoreTraitCall(traitName, memberName, dictionary, arguments) ->
             let argumentText =
                 arguments
@@ -296,8 +300,12 @@ module internal IrText =
                 $"(apply {runtimeExpressionText callee})"
             else
                 $"(apply {runtimeExpressionText callee} {argumentText})"
-        | KRuntimeDictionaryValue(moduleName, traitName, instanceKey) ->
-            $"(dictionary {moduleName} {traitName} {instanceKey})"
+        | KRuntimeDictionaryValue(moduleName, traitName, instanceKey, captures) ->
+            if List.isEmpty captures then
+                $"(dictionary {moduleName} {traitName} {instanceKey})"
+            else
+                let captureText = captures |> List.map runtimeExpressionText |> String.concat " "
+                $"(dictionary {moduleName} {traitName} {instanceKey} {captureText})"
         | KRuntimeTraitCall(traitName, memberName, dictionary, arguments) ->
             let argumentText =
                 arguments
@@ -507,8 +515,12 @@ module internal IrText =
                 |> String.concat " "
 
             $"(call rep={backendRepresentationText resultRepresentation} conv=[{backendCallingConventionText convention}] {backendExpressionText callee} {argumentText})"
-        | BackendDictionaryValue(moduleName, traitName, instanceKey, representation) ->
-            $"(dictionary rep={backendRepresentationText representation} {moduleName} {traitName} {instanceKey})"
+        | BackendDictionaryValue(moduleName, traitName, instanceKey, captures, representation) ->
+            if List.isEmpty captures then
+                $"(dictionary rep={backendRepresentationText representation} {moduleName} {traitName} {instanceKey})"
+            else
+                let captureText = captures |> List.map backendExpressionText |> String.concat " "
+                $"(dictionary rep={backendRepresentationText representation} {moduleName} {traitName} {instanceKey} {captureText})"
         | BackendTraitCall(traitName, memberName, dictionary, arguments, resultRepresentation) ->
             let argumentText =
                 arguments

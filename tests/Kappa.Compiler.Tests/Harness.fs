@@ -81,7 +81,8 @@ let private tokenizeAssertionTypeText (expectedTypeText: string) =
     lexed.Tokens
 
 type private FixtureTypeInventory =
-    { Types: Set<string>
+    { Terms: Set<string>
+      Types: Set<string>
       Traits: Set<string> }
 
 type private DeclaredTypeInfo =
@@ -89,7 +90,8 @@ type private DeclaredTypeInfo =
       Tokens: Token list }
 
 let private emptyFixtureTypeInventory =
-    { Types = Set.empty
+    { Terms = Set.empty
+      Types = Set.empty
       Traits = Set.empty }
 
 let private fixtureDocumentPrivateByDefault (document: ParsedDocument) =
@@ -112,6 +114,19 @@ let private buildFixtureTypeInventories (workspace: WorkspaceCompilation) =
         document.Syntax.Declarations
         |> List.fold (fun state declaration ->
             match declaration with
+            | SignatureDeclaration signature when includeVisibility signature.Visibility ->
+                { state with
+                    Terms = Set.add signature.Name state.Terms }
+            | LetDeclaration definition when includeVisibility definition.Visibility ->
+                match definition.Name with
+                | Some name ->
+                    { state with
+                        Terms = Set.add name state.Terms }
+                | None ->
+                    state
+            | ProjectionDeclarationNode projection when includeVisibility projection.Visibility ->
+                { state with
+                    Terms = Set.add projection.Name state.Terms }
             | DataDeclarationNode dataDeclaration when includeVisibility dataDeclaration.Visibility ->
                 { state with
                     Types = Set.add dataDeclaration.Name state.Types }
@@ -153,6 +168,24 @@ let private buildFixtureTypeInventories (workspace: WorkspaceCompilation) =
             moduleName, inventory)
         |> Map.ofList
 
+    let exportedInventories =
+        ([ "std.unicode"; "std.bytes"; "std.hash"; "std.testing" ]
+         |> List.fold (fun state moduleName ->
+            let inventory =
+                { Terms = Stdlib.standardModuleTermNames moduleName
+                  Types = Stdlib.standardModuleTypeNames moduleName
+                  Traits = Stdlib.standardModuleTraitNames moduleName }
+
+            state
+            |> Map.change moduleName (function
+                | Some existing ->
+                    Some
+                        { Terms = Set.union existing.Terms inventory.Terms
+                          Types = Set.union existing.Types inventory.Types
+                          Traits = Set.union existing.Traits inventory.Traits }
+                | None ->
+                    Some inventory)) exportedInventories)
+
     localInventories, exportedInventories
 
 let private addResolutionCandidate name moduleSegments (candidates: Map<string, string list list>) =
@@ -175,6 +208,7 @@ let private resolveUniqueCandidates (candidates: Map<string, string list list>) 
 let private fixtureImportedNamesForSelection importNamespace selection (inventory: FixtureTypeInventory) =
     let inInventory name =
         match importNamespace with
+        | ImportNamespace.Term -> Set.contains name inventory.Terms
         | ImportNamespace.Type -> Set.contains name inventory.Types
         | ImportNamespace.Trait -> Set.contains name inventory.Traits
         | _ -> false
@@ -188,11 +222,13 @@ let private fixtureImportedNamesForSelection importNamespace selection (inventor
         Set.empty
     | All ->
         match importNamespace with
+        | ImportNamespace.Term -> inventory.Terms
         | ImportNamespace.Type -> inventory.Types
         | ImportNamespace.Trait -> inventory.Traits
         | _ -> Set.empty
     | AllExcept excludedItems ->
         match importNamespace with
+        | ImportNamespace.Term -> inventory.Terms |> Set.filter (fun name -> not (excludedItems |> List.exists (isExcluded name)))
         | ImportNamespace.Type -> inventory.Types |> Set.filter (fun name -> not (excludedItems |> List.exists (isExcluded name)))
         | ImportNamespace.Trait -> inventory.Traits |> Set.filter (fun name -> not (excludedItems |> List.exists (isExcluded name)))
         | _ -> Set.empty
@@ -803,6 +839,47 @@ let private tryFindDeclaredTypeInDocument bindingName (document: ParsedDocument)
             | _ ->
                 None)
 
+let private tryFindStandardModuleDeclaredType bindingName moduleName currentDocument =
+    Stdlib.tryStandardModuleTermTypeText moduleName bindingName
+    |> Option.map (fun typeText ->
+        { Document = currentDocument
+          Tokens =
+            tokenizeAssertionTypeText typeText
+            |> List.filter (fun token -> token.Kind <> EndOfFile) })
+
+let private tryFindImportedDeclaredTypeInDocument (workspace: WorkspaceCompilation) bindingName (document: ParsedDocument) =
+    let _, exportedInventories = buildFixtureTypeInventories workspace
+
+    let importedTermCandidates =
+        collectFixtureImportSpecs document
+        |> List.fold (fun candidates spec ->
+            match spec.Source with
+            | Dotted moduleName ->
+                let moduleNameText = SyntaxFacts.moduleNameToText moduleName
+                let inventory = exportedInventories |> Map.tryFind moduleNameText |> Option.defaultValue emptyFixtureTypeInventory
+
+                fixtureImportedNamesForSelection ImportNamespace.Term spec.Selection inventory
+                |> Seq.fold (fun state name -> addResolutionCandidate name moduleName state) candidates
+            | Url _ ->
+                candidates) Map.empty
+
+    let importedTermResolutions = resolveUniqueCandidates importedTermCandidates
+
+    importedTermResolutions
+    |> Map.tryFind bindingName
+    |> Option.bind (fun moduleName ->
+        let moduleNameText = SyntaxFacts.moduleNameToText moduleName
+
+        tryFindStandardModuleDeclaredType bindingName moduleNameText document
+        |> Option.orElseWith (fun () ->
+            workspace.Documents
+            |> List.tryPick (fun candidate ->
+                match candidate.ModuleName with
+                | Some candidateModuleName when String.Equals(SyntaxFacts.moduleNameToText candidateModuleName, moduleNameText, StringComparison.Ordinal) ->
+                    tryFindDeclaredTypeInDocument bindingName candidate
+                | _ ->
+                    None)))
+
 let private tryFindDeclaredType (workspace: WorkspaceCompilation) (currentFilePath: string option) (target: string) =
     let segments =
         target.Split('.', StringSplitOptions.RemoveEmptyEntries)
@@ -812,55 +889,68 @@ let private tryFindDeclaredType (workspace: WorkspaceCompilation) (currentFilePa
     | [] ->
         invalidArg (nameof target) "Fixture assertion target cannot be empty."
     | [ bindingName ] ->
-        let matches =
-            workspace.Documents
-            |> List.choose (fun document ->
-                tryFindDeclaredTypeInDocument bindingName document
-                |> Option.map (fun info ->
-                    let moduleName =
-                        document.ModuleName
-                        |> Option.map SyntaxFacts.moduleNameToText
-                        |> Option.defaultValue "<unknown>"
-
-                    moduleName, info))
-
-        match matches with
-        | [] ->
-            None
-        | _ when currentFilePath.IsSome ->
-            let preferredModuleName =
+        let currentDocument =
+            currentFilePath
+            |> Option.bind (fun filePath ->
                 workspace.Documents
                 |> List.tryFind (fun document ->
-                    String.Equals(document.Source.FilePath, Path.GetFullPath(currentFilePath.Value), StringComparison.OrdinalIgnoreCase))
-                |> Option.bind (fun document -> document.ModuleName |> Option.map SyntaxFacts.moduleNameToText)
+                    String.Equals(document.Source.FilePath, Path.GetFullPath(filePath), StringComparison.OrdinalIgnoreCase)))
 
-            match preferredModuleName with
-            | Some moduleName ->
-                matches
-                |> List.tryPick (fun (candidateModuleName, info) ->
-                    if String.Equals(candidateModuleName, moduleName, StringComparison.Ordinal) then
-                        Some info
-                    else
-                        None)
-                |> Option.orElseWith (fun () ->
-                    match matches with
-                    | [ _, info ] ->
-                        Some info
-                    | multiple ->
-                        let owners = multiple |> List.map fst |> String.concat ", "
-                        invalidOp $"assertType target '{target}' is ambiguous across modules: {owners}.")
+        match currentDocument |> Option.bind (tryFindDeclaredTypeInDocument bindingName) with
+        | Some info ->
+            Some info
+        | None ->
+            match currentDocument |> Option.bind (tryFindImportedDeclaredTypeInDocument workspace bindingName) with
+            | Some info ->
+                Some info
             | None ->
+                let matches =
+                    workspace.Documents
+                    |> List.choose (fun document ->
+                        tryFindDeclaredTypeInDocument bindingName document
+                        |> Option.map (fun info ->
+                            let moduleName =
+                                document.ModuleName
+                                |> Option.map SyntaxFacts.moduleNameToText
+                                |> Option.defaultValue "<unknown>"
+
+                            moduleName, info))
+
                 match matches with
+                | [] ->
+                    None
+                | _ when currentFilePath.IsSome ->
+                    let preferredModuleName =
+                        currentDocument
+                        |> Option.bind (fun document -> document.ModuleName |> Option.map SyntaxFacts.moduleNameToText)
+
+                    match preferredModuleName with
+                    | Some moduleName ->
+                        matches
+                        |> List.tryPick (fun (candidateModuleName, info) ->
+                            if String.Equals(candidateModuleName, moduleName, StringComparison.Ordinal) then
+                                Some info
+                            else
+                                None)
+                        |> Option.orElseWith (fun () ->
+                            match matches with
+                            | [ _, info ] ->
+                                Some info
+                            | multiple ->
+                                let owners = multiple |> List.map fst |> String.concat ", "
+                                invalidOp $"assertType target '{target}' is ambiguous across modules: {owners}.")
+                    | None ->
+                        match matches with
+                        | [ _, info ] ->
+                            Some info
+                        | multiple ->
+                            let owners = multiple |> List.map fst |> String.concat ", "
+                            invalidOp $"assertType target '{target}' is ambiguous across modules: {owners}."
                 | [ _, info ] ->
                     Some info
                 | multiple ->
                     let owners = multiple |> List.map fst |> String.concat ", "
                     invalidOp $"assertType target '{target}' is ambiguous across modules: {owners}."
-        | [ _, info ] ->
-            Some info
-        | multiple ->
-            let owners = multiple |> List.map fst |> String.concat ", "
-            invalidOp $"assertType target '{target}' is ambiguous across modules: {owners}."
     | _ ->
         let moduleName = segments |> List.take (segments.Length - 1) |> SyntaxFacts.moduleNameToText
         let bindingName = List.last segments

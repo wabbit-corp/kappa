@@ -65,7 +65,7 @@ type KCoreExpression =
     | KCoreSequence of KCoreExpression * KCoreExpression
     | KCoreWhile of condition: KCoreExpression * body: KCoreExpression
     | KCoreAppSpine of KCoreExpression * KCoreArgument list
-    | KCoreDictionaryValue of moduleName: string * traitName: string * instanceKey: string
+    | KCoreDictionaryValue of moduleName: string * traitName: string * instanceKey: string * captures: KCoreExpression list
     | KCoreTraitCall of traitName: string * memberName: string * dictionary: KCoreExpression * arguments: KCoreExpression list
     | KCoreUnary of operatorName: string * KCoreExpression
     | KCoreBinary of KCoreExpression * operatorName: string * KCoreExpression

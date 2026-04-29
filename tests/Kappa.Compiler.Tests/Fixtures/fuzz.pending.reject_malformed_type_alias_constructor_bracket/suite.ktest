@@ -1,1 +1,1 @@
---! assertDiagnosticCodes E_PARSE
+--! assertDiagnosticCodes E_EXPECTED_SYNTAX_TOKEN

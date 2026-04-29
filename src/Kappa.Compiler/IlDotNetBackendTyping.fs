@@ -379,7 +379,7 @@ module internal IlDotNetBackendTyping =
                             match expectedType, dictionary with
                             | Some expected, _ ->
                                 return expected
-                            | None, KRuntimeDictionaryValue(moduleName, _, instanceKey) ->
+                            | None, KRuntimeDictionaryValue(moduleName, _, instanceKey, _) ->
                                 match
                                     traitInstances
                                     |> List.tryFind (fun instanceInfo ->
@@ -661,7 +661,7 @@ module internal IlDotNetBackendTyping =
                             do! inferExpressionType currentModule localTypes active allowedTypeParameters None body |> Result.map (fun _ -> ())
                             return! ensureExpected unitIlType
                         }
-                    | KRuntimeDictionaryValue(moduleName, traitName, instanceKey) ->
+                    | KRuntimeDictionaryValue(moduleName, traitName, instanceKey, _) ->
                         match
                             traitInstances
                             |> List.tryFind (fun instanceInfo ->

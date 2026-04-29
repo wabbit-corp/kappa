@@ -348,6 +348,7 @@ type SurfaceExpression =
     | NumericLiteral of SurfaceNumericLiteral
     | Name of string list
     | KindQualifiedName of KindSelector * string list
+    | TypeSyntaxTokens of Token list
     | SyntaxQuote of SurfaceExpression
     | SyntaxSplice of SurfaceExpression
     | TopLevelSyntaxSplice of SurfaceExpression
@@ -1237,7 +1238,7 @@ module SyntaxFacts =
                 if closingLineStart = 0 then
                     body
                 else
-                    body.Substring(0, closingLineStart - 1)
+                    body.Substring(0, closingLineStart)
 
             let lines = content.Split('\n', StringSplitOptions.None)
             let dedented = ResizeArray<string>()

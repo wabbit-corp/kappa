@@ -126,6 +126,7 @@ type KBackendExpression =
         moduleName: string *
         traitName: string *
         instanceKey: string *
+        captures: KBackendExpression list *
         representation: KBackendRepresentationClass
     | BackendTraitCall of
         traitName: string *

@@ -84,8 +84,8 @@ module internal ClrAssemblyLowering =
                 KRuntimeApply(KRuntimeName(qualifiedName moduleName constructorName), loweredArguments)
         | BackendCall(callee, arguments, _, _) ->
             KRuntimeApply(lowerExpression callee, arguments |> List.map lowerExpression)
-        | BackendDictionaryValue(moduleName, traitName, instanceKey, _) ->
-            KRuntimeDictionaryValue(moduleName, traitName, instanceKey)
+        | BackendDictionaryValue(moduleName, traitName, instanceKey, captures, _) ->
+            KRuntimeDictionaryValue(moduleName, traitName, instanceKey, captures |> List.map lowerExpression)
         | BackendTraitCall(traitName, memberName, dictionary, arguments, _) ->
             KRuntimeTraitCall(traitName, memberName, lowerExpression dictionary, arguments |> List.map lowerExpression)
         | BackendConstructData(moduleName, _, constructorName, _, fields, _) ->

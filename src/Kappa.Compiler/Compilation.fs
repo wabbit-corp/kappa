@@ -216,9 +216,53 @@ module Compilation =
                 traceRecorder.RecordParse preludeDocument.Source.FilePath
                 preludeDocument :: parsedUserDocuments
 
+        let withBundledStdlibDocuments =
+            let bundledByModuleName =
+                BundledStandardModules.all
+                |> List.map (fun moduleInfo -> moduleInfo.ModuleName, moduleInfo)
+                |> Map.ofList
+
+            let rec loadRequiredBundledModules documents loadedModules =
+                let newlyReferencedBundledModules =
+                    documents
+                    |> List.collect collectImportSpecs
+                    |> List.choose (fun spec ->
+                        match spec.Source with
+                        | Dotted moduleName -> Some moduleName
+                        | Url _ -> None)
+                    |> List.distinct
+                    |> List.filter (fun moduleName -> not (Set.contains moduleName loadedModules))
+                    |> List.choose (fun moduleName ->
+                        bundledByModuleName |> Map.tryFind moduleName)
+
+                match newlyReferencedBundledModules with
+                | [] ->
+                    documents
+                | modulesToLoad ->
+                    let parsedBundledDocuments =
+                        modulesToLoad
+                        |> List.map (fun moduleInfo ->
+                            let document = parseBundledStandardModule moduleInfo
+                            traceRecorder.RecordParse document.Source.FilePath
+                            document)
+
+                    let nextLoadedModules =
+                        modulesToLoad
+                        |> List.fold (fun state moduleInfo -> Set.add moduleInfo.ModuleName state) loadedModules
+
+                    loadRequiredBundledModules (documents @ parsedBundledDocuments) nextLoadedModules
+
+            let existingModules =
+                initialDocuments
+                |> List.choose (fun document -> document.ModuleName)
+                |> Set.ofList
+
+            loadRequiredBundledModules initialDocuments existingModules
+
         let documents =
-            initialDocuments
+            withBundledStdlibDocuments
             |> reparseDocumentsWithImportedFixities options
+            |> ElaborationEvaluation.expandTopLevelSplices
             |> resolveImportExportSemantics backendProfile
             |> List.map EffectSemantics.assignDocumentEffectIdentities
 

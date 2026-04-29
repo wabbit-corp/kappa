@@ -935,7 +935,7 @@ module CheckpointVerification =
                 conventionDiagnostics
                 @ verifyBackendExpression currentModule bindingLabel bindingOrigin callee
                 @ (arguments |> List.collect (verifyBackendExpression currentModule bindingLabel bindingOrigin))
-            | BackendDictionaryValue(_, _, _, _) ->
+            | BackendDictionaryValue(_, _, _, _, _) ->
                 []
             | BackendTraitCall(_, _, dictionary, arguments, _) ->
                 verifyBackendExpression currentModule bindingLabel bindingOrigin dictionary

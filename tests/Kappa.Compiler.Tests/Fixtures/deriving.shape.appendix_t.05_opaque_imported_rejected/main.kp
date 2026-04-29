@@ -1,0 +1,14 @@
+module main
+
+import lib.secret.(type Secret)
+import std.deriving.shape.(inspectAdt, unitSyntax)
+
+probe : Unit
+let probe =
+    $(do
+        _ <- inspectAdt @Secret '{ Secret }
+        unitSyntax)
+
+--! assertErrorCount 1
+--! assertDiagnostic error KAPPA_DERIVING_SHAPE_OPAQUE_REPRESENTATION
+--! assertDeclKinds import, import, signature, let

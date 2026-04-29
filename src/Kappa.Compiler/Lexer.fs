@@ -74,7 +74,7 @@ module Lexer =
                 spaces <- spaces + 1
                 index <- index + 1
             | '\t' ->
-                diagnostics.AddError(DiagnosticCode.LexicalError, "Tabs are not permitted in indentation.", source.GetLocation(TextSpan.FromBounds(lineStart + index, lineStart + index + 1)))
+                diagnostics.AddError(DiagnosticCode.TabCharacterNotPermitted, "Tabs are not permitted in indentation.", source.GetLocation(TextSpan.FromBounds(lineStart + index, lineStart + index + 1)))
                 index <- index + 1
             | _ ->
                 index <- lineText.Length
@@ -145,6 +145,11 @@ module Lexer =
                 endIndex <- endIndex + 1
 
         endIndex, closed
+
+    let private startsSyntaxQuote (text: string) index =
+        index + 1 < text.Length
+        && text[index + 1] = '{'
+        && (index + 2 >= text.Length || text[index + 2] <> '\'')
 
     let private countLeadingHashes (text: string) index =
         let mutable currentIndex = index
@@ -352,7 +357,7 @@ module Lexer =
                             currentAbsoluteIndex <- currentAbsoluteIndex + 1
                         | '\t' ->
                             diagnostics.AddError(
-                                DiagnosticCode.LexicalError,
+                                DiagnosticCode.TabCharacterNotPermitted,
                                 "Tabs are not permitted.",
                                 source.GetLocation(TextSpan.FromBounds(currentAbsoluteIndex, currentAbsoluteIndex + 1))
                             )
@@ -441,7 +446,7 @@ module Lexer =
                             currentAbsoluteIndex + nestedHashCount < text.Length && text[currentAbsoluteIndex + nestedHashCount] = '"' ->
                             currentAbsoluteIndex <- scanAbsoluteStringLiteral currentAbsoluteIndex
                         | '\'' ->
-                            if currentAbsoluteIndex + 1 < text.Length && text[currentAbsoluteIndex + 1] = '{' then
+                            if startsSyntaxQuote text currentAbsoluteIndex then
                                 emitAbsolute Operator "'" currentAbsoluteIndex
                                 currentAbsoluteIndex <- currentAbsoluteIndex + 1
                             else
@@ -475,7 +480,7 @@ module Lexer =
                                 currentAbsoluteIndex <- endIndex
                             | Some(SyntaxFacts.InvalidNumericToken(message, endIndex)) ->
                                 diagnostics.AddError(
-                                    DiagnosticCode.LexicalError,
+                                    DiagnosticCode.MalformedNumericLiteral,
                                     message,
                                     source.GetLocation(TextSpan.FromBounds(currentAbsoluteIndex, endIndex))
                                 )
@@ -516,7 +521,7 @@ module Lexer =
                             currentAbsoluteIndex <- endIndex
                         | _ ->
                             diagnostics.AddError(
-                                DiagnosticCode.LexicalError,
+                                DiagnosticCode.UnrecognizedCharacter,
                                 $"Unrecognized character '{current}'.",
                                 source.GetLocation(TextSpan.FromBounds(currentAbsoluteIndex, currentAbsoluteIndex + 1))
                             )
@@ -526,7 +531,7 @@ module Lexer =
 
                 if blockCommentDepth > 0 || not terminated then
                     diagnostics.AddError(
-                        DiagnosticCode.LexicalError,
+                        DiagnosticCode.UnterminatedStringInterpolation,
                         "Unterminated string interpolation.",
                         source.GetLocation(TextSpan.FromBounds(startAbsoluteIndex, currentAbsoluteIndex))
                     )
@@ -623,7 +628,7 @@ module Lexer =
 
                 if not closed then
                     diagnostics.AddError(
-                        DiagnosticCode.LexicalError,
+                        DiagnosticCode.UnterminatedStringLiteral,
                         "Unterminated prefixed string literal.",
                         source.GetLocation(TextSpan.FromBounds(absolutePrefixStart, currentAbsoluteIndex))
                     )
@@ -717,7 +722,7 @@ module Lexer =
                         currentIndex <- currentIndex + 1
 
                 if not closed then
-                    diagnostics.AddError(DiagnosticCode.LexicalError, 
+                    diagnostics.AddError(DiagnosticCode.UnterminatedStringLiteral, 
                         "Unterminated prefixed string literal.",
                         source.GetLocation(TextSpan.FromBounds(lineStart + prefixStart, lineStart + currentIndex))
                     )
@@ -806,7 +811,7 @@ module Lexer =
                 endIndex
             | Some(SyntaxFacts.InvalidNumericToken(message, endIndex)) ->
                 diagnostics.AddError(
-                    DiagnosticCode.LexicalError,
+                    DiagnosticCode.MalformedNumericLiteral,
                     message,
                     source.GetLocation(TextSpan.FromBounds(lineStart + startOffset, lineStart + endIndex))
                 )
@@ -852,7 +857,7 @@ module Lexer =
                     | ' ' ->
                         currentIndex <- currentIndex + 1
                     | '\t' ->
-                        diagnostics.AddError(DiagnosticCode.LexicalError, 
+                        diagnostics.AddError(DiagnosticCode.TabCharacterNotPermitted, 
                             "Tabs are not permitted.",
                             source.GetLocation(TextSpan.FromBounds(lineStart + currentIndex, lineStart + currentIndex + 1))
                         )
@@ -941,7 +946,7 @@ module Lexer =
                         currentIndex + hashCount < lineText.Length && lineText[currentIndex + hashCount] = '"' ->
                         currentIndex <- scanStringLiteral currentIndex
                     | '\'' ->
-                        if currentIndex + 1 < lineText.Length && lineText[currentIndex + 1] = '{' then
+                        if startsSyntaxQuote lineText currentIndex then
                             emit Operator "'" currentIndex
                             currentIndex <- currentIndex + 1
                         else
@@ -961,7 +966,7 @@ module Lexer =
                     | _ when SyntaxFacts.isOperatorCharacter current ->
                         currentIndex <- scanOperator currentIndex
                     | _ ->
-                        diagnostics.AddError(DiagnosticCode.LexicalError, 
+                        diagnostics.AddError(DiagnosticCode.UnrecognizedCharacter, 
                             $"Unrecognized character '{current}'.",
                             source.GetLocation(TextSpan.FromBounds(lineStart + currentIndex, lineStart + currentIndex + 1))
                         )
@@ -970,7 +975,7 @@ module Lexer =
                         currentIndex <- currentIndex + 1
 
             if blockCommentDepth > 0 || not terminated then
-                diagnostics.AddError(DiagnosticCode.LexicalError, 
+                diagnostics.AddError(DiagnosticCode.UnterminatedStringInterpolation, 
                     "Unterminated string interpolation.",
                     source.GetLocation(TextSpan.FromBounds(lineStart + startOffset, lineStart + currentIndex))
                 )
@@ -994,7 +999,7 @@ module Lexer =
                 | ' ' ->
                     index <- index + 1
                 | '\t' ->
-                    diagnostics.AddError(DiagnosticCode.LexicalError, "Tabs are not permitted.", source.GetLocation(TextSpan.FromBounds(lineStart + index, lineStart + index + 1)))
+                    diagnostics.AddError(DiagnosticCode.TabCharacterNotPermitted, "Tabs are not permitted.", source.GetLocation(TextSpan.FromBounds(lineStart + index, lineStart + index + 1)))
                     index <- index + 1
                 | '-' when isLineComment lineText index ->
                     index <- lineText.Length
@@ -1085,7 +1090,7 @@ module Lexer =
                     index + hashCount < lineText.Length && lineText[index + hashCount] = '"' ->
                     index <- scanStringLiteral index
                 | '\'' ->
-                    if index + 1 < lineText.Length && lineText[index + 1] = '{' then
+                    if startsSyntaxQuote lineText index then
                         emit Operator "'" index
                         index <- index + 1
                     else
@@ -1105,7 +1110,7 @@ module Lexer =
                 | _ when SyntaxFacts.isOperatorCharacter current ->
                     index <- scanOperator index
                 | _ ->
-                    diagnostics.AddError(DiagnosticCode.LexicalError, 
+                    diagnostics.AddError(DiagnosticCode.UnrecognizedCharacter, 
                         $"Unrecognized character '{current}'.",
                         source.GetLocation(TextSpan.FromBounds(lineStart + index, lineStart + index + 1))
                     )

@@ -1,5 +1,9 @@
 module main
 
+-- Source issues: Idris2#758
+-- Kappa analogue: extracting a linear function from a monadic bind must preserve the function's linear binder
+-- annotation through the `do`-block elaboration.
+-- Spec: §5.1.5, §8.2
 data Token : Type =
     Token
 

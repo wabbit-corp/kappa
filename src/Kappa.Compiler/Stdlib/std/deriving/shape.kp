@@ -1,0 +1,141 @@
+module std.deriving.shape
+
+data ShapeAdtKind : Type =
+    ProductAdt
+    SumAdt
+    EnumAdt
+
+data ShapeVisibility : Type =
+    ShapeRepresentationVisible
+    ShapeRepresentationOpaque
+
+data ShapeErrorKind : Type =
+    ShapeNotData
+    ShapeNotClosedRecord
+    ShapeOpaqueRepresentation
+    ShapeUnsupportedType
+    ShapeBadConstructorArguments
+    ShapeBadRecordArguments
+    ShapeMissingRuntimeFieldInstance
+
+data ShapeError : Type =
+    ShapeError (kind : ShapeErrorKind) (origin : SyntaxOrigin) (message : String)
+
+data ShapeParameter : Type =
+    ShapeParameter (sourceName : Option String) (renderName : String) (origin : SyntaxOrigin) (@0 parameterType : Type) (parameterTypeSyntax : Syntax Type) (quantity : Quantity) (implicit : Bool) (compileTimeOnly : Bool)
+
+data ShapeField : Type =
+    ShapeField (sourceName : Option String) (renderName : String) (origin : SyntaxOrigin) (typeOrigin : SyntaxOrigin) (@0 fieldType : Type) (fieldTypeSyntax : Syntax Type) (quantity : Quantity) (implicit : Bool) (compileTimeOnly : Bool) (runtimeRelevant : Bool)
+
+data ShapeConstructor : Type =
+    ShapeConstructor (symbol : Symbol) (sourceName : String) (renderName : String) (origin : SyntaxOrigin) (tag : Nat) (fields : List ShapeField)
+
+data AdtShape (a : Type) : Type =
+    AdtShape (symbol : Symbol) (sourceName : String) (renderName : String) (origin : SyntaxOrigin) (visibility : ShapeVisibility) (kind : ShapeAdtKind) (parameters : List ShapeParameter) (constructors : List ShapeConstructor)
+
+data RecordShape (a : Type) : Type =
+    RecordShape (origin : SyntaxOrigin) (fields : List ShapeField)
+
+data BoundField : Type =
+    BoundField (field : ShapeField) (@0 fieldType : Type) (term : Syntax fieldType)
+
+data BoundFieldPair : Type =
+    BoundFieldPair (field : ShapeField) (@0 fieldType : Type) (left : Syntax fieldType) (right : Syntax fieldType)
+
+data FieldArgument : Type =
+    SuppliedFieldArgument (field : ShapeField) (@0 fieldType : Type) (value : Syntax fieldType)
+
+    OmittedImplicitFieldArgument (field : ShapeField)
+
+data FieldConstraint (tc : Type -> Constraint) : Type =
+    FieldConstraint (field : ShapeField) (@0 fieldType : Type) (origin : SyntaxOrigin)
+
+expect term tryInspectAdt :
+    forall (@0 a : Type).
+    Syntax Type -> Elab (Result ShapeError (AdtShape a))
+
+expect term inspectAdt :
+    forall (@0 a : Type).
+    Syntax Type -> Elab (AdtShape a)
+
+expect term tryInspectRecord :
+    forall (@0 a : Type).
+    Syntax Type -> Elab (Result ShapeError (RecordShape a))
+
+expect term inspectRecord :
+    forall (@0 a : Type).
+    Syntax Type -> Elab (RecordShape a)
+
+expect term runtimeConstructorFields :
+    ShapeConstructor -> List ShapeField
+
+expect term runtimeRecordFields :
+    forall (@0 a : Type).
+    RecordShape a -> List ShapeField
+
+expect term requiredRuntimeFieldConstraints :
+    forall (tc : Type -> Constraint) (@0 a : Type).
+    AdtShape a -> Elab (List (FieldConstraint tc))
+
+expect term requireRuntimeFieldInstances :
+    forall (tc : Type -> Constraint) (@0 a : Type).
+    AdtShape a -> Elab Unit
+
+expect term requireRecordFieldInstances :
+    forall (tc : Type -> Constraint) (@0 a : Type).
+    RecordShape a -> Elab Unit
+
+expect term fieldArgument :
+    forall (@0 t : Type).
+    ShapeField -> Syntax t -> FieldArgument
+
+expect term omitImplicitFieldArgument :
+    ShapeField -> FieldArgument
+
+expect term matchAdt :
+    forall (@0 a : Type) (@0 r : Type).
+    AdtShape a ->
+    Syntax a ->
+    (ShapeConstructor -> List BoundField -> Elab (Syntax r)) ->
+    Elab (Syntax r)
+
+expect term matchAdt2 :
+    forall (@0 a : Type) (@0 r : Type).
+    AdtShape a ->
+    Syntax a ->
+    Syntax a ->
+    (ShapeConstructor -> List BoundFieldPair -> Elab (Syntax r)) ->
+    (ShapeConstructor -> ShapeConstructor -> Elab (Syntax r)) ->
+    Elab (Syntax r)
+
+expect term constructAdt :
+    forall (@0 a : Type).
+    AdtShape a ->
+    ShapeConstructor ->
+    List FieldArgument ->
+    Elab (Syntax a)
+
+expect term matchRecord :
+    forall (@0 a : Type) (@0 r : Type).
+    RecordShape a ->
+    Syntax a ->
+    (List BoundField -> Elab (Syntax r)) ->
+    Elab (Syntax r)
+
+expect term constructRecord :
+    forall (@0 a : Type).
+    RecordShape a ->
+    List FieldArgument ->
+    Elab (Syntax a)
+
+expect term stringSyntax :
+    String -> Elab (Syntax String)
+
+expect term natSyntax :
+    Nat -> Elab (Syntax Nat)
+
+expect term boolSyntax :
+    Bool -> Elab (Syntax Bool)
+
+expect term unitSyntax :
+    Elab (Syntax Unit)

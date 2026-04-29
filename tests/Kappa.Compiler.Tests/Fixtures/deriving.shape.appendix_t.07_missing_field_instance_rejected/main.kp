@@ -1,0 +1,20 @@
+module main
+
+import support.shape_assert.(assertHasAdtRuntimeFieldInstances)
+
+trait MiniShow (a : Type) =
+    miniShow : (& value : a) -> String
+
+data Mystery : Type =
+    Mystery
+
+data NeedsMystery : Type =
+    NeedsMystery (value : Mystery)
+
+probe : Unit
+let probe =
+    $(assertHasAdtRuntimeFieldInstances @MiniShow @NeedsMystery '{ NeedsMystery })
+
+--! assertErrorCount 1
+--! assertDiagnostic error KAPPA_DERIVING_SHAPE_MISSING_RUNTIME_FIELD_INSTANCE
+--! assertDeclKinds import, trait, data, data, signature, let

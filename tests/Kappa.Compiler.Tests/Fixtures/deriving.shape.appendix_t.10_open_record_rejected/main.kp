@@ -1,0 +1,13 @@
+module main
+
+import std.deriving.shape.(inspectRecord, unitSyntax)
+
+probe : forall (r : RecRow). Unit
+let probe @r =
+    $(do
+        _ <- inspectRecord @((name : String | r)) '{ (name : String | r) }
+        unitSyntax)
+
+--! assertErrorCount 1
+--! assertDiagnostic error KAPPA_DERIVING_SHAPE_NOT_CLOSED_RECORD
+--! assertDeclKinds import, signature, let

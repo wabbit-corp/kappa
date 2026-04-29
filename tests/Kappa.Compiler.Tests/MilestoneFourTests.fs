@@ -767,7 +767,7 @@ let ``handler operation clauses require an explicit resumption binder`` () =
             [ "main.kp", mainSource ]
 
     Assert.True(workspace.HasErrors, "Expected handler clauses without a resumption binder to be rejected.")
-    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.ParseError)
+    Assert.Contains(workspace.Diagnostics, fun diagnostic -> diagnostic.Code = DiagnosticCode.ExpectedSyntaxToken)
 
 [<Fact>]
 let ``top level effect declarations reject borrowed resumption quantities`` () =

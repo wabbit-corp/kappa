@@ -51,6 +51,12 @@ module internal ZigCcBackendRuntime =
                 "    {"
                 $"        kappa_panic(\"{missingDictionaryMessage}\");"
                 "    }"
+                "    KValue* dispatch_args[argc + 1];"
+                "    dispatch_args[0] = dictionary;"
+                "    for (int i = 0; i < argc; ++i)"
+                "    {"
+                "        dispatch_args[i + 1] = args[i];"
+                "    }"
                 ""
                 yield!
                     entries
@@ -59,7 +65,7 @@ module internal ZigCcBackendRuntime =
                             $"    if (strcmp(dictionary->as.dictionary_value.module_name, \"{cStringLiteral instanceModuleName}\") == 0"
                             $"        && strcmp(dictionary->as.dictionary_value.instance_key, \"{cStringLiteral instanceKey}\") == 0)"
                             "    {"
-                            $"        return {emittedFunctionName}(NULL, args, argc);"
+                            $"        return {emittedFunctionName}(NULL, dispatch_args, argc + 1);"
                             "    }"
                             ""
                         ])

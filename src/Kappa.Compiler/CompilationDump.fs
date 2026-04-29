@@ -681,10 +681,13 @@ module CompilationDump =
                         addEdge nodeId argumentId $"argument:{index}"
 
                     nodeId
-                | BackendDictionaryValue(moduleName, traitName, instanceKey, representation) ->
+                | BackendDictionaryValue(moduleName, traitName, instanceKey, captures, representation) ->
                     addNode
                         "dictionary"
-                        $"dictionary {moduleName}.{traitName}.{instanceKey}"
+                        (if List.isEmpty captures then
+                             $"dictionary {moduleName}.{traitName}.{instanceKey}"
+                         else
+                             $"dictionary {moduleName}.{traitName}.{instanceKey} [{captures.Length} capture(s)]")
                         (Some(IrText.backendRepresentationText representation))
                 | BackendTraitCall(traitName, memberName, dictionary, arguments, resultRepresentation) ->
                     let nodeId =

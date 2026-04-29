@@ -402,7 +402,7 @@ module internal IlDotNetBackendEmit =
                         match expectedType, dictionary with
                         | Some expected, _ ->
                             return expected
-                        | None, KRuntimeDictionaryValue(moduleName, _, instanceKey) ->
+                        | None, KRuntimeDictionaryValue(moduleName, _, instanceKey, _) ->
                             match tryFindTraitInstance state.Environment moduleName traitName instanceKey with
                             | Some instanceInfo ->
                                 match instanceInfo.MemberBindings |> Map.tryFind memberName with
@@ -674,7 +674,7 @@ module internal IlDotNetBackendEmit =
                         do! infer body None |> Result.map (fun _ -> ())
                         return! ensureExpected unitIlType
                     }
-                | KRuntimeDictionaryValue(moduleName, traitName, instanceKey) ->
+                | KRuntimeDictionaryValue(moduleName, traitName, instanceKey, _) ->
                     match tryFindTraitInstance state.Environment moduleName traitName instanceKey with
                     | Some instanceInfo ->
                         ensureExpected (dictionaryIlType traitName instanceInfo.HeadTypes)
@@ -1075,10 +1075,10 @@ module internal IlDotNetBackendEmit =
                                         routeBindingInfo
                                         Map.empty
 
-                                if List.length routeBindingInfo.ParameterTypes <> List.length argumentLocals then
+                                if List.length routeBindingInfo.ParameterTypes <> List.length argumentLocals + 1 then
                                     return!
                                         Result.Error
-                                            $"IL backend trait route '{instanceInfo.ModuleName}.{bindingName}' expected {List.length routeBindingInfo.ParameterTypes} argument(s), but the trait call has {List.length argumentLocals}."
+                                            $"IL backend trait route '{instanceInfo.ModuleName}.{bindingName}' expected {List.length routeBindingInfo.ParameterTypes} argument(s), but the trait call supplies 1 dictionary and {List.length argumentLocals} explicit argument(s)."
 
                                 il.Emit(OpCodes.Ldloc, dictionaryLocal)
                                 il.Emit(OpCodes.Callvirt, dictionaryModuleGetter)
@@ -1098,7 +1098,9 @@ module internal IlDotNetBackendEmit =
                                 il.Emit(OpCodes.Call, stringEqualityMethod)
                                 il.Emit(OpCodes.Brfalse, nextRouteLabel)
 
-                                List.zip3 argumentLocals argumentTypes (routeBindingInfo.ParameterTypes |> List.map snd)
+                                emitLoadLocal il dictionaryLocal
+
+                                List.zip3 argumentLocals argumentTypes (routeBindingInfo.ParameterTypes |> List.tail |> List.map snd)
                                 |> List.iter (fun (argumentLocal, sourceType, targetType) ->
                                     emitLoadLocal il argumentLocal
                                     emitCoerceStackValue state typeParameters sourceType targetType il)
@@ -1580,12 +1582,16 @@ module internal IlDotNetBackendEmit =
                 il.MarkLabel(endLabel)
                 do! emitUnitValue il
             }
-        | KRuntimeDictionaryValue(moduleName, traitName, instanceKey) ->
-            il.Emit(OpCodes.Ldstr, moduleName)
-            il.Emit(OpCodes.Ldstr, traitName)
-            il.Emit(OpCodes.Ldstr, instanceKey)
-            il.Emit(OpCodes.Newobj, dictionaryTupleConstructor)
-            Result.Ok()
+        | KRuntimeDictionaryValue(moduleName, traitName, instanceKey, captures) ->
+            if List.isEmpty captures then
+                il.Emit(OpCodes.Ldstr, moduleName)
+                il.Emit(OpCodes.Ldstr, traitName)
+                il.Emit(OpCodes.Ldstr, instanceKey)
+                il.Emit(OpCodes.Newobj, dictionaryTupleConstructor)
+                Result.Ok()
+            else
+                Result.Error
+                    $"IL backend does not yet support captured dictionaries for trait instance '{moduleName}.{traitName}.{instanceKey}'."
         | KRuntimeTraitCall(traitName, memberName, dictionary, arguments) ->
             emitTraitCall traitName memberName dictionary arguments
         | KRuntimeApply _ ->

@@ -1,0 +1,20 @@
+module main
+
+import support.shape_assert.(assertAdtShape)
+
+data Expr : Type =
+    Lit (value : Int)
+    Add (left : Expr) (right : Expr)
+    Var (name : String)
+
+shapeSmoke : Unit
+let shapeSmoke =
+    $(assertAdtShape @Expr
+        '{ Expr }
+        "Expr"
+        ("Lit" :: "Add" :: "Var" :: Nil)
+        (("value" :: Nil) :: ("left" :: "right" :: Nil) :: ("name" :: Nil) :: Nil))
+
+--! assertNoErrors
+--! assertType shapeSmoke Unit
+--! assertDeclKinds import, data, signature, let

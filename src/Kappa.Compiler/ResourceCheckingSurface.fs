@@ -155,6 +155,7 @@ module internal ResourceCheckingSurface =
             match expression with
             | Literal _ -> ()
             | NumericLiteral _ -> ()
+            | TypeSyntaxTokens _ -> ()
             | KindQualifiedName _ -> ()
             | Name(root :: _) -> yield root
             | Name [] -> ()

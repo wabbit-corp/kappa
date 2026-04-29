@@ -301,6 +301,8 @@ module internal EffectSemantics =
                 CodeQuote(rewriteExpression inner)
             | CodeSplice inner ->
                 CodeSplice(rewriteExpression inner)
+            | TypeSyntaxTokens _ ->
+                expression
             | Literal _
             | NumericLiteral _
             | Name _
@@ -547,6 +549,8 @@ module internal EffectSemantics =
                 CodeQuote(rewrite activeAliases inner)
             | CodeSplice inner ->
                 CodeSplice(rewrite activeAliases inner)
+            | TypeSyntaxTokens _ ->
+                current
             | Handle(isDeep, label, body, returnClause, operationClauses) ->
                 let rewriteClause (clause: SurfaceEffectHandlerClause) =
                     { clause with Body = rewrite activeAliases clause.Body }

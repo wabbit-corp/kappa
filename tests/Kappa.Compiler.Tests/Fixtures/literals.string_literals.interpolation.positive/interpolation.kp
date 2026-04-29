@@ -1,5 +1,7 @@
 module interpolation
 
+-- Source issue: KT-881
+
 name : String
 let name = "done"
 

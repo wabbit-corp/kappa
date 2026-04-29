@@ -1,0 +1,16 @@
+module main
+
+import support.shape_assert.(assertRecordShape)
+
+type UserRecord =
+    (name : String, age : Int)
+
+shapeSmoke : Unit
+let shapeSmoke =
+    $(assertRecordShape @UserRecord
+        '{ UserRecord }
+        ("name" :: "age" :: Nil))
+
+--! assertNoErrors
+--! assertType shapeSmoke Unit
+--! assertDeclKinds import, type, signature, let

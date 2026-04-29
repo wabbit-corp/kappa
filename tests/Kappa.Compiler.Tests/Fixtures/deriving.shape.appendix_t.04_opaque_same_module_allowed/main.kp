@@ -1,0 +1,18 @@
+module main
+
+import support.shape_assert.(assertAdtShape)
+
+opaque data Secret : Type =
+    Secret (value : Int)
+
+shapeSmoke : Unit
+let shapeSmoke =
+    $(assertAdtShape @Secret
+        '{ Secret }
+        "Secret"
+        ("Secret" :: Nil)
+        (("value" :: Nil) :: Nil))
+
+--! assertNoErrors
+--! assertType shapeSmoke Unit
+--! assertDeclKinds import, data, signature, let

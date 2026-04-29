@@ -1175,63 +1175,121 @@ module TypeSignatures =
                 | _ ->
                     None
 
-            let parseConstraints () =
-                if not (containsConstraintArrow 0 position) then
-                    []
-                else
-                    let constraintTokens = ResizeArray<Token>()
+            let tryStripSingleOuterParens (tokens: Token list) =
+                match tokens with
+                | { Kind = LeftParen } :: _ when not (List.isEmpty tokens) && (List.last tokens).Kind = RightParen ->
+                    let tokenArray = tokens |> List.toArray
                     let mutable depth = 0
-                    let mutable keepReading = true
+                    let mutable wrapsWholeList = false
+                    let mutable index = 0
 
-                    while keepReading && not this.IsAtEnd do
-                        match this.Current with
-                        | Some { Kind = LeftParen } as current ->
+                    while index < tokenArray.Length do
+                        match tokenArray[index].Kind with
+                        | LeftParen ->
                             depth <- depth + 1
-                            constraintTokens.Add(current.Value)
-                            this.Advance() |> ignore
-                        | Some { Kind = RightParen } as current ->
-                            depth <- max 0 (depth - 1)
-                            constraintTokens.Add(current.Value)
-                            this.Advance() |> ignore
-                        | _ when this.MatchConstraintArrow() && depth = 0 ->
-                            keepReading <- false
-                        | Some token ->
-                            constraintTokens.Add(token)
-                            this.Advance() |> ignore
-                        | None ->
-                            keepReading <- false
+                        | RightParen ->
+                            depth <- depth - 1
+                            if depth = 0 then
+                                wrapsWholeList <- index = tokenArray.Length - 1
+                        | _ ->
+                            ()
 
-                    let splitConstraints =
-                        let groups = ResizeArray<Token list>()
-                        let currentGroup = ResizeArray<Token>()
-                        let mutable nestedDepth = 0
+                        index <- index + 1
 
-                        for token in constraintTokens do
-                            match token.Kind with
-                            | LeftParen ->
-                                nestedDepth <- nestedDepth + 1
-                                if nestedDepth > 1 then
-                                    currentGroup.Add(token)
-                            | RightParen ->
-                                if nestedDepth > 1 then
-                                    currentGroup.Add(token)
+                    if wrapsWholeList then
+                        Some(tokens |> List.tail |> List.take (tokens.Length - 2))
+                    else
+                        None
+                | _ ->
+                    None
 
-                                nestedDepth <- max 0 (nestedDepth - 1)
-                            | Comma when nestedDepth = 0 ->
-                                if currentGroup.Count > 0 then
-                                    groups.Add(List.ofSeq currentGroup)
-                                    currentGroup.Clear()
-                            | _ ->
-                                currentGroup.Add(token)
+            let splitConstraintGroupTokens constraintTokens =
+                let groupTokens =
+                    constraintTokens
+                    |> tryStripSingleOuterParens
+                    |> Option.defaultValue constraintTokens
 
+                let groups = ResizeArray<Token list>()
+                let currentGroup = ResizeArray<Token>()
+                let mutable parenDepth = 0
+                let mutable bracketDepth = 0
+                let mutable braceDepth = 0
+
+                for token in groupTokens do
+                    match token.Kind with
+                    | LeftParen ->
+                        parenDepth <- parenDepth + 1
+                        currentGroup.Add(token)
+                    | RightParen ->
+                        parenDepth <- max 0 (parenDepth - 1)
+                        currentGroup.Add(token)
+                    | LeftBracket
+                    | LeftEffectRow
+                    | LeftBrace
+                    | LeftSetBrace ->
+                        bracketDepth <- bracketDepth + 1
+                        currentGroup.Add(token)
+                    | RightBracket
+                    | RightEffectRow
+                    | RightBrace
+                    | RightSetBrace ->
+                        bracketDepth <- max 0 (bracketDepth - 1)
+                        currentGroup.Add(token)
+                    | Comma when parenDepth = 0 && bracketDepth = 0 && braceDepth = 0 ->
                         if currentGroup.Count > 0 then
                             groups.Add(List.ofSeq currentGroup)
+                            currentGroup.Clear()
+                    | _ ->
+                        currentGroup.Add(token)
 
-                        groups
-                        |> Seq.toList
+                if currentGroup.Count > 0 then
+                    groups.Add(List.ofSeq currentGroup)
 
-                    splitConstraints
-                    |> List.choose parseConstraint
+                groups |> Seq.toList
+
+            let tryParseConstraintGroup constraintTokens =
+                let groups = splitConstraintGroupTokens constraintTokens
+                let parsedConstraints = groups |> List.map parseConstraint
+
+                if parsedConstraints |> List.forall Option.isSome then
+                    Some(parsedConstraints |> List.choose id)
+                else
+                    None
+
+            let parseConstraints () =
+                let rec loop collected =
+                    if not (containsConstraintArrow 0 position) then
+                        List.rev collected
+                    else
+                        let constraintTokens = ResizeArray<Token>()
+                        let mutable depth = 0
+                        let mutable keepReading = true
+
+                        while keepReading && not this.IsAtEnd do
+                            match this.Current with
+                            | Some { Kind = LeftParen } as current ->
+                                depth <- depth + 1
+                                constraintTokens.Add(current.Value)
+                                this.Advance() |> ignore
+                            | Some { Kind = RightParen } as current ->
+                                depth <- max 0 (depth - 1)
+                                constraintTokens.Add(current.Value)
+                                this.Advance() |> ignore
+                            | _ when this.MatchConstraintArrow() && depth = 0 ->
+                                keepReading <- false
+                            | Some token ->
+                                constraintTokens.Add(token)
+                                this.Advance() |> ignore
+                            | None ->
+                                keepReading <- false
+
+                        match tryParseConstraintGroup (List.ofSeq constraintTokens) with
+                        | Some parsedConstraints ->
+                            loop (List.rev parsedConstraints @ collected)
+                        | None ->
+                            List.rev collected
+
+                loop []
 
             let forall = parseForall ()
             let constraints = parseConstraints ()

@@ -57,7 +57,8 @@ type KRuntimeExpression =
     | KRuntimeSequence of KRuntimeExpression * KRuntimeExpression
     | KRuntimeWhile of condition: KRuntimeExpression * body: KRuntimeExpression
     | KRuntimeApply of KRuntimeExpression * KRuntimeExpression list
-    | KRuntimeDictionaryValue of moduleName: string * traitName: string * instanceKey: string
+    | KRuntimeDictionaryValue of
+        moduleName: string * traitName: string * instanceKey: string * captures: KRuntimeExpression list
     | KRuntimeTraitCall of traitName: string * memberName: string * dictionary: KRuntimeExpression * arguments: KRuntimeExpression list
     | KRuntimeUnary of operatorName: string * KRuntimeExpression
     | KRuntimeBinary of KRuntimeExpression * operatorName: string * KRuntimeExpression

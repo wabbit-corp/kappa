@@ -1,0 +1,18 @@
+module main
+
+import support.shape_assert.(assertAdtShape)
+
+data User : Type =
+    User (name : String) (age : Int)
+
+shapeSmoke : Unit
+let shapeSmoke =
+    $(assertAdtShape @User
+        '{ User }
+        "User"
+        ("User" :: Nil)
+        (("name" :: "age" :: Nil) :: Nil))
+
+--! assertNoErrors
+--! assertType shapeSmoke Unit
+--! assertDeclKinds import, data, signature, let

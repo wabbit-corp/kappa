@@ -1,0 +1,104 @@
+module support.shape_assert
+
+import std.deriving.shape.*
+
+sameStringList : List String -> List String -> Bool
+let sameStringList xs ys =
+    match (xs, ys)
+    case (Nil, Nil) ->
+        True
+    case ((::) x xs1, (::) y ys1) ->
+        (x == y) && sameStringList xs1 ys1
+    case _ ->
+        False
+
+sameStringListList : List (List String) -> List (List String) -> Bool
+let sameStringListList xs ys =
+    match (xs, ys)
+    case (Nil, Nil) ->
+        True
+    case ((::) x xs1, (::) y ys1) ->
+        sameStringList x y && sameStringListList xs1 ys1
+    case _ ->
+        False
+
+fieldNames : List ShapeField -> List String
+let fieldNames fields =
+    match fields
+    case Nil ->
+        Nil
+    case (::) field rest ->
+        (::) field.renderName (fieldNames rest)
+
+constructorNames : List ShapeConstructor -> List String
+let constructorNames constructors =
+    match constructors
+    case Nil ->
+        Nil
+    case (::) ctor rest ->
+        (::) ctor.renderName (constructorNames rest)
+
+constructorFieldNames : List ShapeConstructor -> List (List String)
+let constructorFieldNames constructors =
+    match constructors
+    case Nil ->
+        Nil
+    case (::) ctor rest ->
+        (::) (fieldNames ctor.fields) (constructorFieldNames rest)
+
+assertStringList : String -> List String -> List String -> Elab Unit
+let assertStringList label expected actual =
+    if sameStringList expected actual then
+        pure ()
+    else
+        failElabWith "KAPPA_TEST_SHAPE_MISMATCH" label []
+
+assertStringListList : String -> List (List String) -> List (List String) -> Elab Unit
+let assertStringListList label expected actual =
+    if sameStringListList expected actual then
+        pure ()
+    else
+        failElabWith "KAPPA_TEST_SHAPE_MISMATCH" label []
+
+assertAdtShape :
+    forall (@0 a : Type).
+    Syntax Type -> String -> List String -> List (List String) -> Elab (Syntax Unit)
+let assertAdtShape @a target expectedName expectedConstructors expectedFields = do
+    shape <- inspectAdt @a target
+    assertStringList "ADT type name" ((::) expectedName Nil) ((::) shape.renderName Nil)
+    assertStringList "ADT constructors" expectedConstructors (constructorNames shape.constructors)
+    assertStringListList "ADT fields" expectedFields (constructorFieldNames shape.constructors)
+    unitSyntax
+
+assertRecordShape :
+    forall (@0 a : Type).
+    Syntax Type -> List String -> Elab (Syntax Unit)
+let assertRecordShape @a target expectedFields = do
+    shape <- inspectRecord @a target
+    assertStringList "record fields" expectedFields (fieldNames shape.fields)
+    unitSyntax
+
+assertHasAdtRuntimeFieldInstances :
+    forall (tc : Type -> Constraint) (@0 a : Type).
+    Syntax Type -> Elab (Syntax Unit)
+let assertHasAdtRuntimeFieldInstances @tc @a target = do
+    shape <- inspectAdt @a target
+    requireRuntimeFieldInstances @tc shape
+    unitSyntax
+
+deriveTagNameBody :
+    forall (@0 a : Type).
+    Syntax Type -> Syntax a -> Elab (Syntax String)
+let deriveTagNameBody @a target value = do
+    shape <- inspectAdt @a target
+    matchAdt shape value \ctor fields ->
+        stringSyntax ctor.renderName
+
+deriveSameConstructorBody :
+    forall (@0 a : Type).
+    Syntax Type -> Syntax a -> Syntax a -> Elab (Syntax Bool)
+let deriveSameConstructorBody @a target left right = do
+    shape <- inspectAdt @a target
+    matchAdt2 shape left right
+        (\ctor fieldPairs -> boolSyntax True)
+        (\leftCtor rightCtor -> boolSyntax False)

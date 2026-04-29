@@ -1681,7 +1681,7 @@ let ``KCore using release action selects Releasable evidence`` () =
                         KCoreTraitCall(
                             "Releasable",
                             "release",
-                            KCoreDictionaryValue("main", "Releasable", "IO_File"),
+                            KCoreDictionaryValue("main", "Releasable", "IO_File", []),
                             []
                         ),
                         KCoreName [ releasedName ]
@@ -1787,7 +1787,7 @@ let ``KRuntimeIR preserves using release schedules for backend lowering`` () =
                         KRuntimeTraitCall(
                             "Releasable",
                             "release",
-                            KRuntimeDictionaryValue("main", "Releasable", "IO_File"),
+                            KRuntimeDictionaryValue("main", "Releasable", "IO_File", []),
                             []
                         ),
                         KRuntimeName [ releasedName ]
@@ -2946,8 +2946,8 @@ let ``source compilation rejects stray top level forms instead of accepting unkn
 
     Assert.True(typeWorkspace.HasErrors, "Expected stray top-level type text to become a parse diagnostic.")
     Assert.True(caseWorkspace.HasErrors, "Expected stray top-level case text to become a parse diagnostic.")
-    Assert.Contains(typeWorkspace.Diagnostics, hasDiagnosticCode DiagnosticCode.ParseError)
-    Assert.Contains(caseWorkspace.Diagnostics, hasDiagnosticCode DiagnosticCode.ParseError)
+    Assert.Contains(typeWorkspace.Diagnostics, hasDiagnosticCode DiagnosticCode.ExpectedSyntaxToken)
+    Assert.Contains(caseWorkspace.Diagnostics, hasDiagnosticCode DiagnosticCode.ExpectedSyntaxToken)
 
 [<Fact>]
 let ``source compilation surfaces non callable applications before backend lowering`` () =
@@ -3066,7 +3066,7 @@ let ``source compilation rejects invalid indented do bind continuations before r
             ]
 
     Assert.True(workspace.HasErrors, "Expected an invalid indented continuation after a do-bind source to be rejected in the frontend.")
-    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.ParseError)
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.ExpectedSyntaxToken)
 
 [<Fact>]
 let ``source compilation rejects sibling callable values in arithmetic before runtime`` () =
@@ -3219,7 +3219,7 @@ let ``source compilation rejects malformed instance declarations without crashin
             ]
 
     Assert.True(workspace.HasErrors, "Expected a malformed instance declaration to fail with frontend diagnostics instead of crashing lowering.")
-    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.ParseError)
+    Assert.Contains(workspace.Diagnostics, hasDiagnosticCode DiagnosticCode.ExpectedSyntaxToken)
 
 [<Fact>]
 let ``source compilation rejects sibling lambda values in arithmetic inside applications`` () =

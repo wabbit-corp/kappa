@@ -142,7 +142,7 @@ module internal KBackendLowering =
             BackendRepIOAction
         | KRuntimeApply(KRuntimeName [ "runPure" ], _) ->
             backendOpaqueRepresentation None
-        | KRuntimeDictionaryValue(_, traitName, _) ->
+        | KRuntimeDictionaryValue(_, traitName, _, _) ->
             BackendRepDictionary traitName
         | KRuntimeTraitCall _ ->
             backendOpaqueRepresentation None
@@ -1438,9 +1438,26 @@ module internal KBackendLowering =
                                     [ loweredLeft; loweredRight ]
                                     [ leftRepresentation; rightRepresentation ]
                                     resultRepresentation))
-                | KRuntimeDictionaryValue(moduleName, traitName, instanceKey) ->
+                | KRuntimeDictionaryValue(moduleName, traitName, instanceKey, captures) ->
                     let representation = BackendRepDictionary traitName
-                    Result.Ok(BackendDictionaryValue(moduleName, traitName, instanceKey, representation), representation)
+
+                    captures
+                    |> List.fold
+                        (fun stateResult captureExpression ->
+                            stateResult
+                            |> Result.bind (fun loweredCaptures ->
+                                lowerExpression scopeLabel locals captureExpression
+                                |> Result.map (fun (loweredCapture, _) -> loweredCapture :: loweredCaptures)))
+                        (Result.Ok [])
+                    |> Result.map (fun loweredCaptures ->
+                        BackendDictionaryValue(
+                            moduleName,
+                            traitName,
+                            instanceKey,
+                            List.rev loweredCaptures,
+                            representation
+                        ),
+                        representation)
                 | KRuntimeTraitCall(traitName, memberName, dictionary, arguments) ->
                     lowerExpression scopeLabel locals dictionary
                     |> Result.bind (fun (loweredDictionary, _) ->

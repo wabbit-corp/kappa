@@ -1,0 +1,13 @@
+module main
+
+import std.deriving.shape.(inspectAdt, unitSyntax)
+
+probe : Unit
+let probe =
+    $(do
+        _ <- inspectAdt @(Int -> Int) '{ Int -> Int }
+        unitSyntax)
+
+--! assertErrorCount 1
+--! assertDiagnostic error KAPPA_DERIVING_SHAPE_NOT_DATA
+--! assertDeclKinds import, signature, let

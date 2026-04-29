@@ -1,0 +1,16 @@
+module main
+
+import support.shape_assert.(deriveTagNameBody)
+
+data Expr : Type =
+    Lit (value : Int)
+    Add (left : Expr) (right : Expr)
+    Var (name : String)
+
+tagName : Expr -> String
+let tagName value =
+    $(deriveTagNameBody @Expr '{ Expr } '{ value })
+
+--! assertNoErrors
+--! assertType tagName Expr -> String
+--! assertDeclKinds import, data, signature, let

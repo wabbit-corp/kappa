@@ -1,6 +1,6 @@
 module main
 
--- Source issues: hylo#936, hylo#955
+-- Source issues: hylo#1509, hylo#936, hylo#955
 -- Spec: §5.5.10, §14.3
 type X = (a : Int)
 type Y = X

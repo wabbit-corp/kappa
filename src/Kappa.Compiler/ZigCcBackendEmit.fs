@@ -175,8 +175,11 @@ module internal ZigCcBackendEmit =
             emitWhileExpression context scope condition body
         | BackendCall(callee, arguments, convention, _) ->
             emitCallExpression context scope callee arguments convention
-        | BackendDictionaryValue(moduleName, traitName, instanceKey, _) ->
-            emitDictionaryValueExpression context moduleName traitName instanceKey
+        | BackendDictionaryValue(moduleName, traitName, instanceKey, captures, _) ->
+            if List.isEmpty captures then
+                emitDictionaryValueExpression context moduleName traitName instanceKey
+            else
+                Result.Error(sprintf "zig does not yet support captured dictionaries for trait instance '%s.%s.%s'." moduleName traitName instanceKey)
         | BackendTraitCall(traitName, memberName, dictionary, arguments, _) ->
             emitTraitDispatchExpression context scope traitName memberName dictionary arguments
         | BackendConstructData(moduleName, typeName, _, tag, fields, _) ->
