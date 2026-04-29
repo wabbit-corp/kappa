@@ -29681,6 +29681,52 @@ Generated C headers and ABI metadata are companion artifacts of the artifact tar
 A native shared library with `c-abi` export therefore remains one artifact target with one primary artifact family
 `native-shared-library`; the generated header and ABI metadata are companion artifacts.
 
+<!-- build_system.interface_equivalence -->
+### 19.5B Interface equivalence groups
+
+An interface equivalence group is an authored request that multiple artifact targets expose equivalent public Kappa
+interfaces.
+
+An interface equivalence group has at least:
+
+* group name;
+* member artifact targets;
+* module selector;
+* equivalence mode.
+
+Portable equivalence modes are:
+
+```text
+exact-kappa-interface
+public-kappa-surface
+abi-erased-kappa-surface
+```
+
+`exact-kappa-interface` requires selected module interface identities to match exactly after canonicalization.
+
+`public-kappa-surface` requires the same public module names and public declarations, ignoring backend-private
+implementation declarations, backend-private fragments, and companion-artifact metadata.
+
+`abi-erased-kappa-surface` requires the same public declarations after mandatory erasure of compile-time-only
+arguments, proof-only members, and erased implicit evidence.
+
+An interface equivalence group is checked during build-plan resolution after fragment selection and provider selection
+for each member target.
+
+A mismatch is a build diagnostic. The diagnostic MUST identify:
+
+* equivalence group;
+* compared targets;
+* module name;
+* declaration, instance, export, fixity, opaque item, provider, or fragment responsible for the mismatch;
+* relevant build-manifest provenance.
+
+Backend-specific host bindings MUST NOT appear in a public interface equivalence group unless all member targets expose
+the same backend-specific public surface or the equivalence mode explicitly permits such backend specificity.
+
+This mechanism is intended for packages that claim backend-portable public APIs while using backend-specific fragments
+internally.
+
 <!-- build_system.dependencies -->
 ### 19.6 Dependencies
 
