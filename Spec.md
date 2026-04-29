@@ -7813,9 +7813,9 @@ forall a. T        ==   (@0 a : Type) -> T
 forall (a : S). T  ==   (@0 a : S) -> T
 ```
 
-This includes quantification over the intrinsic compile-time types `Quantity`, `Region`, `Universe`, `Constraint`,
-`RecRow`, `VarRow`, `EffRow`, `Label`, and `EffLabel`, e.g. `forall (q : Quantity). T`, `forall (s : Region). T`,
-`forall (u : Universe). T`, and `forall (r : EffRow). T`.
+This includes quantification over the intrinsic compile-time types `Quantity`, `Region`, `Universe`, `RecRow`, `VarRow`,
+`EffRow`, `Label`, and `EffLabel`, e.g. `forall (q : Quantity). T`, `forall (s : Region). T`, `forall (u : Universe). T`,
+and `forall (r : EffRow). T`.
 
 Examples:
 
@@ -7845,19 +7845,48 @@ Record labels inhabit the intrinsic compile-time type `Label : Type0`.
 Effect labels inhabit the intrinsic compile-time type `EffLabel : Type0`.
 Effect interfaces are ordinary named constructors of declaration kind `type`.
 
-Kappa provides the following row-constraint constructors:
+Kappa provides the following intrinsic row traits:
 
 ```kappa
-ContainsRec : RecRow -> Label -> Type -> Constraint
-LacksRec    : RecRow -> Label -> Constraint
+intrinsic trait ContainsRec (r : RecRow) (l : Label) (a : Type)
+intrinsic trait LacksRec    (r : RecRow) (l : Label)
 
-ContainsVar : VarRow -> Type -> Constraint
-LacksVar    : VarRow -> Type -> Constraint
+intrinsic trait ContainsVar (r : VarRow) (a : Type)
+intrinsic trait LacksVar    (r : VarRow) (a : Type)
 
-ContainsEff : EffRow -> EffLabel -> Type -> Constraint
-LacksEff    : EffRow -> EffLabel -> Constraint
-SplitEff    : EffRow -> EffLabel -> Type -> EffRow -> Constraint
+intrinsic trait ContainsEff (r : EffRow) (l : EffLabel) (e : Type)
+intrinsic trait LacksEff    (r : EffRow) (l : EffLabel)
+intrinsic trait SplitEff    (r : EffRow) (l : EffLabel) (e : Type) (rest : EffRow)
 ```
+
+These are ordinary trait evidence types with compiler-owned introduction rules.
+
+Solver meaning:
+
+* `ContainsRec r l a` is solvable iff normalized record row `r` contains label `l` with field type definitionally equal
+  to `a`.
+* `LacksRec r l` is solvable iff normalized record row `r` contains no label `l`.
+* `ContainsVar r a` is solvable iff normalized variant row `r` contains member type `a`, using the `MemberId` equality
+  rules of §5.4.1.
+* `LacksVar r a` is solvable iff normalized variant row `r` contains no member whose `MemberId` is equal to
+  `MemberId(a)`.
+* `ContainsEff r l e` is solvable iff normalized effect row `r` contains effect label `l` with interface type
+  definitionally equal to `e`.
+* `LacksEff r l` is solvable iff normalized effect row `r` contains no effect label `l`.
+* `SplitEff r l e rest` is solvable iff normalized effect row `r` is definitionally equal, modulo row permutation, to
+  `<[l : e | rest]>` and `LacksEff rest l` is solvable.
+
+Uniqueness and contradiction facts:
+
+* If both `ContainsRec r l a` and `ContainsRec r l b` are solvable, then `a = b` is derivable by definitional equality
+  or by the row solver's erased uniqueness evidence.
+* `ContainsRec r l a` and `LacksRec r l` cannot both be solved in one consistent refinement context.
+* If both `ContainsVar r a` and `LacksVar r a` are requested for the same normalized row and member identity, the goals
+  are inconsistent.
+* If both `ContainsEff r l e1` and `ContainsEff r l e2` are solvable, then `e1 = e2` is derivable by definitional
+  equality or by the row solver's erased uniqueness evidence.
+* If both `SplitEff r l e1 rest1` and `SplitEff r l e2 rest2` are solvable, then `e1 = e2` and `rest1 = rest2` are
+  derivable by definitional equality or by the row solver's erased uniqueness evidence.
 
 Surface syntax for `EffRow` values is given in §5.3.2.
 
@@ -8777,17 +8806,21 @@ Syntax and formation:
 * A field declared as `@label : T` is an implicit field.
 * Sort restriction:
   * The type `T` of an implicit field must elaborate either to:
-    * a concrete constraint descriptor `C : Constraint`,
+    * a trait evidence type, meaning `T : Type u` and `IsTrait T` is available;
     * a compile-time type in the sense of §5.1.4.1, or
     * a boolean proposition accepted by the coercion rule of §5.6.2 (so a bare boolean field type `@p : b` elaborates to
       `@p : b = True`).
-  * Ordinary computational data types such as `String`, `Bytes`, or `IO e a` cannot be marked as implicit record fields.
-* Implicit record fields are the record-field analogue of implicit binders. Accordingly, §5.1.3's prohibition on
-  explicit fields of constraint type does not apply to fields marked with `@`.
+  * Ordinary computational data types such as `String`, `Bytes`, or `IO e a` cannot be marked as implicit record fields
+    unless they are explicitly made trait evidence types by an intrinsic compiler declaration, which portable user code
+    cannot do.
+* Implicit record fields are the record-field analogue of implicit binders. A trait evidence field may also be written
+  as an ordinary explicit field when explicit evidence passing is desired.
 * Quantity:
   * Implicit record fields follow the same defaulting rule as implicit binders (§7.3).
-  * If the field type elaborates to a concrete constraint descriptor or to a compile-time type of §5.1.4.1, the default
-    quantity when omitted is `0`. Erasure of the field value is still governed by §§5.1.4 and 14.4.
+  * If the field type elaborates to a compile-time type of §5.1.4.1, the default quantity when omitted is `0`.
+  * If the field type is a trait evidence type, the default quantity is the ordinary implicit-binder default of §7.3:
+    unrestricted `ω`, unless the user writes another quantity explicitly. Marker, law-only, and intrinsic row-trait
+    evidence may still erase by representation analysis under §§5.1.3, 5.1.4, and 14.4.
 
 Introduction (construction):
 
