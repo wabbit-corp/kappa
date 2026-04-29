@@ -30369,6 +30369,57 @@ For native bindings, this includes when applicable:
 * selected native adapter mode;
 * selected link and load specifications.
 
+A resolved host binding provider records a host-source identity.
+
+For JVM bindings, host-source identity includes, when applicable:
+
+* resolved Maven/JAR artifact identities;
+* classfile digests;
+* module descriptor digests;
+* selected classpath or module-path entries;
+* selected JVM release or bytecode target;
+* binding generator identity;
+* trusted binding summary identity;
+* generated binding interface identity.
+
+For .NET bindings, host-source identity includes, when applicable:
+
+* resolved NuGet package identities;
+* selected CLR assembly identities;
+* metadata digests;
+* selected target framework;
+* selected runtime identifier;
+* binding generator identity;
+* trusted binding summary identity;
+* generated binding interface identity.
+
+For native bindings, generated binding cache entries have the following portable shape:
+
+```text
+GeneratedBindingLockEntry:
+    host binding provider identity
+    host root
+    binding source identity
+    header/module-map/symbol-list digests
+    resolved pkg-config identity, when any
+    trusted binding summary identity
+    generator identity and version
+    target ABI identity
+    adapter mode identity
+    selected link specification
+    selected load specification
+    generated Kappa raw interface identity
+    generated source or interface artifact identity
+    cache key
+```
+
+A later build MAY reuse a generated binding only if every recorded input in the corresponding generated binding lock
+entry is identical.
+
+A generated raw binding interface identity MUST be explicit in the lockfile or equivalent artifact. It MUST NOT be
+reconstructed solely from generator version and header digests when additional trusted summaries, ABI details, adapter
+mode, or implementation options can affect the generated interface.
+
 A host binding provider MUST NOT silently infer ownership, nullability, thread-affinity, callback behavior, error
 mapping, blocking behavior, lifetime, or release behavior from headers alone.
 
