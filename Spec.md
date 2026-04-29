@@ -30212,6 +30212,48 @@ If a feature combination is invalid, build-plan resolution MUST emit a diagnosti
   introduced by the feature when relevant;
 * build-manifest provenance for every contributing feature selection.
 
+<!-- build_system.features.resolution_algorithm -->
+#### Feature resolution algorithm
+
+Feature resolution is deterministic and monotone.
+
+For each package and each target, build-plan resolution computes the selected feature set as follows:
+
+1. Start with features whose declaration marks them selected by default.
+2. Add features selected by the explicit build request.
+3. Add features selected by the package, workspace, target, matrix member, dependency edge, or provider alternative
+   being resolved.
+4. Repeatedly apply `featureEnables` edges until a fixed point is reached.
+5. For every selected feature, add the dependencies, target artifact dependencies, host bindings, bridge targets,
+   bridge providers, codegen targets, generated roots, fragment tags, tests, benchmark targets, export surfaces,
+   deployment requirements, and runtime prerequisites enabled by that feature.
+6. Validate requirements and conflicts against the resolved build context.
+7. Record provenance for every selected feature and for every build value introduced by a feature.
+
+A feature-enable cycle is permitted when it is monotone and reaches the same fixed point regardless of traversal order.
+
+A feature declaration is non-monotone and rejected if selecting it can remove a previously selected feature,
+dependency, fragment tag, provider, host binding, bridge, codegen output, test, benchmark, export surface, or
+deployment requirement.
+
+Feature requirements and conflicts validate the fixed point. They do not remove features.
+
+Feature names are scoped by package identity. A dependency may expose feature names only through that dependency's
+package namespace unless the dependency declaration explicitly maps local feature names to dependency feature names.
+
+When a target depends on a package with feature selections, the resolved plan records:
+
+* requesting package or target;
+* dependency package;
+* requested dependency features;
+* default dependency features included or suppressed;
+* feature mapping used by the dependency edge;
+* transitive features enabled by those selections; and
+* provenance for each feature edge.
+
+A build diagnostic for an invalid feature combination MUST identify the complete selected feature set after fixed-point
+closure, not merely the last feature considered before failure.
+
 <!-- build_system.provider_alternatives -->
 ### 19.5D Provider alternatives and public facades
 
