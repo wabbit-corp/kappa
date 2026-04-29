@@ -29400,36 +29400,79 @@ or multiple definitions for one `expect`, the effective module is rejected.
 Fragment selection must be deterministic for fixed `ResolvedBuildPlan` and source tree identity.
 
 <!-- build_system.targets_backends -->
-### 19.5 Targets, backends, and artifact kinds
+### 19.5 Targets, backend profiles, and artifact families
 
-A target is one artifact-producing build request.
-
-A target has at least:
-
-* target name;
-* target kind;
-* backend profile;
-* artifact kind;
-* selected source roots;
-* enabled fragment tags;
-* module selector;
-* selected dependencies;
-* selected host bindings;
-* selected bridge providers;
-* unsafe/debug policy;
-* deployment mode.
-
-A target has exactly one backend profile.
-
-Portable target kinds include:
+Portable target kinds are:
 
 ```text
-executable
-library
-test
-artifact
-bridge
+artifact target
+test target
+codegen target
+bridge target
+aggregate target
+publish target
+benchmark target
 ```
+
+The backend-profile rule applies as follows:
+
+```text
+artifact target:
+    exactly one backend profile
+    exactly one primary artifact family
+
+test execution target:
+    exactly one backend profile
+
+codegen target:
+    exactly one execution backend, or exactly one resolved tool artifact identity
+
+bridge target:
+    exactly one bridge realization between two resolved artifact targets or artifact identities
+    records a backend pair or bridge realization context
+    does not have a single compilation backend profile
+
+aggregate target:
+    no backend profile
+    groups, aliases, or matrix-expands other targets
+
+publish target:
+    no backend profile
+    packages already resolved and already built artifacts
+
+benchmark execution target:
+    exactly one backend profile
+```
+
+An artifact target has at least:
+
+* target name;
+* target kind `artifact`;
+* backend profile;
+* primary artifact family;
+* selected source roots;
+* generated source roots, if any;
+* resource roots, if any;
+* enabled fragment tags;
+* module selector;
+* selected features;
+* selected dependencies;
+* selected target artifact dependencies;
+* selected host bindings;
+* selected bridge providers;
+* selected codegen outputs;
+* selected export surfaces;
+* selected companion artifact policies;
+* unsafe/debug policy;
+* build profile;
+* deployment mode.
+
+An artifact target MUST select exactly one backend profile.
+
+An artifact target MUST select exactly one primary artifact family.
+
+An artifact target MAY produce companion artifacts, provided those companion artifacts are recorded as companion
+artifacts rather than as additional primary artifact families.
 
 Portable backend-profile families include those standardized by Chapter 17, including where implemented:
 
@@ -29445,18 +29488,88 @@ JNI is not a backend profile.
 
 JNI-related functionality is expressed through one of:
 
-* a JVM target using a JNI-capable native adapter mode;
+* a JVM artifact target using a JNI-capable native adapter mode;
 * a `host.jvm.jni` host binding provider;
-* a Kappa-to-Kappa bridge realization such as `kappa.jni`.
+* a Kappa-to-Kappa bridge realization such as `kappa.jni`;
+* a bridge target whose realization is `kappa.jni`.
 
-If a project needs both native and JVM artifacts, it defines separate native and JVM targets and connects them through a
-bridge target or bridge provider.
+If a project needs both native and JVM artifacts, it defines separate native and JVM artifact targets and connects them
+through a bridge target or bridge provider.
 
-A target MUST NOT silently degrade to another backend profile, artifact kind, bridge realization, adapter mode, or
-deployment mode.
+A target MUST NOT silently degrade to another target kind, backend profile, artifact family, export surface, bridge
+realization, adapter mode, deployment mode, or reproducibility status.
 
 If the selected backend profile cannot support a requested host binding, ABI, bridge contract, callback shape, resource
-discipline, artifact kind, or deployment mode, build-plan resolution MUST reject the target.
+discipline, artifact family, export surface, deployment mode, test execution, benchmark execution, or runtime
+prerequisite, build-plan resolution MUST reject the target.
+
+Portable primary artifact families include, where implemented:
+
+```text
+native-executable
+native-static-library
+native-shared-library
+native-object-archive
+jvm-jar
+jvm-modular-jar
+jvm-runtime-image
+dotnet-assembly
+dotnet-application
+dotnet-native-aot
+wasm-core-module
+wasm-component
+kappa-interface-artifact
+```
+
+A backend profile admits only the artifact families explicitly supported by that backend profile.
+
+A native backend profile MAY admit:
+
+```text
+native-executable
+native-static-library
+native-shared-library
+native-object-archive
+kappa-interface-artifact
+```
+
+A JVM backend profile MAY admit:
+
+```text
+jvm-jar
+jvm-modular-jar
+jvm-runtime-image
+kappa-interface-artifact
+```
+
+A .NET backend profile MAY admit:
+
+```text
+dotnet-assembly
+dotnet-application
+dotnet-native-aot
+kappa-interface-artifact
+```
+
+A WASM component backend profile MAY admit:
+
+```text
+wasm-component
+kappa-interface-artifact
+```
+
+A WASM core backend profile MAY admit:
+
+```text
+wasm-core-module
+kappa-interface-artifact
+```
+
+The `kappa-interface-artifact` family emits Kappa module interface artifacts without claiming to produce a standalone
+runtime artifact.
+
+A primary artifact family determines the primary artifact identity. Companion artifacts contribute to the target's full
+artifact identity and deployment identity, but they do not violate the one-primary-artifact-family rule.
 
 <!-- build_system.dependencies -->
 ### 19.6 Dependencies
