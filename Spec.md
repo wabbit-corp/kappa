@@ -29727,6 +29727,76 @@ the same backend-specific public surface or the equivalence mode explicitly perm
 This mechanism is intended for packages that claim backend-portable public APIs while using backend-specific fragments
 internally.
 
+<!-- build_system.features -->
+### 19.5C Features
+
+A feature is a named optional build selection.
+
+A feature declaration has at least:
+
+* feature name;
+* default selection status;
+* enabled dependencies;
+* enabled target artifact dependencies;
+* enabled host bindings;
+* enabled bridge targets or bridge providers;
+* enabled codegen targets or generated roots;
+* enabled fragment tags;
+* enabled tests;
+* enabled benchmark targets;
+* enabled export surfaces;
+* requirements;
+* conflicts.
+
+A feature requirement is a predicate over the resolved build context.
+
+Portable requirement predicates include:
+
+```text
+requires-feature
+requires-not-feature
+requires-backend-family
+requires-artifact-family
+requires-os
+requires-arch
+requires-target-triple
+requires-build-mode
+requires-build-profile
+requires-backend-capability
+requires-host-binding
+requires-system-prerequisite
+```
+
+A feature conflict is a predicate that rejects simultaneous selections.
+
+Feature selection occurs before fragment selection, dependency resolution for feature-enabled dependencies, and provider
+selection.
+
+Selected features contribute to the target's enabled fragment-tag set.
+
+Selected features contribute to the target's dependency set, host binding set, bridge provider set, codegen input set,
+test set, benchmark set, export surface set, and deployment requirements.
+
+A feature MUST NOT silently select an undeclared fragment tag.
+
+A feature MUST NOT silently select more than one tag from the same exclusive fragment axis.
+
+A feature-derived dependency, host binding, bridge provider, codegen target, export surface, or test has ordinary
+value provenance pointing to both the feature declaration and the target or package expression that selected the
+feature.
+
+The selected feature set of a package and of a target is part of the query key for any query whose answer can depend on
+features.
+
+If a feature combination is invalid, build-plan resolution MUST emit a diagnostic that identifies:
+
+* selected feature set;
+* violated requirement or conflict;
+* target or package being resolved;
+* dependency, fragment tag, host binding, bridge provider, codegen target, export surface, test, or benchmark
+  introduced by the feature when relevant;
+* build-manifest provenance for every contributing feature selection.
+
 <!-- build_system.dependencies -->
 ### 19.6 Dependencies
 
