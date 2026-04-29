@@ -2304,7 +2304,7 @@ let ``workspace and stage dumps expose elaboration available intrinsic terms`` (
                 |> String.concat "\n"
             ]
 
-    Assert.Contains("not", supportedWorkspace.ElaborationAvailableIntrinsicTerms)
+    Assert.Contains("&&", supportedWorkspace.ElaborationAvailableIntrinsicTerms)
     Assert.DoesNotContain("printInt", supportedWorkspace.ElaborationAvailableIntrinsicTerms)
 
     let supportedJson =
@@ -2320,7 +2320,7 @@ let ``workspace and stage dumps expose elaboration available intrinsic terms`` (
         |> Seq.filter (isNull >> not)
         |> Seq.toList
 
-    Assert.Contains("not", supportedTerms)
+    Assert.Contains("&&", supportedTerms)
     Assert.DoesNotContain("printInt", supportedTerms)
 
     let unsupportedWorkspace =
@@ -3990,6 +3990,47 @@ let ``backend verification rejects intrinsic bindings missing intrinsic listings
 
     Assert.Single(diagnostics) |> ignore
     Assert.Contains(diagnostics, hasDiagnosticCode DiagnosticCode.CheckpointVerification)
+
+[<Fact>]
+let ``prelude ordinary helpers stay as bindings while primitive helpers remain intrinsic`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-prelude-pipe-ordinary-binding-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = 42"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let preludeRuntimeModule =
+        workspace.KRuntimeIR
+        |> List.find (fun moduleDump -> moduleDump.Name = Stdlib.PreludeModuleText)
+
+    Assert.DoesNotContain("not", preludeRuntimeModule.IntrinsicTerms)
+    Assert.DoesNotContain("and", preludeRuntimeModule.IntrinsicTerms)
+    Assert.DoesNotContain("or", preludeRuntimeModule.IntrinsicTerms)
+    Assert.DoesNotContain("printInt", preludeRuntimeModule.IntrinsicTerms)
+    Assert.DoesNotContain("printString", preludeRuntimeModule.IntrinsicTerms)
+    Assert.DoesNotContain("printlnString", preludeRuntimeModule.IntrinsicTerms)
+    Assert.Contains(">>", preludeRuntimeModule.IntrinsicTerms)
+    Assert.Contains("|>", preludeRuntimeModule.IntrinsicTerms)
+    Assert.Contains("<|", preludeRuntimeModule.IntrinsicTerms)
+    Assert.Contains("orElse", preludeRuntimeModule.IntrinsicTerms)
+    Assert.Contains("print", preludeRuntimeModule.IntrinsicTerms)
+    Assert.Contains("println", preludeRuntimeModule.IntrinsicTerms)
+
+    let runtimeBindingNames =
+        preludeRuntimeModule.Bindings |> List.map (fun binding -> binding.Name) |> Set.ofList
+
+    Assert.Contains("not", runtimeBindingNames)
+    Assert.Contains("and", runtimeBindingNames)
+    Assert.Contains("or", runtimeBindingNames)
+    Assert.Contains("printInt", runtimeBindingNames)
+    Assert.Contains("printString", runtimeBindingNames)
+    Assert.Contains("printlnString", runtimeBindingNames)
 
 [<Fact>]
 let ``backend verification rejects duplicate closure parameters`` () =

@@ -3369,6 +3369,57 @@ let ``macro failElab defaults to elaboration failed diagnostics`` () =
     )
 
 [<Fact>]
+let ``frontend rejects inout declarations whose result does not thread the named field`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-inout-threaded-field-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "type Cell = (1 value : Int)"
+                    "badStep : (inout c : Cell) -> Cell"
+                    "let badStep c = c"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected invalid inout declaration to be rejected in frontend validation.")
+    Assert.Contains(
+        workspace.Diagnostics,
+        fun diagnostic -> diagnostic.Code = DiagnosticCode.QttInoutThreadedFieldMissing
+    )
+
+[<Fact>]
+let ``frontend rejects missing tilde at resolved inout call sites before generic body mismatch`` () =
+    let workspace =
+        compileInMemoryWorkspace
+            "memory-inout-missing-tilde-root"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "data File : Type ="
+                    "    Handle Int"
+                    "let step (inout file : File) : IO File = pure file"
+                    "let main : IO Unit = do"
+                    "    let 1 file = Handle 1"
+                    "    step file"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.True(workspace.HasErrors, "Expected missing '~' at an inout call site to be rejected in frontend validation.")
+    Assert.Contains(
+        workspace.Diagnostics,
+        fun diagnostic -> diagnostic.Code = DiagnosticCode.QttInoutMarkerRequired
+    )
+    Assert.Contains(
+        workspace.Diagnostics,
+        fun diagnostic -> diagnostic.Code = DiagnosticCode.QttInoutThreadedFieldMissing
+    )
+
+[<Fact>]
 let ``source compilation rejects active patterns without an explicit scrutinee binder`` () =
     let workspace =
         compileInMemoryWorkspaceWithPackageMode
@@ -3428,7 +3479,7 @@ let ``compilation injects bundled std prelude and satisfies its intrinsic expect
             | _ ->
                 None)
 
-    Assert.True(intrinsicExpect.IsSome, "Expected bundled std.prelude to declare intrinsic term 'not'.")
+    Assert.True(intrinsicExpect.IsNone, "Expected bundled std.prelude to define 'not' ordinarily, not as an intrinsic expect.")
 
 [<Fact>]
 let ``supported backend profiles satisfy the current prelude intrinsic surface`` () =
@@ -3456,8 +3507,10 @@ let ``supported backend profiles satisfy the current prelude intrinsic surface``
             workspace.KCore
             |> List.find (fun moduleDump -> moduleDump.Name = Stdlib.PreludeModuleText)
 
-        Assert.Contains("not", preludeModule.IntrinsicTerms)
-        Assert.Contains("printInt", preludeModule.IntrinsicTerms)
+        Assert.DoesNotContain("not", preludeModule.IntrinsicTerms)
+        Assert.Contains("print", preludeModule.IntrinsicTerms)
+        Assert.Contains("println", preludeModule.IntrinsicTerms)
+        Assert.DoesNotContain("printInt", preludeModule.IntrinsicTerms)
 
 [<Fact>]
 let ``KCore preserves compile time binders and structured capture aware types`` () =
@@ -3541,7 +3594,7 @@ let ``KCore lowers calls as application spines with explicit arguments`` () =
         failwithf "Expected KCore app spine for answer, got %A" other
 
 [<Fact>]
-let ``KCore does not pass builtin Ord dictionaries to intrinsic compare`` () =
+let ``KCore resolves builtin compare through Ord trait dispatch`` () =
     let workspace =
         compileInMemoryWorkspace
             "memory-kcore-compare-builtin-root"
@@ -3566,16 +3619,16 @@ let ``KCore does not pass builtin Ord dictionaries to intrinsic compare`` () =
 
     match orderingBinding.Body with
     | Some(
-        KCoreAppSpine(
-            KCoreName [ "compare" ],
-            [ { ArgumentKind = KCoreExplicitArgument
-                Expression = KCoreLiteral(LiteralValue.String "a") }
-              { ArgumentKind = KCoreExplicitArgument
-                Expression = KCoreLiteral(LiteralValue.String "b") } ]
+        KCoreTraitCall(
+            "Ord",
+            "compare",
+            KCoreDictionaryValue("std.prelude", "Ord", "builtin-prelude:Ord:String", []),
+            [ KCoreLiteral(LiteralValue.String "a")
+              KCoreLiteral(LiteralValue.String "b") ]
         )
       ) -> ()
     | other ->
-        failwithf "Expected builtin compare call without runtime dictionary arguments, got %A" other
+        failwithf "Expected builtin compare to lower through Ord trait dispatch, got %A" other
 
 [<Fact>]
 let ``KCore preserves qualified Res constructor applications from map sugar`` () =
@@ -4662,6 +4715,20 @@ let ``bundled bootstrap prelude exposes the current bootstrap surface and IO sha
                 None)
         |> Map.ofList
 
+    let signatureTypes =
+        preludeDocument.Syntax.Declarations
+        |> List.choose (function
+            | SignatureDeclaration declaration -> Some(declaration.Name, tokensText declaration.TypeTokens)
+            | _ -> None)
+        |> Map.ofList
+
+    let letNames =
+        preludeDocument.Syntax.Declarations
+        |> List.choose (function
+            | LetDeclaration declaration -> declaration.Name
+            | _ -> None)
+        |> Set.ofList
+
     let uioAliasHeaderText, uioAliasBodyText =
         preludeDocument.Syntax.Declarations
         |> List.pick (function
@@ -4685,15 +4752,21 @@ let ``bundled bootstrap prelude exposes the current bootstrap surface and IO sha
     Assert.Equal("ClosedCode t -> UIO t", expectTermTypes["runCode"])
     Assert.Equal("( 1 value : a ) -> UIO a", expectTermTypes["pure"])
     Assert.Equal("UIO a -> ( a -> UIO b ) -> UIO b", expectTermTypes[">>="])
-    Assert.Equal("UIO a -> UIO b -> UIO b", expectTermTypes[">>"])
     Assert.Equal("String -> UIO Unit", expectTermTypes["println"])
-    Assert.Equal("String -> UIO Unit", expectTermTypes["printlnString"])
     Assert.Equal("String -> UIO Unit", expectTermTypes["print"])
-    Assert.Equal("Int -> UIO Unit", expectTermTypes["printInt"])
-    Assert.Equal("String -> UIO Unit", expectTermTypes["printString"])
     Assert.Equal("a -> UIO ( Ref a )", expectTermTypes["newRef"])
     Assert.Equal("Ref a -> UIO a", expectTermTypes["readRef"])
     Assert.Equal("Ref a -> a -> UIO Unit", expectTermTypes["writeRef"])
+    Assert.Equal("String -> UIO Unit", signatureTypes["printlnString"])
+    Assert.Equal("Int -> UIO Unit", signatureTypes["printInt"])
+    Assert.Equal("String -> UIO Unit", signatureTypes["printString"])
+    Assert.Contains("printlnString", letNames)
+    Assert.Contains("printInt", letNames)
+    Assert.Contains("printString", letNames)
+    Assert.Equal("UIO a -> UIO b -> UIO b", expectTermTypes[">>"])
+    Assert.Equal("Option a -> Option a -> Option a", expectTermTypes["orElse"])
+    Assert.Equal("a -> ( a -> b ) -> b", expectTermTypes["|>"])
+    Assert.Equal("( a -> b ) -> a -> b", expectTermTypes["<|"])
 
 [<Fact>]
 let ``bundled std hash module exposes real Hashable members and ordinary helpers`` () =
@@ -4751,6 +4824,32 @@ let ``bundled std hash module exposes real Hashable members and ordinary helpers
     Assert.True(hashWithIsOrdinary, "Expected std.hash.hashWith to be an ordinary bundled definition.")
 
 [<Fact>]
+let ``package mode resolves builtin Ord trait member compare for HashCode Bytes and Byte`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithPackageMode
+            "memory-package-builtin-ord-compare-root"
+            true
+            [
+                "main.kp",
+                [
+                    "import std.hash.*"
+                    "import std.unicode.*"
+                    "let h1 : HashCode = hashWith defaultHashSeed \"abc\""
+                    "let h2 : HashCode = hashWith defaultHashSeed \"abc\""
+                    "let hashOrd : Ordering = compare h1 h2"
+                    "let aBytes : Bytes = utf8Bytes \"a\""
+                    "let bBytes : Bytes = utf8Bytes \"b\""
+                    "let bytesOrd : Ordering = compare aBytes bBytes"
+                    "let low : Byte = b'\\x00'"
+                    "let high : Byte = b'\\xFF'"
+                    "let byteOrd : Ordering = compare low high"
+                ]
+                |> String.concat "\n"
+            ]
+
+    Assert.False(workspace.HasErrors, diagnosticsSummary workspace.Diagnostics)
+
+[<Fact>]
 let ``backend intrinsic bootstrap contract is derived from bundled prelude expectations with explicit module local supplement`` () =
     let preludeSource =
         createSource Stdlib.BundledPreludeVirtualPath (Stdlib.loadBundledPreludeText ())
@@ -4797,6 +4896,43 @@ let ``backend intrinsic bootstrap contract is derived from bundled prelude expec
         expectedModuleLocalTerms |> Set.toList,
         Stdlib.intrinsicTermNamesAvailableInModule "interpreter" [ "main" ] |> Set.toList
     )
+
+[<Fact>]
+let ``bundled prelude defines show and compare as trait members not standalone expect terms`` () =
+    let preludeSource =
+        createSource Stdlib.BundledPreludeVirtualPath (Stdlib.loadBundledPreludeText ())
+
+    let preludeLexed = Lexer.tokenize preludeSource
+    let preludeParsed = Parser.parse preludeSource preludeLexed.Tokens
+
+    Assert.Empty(preludeLexed.Diagnostics)
+    Assert.Empty(preludeParsed.Diagnostics)
+
+    let expectTerms =
+        preludeParsed.Syntax.Declarations
+        |> List.choose (function
+            | ExpectDeclarationNode (ExpectTermDeclaration declaration) -> Some declaration.Name
+            | _ -> None)
+        |> Set.ofList
+
+    Assert.DoesNotContain("show", expectTerms)
+    Assert.DoesNotContain("compare", expectTerms)
+
+    let traitMembers =
+        preludeParsed.Syntax.Declarations
+        |> List.choose (function
+            | TraitDeclarationNode declaration ->
+                Some(
+                    declaration.Name,
+                    declaration.Members
+                    |> List.choose (fun memberDeclaration -> memberDeclaration.Name)
+                    |> Set.ofList
+                )
+            | _ -> None)
+        |> Map.ofList
+
+    Assert.Contains("show", traitMembers["Show"])
+    Assert.Contains("compare", traitMembers["Ord"])
 
 [<Fact>]
 let ``bundled prelude bootstrap fixities are derived from leading prelude declarations`` () =

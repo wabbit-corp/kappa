@@ -4,6 +4,21 @@ open System
 
 // Lowers KRuntimeIR into target-neutral runtime-facing KBackendIR.
 module internal KBackendLowering =
+    let private tryParseTypeText (text: string) =
+        let source = SourceText.From("<backend-type>", text)
+        let lexed = Lexer.tokenize source
+
+        if not (List.isEmpty lexed.Diagnostics) then
+            None
+        else
+            TypeSignatures.parseType lexed.Tokens
+
+    let rec private isFunctionLikeType typeExpr =
+        match typeExpr with
+        | TypeSignatures.TypeArrow _ -> true
+        | TypeSignatures.TypeCapture(inner, _) -> isFunctionLikeType inner
+        | _ -> false
+
     type private BackendLoweringBindingInfo =
         { ModuleName: string
           Name: string
@@ -56,22 +71,26 @@ module internal KBackendLowering =
                 .Split([| ' '; '\t' |], StringSplitOptions.RemoveEmptyEntries)
             |> Array.tryHead
 
-        match typeText |> Option.bind tryTypeHead with
-        | Some "Int" -> Some BackendRepInt64
-        | Some "Float" -> Some BackendRepFloat64
-        | Some "Bool" -> Some BackendRepBoolean
-        | Some "String" -> Some BackendRepString
-        | Some "Char"
-        | Some "UnicodeScalar"
-        | Some "Grapheme" -> Some BackendRepString
-        | Some "Byte" -> Some BackendRepInt64
-        | Some "Unit" -> Some BackendRepUnit
-        | Some head when head.StartsWith("__kappa_dict_", StringComparison.Ordinal) ->
-            Some(BackendRepDictionary(head.Substring("__kappa_dict_".Length)))
-        | Some "IO" -> Some BackendRepIOAction
-        | Some "Ref" -> Some(BackendRepRef(backendOpaqueRepresentation None))
-        | Some head -> Some(backendOpaqueRepresentation (Some head))
-        | None -> None
+        match typeText |> Option.bind tryParseTypeText with
+        | Some parsedType when isFunctionLikeType parsedType ->
+            Some(backendOpaqueRepresentation (Some "Function"))
+        | _ ->
+            match typeText |> Option.bind tryTypeHead with
+            | Some "Int" -> Some BackendRepInt64
+            | Some "Float" -> Some BackendRepFloat64
+            | Some "Bool" -> Some BackendRepBoolean
+            | Some "String" -> Some BackendRepString
+            | Some "Char"
+            | Some "UnicodeScalar"
+            | Some "Grapheme" -> Some BackendRepString
+            | Some "Byte" -> Some BackendRepInt64
+            | Some "Unit" -> Some BackendRepUnit
+            | Some head when head.StartsWith("__kappa_dict_", StringComparison.Ordinal) ->
+                Some(BackendRepDictionary(head.Substring("__kappa_dict_".Length)))
+            | Some "IO" -> Some BackendRepIOAction
+            | Some "Ref" -> Some(BackendRepRef(backendOpaqueRepresentation None))
+            | Some head -> Some(backendOpaqueRepresentation (Some head))
+            | None -> None
 
     let private mergeBackendRepresentations left right =
         if left = right then
@@ -129,9 +148,6 @@ module internal KBackendLowering =
         | KRuntimeApply(KRuntimeName [ ">>" ], _)
         | KRuntimeApply(KRuntimeName [ "print" ], _)
         | KRuntimeApply(KRuntimeName [ "println" ], _)
-        | KRuntimeApply(KRuntimeName [ "printlnString" ], _)
-        | KRuntimeApply(KRuntimeName [ "printInt" ], _)
-        | KRuntimeApply(KRuntimeName [ "printString" ], _)
         | KRuntimeApply(KRuntimeName [ "openFile" ], _)
         | KRuntimeApply(KRuntimeName [ "primitiveReadData" ], _)
         | KRuntimeApply(KRuntimeName [ "readData" ], _)
@@ -868,7 +884,7 @@ module internal KBackendLowering =
 
             let executedIntrinsicRepresentation runtimeName argumentRepresentations =
                 match runtimeName, argumentRepresentations with
-                | ("print" | "println" | "printlnString" | "printInt" | "printString" | "writeRef"), _ ->
+                | ("print" | "println" | "writeRef"), _ ->
                     Some BackendRepUnit
                 | "primitiveIntToString", _ ->
                     Some BackendRepString

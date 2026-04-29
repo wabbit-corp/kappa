@@ -18,6 +18,8 @@ infix left 70 (*)
 infix left 70 (/)
 infix right 30 (&&)
 infix right 20 (||)
+infix left 1 (|>)
+infix right 0 (<|)
 
 data Void : Type
 
@@ -161,10 +163,13 @@ type OnceQuery (a : Type) = QueryCore (QueryMode OneShot QZeroOrMore) ω a
 type OptionalQuery (a : Type) = QueryCore (QueryMode Reusable QZeroOrOne) ω a
 type NonEmptyQuery (a : Type) = QueryCore (QueryMode Reusable QOneOrMore) ω a
 type SingletonQuery (a : Type) = QueryCore (QueryMode Reusable QOne) ω a
+
 expect type RawComprehension (a : Type)
 expect type ComprehensionPlan (a : Type)
+
 expect type IO (e : Type) (a : Type)
 type UIO (a : Type) = IO Void a
+
 expect type Code (t : Type)
 expect type ClosedCode (t : Type)
 expect type Fiber (e : Type) (a : Type)
@@ -182,9 +187,12 @@ expect type Thunk (a : Type)
 expect type Need (a : Type)
 
 trait Equiv (a : Type)
-trait Eq (a : Type)
-trait Ord (a : Type)
-trait Show (a : Type)
+trait Eq (a : Type) =
+    (==) : (& x : a) -> (& y : a) -> Bool
+trait Eq a => Ord (a : Type) =
+    compare : (& x : a) -> (& y : a) -> Ordering
+trait Show (a : Type) =
+    show : (& value : a) -> String
 trait Shareable (a : Type)
 trait Functor (f : Type -> Type)
 trait Applicative (f : Type -> Type)
@@ -228,13 +236,21 @@ expect term (>>=) : UIO a -> (a -> UIO b) -> UIO b
 expect term (>>) : UIO a -> UIO b -> UIO b
 expect term (|>) : a -> (a -> b) -> b
 expect term (<|) : (a -> b) -> a -> b
+
 expect term True : Bool
 expect term False : Bool
-expect term not : Bool -> Bool
-expect term and : Bool -> Bool -> Bool
-expect term or : Bool -> Bool -> Bool
-expect term compare : forall (a : Type). Ord a => (& x : a) -> (& y : a) -> Ordering
-expect term show : forall (a : Type). Show a => (& value : a) -> String
+not : Bool -> Bool
+let not value =
+    if value then False else True
+
+and : Bool -> Bool -> Bool
+let and left right =
+    if left then right else False
+
+or : Bool -> Bool -> Bool
+let or left right =
+    if left then True else right
+
 expect term (..) : forall (v : Type). (@_ : Rangeable v) -> v -> v -> Rangeable.Range v
 expect term (..<) : forall (v : Type). (@_ : Rangeable v) -> v -> v -> Rangeable.Range v
 expect term force : Thunk a -> a
@@ -246,6 +262,7 @@ expect term composeProjector :
 expect term empty : a
 expect term (<|>) : a -> a -> a
 expect term orElse : Option a -> Option a -> Option a
+
 expect term negate : a -> a
 expect term absurd : Void -> a
 expect term subst : ((=) a x y) -> b -> b
@@ -319,10 +336,16 @@ expect term re : Elab (Dict (InterpolatedMacro String))
 expect term b : Elab (Dict (InterpolatedMacro String))
 expect term type : Elab (Dict (InterpolatedMacro Type))
 expect term println : String -> UIO Unit
-expect term printlnString : String -> UIO Unit
+printlnString : String -> UIO Unit
+let printlnString value = println value
+
 expect term print : String -> UIO Unit
-expect term printInt : Int -> UIO Unit
-expect term printString : String -> UIO Unit
+printInt : Int -> UIO Unit
+let printInt value = println (primitiveIntToString value)
+
+printString : String -> UIO Unit
+let printString value = print value
+
 expect term primitiveIntToString : Int -> String
 expect term newRef : a -> UIO (Ref a)
 expect term readRef : Ref a -> UIO a

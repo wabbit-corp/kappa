@@ -113,6 +113,30 @@ let ``interpreter evaluates imported functions and closures`` () =
         failwithf "Expected successful evaluation, got %s" issue.Message
 
 [<Fact>]
+let ``interpreter evaluates ordinary prelude convenience bindings`` () =
+    let mainSource =
+        [
+            "module main"
+            "let result ="
+            "    if and True (or False (not False)) then 43 else 0"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-ordinary-prelude-convenience-bindings-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(workspace.HasErrors, sprintf "Expected no diagnostics, got %A" workspace.Diagnostics)
+
+    match result with
+    | Result.Ok value ->
+        Assert.Equal("43", RuntimeValue.format value)
+    | Result.Error issue ->
+        failwithf "Expected ordinary prelude convenience bindings to evaluate successfully, got %s" issue.Message
+
+[<Fact>]
 let ``decodeUtf8 round trips valid utf8 bytes`` () =
     let mainSource =
         [
@@ -304,6 +328,39 @@ let ``ordinary calls synthesize omitted leading implicit runtime parameters befo
         failwithf "Expected omitted implicit Render argument to synthesize successfully, got %s" issue.Message
 
 [<Fact>]
+let ``binding bodies can use omitted leading implicit runtime parameters from their signatures`` () =
+    let mainSource =
+        [
+            "module main"
+            "trait Render (a : Type) ="
+            "    render : a -> String"
+            "instance Render Int ="
+            "    let render x = primitiveIntToString x"
+            "format : (@_ : Render Int) -> Int -> String"
+            "let format x = render x"
+            "let result = format 1"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-omitted-implicit-binding-body-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(
+        workspace.HasErrors,
+        sprintf "Expected omitted implicit signature binders to stay available in the binding body, got %A" workspace.Diagnostics
+    )
+
+    match result with
+    | Result.Ok(StringValue "1") -> ()
+    | Result.Ok value ->
+        failwithf "Expected binding body to use omitted implicit Render evidence and return \"1\", got %A" value
+    | Result.Error issue ->
+        failwithf "Expected omitted implicit Render evidence to evaluate successfully, got %s" issue.Message
+
+[<Fact>]
 let ``grouped constrained instances expose premise dictionaries to ordinary helper calls`` () =
     let mainSource =
         [
@@ -342,6 +399,67 @@ let ``grouped constrained instances expose premise dictionaries to ordinary help
         failwithf "Expected grouped constrained instance helper call to return \"1\", got %A" value
     | Result.Error issue ->
         failwithf "Expected grouped constrained instance helper call to evaluate successfully, got %s" issue.Message
+
+[<Fact>]
+let ``prelude boolean helpers evaluate through ordinary definitions`` () =
+    let mainSource =
+        [
+            "module main"
+            "let bools = (not False) && (and True True) && (or False True)"
+            "let result = bools"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-prelude-boolean-definitions-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(
+        workspace.HasErrors,
+        sprintf "Expected prelude boolean helpers to compile as ordinary definitions, got %A" workspace.Diagnostics
+    )
+
+    match result with
+    | Result.Ok(BooleanValue true) -> ()
+    | Result.Ok value ->
+        failwithf "Expected ordinary prelude boolean helper definitions to evaluate to True, got %A" value
+    | Result.Error issue ->
+        failwithf "Expected ordinary prelude boolean helper definitions to evaluate successfully, got %s" issue.Message
+
+[<Fact>]
+let ``prelude show and compare resolve through trait members for builtin and user instances`` () =
+    let mainSource =
+        [
+            "module main"
+            "data Box : Type = Box Int"
+            "instance Show Box ="
+            "    let show value = \"box\""
+            "let builtinShow = show 42"
+            "let builtinCompare = compare 1 2"
+            "let userShow = show (Box 0)"
+            "let result = (builtinShow == \"42\") && (builtinCompare == LT) && (userShow == \"box\")"
+        ]
+        |> String.concat "\n"
+
+    let workspace, result =
+        evaluateInMemoryBinding
+            "memory-prelude-trait-member-show-compare-root"
+            "main.result"
+            [ "main.kp", mainSource ]
+
+    Assert.False(
+        workspace.HasErrors,
+        sprintf "Expected prelude show/compare to resolve through trait members, got %A" workspace.Diagnostics
+    )
+
+    match result with
+    | Result.Ok(BooleanValue true) -> ()
+    | Result.Ok value ->
+        failwithf "Expected prelude show/compare trait member regression to evaluate to True, got %A" value
+    | Result.Error issue ->
+        failwithf "Expected prelude show/compare trait member regression to evaluate successfully, got %s" issue.Message
 
 [<Fact>]
 let ``real Hashable instances support structural option and result hashing`` () =
