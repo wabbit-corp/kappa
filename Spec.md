@@ -30254,6 +30254,63 @@ When a target depends on a package with feature selections, the resolved plan re
 A build diagnostic for an invalid feature combination MUST identify the complete selected feature set after fixed-point
 closure, not merely the last feature considered before failure.
 
+<!-- build_system.matrix_expansion -->
+### 19.5CA Matrix target expansion
+
+A matrix target is an authored aggregate target that expands into zero or more ordinary targets by taking combinations
+of declared axis values.
+
+A matrix target has at least:
+
+* matrix target name;
+* generated target kind;
+* axis declarations;
+* axis value sets;
+* optional include rules;
+* optional exclude rules;
+* generated target naming rule;
+* generated target field template;
+* feature-selection policy;
+* fragment-tag policy; and
+* provenance policy.
+
+Matrix expansion occurs after manifest evaluation and before target dependency graph validation for generated targets.
+
+For a matrix target with axes `a1 ... an`, the default expansion order is lexicographic in axis declaration order,
+using each axis's declared value order.
+
+Include and exclude rules are applied after forming the product of axis values and before generated target names are
+checked for uniqueness.
+
+If include and exclude rules overlap, exclusion wins unless the matrix target explicitly declares a different conflict
+policy. A non-default conflict policy is an implementation extension unless standardized by this specification.
+
+A generated target records:
+
+* source matrix target name;
+* selected axis values;
+* generated target name;
+* generated target kind;
+* generated target field values after template substitution;
+* enabled fragment tags derived from axis values;
+* selected features derived from axis values;
+* backend profile, artifact family, build profile, deployment mode, and target triple derived from axis values when
+  applicable;
+* provenance for every generated field; and
+* deterministic matrix ordinal.
+
+A generated target name MUST be unique within the package or workspace target namespace after qualification.
+
+A matrix target MUST NOT silently generate a target that violates the backend-profile rule of §19.5.
+
+A matrix target MUST NOT silently enable more than one tag from the same exclusive fragment axis.
+
+A matrix target is an aggregate target. It has no backend profile, compiles no modules, and produces no artifact by
+itself.
+
+All compiler queries, diagnostics, test results, benchmark results, and publish records for a generated target refer
+to the generated target identity and include a provenance backreference to the matrix target and selected axis values.
+
 <!-- build_system.provider_alternatives -->
 ### 19.5D Provider alternatives and public facades
 
