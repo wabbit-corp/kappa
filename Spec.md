@@ -27505,6 +27505,56 @@ Rules:
   Such sugar MAY include precise foreign type declarations, adapter-mode selection, entry-point naming, library lookup,
   marshalling directives, callback declarations, or JNI-specific policy annotations.
 
+<!-- compiler.ffi.precise_overlays_trusted_binding_summaries_shims.example -->
+##### 17.7.4.1 Trusted-summary strengthening example
+
+Worked example: strengthening a raw nullable pointer
+
+A raw native binding may expose a nullable pointer-like result conservatively:
+
+```kappa
+module host.native.lib.Raw
+
+find_user_raw :
+    std.ffi.CInt -> IO HostError (Option std.ffi.RawPtr)
+```
+
+A trusted binding summary may strengthen this raw surface only by naming the boundary contract:
+
+```text
+trusted summary lib.find_user_raw:
+    nullability:
+        null result means user not found
+        non-null result points to a live UserHandle owned by the library
+    ownership:
+        returned handle is borrowed from the library cache
+        handle is invalidated by lib.close_user_cache
+    error translation:
+        errno ENOMEM -> Err OutOfMemory
+        errno EIO    -> Err StorageFailure
+        all other host failures -> defect HostFailure
+```
+
+A refined overlay may then expose:
+
+```kappa
+opaque data UserHandle : Type
+
+findUser :
+    UserId -> IO UserError (Option UserHandle)
+```
+
+Rules:
+
+* The refined `Option UserHandle` surface is justified by the trusted nullability contract.
+* The `IO UserError` surface is justified by the trusted error-translation contract.
+* The opaque `UserHandle` wrapper carries the documented ownership and invalidation behavior.
+* The raw nullable pointer is not definitionally equal to `Option UserHandle`.
+* The trusted summary does not prove pointer identity, object identity, alias preservation, or propositional equality
+  unless it explicitly states an Exact contract and supplies the required proof or representation rule.
+
+A raw host failure MUST NOT be treated as successful completion merely because the host printed or logged an error.
+
 <!-- compiler.ffi.boundary_contracts_blame -->
 #### 17.7.4A Boundary contracts, dependent checks, and blame
 
