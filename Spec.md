@@ -29704,6 +29704,70 @@ Compiler semantic queries MUST consume the `ResolvedTargetGraph` projection rele
 
 Build execution queries MUST consume the `BuildActionGraph` projection relevant to the selected action.
 
+<!-- build_system.action_identity_cache -->
+### 19.3E Build actions and cache identity
+
+A `BuildAction` is a deterministic description of one scheduled build operation.
+
+A `BuildAction` MUST record:
+
+* action identity;
+* owning target;
+* action phase;
+* executable tool identity;
+* command arguments;
+* normalized environment;
+* working-directory policy;
+* declared inputs;
+* declared input directories;
+* declared outputs;
+* declared output directories;
+* execution platform;
+* target platform;
+* timeout policy;
+* resource policy;
+* external observation policy;
+* cache policy;
+* reproducibility policy; and
+* provenance.
+
+A `BuildActionKey` MUST include every field that can affect the produced outputs, diagnostics, generated interfaces,
+deployment metadata, or subsequent provider identity.
+
+An implementation MUST NOT reuse a cached action result for a `BuildActionKey` unless the action result was produced
+under a cache-compatible action identity and reproducibility policy.
+
+<!-- build_system.external_observations -->
+### 19.3F External observations
+
+An `ExternalObservation` is any fact observed during resolution or action execution that was not already supplied as an
+immutable input.
+
+Portable observation kinds include:
+
+* file read with digest;
+* directory enumeration with listing digest;
+* absent path probe;
+* environment-variable read;
+* system-property read;
+* tool executable identity;
+* SDK discovery;
+* registry lookup;
+* network fetch;
+* native loader lookup;
+* JVM classpath or module-path inspection;
+* CLR assembly inspection;
+* `pkg-config` query; and
+* header preprocessing or module-map scanning.
+
+Package mode MUST reject unrecorded build-affecting external observations.
+
+A hermetic action rejects undeclared observations.
+
+A transcript action records observations and is reproducible only with the transcript.
+
+An ambient action records observations as unreproducibility reasons.
+
 <!-- build_system.fragments -->
 ### 19.4 Fragment selection
 
@@ -30624,6 +30688,48 @@ or generated interface artifact is materialized, cached, checked in, or verified
 
 A generator diagnostic MUST carry provenance for the manifest expression selecting the generator, each relevant
 generator input, and the generated output span when available.
+
+<!-- build_system.platforms_toolchains -->
+### 19.5G Platforms and toolchains
+
+A resolved target MUST distinguish:
+
+```text
+hostPlatform:
+    the platform on which the build driver and resolver execute;
+
+executionPlatform:
+    the platform on which build actions for the target execute;
+
+targetPlatform:
+    the platform on which the produced artifact is intended to run;
+
+toolchainProfile:
+    the selected tools, intrinsic capabilities, ABI assumptions, standard-library identities, and backend adapters used
+    to produce artifacts for the targetPlatform while executing on the executionPlatform.
+```
+
+A backend profile does not by itself determine the execution platform or host platform.
+
+A target triple does not by itself determine the toolchain identity.
+
+<!-- build_system.variant_selection -->
+### 19.5H Variant selection
+
+A variant is a producer capability selected to satisfy a consumer requirement.
+
+Variant selection MUST record:
+
+* consumer target or dependency edge;
+* producer candidates;
+* consumer requirements;
+* producer capabilities;
+* compatibility rules;
+* disambiguation rules;
+* selected candidate; and
+* provenance for every selected or rejected candidate.
+
+A variant collision or ambiguity is a build diagnostic.
 
 <!-- build_system.dependencies -->
 ### 19.6 Dependencies
@@ -31723,6 +31829,26 @@ deployment prerequisite.
 
 If a query is valid for a `BuildPlanDraft` only, its key MUST identify that it is a planning query and MUST NOT be
 reused as a compilation query key for `ResolvedBuildPlanFinal`.
+
+<!-- build_system.explanation_queries -->
+### 19.10A Build explanation queries
+
+A conforming implementation MUST expose explanation queries for at least:
+
+```text
+whyTargetSelected(target)
+whyFeatureEnabled(package, feature, target)
+whyDependencySelected(package, target)
+whyProviderSelected(moduleName, target)
+whyActionRebuilt(action)
+whyActionCached(action)
+whyNotReproducible(target)
+whyVariantSelected(edge)
+whyBridgeSelected(bridgeTarget)
+whyRuntimePrerequisite(requiredBy)
+```
+
+Each explanation query MUST return structured provenance, not prose only.
 
 <!-- build_system.diagnostics -->
 ### 19.11 Build diagnostics
