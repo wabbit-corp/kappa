@@ -29820,6 +29820,160 @@ In package mode, the lockfile or equivalent artifact MUST record at least:
 * deployment prerequisites;
 * native, managed, WASM, or bridge runtime identities required by the bridge when available.
 
+<!-- build_system.test_targets -->
+### 19.8A Test targets
+
+A test target describes compiler checks, compile checks, runtime tests, integration tests, diagnostic tests, golden
+tests, or compile-fail suites.
+
+Portable test kinds are:
+
+```text
+unit
+integration
+compile
+compile-fail
+diagnostic
+golden
+bridge
+host-capability
+```
+
+A test target has at least:
+
+* target name;
+* test kind;
+* selected source roots or test roots;
+* selected suite specs;
+* dependencies;
+* target artifact dependencies under test;
+* selected features;
+* selected host bindings, if any;
+* selected bridge providers, if any;
+* expected unsupported/rejected/skipped policy;
+* one or more test executions.
+
+A test execution target has at least:
+
+* execution name;
+* backend profile;
+* artifact family used for test execution, when applicable;
+* fragment tags;
+* build profile;
+* unsafe/debug policy;
+* runtime parameters;
+* runtime prerequisites;
+* expected result policy.
+
+A test execution target has exactly one backend profile.
+
+A test target with multiple backend executions resolves to multiple test execution targets.
+
+A diagnostic test target has at least:
+
+* selected source roots;
+* package mode or script mode;
+* backend profile context;
+* selected fragment tags;
+* selected host binding availability;
+* selected unsafe/debug policy;
+* expected diagnostic codes;
+* expected primary spans;
+* expected labels;
+* expected notes or helps, when asserted;
+* expected fix-its, when asserted.
+
+A golden test target has at least:
+
+* selected source roots;
+* selected compiler stage or emitted artifact kind;
+* canonicalization policy;
+* golden file identity;
+* expected update policy.
+
+A compile-fail test target is a diagnostic test target whose expected result is rejection.
+
+Test results MUST be grouped by resolved test target and resolved test execution target.
+
+A test result record MUST include the resolved-plan projection used for that execution.
+
+A test target does not by itself produce a runtime artifact unless one of its test execution targets explicitly compiles
+or depends on an artifact target.
+
+A test target MUST NOT hide unsupported backends as passing tests.
+
+Unsupported, skipped, rejected, failed, and passed are distinct outcomes.
+
+<!-- build_system.benchmark_targets -->
+### 19.8B Benchmark targets
+
+A benchmark target describes reproducible benchmark compilation and execution.
+
+A benchmark target has at least:
+
+* target name;
+* benchmark suite spec;
+* subject target or benchmark module selector;
+* dependencies;
+* selected features;
+* one or more benchmark executions;
+* dataset identities;
+* runtime parameters;
+* result attribution policy.
+
+A benchmark execution has at least:
+
+* execution name;
+* backend profile;
+* primary artifact family used for benchmark execution;
+* build profile;
+* optimization profile;
+* optional PGO policy;
+* optional LTO policy;
+* optional sanitizer policy;
+* optional profiling policy;
+* runtime parameters;
+* runtime prerequisites;
+* environment prerequisites.
+
+A benchmark execution has exactly one backend profile.
+
+A benchmark dataset records:
+
+* dataset name;
+* source;
+* immutable content identity or transcript identity;
+* decompression or preparation step identity, when any;
+* logical input name exposed to the benchmark.
+
+Benchmark runtime parameters record:
+
+* arguments;
+* environment supplied by the build tool;
+* working directory policy;
+* warmup policy;
+* measurement policy;
+* iteration policy;
+* timeout policy;
+* concurrency policy.
+
+A benchmark result MUST be attributable to:
+
+* resolved benchmark target;
+* resolved benchmark execution;
+* resolved plan projection;
+* backend profile;
+* build profile;
+* optimization profile;
+* toolchain identity;
+* runtime identity;
+* dataset identity;
+* runtime parameters;
+* host or system prerequisites that the benchmark result declares relevant.
+
+Benchmark results are not part of ordinary compilation semantics, but benchmark configuration is part of the resolved
+plan when the benchmark target is selected.
+
 <!-- build_system.module_providers -->
 ### 19.9 Module providers
 
