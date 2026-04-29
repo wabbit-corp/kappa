@@ -29914,6 +29914,110 @@ Target artifact dependencies participate in the target dependency graph.
 A target dependency cycle is a build error unless the cycle is entirely within an explicitly standardized bridge-bundle
 mechanism. Portable v1 does not standardize mutually recursive static artifact targets.
 
+<!-- build_system.codegen_targets -->
+### 19.5F Codegen targets
+
+A codegen target describes generated outputs to be produced by a build step.
+
+A codegen target has at least:
+
+* target name;
+* generator specification;
+* execution backend or resolved tool artifact identity;
+* inputs;
+* outputs;
+* output policy;
+* dependency set;
+* unsafe/debug policy;
+* reproducibility policy.
+
+A generator specification names one of:
+
+```text
+target artifact dependency used as tool
+external tool dependency
+macro package tool
+implementation-provided generator
+host binding generator
+bridge generator
+```
+
+A codegen input may be:
+
+```text
+config value
+schema file
+source file
+source root
+resource file
+dependency artifact
+target artifact
+host binding surface
+bridge contract
+lockfile entry
+explicit external input
+```
+
+A codegen output may be:
+
+```text
+generated source root
+generated Kappa module interface artifact
+generated resource root
+generated native source
+generated managed source
+generated header
+generated ABI metadata
+generated bridge companion artifact
+generated diagnostic fixture
+implementation-defined generated artifact
+```
+
+A codegen target's output policy is one of:
+
+```text
+generated-in-build-directory
+checked-in-generated-output
+cached-generated-output
+```
+
+A codegen target MUST NOT be executed during manifest evaluation.
+
+The build resolver or build scheduler executes a codegen target only after resolving the generator identity, input
+identities, tool identity, execution backend, and output policy.
+
+A target that consumes generated Kappa modules MUST compile only against a `ResolvedBuildPlan` in which the required
+generated source root or generated interface artifact is materialized or matched by a valid lockfile/cache entry.
+
+A materialized codegen result records at least:
+
+* codegen target identity;
+* generator artifact identity;
+* generator version or digest;
+* execution backend or tool runtime identity;
+* generator arguments;
+* generator config values with provenance;
+* input identities and digests;
+* declared output identities;
+* materialized output paths or logical generated roots;
+* generated module provider identities;
+* source maps or provenance maps from generated output to generator inputs;
+* diagnostics emitted by the generator;
+* reproducibility status.
+
+Generated Kappa source modules produced by codegen are module providers under §19.9.
+
+Generated Kappa interface artifacts produced by codegen are module providers under §19.9.
+
+Diagnostics from generated code SHOULD point first to the user-authored manifest expression, source input, schema input,
+or generator input responsible for the generated construct, rather than only to generated output text.
+
+A generated output used in package mode MUST either:
+
+* be reproduced from pinned generator inputs during the build;
+* match a lockfile/cache entry whose inputs are identical; or
+* be checked in and recorded by content identity.
+
 <!-- build_system.dependencies -->
 ### 19.6 Dependencies
 
