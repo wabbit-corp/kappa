@@ -5178,7 +5178,7 @@ import, export, as, except,
 do, block, return, open,
 forall, exists,
 captures, thunk, lazy, force,
-assertTerminates, assertReducible, assertTotal, decreases, structural, expect, instance, derive, effect, handle, deep,
+assertTerminates, assertReducible, assertTotal, decreases, structural, expect, intrinsic, instance, derive, effect, handle, deep,
 with, scoped, pattern,
 projection, place, get, set, sink,
 infix, postfix, prefix, left, right,
@@ -5197,6 +5197,15 @@ Keywords are **soft** (contextual) keywords:
 * The lexer recognizes the keyword tokens, but implementations must permit their use as ordinary identifiers in contexts
   where a keyword is not syntactically expected.
 * Example: `let type = 42` is permitted (where `type` is a term name), while `type Foo = ...` uses `type` as a keyword.
+
+If an implementation accepts `intrinsic trait` in source or generated prelude declarations, `intrinsic` belongs to this
+contextual-keyword set.
+
+If `intrinsic trait` is accepted only in implementation-provided interface files and never in user source, this keyword
+entry is optional.
+
+In either case, user source MUST NOT be able to use `intrinsic` to bypass the intrinsic-trait introduction restrictions
+of §12.
 
 <!-- lexical.comments -->
 ### 3.3 Comments
