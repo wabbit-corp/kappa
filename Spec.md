@@ -29052,6 +29052,77 @@ A `ResolvedBuildPlan` is final for a consuming target only after every generated
 binding surface, bridge companion, or codegen output required by that target has either been materialized or matched to a
 valid lockfile/cache entry.
 
+<!-- build_system.std_build.canonical_schema -->
+### 19.1B Canonical portable build schema
+
+The phrase "types equivalent to" in §19.1 is a portability obligation, not implementation latitude to expose
+incompatible manifest vocabularies.
+
+A conforming implementation that supports portable build manifests MUST expose a canonical portable build schema identity
+through the build-manifest schema scope.
+
+The schema identity records at least:
+
+* Kappa language version;
+* `std.build` schema version;
+* implementation-supported portable schema feature set;
+* every portable type constructor exposed by `std.build`;
+* every portable value constructor or builder exposed by `std.build`;
+* every field name, field type, default value, and required/optional status of each portable record-like build value;
+* every enum-like case name and payload type of each portable sum-like build value;
+* canonical serialization rules for every portable build value; and
+* compatibility mappings accepted by the implementation, when any.
+
+A portable build value has a **canonical build serialization**.
+
+Canonical build serialization MUST be deterministic for a fixed schema identity, source value, and provenance map. It
+MUST NOT depend on:
+
+* hash-table iteration order;
+* physical address identity;
+* filesystem enumeration order;
+* locale;
+* host environment variables;
+* current time;
+* current working directory except where explicitly represented as a resolved fact;
+* parallel worker scheduling; or
+* implementation-private pretty-printing choices.
+
+For each portable declaration in `std.build`, the schema MUST specify:
+
+* source-visible spelling;
+* config-mode type;
+* required fields;
+* optional fields;
+* defaulting rules;
+* normalization rules;
+* provenance propagation rules;
+* canonical serialization contribution;
+* compatibility-fingerprint contribution; and
+* whether the declaration is part of the stable portable schema or an implementation extension.
+
+A portable manifest is schema-compatible with an implementation only if every portable build value reachable from the
+final `buildConfig` binding can be interpreted under the implementation's canonical portable schema without using
+implementation-extension semantics.
+
+An implementation MAY expose additional build-schema declarations. Such declarations MUST be marked as implementation
+extensions in the schema identity. A manifest that uses an implementation-extension declaration is not portable unless
+that extension is standardized by a later version of this specification.
+
+Two `ResolvedBuildPlan` values are schema-compatible only if their canonical schema identities are equal, or if the
+consuming implementation declares an explicit compatibility mapping from one schema identity to the other and records
+that mapping in the resolved plan.
+
+The schema identity is part of:
+
+* manifest compatibility checking;
+* lockfile identity;
+* build-plan identity;
+* generated-output cache keys;
+* macro transcript identity when macros observe build config values;
+* build diagnostics that depend on schema interpretation; and
+* query keys for build-sensitive compiler queries.
+
 <!-- build_system.manifest_shape -->
 ### 19.2 Build manifest shape
 
