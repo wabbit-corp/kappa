@@ -28309,6 +28309,31 @@ A diagnostic for `E_CONFIG_PROVENANCE_UNAVAILABLE` MUST distinguish:
 * unavailable because of an implementation limit;
 * unavailable because the value came from an explicit unknown external input.
 
+<!-- config_mode.relationship_to_macros -->
+### 18.10 Relationship to macros and diagnostics
+
+The value-provenance model of this chapter is independent of config mode.
+
+Config mode requires value provenance for config-evaluated values.
+
+Implementations MAY reuse the same provenance representation for:
+
+* elaboration-time macro values;
+* generated syntax diagnostics;
+* build-plan resolution;
+* lockfile update suggestions;
+* test-fixture diagnostics;
+* generated-code source maps.
+
+Portable v1 does not require arbitrary ordinary Kappa runtime values to carry provenance.
+
+Portable v1 also does not require `Elab` actions to expose provenance for arbitrary meta-phase values.
+
+Macros that operate on `Syntax` continue to use `SyntaxOrigin` and the source/synthetic-origin model.
+
+A future revision may expose a public elaboration-time API for value provenance.
+Such an API must preserve hygiene, phase separation, source/synthetic origin discipline, and config-mode determinism.
+
 ---
 
 <!-- appendices.pipe_operators -->
