@@ -29719,6 +29719,51 @@ or multiple definitions for one `expect`, the effective module is rejected.
 
 Fragment selection must be deterministic for fixed `ResolvedBuildPlan` and source tree identity.
 
+<!-- build_system.fragments.composition -->
+#### Fragment composition
+
+For a fixed target, all selected source files with the same path-derived module name form one **fragment group**.
+
+A fragment group elaborates to one effective module.
+
+The following rules apply to a fragment group:
+
+* Each fragment file has its own import declarations, local fixity declarations, source origins, and lexical file
+  scope.
+* An import declaration in one fragment does not place imported names in lexical scope for another fragment.
+* A local fixity declaration in one fragment does not affect parsing or expression grouping in another fragment.
+* Top-level declarations from all selected fragments contribute to the effective module's top-level declaration set.
+* Name resolution inside a fragment may resolve top-level declarations contributed by any selected fragment of the same
+  effective module, subject to the ordinary recursion, signature, visibility, opacity, and declaration-kind rules.
+* Export declarations from all selected fragments contribute to the effective module export surface.
+* Export conflicts are diagnosed after the effective export surface is assembled.
+* Unselected fragments contribute no declarations, imports, fixities, instances, exports, diagnostics, or source
+  origins to the target, except as related origins in diagnostics about fragment selection itself.
+
+Top-level declaration order across fragments is not semantically observable.
+
+A program is ill-formed if acceptance, typing, instance selection, implicit resolution, exported fixity, exported
+surface, or interface identity would depend on a source-order choice between two different fragment files.
+
+For deterministic diagnostics, generated source maps, and presentation-only ordering, the canonical fragment order is:
+
+1. unsuffixed fragment files before suffixed fragment files;
+2. then files whose suffix tag sequence follows the declaration order of fragment axes and tags;
+3. then normalized relative source path by Unicode scalar-value order;
+4. then increasing source start offset within that file.
+
+This presentation order MUST NOT be used to resolve semantic ambiguity.
+
+If more than one selected fragment exports a top-level fixity declaration for the same operator and those fixities are
+not definitionally identical in kind, precedence, and associativity, the effective module is rejected.
+
+If more than one selected fragment contributes the same top-level declaration spelling and declaration kind, the
+effective module is rejected unless the declarations form a permitted same-spelling data-family group under Chapter 2 or
+a single `expect` declaration is satisfied by exactly one selected definition under §6.5.
+
+A separate top-level signature declaration still satisfies a definition only within the same source file, as specified
+by §6.2. Cross-fragment declaration requirements use `expect`.
+
 <!-- build_system.targets_backends -->
 ### 19.5 Targets, backend profiles, and artifact families
 
