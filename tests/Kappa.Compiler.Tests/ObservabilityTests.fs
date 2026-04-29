@@ -996,6 +996,39 @@ let ``pipeline trace records representation changes and verification outcomes`` 
     Assert.Equal(Some true, targetVerifyStep.VerificationSucceeded)
 
 [<Fact>]
+let ``pipeline trace records target verification failure without inventing target lowering`` () =
+    let workspace =
+        compileInMemoryWorkspaceWithBackend
+            "memory-trace-target-failure-root"
+            "dotnet"
+            [
+                "main.kp",
+                [
+                    "module main"
+                    "let answer = missingName"
+                ]
+                |> String.concat "\n"
+            ]
+
+    let trace = Compilation.pipelineTrace workspace
+
+    let targetVerifyStep =
+        trace
+        |> List.find (fun step ->
+            step.Event = PipelineTraceEvent.Verify
+            && step.InputCheckpoint = "dotnet.clr"
+            && step.OutputCheckpoint = "dotnet.clr")
+
+    Assert.False(targetVerifyStep.ChangedRepresentation)
+    Assert.True(targetVerifyStep.VerificationAttempted)
+    Assert.Equal(Some false, targetVerifyStep.VerificationSucceeded)
+
+    Assert.DoesNotContain(
+        trace,
+        fun step -> step.Event = PipelineTraceEvent.LowerTarget && step.OutputCheckpoint = "dotnet.clr"
+    )
+
+[<Fact>]
 let ``zig backend exposes a post KBackendIR target checkpoint`` () =
     let workspace =
         compileInMemoryWorkspaceWithBackend

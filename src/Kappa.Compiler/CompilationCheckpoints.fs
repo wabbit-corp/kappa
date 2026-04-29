@@ -71,6 +71,10 @@ module internal CompilationCheckpoints =
         |> List.map (fun diagnostic -> diagnostic.Message)
         |> String.concat Environment.NewLine
 
+    type TargetVerificationOutcome =
+        { Diagnostics: Diagnostic list
+          LoweringAttempted: bool }
+
     let private ensureTargetLoweringPreconditions (workspace: WorkspaceCompilation) checkpoint =
         if workspace.HasErrors then
             Result.Error
@@ -120,26 +124,44 @@ module internal CompilationCheckpoints =
               FunctionSymbols = functionSymbols
               SourceText = "" }
 
-    let tryEmitTargetTranslationUnit (workspace: WorkspaceCompilation) checkpoint =
+    let private tryEmitTargetTranslationUnitDetailed (workspace: WorkspaceCompilation) checkpoint =
         match workspace.Backend, checkpoint with
         | BackendProfile.Zig, checkpointName when checkpointName = Stdlib.ZigTargetCheckpointName ->
-            ensureTargetLoweringPreconditions workspace checkpoint
-            |> Result.bind (fun () -> ZigCcBackend.emitTranslationUnit workspace)
+            match ensureTargetLoweringPreconditions workspace checkpoint with
+            | Result.Ok () ->
+                ZigCcBackend.emitTranslationUnit workspace, true
+            | Result.Error message ->
+                Result.Error message, false
         | BackendProfile.DotNet, checkpointName when checkpointName = Stdlib.ClrTargetCheckpointName ->
-            ensureTargetLoweringPreconditions workspace checkpoint
-            |> Result.bind (fun () -> emitClrTargetManifest workspace)
+            match ensureTargetLoweringPreconditions workspace checkpoint with
+            | Result.Ok () ->
+                emitClrTargetManifest workspace, true
+            | Result.Error message ->
+                Result.Error message, false
         | _ ->
-            Result.Error $"Unknown checkpoint '{checkpoint}'."
+            Result.Error $"Unknown checkpoint '{checkpoint}'.", false
+
+    let tryEmitTargetTranslationUnit (workspace: WorkspaceCompilation) checkpoint =
+        tryEmitTargetTranslationUnitDetailed workspace checkpoint |> fst
+
+    let verifyTargetCheckpointDetailed (workspace: WorkspaceCompilation) checkpoint =
+        let result, loweringAttempted = tryEmitTargetTranslationUnitDetailed workspace checkpoint
+
+        let diagnostics =
+            match result with
+            | Result.Ok _ ->
+                []
+            | Result.Error message ->
+                [ { Severity = Error
+                    Code = DiagnosticCode.TargetCheckpoint
+                    Stage = Some "target-lowering"
+                    Phase = None
+                    Message = message
+                    Location = None
+                    RelatedLocations = [] } ]
+
+        { Diagnostics = diagnostics
+          LoweringAttempted = loweringAttempted }
 
     let verifyTargetCheckpoint (workspace: WorkspaceCompilation) checkpoint =
-        match tryEmitTargetTranslationUnit workspace checkpoint with
-        | Result.Ok _ ->
-            []
-        | Result.Error message ->
-            [ { Severity = Error
-                Code = DiagnosticCode.TargetCheckpoint
-                Stage = Some "target-lowering"
-                Phase = None
-                Message = message
-                Location = None
-                RelatedLocations = [] } ]
+        (verifyTargetCheckpointDetailed workspace checkpoint).Diagnostics

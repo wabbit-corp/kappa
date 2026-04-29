@@ -199,15 +199,22 @@ module Compilation =
         let analysisSessionIdentity =
             $"sourceRoot={options.SourceRoot};{buildConfigurationIdentity}"
 
+        let traceRecorder = CompilationTrace.Recorder()
+
         let parsedUserDocuments =
             collectInputFiles options inputs
-            |> List.map (parseFile options)
+            |> List.map (fun filePath ->
+                let document = parseFile options filePath
+                traceRecorder.RecordParse document.Source.FilePath
+                document)
 
         let initialDocuments =
             if parsedUserDocuments |> List.exists (fun document -> document.ModuleName = Some Stdlib.PreludeModuleName) then
                 parsedUserDocuments
             else
-                parseBundledPrelude options.AllowUnsafeConsume :: parsedUserDocuments
+                let preludeDocument = parseBundledPrelude options.AllowUnsafeConsume
+                traceRecorder.RecordParse preludeDocument.Source.FilePath
+                preludeDocument :: parsedUserDocuments
 
         let documents =
             initialDocuments
@@ -219,7 +226,10 @@ module Compilation =
 
         let frontendModulesForValidation =
             documents
-            |> List.map (buildKFrontIRModule Map.empty)
+            |> List.map (fun document ->
+                let frontendModule = buildKFrontIRModule Map.empty document
+                traceRecorder.RecordBuildKFrontIR document.Source.FilePath
+                frontendModule)
 
         let frontendDiagnostics =
             (documents |> List.collect (fun document -> document.Diagnostics))
@@ -242,18 +252,37 @@ module Compilation =
             frontendDiagnostics @ resourceCheckResult.Diagnostics
 
         let frontendSnapshots =
-            CompilationSnapshots.buildFrontendSnapshots resourceCheckResult.OwnershipFactsByFile sourceDiagnostics documents
+            CompilationSnapshots.buildFrontendSnapshots
+                resourceCheckResult.OwnershipFactsByFile
+                sourceDiagnostics
+                documents
+                (fun phase snapshot ->
+                    if phase <> RAW then
+                        let fromPhase = KFrontIRPhase.all |> List.item (KFrontIRPhase.ordinal phase - 1)
+                        traceRecorder.RecordAdvancePhase(fromPhase, phase, snapshot.ModuleIdentity, snapshot.FilePath))
 
         let kFrontIR =
             frontendSnapshots[CORE_LOWERING].Modules
 
-        let kCore =
+        let loweredKCore =
             SurfaceElaboration.lowerKCoreModules backendProfile options.AllowUnsafeConsume kFrontIR hostBindingModules
-            |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
+
+        do
+            loweredKCore
+            |> List.iter (fun moduleDump -> traceRecorder.RecordLowerKCore(Some [ moduleDump.Name ], moduleDump.SourceFile))
+
+        let kCore =
+            loweredKCore |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
+
+        let loweredKRuntimeIR =
+            kCore
+            |> List.map (fun coreModule ->
+                let runtimeModule = KRuntimeLowering.lowerKRuntimeModule coreModule
+                traceRecorder.RecordLowerKRuntimeIR runtimeModule.Name
+                runtimeModule)
 
         let kRuntimeIR =
-            kCore
-            |> List.map KRuntimeLowering.lowerKRuntimeModule
+            loweredKRuntimeIR
             |> fun loweredModules ->
                 loweredModules
                 @ (hostBindingModules |> Map.values |> Seq.map HostBindings.toRuntimeModule |> Seq.toList)
@@ -263,12 +292,15 @@ module Compilation =
         let runtimeCapabilityDiagnostics =
             validateBackendRuntimeSupport backendProfile documents kRuntimeIR
 
-        let kBackendIR, backendLoweringDiagnostics =
+        let loweredKBackendIR, backendLoweringDiagnostics =
             KBackendLowering.lowerKBackendModules backendProfile options.AllowUnsafeConsume kRuntimeIR
 
+        do
+            loweredKBackendIR
+            |> List.iter (fun moduleDump -> traceRecorder.RecordLowerKBackendIR moduleDump.Name)
+
         let kBackendIR =
-            kBackendIR
-            |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
+            loweredKBackendIR |> List.sortBy (fun moduleDump -> moduleDump.SourceFile)
 
         let clrAssemblyIR =
             ClrAssemblyLowering.lowerModules kRuntimeIR kBackendIR
@@ -312,14 +344,17 @@ module Compilation =
               Diagnostics = provisionalDiagnostics
               PipelineTrace = [] }
 
-        let implementationDiagnostics =
+        let implementationVerificationDiagnostics =
             if
                 not requiresBackendImplementation
                 || workspaceWithoutTrace.Diagnostics |> List.exists (fun diagnostic -> diagnostic.Severity = Error)
             then
-                []
+                None
             else
-                CheckpointVerification.verifyCheckpoint workspaceWithoutTrace "KBackendIR"
+                Some(CheckpointVerification.verifyCheckpoint workspaceWithoutTrace "KBackendIR")
+
+        let implementationDiagnostics =
+            implementationVerificationDiagnostics |> Option.defaultValue []
 
         let workspaceWithoutTrace =
             { workspaceWithoutTrace with
@@ -332,26 +367,65 @@ module Compilation =
                 KFrontIR = checkerSnapshot.Modules
                 Diagnostics = checkerSnapshot.Diagnostics }
 
-        let verification: CompilationTrace.VerificationSummary =
-            { Frontend =
-                CheckpointVerification.verifyCheckpoint frontendVerificationWorkspace (KFrontIRPhase.checkpointName CHECKERS)
-                |> List.isEmpty
-              KCore = CheckpointVerification.verifyCheckpoint workspaceWithoutTrace "KCore" |> List.isEmpty
-              KRuntimeIR = CheckpointVerification.verifyCheckpoint workspaceWithoutTrace "KRuntimeIR" |> List.isEmpty
-              KBackendIR = CheckpointVerification.verifyCheckpoint workspaceWithoutTrace "KBackendIR" |> List.isEmpty
-              Targets =
-                CompilationCheckpoints.targetCheckpointNames workspaceWithoutTrace
-                |> List.map (fun checkpoint ->
-                    checkpoint, (CompilationCheckpoints.verifyTargetCheckpoint workspaceWithoutTrace checkpoint |> List.isEmpty))
-                |> Map.ofList }
+        let frontendVerificationDiagnostics =
+            CheckpointVerification.verifyCheckpoint frontendVerificationWorkspace (KFrontIRPhase.checkpointName CHECKERS)
+
+        traceRecorder.RecordVerification(
+            PipelineTraceSubject.Module,
+            $"verify at {KFrontIRPhase.checkpointName CHECKERS}",
+            KFrontIRPhase.checkpointName CHECKERS,
+            List.isEmpty frontendVerificationDiagnostics
+        )
+
+        let kCoreVerificationDiagnostics =
+            CheckpointVerification.verifyCheckpoint workspaceWithoutTrace "KCore"
+
+        traceRecorder.RecordVerification(
+            PipelineTraceSubject.KCoreUnit,
+            "verify at KCore",
+            "KCore",
+            List.isEmpty kCoreVerificationDiagnostics
+        )
+
+        let kRuntimeIRVerificationDiagnostics =
+            CheckpointVerification.verifyCheckpoint workspaceWithoutTrace "KRuntimeIR"
+
+        traceRecorder.RecordVerification(
+            PipelineTraceSubject.KRuntimeIRUnit,
+            "verify at KRuntimeIR",
+            "KRuntimeIR",
+            List.isEmpty kRuntimeIRVerificationDiagnostics
+        )
+
+        let kBackendIRVerificationDiagnostics =
+            implementationVerificationDiagnostics
+            |> Option.defaultValue (CheckpointVerification.verifyCheckpoint workspaceWithoutTrace "KBackendIR")
+
+        traceRecorder.RecordVerification(
+            PipelineTraceSubject.KBackendIRUnit,
+            "verify at KBackendIR",
+            "KBackendIR",
+            List.isEmpty kBackendIRVerificationDiagnostics
+        )
+
+        do
+            CompilationCheckpoints.targetCheckpointNames workspaceWithoutTrace
+            |> List.iter (fun checkpoint ->
+                let targetOutcome =
+                    CompilationCheckpoints.verifyTargetCheckpointDetailed workspaceWithoutTrace checkpoint
+
+                if targetOutcome.LoweringAttempted then
+                    traceRecorder.RecordLowerTarget(checkpoint, CompilationCheckpoints.targetInputCheckpoint workspaceWithoutTrace checkpoint)
+
+                traceRecorder.RecordVerification(
+                    PipelineTraceSubject.TargetUnit,
+                    $"verify target at {checkpoint}",
+                    checkpoint,
+                    List.isEmpty targetOutcome.Diagnostics
+                ))
 
         { workspaceWithoutTrace with
-            PipelineTrace =
-                CompilationTrace.buildPipelineTrace
-                    workspaceWithoutTrace
-                    kFrontIR
-                    (CompilationCheckpoints.targetCheckpointNames workspaceWithoutTrace)
-                    verification }
+            PipelineTrace = traceRecorder.Finish() }
 
     let checkpointContracts (workspace: WorkspaceCompilation) =
         CompilationCheckpoints.contractsForWorkspace workspace

@@ -53,12 +53,15 @@ module internal CompilationSnapshots =
                 None
           ResolvedPhases = resolvedPhasesAtSnapshot ownershipFactsByFile phase document |> KFrontIRPhase.phasesThrough |> Set.ofList }
 
-    let buildFrontendSnapshots ownershipFactsByFile (diagnostics: Diagnostic list) (documents: ParsedDocument list) =
+    let buildFrontendSnapshots ownershipFactsByFile (diagnostics: Diagnostic list) (documents: ParsedDocument list) onSnapshotMaterialized =
         KFrontIRPhase.all
         |> List.map (fun phase ->
             let modules =
                 documents
-                |> List.map (documentSnapshot ownershipFactsByFile phase)
+                |> List.map (fun document ->
+                    let snapshot = documentSnapshot ownershipFactsByFile phase document
+                    onSnapshotMaterialized phase snapshot
+                    snapshot)
                 |> List.sortBy (fun document -> document.FilePath)
 
             let snapshotDiagnostics =

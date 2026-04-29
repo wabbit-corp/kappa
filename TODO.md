@@ -580,12 +580,6 @@ Duplicates are merged. The organization below is by compiler stage rather than b
 
 ## 11A. Observability, Incrementality, and Checkpoint Metadata
 
-- `[High] Replace the current synthetic pipeline trace with actual execution tracing, or rename it honestly.`
-  - The current pipeline trace is reconstructed after compilation from the final document list and target list, and it does not reflect real execution ordering, skipped work, lazy queries, failures, or reuse.
-  - `Reuse` exists as a trace event but is not actually emitted.
-  - Collect trace events at the point work really executes, including reuse/invalidate/skip/cache-probe events, or rename the current output to make clear that it is a planned/synthesized trace.
-  - Sources: `reviews/observability1.md`.
-
 ## 12. Tests, Harness, and Conformance Backlog
 
 - `[High] Split the suite conceptually into spec conformance, compiler regression, backend regression, and integration tests.`

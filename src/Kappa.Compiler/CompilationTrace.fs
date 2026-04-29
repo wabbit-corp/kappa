@@ -1,14 +1,9 @@
 namespace Kappa.Compiler
 
-// Builds the observable pipeline trace from executed stages and verification results.
-module internal CompilationTrace =
-    type VerificationSummary =
-        { Frontend: bool
-          KCore: bool
-          KRuntimeIR: bool
-          KBackendIR: bool
-          Targets: Map<string, bool> }
+open System.Collections.Generic
 
+// Records the observable pipeline trace from the steps the compiler actually executed.
+module internal CompilationTrace =
     let private traceStep eventName subject stepName inputCheckpoint outputCheckpoint changedRepresentation verificationAttempted verificationSucceeded =
         { Event = eventName
           Subject = subject
@@ -19,160 +14,118 @@ module internal CompilationTrace =
           VerificationAttempted = verificationAttempted
           VerificationSucceeded = verificationSucceeded }
 
-    let buildPipelineTrace
-        (workspace: WorkspaceCompilation)
-        (documents: KFrontIRModule list)
-        (targetCheckpoints: string list)
-        (verification: VerificationSummary)
-        =
-        let frontendCheckpoint = KFrontIRPhase.checkpointName CHECKERS
+    let private moduleLabel moduleIdentity filePath =
+        moduleIdentity
+        |> Option.map SyntaxFacts.moduleNameToText
+        |> Option.defaultValue filePath
 
-        let phaseTransitions =
-            KFrontIRPhase.all
-            |> List.pairwise
+    type Recorder() =
+        let steps = ResizeArray<PipelineTraceStep>()
 
-        let documentSteps =
-            documents
-            |> List.sortBy (fun document -> document.FilePath)
-            |> List.collect (fun document ->
-                let label =
-                    document.ModuleIdentity
-                    |> Option.map SyntaxFacts.moduleNameToText
-                    |> Option.defaultValue document.FilePath
+        member _.RecordStep
+            eventName
+            subject
+            stepName
+            inputCheckpoint
+            outputCheckpoint
+            changedRepresentation
+            verificationAttempted
+            verificationSucceeded
+            =
+            steps.Add(
+                traceStep
+                    eventName
+                    subject
+                    stepName
+                    inputCheckpoint
+                    outputCheckpoint
+                    changedRepresentation
+                    verificationAttempted
+                    verificationSucceeded
+            )
 
-                let parseSteps =
-                    [
-                        traceStep
-                            PipelineTraceEvent.Parse
-                            PipelineTraceSubject.File
-                            $"parse {document.FilePath}"
-                            "surface-source"
-                            "surface-source"
-                            false
-                            false
-                            None
-                        traceStep
-                            PipelineTraceEvent.BuildKFrontIR
-                            PipelineTraceSubject.File
-                            $"build KFrontIR for {document.FilePath}"
-                            "surface-source"
-                            (KFrontIRPhase.checkpointName RAW)
-                            true
-                            false
-                            None
-                    ]
+        member this.RecordParse(filePath: string) =
+            this.RecordStep
+                PipelineTraceEvent.Parse
+                PipelineTraceSubject.File
+                $"parse {filePath}"
+                "surface-source"
+                "surface-source"
+                false
+                false
+                None
 
-                let phaseSteps =
-                    phaseTransitions
-                    |> List.map (fun (fromPhase, toPhase) ->
-                        traceStep
-                            PipelineTraceEvent.AdvancePhase
-                            PipelineTraceSubject.Module
-                            $"advance {label} to {KFrontIRPhase.phaseName toPhase}"
-                            (KFrontIRPhase.checkpointName fromPhase)
-                            (KFrontIRPhase.checkpointName toPhase)
-                            true
-                            false
-                            None)
+        member this.RecordBuildKFrontIR(filePath: string) =
+            this.RecordStep
+                PipelineTraceEvent.BuildKFrontIR
+                PipelineTraceSubject.File
+                $"build KFrontIR for {filePath}"
+                "surface-source"
+                (KFrontIRPhase.checkpointName RAW)
+                true
+                false
+                None
 
-                let verifyAndLowerSteps =
-                    [
-                        traceStep
-                            PipelineTraceEvent.Verify
-                            PipelineTraceSubject.Module
-                            $"verify {label} at {frontendCheckpoint}"
-                            frontendCheckpoint
-                            frontendCheckpoint
-                            false
-                            true
-                            (Some verification.Frontend)
-                        traceStep
-                            PipelineTraceEvent.LowerKCore
-                            PipelineTraceSubject.Module
-                            $"lower {label} to KCore"
-                            (KFrontIRPhase.checkpointName CORE_LOWERING)
-                            "KCore"
-                            true
-                            false
-                            None
-                        traceStep
-                            PipelineTraceEvent.Verify
-                            PipelineTraceSubject.KCoreUnit
-                            $"verify {label} at KCore"
-                            "KCore"
-                            "KCore"
-                            false
-                            true
-                            (Some verification.KCore)
-                        traceStep
-                            PipelineTraceEvent.LowerKRuntimeIR
-                            PipelineTraceSubject.KCoreUnit
-                            $"lower {label} to KRuntimeIR"
-                            "KCore"
-                            "KRuntimeIR"
-                            true
-                            false
-                            None
-                        traceStep
-                            PipelineTraceEvent.Verify
-                            PipelineTraceSubject.KRuntimeIRUnit
-                            $"verify {label} at KRuntimeIR"
-                            "KRuntimeIR"
-                            "KRuntimeIR"
-                            false
-                            true
-                            (Some verification.KRuntimeIR)
-                        traceStep
-                            PipelineTraceEvent.LowerKBackendIR
-                            PipelineTraceSubject.Module
-                            $"lower {label} to KBackendIR"
-                            "KRuntimeIR"
-                            "KBackendIR"
-                            true
-                            false
-                            None
-                        traceStep
-                            PipelineTraceEvent.Verify
-                            PipelineTraceSubject.KBackendIRUnit
-                            $"verify {label} at KBackendIR"
-                            "KBackendIR"
-                            "KBackendIR"
-                            false
-                            true
-                            (Some verification.KBackendIR)
-                    ]
+        member this.RecordAdvancePhase(fromPhase: KFrontIRPhase, toPhase: KFrontIRPhase, moduleIdentity, filePath) =
+            let label = moduleLabel moduleIdentity filePath
 
-                parseSteps @ phaseSteps @ verifyAndLowerSteps)
+            this.RecordStep
+                PipelineTraceEvent.AdvancePhase
+                PipelineTraceSubject.Module
+                $"advance {label} to {KFrontIRPhase.phaseName toPhase}"
+                (KFrontIRPhase.checkpointName fromPhase)
+                (KFrontIRPhase.checkpointName toPhase)
+                true
+                false
+                None
 
-        let targetSteps =
-            targetCheckpoints
-            |> List.collect (fun checkpoint ->
-                let inputCheckpoint = CompilationCheckpoints.targetInputCheckpoint workspace checkpoint
+        member this.RecordLowerKCore(moduleIdentity, filePath) =
+            let label = moduleLabel moduleIdentity filePath
 
-                let verified =
-                    verification.Targets
-                    |> Map.tryFind checkpoint
-                    |> Option.defaultValue false
+            this.RecordStep
+                PipelineTraceEvent.LowerKCore
+                PipelineTraceSubject.Module
+                $"lower {label} to KCore"
+                (KFrontIRPhase.checkpointName CORE_LOWERING)
+                "KCore"
+                true
+                false
+                None
 
-                [
-                    traceStep
-                        PipelineTraceEvent.LowerTarget
-                        PipelineTraceSubject.TargetUnit
-                        $"lower {inputCheckpoint} to {checkpoint}"
-                        inputCheckpoint
-                        checkpoint
-                        true
-                        false
-                        None
-                    traceStep
-                        PipelineTraceEvent.Verify
-                        PipelineTraceSubject.TargetUnit
-                        $"verify target at {checkpoint}"
-                        checkpoint
-                        checkpoint
-                        false
-                        true
-                        (Some verified)
-                ])
+        member this.RecordLowerKRuntimeIR(moduleName: string) =
+            this.RecordStep
+                PipelineTraceEvent.LowerKRuntimeIR
+                PipelineTraceSubject.KCoreUnit
+                $"lower {moduleName} to KRuntimeIR"
+                "KCore"
+                "KRuntimeIR"
+                true
+                false
+                None
 
-        documentSteps @ targetSteps
+        member this.RecordLowerKBackendIR(moduleName: string) =
+            this.RecordStep
+                PipelineTraceEvent.LowerKBackendIR
+                PipelineTraceSubject.Module
+                $"lower {moduleName} to KBackendIR"
+                "KRuntimeIR"
+                "KBackendIR"
+                true
+                false
+                None
+
+        member this.RecordLowerTarget(checkpoint: string, inputCheckpoint: string) =
+            this.RecordStep
+                PipelineTraceEvent.LowerTarget
+                PipelineTraceSubject.TargetUnit
+                $"lower {inputCheckpoint} to {checkpoint}"
+                inputCheckpoint
+                checkpoint
+                true
+                false
+                None
+
+        member this.RecordVerification(subject, stepName: string, checkpoint: string, succeeded: bool) =
+            this.RecordStep PipelineTraceEvent.Verify subject stepName checkpoint checkpoint false true (Some succeeded)
+
+        member _.Finish() = steps |> Seq.toList
