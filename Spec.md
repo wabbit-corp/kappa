@@ -30429,6 +30429,71 @@ If the required precision is unavailable, the generated raw binding must use con
 `std.ffi.RawPtr`, `std.ffi.OpaqueHandle`, checked boundary results, dynamic values, or another explicitly imprecise
 surface permitted by Chapter 17.
 
+<!-- build_system.deployment_native_runtime -->
+### 19.7A Deployment, native loading, and runtime prerequisites
+
+A deployment mode describes whether produced artifacts are self-contained, thin, bundled, system-dependent, or
+implementation-defined.
+
+Portable deployment modes include:
+
+```text
+self-contained
+thin
+bundled
+system-prerequisite
+provided-by-host
+implementation-defined
+```
+
+A native load specification contributes to deployment mode but does not replace it.
+
+A bundled native dependency records:
+
+* native library identity;
+* producer dependency or target;
+* selected ABI identity;
+* selected library file identity;
+* deployment-relative path;
+* runtime loader policy;
+* generated loader metadata;
+* platform-specific install name, rpath, loader path, or equivalent metadata when applicable.
+
+A system-provided native dependency records:
+
+* required library or SDK name;
+* version constraint or compatibility constraint when known;
+* ABI identity or compatibility fingerprint when known;
+* header or metadata identity used for compilation;
+* runtime prerequisite description;
+* non-self-contained deployment status.
+
+`system-loader` means runtime loading uses the platform's ordinary loader search behavior.
+
+`bundled-loader` means the deployment layout records the exact bundled native library identity and deployment path.
+
+`provided-by-host` means the selected runtime, platform, SDK, or host process is expected to supply the required symbol
+surface or library handle.
+
+A build that uses `system-loader` or `provided-by-host` MUST NOT claim to be self-contained unless every such dependency
+is also bundled or otherwise made part of the deployment layout.
+
+A build may be reproducible for compilation while intentionally non-self-contained for deployment. In that case the
+target reproducibility status is `ReproducibleCompilationButSystemRuntimePrerequisite` or `NonSelfContainedDeployment`,
+not `FullyReproducible`.
+
+Runtime prerequisite diagnostics MUST distinguish:
+
+* missing compile-time headers or metadata;
+* missing link-time library;
+* missing runtime library;
+* incompatible runtime ABI;
+* missing platform SDK;
+* missing host runtime;
+* missing device driver;
+* unsupported loader policy;
+* non-self-contained deployment.
+
 <!-- build_system.bridges -->
 ### 19.8 Bridge providers and bridge targets
 
