@@ -19865,6 +19865,152 @@ runtime behavior.
 Instance candidate collection and representative selection MUST NOT depend on import declaration order, module load
 order, interface reload order, hash-map iteration order, cache insertion order, or worker scheduling.
 
+<!-- traits.instances.normalized_instance_heads -->
+#### 12.3.1A Normalized instance goals and heads
+
+Instance resolution compares trait goals and instance heads after ordinary transparent normalization.
+
+For a trait goal `Tr args`, the normalized goal is obtained by:
+
+* elaborating all arguments;
+* normalizing transparent type aliases, transparent families, and transparent compile-time definitions available at the
+  use site;
+* normalizing associated static-member projections whose governing evidence is already solved;
+* preserving opacity boundaries that are not clarified at the use site;
+* preserving erased indices and proof arguments as compile-time facts when they affect the instance head;
+* preserving universe, kind, row, quantity, and capture information that affects equality of the goal.
+
+For an instance declaration, the normalized instance head is obtained by the same process at the instance declaration
+site, then serialized into the module interface as part of the instance identity.
+
+Candidate collection in §12.3.1 step 2 uses normalized goals and normalized instance heads.
+
+An implementation MUST NOT ignore a possible candidate merely because the goal head is a transparent family
+application, transparent associated-member application, transparent alias, or other normalizable compile-time form at
+the first comparison point.
+
+Conservative overlap under normalization:
+
+If an instance goal or instance head is headed by a transparent family, associated static member, or other compile-time
+form whose future instantiation may normalize to a head that overlaps with another local or global candidate, the
+checker MUST remain conservative.
+
+The program is accepted only when all surviving normalized candidates are coherent under §15.2.1.
+
+It is not sufficient to accept merely because an overlap is hidden behind an unreduced family or associated-member
+head.
+
+Diagnostics:
+
+If normalization is blocked by missing or ambiguous governing trait evidence, use diagnostic family
+`kappa.associated.normalization-blocked`.
+
+If several normalized candidates survive but are not coherent, the incoherence diagnostic MUST expose the hidden
+normalization fact that made the candidates overlap.
+
+<!-- traits.instances.supertrait_projection_path_selection -->
+#### 12.3.1B Supertrait projection and conformance-path selection
+
+Supertrait projection is evidence projection. It is not ambient global instance generation.
+
+Consequences:
+
+* A global instance for `Ord T` does not by itself create a separate global instance candidate for `Eq T`.
+* Solving a global goal `Eq T` uses directly declared `Eq` instances for `T`, plus local implicit evidence, according
+  to §12.3.1.
+* Supertrait evidence from an `Ord T` dictionary is available only when that dictionary itself is already available as
+  local implicit evidence or as an explicit dictionary value.
+
+Local supertrait projection:
+
+When local implicit resolution considers an in-scope dictionary `d : Tr args`, it may project any declared supertrait
+reachable from `Tr args`.
+
+If several projection paths from the same dictionary reach the same normalized supertrait goal, the trait declaration
+is well-formed only if those projected dictionaries are coherent under §15.2.1.
+
+If several local dictionaries at the same lexical scope can project evidence for the same normalized supertrait goal,
+local implicit resolution treats them as ambiguous unless their projected dictionaries are coherent under §15.2.1.
+
+If a direct local dictionary for the goal and one or more projected local dictionaries for the same goal are visible in
+the same lexical scope, they are ordinary local candidates for the same implicit goal. They are accepted only when the
+ordinary local-implicit uniqueness or coherence rule accepts them.
+
+No implementation-dependent path choice:
+
+An implementation MUST NOT choose arbitrarily among multiple refinement paths.
+
+Whenever more than one path can supply evidence for the same normalized trait goal, the checker must either:
+
+* prove the resulting dictionaries coherent under §15.2.1 and select a deterministic representative; or
+* reject the implicit goal as ambiguous or incoherent.
+
+Deterministic representative ordering for coherent projected evidence follows the representative ordering of §12.3.1,
+extended by the lexicographic list of supertrait-edge source origins used by the projection path.
+
+Diagnostics:
+
+A supertrait-path ambiguity diagnostic MUST identify:
+
+* the requested trait goal;
+* every direct and projected candidate considered;
+* the dictionary or instance from which each projected candidate originated;
+* the projection path;
+* whether candidates failed uniqueness or failed coherence;
+* the deterministic representative if candidates were coherent.
+
+<!-- traits.instances.associated_static_member_instance_checking -->
+#### 12.3.1C Associated static member checking in instances
+
+When checking an instance declaration for trait `Tr params`, the checker first elaborates the instance head:
+
+```text
+Tr actuals
+```
+
+Then, for each associated static member declared by `Tr`, the checker obtains the instantiated member declaration by
+substituting `params := actuals` into the trait member declaration and normalizing under the ordinary rules of §14.3A.
+
+An instance definition for an associated static member is accepted iff it checks against that instantiated declaration.
+
+The check uses ordinary elaboration. In particular, it may use:
+
+* refined kind or universe information forced by the instance head;
+* equalities induced by indexed instance arguments;
+* transparent aliases and transparent family reduction;
+* associated-member normalization whose governing evidence is available;
+* ordinary implicit insertion;
+* ordinary type and kind inference;
+* ordinary opacity, `unhide`, and `clarify` rules.
+
+The checker MUST reject an associated static member definition when its effective instantiated receiver or head does not
+match the trait member after substitution and normalization.
+
+The checker MUST NOT:
+
+* accept a malformed associated static member merely because its written syntax resembles the trait declaration;
+* reject a valid associated static member merely because its written parameter order or alias-expanded shape differs
+  syntactically from the trait declaration;
+* ignore kind or index refinement induced by the instance head;
+* postpone malformed associated static member checking until a later internal panic or missing-skolem failure.
+
+Undeclared member definitions:
+
+If an instance body defines a compile-time member name not declared by the trait, the diagnostic belongs to
+`kappa.associated.member-undeclared`.
+
+Missing associated static members:
+
+If a required associated static member has no default and the instance does not define it, instance checking fails.
+The diagnostic MUST identify:
+
+* the trait;
+* the instance head;
+* the missing member;
+* the instantiated expected member declaration;
+* whether a default exists;
+* any generated derive or macro origin that omitted it.
+
 <!-- traits.instances.search_termination -->
 #### 12.3.2 Instance search termination
 
