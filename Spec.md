@@ -31311,6 +31311,36 @@ A dependency-resolution diagnostic MUST include a structured conflict explanatio
 incompatible constraints, the package or artifact that introduced each constraint, and the manifest or dependency
 metadata provenance for each edge.
 
+<!-- build_system.dependencies.path_content_identity -->
+#### Path dependency content identity
+
+A `PathDependencyContentIdentity` records the portable content identity of a path dependency.
+
+It records at least:
+
+* dependency logical name;
+* normalized package root identity;
+* source tree identity for selected source roots;
+* resource tree identity for selected resource roots;
+* build manifest semantic identity;
+* build manifest provenance identity when publication includes provenance;
+* lockfile identity or lockfile absence;
+* selected checked-in generated output identities;
+* package metadata identity;
+* exported module interface identities when already materialized;
+* ignored-path policy;
+* symlink policy; and
+* provenance of the path dependency declaration.
+
+A path dependency used in package mode is reproducible only when every build-affecting file or generated output
+reachable from the selected dependency is represented by content identity, lockfile identity, transcript identity, or
+an explicit unreproducibility reason.
+
+Publish mode with `record-path-content-identities` MUST use `PathDependencyContentIdentity`.
+
+Publish mode with `vendor-path-dependencies` MUST include enough vendored content to reconstruct the same
+`PathDependencyContentIdentity`.
+
 <!-- build_system.dependencies.maven -->
 ### 19.6A JVM ecosystem dependencies and packaging
 
